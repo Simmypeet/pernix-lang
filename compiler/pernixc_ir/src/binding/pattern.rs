@@ -2081,5 +2081,5 @@ pub(super) enum Path {
     Variant(VariantPath),
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

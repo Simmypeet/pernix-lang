@@ -1,64 +1,28 @@
-use std::{fmt::Display, sync::Arc};
-
-use pernixc_base::{
-    handler::{Counter, Panic, Storage},
-    source_file::{SourceElement, SourceFile},
-};
-use pernixc_lexical::token_stream::{TokenStream, Tree};
-use pernixc_syntax::{
-    state_machine::parse::Parse,
-    syntax_tree::{self, SyntaxTree},
+use pernixc_component::fields::Fields;
+use pernixc_handler::Panic;
+use pernixc_source_file::SourceElement;
+use pernixc_syntax::{syntax_tree, utility::parse};
+use pernixc_term::{
+    generic_arguments::GenericArguments,
+    generic_parameter::{GenericParameters, TypeParameterID},
+    lifetime::Lifetime,
+    r#type::{Primitive, Qualifier, Reference, Tuple, Type},
+    Symbol, TupleElement,
 };
 
 use crate::{
-    arena::ID,
-    error::{self, Error},
-    ir::{
-        self,
-        address::{self, Address, Field, Memory},
-        instruction::Instruction,
-        pattern::{Irrefutable, NameBindingPoint, Named},
-        representation::{
-            binding::{infer, Binder},
-            borrow, Representation,
-        },
-        value::{register::Assignment, Value},
-        Erased,
+    address::{self, Address, Field, Memory},
+    binding::{
+        infer,
+        test::{build_table, CreateBinderAtExt, Template},
+        Binder,
     },
-    symbol::{
-        self,
-        table::{
-            self,
-            representation::{Index, IndexMut, Insertion},
-            resolution, Building, Table,
-        },
-        Accessibility, AdtID, AdtTemplate, Function, FunctionDefinition,
-        FunctionTemplate, GenericDeclaration, GenericID, MemberID,
-        StructDefinition,
-    },
-    type_system::{
-        self,
-        term::{
-            self,
-            lifetime::Lifetime,
-            r#type::{self, Primitive, Qualifier, Reference, Type},
-            GenericArguments, Symbol, Tuple, TupleElement,
-        },
-    },
+    instruction::Instruction,
+    model::Erased,
+    pattern::{Irrefutable, NameBindingPoint, Named},
+    value::{register::Assignment, Value},
+    Representation,
 };
-
-fn create_pattern(source: impl Display) -> syntax_tree::pattern::Irrefutable {
-    let source_file =
-        Arc::new(SourceFile::new(source.to_string(), "test".into()));
-    let token_stream = TokenStream::tokenize(source_file, &Panic);
-    let tree = Tree::new(&token_stream);
-
-    let pattern = syntax_tree::pattern::Irrefutable::parse
-        .parse_syntax(&tree, &Panic)
-        .unwrap();
-
-    pattern
-}
 
 impl Representation<infer::Model> {
     /// Check for the named pattern that bound as `ref QUALIFIER IDENTIFIER`
@@ -139,55 +103,17 @@ impl Representation<infer::Model> {
     }
 }
 
-fn create_dummy_function() -> (Table<Building>, ID<Function>) {
-    let mut table = Table::default();
-
-    let Insertion { id: test_module_id, duplication } =
-        table.create_root_module("test".to_string());
-
-    assert!(duplication.is_none());
-
-    let Insertion { id: function_id, duplication } = table
-        .insert_member(
-            "test".to_string(),
-            Accessibility::Public,
-            test_module_id,
-            None,
-            GenericDeclaration::default(),
-            FunctionTemplate::<FunctionDefinition>::default(),
-        )
-        .unwrap();
-
-    assert!(duplication.is_none());
-
-    (table, function_id)
-}
-
-impl<
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Binder<'_, S, RO, TO>
-{
+impl Binder<'_> {
     fn bind_irrefutable(
         &mut self,
-        pattern_syn: syntax_tree::pattern::Irrefutable,
+        pattern_syn: &syntax_tree::pattern::Irrefutable,
         ty: &Type<infer::Model>,
         address: Address<infer::Model>,
     ) -> (Irrefutable, NameBindingPoint<infer::Model>) {
-        let storage = Storage::<Box<dyn error::Error>>::default();
-
         let irrefutable =
-            self.bind_pattern(ty, &pattern_syn, &storage).unwrap().unwrap();
-
-        let storage = storage.into_vec();
-        assert!(storage.is_empty(), "{storage:?}");
+            self.bind_pattern(ty, pattern_syn, &Panic).unwrap().unwrap();
 
         let mut binding_point = NameBindingPoint::default();
-
-        let storage = Storage::<Box<dyn error::Error>>::default();
 
         self.insert_irrefutable_named_binding_point(
             &mut binding_point,
@@ -198,12 +124,9 @@ impl<
             Qualifier::Mutable,
             false,
             self.stack.current_scope().scope_id(),
-            &storage,
+            &Panic,
         )
         .unwrap();
-
-        let storage = storage.into_vec();
-        assert!(storage.is_empty(), "{storage:?}");
 
         (irrefutable, binding_point)
     }
@@ -213,27 +136,19 @@ impl<
 fn value_bound_named() {
     const VALUE_BOUND_NAMED: &str = "mutable helloWorld";
 
-    let (table, function_id) = create_dummy_function();
+    let template = Template::new();
+    let mut binder = template.create_binder();
 
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &storage,
-    )
-    .unwrap();
+    let syn = parse::<syntax_tree::pattern::Irrefutable>(VALUE_BOUND_NAMED);
 
-    assert!(storage.as_vec().is_empty());
-
-    let syn = create_pattern(VALUE_BOUND_NAMED);
-    let alloca_id = binder.create_alloca(Type::default(), syn.span());
+    let alloca_id = binder.create_alloca(
+        Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+        syn.span(),
+    );
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        syn,
-        &Type::default(),
+        &syn,
+        &Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
         Address::Memory(Memory::Alloca(alloca_id)),
     );
 
@@ -242,12 +157,12 @@ fn value_bound_named() {
     };
 
     assert_eq!(pattern.name, "helloWorld");
-    assert_eq!(pattern.is_mutable, true);
+    assert!(pattern.is_mutable);
     assert_eq!(pattern.reference_binding, None);
 
     let name = binding_point.named_patterns_by_name.get("helloWorld").unwrap();
 
-    assert_eq!(name.mutable, true);
+    assert!(name.mutable);
     assert_eq!(name.load_address, Address::Memory(Memory::Alloca(alloca_id)));
 }
 
@@ -255,29 +170,21 @@ fn value_bound_named() {
 fn reference_bound_named() {
     const SIMPLE_NAMED_REFERENCE_BOUND: &str = "&mutable helloWorld";
 
-    let (table, function_id) = create_dummy_function();
+    let template = Template::new();
+    let mut binder = template.create_binder();
 
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &storage,
-    )
-    .unwrap();
-
-    let syn = create_pattern(SIMPLE_NAMED_REFERENCE_BOUND);
-    let alloca_id = binder.create_alloca(Type::default(), syn.span());
+    let syn = parse::<syntax_tree::pattern::Irrefutable>(
+        SIMPLE_NAMED_REFERENCE_BOUND,
+    );
+    let alloca_id = binder.create_alloca(
+        Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+        syn.span(),
+    );
     let (pattern, binding_point) = binder.bind_irrefutable(
-        syn,
-        &Type::default(),
+        &syn,
+        &Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
         Address::Memory(Memory::Alloca(alloca_id)),
     );
-
-    // no error
-    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Named(pattern) = pattern else {
         panic!("Expected a named pattern")
@@ -289,91 +196,47 @@ fn reference_bound_named() {
         "helloWorld",
         &Address::Memory(Memory::Alloca(alloca_id)),
         Qualifier::Mutable,
-        &Type::default(),
+        &Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
     );
 }
+
+const STRUCT_DECLARATION: &str = r"
+    public struct Test { 
+        public a: int32, 
+        public b: float32,
+    }
+
+    public function test() {}
+";
 
 #[test]
 #[allow(clippy::too_many_lines)]
 fn value_bound_struct() {
     const VALUE_BOUND_STRUCT: &str = "{ &mutable a, mutable b }";
 
-    let (mut table, function_id) = create_dummy_function();
-    let struct_id = {
-        let core_module_id = table
-            .get_by_qualified_name(std::iter::once("core"))
-            .unwrap()
-            .into_module()
-            .unwrap();
+    let table = build_table(STRUCT_DECLARATION);
 
-        let Insertion { id: struct_id, duplication } = table
-            .insert_member(
-                "Test".to_string(),
-                Accessibility::Public,
-                core_module_id,
-                None,
-                GenericDeclaration::default(),
-                AdtTemplate::<StructDefinition>::default(),
-            )
-            .unwrap();
-
-        assert!(duplication.is_none());
-
-        let struct_sym = table.get_mut(struct_id).unwrap();
-
-        struct_sym
-            .insert_field(symbol::Field {
-                accessibility: Accessibility::Public,
-                r#type: Type::Primitive(Primitive::Int32),
-                name: "a".to_string(),
-                span: None,
-            })
-            .unwrap();
-
-        struct_sym
-            .insert_field(symbol::Field {
-                accessibility: Accessibility::Public,
-                r#type: Type::Primitive(Primitive::Float32),
-                name: "b".to_string(),
-                span: None,
-            })
-            .unwrap();
-
-        struct_id
-    };
+    let struct_id = table.get_by_qualified_name(["test", "Test"]).unwrap();
 
     let struct_ty = Type::Symbol(Symbol {
-        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
+        id: struct_id,
         generic_arguments: GenericArguments::default(),
     });
 
-    let a_field_id =
-        table.get(struct_id).unwrap().fields().get_id("a").unwrap();
-    let b_field_id =
-        table.get(struct_id).unwrap().fields().get_id("b").unwrap();
+    let fields = table.query::<Fields>(struct_id).unwrap();
+    let a_field_id = fields.field_ids_by_name["a"];
+    let b_field_id = fields.field_ids_by_name["b"];
 
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &storage,
-    )
-    .unwrap();
+    let mut binder = table.create_binder_at(["test", "test"]);
 
-    let syn = create_pattern(VALUE_BOUND_STRUCT);
+    let syn = parse::<syntax_tree::pattern::Irrefutable>(VALUE_BOUND_STRUCT);
     let struct_alloca_id = binder.create_alloca(struct_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        syn,
+        &syn,
         &struct_ty,
         Address::Memory(Memory::Alloca(struct_alloca_id)),
     );
-
-    // no error
-    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Structural(pattern) = pattern else {
         panic!("Expected a named pattern")
@@ -411,7 +274,7 @@ fn value_bound_struct() {
         };
 
         assert_eq!(pattern.name, "b");
-        assert_eq!(pattern.is_mutable, true);
+        assert!(pattern.is_mutable);
         assert_eq!(pattern.reference_binding, None);
 
         assert_eq!(
@@ -432,86 +295,34 @@ fn reference_bound_struct() {
     // both a and b are bound by reference
     const REFERENCE_BOUND_STRUCT: &str = "{ &a, mutable b }";
 
-    let (mut table, function_id) = create_dummy_function();
-    let struct_id = {
-        let core_module_id = table
-            .get_by_qualified_name(std::iter::once("core"))
-            .unwrap()
-            .into_module()
-            .unwrap();
+    let table = build_table(STRUCT_DECLARATION);
 
-        let Insertion { id: struct_id, duplication } = table
-            .insert_member(
-                "Test".to_string(),
-                Accessibility::Public,
-                core_module_id,
-                None,
-                GenericDeclaration::default(),
-                AdtTemplate::<StructDefinition>::default(),
-            )
-            .unwrap();
-
-        assert!(duplication.is_none());
-
-        let struct_sym = table.get_mut(struct_id).unwrap();
-
-        struct_sym
-            .insert_field(symbol::Field {
-                accessibility: Accessibility::Public,
-                r#type: Type::Primitive(Primitive::Int32),
-                name: "a".to_string(),
-                span: None,
-            })
-            .unwrap();
-
-        struct_sym
-            .insert_field(symbol::Field {
-                accessibility: Accessibility::Public,
-                r#type: Type::Primitive(Primitive::Float32),
-                name: "b".to_string(),
-                span: None,
-            })
-            .unwrap();
-
-        struct_id
-    };
-
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &Counter::default(),
-    )
-    .unwrap();
+    let struct_id = table.get_by_qualified_name(["test", "Test"]).unwrap();
+    let mut binder = table.create_binder_at(["test", "test"]);
 
     // no error
-    assert!(storage.as_vec().is_empty());
 
     let struct_ty = Type::Symbol(Symbol {
-        id: r#type::SymbolID::Adt(AdtID::Struct(struct_id)),
+        id: struct_id,
         generic_arguments: GenericArguments::default(),
     });
     let reference_struct_ty = Type::Reference(Reference {
         qualifier: Qualifier::Immutable,
         lifetime: Lifetime::Static,
-        pointee: Box::new(struct_ty.clone()),
+        pointee: Box::new(struct_ty),
     });
 
-    let a_field_id =
-        table.get(struct_id).unwrap().fields().get_id("a").unwrap();
-    let b_field_id =
-        table.get(struct_id).unwrap().fields().get_id("b").unwrap();
+    let fields = table.query::<Fields>(struct_id).unwrap();
+    let a_field_id = fields.field_ids_by_name["a"];
+    let b_field_id = fields.field_ids_by_name["b"];
 
-    let syn = create_pattern(REFERENCE_BOUND_STRUCT);
+    let syn =
+        parse::<syntax_tree::pattern::Irrefutable>(REFERENCE_BOUND_STRUCT);
     let struct_alloca_id =
         binder.create_alloca(reference_struct_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        syn,
+        &syn,
         &reference_struct_ty,
         Address::Memory(Memory::Alloca(struct_alloca_id)),
     );
@@ -575,7 +386,8 @@ fn reference_bound_struct() {
 fn value_bound_tuple() {
     const VALUE_BOUND_TUPLE: &str = "(&a, mutable b)";
 
-    let (table, function_id) = create_dummy_function();
+    let template = Template::new();
+    let mut binder = template.create_binder();
 
     let tuple_ty = Type::Tuple(Tuple {
         elements: vec![
@@ -590,25 +402,11 @@ fn value_bound_tuple() {
         ],
     });
 
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &storage,
-    )
-    .unwrap();
-
-    // no error
-    assert!(storage.as_vec().is_empty());
-
-    let syn = create_pattern(VALUE_BOUND_TUPLE);
+    let syn = parse::<syntax_tree::pattern::Irrefutable>(VALUE_BOUND_TUPLE);
     let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        syn,
+        &syn,
         &tuple_ty,
         Address::Memory(Memory::Alloca(tuple_alloca_id)),
     );
@@ -658,7 +456,7 @@ fn value_bound_tuple() {
 
         assert_eq!(pattern.name, "b");
         assert_eq!(pattern.reference_binding, None);
-        assert_eq!(pattern.is_mutable, true);
+        assert!(pattern.is_mutable);
 
         assert_eq!(
             binding_point.named_patterns_by_name.get("b").unwrap().load_address,
@@ -676,7 +474,8 @@ fn value_bound_tuple() {
 fn reference_bound_tuple() {
     const REFERENCE_BOUND_TUPLE: &str = "(&a, mutable b)";
 
-    let (table, function_id) = create_dummy_function();
+    let template = Template::new();
+    let mut binder = template.create_binder();
 
     let tuple_ty = Type::Tuple(Tuple {
         elements: vec![
@@ -693,26 +492,15 @@ fn reference_bound_tuple() {
     let reference_tuple_ty = Type::Reference(Reference {
         qualifier: Qualifier::Mutable,
         lifetime: Lifetime::Static,
-        pointee: Box::new(tuple_ty.clone()),
+        pointee: Box::new(tuple_ty),
     });
 
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &storage,
-    )
-    .unwrap();
-
-    let syn = create_pattern(REFERENCE_BOUND_TUPLE);
+    let syn = parse::<syntax_tree::pattern::Irrefutable>(REFERENCE_BOUND_TUPLE);
     let tuple_alloca_id =
         binder.create_alloca(reference_tuple_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        syn,
+        &syn,
         &reference_tuple_ty,
         Address::Memory(Memory::Alloca(tuple_alloca_id)),
     );
@@ -766,7 +554,7 @@ fn reference_bound_tuple() {
             &binding_point,
             "b",
             &Address::Tuple(address::Tuple {
-                tuple_address: Box::new(base_tuple_address.clone()),
+                tuple_address: Box::new(base_tuple_address),
                 offset: address::Offset::FromStart(1),
             }),
             Qualifier::Mutable,
@@ -775,11 +563,21 @@ fn reference_bound_tuple() {
     }
 }
 
+const WITH_UNPACKED_TYPE_PARAMETER: &str = r"
+public function test[T]() where tuple T {}
+";
+
 #[test]
+#[allow(clippy::too_many_lines)]
 fn more_packed_tuple() {
     const PACKED_TUPLE: &str = "(a, ...b,  c)";
+    let table = build_table(WITH_UNPACKED_TYPE_PARAMETER);
+    let mut binder = table.create_binder_at(["test", "test"]);
 
-    let (table, function_id) = create_dummy_function();
+    let test_function_id =
+        table.get_by_qualified_name(["test", "test"]).unwrap();
+    let test_generic_params =
+        table.query::<GenericParameters>(test_function_id).unwrap();
 
     let tuple_ty = Type::Tuple(Tuple {
         elements: vec![
@@ -792,10 +590,10 @@ fn more_packed_tuple() {
                 is_unpacked: false,
             },
             TupleElement {
-                term: Type::Parameter(MemberID {
-                    parent: GenericID::Struct(ID::new(0)),
-                    id: ID::new(0),
-                }),
+                term: Type::Parameter(TypeParameterID::new(
+                    test_function_id,
+                    test_generic_params.type_parameter_ids_by_name()["T"],
+                )),
                 is_unpacked: true,
             },
             TupleElement {
@@ -813,28 +611,14 @@ fn more_packed_tuple() {
         ],
     });
 
-    let storage: Storage<Box<dyn Error>> = Storage::default();
-    let mut binder = Binder::new_function(
-        &table,
-        resolution::NoOp,
-        type_system::observer::NoOp,
-        function_id,
-        std::iter::empty(),
-        &storage,
-    )
-    .unwrap();
-
-    let syn = create_pattern(PACKED_TUPLE);
+    let syn = parse::<syntax_tree::pattern::Irrefutable>(PACKED_TUPLE);
     let tuple_alloca_id = binder.create_alloca(tuple_ty.clone(), syn.span());
 
     let (pattern, binding_point) = binder.bind_irrefutable(
-        syn,
+        &syn,
         &tuple_ty,
         Address::Memory(Memory::Alloca(tuple_alloca_id)),
     );
-
-    // no error
-    assert!(storage.as_vec().is_empty());
 
     let Irrefutable::Tuple(pattern) = pattern else {
         panic!("Expected a tuple pattern")
@@ -860,7 +644,7 @@ fn more_packed_tuple() {
                 ))),
                 offset: address::Offset::FromStart(0),
             })
-        )
+        );
     }
 
     // b tuple check
@@ -897,8 +681,8 @@ fn more_packed_tuple() {
                 return false;
             };
 
-            &store.address
-                == &Address::Tuple(address::Tuple {
+            store.address
+                == Address::Tuple(address::Tuple {
                     tuple_address: Box::new(load_address.clone()),
                     offset: address::Offset::FromStart(0),
                 })
@@ -988,17 +772,18 @@ fn more_packed_tuple() {
                 .get(*load_address.as_memory().unwrap().as_alloca().unwrap())
                 .unwrap()
                 .r#type,
-            Type::Tuple(term::Tuple {
+            Type::Tuple(Tuple {
                 elements: vec![
                     TupleElement {
                         term: Type::Primitive(Primitive::Int16),
                         is_unpacked: false
                     },
                     TupleElement {
-                        term: Type::Parameter(MemberID {
-                            parent: GenericID::Struct(ID::new(0)),
-                            id: ID::new(0)
-                        }),
+                        term: Type::Parameter(TypeParameterID::new(
+                            test_function_id,
+                            test_generic_params.type_parameter_ids_by_name()
+                                ["T"]
+                        )),
                         is_unpacked: true
                     },
                     TupleElement {
@@ -1034,6 +819,6 @@ fn more_packed_tuple() {
                 ))),
                 offset: address::Offset::FromEnd(0),
             })
-        )
+        );
     }
 }
