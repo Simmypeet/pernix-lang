@@ -1273,3 +1273,46 @@ impl Report<&Table> for SymbolIsNotCallable {
         }
     }
 }
+
+/// The block with the given label name was not found.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BlockWithGivenLableNameNotFound {
+    /// The span of the label identifier.
+    pub span: Span,
+}
+
+impl Report<&Table> for BlockWithGivenLableNameNotFound {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "block with label named `{}` was not found",
+                self.span.str()
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The `epxress` expression can't be used outside of a block expression.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpressOutsideBlock {
+    /// The span of the expression.
+    pub span: Span,
+}
+
+impl Report<&Table> for ExpressOutsideBlock {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: "`express` expression can't be used outside of a block \
+                      expression"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}

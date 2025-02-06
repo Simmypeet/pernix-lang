@@ -107,8 +107,10 @@ pub trait Bind<T> {
 
 mod array;
 mod binary;
+mod block;
 mod boolean;
 mod character;
+mod express;
 mod numeric;
 mod panic;
 mod parenthesized;
@@ -120,10 +122,8 @@ mod string;
 mod r#struct;
 
 /*
-mod block;
 mod r#break;
 mod r#continue;
-mod express;
 mod if_else;
 mod r#loop;
 mod r#match;
@@ -406,8 +406,8 @@ impl Bind<&syntax_tree::expression::Terminator> for Binder<'_> {
             syntax_tree::expression::Terminator::Continue(_) => {
                 todo!()
             }
-            syntax_tree::expression::Terminator::Express(_) => {
-                todo!()
+            syntax_tree::expression::Terminator::Express(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Terminator::Break(_) => {
                 todo!()
@@ -424,8 +424,8 @@ impl Bind<&syntax_tree::expression::Brace> for Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Brace::Block(_) => {
-                todo!()
+            syntax_tree::expression::Brace::Block(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Brace::IfElse(_) => {
                 todo!()

@@ -1,40 +1,18 @@
 use std::num::NonZeroUsize;
 
-use pernixc_base::handler::Handler;
-use pernixc_syntax::syntax_tree::{self};
+use pernixc_handler::Handler;
+use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
 
 use super::{Bind, Config, Expression};
-use crate::{
-    error::{self},
-    ir::{
-        self,
-        representation::binding::{
-            borrow,
-            infer::{self},
-            Binder, Error,
-        },
-    },
-    symbol::table::{
-        self,
-        resolution::{self},
-    },
-    type_system::{self},
-};
+use crate::binding::{Binder, Error};
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Block> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Block> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Block,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let scope_id = self
             .intermediate_representation

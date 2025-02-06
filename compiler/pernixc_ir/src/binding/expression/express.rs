@@ -1,55 +1,34 @@
 use std::collections::hash_map::Entry;
 
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::Type;
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error::{self, BlockWithGivenLableNameNotFound, ExpressOutsideBlock},
-    ir::{
-        self,
-        control_flow_graph::InsertTerminatorError,
-        instruction::{
-            Instruction, Jump, ScopePop, Terminator, UnconditionalJump,
-        },
-        representation::{
-            binding::{
-                infer::{self},
-                stack::Scope,
-                Binder, Error, SemanticError,
-            },
-            borrow,
-        },
-        value::{
-            literal::{self, Literal},
-            Value,
-        },
+    binding::{
+        diagnostic::{BlockWithGivenLableNameNotFound, ExpressOutsideBlock},
+        infer::Expected,
+        stack::Scope,
+        Binder, Error, SemanticError,
     },
-    symbol::table::{self, resolution},
-    type_system::{
-        self,
-        term::{
-            self,
-            r#type::{self, Expected, Type},
-        },
+    instruction::{Instruction, Jump, ScopePop, Terminator, UnconditionalJump},
+    model::Constraint,
+    value::{
+        literal::{self, Literal},
+        Value,
     },
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Express> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Express> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Express,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
             .label()
@@ -104,7 +83,7 @@ impl<
         };
 
         let value_type = value.as_ref().map_or_else(
-            || Ok(Type::Tuple(term::Tuple { elements: Vec::new() })),
+            || Ok(Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })),
             |x| self.type_of_value(x),
         )?;
 
@@ -134,7 +113,7 @@ impl<
             .entry(self.current_block_id)
         {
             entry.insert(value.unwrap_or(Value::Literal(Literal::Unit(
-                literal::Unit { span: (syntax_tree.span()) },
+                literal::Unit { span: Some(syntax_tree.span()) },
             ))));
         }
 
@@ -159,34 +138,31 @@ impl<
         }
 
         // jump to the block
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: self
-                        .block_states_by_scope_id
-                        .get(&scope_id)
-                        .unwrap()
-                        .successor_block_id,
-                })),
-            )
-        {
-            panic!("invalid block id");
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: self
+                    .block_states_by_scope_id
+                    .get(&scope_id)
+                    .unwrap()
+                    .successor_block_id,
+            })),
+        );
 
         let value =
             Value::Literal(Literal::Unreachable(literal::Unreachable {
                 r#type: {
-                    let inference = self
-                        .create_type_inference(r#type::Constraint::All(true));
+                    let inference =
+                        self.create_type_inference(Constraint::All(true));
 
                     Type::Inference(inference)
                 },
-                span: (syntax_tree.span()),
+                span: Some(syntax_tree.span()),
             }));
 
         Ok(Expression::RValue(value))
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -423,41 +423,6 @@ fn not_all_flow_path_express_value_error() {
 }
 
 #[test]
-fn single_express_block() {
-    const BLOCK: &str = r"{
-        express 32;
-    }
-    ";
-
-    let test_template = TestTemplate::new();
-
-    let (mut binder, storage) = test_template.create_binder();
-
-    let block = parse_expression(BLOCK)
-        .into_binary()
-        .unwrap()
-        .destruct()
-        .0
-        .into_brace()
-        .unwrap()
-        .into_block()
-        .unwrap();
-
-    let numeric_literal = binder
-        .bind(&block, Config { target: Target::RValue }, &storage)
-        .unwrap()
-        .into_r_value()
-        .unwrap()
-        .into_literal()
-        .unwrap()
-        .into_numeric()
-        .unwrap();
-
-    assert_eq!(numeric_literal.integer_string, "32");
-    assert!(numeric_literal.decimal_stirng.is_none());
-}
-
-#[test]
 fn multiple_express_block() {
     const BLOCK: &str = r"
     'x: {
