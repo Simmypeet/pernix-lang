@@ -1181,3 +1181,148 @@ fn arrow_access() {
         assert_eq!(lvalue.qualifier, Qualifier::Mutable);
     }
 }
+
+const ENUM_DECLARATION: &str = r"
+public enum Sample[F, S] {
+    First(F),
+    Second(S),
+    Third(bool),
+    Fourth
+}
+
+public function test() {}
+";
+
+#[test]
+fn variant_call() {
+    let table = build_table(ENUM_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let first_variant_id =
+        table.get_by_qualified_name(["test", "Sample", "First"]).unwrap();
+    let fourth_variant_id =
+        table.get_by_qualified_name(["test", "Sample", "Fourth"]).unwrap();
+
+    // first variant
+    {
+        let call_register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("Sample::First(32)"))
+            .into_register()
+            .unwrap();
+
+        let call = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(call_register_id)
+            .unwrap()
+            .assignment
+            .as_variant()
+            .unwrap();
+
+        assert_eq!(call.variant_id, first_variant_id);
+
+        let numeric_literal = call
+            .associated_value
+            .as_ref()
+            .unwrap()
+            .as_literal()
+            .unwrap()
+            .as_numeric()
+            .unwrap();
+
+        assert_eq!(numeric_literal.integer_string, "32");
+        assert!(numeric_literal.decimal_stirng.is_none());
+    }
+
+    // fourth variant
+    {
+        let call_register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("Sample::Fourth()"))
+            .into_register()
+            .unwrap();
+
+        let call = binder
+            .intermediate_representation
+            .values
+            .registers
+            .get(call_register_id)
+            .unwrap()
+            .assignment
+            .as_variant()
+            .unwrap();
+
+        assert_eq!(call.variant_id, fourth_variant_id);
+        assert!(call.associated_value.is_none());
+    }
+}
+
+#[test]
+fn variant_call_mismatched_argument_count_error() {
+    let table = build_table(ENUM_DECLARATION);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    // too many
+    {
+        let (_, errors) =
+            binder.bind_as_rvalue_error(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("Sample::First(32, 64)"));
+
+        assert_eq!(errors.len(), 1);
+
+        let error = errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<MismatchedArgumentCount>()
+            .unwrap();
+
+        assert_eq!(error.expected_count, 1);
+        assert_eq!(error.found_count, 2);
+    }
+
+    // too few
+    {
+        let (_, errors) =
+            binder.bind_as_rvalue_error(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("Sample::Second()"));
+
+        assert_eq!(errors.len(), 1);
+
+        let error = errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<MismatchedArgumentCount>()
+            .unwrap();
+
+        assert_eq!(error.expected_count, 1);
+        assert_eq!(error.found_count, 0);
+    }
+
+    // too many
+    {
+        let (_, errors) =
+            binder.bind_as_rvalue_error(&parse::<
+                syntax_tree::expression::Postfixable,
+            >("Sample::Fourth(32)"));
+
+        assert_eq!(errors.len(), 1);
+
+        let error = errors
+            .first()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<MismatchedArgumentCount>()
+            .unwrap();
+
+        assert_eq!(error.expected_count, 0);
+        assert_eq!(error.found_count, 1);
+    }
+}
