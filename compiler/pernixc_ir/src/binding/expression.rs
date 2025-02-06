@@ -109,7 +109,9 @@ mod array;
 mod binary;
 mod block;
 mod boolean;
+mod r#break;
 mod character;
+mod r#continue;
 mod express;
 mod if_else;
 mod r#loop;
@@ -123,12 +125,10 @@ mod qualified_identifier;
 mod r#return;
 mod string;
 mod r#struct;
+mod r#while;
 
 /*
-mod r#break;
-mod r#continue;
 mod r#match;
-mod r#while;
 */
 
 impl Binder<'_> {
@@ -403,14 +403,14 @@ impl Bind<&syntax_tree::expression::Terminator> for Binder<'_> {
             syntax_tree::expression::Terminator::Return(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Terminator::Continue(_) => {
-                todo!()
+            syntax_tree::expression::Terminator::Continue(syn) => {
+                self.bind(syn, config, handler)
             }
             syntax_tree::expression::Terminator::Express(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Terminator::Break(_) => {
-                todo!()
+            syntax_tree::expression::Terminator::Break(syn) => {
+                self.bind(syn, config, handler)
             }
         }
     }
@@ -436,8 +436,8 @@ impl Bind<&syntax_tree::expression::Brace> for Binder<'_> {
             syntax_tree::expression::Brace::Match(_) => {
                 todo!()
             }
-            syntax_tree::expression::Brace::While(_) => {
-                todo!()
+            syntax_tree::expression::Brace::While(syn) => {
+                self.bind(syn, config, handler)
             }
         }
     }

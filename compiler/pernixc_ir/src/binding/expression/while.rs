@@ -1,55 +1,35 @@
 use std::num::NonZeroUsize;
 
-use pernixc_base::{handler::Handler, source_file::SourceElement};
-use pernixc_syntax::syntax_tree::{self};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
+use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::{Primitive, Type};
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error::{self},
-    ir::{
-        self,
-        control_flow_graph::InsertTerminatorError,
-        instruction::{
-            Instruction, Jump, ScopePop, ScopePush, Terminator,
-            UnconditionalJump,
-        },
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                Binder, Error, LoopKind, LoopState,
-            },
-            borrow,
-        },
-        value::{
-            literal::{self, Literal, Unreachable},
-            Value,
-        },
+    binding::{
+        infer::{Expected, InferenceVariable},
+        Binder, Error, LoopKind, LoopState,
     },
-    symbol::table::{
-        self,
-        resolution::{self},
+    instruction::{
+        ConditionalJump, Instruction, Jump, ScopePop, ScopePush, Terminator,
+        UnconditionalJump,
     },
-    type_system::{
-        self,
-        term::r#type::{self, Constraint, Expected, Type},
+    model::Constraint,
+    value::{
+        literal::{self, Literal, Unreachable},
+        Value,
     },
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::While> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::While> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::While,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
             .block()
@@ -101,18 +81,12 @@ impl<
         */
 
         // jump to the loop header block
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: loop_block_id,
-                })),
-            )
-        {
-            panic!("invalid block id");
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: loop_block_id,
+            })),
+        );
 
         // set the current block to the loop header block
         self.current_block_id = loop_block_id;
@@ -131,9 +105,9 @@ impl<
         // bind the conditional value
         let condition =
             self.bind_value_or_error(syntax_tree.parenthesized(), handler)?;
-        let _ = self.type_check(
+        self.type_check(
             &self.type_of_value(&condition)?,
-            Expected::Known(Type::Primitive(r#type::Primitive::Bool)),
+            Expected::Known(Type::Primitive(Primitive::Bool)),
             syntax_tree.parenthesized().span(),
             true,
             handler,
@@ -141,23 +115,13 @@ impl<
 
         // based on the condition, jump to the loop body block or the condition
         // fail block
-        assert!(
-            !self
-                .intermediate_representation
-                .control_flow_graph
-                .insert_terminator(
-                    loop_block_id,
-                    Terminator::Jump(Jump::Conditional(
-                        crate::ir::instruction::ConditionalJump {
-                            condition,
-                            true_target: loop_body_block_id,
-                            false_target: condition_fail_block_id,
-                        },
-                    )),
-                )
-                .err()
-                .map_or(false, |x| x.is_invalid_block_id()),
-            "invalid block id"
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            loop_block_id,
+            Terminator::Jump(Jump::Conditional(ConditionalJump {
+                condition,
+                true_target: loop_body_block_id,
+                false_target: condition_fail_block_id,
+            })),
         );
 
         // handle condition fail block
@@ -168,19 +132,11 @@ impl<
             .current_block_mut()
             .add_instruction(Instruction::ScopePop(ScopePop(while_scope_id)));
         // jump to the exit block
-        assert!(
-            !self
-                .intermediate_representation
-                .control_flow_graph
-                .insert_terminator(
-                    condition_fail_block_id,
-                    Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                        target: exit_block_id,
-                    })),
-                )
-                .err()
-                .map_or(false, |x| x.is_invalid_block_id()),
-            "invalid block id"
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            condition_fail_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: exit_block_id,
+            })),
         );
 
         // handle loop body block
@@ -197,19 +153,11 @@ impl<
             .add_instruction(Instruction::ScopePop(ScopePop(while_scope_id)));
 
         // jump to the loop header block
-        assert!(
-            !self
-                .intermediate_representation
-                .control_flow_graph
-                .insert_terminator(
-                    self.current_block_id,
-                    Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                        target: loop_block_id,
-                    })),
-                )
-                .err()
-                .map_or(false, |x| x.is_invalid_block_id()),
-            "invalid block id"
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: loop_block_id,
+            })),
         );
 
         // pop the loop scope
@@ -231,11 +179,11 @@ impl<
 
                     Type::Inference(inference)
                 },
-                span: (syntax_tree.span()),
+                span: Some(syntax_tree.span()),
             }))
         } else {
             Value::Literal(Literal::Unit(literal::Unit {
-                span: (syntax_tree.span()),
+                span: Some(syntax_tree.span()),
             }))
         };
 

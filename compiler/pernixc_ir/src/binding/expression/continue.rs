@@ -1,49 +1,29 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, Label};
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::r#type::Type;
 
 use super::{Bind, Config, Expression};
 use crate::{
-    error::{self, LoopControlFlow},
-    ir::{
-        self,
-        control_flow_graph::InsertTerminatorError,
-        instruction::{
-            Instruction, Jump, ScopePop, Terminator, UnconditionalJump,
-        },
-        representation::{
-            binding::{
-                infer::{self, InferenceVariable},
-                stack::Scope,
-                Binder, Error,
-            },
-            borrow,
-        },
-        value::{
-            literal::{Literal, Unreachable},
-            Value,
-        },
+    binding::{
+        diagnostic::LoopControlFlow, infer::InferenceVariable, stack::Scope,
+        Binder, Error,
     },
-    symbol::table::{self, resolution},
-    type_system::{
-        self,
-        term::r#type::{Constraint, Type},
+    instruction::{Instruction, Jump, ScopePop, Terminator, UnconditionalJump},
+    model::Constraint,
+    value::{
+        literal::{Literal, Unreachable},
+        Value,
     },
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Continue> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Continue> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Continue,
         _: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let loop_scope_id = self.find_loop_scope_id(
             LoopControlFlow::Continue,
@@ -73,22 +53,16 @@ impl<
         }
 
         // jump to the loop block
-        if let Err(InsertTerminatorError::InvalidBlockID(_)) = self
-            .intermediate_representation
-            .control_flow_graph
-            .insert_terminator(
-                self.current_block_id,
-                Terminator::Jump(Jump::Unconditional(UnconditionalJump {
-                    target: self
-                        .loop_states_by_scope_id
-                        .get(&loop_scope_id)
-                        .unwrap()
-                        .loop_block_id,
-                })),
-            )
-        {
-            panic!("invalid block id");
-        }
+        self.intermediate_representation.control_flow_graph.insert_terminator(
+            self.current_block_id,
+            Terminator::Jump(Jump::Unconditional(UnconditionalJump {
+                target: self
+                    .loop_states_by_scope_id
+                    .get(&loop_scope_id)
+                    .unwrap()
+                    .loop_block_id,
+            })),
+        );
 
         let value = Value::Literal(Literal::Unreachable(Unreachable {
             r#type: {
@@ -100,7 +74,7 @@ impl<
 
                 Type::Inference(inference)
             },
-            span: (syntax_tree.span()),
+            span: Some(syntax_tree.span()),
         }));
 
         Ok(Expression::RValue(value))
