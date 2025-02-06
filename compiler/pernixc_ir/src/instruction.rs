@@ -11,12 +11,12 @@ use serde::{Deserialize, Serialize};
 use super::{
     address::{self, Address},
     control_flow_graph::Block,
-    representation::Values,
     scope::Scope,
     value::{
         register::{Assignment, Register},
         Value,
     },
+    Values,
 };
 use crate::model::Transform;
 

@@ -9,8 +9,10 @@ use crate::{
     binding::{infer::InferenceVariable, Binder, Error},
     instruction::Terminator,
     model::Constraint,
-    value::literal::{Literal, Unreachable},
-    Value,
+    value::{
+        literal::{Literal, Unreachable},
+        Value,
+    },
 };
 
 impl Bind<&syntax_tree::expression::Panic> for Binder<'_> {

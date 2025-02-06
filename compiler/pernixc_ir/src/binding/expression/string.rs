@@ -12,8 +12,10 @@ use super::{Bind, Config, Expression};
 use crate::{
     binding::{infer::InferenceVariable, Binder, Error},
     model::NoConstraint,
-    value::literal::{self, Literal},
-    Value,
+    value::{
+        literal::{self, Literal},
+        Value,
+    },
 };
 
 impl Bind<&token::String> for Binder<'_> {

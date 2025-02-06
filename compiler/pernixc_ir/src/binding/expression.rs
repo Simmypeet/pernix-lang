@@ -34,8 +34,8 @@ use crate::{
     value::{
         literal::{self, Literal, Unit, Unreachable},
         register::{Assignment, Load, Phi},
+        Value,
     },
-    Value,
 };
 
 /// An enumeration describes the intended purpose of binding the expression.

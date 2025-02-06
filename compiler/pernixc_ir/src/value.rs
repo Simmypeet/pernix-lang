@@ -13,7 +13,7 @@ use pernixc_type_system::{
 use register::Register;
 use serde::{Deserialize, Serialize};
 
-use super::representation::Values;
+use super::Values;
 use crate::model::Transform;
 
 pub mod literal;

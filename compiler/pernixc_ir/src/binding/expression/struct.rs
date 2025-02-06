@@ -23,8 +23,10 @@ use crate::{
         infer::{self, Expected},
         AbruptError, Binder, Error, SemanticError,
     },
-    value::register::{Assignment, Struct},
-    Value,
+    value::{
+        register::{Assignment, Struct},
+        Value,
+    },
 };
 
 impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {

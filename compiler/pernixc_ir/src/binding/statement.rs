@@ -17,8 +17,10 @@ use crate::{
     instruction::{Instruction, RegisterDiscard},
     model,
     pattern::{NameBindingPoint, Wildcard},
-    value::literal::{self, Literal},
-    Value,
+    value::{
+        literal::{self, Literal},
+        Value,
+    },
 };
 
 impl Binder<'_> {

@@ -26,8 +26,8 @@ use crate::{
     value::{
         literal::{self, Literal},
         register::{Assignment, Load, Variant},
+        Value,
     },
-    Value,
 };
 
 impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {

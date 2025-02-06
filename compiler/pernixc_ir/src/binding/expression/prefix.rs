@@ -14,8 +14,10 @@ use crate::{
         Error, SemanticError,
     },
     model::{Constraint, Erased},
-    value::register::{Assignment, Borrow, Prefix, PrefixOperator},
-    Value,
+    value::{
+        register::{Assignment, Borrow, Prefix, PrefixOperator},
+        Value,
+    },
 };
 
 impl Bind<&syntax_tree::expression::Prefix> for Binder<'_> {

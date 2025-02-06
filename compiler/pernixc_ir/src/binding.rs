@@ -46,8 +46,9 @@ use crate::{
     value::{
         literal::{Literal, Unreachable},
         register::{Assignment, Register},
+        Value,
     },
-    Representation, Value,
+    Representation,
 };
 
 pub mod diagnostic;

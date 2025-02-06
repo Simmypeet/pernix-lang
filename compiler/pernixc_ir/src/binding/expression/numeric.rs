@@ -13,8 +13,10 @@ use crate::{
         Binder, Error, SemanticError,
     },
     model::Constraint,
-    value::literal::{Literal, Numeric},
-    Value,
+    value::{
+        literal::{Literal, Numeric},
+        Value,
+    },
 };
 
 impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {

@@ -21,7 +21,7 @@ use super::{
     expression::{Bind, Config, LValue, Target},
     infer, Binder,
 };
-use crate::Value;
+use crate::value::Value;
 
 #[derive(Debug)]
 pub struct Template {

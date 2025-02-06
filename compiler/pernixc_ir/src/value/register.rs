@@ -36,8 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use super::Value;
 use crate::{
-    address::Address, control_flow_graph::Block, model::Transform,
-    representation::Values,
+    address::Address, control_flow_graph::Block, model::Transform, Values,
 };
 
 /// Represents an element of a [`Tuple`].

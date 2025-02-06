@@ -25,8 +25,8 @@ use crate::{
             ArithmeticOperator, Assignment, Binary, BinaryOperator,
             BitwiseOperator, Load, Phi,
         },
+        Value,
     },
-    Value,
 };
 
 impl Bind<&syntax_tree::expression::Binary> for Binder<'_> {

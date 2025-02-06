@@ -6,8 +6,10 @@ use pernixc_table::diagnostic::Diagnostic;
 use super::{Bind, Config, Expression};
 use crate::{
     binding::{Binder, Error},
-    value::literal::{Boolean, Literal},
-    Value,
+    value::{
+        literal::{Boolean, Literal},
+        Value,
+    },
 };
 
 impl Bind<&syntax_tree::expression::Boolean> for Binder<'_> {

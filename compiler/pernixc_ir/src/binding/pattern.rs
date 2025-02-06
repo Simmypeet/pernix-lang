@@ -43,8 +43,10 @@ use crate::{
         Named, Refutable, Structural, Tuple, TupleElement, Wildcard,
     },
     scope::Scope,
-    value::register::{Assignment, Borrow, Load},
-    Value,
+    value::{
+        register::{Assignment, Borrow, Load},
+        Value,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

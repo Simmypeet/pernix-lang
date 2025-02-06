@@ -14,8 +14,8 @@ use crate::{
     value::{
         literal::{self, Literal},
         register::{self, Assignment},
+        Value,
     },
-    Value,
 };
 
 impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {

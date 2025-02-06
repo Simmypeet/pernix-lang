@@ -11,8 +11,10 @@ use crate::{
         Binder, Error,
     },
     model::Constraint,
-    value::register::{Array, Assignment},
-    Value,
+    value::{
+        register::{Array, Assignment},
+        Value,
+    },
 };
 
 impl Bind<&syntax_tree::expression::Array> for Binder<'_> {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     binding::{AbruptError, Binder},
-    FunctionBody, IR,
+    IR,
 };
 use pernixc_syntax::syntax_tree::{item::Parameter, ConnectedList};
 use pernixc_table::{
@@ -17,24 +17,21 @@ use pernixc_table::{
 
 use crate::builder;
 
-impl Builder<FunctionBody> for builder::Builder {
+impl Builder<IR> for builder::Builder {
     fn build(
         &self,
         global_id: GlobalID,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Arc<FunctionBody>> {
+    ) -> Option<Arc<IR>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id);
 
         if !symbol_kind.has_function_body() {
             return None;
         }
 
-        let _scope = self.start_building(
-            table,
-            global_id,
-            FunctionBody::component_name(),
-        );
+        let _scope =
+            self.start_building(table, global_id, IR::component_name());
 
         let signature =
             table.get::<component::syntax_tree::FunctionSignature>(global_id);
@@ -56,7 +53,7 @@ impl Builder<FunctionBody> for builder::Builder {
                 binder.bind_statement(statement, handler)?;
             }
 
-            Ok(FunctionBody::SuboptimalIR(IR::default()))
+            Ok(IR::default())
         }) {
             Ok(result) => Some(Arc::new(result)),
             Err(error) => {
@@ -67,7 +64,7 @@ impl Builder<FunctionBody> for builder::Builder {
                     AbruptError::CyclicDependency(CyclicDependencyError) => {}
                 }
 
-                Some(Arc::new(FunctionBody::SuboptimalIR(IR::default())))
+                Some(Arc::new(IR::default()))
             }
         }
     }

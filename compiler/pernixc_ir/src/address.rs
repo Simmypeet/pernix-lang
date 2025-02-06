@@ -20,7 +20,7 @@ use pernixc_type_system::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{alloca::Alloca, model::Transform, representation::Values, Value};
+use crate::{alloca::Alloca, model::Transform, value::Value, Values};
 
 /// The address points to a field in a struct.
 #[derive(

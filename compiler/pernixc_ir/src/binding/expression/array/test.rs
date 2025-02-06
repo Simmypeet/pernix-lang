@@ -9,7 +9,7 @@ use crate::{
         test::{BindExt, Template},
     },
     model::{self, Constraint},
-    Value,
+    value::Value,
 };
 
 #[test]

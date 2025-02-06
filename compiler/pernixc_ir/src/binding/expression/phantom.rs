@@ -8,8 +8,10 @@ use super::{Bind, Config, Expression};
 use crate::{
     binding::{infer::InferenceVariable, Binder, Error},
     model::Constraint,
-    value::literal::{self, Literal},
-    Value,
+    value::{
+        literal::{self, Literal},
+        Value,
+    },
 };
 
 impl Bind<&syntax_tree::expression::Phantom> for Binder<'_> {

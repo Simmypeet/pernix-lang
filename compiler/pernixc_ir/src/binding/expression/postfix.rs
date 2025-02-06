@@ -57,8 +57,8 @@ use crate::{
         register::{
             Assignment, Borrow, Cast, FunctionCall, Load, Register, Variant,
         },
+        Value,
     },
-    Value,
 };
 
 // FIXME: the algorithm for searching methods are such a mess
