@@ -1,46 +1,30 @@
-use pernixc_base::{handler::Handler, source_file::SourceElement};
+use pernixc_handler::Handler;
+use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
+use pernixc_table::diagnostic::Diagnostic;
+use pernixc_term::{
+    lifetime::Lifetime,
+    r#type::{Primitive, Qualifier, Type},
+};
 
 use super::{Bind, Config, Expression, Target};
 use crate::{
-    error::{self, MismatchedQualifierForReferenceOf},
-    ir::{
-        self,
-        representation::{
-            binding::{infer, Binder, Error, SemanticError},
-            borrow,
-        },
-        value::{
-            register::{Assignment, Prefix, PrefixOperator, Borrow},
-            Value,
-        },
-        Erased,
+    binding::{
+        diagnostic::MismatchedQualifierForReferenceOf, infer::Expected, Binder,
+        Error, SemanticError,
     },
-    symbol::table::{self, resolution},
-    type_system::{
-        self,
-        term::{
-            lifetime::Lifetime,
-            r#type::{self, Expected, Qualifier, Type},
-        },
-    },
+    model::{Constraint, Erased},
+    value::register::{Assignment, Borrow, Prefix, PrefixOperator},
+    Value,
 };
 
-impl<
-        't,
-        S: table::State,
-        RO: resolution::Observer<S, infer::Model>,
-        TO: type_system::observer::Observer<infer::Model, S>
-            + type_system::observer::Observer<ir::Model, S>
-            + type_system::observer::Observer<borrow::Model, S>,
-    > Bind<&syntax_tree::expression::Prefix> for Binder<'t, S, RO, TO>
-{
+impl Bind<&syntax_tree::expression::Prefix> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Prefix,
         config: Config,
-        handler: &dyn Handler<Box<dyn error::Error>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree.operator() {
             syntax_tree::expression::PrefixOperator::LogicalNot(_)
@@ -48,17 +32,15 @@ impl<
             | syntax_tree::expression::PrefixOperator::BitwiseNot(_) => {
                 let (expected_type, operator) = match syntax_tree.operator() {
                     syntax_tree::expression::PrefixOperator::LogicalNot(_) => (
-                        Some(Expected::Known(Type::Primitive(
-                            r#type::Primitive::Bool,
-                        ))),
+                        Some(Expected::Known(Type::Primitive(Primitive::Bool))),
                         PrefixOperator::LogicalNot,
                     ),
                     syntax_tree::expression::PrefixOperator::Negate(_) => (
-                        Some(Expected::Constraint(r#type::Constraint::Signed)),
+                        Some(Expected::Constraint(Constraint::Signed)),
                         PrefixOperator::Negate,
                     ),
                     syntax_tree::expression::PrefixOperator::BitwiseNot(_) => (
-                        Some(Expected::Constraint(r#type::Constraint::Integer)),
+                        Some(Expected::Constraint(Constraint::Integer)),
                         PrefixOperator::BitwiseNot,
                     ),
                     _ => unreachable!(),
@@ -145,3 +127,6 @@ impl<
         }
     }
 }
+
+#[cfg(test)]
+mod test;

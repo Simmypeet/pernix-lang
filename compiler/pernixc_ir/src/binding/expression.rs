@@ -114,6 +114,7 @@ mod panic;
 mod parenthesized;
 mod phantom;
 mod postfix;
+mod prefix;
 mod qualified_identifier;
 mod string;
 mod r#struct;
@@ -126,7 +127,6 @@ mod express;
 mod if_else;
 mod r#loop;
 mod r#match;
-mod prefix;
 mod r#return;
 mod r#while;
 */
@@ -197,8 +197,8 @@ impl<'t> Bind<&syntax_tree::expression::Prefixable> for Binder<'t> {
             syntax_tree::expression::Prefixable::Postfixable(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Prefixable::Prefix(_) => {
-                todo!()
+            syntax_tree::expression::Prefixable::Prefix(syn) => {
+                self.bind(syn, config, handler)
             }
         }
     }
