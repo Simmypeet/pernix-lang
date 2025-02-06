@@ -168,3 +168,6 @@ impl Bind<&syntax_tree::expression::Loop> for Binder<'_> {
         Ok(Expression::RValue(value))
     }
 }
+
+#[cfg(test)]
+mod test;
