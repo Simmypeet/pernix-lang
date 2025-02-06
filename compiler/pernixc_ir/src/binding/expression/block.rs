@@ -37,3 +37,6 @@ impl Bind<&syntax_tree::expression::Block> for Binder<'_> {
         self.bind(block_state, config, handler)
     }
 }
+
+#[cfg(test)]
+mod test;
