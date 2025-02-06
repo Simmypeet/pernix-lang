@@ -119,6 +119,34 @@
 //!     true
 //! );
 //! ```
+//! ## Serialize With Filter
+//!
+//! ```rust
+//! use std::convert::Infallible;
+//!
+//! use pernixc_storage::{serde::Reflector, BoxTrait, Storage};
+//!
+//! let storage = Storage::<_, BoxTrait>::default();
+//!
+//! storage.add_component("a".to_string(), 1);
+//! storage.add_component("b".to_string(), 2);
+//! storage.add_component("c".to_string(), 3);
+//!
+//! let mut reflector = Reflector::new();
+//!
+//! reflector.register_type::<i32>("i32".to_string());
+//!
+//! reflector.set_filter(|id| id == "a");
+//!
+//! let serializable = storage.as_serializable::<_, Infallible>(&reflector);
+//!
+//! let serialized = serde_json::to_value(&serializable).unwrap();
+//!
+//! assert_eq!(serialized["a"]["i32"], 1);
+//!
+//! assert!(serialized.get("b").is_none());
+//! assert!(serialized.get("c").is_none());
+//! ```
 
 use std::{
     any::{Any, TypeId},
@@ -156,10 +184,11 @@ struct DeserializationMetaData<P: Ptr> {
 }
 
 /// Uesd to serialize/deserialize the [`Storage`] struct.
-#[allow(missing_debug_implementations)]
+#[allow(missing_debug_implementations, clippy::type_complexity)]
 pub struct Reflector<ID, P: Ptr, T, E = Infallible> {
     serialization_meta_datas: HashMap<TypeId, SerializationMetaData<T>>,
     deserialization_meta_datas: HashMap<T, DeserializationMetaData<P>>,
+    symbol_filter: Option<Box<dyn Fn(&ID) -> bool>>,
 
     _phantom: std::marker::PhantomData<(ID, E)>,
 }
@@ -169,6 +198,7 @@ impl<ID, P: Ptr, T, E> Default for Reflector<ID, P, T, E> {
         Self {
             serialization_meta_datas: HashMap::new(),
             deserialization_meta_datas: HashMap::new(),
+            symbol_filter: None,
 
             _phantom: std::marker::PhantomData,
         }
@@ -205,6 +235,7 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
         Self {
             serialization_meta_datas: HashMap::new(),
             deserialization_meta_datas: HashMap::new(),
+            symbol_filter: None,
 
             _phantom: std::marker::PhantomData,
         }
@@ -348,6 +379,12 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
 
         true
     }
+
+    /// Set a filter to only serialize the components that satisfy the filter.
+    /// The filter is applied to the entity id.
+    pub fn set_filter(&mut self, filter: impl Fn(&ID) -> bool + 'static) {
+        self.symbol_filter = Some(Box::new(filter));
+    }
 }
 
 /// The struct that enables the serialization of the [`Storage`] struct.
@@ -379,6 +416,12 @@ impl<
         let mut type_ids_by_id = HashMap::<_, HashSet<_>>::new();
 
         for entry in &self.storage.components {
+            if let Some(filter) = &self.reflector.symbol_filter {
+                if !filter(&entry.key().0) {
+                    continue;
+                }
+            }
+
             type_ids_by_id
                 .entry(entry.key().0.clone())
                 .or_insert_with(HashSet::new)
