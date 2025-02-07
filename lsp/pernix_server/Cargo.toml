@@ -29,6 +29,7 @@ pernixc_syntax = { path = "../../compiler/pernixc_syntax" }
 pernixc_log = { path = "../../compiler/pernixc_log" }
 pernixc_table = { path = "../../compiler/pernixc_table" }
 pernixc_builder = { path = "../../compiler/pernixc_builder" }
+pernixc_intrinsic = { path = "../../compiler/pernixc_intrinsic" }
 
 [lints]
 workspace = true

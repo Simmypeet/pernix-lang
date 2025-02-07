@@ -12,10 +12,11 @@ use parking_lot::RwLock;
 use pernixc_builder::Compilation;
 use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
+use pernixc_intrinsic::IntrinsicExt;
 use pernixc_lexical::token::Identifier;
 use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_table::Table;
+use pernixc_table::{Table, TargetID};
 use tower_lsp::lsp_types::Url;
 
 use crate::{extension::DaignosticExt, workspace};
@@ -119,11 +120,12 @@ impl Semantic {
         let target = Target::parse(&root, target_name.clone(), &collector);
 
         let mut table = Table::new(semantic_error_storage.clone());
+        table.initialize_core();
 
         let target_id = table
             .add_compilation_target(
                 target_name,
-                std::iter::empty(),
+                std::iter::once(TargetID::CORE),
                 target,
                 &*semantic_error_storage,
             )

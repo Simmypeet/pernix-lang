@@ -119,11 +119,35 @@ impl Target {
 }
 
 /// Represents the semantic representation of the program.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Representation {
     storage: Storage<GlobalID, ArcTrait>,
     targets_by_id: HashMap<TargetID, Target>,
     targets_by_name: HashMap<String, TargetID>,
+}
+
+impl Default for Representation {
+    fn default() -> Self {
+        let mut repr = Self {
+            storage: Storage::default(),
+            targets_by_id: HashMap::default(),
+            targets_by_name: HashMap::default(),
+        };
+
+        assert!(repr
+            .targets_by_id
+            .insert(TargetID::CORE, Target {
+                generated_ids: 0,
+                linked_targets: HashSet::new(),
+            })
+            .is_none());
+        assert!(repr
+            .targets_by_name
+            .insert("core".to_string(), TargetID::CORE)
+            .is_none());
+
+        repr
+    }
 }
 
 struct SerializableRepresentation<'a, T, E> {

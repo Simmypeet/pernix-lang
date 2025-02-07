@@ -14,13 +14,16 @@ use parking_lot::RwLock;
 use pernixc_builder::Compilation;
 use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
+use pernixc_intrinsic::IntrinsicExt;
 use pernixc_log::{
     formatting::{Color, Style},
     Message, Severity,
 };
 use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_table::{CompilationMetaData, GlobalID, Table};
+use pernixc_table::{
+    AddTargetError, CompilationMetaData, GlobalID, Table, TargetID,
+};
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
 
@@ -83,6 +86,7 @@ pub struct Arguments {
 struct Printer {
     printed: RwLock<bool>,
 }
+
 impl Printer {
     /// Creates a new [`Printer`].
     const fn new() -> Self { Self { printed: RwLock::new(false) } }
@@ -218,6 +222,8 @@ pub fn run(argument: Arguments) -> ExitCode {
     let reflector = pernixc_builder::reflector::get();
     let mut table = Table::new(storage.clone());
 
+    table.initialize_core();
+
     let mut inplace_table_deserializer =
         table.as_incremental_library_deserializer(&reflector);
     let mut link_library_ids = Vec::new();
@@ -258,14 +264,28 @@ pub fn run(argument: Arguments) -> ExitCode {
         link_library_ids.push(library_meta_data.target_id);
     }
 
-    let target_id = table
-        .add_compilation_target(
-            target.name().clone(),
-            link_library_ids,
-            target,
-            &*storage,
-        )
-        .unwrap();
+    let target_id = match table.add_compilation_target(
+        target.name().clone(),
+        link_library_ids.into_iter().chain(std::iter::once(TargetID::CORE)),
+        target,
+        &*storage,
+    ) {
+        Ok(target_id) => target_id,
+
+        Err(AddTargetError::DuplicateTargetName(target)) => {
+            let msg = Message::new(
+                Severity::Error,
+                format!("duplicate target name: {target}"),
+            );
+
+            eprintln!("{msg}");
+            return ExitCode::FAILURE;
+        }
+
+        Err(AddTargetError::UnknownTargetLink(id)) => {
+            panic!("unknown target link: {id:?}");
+        }
+    };
 
     let symbol_count =
         table.get_target(target_id).unwrap().all_symbols().count();

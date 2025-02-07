@@ -20,6 +20,7 @@ members = [
     "compiler/pernixc",
     "compiler/pernixc_ir",
     "compiler/pernixc_transitive_closure",
+    "compiler/pernixc_intrinsic",
     "lsp/pernix_server",
 ]
 

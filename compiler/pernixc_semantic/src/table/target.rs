@@ -77,8 +77,7 @@ impl Representation {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<TargetID, AddTargetError> {
         // make sure every target links to the core target
-        let mut linked_targets_vec =
-            std::iter::once(TargetID::CORE).collect::<HashSet<_>>();
+        let mut linked_targets_vec = HashSet::new();
 
         for linked_target in linked_targets {
             if !self.targets_by_id.contains_key(&linked_target)
