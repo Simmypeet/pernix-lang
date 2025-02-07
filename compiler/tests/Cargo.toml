@@ -1,0 +1,22 @@
+[package]
+name = "tests"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dev-dependencies]
+pernixc_source_file = { path = "../pernixc_source_file" }
+pernixc_memory_checker = { path = "../pernixc_memory_checker" }
+pernixc_table = { path = "../pernixc_table" }
+pernixc_builder = { path = "../pernixc_builder" }
+
+
+[[test]]
+name = "memory_checker"
+path = "src/memory_checker.rs"
+
+[lints]
+workspace = true
