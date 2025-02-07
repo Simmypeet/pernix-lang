@@ -12,7 +12,7 @@ use pernixc_term::{
 
 use crate::{environment::Environment, normalizer::Normalizer};
 
-impl<'a, M: Model, N: Normalizer<M>> Environment<'a, M, N> {
+impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
     /// Retrieves the variance of the term at the given location.
     ///
     /// This function early returns the `parent_variance` if the variance is

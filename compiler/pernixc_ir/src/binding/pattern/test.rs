@@ -686,14 +686,14 @@ fn more_packed_tuple() {
                     tuple_address: Box::new(load_address.clone()),
                     offset: address::Offset::FromStart(0),
                 })
-                && store.value.as_register().copied().map_or(false, |reg| {
+                && store.value.as_register().copied().is_some_and(|reg| {
                     binder
                         .intermediate_representation
                         .values
                         .registers
                         .get(reg)
                         .and_then(|reg| reg.assignment.as_load())
-                        .map_or(false, |x| {
+                        .is_some_and(|x| {
                             x.address
                                 == Address::Tuple(address::Tuple {
                                     tuple_address: Box::new(Address::Memory(
@@ -715,14 +715,14 @@ fn more_packed_tuple() {
                     tuple_address: Box::new(load_address.clone()),
                     offset: address::Offset::FromEnd(1),
                 })
-                && store.value.as_register().copied().map_or(false, |reg| {
+                && store.value.as_register().copied().is_some_and(|reg| {
                     binder
                         .intermediate_representation
                         .values
                         .registers
                         .get(reg)
                         .and_then(|reg| reg.assignment.as_load())
-                        .map_or(false, |x| {
+                        .is_some_and(|x| {
                             x.address
                                 == Address::Tuple(address::Tuple {
                                     tuple_address: Box::new(Address::Memory(
@@ -744,14 +744,14 @@ fn more_packed_tuple() {
                     tuple_address: Box::new(load_address.clone()),
                     offset: address::Offset::FromEnd(0),
                 })
-                && store.value.as_register().copied().map_or(false, |reg| {
+                && store.value.as_register().copied().is_some_and(|reg| {
                     binder
                         .intermediate_representation
                         .values
                         .registers
                         .get(reg)
                         .and_then(|reg| reg.assignment.as_load())
-                        .map_or(false, |x| {
+                        .is_some_and(|x| {
                             x.address
                                 == Address::Tuple(address::Tuple {
                                     tuple_address: Box::new(Address::Memory(

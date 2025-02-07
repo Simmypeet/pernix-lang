@@ -309,8 +309,7 @@ fn unexpected_symbol_in_predicate() {
     let struct_id = table.get_by_qualified_name(["test", "Struct"]).unwrap();
 
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<UnexpectedSymbolInPredicate>().map_or(
-            false,
+        x.as_any().downcast_ref::<UnexpectedSymbolInPredicate>().is_some_and(
             |x| {
                 x.predicate_kind == PredicateKind::Trait
                     && x.found_id == struct_id
@@ -319,8 +318,7 @@ fn unexpected_symbol_in_predicate() {
         )
     }));
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<UnexpectedSymbolInPredicate>().map_or(
-            false,
+        x.as_any().downcast_ref::<UnexpectedSymbolInPredicate>().is_some_and(
             |x| {
                 x.predicate_kind == PredicateKind::Marker
                     && x.found_id == struct_id
@@ -329,8 +327,7 @@ fn unexpected_symbol_in_predicate() {
         )
     }));
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<UnexpectedSymbolInPredicate>().map_or(
-            false,
+        x.as_any().downcast_ref::<UnexpectedSymbolInPredicate>().is_some_and(
             |x| {
                 x.predicate_kind == PredicateKind::TraitTypeEquality
                     && x.found_id == struct_id

@@ -183,7 +183,7 @@ impl Binder<'_> {
     }
 }
 
-impl<'t> Bind<&syntax_tree::expression::Prefixable> for Binder<'t> {
+impl Bind<&syntax_tree::expression::Prefixable> for Binder<'_> {
     fn bind(
         &mut self,
         syntax_tree: &syntax_tree::expression::Prefixable,

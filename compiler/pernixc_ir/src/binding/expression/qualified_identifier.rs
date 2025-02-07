@@ -42,7 +42,7 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
             && syntax_tree
                 .root()
                 .as_generic_identifier()
-                .map_or(false, |x| x.generic_arguments().is_none());
+                .is_some_and(|x| x.generic_arguments().is_none());
 
         // search for the variable/parameter in the stack
         #[allow(clippy::unnecessary_operation)]

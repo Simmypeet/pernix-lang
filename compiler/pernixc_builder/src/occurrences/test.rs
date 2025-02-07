@@ -781,7 +781,7 @@ fn empty_struct_negative_marker_not_satisfied() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<UnsatisfiedPredicate<Default>>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.predicate
                 == Predicate::NegativeMarker(NegativeMarker {
                     marker_id,
@@ -799,7 +799,7 @@ fn empty_struct_negative_marker_not_satisfied() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<UnsatisfiedPredicate<Default>>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.predicate
                 == Predicate::NegativeMarker(NegativeMarker {
                     marker_id,

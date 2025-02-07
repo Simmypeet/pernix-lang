@@ -34,8 +34,8 @@ struct ForallLifetimeInstantiationVisitor<'a, M: Model> {
     instantiations: &'a ForallLifetimeInstantiation<M>,
 }
 
-impl<'a, M: Model> visitor::MutableRecursive<Lifetime<M>>
-    for ForallLifetimeInstantiationVisitor<'a, M>
+impl<M: Model> visitor::MutableRecursive<Lifetime<M>>
+    for ForallLifetimeInstantiationVisitor<'_, M>
 {
     fn visit(
         &mut self,
@@ -56,8 +56,8 @@ impl<'a, M: Model> visitor::MutableRecursive<Lifetime<M>>
     }
 }
 
-impl<'a, M: Model> visitor::MutableRecursive<Type<M>>
-    for ForallLifetimeInstantiationVisitor<'a, M>
+impl<M: Model> visitor::MutableRecursive<Type<M>>
+    for ForallLifetimeInstantiationVisitor<'_, M>
 {
     fn visit(
         &mut self,
@@ -68,8 +68,8 @@ impl<'a, M: Model> visitor::MutableRecursive<Type<M>>
     }
 }
 
-impl<'a, M: Model> visitor::MutableRecursive<Constant<M>>
-    for ForallLifetimeInstantiationVisitor<'a, M>
+impl<M: Model> visitor::MutableRecursive<Constant<M>>
+    for ForallLifetimeInstantiationVisitor<'_, M>
 {
     fn visit(
         &mut self,

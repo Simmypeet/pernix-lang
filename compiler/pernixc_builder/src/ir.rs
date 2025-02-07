@@ -14,6 +14,10 @@ use pernixc_table::{
     query::{Builder, CyclicDependencyError},
     GlobalID, Table,
 };
+use pernixc_type_system::{
+    environment::{Environment, GetActivePremiseExt},
+    normalizer,
+};
 
 use crate::builder;
 
@@ -54,6 +58,22 @@ impl Builder<IR> for builder::Builder {
             }
 
             binder.finalize(handler)
+        })
+        .and_then(|mut ir| {
+            let environment = Environment::new(
+                std::borrow::Cow::Owned(table.get_active_premise(global_id)),
+                table,
+                normalizer::NO_OP,
+            );
+
+            pernixc_memory_checker::memory_check(
+                &mut ir,
+                global_id,
+                &environment,
+                handler,
+            )?;
+
+            Ok(ir)
         }) {
             Ok(result) => Some(Arc::new(result)),
             Err(error) => {

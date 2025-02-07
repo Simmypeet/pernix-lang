@@ -19,9 +19,7 @@ struct Visitor<'e, N: Normalizer<M>, M: Model> {
     abrupt_error: Option<AbruptError>,
 }
 
-impl<'e, U: Term, N: Normalizer<U::Model>> Mutable<U>
-    for Visitor<'e, N, U::Model>
-{
+impl<U: Term, N: Normalizer<U::Model>> Mutable<U> for Visitor<'_, N, U::Model> {
     fn visit(&mut self, term: &mut U, _: U::Location) -> bool {
         if self.abrupt_error.is_some() {
             return false;

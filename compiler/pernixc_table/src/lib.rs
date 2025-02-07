@@ -155,8 +155,8 @@ struct SerializableRepresentation<'a, T, E> {
     reflector: &'a Reflector<GlobalID, ArcTrait, T, E>,
 }
 
-impl<'a, T: Serialize, E: std::fmt::Display + 'static> Serialize
-    for SerializableRepresentation<'a, T, E>
+impl<T: Serialize, E: std::fmt::Display + 'static> Serialize
+    for SerializableRepresentation<'_, T, E>
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -255,7 +255,7 @@ impl Representation {
         &'a self,
         compilation_meta_data: &'a CompilationMetaData,
         reflector: &'a Reflector<GlobalID, ArcTrait, T, E>,
-    ) -> Library<T, E> {
+    ) -> Library<'a, T, E> {
         Library { representation: self, compilation_meta_data, reflector }
     }
 
@@ -777,9 +777,7 @@ pub struct DisplayObject<'a, D: ?Sized> {
     pub display: &'a D,
 }
 
-impl<'a, Error: Display + ?Sized> std::fmt::Display
-    for DisplayObject<'a, Error>
-{
+impl<Error: Display + ?Sized> std::fmt::Display for DisplayObject<'_, Error> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.display.fmt(self.table, f)
     }

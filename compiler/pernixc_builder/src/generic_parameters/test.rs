@@ -67,8 +67,7 @@ fn mis_ordered_generic_parameter() {
     assert_eq!(errors.len(), 2);
 
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<MisOrderedGenericParameter>().map_or(
-            false,
+        x.as_any().downcast_ref::<MisOrderedGenericParameter>().is_some_and(
             |x| {
                 x.generic_kind == GenericKind::Type
                     && x.generic_parameter_span.str() == "T"
@@ -77,8 +76,7 @@ fn mis_ordered_generic_parameter() {
     }));
 
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<MisOrderedGenericParameter>().map_or(
-            false,
+        x.as_any().downcast_ref::<MisOrderedGenericParameter>().is_some_and(
             |x| {
                 x.generic_kind == GenericKind::Lifetime
                     && x.generic_parameter_span.str() == "'b"
@@ -121,7 +119,7 @@ fn duplicated_generic_parameter() {
     assert!(errors.iter().any(|x| {
         x.as_any()
             .downcast_ref::<DuplicatedGenericParameter<LifetimeParameter>>()
-            .map_or(false, |x| {
+            .is_some_and(|x| {
                 x.duplicating_generic_parameter_span.str() == "a"
                     && generic_parameters.lifetimes()
                         [x.existing_generic_parameter_id.id]
@@ -132,7 +130,7 @@ fn duplicated_generic_parameter() {
     assert!(errors.iter().any(|x| {
         x.as_any()
             .downcast_ref::<DuplicatedGenericParameter<TypeParameter>>()
-            .map_or(false, |x| {
+            .is_some_and(|x| {
                 x.duplicating_generic_parameter_span.str() == "T"
                     && generic_parameters.types()
                         [x.existing_generic_parameter_id.id]
@@ -143,7 +141,7 @@ fn duplicated_generic_parameter() {
     assert!(errors.iter().any(|x| {
         x.as_any()
             .downcast_ref::<DuplicatedGenericParameter<ConstantParameter>>()
-            .map_or(false, |x| {
+            .is_some_and(|x| {
                 x.duplicating_generic_parameter_span.str() == "N"
                     && generic_parameters.constants()
                         [x.existing_generic_parameter_id.id]

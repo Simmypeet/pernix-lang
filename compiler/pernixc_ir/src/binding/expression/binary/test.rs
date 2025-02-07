@@ -207,13 +207,9 @@ fn compound_binary_operator() {
             return false;
         }
 
-        binary
-            .rhs
-            .as_literal()
-            .and_then(|x| x.as_numeric())
-            .map_or(false, |x| {
-                x.integer_string == "64" && x.decimal_stirng.is_none()
-            })
+        binary.rhs.as_literal().and_then(|x| x.as_numeric()).is_some_and(|x| {
+            x.integer_string == "64" && x.decimal_stirng.is_none()
+        })
     }));
 }
 

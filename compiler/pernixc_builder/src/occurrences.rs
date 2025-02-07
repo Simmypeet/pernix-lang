@@ -597,7 +597,7 @@ impl Checker<'_> {
 
                 Predicate::TypeOutlives(outlives) => {
                     if RecursiveIterator::new(&outlives.operand).any(|x| {
-                        x.0.as_lifetime().map_or(false, |x| x.is_forall())
+                        x.0.as_lifetime().is_some_and(|x| x.is_forall())
                     }) {
                         is_not_general_enough = true;
                         continue;

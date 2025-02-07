@@ -143,23 +143,22 @@ fn trait_with_errors() {
     assert_eq!(errors.len(), 2);
 
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<SymbolIsMoreAccessibleThanParent>().map_or(
-            false,
-            |x| {
+        x.as_any()
+            .downcast_ref::<SymbolIsMoreAccessibleThanParent>()
+            .is_some_and(|x| {
                 x.parent_id == trait_symbol && x.symbol_id == first_trait_symbol
-            },
-        )
+            })
     }));
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<ItemRedifinition>().map_or(false, |x| {
+        x.as_any().downcast_ref::<ItemRedifinition>().is_some_and(|x| {
             let existing_name = table
                 .storage
                 .get::<Name>(x.existing_id)
-                .map_or(false, |x| x.as_str() == "second");
+                .is_some_and(|x| x.as_str() == "second");
             let new_name = table
                 .storage
                 .get::<Name>(x.new_id)
-                .map_or(false, |x| x.as_str() == "second");
+                .is_some_and(|x| x.as_str() == "second");
 
             existing_name && new_name && x.in_id == trait_symbol
         })
@@ -300,8 +299,7 @@ fn usings() {
         table.get_by_qualified_name(["test", "inner", "Inaccessible"]).unwrap();
 
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<SymbolIsNotAccessible>().map_or(
-            false,
+        x.as_any().downcast_ref::<SymbolIsNotAccessible>().is_some_and(
             |error| {
                 error.referring_site == root_module
                     && error.referred == inaccessible_symbol
@@ -309,16 +307,16 @@ fn usings() {
         )
     }));
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<ConflictingUsing>().map_or(false, |x| {
+        x.as_any().downcast_ref::<ConflictingUsing>().is_some_and(|x| {
             x.module_id == root_module
                 && x.name == "Existing"
                 && x.conflicting_span
                     .as_ref()
-                    .map_or(false, |x| x.str() == "Existing")
+                    .is_some_and(|x| x.str() == "Existing")
         })
     }));
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<SymbolNotFound>().map_or(false, |x| {
+        x.as_any().downcast_ref::<SymbolNotFound>().is_some_and(|x| {
             x.searched_item_id == Some(root_module)
                 && x.resolution_span.str() == "notFound"
         })
@@ -377,7 +375,7 @@ fn trait_implementations() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedTraitMemberAndImplementationMember>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.found_kind == TraitMemberKind::Type
                 && x.implementation_member_identifer_span.str()
                     == "someFunction"
@@ -385,7 +383,7 @@ fn trait_implementations() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<UnknownTraitImplementationMember>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.trait_id == trait_id
                 && x.identifier_span.str() == "unknownFunction"
         })));

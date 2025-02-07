@@ -21,7 +21,7 @@ struct ContainsErrorVisitor {
     contains_error: bool,
 }
 
-impl<'v, M: Model> Recursive<'v, Lifetime<M>> for ContainsErrorVisitor {
+impl<M: Model> Recursive<'_, Lifetime<M>> for ContainsErrorVisitor {
     fn visit(
         &mut self,
         term: &Lifetime<M>,
@@ -36,7 +36,7 @@ impl<'v, M: Model> Recursive<'v, Lifetime<M>> for ContainsErrorVisitor {
     }
 }
 
-impl<'v, M: Model> Recursive<'v, Type<M>> for ContainsErrorVisitor {
+impl<M: Model> Recursive<'_, Type<M>> for ContainsErrorVisitor {
     fn visit(
         &mut self,
         term: &Type<M>,
@@ -51,7 +51,7 @@ impl<'v, M: Model> Recursive<'v, Type<M>> for ContainsErrorVisitor {
     }
 }
 
-impl<'v, M: Model> Recursive<'v, Constant<M>> for ContainsErrorVisitor {
+impl<M: Model> Recursive<'_, Constant<M>> for ContainsErrorVisitor {
     fn visit(
         &mut self,
         term: &Constant<M>,

@@ -402,12 +402,11 @@ pub struct SerializableStorage<
 }
 
 impl<
-        'a,
         ID: serde::Serialize + Eq + Hash + Clone,
         P: Ptr,
         T: serde::Serialize,
         E: Display + 'static,
-    > serde::Serialize for SerializableStorage<'a, ID, P, T, E>
+    > serde::Serialize for SerializableStorage<'_, ID, P, T, E>
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -472,12 +471,11 @@ struct SerializeEntry<'a, ID: Eq + Hash, P: Ptr, T, E: Display + 'static> {
 }
 
 impl<
-        'a,
         ID: Eq + Hash + Clone,
         P: Ptr,
         T: serde::Serialize,
         E: Display + 'static,
-    > serde::Serialize for SerializeEntry<'a, ID, P, T, E>
+    > serde::Serialize for SerializeEntry<'_, ID, P, T, E>
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -530,7 +528,7 @@ struct SerializeComponent<'a, P: Ptr> {
     serialize_fn: fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize)),
 }
 
-impl<'a, P: Ptr> serde::Serialize for SerializeComponent<'a, P> {
+impl<P: Ptr> serde::Serialize for SerializeComponent<'_, P> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -549,12 +547,11 @@ impl<'a, P: Ptr> serde::Serialize for SerializeComponent<'a, P> {
 
 impl<
         'de,
-        're,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
         P: Ptr,
         T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         E: Display + 'static,
-    > serde::de::DeserializeSeed<'de> for &'re Reflector<ID, P, T, E>
+    > serde::de::DeserializeSeed<'de> for &Reflector<ID, P, T, E>
 {
     type Value = Storage<ID, P>;
 
@@ -645,12 +642,11 @@ struct ComponentMapVisitor<'a, ID, P: Ptr, T, E: Display + 'static> {
 
 impl<
         'de,
-        'a,
         ID: Eq + Hash + Clone + for<'x> serde::Deserialize<'x>,
         P: Ptr,
         T: for<'x> serde::Deserialize<'x> + Eq + Hash + std::fmt::Debug,
         E: Display + 'static,
-    > serde::de::Visitor<'de> for ComponentMapVisitor<'a, ID, P, T, E>
+    > serde::de::Visitor<'de> for ComponentMapVisitor<'_, ID, P, T, E>
 {
     type Value = HashMap<T, P::Wrap<dyn Any + Send + Sync>>;
 
@@ -921,9 +917,7 @@ struct InplaceComponentComparer<'current> {
     ) -> Result<bool, erased_serde::Error>,
 }
 
-impl<'de, 'current> serde::de::DeserializeSeed<'de>
-    for InplaceComponentComparer<'current>
-{
+impl<'de> serde::de::DeserializeSeed<'de> for InplaceComponentComparer<'_> {
     type Value = ();
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -956,9 +950,7 @@ struct InplaceComponentMerger<'current> {
     ) -> Result<(), erased_serde::Error>,
 }
 
-impl<'de, 'current> serde::de::DeserializeSeed<'de>
-    for InplaceComponentMerger<'current>
-{
+impl<'de> serde::de::DeserializeSeed<'de> for InplaceComponentMerger<'_> {
     type Value = ();
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>

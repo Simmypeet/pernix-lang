@@ -61,8 +61,8 @@ struct Visitor<'t, 'p, N: Normalizer<M>, M: Model> {
     environment: &'t Environment<'t, M, N>,
 }
 
-impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Lifetime<M>>
-    for Visitor<'t, 'p, N, M>
+impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Lifetime<M>>
+    for Visitor<'_, '_, N, M>
 {
     fn visit(
         &mut self,
@@ -80,8 +80,8 @@ impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Lifetime<M>>
     }
 }
 
-impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Type<M>>
-    for Visitor<'t, 'p, N, M>
+impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Type<M>>
+    for Visitor<'_, '_, N, M>
 {
     fn visit(
         &mut self,
@@ -123,8 +123,8 @@ impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Type<M>>
     }
 }
 
-impl<'t, 'p, N: Normalizer<M>, M: Model> visitor::Visitor<'_, Constant<M>>
-    for Visitor<'t, 'p, N, M>
+impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Constant<M>>
+    for Visitor<'_, '_, N, M>
 {
     fn visit(
         &mut self,

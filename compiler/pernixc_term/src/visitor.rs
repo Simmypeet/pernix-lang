@@ -110,14 +110,13 @@ macro_rules! implements_visit_recursive {
 }
 
 impl<
-        'a,
         'b,
         T: Element,
         V: Recursive<'b, T>
             + Recursive<'b, Lifetime<T::Model>>
             + Recursive<'b, Type<T::Model>>
             + Recursive<'b, Constant<T::Model>>,
-    > Visitor<'b, T> for RecursiveVisitorAdapter<'a, V>
+    > Visitor<'b, T> for RecursiveVisitorAdapter<'_, V>
 {
     fn visit(&mut self, term: &'b T, location: T::Location) -> bool {
         implements_visit_recursive!(self, accept_one_level, term, location)
@@ -131,13 +130,12 @@ struct RecursiveVisitorAdapterMut<'a, V> {
 }
 
 impl<
-        'a,
         T: Element,
         V: MutableRecursive<T>
             + MutableRecursive<Lifetime<T::Model>>
             + MutableRecursive<Type<T::Model>>
             + MutableRecursive<Constant<T::Model>>,
-    > Mutable<T> for RecursiveVisitorAdapterMut<'a, V>
+    > Mutable<T> for RecursiveVisitorAdapterMut<'_, V>
 {
     fn visit(&mut self, term: &mut T, location: T::Location) -> bool {
         implements_visit_recursive!(self, accept_one_level_mut, term, location)
@@ -266,13 +264,10 @@ pub fn accept_recursive<
     let mut adapter =
         RecursiveVisitorAdapter { visitor, current_locations: Vec::new() };
 
-    match element.accept_one_level(&mut adapter) {
-        Ok(result) => {
-            if !result {
-                return false;
-            }
+    if let Ok(result) = element.accept_one_level(&mut adapter) {
+        if !result {
+            return false;
         }
-        Err(VisitNonApplicationTermError) => {}
     }
 
     !element.accept_single_recursive(visitor, std::iter::empty())

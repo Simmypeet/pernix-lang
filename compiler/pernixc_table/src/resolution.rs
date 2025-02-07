@@ -35,7 +35,7 @@ impl Representation {
                         .filter(|x| {
                             self.targets_by_id
                                 .get(&referring_site.target_id)
-                                .map_or(false, |y| y.linked_targets.contains(x))
+                                .is_some_and(|y| y.linked_targets.contains(x))
                                 || x == &referring_site.target_id
                         })
                     else {

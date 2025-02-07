@@ -66,19 +66,19 @@ fn unused_generic_parameters() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<Error<LifetimeParameter>>()
-        .map_or(false, |x| x.generic_parameter_id.id == c_lt
+        .is_some_and(|x| x.generic_parameter_id.id == c_lt
             && x.generic_parameter_id.parent == implementation_id)));
 
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<Error<TypeParameter>>()
-        .map_or(false, |x| x.generic_parameter_id.id == u_ty
+        .is_some_and(|x| x.generic_parameter_id.id == u_ty
             && x.generic_parameter_id.parent == implementation_id)));
 
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<Error<TypeParameter>>()
-        .map_or(false, |x| x.generic_parameter_id.id == v_ty
+        .is_some_and(|x| x.generic_parameter_id.id == v_ty
             && x.generic_parameter_id.parent == implementation_id)));
 }
 
@@ -319,7 +319,7 @@ fn generic_parameter_count_mismatched() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedGenericParameterCountInImplementation>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.expected_count == 2
                 && x.declared_count == 1
                 && x.generic_kind == GenericKind::Lifetime
@@ -329,7 +329,7 @@ fn generic_parameter_count_mismatched() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedGenericParameterCountInImplementation>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.expected_count == 2
                 && x.declared_count == 1
                 && x.generic_kind == GenericKind::Type
@@ -339,7 +339,7 @@ fn generic_parameter_count_mismatched() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedGenericParameterCountInImplementation>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.expected_count == 1
                 && x.declared_count == 0
                 && x.generic_kind == GenericKind::Constant
@@ -417,19 +417,19 @@ fn constant_parameter_type_mismatched() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedImplementationConstantTypeParameter>()
-        .map_or(false, |_| true)));
+        .is_some_and(|_| true)));
 
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedImplementationConstantTypeParameter>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.implementation_member_constant_parameter_id == impl_y_const_id
                 && x.trait_member_constant_parameter_id == trait_y_const_id
         })));
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedImplementationConstantTypeParameter>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.implementation_member_constant_parameter_id == impl_w_const_id
                 && x.trait_member_constant_parameter_id == trait_w_const_id
         })));
@@ -511,7 +511,7 @@ fn implemented_predicate_check() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<UnsatisfiedPredicate<Default>>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.predicate_declaration_span.as_ref().map(Span::str)
                 == Some("Require[U]")
                 && x.predicate == expected_trait
@@ -520,7 +520,7 @@ fn implemented_predicate_check() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<UnsatisfiedPredicate<Default>>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.predicate_declaration_span.as_ref().map(Span::str)
                 == Some("Y: 'd")
                 && x.predicate == expected_outlives
@@ -599,7 +599,7 @@ fn extraneous_predicate_check() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<ExtraneousImplementationMemberPredicate>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.trait_implementation_member_id == output_impl_id
                 && x.predicate == expected_trait
                 && x.predicate_span.str() == "Require[Y]"
@@ -608,7 +608,7 @@ fn extraneous_predicate_check() {
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<ExtraneousImplementationMemberPredicate>()
-        .map_or(false, |x| {
+        .is_some_and(|x| {
             x.trait_implementation_member_id == output_impl_id
                 && x.predicate == expected_outlives
                 && x.predicate_span.str() == "Y: 'd"

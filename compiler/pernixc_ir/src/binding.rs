@@ -123,7 +123,7 @@ struct HandlerWrapper<'h> {
     suboptimal: Arc<RwLock<bool>>,
 }
 
-impl<'h> Handler<Box<dyn Diagnostic>> for HandlerWrapper<'h> {
+impl Handler<Box<dyn Diagnostic>> for HandlerWrapper<'_> {
     fn receive(&self, error: Box<dyn Diagnostic>) {
         // found an error, set the flag to true
         *self.suboptimal.write() = true;
@@ -338,7 +338,7 @@ impl<T: Default + Clone, U: Term + From<T>> ElidedTermProvider<U>
     }
 }
 
-impl<'t> Binder<'t> {
+impl Binder<'_> {
     fn create_unreachable(&mut self, span: Span) -> Literal<infer::Model> {
         Literal::Unreachable(Unreachable {
             r#type: {

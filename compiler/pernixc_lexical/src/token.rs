@@ -592,7 +592,7 @@ impl Token {
             });
 
             let is_cr =
-                iter.peek().map_or(false, |(_, character)| character == '\r');
+                iter.peek().is_some_and(|(_, character)| character == '\r');
 
             if let (true, Some((_, '\n'))) = (is_cr, iter.next()) {
                 // skips the crlf

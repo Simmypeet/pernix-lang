@@ -251,7 +251,7 @@ impl Target {
             };
 
         let submodule_current_directory =
-            if source_file.as_ref().map_or(false, |x| x.0) {
+            if source_file.as_ref().is_some_and(|x| x.0) {
                 current_directory.to_path_buf()
             } else {
                 current_directory.join(&current_module_name)

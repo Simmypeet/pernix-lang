@@ -49,8 +49,8 @@ struct Instantiater<'a, M: Model> {
     substitution: &'a Instantiation<M>,
 }
 
-impl<'a, T: Element + Clone + Ord> MutableRecursive<T>
-    for Instantiater<'a, T::Model>
+impl<T: Element + Clone + Ord> MutableRecursive<T>
+    for Instantiater<'_, T::Model>
 {
     fn visit(
         &mut self,

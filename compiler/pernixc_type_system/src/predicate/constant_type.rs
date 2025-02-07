@@ -24,8 +24,8 @@ struct Visitor<'t, N: Normalizer<M>, M: Model> {
     environment: &'t Environment<'t, M, N>,
 }
 
-impl<'t, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Lifetime<M>>
-    for Visitor<'t, N, M>
+impl<M: Model, N: Normalizer<M>> visitor::Visitor<'_, Lifetime<M>>
+    for Visitor<'_, N, M>
 {
     fn visit(
         &mut self,
@@ -40,8 +40,8 @@ impl<'t, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Lifetime<M>>
     }
 }
 
-impl<'a, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Type<M>>
-    for Visitor<'a, N, M>
+impl<M: Model, N: Normalizer<M>> visitor::Visitor<'_, Type<M>>
+    for Visitor<'_, N, M>
 {
     fn visit(
         &mut self,
@@ -78,8 +78,8 @@ impl<'a, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Type<M>>
     }
 }
 
-impl<'a, 'v, M: Model, N: Normalizer<M>> visitor::Visitor<'v, Constant<M>>
-    for Visitor<'a, N, M>
+impl<M: Model, N: Normalizer<M>> visitor::Visitor<'_, Constant<M>>
+    for Visitor<'_, N, M>
 {
     fn visit(
         &mut self,

@@ -402,7 +402,7 @@ fn create_temporary_lvalue() {
                 .value
                 .as_literal()
                 .and_then(|x| x.as_numeric())
-                .map_or(false, |x| {
+                .is_some_and(|x| {
                     x.integer_string == "32" && x.decimal_stirng.is_none()
                 })
     }));

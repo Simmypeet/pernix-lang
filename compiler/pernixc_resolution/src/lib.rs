@@ -220,7 +220,7 @@ pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex, M: Model> {
     pub extra_namespace: Option<&'ex ExtraNamespace<M>>,
 }
 
-impl<'lp, 'tp, 'cp, 'ob, 'ex, M: Model> Config<'lp, 'tp, 'cp, 'ob, 'ex, M> {
+impl<M: Model> Config<'_, '_, '_, '_, '_, M> {
     /// Creates a new instance of the config.
     #[allow(clippy::option_if_let_else)]
     pub fn reborrow(&mut self) -> Config<M> {

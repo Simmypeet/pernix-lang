@@ -18,8 +18,8 @@ struct Visitor<'a, 'e, N: Normalizer<M>, M: Model> {
     environment: &'e Environment<'e, M, N>,
 }
 
-impl<'a, 'e, 'v, U: Term, N: Normalizer<U::Model>> visitor::Visitor<'v, U>
-    for Visitor<'a, 'e, N, U::Model>
+impl<'v, U: Term, N: Normalizer<U::Model>> visitor::Visitor<'v, U>
+    for Visitor<'_, '_, N, U::Model>
 {
     fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
         match self

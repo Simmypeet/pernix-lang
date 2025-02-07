@@ -147,7 +147,8 @@ impl<'a, M: Model> Environment<'a, M, normalizer::NoOp> {
     }
 }
 
-impl<'a, M: Model, N> Environment<'a, M, N> {
+impl<M: Model, N> Environment<'_, M, N> {
+    /// Asserts that the call stack is empty.
     #[cfg(test)]
     pub fn assert_call_stack_empty(&self) {
         let context = self.context.borrow();
@@ -157,9 +158,7 @@ impl<'a, M: Model, N> Environment<'a, M, N> {
     }
 }
 
-impl<'a, M: Model, N: std::fmt::Debug> std::fmt::Debug
-    for Environment<'a, M, N>
-{
+impl<M: Model, N: std::fmt::Debug> std::fmt::Debug for Environment<'_, M, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Environment")
             .field("premise", &self.premise)
@@ -169,7 +168,7 @@ impl<'a, M: Model, N: std::fmt::Debug> std::fmt::Debug
     }
 }
 
-impl<'a, M: Model, N: Clone> Clone for Environment<'a, M, N> {
+impl<M: Model, N: Clone> Clone for Environment<'_, M, N> {
     fn clone(&self) -> Self {
         Self {
             premise: self.premise.clone(),
@@ -200,7 +199,7 @@ impl<T: Any + Send + Sync + Eq + Hash + Ord> DynIdent for T {
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
 
     fn dyn_eq(&self, other: &dyn DynIdent) -> bool {
-        other.as_any().downcast_ref::<T>().map_or(false, |other| self == other)
+        other.as_any().downcast_ref::<T>() == Some(self)
     }
 
     fn dyn_hash(&self, mut state: &mut dyn Hasher) { self.hash(&mut state); }
@@ -389,7 +388,7 @@ impl Context {
             return false;
         };
 
-        if last.query.downcast_ref::<Q>().map_or(true, |x| x != query) {
+        if last.query.downcast_ref::<Q>() != Some(query) {
             return false;
         }
 
@@ -422,7 +421,7 @@ impl Context {
     ) -> Option<Cached<Arc<Q::InProgress>, Arc<Q::Result>>> {
         let last = self.call_stack.last()?;
 
-        if last.query.downcast_ref::<Q>().map_or(true, |x| x != query) {
+        if last.query.downcast_ref::<Q>() != Some(query) {
             return None;
         }
 
@@ -486,11 +485,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                 let position = context
                     .call_stack
                     .iter()
-                    .position(|x| {
-                        x.query
-                            .downcast_ref::<Q>()
-                            .map_or(false, |x| x == query)
-                    })
+                    .position(|x| (x.query.downcast_ref::<Q>() == Some(query)))
                     .expect("should exist");
 
                 // circular dependency

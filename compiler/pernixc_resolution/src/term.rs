@@ -471,7 +471,7 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
         && syntax_tree
             .root()
             .as_generic_identifier()
-            .map_or(false, |x| x.generic_arguments().is_none());
+            .is_some_and(|x| x.generic_arguments().is_none());
 
     // try to resolve the simple identifier in the extra namespace
     if let (true, Some(extra_type)) = (

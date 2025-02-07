@@ -18,6 +18,9 @@ pub trait Diagnostic:
 
     #[allow(missing_docs)]
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    #[allow(missing_docs)]
+    fn type_name(&self) -> &'static str;
 }
 
 impl<U: for<'a> Report<&'a Table> + Debug + Any + Send + Sync + 'static>
@@ -26,6 +29,8 @@ impl<U: for<'a> Report<&'a Table> + Debug + Any + Send + Sync + 'static>
     fn as_any(&self) -> &dyn Any { self }
 
     fn as_any_mut(&mut self) -> &mut dyn Any { self }
+
+    fn type_name(&self) -> &'static str { std::any::type_name::<U>() }
 }
 
 impl<U: for<'a> Report<&'a Table> + Debug + Any + Send + Sync + 'static> From<U>

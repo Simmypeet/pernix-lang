@@ -51,7 +51,7 @@ enum LibraryField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct LibraryFieldVisitor;
 
-impl<'de> Visitor<'de> for LibraryFieldVisitor {
+impl Visitor<'_> for LibraryFieldVisitor {
     type Value = LibraryField;
 
     fn expecting(
@@ -106,13 +106,10 @@ impl<'x> Deserialize<'x> for LibraryField {
 
 impl<
         'de,
-        'current,
-        't,
-        'r,
         T: for<'x> Deserialize<'x> + Eq + Hash + Debug,
         E: Display + 'static,
     > DeserializeSeed<'de>
-    for &'current mut IncrementalLibraryDeserializer<'t, 'r, T, E>
+    for &mut IncrementalLibraryDeserializer<'_, '_, T, E>
 {
     type Value = CompilationMetaData;
 
@@ -130,13 +127,9 @@ impl<
 
 impl<
         'de,
-        'current,
-        't,
-        'r,
         T: for<'x> Deserialize<'x> + Eq + Hash + Debug,
         E: Display + 'static,
-    > Visitor<'de>
-    for &'current mut IncrementalLibraryDeserializer<'t, 'r, T, E>
+    > Visitor<'de> for &mut IncrementalLibraryDeserializer<'_, '_, T, E>
 {
     type Value = CompilationMetaData;
 
@@ -225,7 +218,7 @@ enum RepresentationField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct RepresentationFieldVisitor;
 
-impl<'de> Visitor<'de> for RepresentationFieldVisitor {
+impl Visitor<'_> for RepresentationFieldVisitor {
     type Value = RepresentationField;
 
     fn expecting(

@@ -247,7 +247,7 @@ impl Pattern for Refutable {
             Self::Tuple(pat) => binder.insert_named_binding_point_tuple(
                 name_binding_point,
                 pat,
-                &address_span,
+                address_span.as_ref(),
                 binding,
                 must_copy,
                 scope_id,
@@ -258,7 +258,7 @@ impl Pattern for Refutable {
                 .insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
-                    &address_span,
+                    address_span.as_ref(),
                     binding,
                     must_copy,
                     scope_id,
@@ -503,7 +503,7 @@ impl Pattern for Irrefutable {
             Self::Tuple(pat) => binder.insert_named_binding_point_tuple(
                 name_binding_point,
                 pat,
-                &address_span,
+                address_span.as_ref(),
                 binding,
                 must_copy,
                 scope_id,
@@ -514,7 +514,7 @@ impl Pattern for Irrefutable {
                 .insert_named_binding_point_structural(
                     name_binding_point,
                     pat,
-                    &address_span,
+                    address_span.as_ref(),
                     binding,
                     must_copy,
                     scope_id,
@@ -1288,7 +1288,7 @@ impl Binder<'_> {
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         tuple_pat: &Tuple<T>,
-        address_span: &Option<Span>,
+        address_span: Option<&Span>,
         mut binding: Binding,
         must_copy: bool,
         scope_id: ID<Scope>,
@@ -1359,7 +1359,7 @@ impl Binder<'_> {
                     self,
                     name_binding_point,
                     &tuple_pat.pattern,
-                    address_span.clone(),
+                    address_span.cloned(),
                     Binding {
                         kind: binding.kind,
                         r#type: &tuple_ty.term,
@@ -1393,17 +1393,18 @@ impl Binder<'_> {
                         tuple_address: Box::new(binding.address.clone()),
                         offset: address::Offset::FromStart(index),
                     });
+                    let span = address_span.cloned().unwrap_or_else(|| {
+                        tuple_pat
+                            .elements
+                            .get(packed_position)
+                            .unwrap()
+                            .pattern
+                            .span()
+                    });
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        address_span.clone().unwrap_or_else(|| {
-                            tuple_pat
-                                .elements
-                                .get(packed_position)
-                                .unwrap()
-                                .pattern
-                                .span()
-                        }),
+                        span,
                     );
 
                     let _ = self.current_block_mut().add_instruction(
@@ -1467,7 +1468,7 @@ impl Binder<'_> {
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        address_span.clone().unwrap_or_else(|| {
+                        address_span.cloned().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
@@ -1510,7 +1511,7 @@ impl Binder<'_> {
 
                     let moved_reg = self.create_register_assignmnet(
                         Assignment::Load(Load { address: element_address }),
-                        address_span.clone().unwrap_or_else(|| {
+                        address_span.cloned().unwrap_or_else(|| {
                             tuple_pat
                                 .elements
                                 .get(packed_position)
@@ -1546,7 +1547,7 @@ impl Binder<'_> {
                 self,
                 name_binding_point,
                 &tuple_pat.elements.get(packed_position).unwrap().pattern,
-                address_span.clone(),
+                address_span.cloned(),
                 Binding {
                     kind: binding.kind,
                     r#type: &packed_type,
@@ -1584,7 +1585,7 @@ impl Binder<'_> {
                     self,
                     name_binding_point,
                     &pat_elem.pattern,
-                    address_span.clone(),
+                    address_span.cloned(),
                     Binding {
                         kind: binding.kind,
                         r#type: &ty_elem.term,
@@ -1618,7 +1619,7 @@ impl Binder<'_> {
                     self,
                     name_binding_point,
                     &tuple_pat.pattern,
-                    address_span.clone(),
+                    address_span.cloned(),
                     Binding {
                         kind: binding.kind,
                         r#type: tuple_ty,
@@ -1639,7 +1640,7 @@ impl Binder<'_> {
         &mut self,
         name_binding_point: &mut NameBindingPoint<infer::Model>,
         structural: &Structural<T>,
-        address_span: &Option<Span>,
+        address_span: Option<&Span>,
         mut binding: Binding,
         must_copy: bool,
         scope_id: ID<Scope>,
@@ -1706,7 +1707,7 @@ impl Binder<'_> {
                 self,
                 name_binding_point,
                 structural.patterns_by_field_id.get(&field_id).unwrap(),
-                address_span.clone(),
+                address_span.cloned(),
                 binding_cloned,
                 must_copy,
                 scope_id,
