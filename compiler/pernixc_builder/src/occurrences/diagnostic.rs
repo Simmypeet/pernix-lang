@@ -12,56 +12,6 @@ use pernixc_term::{
     Model,
 };
 
-/// The implementation is not general enough to satisfy the required
-/// predicate's forall lifetimes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementationIsNotGeneralEnough<M: Model> {
-    /// The ID of the implementation where the predicate is not satisfied.
-    pub resolvable_implementation_id: GlobalID,
-
-    /// The generic arguments required by the trait predicate.
-    pub generic_arguments: GenericArguments<M>,
-
-    /// The span where the trait predicate was declared.
-    pub predicate_declaration_span: Option<Span>,
-
-    /// The span of the instantiation that cuases the error
-    pub instantiation_span: Span,
-}
-
-impl<M: Model> Report<&Table> for ImplementationIsNotGeneralEnough<M>
-where
-    GenericArguments<M>: pernixc_table::Display,
-{
-    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
-        let span = table.get::<LocationSpan>(self.resolvable_implementation_id);
-
-        pernixc_diagnostic::Diagnostic {
-            span: self.instantiation_span.clone(),
-            message: format!(
-                "the implementation is not general enough to satisfy the \
-                 required forall lifetimes in the generic arguments: {}",
-                DisplayObject { table, display: &self.generic_arguments }
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: self
-                .predicate_declaration_span
-                .as_ref()
-                .map(|span| Related {
-                    span: span.clone(),
-                    message: "the predicate is declared here".to_string(),
-                })
-                .into_iter()
-                .chain(span.span.as_ref().map(|span| Related {
-                    span: span.clone(),
-                    message: "the implementation is defined here".to_string(),
-                }))
-                .collect(),
-        }
-    }
-}
-
 /// The generic arguments are not compatible with the generic arguments defined
 /// in the implementation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

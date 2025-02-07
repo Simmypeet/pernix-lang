@@ -1,18 +1,17 @@
 //! Contains the extension trait for the environment for interacting with the
 //! type system and the term resolution.
 
-use diagnostic::UnsatisfiedPredicate;
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
 use pernixc_table::{diagnostic::Diagnostic, query::CyclicDependencyError};
 use pernixc_term::{predicate::Predicate, r#type::Type, Model};
 use pernixc_type_system::{
-    diagnostic::OverflowOperation, environment::Environment,
-    normalizer::Normalizer, simplify::Simplify, AbruptError,
-    LifetimeConstraint,
+    diagnostic::{OverflowOperation, UnsatisfiedPredicate},
+    environment::Environment,
+    normalizer::Normalizer,
+    simplify::Simplify,
+    AbruptError, LifetimeConstraint,
 };
-
-pub mod diagnostic;
 
 /// An extension trait for the environment for interacting with the type system
 /// and the term resolution. This allows simpler uses of the type system.

@@ -13,11 +13,11 @@ use pernixc_term::{
     r#type::{Primitive, Qualifier, Reference, TraitMember, Type},
     Default, MemberSymbol, Symbol,
 };
-
-use crate::{
-    occurrences::diagnostic::ImplementationIsNotGeneralEnough,
-    type_system::diagnostic::UnsatisfiedPredicate, utility::build_table,
+use pernixc_type_system::diagnostic::{
+    ImplementationIsNotGeneralEnough, UnsatisfiedPredicate,
 };
+
+use crate::utility::build_table;
 
 const PREDICATE_REQUIREMENTS: &str = r"
 public trait Fizz['a, T] {}

@@ -31,7 +31,8 @@ use pernixc_term::{
     Model,
 };
 use pernixc_type_system::{
-    environment::Environment as TyEnvironment, normalizer::Normalizer,
+    environment::{Environment as TyEnvironment, GetActivePremiseExt},
+    normalizer::{self, Normalizer},
     well_formedness,
 };
 use state::{SetStateSucceeded, Stack, Summary};
@@ -769,11 +770,17 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
 ///
 /// See [`binding::AbruptError`] for more information
 pub fn memory_check(
+    table: &Table,
     representation: &mut Representation<model::Model>,
     current_site: GlobalID,
-    ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Result<(), binding::AbruptError> {
+    let ty_environment = TyEnvironment::new(
+        std::borrow::Cow::Owned(table.get_active_premise(current_site)),
+        table,
+        normalizer::NO_OP,
+    );
+
     let all_block_ids =
         representation.control_flow_graph.blocks().ids().collect::<Vec<_>>();
 
@@ -782,7 +789,7 @@ pub fn memory_check(
         walk_results_by_block_id: HashMap::new(),
         target_stakcs_by_block_id: HashMap::new(),
         current_site,
-        ty_environment,
+        ty_environment: &ty_environment,
     };
 
     for block_id in all_block_ids {

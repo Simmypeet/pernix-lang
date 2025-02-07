@@ -1,32 +1,42 @@
-use pernixc_base::{handler::Handler, source_file::Span};
+use pernixc_arena::ID;
+use pernixc_handler::Handler;
+use pernixc_source_file::Span;
+use pernixc_table::{
+    component::{Parent, SymbolKind},
+    diagnostic::Diagnostic,
+    query::CyclicDependencyError,
+    GlobalID,
+};
+use pernixc_term::{
+    generic_arguments::GenericArguments,
+    generic_parameter::GenericParameters,
+    instantiation::Instantiation,
+    predicate::{PositiveMarker, PositiveTrait, Predicate, Tuple},
+    r#type::Qualifier,
+};
+use pernixc_type_system::{
+    diagnostic::{
+        ImplementationIsNotGeneralEnough, UndecidablePredicate,
+        UnsatisfiedPredicate,
+    },
+    environment::Environment,
+    normalizer::Normalizer,
+    well_formedness,
+};
 
 use crate::{
-    arena::ID,
-    error::{self, OverflowOperation, TypeSystemOverflow},
-    ir::{
-        self,
-        representation::{binding::HandlerWrapper, Representation},
-        value::register::{self, Register},
+    model,
+    value::{
+        register::{self, Register},
+        Value,
     },
-    symbol::{
-        table::{self, representation::Index},
-        CallableID, GenericID, ItemID,
-    },
-    type_system::{
-        environment::Environment,
-        instantiation::Instantiation,
-        normalizer::Normalizer,
-        observer::Observer,
-        predicate::{self, PositiveMarker, PositiveTrait, Predicate, Tuple},
-        term::{r#type::Qualifier, GenericArguments},
-        well_formedness, OverflowError,
-    },
+    Representation,
 };
 
 fn report_error(
-    well_formedness_error: well_formedness::Error<ir::Model>,
+    well_formedness_error: well_formedness::Error<model::Model>,
     instantiation_span: Span,
-    handler: &HandlerWrapper,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
     match well_formedness_error {
         well_formedness::Error::Unsatisfied(unsatisfied) => {
@@ -34,7 +44,7 @@ fn report_error(
                 return;
             }
 
-            handler.receive(Box::new(error::UnsatisfiedPredicate {
+            handler.receive(Box::new(UnsatisfiedPredicate {
                 predicate: unsatisfied.predicate,
                 instantiation_span,
                 predicate_declaration_span: unsatisfied
@@ -46,10 +56,12 @@ fn report_error(
                 return;
             }
 
-            handler.receive(Box::new(TypeSystemOverflow {
-                operation: OverflowOperation::Predicate(undecidable.predicate),
-                overflow_span: instantiation_span,
-                overflow_error: OverflowError,
+            handler.receive(Box::new(UndecidablePredicate {
+                predicate: undecidable.predicate,
+                predicate_declaration_span: undecidable
+                    .predicate_declaration_span,
+                instantiation_span,
+                overflow_error: undecidable.overflow_error,
             }));
         }
         well_formedness::Error::ImplementationIsNotGeneralEnough(
@@ -62,38 +74,31 @@ fn report_error(
                 return;
             }
 
-            handler.receive(Box::new(
-                error::ImplementationIsNotGeneralEnough {
-                    resolvable_implementation_id:
-                        implementation_is_not_general_enough
-                            .resolved_implementation
-                            .id,
-                    instantiation_span,
-                    predicate_declaration_span:
-                        implementation_is_not_general_enough
-                            .predicate_declaration_span,
-                    generic_arguments: implementation_is_not_general_enough
-                        .generic_arguments,
-                },
-            ));
+            handler.receive(Box::new(ImplementationIsNotGeneralEnough {
+                resolvable_implementation_id:
+                    implementation_is_not_general_enough
+                        .resolved_implementation
+                        .id,
+                instantiation_span,
+                predicate_declaration_span:
+                    implementation_is_not_general_enough
+                        .predicate_declaration_span,
+                generic_arguments: implementation_is_not_general_enough
+                    .generic_arguments,
+            }));
         }
     }
 }
 
-impl Representation<ir::Model> {
+impl Representation<model::Model> {
     #[allow(clippy::too_many_lines)]
-    fn check_register_assignment<T: table::State>(
+    fn check_register_assignment(
         &self,
-        register_id: ID<Register<ir::Model>>,
-        current_site: ItemID,
-        environment: &Environment<
-            ir::Model,
-            T,
-            impl Normalizer<ir::Model, T>,
-            impl Observer<ir::Model, T>,
-        >,
-        handler: &HandlerWrapper,
-    ) {
+        register_id: ID<Register<model::Model>>,
+        current_site: GlobalID,
+        environment: &Environment<model::Model, impl Normalizer<model::Model>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<(), CyclicDependencyError> {
         let register =
             self.values.registers.get(register_id).expect("Register not found");
 
@@ -101,169 +106,190 @@ impl Representation<ir::Model> {
             register::Assignment::Struct(st) => {
                 let instantiation = Instantiation::from_generic_arguments(
                     st.generic_arguments.clone(),
-                    st.struct_id.into(),
-                    &environment
+                    st.struct_id,
+                    &*environment
                         .table()
-                        .get(st.struct_id)
-                        .unwrap()
-                        .generic_declaration
-                        .parameters,
+                        .query::<GenericParameters>(st.struct_id)?,
                 )
                 .unwrap();
 
                 for error in well_formedness::check(
-                    st.struct_id.into(),
+                    st.struct_id,
                     &instantiation,
                     false,
                     environment,
-                )
+                )?
                 .1
                 {
-                    report_error(error, register.span.clone(), handler);
+                    report_error(
+                        error,
+                        register.span.clone().unwrap(),
+                        handler,
+                    );
                 }
+
+                Ok(())
             }
             register::Assignment::Variant(variant) => {
-                let enum_id = environment
-                    .table()
-                    .get(variant.variant_id)
-                    .unwrap()
-                    .parent_enum_id();
+                let enum_id = GlobalID::new(
+                    variant.variant_id.target_id,
+                    environment
+                        .table()
+                        .get::<Parent>(variant.variant_id)
+                        .parent
+                        .unwrap(),
+                );
 
                 let instantiation = Instantiation::from_generic_arguments(
                     variant.generic_arguments.clone(),
-                    enum_id.into(),
-                    &environment
+                    enum_id,
+                    &*environment
                         .table()
-                        .get(enum_id)
-                        .unwrap()
-                        .generic_declaration
-                        .parameters,
+                        .query::<GenericParameters>(enum_id)?,
                 )
                 .unwrap();
 
                 for error in well_formedness::check(
-                    enum_id.into(),
+                    enum_id,
                     &instantiation,
                     false,
                     environment,
-                )
+                )?
                 .1
                 {
-                    report_error(error, register.span.clone(), handler);
+                    report_error(
+                        error,
+                        register.span.clone().unwrap(),
+                        handler,
+                    );
                 }
+
+                Ok(())
             }
             register::Assignment::FunctionCall(function_call) => {
-                match function_call.callable_id {
-                    CallableID::Function(id) => {
-                        for error in well_formedness::check(
-                            id.into(),
+                let symbol_kind = *environment
+                    .table()
+                    .get::<SymbolKind>(function_call.callable_id);
+
+                match symbol_kind {
+                    SymbolKind::Function | SymbolKind::ExternFunction => {
+                        well_formedness::check(
+                            function_call.callable_id,
                             &function_call.instantiation,
                             false,
                             environment,
-                        )
+                        )?
                         .1
-                        {
-                            report_error(error, register.span.clone(), handler);
-                        }
+                        .into_iter()
+                        .for_each(|error| {
+                            report_error(
+                                error,
+                                register.span.clone().unwrap(),
+                                handler,
+                            );
+                        });
+
+                        Ok(())
                     }
 
-                    CallableID::TraitFunction(id) => {
+                    SymbolKind::TraitFunction => {
                         // parent trait requirement
-                        let parent_trait_id =
-                            environment.table().get(id).unwrap().parent_id();
+                        let parent_trait_id = GlobalID::new(
+                            function_call.callable_id.target_id,
+                            environment
+                                .table()
+                                .get::<Parent>(function_call.callable_id)
+                                .parent
+                                .unwrap(),
+                        );
 
                         let trait_arguments = function_call
                             .instantiation
                             .create_generic_arguments(
-                                parent_trait_id.into(),
-                                &environment
+                                parent_trait_id,
+                                &*environment
                                     .table()
-                                    .get(parent_trait_id)
-                                    .unwrap()
-                                    .generic_declaration
-                                    .parameters,
+                                    .query::<GenericParameters>(
+                                        parent_trait_id,
+                                    )?,
                             )
                             .unwrap();
 
                         // check extra trait satisfiability
                         let mut errors = well_formedness::predicate_satisfied(
-                            predicate::Predicate::PositiveTrait(
-                                PositiveTrait {
-                                    id: parent_trait_id,
-                                    is_const: false, /* TODO: reflect the
-                                                      * actual valuec */
-                                    generic_arguments: trait_arguments,
-                                },
-                            ),
+                            Predicate::PositiveTrait(PositiveTrait {
+                                trait_id: parent_trait_id,
+                                is_const: false, /* TODO: reflect the
+                                                  * actual valuec */
+                                generic_arguments: trait_arguments,
+                            }),
                             None,
                             false,
                             environment,
-                        )
+                        )?
                         .1;
                         errors.extend(
                             well_formedness::check(
-                                id.into(),
+                                function_call.callable_id,
                                 &function_call.instantiation,
                                 false,
                                 environment,
-                            )
+                            )?
                             .1,
                         );
 
                         for error in errors {
-                            report_error(error, register.span.clone(), handler);
+                            report_error(
+                                error,
+                                register.span.clone().unwrap(),
+                                handler,
+                            );
                         }
+
+                        Ok(())
                     }
 
-                    CallableID::TraitImplementationFunction(_)
-                    | CallableID::AdtImplementationFunction(_) => {
-                        let parent_implementation_id: GenericID =
-                            match function_call.callable_id {
-                                CallableID::TraitImplementationFunction(id) => {
-                                    environment
-                                        .table()
-                                        .get(id)
-                                        .unwrap()
-                                        .parent_id()
-                                        .into()
-                                }
-                                CallableID::AdtImplementationFunction(id) => {
-                                    environment
-                                        .table()
-                                        .get(id)
-                                        .unwrap()
-                                        .parent_id()
-                                        .into()
-                                }
-
-                                CallableID::Function(_)
-                                | CallableID::TraitFunction(_) => {
-                                    unreachable!()
-                                }
-                            };
+                    SymbolKind::AdtImplementationFunction
+                    | SymbolKind::TraitImplementationFunction => {
+                        let parent_implementation_id = GlobalID::new(
+                            function_call.callable_id.target_id,
+                            environment
+                                .table()
+                                .get::<Parent>(function_call.callable_id)
+                                .parent
+                                .unwrap(),
+                        );
 
                         let mut errors = well_formedness::check(
                             parent_implementation_id,
                             &function_call.instantiation,
                             false,
                             environment,
-                        )
+                        )?
                         .1;
 
                         errors.extend(
                             well_formedness::check(
-                                function_call.callable_id.into(),
+                                function_call.callable_id,
                                 &function_call.instantiation,
                                 false,
                                 environment,
-                            )
+                            )?
                             .1,
                         );
 
                         for error in errors {
-                            report_error(error, register.span.clone(), handler);
+                            report_error(
+                                error,
+                                register.span.clone().unwrap(),
+                                handler,
+                            );
                         }
+
+                        Ok(())
                     }
+
+                    _ => unreachable!(),
                 }
             }
 
@@ -286,8 +312,6 @@ impl Representation<ir::Model> {
                     let copy_marker = environment
                         .table()
                         .get_by_qualified_name(["core", "Copy"])
-                        .unwrap()
-                        .into_marker()
                         .unwrap();
 
                     let predicate = Predicate::PositiveMarker(
@@ -303,13 +327,19 @@ impl Representation<ir::Model> {
                         None,
                         false,
                         environment,
-                    )
+                    )?
                     .1;
 
                     for error in errors {
-                        report_error(error, register.span.clone(), handler);
+                        report_error(
+                            error,
+                            register.span.clone().unwrap(),
+                            handler,
+                        );
                     }
                 }
+
+                Ok(())
             }
 
             // tuple unpacking
@@ -331,28 +361,31 @@ impl Representation<ir::Model> {
                         None,
                         false,
                         environment,
-                    )
+                    )?
                     .1;
 
                     for error in errors {
                         report_error(
                             error,
                             match &element.value {
-                                ir::value::Value::Register(id) => self
+                                Value::Register(id) => self
                                     .values
                                     .registers
                                     .get(*id)
                                     .unwrap()
                                     .span
-                                    .clone(),
-                                ir::value::Value::Literal(literal) => {
-                                    literal.span().clone()
+                                    .clone()
+                                    .unwrap(),
+                                Value::Literal(literal) => {
+                                    literal.span().cloned().unwrap()
                                 }
                             },
                             handler,
                         );
                     }
                 }
+
+                Ok(())
             }
 
             register::Assignment::Borrow(_)
@@ -361,21 +394,16 @@ impl Representation<ir::Model> {
             | register::Assignment::Array(_)
             | register::Assignment::Phi(_)
             | register::Assignment::Cast(_)
-            | register::Assignment::VariantNumber(_) => {}
+            | register::Assignment::VariantNumber(_) => Ok(()),
         }
     }
 
-    pub(super) fn check<T: table::State>(
+    pub(super) fn check(
         &self,
-        current_site: ItemID,
-        environment: &Environment<
-            ir::Model,
-            T,
-            impl Normalizer<ir::Model, T>,
-            impl Observer<ir::Model, T>,
-        >,
-        handler: &HandlerWrapper,
-    ) {
+        current_site: GlobalID,
+        environment: &Environment<model::Model, impl Normalizer<model::Model>>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<(), CyclicDependencyError> {
         for register_id in self
             .control_flow_graph
             .traverse()
@@ -387,7 +415,9 @@ impl Representation<ir::Model> {
                 current_site,
                 environment,
                 handler,
-            );
+            )?;
         }
+
+        Ok(())
     }
 }

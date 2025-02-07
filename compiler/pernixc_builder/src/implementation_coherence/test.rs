@@ -17,6 +17,7 @@ use pernixc_term::{
     r#type::{Primitive, Type},
     Default,
 };
+use pernixc_type_system::diagnostic::UnsatisfiedPredicate;
 
 use crate::{
     implementation_coherence::diagnostic::{
@@ -26,7 +27,6 @@ use crate::{
         MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
         UnusedGenericParameterInImplementation,
     },
-    type_system::diagnostic::UnsatisfiedPredicate,
     utility::{add_target, build_table},
 };
 

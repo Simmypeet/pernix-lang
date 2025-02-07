@@ -1,9 +1,15 @@
 //! Contains the "binder-finalization" logic.
 
+use std::borrow::Cow;
+
 use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic};
 use pernixc_term::r#type::Type;
+use pernixc_type_system::{
+    environment::{Environment, GetActivePremiseExt},
+    normalizer,
+};
 
 use super::{diagnostic::NotAllFlowPathsReturnAValue, AbruptError, Binder};
 use crate::{
@@ -12,9 +18,9 @@ use crate::{
 };
 
 // mod borrow;
-// mod check;
 // mod memory;
 // mod simplify_drop;
+mod check;
 mod transform_inference;
 
 impl Binder<'_> {
@@ -73,6 +79,14 @@ impl Binder<'_> {
             self.table,
             &handler_wrapper,
         )?;
+
+        let environment = Environment::new(
+            Cow::Owned(self.table.get_active_premise(self.current_site)),
+            self.table,
+            normalizer::NO_OP,
+        );
+
+        transformed_ir.check(self.current_site, &environment, handler)?;
 
         Ok(transformed_ir)
     }

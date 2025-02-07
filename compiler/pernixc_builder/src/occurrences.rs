@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::BTreeSet};
 use derive_new::new;
 use diagnostic::{
     AdtImplementationIsNotGeneralEnough, ConstantArgumentTypeMismatched,
-    ImplementationIsNotGeneralEnough, MismatchedImplementationArguments,
+    MismatchedImplementationArguments,
 };
 use enum_as_inner::EnumAsInner;
 use parking_lot::RwLock;
@@ -36,7 +36,10 @@ use pernixc_term::{
 use pernixc_type_system::{
     compatible::Compatibility,
     deduction,
-    diagnostic::OverflowOperation,
+    diagnostic::{
+        ImplementationIsNotGeneralEnough, OverflowOperation,
+        UnsatisfiedPredicate,
+    },
     environment::{Environment, GetActivePremiseExt},
     normalizer,
     predicate::{
@@ -48,7 +51,7 @@ use pernixc_type_system::{
     AbruptError, LifetimeConstraint, OverflowError, Satisfied, Succeeded,
 };
 
-use crate::type_system::{diagnostic::UnsatisfiedPredicate, EnvironmentExt};
+use crate::type_system::EnvironmentExt;
 
 pub mod diagnostic;
 

@@ -30,7 +30,7 @@ use crate::{
         PositiveMarkerSatisfied, PositiveTraitSatisfied,
     },
     resolution::Implementation,
-    AbruptError, LifetimeConstraint, Succeeded,
+    AbruptError, LifetimeConstraint, OverflowError, Succeeded,
 };
 
 /// Representing an unsatisfied in where clause predicate.csjjj
@@ -52,6 +52,9 @@ pub struct Undecidable<M: Model> {
 
     /// The span where the where clause predicate was declared.
     pub predicate_declaration_span: Option<Span>,
+
+    /// The overflow error that occurred.
+    pub overflow_error: OverflowError,
 }
 
 /// The implementation's lifetime arguments are not general enough to satisfied
@@ -324,11 +327,12 @@ pub fn predicate_satisfied<M: Model>(
                             },
                         )]))
                     }
-                    Err(AbruptError::Overflow(_)) => {
+                    Err(AbruptError::Overflow(overflow_error)) => {
                         return Ok((BTreeSet::new(), vec![Error::Undecidable(
                             Undecidable {
                                 predicate,
                                 predicate_declaration_span,
+                                overflow_error,
                             },
                         )]))
                     }
@@ -362,11 +366,12 @@ pub fn predicate_satisfied<M: Model>(
                         )]))
                     }
 
-                    Err(AbruptError::Overflow(_)) => {
+                    Err(AbruptError::Overflow(overflow_error)) => {
                         return Ok((BTreeSet::new(), vec![Error::Undecidable(
                             Undecidable {
                                 predicate,
                                 predicate_declaration_span,
+                                overflow_error,
                             },
                         )]))
                     }
@@ -553,7 +558,12 @@ pub fn predicate_satisfied<M: Model>(
                                     },
                                 ));
                             }
-                            Err(_) => {
+
+                            Err(AbruptError::CyclicDependency(error)) => {
+                                return Err(error);
+                            }
+
+                            Err(AbruptError::Overflow(overflow_error)) => {
                                 extra_predicate_error.push(Error::Undecidable(
                                     Undecidable {
                                         predicate: Predicate::LifetimeOutlives(
@@ -561,6 +571,7 @@ pub fn predicate_satisfied<M: Model>(
                                         ),
 
                                         predicate_declaration_span: None,
+                                        overflow_error,
                                     },
                                 ));
                             }
@@ -583,10 +594,11 @@ pub fn predicate_satisfied<M: Model>(
             Ok((BTreeSet::new(), extra_predicate_error))
         }
 
-        Err(AbruptError::Overflow(_)) => {
+        Err(AbruptError::Overflow(overflow_error)) => {
             extra_predicate_error.push(Error::Undecidable(Undecidable {
                 predicate,
                 predicate_declaration_span,
+                overflow_error,
             }));
 
             Ok((BTreeSet::new(), extra_predicate_error))
