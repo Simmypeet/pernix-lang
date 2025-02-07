@@ -1,5 +1,5 @@
 [package]
-name = "tests"
+name = "pernixc_test"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
