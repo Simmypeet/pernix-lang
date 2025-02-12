@@ -9,6 +9,7 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
+use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
 use pernixc_component::{
     fields::Field, function_signature::FunctionSignature,
@@ -17,7 +18,6 @@ use pernixc_component::{
 use pernixc_source_file::Span;
 use pernixc_table::{
     component::{Parent, SymbolKind},
-    query::CyclicDependencyError,
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -30,7 +30,7 @@ use pernixc_term::{
     MemberSymbol, ModelOf, Symbol,
 };
 use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, AbruptError, Succeeded,
+    environment::Environment, normalizer::Normalizer, Error, Succeeded,
 };
 use serde::{Deserialize, Serialize};
 
@@ -77,7 +77,7 @@ impl<M: pernixc_term::Model> Values<M> {
         tuple: &Tuple<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         let mut constraints = BTreeSet::new();
         let mut elements = Vec::new();
 
@@ -125,7 +125,7 @@ impl<M: pernixc_term::Model> Values<M> {
         load: &Load<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         self.type_of_address(&load.address, current_site, environment)
     }
 }
@@ -151,7 +151,7 @@ impl<M: pernixc_term::Model> Values<M> {
         reference_of: &Borrow<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         self.type_of_address(&reference_of.address, current_site, environment)
             .map(|x| {
                 x.map(|x| {
@@ -215,7 +215,7 @@ impl<M: pernixc_term::Model> Values<M> {
         prefix: &Prefix<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         let operand_type =
             self.type_of_value(&prefix.operand, current_site, environment)?;
 
@@ -326,7 +326,7 @@ impl<M: pernixc_term::Model> FunctionCall<M> {
 fn type_of_function_call_assignment<M: pernixc_term::Model>(
     function_call: &FunctionCall<M>,
     table: &Table,
-) -> Result<Type<M>, AbruptError> {
+) -> Result<Type<M>, Error> {
     let callable =
         table.query::<FunctionSignature>(function_call.callable_id)?;
 
@@ -498,7 +498,7 @@ impl<M: pernixc_term::Model> Values<M> {
         binary: &Binary<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         // the return type always based on the lhs field
         if let BinaryOperator::Relational(_) = binary.operator {
             Ok(Succeeded::new(Type::Primitive(
@@ -669,7 +669,7 @@ impl<M: pernixc_term::Model> Values<M> {
         id: ID<Register<M>>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         let register = &self.registers[id];
 
         let ty = match &register.assignment {
@@ -788,7 +788,7 @@ impl<M: pernixc_term::Model> Register<M> {
     /// transformer.
     #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
     pub fn transform_model<
-        E: From<CyclicDependencyError>,
+        E: From<Abort>,
         U: pernixc_term::Model,
         T: Transform<Lifetime<M>, Target = U, Error = E>
             + Transform<Type<M>, Target = U, Error = E>

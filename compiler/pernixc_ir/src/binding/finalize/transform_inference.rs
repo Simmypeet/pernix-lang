@@ -3,7 +3,7 @@ use std::{collections::HashSet, convert::Infallible, option::Option};
 use pernixc_arena::{Key, ID};
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
-use pernixc_table::Table;
+use pernixc_table::{diagnostic::Diagnostic, Table};
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
@@ -12,13 +12,9 @@ use pernixc_term::{
     visitor::{self, MutableRecursive, RecursiveIterator},
     ModelOf, Never,
 };
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use crate::{
-    binding::{
-        diagnostic::TypeAnnotationRequired, infer, AbruptError, AddContextExt,
-        HandlerWrapper,
-    },
+    binding::{diagnostic::TypeAnnotationRequired, infer, Abort},
     model::{self, Erased, NoConstraint, Transform},
     Representation,
 };
@@ -88,19 +84,19 @@ impl TryFrom<model::Constraint> for Never {
 pub struct Transformer<'a> {
     inference_context: &'a infer::Context,
     table: &'a Table,
-    handler: &'a HandlerWrapper<'a>,
+    handler: &'a dyn Handler<Box<dyn Diagnostic>>,
     should_report: bool,
 }
 
 impl Transform<Lifetime<infer::Model>> for Transformer<'_> {
     type Target = model::Model;
-    type Error = AbruptError;
+    type Error = Abort;
 
     fn transform(
         &mut self,
         term: Lifetime<infer::Model>,
         _: Option<&Span>,
-    ) -> Result<Lifetime<model::Model>, AbruptError> {
+    ) -> Result<Lifetime<model::Model>, Abort> {
         Ok(match term {
             Lifetime::Static => Lifetime::Static,
             Lifetime::Parameter(member_id) => Lifetime::Parameter(member_id),
@@ -122,7 +118,7 @@ impl Transform<Lifetime<infer::Model>> for Transformer<'_> {
 
 impl Transform<Constant<infer::Model>> for Transformer<'_> {
     type Target = model::Model;
-    type Error = AbruptError;
+    type Error = Abort;
 
     fn inspect(
         &mut self,
@@ -136,16 +132,15 @@ impl Transform<Constant<infer::Model>> for Transformer<'_> {
         &mut self,
         term: Constant<infer::Model>,
         span: Option<&Span>,
-    ) -> Result<Constant<model::Model>, AbruptError> {
-        let mut constant = self
-            .inference_context
-            .transform_constant_into_constraint_model(term, self.table)
-            .map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeCheck,
-                    span.cloned().unwrap(),
-                )
-            })?;
+    ) -> Result<Constant<model::Model>, Abort> {
+        let mut constant =
+            self.inference_context.transform_constant_into_constraint_model(
+                term,
+                span.cloned().unwrap(),
+                self.table,
+                self.handler,
+            )?;
+
         let mut replace_inference = ReplaceInference;
 
         visitor::accept_recursive_mut(&mut constant, &mut replace_inference);
@@ -157,22 +152,19 @@ impl Transform<Constant<infer::Model>> for Transformer<'_> {
 
 impl Transform<Type<infer::Model>> for Transformer<'_> {
     type Target = model::Model;
-    type Error = AbruptError;
+    type Error = Abort;
 
     fn inspect(
         &mut self,
         term: &Type<infer::Model>,
         span: Option<&Span>,
     ) -> Result<(), Self::Error> {
-        let ty = self
-            .inference_context
-            .transform_type_into_constraint_model(term.clone(), self.table)
-            .map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeCheck,
-                    span.cloned().unwrap(),
-                )
-            })?;
+        let ty = self.inference_context.transform_type_into_constraint_model(
+            term.clone(),
+            span.cloned().unwrap(),
+            self.table,
+            self.handler,
+        )?;
 
         let found_inference = RecursiveIterator::new(&ty).any(|x| match x.0 {
             pernixc_term::Kind::Lifetime(_) => false,
@@ -194,16 +186,14 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
         &mut self,
         term: Type<infer::Model>,
         span: Option<&Span>,
-    ) -> Result<Type<model::Model>, AbruptError> {
-        let mut ty = self
-            .inference_context
-            .transform_type_into_constraint_model(term, self.table)
-            .map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeOf,
-                    span.cloned().unwrap(),
-                )
-            })?;
+    ) -> Result<Type<model::Model>, Abort> {
+        let mut ty =
+            self.inference_context.transform_type_into_constraint_model(
+                term,
+                span.cloned().unwrap(),
+                self.table,
+                self.handler,
+            )?;
 
         let mut replace_inference = ReplaceInference;
 
@@ -218,8 +208,8 @@ pub fn transform_inference(
     mut original: Representation<infer::Model>,
     inference_context: &infer::Context,
     table: &Table,
-    handler: &HandlerWrapper,
-) -> Result<Representation<model::Model>, AbruptError> {
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Result<Representation<model::Model>, Abort> {
     original.control_flow_graph.remove_unerachable_blocks();
 
     let used_registers = original
@@ -246,7 +236,7 @@ pub fn transform_inference(
                 x.transform_model(&mut transformer)?,
             ))
         })
-        .collect::<Result<_, AbruptError>>()?;
+        .collect::<Result<_, Abort>>()?;
 
     transformer.should_report = true;
 
@@ -262,7 +252,7 @@ pub fn transform_inference(
                 x.transform_model(&mut transformer, table)?,
             ))
         })
-        .collect::<Result<_, AbruptError>>()?;
+        .collect::<Result<_, Abort>>()?;
 
     result.scope_tree = original.scope_tree;
 

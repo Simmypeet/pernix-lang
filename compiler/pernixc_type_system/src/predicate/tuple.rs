@@ -7,7 +7,7 @@ use crate::{
     environment::{Environment, Query},
     normalizer::Normalizer,
     term::Term,
-    AbruptError, Satisfied, Succeeded,
+    Error, Satisfied, Succeeded,
 };
 
 impl<T: Term> Query for Tuple<T> {
@@ -15,7 +15,7 @@ impl<T: Term> Query for Tuple<T> {
     type Parameter = ();
     type InProgress = ();
     type Result = Succeeded<Satisfied, T::Model>;
-    type Error = AbruptError;
+    type Error = Error;
 
     fn query(
         &self,

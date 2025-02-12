@@ -8,7 +8,7 @@ use pernixc_table::GlobalID;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     environment::Environment, normalizer::Normalizer, simplify::Simplify,
-    AbruptError, Succeeded,
+    Error, Succeeded,
 };
 use register::Register;
 use serde::{Deserialize, Serialize};
@@ -76,7 +76,7 @@ impl<M: pernixc_term::Model> Values<M> {
         value: &Value<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         match value {
             Value::Register(register) => {
                 self.type_of_register(*register, current_site, environment)

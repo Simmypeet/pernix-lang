@@ -3,12 +3,13 @@
 use std::{
     any::{Any, TypeId},
     collections::{hash_map::Entry, HashMap},
-    fmt::{self, Debug},
+    fmt::Debug,
     sync::Arc,
     thread::ThreadId,
 };
 
 use parking_lot::Condvar;
+use pernixc_abort::Abort;
 use pernixc_handler::Handler;
 
 use super::{GlobalID, Table};
@@ -180,42 +181,6 @@ pub trait Builder<T>: Any + Send + Sync {
     ) -> Option<Arc<T>>;
 }
 
-/// An extension trait for shorten the error handling code.
-pub trait Handle {
-    /// The type of the successful result.
-    type Ok;
-
-    /// Handles the [`CyclicDependency`] error in case of the error, this will
-    /// transform the error type from [`Error`] to [`HandledError`].
-    #[allow(clippy::missing_errors_doc)]
-    fn handle(
-        self,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Self::Ok>;
-}
-
-/**
-A cyclic dependency detected while building a component for the particular
-symbol. The error diagnostic for the user has been reported to the handler.
- */
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    thiserror::Error,
-    displaydoc::Display,
-)]
-pub struct CyclicDependencyError;
-
-impl From<CyclicDependencyError> for fmt::Error {
-    fn from(CyclicDependencyError: CyclicDependencyError) -> Self { Self }
-}
-
 impl Table {
     /// Queries for the component of type `T` for the given `global_id`.
     ///
@@ -229,7 +194,7 @@ impl Table {
     pub fn query<T: Derived + Any + Send + Sync>(
         &self,
         global_id: GlobalID,
-    ) -> Result<Arc<T>, CyclicDependencyError> {
+    ) -> Result<Arc<T>, Abort> {
         // if the component is already computed, return it
         let mut context = self.query_context.lock();
         if let Some(result) = self.storage.get_cloned::<T>(global_id) {
@@ -270,7 +235,7 @@ impl Table {
                         diagnostic::CyclicDependency { records_stack: stack },
                     ));
 
-                    return Err(CyclicDependencyError);
+                    return Err(Abort);
                 }
 
                 // follow the dependency chain

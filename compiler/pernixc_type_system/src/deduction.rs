@@ -5,6 +5,7 @@ use std::{
     hash::Hash,
 };
 
+use pernixc_abort::Abort;
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -17,7 +18,6 @@ use pernixc_term::{
     Model,
 };
 
-use super::AbruptError;
 use crate::{
     compatible::Compatibility,
     environment::Environment,
@@ -26,7 +26,8 @@ use crate::{
     normalizer::Normalizer,
     term::Term,
     unification::{self, Log, Unification},
-    LifetimeConstraint, LifetimeUnifyingPredicate, Satisfied, Succeeded,
+    LifetimeConstraint, LifetimeUnifyingPredicate, OverflowError, Satisfied,
+    Succeeded,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -155,9 +156,9 @@ fn from_unification_to_substitution<T: Term, N: Normalizer<T::Model>>(
         &Environment<T::Model, N>,
     ) -> Result<
         Option<Succeeded<Satisfied, T::Model>>,
-        AbruptError,
+        Error,
     >,
-) -> crate::Result<BTreeMap<T, T>, T::Model, AbruptError> {
+) -> crate::Result<BTreeMap<T, T>, T::Model, Error> {
     let mut result = BTreeMap::new();
 
     let mut constraints = BTreeSet::new();
@@ -209,13 +210,27 @@ pub struct UnificationFailureError;
 #[allow(missing_docs)]
 pub enum Error {
     #[error(transparent)]
-    Abrupt(#[from] AbruptError),
+    Overflow(#[from] OverflowError),
 
     #[error(transparent)]
     MismatchedGenericArgumentCount(#[from] MismatchedGenericArgumentCountError),
 
     #[error(transparent)]
     UnificationFailure(#[from] UnificationFailureError),
+
+    #[error(transparent)]
+    Abort(#[from] Abort),
+}
+
+impl From<crate::Error> for Error {
+    fn from(value: crate::Error) -> Self {
+        match value {
+            crate::Error::Overflow(overflow_error) => {
+                Self::Overflow(overflow_error)
+            }
+            crate::Error::Abort(abort) => Self::Abort(abort),
+        }
+    }
 }
 
 /// Results of deduction from generic arguments.
@@ -426,9 +441,9 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                 constant_param_map,
                 self,
                 |lhs, rhs, environment| {
-                    environment
+                    Ok(environment
                         .query(&Equality::new(lhs.clone(), rhs.clone()))
-                        .map(|x| x.map(|x| (*x).clone()))
+                        .map(|x| x.map(|x| (*x).clone()))?)
                 },
             )?
             else {

@@ -8,7 +8,7 @@ use pernixc_term::{
 
 use crate::{
     compatible::Compatibility, environment::Environment,
-    normalizer::Normalizer, term::Term, AbruptError, Succeeded,
+    normalizer::Normalizer, term::Term, Error, Succeeded,
 };
 
 /// A trait used for retrieving equivalences of a term based on the equality
@@ -18,14 +18,14 @@ pub trait Equivalence: ModelOf + Sized {
     fn get_equivalences_internal(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> Result<Vec<Succeeded<Self, Self::Model>>, AbruptError>;
+    ) -> Result<Vec<Succeeded<Self, Self::Model>>, Error>;
 }
 
 impl<M: Model> Equivalence for Lifetime<M> {
     fn get_equivalences_internal(
         &self,
         _: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
+    ) -> Result<Vec<Succeeded<Self, M>>, Error> {
         Ok(Vec::new())
     }
 }
@@ -34,7 +34,7 @@ impl<M: Model> Equivalence for Type<M> {
     fn get_equivalences_internal(
         &self,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
+    ) -> Result<Vec<Succeeded<Self, M>>, Error> {
         let mut equivalences = Vec::new();
 
         if !self.is_trait_member() {
@@ -81,7 +81,7 @@ impl<M: Model> Equivalence for Constant<M> {
     fn get_equivalences_internal(
         &self,
         _: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Vec<Succeeded<Self, M>>, AbruptError> {
+    ) -> Result<Vec<Succeeded<Self, M>>, Error> {
         Ok(Vec::new())
     }
 }
@@ -96,7 +96,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
     pub fn get_equivalences<T: Term<Model = M>>(
         &self,
         term: &T,
-    ) -> Result<Vec<Succeeded<T, M>>, AbruptError> {
+    ) -> Result<Vec<Succeeded<T, M>>, Error> {
         let mut equivalences = term.get_equivalences_internal(self)?;
 
         if let Some(normalization) = term.normalize(self)? {

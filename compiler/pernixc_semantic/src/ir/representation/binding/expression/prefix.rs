@@ -119,7 +119,7 @@ impl<
                 )?;
 
                 if lvalue.qualifier < qualifier {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         MismatchedQualifierForReferenceOf {
                             reference_of_span: syntax_tree.span(),
                             found_qualifier: lvalue.qualifier,

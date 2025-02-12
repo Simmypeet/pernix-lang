@@ -45,7 +45,7 @@ impl Bind<&syntax_tree::expression::Break> for Binder<'_> {
 
         let value_type = value.as_ref().map_or_else(
             || Ok(Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })),
-            |x| self.type_of_value(x),
+            |x| self.type_of_value(x, handler),
         )?;
 
         match &self.loop_states_by_scope_id.get(&loop_scope_id).unwrap().kind {
@@ -60,7 +60,6 @@ impl Bind<&syntax_tree::expression::Break> for Binder<'_> {
                         || syntax_tree.span(),
                         SourceElement::span,
                     ),
-                    true,
                     handler,
                 )?;
             }
@@ -72,7 +71,6 @@ impl Bind<&syntax_tree::expression::Break> for Binder<'_> {
                         &value_type,
                         Expected::Known(break_type.clone()),
                         syntax_tree.span(),
-                        true,
                         handler,
                     )?;
                 } else {

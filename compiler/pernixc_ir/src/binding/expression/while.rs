@@ -106,10 +106,9 @@ impl Bind<&syntax_tree::expression::While> for Binder<'_> {
         let condition =
             self.bind_value_or_error(syntax_tree.parenthesized(), handler)?;
         self.type_check(
-            &self.type_of_value(&condition)?,
+            &self.type_of_value(&condition, handler)?,
             Expected::Known(Type::Primitive(Primitive::Bool)),
             syntax_tree.parenthesized().span(),
-            true,
             handler,
         )?;
 

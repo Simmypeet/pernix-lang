@@ -22,7 +22,7 @@ use crate::{
     equality::Equality,
     normalizer::Normalizer,
     term::Term,
-    AbruptError, ResultArc, Satisfied, Succeeded,
+    Error, ResultArc, Satisfied, Succeeded,
 };
 
 /// A query for checking the type of a compile-time constant value.
@@ -159,7 +159,7 @@ impl<M: Model> Query for TypeCheck<M> {
     type Parameter = ();
     type InProgress = ();
     type Result = Succeeded<Satisfied, M>;
-    type Error = AbruptError;
+    type Error = Error;
 
     #[allow(clippy::too_many_lines)]
     fn query(

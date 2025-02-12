@@ -29,7 +29,7 @@ use crate::{
     normalizer,
     term::Term,
     test::purge,
-    AbruptError,
+    Error,
 };
 
 #[test]
@@ -325,7 +325,7 @@ fn symbol() {
 )]
 pub enum AbortError {
     #[error(transparent)]
-    Abrupt(#[from] AbruptError),
+    Abrupt(#[from] Error),
 
     #[error("collision to the ID generated on the table")]
     IDCollision,

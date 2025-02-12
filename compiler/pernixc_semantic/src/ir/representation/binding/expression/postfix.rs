@@ -138,7 +138,7 @@ impl<
                             | Primitive::Isize
                     )
                 ) {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         InvalidCastType {
                             r#type: self
                                 .inference_context
@@ -286,7 +286,7 @@ impl<
             self.resolution_observer.on_item_id_resolved(
                 self.table,
                 self.current_site,
-                &self.create_handler_wrapper(handler),
+                &handler,
                 trait_function_id.into(),
                 &method_ident.identifier().span,
             );
@@ -421,7 +421,7 @@ impl<
             self.resolution_observer.on_resolution_resolved(
                 self.table,
                 self.current_site,
-                &self.create_handler_wrapper(handler),
+                &handler,
                 &trait_function_resolution,
                 &method_ident.span(),
             );
@@ -566,7 +566,7 @@ impl<
                 Expression::LValue(address),
             ) => {
                 if qualifier > address.qualifier {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         MismatchedQualifierForReferenceOf {
                             reference_of_span: address.span.clone(),
                             found_qualifier: address.qualifier,
@@ -640,7 +640,7 @@ impl<
                 handler,
             )?));
         } else if trait_method_candidates.is_empty() {
-            let wrapper = self.create_handler_wrapper(handler);
+            let wrapper = handler;
 
             for error in error(self) {
                 wrapper.receive(error);
@@ -649,7 +649,7 @@ impl<
             return Err(Error::Semantic(SemanticError(method_call_span)));
         }
 
-        self.create_handler_wrapper(handler).receive(Box::new(
+        handler.receive(Box::new(
             AmbiguousMethodCall {
                 method_call_span: method_call_span.clone(),
                 callable_candidates: trait_method_candidates
@@ -1039,7 +1039,7 @@ impl<
             )
             .unwrap()
         {
-            self.create_handler_wrapper(handler).receive(Box::new(
+            handler.receive(Box::new(
                 SymbolIsNotAccessible {
                     referring_site: self.current_site,
                     referred: adt_implementation_function_id.into(),
@@ -1120,7 +1120,7 @@ impl<
                     }) => struct_id,
 
                     found_type => {
-                        self.create_handler_wrapper(handler).receive(Box::new(
+                        handler.receive(Box::new(
                             ExpectStructType {
                                 span: syntax_tree.postfixable().span(),
                                 r#type: self
@@ -1149,7 +1149,7 @@ impl<
 
                 // soft error, keep going
                 if generic_ident.generic_arguments().is_some() {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         UnexpectedGenericArgumentsInField {
                             field_access_span: syntax_tree.span(),
                         },
@@ -1164,7 +1164,7 @@ impl<
                     .fields()
                     .get_id(generic_ident.identifier().span.str())
                 else {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         FieldNotFound {
                             struct_id,
                             identifier_span: generic_ident
@@ -1194,7 +1194,7 @@ impl<
                     .is_accessible_from(self.current_site, field_accessibility)
                     .unwrap()
                 {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         FieldIsNotAccessible {
                             field_id,
                             struct_id,
@@ -1217,7 +1217,7 @@ impl<
                 let tuple_ty = match ty {
                     Type::Tuple(tuple_ty) => tuple_ty,
                     found_type => {
-                        self.create_handler_wrapper(handler).receive(Box::new(
+                        handler.receive(Box::new(
                             TupleExpected {
                                 span: syntax_tree.postfixable().span(),
                                 r#type: self
@@ -1262,7 +1262,7 @@ impl<
                     Err(err) => match err.kind() {
                         std::num::IntErrorKind::NegOverflow
                         | std::num::IntErrorKind::PosOverflow => {
-                            self.create_handler_wrapper(handler).receive(
+                            handler.receive(
                                 Box::new(TooLargeTupleIndex {
                                     access_span: access.span(),
                                 }),
@@ -1280,7 +1280,7 @@ impl<
                 };
 
                 if index >= tuple_ty.elements.len() {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         TupleIndexOutOfBOunds {
                             access_span: access.span(),
                             tuple_type: self
@@ -1315,7 +1315,7 @@ impl<
 
                     // report error
                     if pass_unpacked {
-                        self.create_handler_wrapper(handler).receive(Box::new(
+                        handler.receive(Box::new(
                             CannotIndexPastUnpackedTuple {
                                 index_span: syn.span(),
                                 tuple_type: self
@@ -1361,7 +1361,7 @@ impl<
                 )?;
 
                 if !matches!(ty, Type::Array(_)) {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         ExpectArray {
                             span: syntax_tree.postfixable().span(),
                             r#type: self
@@ -1488,7 +1488,7 @@ impl<
             postfixable => {
                 let _ = self.bind_value_or_error(postfixable, handler);
 
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     ExpressionIsNotCallable {
                         span: postfixable.span(),
                     },
@@ -1525,7 +1525,7 @@ impl<
 
             let associated_value = match arguments.len() {
                 0 => {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         MismatchedArgumentCount {
                             called_id: variant.variant.into(),
                             expected_count: 1,
@@ -1541,7 +1541,7 @@ impl<
                 }
                 len => {
                     if len != 1 {
-                        self.create_handler_wrapper(handler).receive(Box::new(
+                        handler.receive(Box::new(
                             MismatchedArgumentCount {
                                 called_id: variant.variant.into(),
                                 expected_count: 1,
@@ -1558,7 +1558,7 @@ impl<
                         Expected::Known(variant_type),
                         argument.0,
                         true,
-                        &self.create_handler_wrapper(handler),
+                        &handler,
                     )?;
 
                     argument.1
@@ -1575,7 +1575,7 @@ impl<
             ))
         } else {
             if !arguments.is_empty() {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     MismatchedArgumentCount {
                         called_id: variant.variant.into(),
                         expected_count: 0,
@@ -1609,7 +1609,7 @@ impl<
 
         // mismatched arguments count
         if arguments.len() != callable.parameter_order().len() {
-            self.create_handler_wrapper(handler).receive(Box::new(
+            handler.receive(Box::new(
                 MismatchedArgumentCount {
                     called_id: callable_id.into(),
                     expected_count: callable.parameter_order().len(),
@@ -2011,7 +2011,7 @@ impl<
 
             resolution => {
                 // report symbol is not callable
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     SymbolIsNotCallable {
                         called_id: resolution.item_id(),
                         span: syntax_tree_span.clone(),

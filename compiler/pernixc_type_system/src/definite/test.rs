@@ -17,7 +17,7 @@ use crate::{
     environment::{Environment, Premise},
     normalizer,
     term::Term,
-    AbruptError,
+    Error,
 };
 
 #[derive(
@@ -25,7 +25,7 @@ use crate::{
 )]
 pub enum ApplyPropertyError {
     #[error("{0}")]
-    Abrupt(#[from] AbruptError),
+    Abrupt(#[from] Error),
 }
 
 pub trait Property<T>: 'static + Debug {

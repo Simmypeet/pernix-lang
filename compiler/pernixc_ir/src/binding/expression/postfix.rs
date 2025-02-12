@@ -31,7 +31,6 @@ use pernixc_term::{
     r#type::{Primitive, Qualifier, Type},
     Default, Model, Symbol,
 };
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression, LValue};
 use crate::{
@@ -48,7 +47,7 @@ use crate::{
         },
         expression::Target,
         infer::{self, Expected, InferenceVariable},
-        AbruptError, AddContextExt, Binder, Error, SemanticError,
+        Abort, Binder, BindingError, Error,
     },
     instruction::{Instruction, Store},
     model::{Constraint, Erased, NoConstraint},
@@ -85,10 +84,12 @@ impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
                     .create_environment()
                     .simplify(cast_type)
                     .map_err(|x| {
-                    x.into_type_system_overflow(
-                        OverflowOperation::TypeOf,
-                        cast_syn.r#type().span(),
-                    )
+                    x.report_overflow(|x| {
+                        x.report_as_type_calculating_overflow(
+                            cast_syn.r#type().span(),
+                            handler,
+                        )
+                    })
                 })?;
 
                 // can only cast between numeric types
@@ -109,25 +110,19 @@ impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
                             | Primitive::Isize
                     )
                 ) {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        InvalidCastType {
-                            r#type: self
-                                .inference_context
-                                .transform_type_into_constraint_model(
-                                    cast_type.result.clone(),
-                                    self.table,
-                                )
-                                .map_err(|x| {
-                                    x.into_type_system_overflow(
-                                        OverflowOperation::TypeOf,
-                                        cast_syn.r#type().span(),
-                                    )
-                                })?,
-                            span: cast_syn.r#type().span(),
-                        },
-                    ));
+                    handler.receive(Box::new(InvalidCastType {
+                        r#type: self
+                            .inference_context
+                            .transform_type_into_constraint_model(
+                                cast_type.result.clone(),
+                                cast_syn.r#type().span(),
+                                self.table,
+                                handler,
+                            )?,
+                        span: cast_syn.r#type().span(),
+                    }));
 
-                    return Err(Error::Semantic(SemanticError(
+                    return Err(Error::Binding(BindingError(
                         cast_syn.r#type().span(),
                     )));
                 }
@@ -139,12 +134,11 @@ impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
                 )?;
 
                 // type check the value
-                let type_of_value = self.type_of_value(&value)?;
+                let type_of_value = self.type_of_value(&value, handler)?;
                 let _ = self.type_check(
                     &type_of_value,
                     Expected::Constraint(Constraint::Number),
                     syntax_tree.postfixable().span(),
-                    true,
                     handler,
                 )?;
 
@@ -199,6 +193,7 @@ impl Binder<'_> {
         generic_arguments: &GenericArguments<infer::Model>,
         access_type: &Type<infer::Model>,
         arguments: &[(Span, Value<infer::Model>)],
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<
         Vec<(
             GlobalID,
@@ -206,7 +201,7 @@ impl Binder<'_> {
             infer::Context,
             RecieverKind,
         )>,
-        AbruptError,
+        Abort,
     > {
         let mut candidates = Vec::new();
 
@@ -317,7 +312,6 @@ impl Binder<'_> {
                     generic_arguments.clone(),
                     trait_function_id,
                     method_ident.span(),
-                    false,
                     &storage,
                 )?;
 
@@ -418,10 +412,9 @@ impl Binder<'_> {
 
                 let storage = Storage::<Box<dyn Diagnostic>>::default();
                 if !self.type_check(
-                    &self.type_of_value(argument_value).unwrap(),
+                    &self.type_of_value(argument_value, handler)?,
                     Expected::Known(parameter_ty),
                     argument_span.clone(),
-                    false,
                     &storage,
                 )? {
                     continue 'candidate;
@@ -484,7 +477,7 @@ impl Binder<'_> {
                         .unwrap(),
                     Value::Literal(literal) => literal.span().cloned().unwrap(),
                 };
-                let type_of_value = self.type_of_value(&value)?;
+                let type_of_value = self.type_of_value(&value, handler)?;
                 let alloca_id = self.create_alloca(type_of_value, span.clone());
 
                 // initialize
@@ -511,7 +504,7 @@ impl Binder<'_> {
                 Expression::LValue(address),
             ) => {
                 if qualifier > address.qualifier {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         MismatchedQualifierForReferenceOf {
                             reference_of_span: address.span.clone(),
                             found_qualifier: address.qualifier,
@@ -584,26 +577,24 @@ impl Binder<'_> {
                 handler,
             )?));
         } else if trait_method_candidates.is_empty() {
-            let wrapper = self.create_handler_wrapper(handler);
+            let wrapper = handler;
 
             for error in error(self) {
                 wrapper.receive(error);
             }
 
-            return Err(Error::Semantic(SemanticError(method_call_span)));
+            return Err(Error::Binding(BindingError(method_call_span)));
         }
 
-        self.create_handler_wrapper(handler).receive(Box::new(
-            AmbiguousMethodCall {
-                method_call_span: method_call_span.clone(),
-                callable_candidates: trait_method_candidates
-                    .into_iter()
-                    .map(|x| x.0)
-                    .collect(),
-            },
-        ));
+        handler.receive(Box::new(AmbiguousMethodCall {
+            method_call_span: method_call_span.clone(),
+            callable_candidates: trait_method_candidates
+                .into_iter()
+                .map(|x| x.0)
+                .collect(),
+        }));
 
-        Err(Error::Semantic(SemanticError(method_call_span)))
+        Err(Error::Binding(BindingError(method_call_span)))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -634,12 +625,7 @@ impl Binder<'_> {
                 .into_l_value()
                 .unwrap();
 
-            let ty = self.type_of_address(&lvalue.address).map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeOf,
-                    lvalue.span.clone(),
-                )
-            })?;
+            let ty = self.type_of_address(&lvalue.address, handler)?;
 
             (Expression::LValue(lvalue), ty)
         }
@@ -652,9 +638,9 @@ impl Binder<'_> {
             )?;
 
             let ty = match &value {
-                Expression::RValue(val) => self.type_of_value(val).unwrap(),
+                Expression::RValue(val) => self.type_of_value(val, handler)?,
                 Expression::LValue(val) => {
-                    self.type_of_address(&val.address).unwrap()
+                    self.type_of_address(&val.address, handler)?
                 }
             };
 
@@ -677,7 +663,7 @@ impl Binder<'_> {
             .generic_arguments()
             .as_ref()
             .map_or_else(GenericArguments::default, |x| {
-                self.resolve_generic_arguments_with_inference(x, true, handler)
+                self.resolve_generic_arguments_with_inference(x, handler)
             });
 
         let trait_method_candidates = self.search_trait_method_candidates(
@@ -685,6 +671,7 @@ impl Binder<'_> {
             &generic_arguments,
             &access_type,
             &arguments,
+            handler,
         )?;
 
         let Some(symbol) = access_type.into_symbol().into_iter().find(|x| {
@@ -748,7 +735,6 @@ impl Binder<'_> {
                 generic_arguments,
                 adt_implementation_function_id,
                 method_ident.span(),
-                false,
                 &storage,
             )?;
 
@@ -852,7 +838,6 @@ impl Binder<'_> {
                 },
             })),
             struct_expression_wth_access.postfixable().span(),
-            true,
             handler,
         )?;
 
@@ -957,13 +942,11 @@ impl Binder<'_> {
                 .get_accessibility(adt_implementation_function_id)
                 .into_global(adt_implementation_function_id.target_id),
         ) {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                SymbolIsNotAccessible {
-                    referring_site: self.current_site,
-                    referred: adt_implementation_function_id,
-                    referred_span: method_ident.span(),
-                },
-            ));
+            handler.receive(Box::new(SymbolIsNotAccessible {
+                referring_site: self.current_site,
+                referred: adt_implementation_function_id,
+                referred_span: method_ident.span(),
+            }));
         }
 
         let reciever_argument = self.bind_reciever_argument(
@@ -1001,13 +984,7 @@ impl Binder<'_> {
                     handler,
                 )?;
 
-                let ty =
-                    self.type_of_address(&lvalue.address).map_err(|x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            lvalue.span.clone(),
-                        )
-                    })?;
+                let ty = self.type_of_address(&lvalue.address, handler)?;
 
                 (lvalue, ty)
             }
@@ -1024,13 +1001,7 @@ impl Binder<'_> {
                     .into_l_value()
                     .unwrap();
 
-                let ty =
-                    self.type_of_address(&lvalue.address).map_err(|x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            lvalue.span.clone(),
-                        )
-                    })?;
+                let ty = self.type_of_address(&lvalue.address, handler)?;
 
                 (lvalue, ty)
             }
@@ -1054,24 +1025,19 @@ impl Binder<'_> {
                     }
 
                     found_type => {
-                        self.create_handler_wrapper(handler).receive(Box::new(
-                            ExpectedStructType {
-                                span: syntax_tree.postfixable().span(),
-                                r#type: self
-                                    .inference_context
-                                    .transform_type_into_constraint_model(
-                                        found_type, self.table,
-                                    )
-                                    .map_err(|x| {
-                                        x.into_type_system_overflow(
-                                            OverflowOperation::TypeOf,
-                                            syntax_tree.postfixable().span(),
-                                        )
-                                    })?,
-                            },
-                        ));
+                        handler.receive(Box::new(ExpectedStructType {
+                            span: syntax_tree.postfixable().span(),
+                            r#type: self
+                                .inference_context
+                                .transform_type_into_constraint_model(
+                                    found_type,
+                                    syntax_tree.postfixable().span(),
+                                    self.table,
+                                    handler,
+                                )?,
+                        }));
 
-                        return Err(Error::Semantic(SemanticError(
+                        return Err(Error::Binding(BindingError(
                             syntax_tree.postfixable().span(),
                         )));
                     }
@@ -1079,7 +1045,7 @@ impl Binder<'_> {
 
                 // soft error, keep going
                 if generic_ident.generic_arguments().is_some() {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         UnexpectedGenericArgumentsInField {
                             field_access_span: syntax_tree.span(),
                         },
@@ -1096,17 +1062,15 @@ impl Binder<'_> {
                     .get(generic_ident.identifier().span.str())
                     .copied()
                 else {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        FieldNotFound {
-                            struct_id,
-                            identifier_span: generic_ident
-                                .identifier()
-                                .span
-                                .clone(),
-                        },
-                    ));
+                    handler.receive(Box::new(FieldNotFound {
+                        struct_id,
+                        identifier_span: generic_ident
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
 
-                    return Err(Error::Semantic(SemanticError(
+                    return Err(Error::Binding(BindingError(
                         generic_ident.identifier().span.clone(),
                     )));
                 };
@@ -1118,17 +1082,15 @@ impl Binder<'_> {
                     self.current_site,
                     field_accessibility.into_global(struct_id.target_id),
                 ) {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        FieldIsNotAccessible {
-                            field_id,
-                            struct_id,
-                            referring_site: self.current_site,
-                            referring_identifier_span: generic_ident
-                                .identifier()
-                                .span
-                                .clone(),
-                        },
-                    ));
+                    handler.receive(Box::new(FieldIsNotAccessible {
+                        field_id,
+                        struct_id,
+                        referring_site: self.current_site,
+                        referring_identifier_span: generic_ident
+                            .identifier()
+                            .span
+                            .clone(),
+                    }));
                 }
 
                 Address::Field(address::Field {
@@ -1141,24 +1103,19 @@ impl Binder<'_> {
                 let tuple_ty = match ty {
                     Type::Tuple(tuple_ty) => tuple_ty,
                     found_type => {
-                        self.create_handler_wrapper(handler).receive(Box::new(
-                            ExpectedTuple {
-                                span: syntax_tree.postfixable().span(),
-                                r#type: self
-                                    .inference_context
-                                    .transform_type_into_constraint_model(
-                                        found_type, self.table,
-                                    )
-                                    .map_err(|x| {
-                                        x.into_type_system_overflow(
-                                            OverflowOperation::TypeOf,
-                                            syntax_tree.postfixable().span(),
-                                        )
-                                    })?,
-                            },
-                        ));
+                        handler.receive(Box::new(ExpectedTuple {
+                            span: syntax_tree.postfixable().span(),
+                            r#type: self
+                                .inference_context
+                                .transform_type_into_constraint_model(
+                                    found_type,
+                                    syntax_tree.postfixable().span(),
+                                    self.table,
+                                    handler,
+                                )?,
+                        }));
 
-                        return Err(Error::Semantic(SemanticError(
+                        return Err(Error::Binding(BindingError(
                             syntax_tree.postfixable().span(),
                         )));
                     }
@@ -1168,7 +1125,7 @@ impl Binder<'_> {
                 if tuple_ty.elements.iter().filter(|x| x.is_unpacked).count()
                     > 1
                 {
-                    return Err(Error::Semantic(SemanticError(
+                    return Err(Error::Binding(BindingError(
                         syntax_tree.span(),
                     )));
                 }
@@ -1182,13 +1139,11 @@ impl Binder<'_> {
                     Err(err) => match err.kind() {
                         std::num::IntErrorKind::NegOverflow
                         | std::num::IntErrorKind::PosOverflow => {
-                            self.create_handler_wrapper(handler).receive(
-                                Box::new(TooLargeTupleIndex {
-                                    access_span: access.span(),
-                                }),
-                            );
+                            handler.receive(Box::new(TooLargeTupleIndex {
+                                access_span: access.span(),
+                            }));
 
-                            return Err(Error::Semantic(SemanticError(
+                            return Err(Error::Binding(BindingError(
                                 syn.index().span.clone(),
                             )));
                         }
@@ -1200,27 +1155,21 @@ impl Binder<'_> {
                 };
 
                 if index >= tuple_ty.elements.len() {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        TupleIndexOutOfBOunds {
-                            access_span: access.span(),
-                            tuple_type: self
-                                .inference_context
-                                .transform_type_into_constraint_model(
-                                    Type::Tuple(tuple_ty),
-                                    self.table,
-                                )
-                                .map_err(|x| {
-                                    x.into_type_system_overflow(
-                                        OverflowOperation::TypeOf,
-                                        syntax_tree.postfixable().span(),
-                                    )
-                                })?
-                                .into_tuple()
-                                .unwrap(),
-                        },
-                    ));
+                    handler.receive(Box::new(TupleIndexOutOfBOunds {
+                        access_span: access.span(),
+                        tuple_type: self
+                            .inference_context
+                            .transform_type_into_constraint_model(
+                                Type::Tuple(tuple_ty),
+                                syntax_tree.postfixable().span(),
+                                self.table,
+                                handler,
+                            )?
+                            .into_tuple()
+                            .unwrap(),
+                    }));
 
-                    return Err(Error::Semantic(SemanticError(
+                    return Err(Error::Binding(BindingError(
                         syn.index().span.clone(),
                     )));
                 }
@@ -1235,27 +1184,23 @@ impl Binder<'_> {
 
                     // report error
                     if pass_unpacked {
-                        self.create_handler_wrapper(handler).receive(Box::new(
+                        handler.receive(Box::new(
                             CannotIndexPastUnpackedTuple {
                                 index_span: syn.span(),
                                 tuple_type: self
                                     .inference_context
                                     .transform_type_into_constraint_model(
                                         Type::Tuple(tuple_ty),
+                                        syntax_tree.postfixable().span(),
                                         self.table,
-                                    )
-                                    .map_err(|x| {
-                                        x.into_type_system_overflow(
-                                            OverflowOperation::TypeOf,
-                                            syntax_tree.postfixable().span(),
-                                        )
-                                    })?
+                                        handler,
+                                    )?
                                     .into_tuple()
                                     .unwrap(),
                             },
                         ));
 
-                        return Err(Error::Semantic(SemanticError(
+                        return Err(Error::Binding(BindingError(
                             syn.index().span.clone(),
                         )));
                     }
@@ -1278,35 +1223,29 @@ impl Binder<'_> {
                 )?;
 
                 if !matches!(ty, Type::Array(_)) {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        ExpectArray {
-                            span: syntax_tree.postfixable().span(),
-                            r#type: self
-                                .inference_context
-                                .transform_type_into_constraint_model(
-                                    ty, self.table,
-                                )
-                                .map_err(|x| {
-                                    x.into_type_system_overflow(
-                                        OverflowOperation::TypeOf,
-                                        syntax_tree.postfixable().span(),
-                                    )
-                                })?,
-                        },
-                    ));
+                    handler.receive(Box::new(ExpectArray {
+                        span: syntax_tree.postfixable().span(),
+                        r#type: self
+                            .inference_context
+                            .transform_type_into_constraint_model(
+                                ty,
+                                syntax_tree.postfixable().span(),
+                                self.table,
+                                handler,
+                            )?,
+                    }));
 
-                    return Err(Error::Semantic(SemanticError(
+                    return Err(Error::Binding(BindingError(
                         syntax_tree.postfixable().span(),
                     )));
                 }
 
                 // expected a `usize` type
-                let index_ty = self.type_of_value(&value)?;
+                let index_ty = self.type_of_value(&value, handler)?;
                 let _ = self.type_check(
                     &index_ty,
                     Expected::Known(Type::Primitive(Primitive::Usize)),
                     index.expression().span(),
-                    true,
                     handler,
                 )?;
 
@@ -1345,8 +1284,6 @@ impl Binder<'_> {
         syntax_tree: &syntax_tree::expression::Postfix,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        use qualified_identifier::Error::{CyclicDependency, FatalSemantic};
-
         match &**syntax_tree.postfixable() {
             // possibly method call
             syntax_tree::expression::Postfixable::Postfix(postfix)
@@ -1390,17 +1327,10 @@ impl Binder<'_> {
                         qualified_identifier,
                         handler,
                     )
-                    .map_err(|x| {
-                        match x{
-                            FatalSemantic => {
-                                Error::Semantic(
-                                    SemanticError(qualified_identifier.span())
-                                )
-                            },
-                            CyclicDependency(x) => {
-                                Error::Abrupt(AbruptError::CyclicDependency(x))
-                            }
-                        }
+                    .map_err(|_| {
+                            Error::Binding(
+                                BindingError(qualified_identifier.span())
+                            )
                     })?;
 
                 self.bind_postfix_call_with_resolution(
@@ -1416,13 +1346,13 @@ impl Binder<'_> {
             postfixable => {
                 let _ = self.bind_value_or_error(postfixable, handler);
 
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     ExpressionIsNotCallable {
                         span: postfixable.span(),
                     },
                 ));
 
-                Err(Error::Semantic(SemanticError(postfixable.span())))
+                Err(Error::Binding(BindingError(postfixable.span())))
             }
         }
     }
@@ -1433,7 +1363,7 @@ impl Binder<'_> {
         variant: qualified_identifier::Variant<infer::Model>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<ID<Register<infer::Model>>, AbruptError> {
+    ) -> Result<ID<Register<infer::Model>>, Abort> {
         let enum_id = GlobalID::new(
             variant.variant_id.target_id,
             self.table.get::<Parent>(variant.variant_id).parent.unwrap(),
@@ -1460,14 +1390,12 @@ impl Binder<'_> {
 
             let associated_value = match arguments.len() {
                 0 => {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        MismatchedArgumentCount {
-                            called_id: variant.variant_id,
-                            expected_count: 1,
-                            found_count: 0,
-                            span: syntax_tree_span.clone(),
-                        },
-                    ));
+                    handler.receive(Box::new(MismatchedArgumentCount {
+                        called_id: variant.variant_id,
+                        expected_count: 1,
+                        found_count: 0,
+                        span: syntax_tree_span.clone(),
+                    }));
 
                     Value::Literal(Literal::Error(literal::Error {
                         r#type: variant_type,
@@ -1476,24 +1404,21 @@ impl Binder<'_> {
                 }
                 len => {
                     if len != 1 {
-                        self.create_handler_wrapper(handler).receive(Box::new(
-                            MismatchedArgumentCount {
-                                called_id: variant.variant_id,
-                                expected_count: 1,
-                                found_count: len,
-                                span: syntax_tree_span.clone(),
-                            },
-                        ));
+                        handler.receive(Box::new(MismatchedArgumentCount {
+                            called_id: variant.variant_id,
+                            expected_count: 1,
+                            found_count: len,
+                            span: syntax_tree_span.clone(),
+                        }));
                     }
 
                     let argument = arguments.into_iter().next().unwrap();
 
                     let _ = self.type_check(
-                        &self.type_of_value(&argument.1)?,
+                        &self.type_of_value(&argument.1, handler)?,
                         Expected::Known(variant_type),
                         argument.0,
-                        true,
-                        &self.create_handler_wrapper(handler),
+                        handler,
                     )?;
 
                     argument.1
@@ -1510,14 +1435,12 @@ impl Binder<'_> {
             ))
         } else {
             if !arguments.is_empty() {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    MismatchedArgumentCount {
-                        called_id: variant.variant_id,
-                        expected_count: 0,
-                        found_count: arguments.len(),
-                        span: syntax_tree_span.clone(),
-                    },
-                ));
+                handler.receive(Box::new(MismatchedArgumentCount {
+                    called_id: variant.variant_id,
+                    expected_count: 0,
+                    found_count: arguments.len(),
+                    span: syntax_tree_span.clone(),
+                }));
             }
 
             Ok(self.create_register_assignmnet(
@@ -1538,7 +1461,7 @@ impl Binder<'_> {
         mut instantiation: Instantiation<infer::Model>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<ID<Register<infer::Model>>, AbruptError> {
+    ) -> Result<ID<Register<infer::Model>>, Abort> {
         let function_signature =
             self.table.query::<FunctionSignature>(callable_id)?;
         let elided_lifetimes =
@@ -1557,14 +1480,12 @@ impl Binder<'_> {
 
         // mismatched arguments count
         if arguments.len() != function_signature.parameter_order.len() {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                MismatchedArgumentCount {
-                    called_id: callable_id,
-                    expected_count: function_signature.parameter_order.len(),
-                    found_count: arguments.len(),
-                    span: syntax_tree_span.clone(),
-                },
-            ));
+            handler.receive(Box::new(MismatchedArgumentCount {
+                called_id: callable_id,
+                expected_count: function_signature.parameter_order.len(),
+                found_count: arguments.len(),
+                span: syntax_tree_span.clone(),
+            }));
         }
 
         // type check the arguments
@@ -1583,10 +1504,9 @@ impl Binder<'_> {
             instantiation::instantiate(&mut parameter_ty, &instantiation);
 
             let _ = self.type_check(
-                &self.type_of_value(argument_value).unwrap(),
+                &self.type_of_value(argument_value, handler)?,
                 Expected::Known(parameter_ty),
                 argument_span.clone(),
-                true,
                 handler,
             )?;
 
@@ -1927,7 +1847,6 @@ impl Binder<'_> {
                                 },
                             })),
                             resolution_span,
-                            true,
                             handler,
                         )?;
 
@@ -1961,14 +1880,12 @@ impl Binder<'_> {
 
             resolution => {
                 // report symbol is not callable
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    SymbolIsNotCallable {
-                        called_id: resolution.global_id(),
-                        span: syntax_tree_span.clone(),
-                    },
-                ));
+                handler.receive(Box::new(SymbolIsNotCallable {
+                    called_id: resolution.global_id(),
+                    span: syntax_tree_span.clone(),
+                }));
 
-                Err(Error::Semantic(SemanticError(syntax_tree_span)))
+                Err(Error::Binding(BindingError(syntax_tree_span)))
             }
         }
     }

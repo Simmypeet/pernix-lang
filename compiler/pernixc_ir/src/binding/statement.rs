@@ -5,15 +5,13 @@ use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Qualifier, Type};
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{
     expression::{Bind, Config, Expression, Target},
-    infer, AbruptError, Binder, Error,
+    infer, Abort, Binder, Error,
 };
 use crate::{
     address::{Address, Memory},
-    binding::AddContextExt,
     instruction::{Instruction, RegisterDiscard},
     model,
     pattern::{NameBindingPoint, Wildcard},
@@ -25,15 +23,12 @@ use crate::{
 
 impl Binder<'_> {
     /// Binds the given [`syntax_tree::statement::Statement`] to the IR.
-    ///
-    /// # Errors
-    ///
-    /// See [`InternalError`] for more information.
+    #[allow(clippy::missing_errors_doc)]
     pub fn bind_statement(
         &mut self,
         syntax_tree: &syntax_tree::statement::Statement,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError> {
+    ) -> Result<(), Abort> {
         match syntax_tree {
             syntax_tree::statement::Statement::VariableDeclaration(
                 syntax_tree,
@@ -71,9 +66,9 @@ impl Binder<'_> {
                         Ok(())
                     }
 
-                    Err(Error::Semantic(_)) | Ok(_) => Ok(()),
+                    Err(Error::Binding(_)) | Ok(_) => Ok(()),
 
-                    Err(Error::Abrupt(err)) => {
+                    Err(Error::Unrecoverable(err)) => {
                         return Err(err);
                     }
                 };
@@ -88,21 +83,17 @@ impl Binder<'_> {
     /// Binds the given [`syntax_tree::statement::VariableDeclaration`] to the
     /// IR.
     ///
-    /// # Errors
-    ///
-    /// See [`InternalError`] for more information.
-    ///
     /// # Returns
     ///
     /// An `Ok` of tuple address where the initializer value is stored and a
     /// boolean indicating if the address is from the l-value or is newly
     /// created to store the r-value.
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
     pub fn bind_variable_declaration(
         &mut self,
         syntax_tree: &syntax_tree::statement::VariableDeclaration,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(Address<infer::Model>, bool), AbruptError> {
+    ) -> Result<(Address<infer::Model>, bool), Abort> {
         // capture the current scope id first, since we will be working in
         // a new temporary scope from now on
         let variable_scope_id = self.stack.current_scope().scope_id();
@@ -130,7 +121,8 @@ impl Binder<'_> {
                             variable_scope_id,
                             Some(syntax_tree.irrefutable_pattern().span()),
                             syntax_tree.span(),
-                        ),
+                            handler,
+                        )?,
                     )),
                     Qualifier::Mutable, /* has the highest mutability */
                     false,
@@ -138,7 +130,7 @@ impl Binder<'_> {
             }
 
             Err(err) => match err {
-                Error::Semantic(semantic_error) => {
+                Error::Binding(semantic_error) => {
                     (
                         Address::Memory(Memory::Alloca({
                             let ty_inference = self.create_type_inference(
@@ -154,22 +146,20 @@ impl Binder<'_> {
                                 variable_scope_id,
                                 Some(syntax_tree.irrefutable_pattern().span()),
                                 syntax_tree.span(),
-                            )
+                                handler,
+                            )?
                         })),
                         Qualifier::Mutable, /* has the highest mutability */
                         false,
                     )
                 }
-                Error::Abrupt(internal_error) => return Err(internal_error),
+                Error::Unrecoverable(internal_error) => {
+                    return Err(internal_error)
+                }
             },
         };
 
-        let type_of_address = self.type_of_address(&address).map_err(|x| {
-            x.into_type_system_overflow(
-                OverflowOperation::TypeOf,
-                syntax_tree.expression().span(),
-            )
-        })?;
+        let type_of_address = self.type_of_address(&address, handler)?;
 
         if let Some(type_annotation) = syntax_tree.type_annotation() {
             let type_annotation = self
@@ -179,7 +169,6 @@ impl Binder<'_> {
                 &type_of_address,
                 infer::Expected::Known(type_annotation),
                 syntax_tree.expression().span(),
-                true,
                 handler,
             )?;
         };
@@ -188,17 +177,19 @@ impl Binder<'_> {
             .create_environment()
             .simplify(type_of_address)
             .map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeOf,
-                    syntax_tree.expression().span(),
-                )
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(
+                        syntax_tree.expression().span(),
+                        handler,
+                    )
+                })
             })?;
 
         let pattern = self
             .bind_pattern(
                 &type_of_address.result,
                 syntax_tree.irrefutable_pattern(),
-                &self.create_handler_wrapper(handler),
+                handler,
             )?
             .unwrap_or_else(|| {
                 Wildcard { span: syntax_tree.irrefutable_pattern().span() }
@@ -215,7 +206,7 @@ impl Binder<'_> {
             qualifier,
             from_lvalue,
             variable_scope_id,
-            &self.create_handler_wrapper(handler),
+            handler,
         )?;
 
         // pop temporary scope

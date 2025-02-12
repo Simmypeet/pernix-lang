@@ -24,7 +24,7 @@ use crate::{
     normalizer::Normalizer,
     resolution::{self, Implementation},
     term::Term,
-    AbruptError, Satisfied, Succeeded,
+    Error, Satisfied, Succeeded,
 };
 
 /// An enumeration of ways the marker can be satisfied.
@@ -50,7 +50,7 @@ pub enum PositiveSatisfied<M: Model> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum VisitorState<M: Model> {
     Failed,
-    AbruptError(AbruptError),
+    AbruptError(Error),
     Succeeded(BTreeMap<Positive<M>, Arc<Succeeded<PositiveSatisfied<M>, M>>>),
 }
 
@@ -147,7 +147,7 @@ impl<M: Model> Query for Positive<M> {
     type Parameter = ();
     type InProgress = ();
     type Result = Succeeded<PositiveSatisfied<M>, M>;
-    type Error = AbruptError;
+    type Error = Error;
 
     #[allow(clippy::too_many_lines)]
     fn query(
@@ -224,8 +224,12 @@ impl<M: Model> Query for Positive<M> {
                 return Ok(None);
             }
 
-            Err(resolution::Error::Abrupt(abrupt_error)) => {
-                return Err(abrupt_error)
+            Err(resolution::Error::Abort(error)) => {
+                return Err(Error::Abort(error))
+            }
+
+            Err(resolution::Error::Overflow(error)) => {
+                return Err(Error::Overflow(error))
             }
 
             Err(_) => {}
@@ -330,7 +334,7 @@ impl<M: Model> Query for Negative<M> {
     type Parameter = ();
     type InProgress = ();
     type Result = Succeeded<NegativeSatisfied<M>, M>;
-    type Error = AbruptError;
+    type Error = Error;
 
     fn query(
         &self,
@@ -361,8 +365,12 @@ impl<M: Model> Query for Negative<M> {
                 }
             }
 
-            Err(resolution::Error::Abrupt(abrupt_error)) => {
-                return Err(abrupt_error);
+            Err(resolution::Error::Abort(error)) => {
+                return Err(Error::Abort(error));
+            }
+
+            Err(resolution::Error::Overflow(error)) => {
+                return Err(Error::Overflow(error));
             }
 
             Err(_) => {}
@@ -424,7 +432,7 @@ fn is_in_marker<M: Model>(
     marker_id: GlobalID,
     generic_arguments: &GenericArguments<M>,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
     let Some(query_site) = environment.premise().query_site else {
         return Ok(None);
     };

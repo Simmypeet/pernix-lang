@@ -1,7 +1,8 @@
 //! Contains the definition of model used by the IR.
 
+use pernixc_abort::Abort;
 use pernixc_source_file::Span;
-use pernixc_table::{query::CyclicDependencyError, Table};
+use pernixc_table::Table;
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, Default, ModelOf,
     Never,
@@ -209,7 +210,7 @@ pub trait Transform<T: ModelOf> {
     type Target: pernixc_term::Model;
 
     /// The error that might occur when transforming the terms.
-    type Error: From<CyclicDependencyError>;
+    type Error: From<Abort>;
 
     /// Inspects the term. This is called before transforming the term.
     ///

@@ -15,6 +15,7 @@ pernixc_component = { path = "../pernixc_component" }
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
 pernixc_log = { path = "../pernixc_log" }
+pernixc_abort = { path = "../pernixc_abort" }
 serde = { workspace = true }
 getset = { workspace = true }
 thiserror = { workspace = true }

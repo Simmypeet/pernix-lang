@@ -85,7 +85,7 @@ impl<
         // block state not found report the error
         let Some(scope_id) = scope_id else {
             if label.is_some() {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     BlockWithGivenLableNameNotFound {
                         span: syntax_tree
                             .label()
@@ -95,7 +95,7 @@ impl<
                     },
                 ));
             } else {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     ExpressOutsideBlock { span: syntax_tree.span() },
                 ));
             };

@@ -16,7 +16,7 @@ use pernixc_term::{
     Symbol,
 };
 use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, AbruptError, Succeeded,
+    environment::Environment, normalizer::Normalizer, Error, Succeeded,
 };
 use serde::{Deserialize, Serialize};
 
@@ -359,7 +359,7 @@ impl<M: pernixc_term::Model> Values<M> {
         address: &Address<M>,
         current_site: GlobalID,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Succeeded<Type<M>, M>, AbruptError> {
+    ) -> Result<Succeeded<Type<M>, M>, Error> {
         match address {
             Address::Memory(Memory::Parameter(parameter)) => {
                 let function_signature =

@@ -11,7 +11,7 @@ use super::{Bind, Config, Expression, Target};
 use crate::{
     binding::{
         diagnostic::MismatchedQualifierForReferenceOf, infer::Expected, Binder,
-        Error, SemanticError,
+        BindingError, Error,
     },
     model::{Constraint, Erased},
     value::{
@@ -60,13 +60,12 @@ impl Bind<&syntax_tree::expression::Prefix> for Binder<'_> {
                 // if required, type check the operand
                 if let Some(expected_type) = expected_type {
                     if !self.type_check(
-                        &self.type_of_value(&operand)?,
+                        &self.type_of_value(&operand, handler)?,
                         expected_type,
                         syntax_tree.span(),
-                        true,
                         handler,
                     )? {
-                        return Err(Error::Semantic(SemanticError(
+                        return Err(Error::Binding(BindingError(
                             syntax_tree.span(),
                         )));
                     }
@@ -103,7 +102,7 @@ impl Bind<&syntax_tree::expression::Prefix> for Binder<'_> {
                 )?;
 
                 if lvalue.qualifier < qualifier {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         MismatchedQualifierForReferenceOf {
                             reference_of_span: syntax_tree.span(),
                             found_qualifier: lvalue.qualifier,

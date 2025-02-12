@@ -156,7 +156,7 @@ impl<
             Some(BlockOrIfElse::IfElse(if_else)) => {
                 let expression = self.bind_value_or_error(
                     if_else,
-                    &self.create_handler_wrapper(handler),
+                    &handler,
                 )?;
 
                 (expression, self.current_block_id)

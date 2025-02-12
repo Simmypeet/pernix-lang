@@ -8,8 +8,11 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use getset::{Getters, MutGetters};
+use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
-use pernixc_table::Table;
+use pernixc_handler::Handler;
+use pernixc_source_file::Span;
+use pernixc_table::{diagnostic::Diagnostic, Table};
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type,
     visitor::RecursiveIterator, ModelOf as _, Never,
@@ -531,7 +534,7 @@ pub struct CyclicInferenceError<T>(InferenceVariable<T>);
 #[allow(missing_docs)]
 pub enum UnifyError {
     #[error(transparent)]
-    AbruptError(#[from] pernixc_type_system::AbruptError),
+    TypeSystem(#[from] pernixc_type_system::Error),
 
     #[error("the two types cannot be unified or are mismatched")]
     IncompatibleTypes { lhs: Type<Model>, rhs: Type<Model> },
@@ -671,10 +674,8 @@ impl unification::Predicate<Lifetime<Model>> for UnificationPredicate {
         _: &Lifetime<Model>,
         _: &[Log<Model>],
         _: &[Log<Model>],
-    ) -> Result<
-        Option<Succeeded<Satisfied, Model>>,
-        pernixc_type_system::AbruptError,
-    > {
+    ) -> Result<Option<Succeeded<Satisfied, Model>>, pernixc_type_system::Error>
+    {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -686,10 +687,8 @@ impl unification::Predicate<Type<Model>> for UnificationPredicate {
         to: &Type<Model>,
         _: &[Log<Model>],
         _: &[Log<Model>],
-    ) -> Result<
-        Option<Succeeded<Satisfied, Model>>,
-        pernixc_type_system::AbruptError,
-    > {
+    ) -> Result<Option<Succeeded<Satisfied, Model>>, pernixc_type_system::Error>
+    {
         Ok((from.is_inference() || to.is_inference())
             .then_some(Succeeded::satisfied()))
     }
@@ -702,10 +701,8 @@ impl unification::Predicate<Constant<Model>> for UnificationPredicate {
         to: &Constant<Model>,
         _: &[Log<Model>],
         _: &[Log<Model>],
-    ) -> Result<
-        Option<Succeeded<Satisfied, Model>>,
-        pernixc_type_system::AbruptError,
-    > {
+    ) -> Result<Option<Succeeded<Satisfied, Model>>, pernixc_type_system::Error>
+    {
         Ok((from.is_inference() || to.is_inference())
             .then_some(Succeeded::satisfied()))
     }
@@ -715,10 +712,8 @@ impl Normalizer<Model> for Context {
     fn normalize_type(
         ty: &Type<Model>,
         environment: &Environment<Model, Self>,
-    ) -> Result<
-        Option<Succeeded<Type<Model>, Model>>,
-        pernixc_type_system::AbruptError,
-    > {
+    ) -> Result<Option<Succeeded<Type<Model>, Model>>, pernixc_type_system::Error>
+    {
         let Type::Inference(ty) = ty else {
             return Ok(None);
         };
@@ -741,7 +736,7 @@ impl Normalizer<Model> for Context {
         environment: &Environment<Model, Self>,
     ) -> Result<
         Option<Succeeded<Constant<Model>, Model>>,
-        pernixc_type_system::AbruptError,
+        pernixc_type_system::Error,
     > {
         let Constant::Inference(constant) = constant else {
             return Ok(None);
@@ -1218,7 +1213,7 @@ impl Normalizer<IntermediaryModel> for ConstraintNormalizer<'_> {
         environment: &Environment<IntermediaryModel, Self>,
     ) -> Result<
         Option<Succeeded<Type<IntermediaryModel>, IntermediaryModel>>,
-        pernixc_type_system::AbruptError,
+        pernixc_type_system::Error,
     > {
         let Type::Inference(ty) = ty else {
             return Ok(None);
@@ -1264,7 +1259,7 @@ impl Normalizer<IntermediaryModel> for ConstraintNormalizer<'_> {
         environment: &Environment<IntermediaryModel, Self>,
     ) -> Result<
         Option<Succeeded<Constant<IntermediaryModel>, IntermediaryModel>>,
-        pernixc_type_system::AbruptError,
+        pernixc_type_system::Error,
     > {
         let Constant::Inference(constant) = constant else {
             return Ok(None);
@@ -1307,7 +1302,7 @@ impl Normalizer<IntermediaryModel> for ConstraintNormalizer<'_> {
 }
 
 impl TryFrom<Erased> for model::NoConstraint {
-    type Error = pernixc_type_system::AbruptError;
+    type Error = pernixc_type_system::Error;
 
     fn try_from(_: Erased) -> Result<Self, Self::Error> { Ok(Self) }
 }
@@ -1315,7 +1310,7 @@ impl TryFrom<Erased> for model::NoConstraint {
 impl TryFrom<InferenceOrConstraint<InferenceVariable<Type<Model>>, Self>>
     for model::Constraint
 {
-    type Error = pernixc_type_system::AbruptError;
+    type Error = pernixc_type_system::Error;
 
     fn try_from(
         value: InferenceOrConstraint<InferenceVariable<Type<Model>>, Self>,
@@ -1332,7 +1327,7 @@ impl TryFrom<InferenceOrConstraint<InferenceVariable<Type<Model>>, Self>>
 impl TryFrom<InferenceOrConstraint<InferenceVariable<Constant<Model>>, Self>>
     for model::NoConstraint
 {
-    type Error = pernixc_type_system::AbruptError;
+    type Error = pernixc_type_system::Error;
 
     fn try_from(
         value: InferenceOrConstraint<InferenceVariable<Constant<Model>>, Self>,
@@ -1354,16 +1349,13 @@ impl Context {
     ///
     /// All type inference variables will be replaced with the constraints they
     /// currently infer.
-    ///
-    /// # Errors
-    ///
-    /// See [`pernixc_type_system::AbruptError`] for more information.
     pub fn transform_type_into_constraint_model(
         &self,
         ty: Type<Model>,
+        type_span: Span,
         table: &Table,
-    ) -> Result<Type<model::Constrained>, pernixc_type_system::AbruptError>
-    {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<Type<model::Constrained>, Abort> {
         let mut intermediary_type =
             Type::<IntermediaryModel>::from_other_model(ty);
 
@@ -1376,8 +1368,15 @@ impl Context {
             &constraint_normalizer,
         );
 
-        intermediary_type =
-            environment.simplify(intermediary_type)?.result.clone();
+        intermediary_type = environment
+            .simplify(intermediary_type)
+            .map_err(|x| {
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(type_span, handler)
+                })
+            })?
+            .result
+            .clone();
 
         Ok(Type::try_from_other_model(intermediary_type).unwrap())
     }
@@ -1394,9 +1393,10 @@ impl Context {
     pub fn transform_constant_into_constraint_model(
         &self,
         constant: Constant<Model>,
+        type_span: Span,
         table: &Table,
-    ) -> Result<Constant<model::Constrained>, pernixc_type_system::AbruptError>
-    {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<Constant<model::Constrained>, Abort> {
         let mut intermediary_constant =
             Constant::<IntermediaryModel>::from_other_model(constant);
 
@@ -1409,8 +1409,15 @@ impl Context {
             &constraint_normalizer,
         );
 
-        intermediary_constant =
-            environment.simplify(intermediary_constant)?.result.clone();
+        intermediary_constant = environment
+            .simplify(intermediary_constant)
+            .map_err(|x| {
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(type_span, handler)
+                })
+            })?
+            .result
+            .clone();
 
         Ok(Constant::try_from_other_model(intermediary_constant).unwrap())
     }

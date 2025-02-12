@@ -9,6 +9,7 @@ use diagnostic::{
     MismatchedGenericParameterCountInImplementation,
     MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
 };
+use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_table::{
@@ -17,7 +18,6 @@ use pernixc_table::{
         SymbolKind, TraitImplementation,
     },
     diagnostic::Diagnostic,
-    query::CyclicDependencyError,
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -39,11 +39,10 @@ use pernixc_term::{
     Default, Kind,
 };
 use pernixc_type_system::{
-    diagnostic::OverflowOperation,
     environment::{Environment, GetActivePremiseExt, Premise},
     normalizer,
     order::Order,
-    AbruptError,
+    Error,
 };
 
 use crate::occurrences::Checker;
@@ -389,20 +388,16 @@ pub(super) fn check_overlapping(
         ) {
             Ok(order) => order,
 
-            Err(AbruptError::CyclicDependency(CyclicDependencyError)) => {
-                continue
-            }
-            Err(AbruptError::Overflow(overflow_error)) => {
-                handler.receive(Box::new(
-                    overflow_error.into_diagnostic(
-                        OverflowOperation::TypeCheck,
-                        table
-                            .get::<LocationSpan>(implementation_id)
-                            .span
-                            .clone()
-                            .unwrap(),
-                    ),
-                ));
+            Err(Error::Abort(Abort)) => continue,
+            Err(Error::Overflow(overflow_error)) => {
+                overflow_error.report_as_type_calculating_overflow(
+                    table
+                        .get::<LocationSpan>(implementation_id)
+                        .span
+                        .clone()
+                        .unwrap(),
+                    handler,
+                );
 
                 continue;
             }
@@ -755,11 +750,12 @@ fn extraneous_predicate_check(
         for (pred, decl_span, overflow) in
             errors.into_iter().filter_map(|x| x.into_undecidable().ok())
         {
-            handler.receive(Box::new(overflow.into_undecidable_predicate(
+            overflow.report_as_undecidable_predicate(
                 pred,
                 decl_span,
                 span.clone(),
-            )));
+                handler,
+            );
         }
     }
 }

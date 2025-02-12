@@ -62,7 +62,7 @@ impl<
             generic_arguments,
         }) = resolution
         else {
-            self.create_handler_wrapper(handler).receive(Box::new(
+            handler.receive(Box::new(
                 error::ExpectStruct { span: syntax_tree.span() },
             ));
             return Err(Error::Semantic(SemanticError(syntax_tree.span())));
@@ -95,7 +95,7 @@ impl<
                     .fields()
                     .get_id(field_syn.identifier().span.str())
                 else {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         FieldNotFound {
                             identifier_span: field_syn
                                 .identifier()
@@ -122,7 +122,7 @@ impl<
                 .is_accessible_from(self.current_site, field_accessibility)
                 .unwrap()
             {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     FieldIsNotAccessible {
                         field_id,
                         struct_id,
@@ -168,7 +168,7 @@ impl<
             .collect::<HashSet<_>>();
 
         if !uninitialized_fields.is_empty() {
-            self.create_handler_wrapper(handler).receive(Box::new(
+            handler.receive(Box::new(
                 error::UninitializedFields {
                     struct_id,
                     uninitialized_fields,

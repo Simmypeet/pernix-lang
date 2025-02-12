@@ -2,16 +2,17 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
+use pernixc_abort::Abort;
 use pernixc_arena::ID;
+use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{self, Address, Offset},
-    binding::{self, AddContextExt},
     instruction::{Drop, DropUnpackTuple, Instruction},
     model, scope,
 };
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::SymbolKind, query::CyclicDependencyError, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{
     generic_parameter::GenericParameters,
@@ -19,10 +20,7 @@ use pernixc_term::{
     r#type::{self, Qualifier, Type},
     Model, Symbol,
 };
-use pernixc_type_system::{
-    diagnostic::OverflowOperation, environment::Environment,
-    normalizer::Normalizer,
-};
+use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 /// Contains the state of each field in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -431,7 +429,7 @@ impl State {
         alternate: &Self,
         address: &Address<model::Model>,
         table: &Table,
-    ) -> Result<Vec<Instruction<model::Model>>, CyclicDependencyError> {
+    ) -> Result<Vec<Instruction<model::Model>>, Abort> {
         match (self, alternate) {
             (Self::Total(Initialized::False(_)), other) => {
                 other.get_drop_instructions(address, table)
@@ -554,7 +552,7 @@ impl State {
         table: &Table,
         negative: bool,
         should_drop_mutable_reference: bool,
-    ) -> Result<Vec<Instruction<model::Model>>, CyclicDependencyError> {
+    ) -> Result<Vec<Instruction<model::Model>>, Abort> {
         match self {
             Self::Total(Initialized::True) => Ok(if negative {
                 Vec::new()
@@ -694,7 +692,7 @@ impl State {
         &self,
         address: &Address<model::Model>,
         table: &Table,
-    ) -> Result<Vec<Instruction<model::Model>>, CyclicDependencyError> {
+    ) -> Result<Vec<Instruction<model::Model>>, Abort> {
         self.get_drop_instructions_interanl(address, table, false, false)
     }
 
@@ -1045,9 +1043,17 @@ impl Scope {
         address: &Address<model::Model>,
         load_span: Span,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-    ) -> Result<SetStateSucceeded, pernixc_type_system::AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<SetStateSucceeded, Abort> {
         let result = self
-            .set_state_internal(address, Some(load_span), true, environment)
+            .set_state_internal(
+                address,
+                load_span,
+                false,
+                true,
+                environment,
+                handler,
+            )
             .map(|x| match x {
                 SetStateResultInternal::Unchanged(a, b) => {
                     SetStateSucceeded::Unchanged(a, b)
@@ -1076,10 +1082,19 @@ impl Scope {
     pub fn set_initialized(
         &mut self,
         address: &Address<model::Model>,
+        set_span: Span,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-    ) -> Result<SetStateSucceeded, pernixc_type_system::AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<SetStateSucceeded, Abort> {
         let result = self
-            .set_state_internal(address, None, true, environment)
+            .set_state_internal(
+                address,
+                set_span,
+                true,
+                true,
+                environment,
+                handler,
+            )
             .map(|x| match x {
                 SetStateResultInternal::Unchanged(a, b) => {
                     SetStateSucceeded::Unchanged(a, b)
@@ -1167,11 +1182,12 @@ impl Scope {
     fn set_state_internal(
         &mut self,
         address: &Address<model::Model>,
-        // None, if set to initialize, Some if set to uninitialized
-        initialized: Option<Span>,
+        set_span: Span,
+        set_initialized: bool,
         root: bool,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-    ) -> Result<SetStateResultInternal, pernixc_type_system::AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<SetStateResultInternal, Abort> {
         let (target_state, ty, version) = match address {
             Address::Memory(memory) => self
                 .memories_by_address
@@ -1188,9 +1204,11 @@ impl Scope {
             Address::Field(field) => {
                 let (state, ty, version) = match self.set_state_internal(
                     &field.struct_address,
-                    initialized.clone(),
+                    set_span.clone(),
+                    set_initialized,
                     false,
                     environment,
+                    handler,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
@@ -1228,7 +1246,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == initialized.is_none() {
+                    if current.is_true() == set_initialized {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*field.struct_address).clone(),
@@ -1262,7 +1280,18 @@ impl Scope {
 
                         instantiation::instantiate(&mut ty, &instantiation);
 
-                        environment.simplify(ty)?.result.clone()
+                        environment
+                            .simplify(ty)
+                            .map_err(|x| {
+                                x.report_overflow(|x| {
+                                    x.report_as_type_calculating_overflow(
+                                        set_span.clone(),
+                                        handler,
+                                    )
+                                })
+                            })?
+                            .result
+                            .clone()
                     },
                     version,
                 )
@@ -1271,9 +1300,11 @@ impl Scope {
             Address::Tuple(tuple) => {
                 let (state, ty, version) = match self.set_state_internal(
                     &tuple.tuple_address,
-                    initialized.clone(),
+                    set_span.clone(),
+                    set_initialized,
                     false,
                     environment,
+                    handler,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
@@ -1287,7 +1318,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == initialized.is_none() {
+                    if current.is_true() == set_initialized {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*tuple.tuple_address).clone(),
@@ -1355,9 +1386,11 @@ impl Scope {
             Address::Variant(variant) => {
                 let (state, ty, version) = match self.set_state_internal(
                     &variant.enum_address,
-                    initialized.clone(),
+                    set_span.clone(),
+                    set_initialized,
                     false,
                     environment,
+                    handler,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
@@ -1399,7 +1432,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == initialized.is_none() {
+                    if current.is_true() == set_initialized {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*variant.enum_address).clone(),
@@ -1426,7 +1459,18 @@ impl Scope {
 
                         instantiation::instantiate(&mut ty, &instantiation);
 
-                        environment.simplify(ty)?.result.clone()
+                        environment
+                            .simplify(ty)
+                            .map_err(|x| {
+                                x.report_overflow(|x| {
+                                    x.report_as_type_calculating_overflow(
+                                        set_span.clone(),
+                                        handler,
+                                    )
+                                })
+                            })?
+                            .result
+                            .clone()
                     },
                     version,
                 )
@@ -1436,9 +1480,11 @@ impl Scope {
                 // must be a mutable reference
                 let (state, ty, version) = match self.set_state_internal(
                     &reference.reference_address,
-                    initialized.clone(),
+                    set_span.clone(),
+                    set_initialized,
                     false,
                     environment,
+                    handler,
                 )? {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
@@ -1464,7 +1510,7 @@ impl Scope {
 
                 if let State::Total(current) = state {
                     // already satisfied
-                    if current.is_true() == initialized.is_none() {
+                    if current.is_true() == set_initialized {
                         return Ok(SetStateResultInternal::Unchanged(
                             current.clone(),
                             (*reference.reference_address).clone(),
@@ -1492,26 +1538,22 @@ impl Scope {
         };
 
         if root {
-            let repalced = match initialized {
-                Some(id) => {
-                    let current_version = *version;
-                    *version += 1;
+            let replaced = if set_initialized {
+                std::mem::replace(target_state, State::Total(Initialized::True))
+            } else {
+                let current_version = *version;
+                *version += 1;
 
-                    std::mem::replace(
-                        target_state,
-                        State::Total(Initialized::False(Uninitialized {
-                            latest_accessor: Some(id),
-                            version: current_version,
-                        })),
-                    )
-                }
-                None => std::mem::replace(
+                std::mem::replace(
                     target_state,
-                    State::Total(Initialized::True),
-                ),
+                    State::Total(Initialized::False(Uninitialized {
+                        latest_accessor: Some(set_span),
+                        version: current_version,
+                    })),
+                )
             };
 
-            Ok(SetStateResultInternal::Done(repalced))
+            Ok(SetStateResultInternal::Done(replaced))
         } else {
             Ok(SetStateResultInternal::Continue {
                 state: target_state,
@@ -1547,17 +1589,16 @@ impl Stack {
         address: &Address<model::Model>,
         span: Span,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-    ) -> Result<SetStateSucceeded, binding::AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<SetStateSucceeded, Abort> {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
-                return scope.set_initialized(address, environment).map_err(
-                    |x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            span,
-                        )
-                    },
+                return scope.set_initialized(
+                    address,
+                    span,
+                    environment,
+                    handler,
                 );
             }
         }
@@ -1584,18 +1625,17 @@ impl Stack {
         address: &Address<model::Model>,
         move_span: Span,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-    ) -> Result<SetStateSucceeded, binding::AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<SetStateSucceeded, Abort> {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
-                return scope
-                    .set_uninitialized(address, move_span.clone(), environment)
-                    .map_err(|x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            move_span,
-                        )
-                    });
+                return scope.set_uninitialized(
+                    address,
+                    move_span,
+                    environment,
+                    handler,
+                );
             }
         }
 

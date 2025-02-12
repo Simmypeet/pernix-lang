@@ -20,7 +20,7 @@ use crate::{
     normalizer::Normalizer,
     term::Term,
     unification::{self, Matching, Unification},
-    AbruptError, LifetimeConstraint, Satisfied, Succeeded,
+    Error, LifetimeConstraint, Satisfied, Succeeded,
 };
 
 /// The result of matching the lifetime with the forall lifetimes.
@@ -150,7 +150,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>>
         _: &Lifetime<M>,
         from_logs: &[unification::Log<M>],
         _: &[unification::Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         let mut current_from = self.from.clone();
 
         for (idx, log) in from_logs.iter().enumerate() {
@@ -198,7 +198,7 @@ impl<M: Model> unification::Predicate<Type<M>>
         _: &Type<M>,
         _: &[unification::Log<M>],
         _: &[unification::Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         Ok(None)
     }
 }
@@ -212,7 +212,7 @@ impl<M: Model> unification::Predicate<Constant<M>>
         _: &Constant<M>,
         _: &[unification::Log<M>],
         _: &[unification::Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         Ok(None)
     }
 }
@@ -223,7 +223,7 @@ fn append_matchings_from_unification<M: Model>(
     parent_variance: Variance,
     environment: &Environment<M, impl Normalizer<M>>,
     matching: &mut BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
-) -> Result<bool, AbruptError> {
+) -> Result<bool, Error> {
     if let Some(rewritten_from) = &unifier.rewritten_from {
         current_from = rewritten_from.clone();
     }

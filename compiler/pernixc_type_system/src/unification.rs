@@ -22,7 +22,7 @@ use crate::{
     equality::Equality,
     normalizer::Normalizer,
     term::Term,
-    AbruptError, Satisfied, Succeeded,
+    Error, Satisfied, Succeeded,
 };
 
 /// A query for performing unification.
@@ -47,7 +47,7 @@ pub trait Predicate<T: ModelOf> {
         to: &T,
         from_logs: &[Log<T::Model>],
         to_logs: &[Log<T::Model>],
-    ) -> Result<Option<Succeeded<Satisfied, T::Model>>, AbruptError>;
+    ) -> Result<Option<Succeeded<Satisfied, T::Model>>, Error>;
 }
 
 /// A trait implemented by terms that can be unified.
@@ -65,7 +65,7 @@ pub trait Element: ModelOf {
         predicate: &(impl Predicate<Lifetime<Self::Model>>
               + Predicate<Type<Self::Model>>
               + Predicate<Constant<Self::Model>>),
-    ) -> Result<Option<Succeeded<Satisfied, Self::Model>>, AbruptError>;
+    ) -> Result<Option<Succeeded<Satisfied, Self::Model>>, Error>;
 
     /// Converts the term into a [`Log`] record as a rewitten term.
     fn into_rewritten(self) -> Log<Self::Model>;
@@ -80,7 +80,7 @@ impl<M: Model> Element for Lifetime<M> {
         predicate: &(impl Predicate<Lifetime<Self::Model>>
               + Predicate<Type<Self::Model>>
               + Predicate<Constant<Self::Model>>),
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         predicate.unifiable(from, to, from_logs, to_logs)
     }
 
@@ -96,7 +96,7 @@ impl<M: Model> Element for Type<M> {
         predicate: &(impl Predicate<Lifetime<Self::Model>>
               + Predicate<Type<Self::Model>>
               + Predicate<Constant<Self::Model>>),
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         predicate.unifiable(from, to, from_logs, to_logs)
     }
 
@@ -112,7 +112,7 @@ impl<M: Model> Element for Constant<M> {
         predicate: &(impl Predicate<Lifetime<Self::Model>>
               + Predicate<Type<Self::Model>>
               + Predicate<Constant<Self::Model>>),
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         predicate.unifiable(from, to, from_logs, to_logs)
     }
 
@@ -225,7 +225,7 @@ impl<T: Term, P: PredicateA<T::Model>> Query for Unification<T, P> {
     );
     type InProgress = ();
     type Result = Succeeded<Unifier<T>, T::Model>;
-    type Error = AbruptError;
+    type Error = Error;
 
     fn query(
         &self,

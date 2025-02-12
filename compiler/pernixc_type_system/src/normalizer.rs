@@ -2,7 +2,7 @@
 
 use pernixc_term::{constant::Constant, r#type::Type, Model};
 
-use crate::{environment::Environment, AbruptError, Succeeded};
+use crate::{environment::Environment, Error, Succeeded};
 
 /// The object used to normalize the inference variables into the concrete term.
 pub trait Normalizer<M: Model>: Sized {
@@ -15,7 +15,7 @@ pub trait Normalizer<M: Model>: Sized {
     fn normalize_type(
         ty: &Type<M>,
         environment: &Environment<M, Self>,
-    ) -> Result<Option<Succeeded<Type<M>, M>>, AbruptError>;
+    ) -> Result<Option<Succeeded<Type<M>, M>>, Error>;
 
     /// Normalizes the constant inference variable into the concrete constant
     /// term.
@@ -26,7 +26,7 @@ pub trait Normalizer<M: Model>: Sized {
     fn normalize_constant(
         constant: &Constant<M>,
         environment: &Environment<M, Self>,
-    ) -> Result<Option<Succeeded<Constant<M>, M>>, AbruptError>;
+    ) -> Result<Option<Succeeded<Constant<M>, M>>, Error>;
 }
 
 /// The default normalizer that does not normalize the inference variables.
@@ -40,14 +40,14 @@ impl<M: Model> Normalizer<M> for NoOp {
     fn normalize_type(
         _: &Type<M>,
         _: &Environment<M, Self>,
-    ) -> Result<Option<Succeeded<Type<M>, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Type<M>, M>>, Error> {
         Ok(None)
     }
 
     fn normalize_constant(
         _: &Constant<M>,
         _: &Environment<M, Self>,
-    ) -> Result<Option<Succeeded<Constant<M>, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Constant<M>, M>>, Error> {
         Ok(None)
     }
 }

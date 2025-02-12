@@ -8,31 +8,33 @@
 
 use std::{collections::HashSet, sync::Arc};
 
+use pernixc_abort::Abort;
 use pernixc_component::function_signature::FunctionSignature;
+use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{self, Address, Field, Memory, Variant},
-    binding::{self, AddContextExt},
     instruction::{Drop, DropUnpackTuple, Instruction},
     model, Values,
 };
 use pernixc_table::{
     component::{Member, SymbolKind},
+    diagnostic::Diagnostic,
     GlobalID,
 };
 use pernixc_term::{
-    generic_arguments::GenericArguments, predicate::PositiveTrait, r#type::Type,
+    generic_arguments::GenericArguments,
+    predicate::{PositiveTrait, Predicate},
+    r#type::Type,
 };
-use pernixc_type_system::{
-    diagnostic::OverflowOperation, environment::Environment,
-    normalizer::Normalizer,
-};
+use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 pub(super) fn simplify_drops(
     drop_instructions: impl IntoIterator<Item = Instruction<model::Model>>,
     values: &Values<model::Model>,
     current_site: GlobalID,
     environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-) -> Result<Vec<Instruction<model::Model>>, binding::AbruptError> {
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Result<Vec<Instruction<model::Model>>, Abort> {
     let mut results = Vec::new();
 
     for instruction in drop_instructions {
@@ -43,6 +45,7 @@ pub(super) fn simplify_drops(
                 &mut HashSet::new(),
                 current_site,
                 environment,
+                handler,
             )?);
         } else {
             results.push(instruction);
@@ -59,7 +62,8 @@ pub(super) fn simplify_drop(
     visited_types: &mut HashSet<Type<model::Model>>,
     current_site: GlobalID,
     environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-) -> Result<Vec<Instruction<model::Model>>, binding::AbruptError> {
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Result<Vec<Instruction<model::Model>>, Abort> {
     let span_of = match drop.address.get_root_memory() {
         Memory::Parameter(id) => {
             let function_signature: Arc<FunctionSignature> =
@@ -74,10 +78,9 @@ pub(super) fn simplify_drop(
     let ty = values
         .type_of_address(&drop.address, current_site, environment)
         .map_err(|x| {
-            x.into_type_system_overflow(
-                OverflowOperation::TypeOf,
-                span_of.clone(),
-            )
+            x.report_overflow(|x| {
+                x.report_as_type_calculating_overflow(span_of.clone(), handler)
+            })
         })?
         .result;
 
@@ -107,10 +110,14 @@ pub(super) fn simplify_drop(
                     if environment
                         .query(&predicate)
                         .map_err(|x| {
-                            x.into_type_system_overflow(
-                                OverflowOperation::TypeOf,
-                                span_of.clone(),
-                            )
+                            x.report_overflow(|x| {
+                                x.report_as_undecidable_predicate(
+                                    Predicate::PositiveTrait(predicate.clone()),
+                                    None,
+                                    span_of,
+                                    handler,
+                                )
+                            })
                         })?
                         .is_none()
                     {
@@ -143,6 +150,7 @@ pub(super) fn simplify_drop(
                             visited_types,
                             current_site,
                             environment,
+                            handler,
                         )?);
                     }
 
@@ -167,10 +175,14 @@ pub(super) fn simplify_drop(
                     if environment
                         .query(&predicate)
                         .map_err(|x| {
-                            x.into_type_system_overflow(
-                                OverflowOperation::TypeOf,
-                                span_of,
-                            )
+                            x.report_overflow(|x| {
+                                x.report_as_undecidable_predicate(
+                                    Predicate::PositiveTrait(predicate.clone()),
+                                    None,
+                                    span_of,
+                                    handler,
+                                )
+                            })
                         })?
                         .is_none()
                     {
@@ -202,6 +214,7 @@ pub(super) fn simplify_drop(
                             visited_types,
                             current_site,
                             environment,
+                            handler,
                         )?
                         .is_empty()
                         {
@@ -245,6 +258,7 @@ pub(super) fn simplify_drop(
                             visited_types,
                             current_site,
                             environment,
+                            handler,
                         )?);
                     }
 
@@ -274,6 +288,7 @@ pub(super) fn simplify_drop(
                             visited_types,
                             current_site,
                             environment,
+                            handler,
                         )?);
                     }
                 }
@@ -293,6 +308,7 @@ pub(super) fn simplify_drop(
                             visited_types,
                             current_site,
                             environment,
+                            handler,
                         )?);
                     }
                 }

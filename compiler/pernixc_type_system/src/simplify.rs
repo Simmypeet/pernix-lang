@@ -10,13 +10,13 @@ use crate::{
     normalizer::Normalizer,
     term::Term,
     unification::Unification,
-    AbruptError, LifetimeConstraint, LifetimeUnifyingPredicate, Succeeded,
+    Error, LifetimeConstraint, LifetimeUnifyingPredicate, Succeeded,
 };
 
 struct Visitor<'e, N: Normalizer<M>, M: Model> {
     environment: &'e Environment<'e, M, N>,
     lifetime_constraints: BTreeSet<LifetimeConstraint<M>>,
-    abrupt_error: Option<AbruptError>,
+    abrupt_error: Option<Error>,
 }
 
 impl<U: Term, N: Normalizer<U::Model>> Mutable<U> for Visitor<'_, N, U::Model> {
@@ -280,7 +280,7 @@ impl<T: Term> Query for Simplify<T> {
     type Parameter = ();
     type InProgress = ();
     type Result = Succeeded<T, T::Model>;
-    type Error = AbruptError;
+    type Error = Error;
 
     #[allow(clippy::too_many_lines)]
     fn query(
@@ -420,7 +420,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
     pub fn simplify<T: Term<Model = M>>(
         &self,
         term: T,
-    ) -> Result<Arc<Succeeded<T, M>>, AbruptError> {
+    ) -> Result<Arc<Succeeded<T, M>>, Error> {
         Ok(self.query(&Simplify(term))?.unwrap())
     }
 }

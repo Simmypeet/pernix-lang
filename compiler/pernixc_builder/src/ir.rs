@@ -2,16 +2,14 @@
 
 use std::sync::Arc;
 
+use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    binding::{AbruptError, Binder},
-    IR,
-};
+use pernixc_ir::{binding::Binder, IR};
 use pernixc_syntax::syntax_tree::{item::Parameter, ConnectedList};
 use pernixc_table::{
     component::{self, Derived, SymbolKind},
     diagnostic::Diagnostic,
-    query::{Builder, CyclicDependencyError},
+    query::Builder,
     GlobalID, Table,
 };
 
@@ -63,16 +61,7 @@ impl Builder<IR> for builder::Builder {
             Ok(ir)
         }) {
             Ok(result) => Some(Arc::new(result)),
-            Err(error) => {
-                match error {
-                    AbruptError::TypeSystemOverflow(type_system_overflow) => {
-                        handler.receive(Box::new(type_system_overflow));
-                    }
-                    AbruptError::CyclicDependency(CyclicDependencyError) => {}
-                }
-
-                Some(Arc::new(IR::default()))
-            }
+            Err(Abort) => Some(Arc::new(IR::default())),
         }
     }
 }

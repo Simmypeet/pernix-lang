@@ -27,7 +27,7 @@ use crate::{
     equality, normalizer,
     term::Term,
     test::purge,
-    AbruptError,
+    Error,
 };
 
 #[derive(
@@ -35,7 +35,7 @@ use crate::{
 )]
 pub enum AbortError {
     #[error(transparent)]
-    Abrupt(#[from] AbruptError),
+    Abrupt(#[from] Error),
 
     #[error("collision to the ID generated on the table")]
     IDCollision,

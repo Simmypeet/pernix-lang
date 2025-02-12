@@ -543,7 +543,7 @@ pub enum Error<M: Model> {
 
     /// Encounters the [`super::Error`] while calculating the requirements for
     /// the given [`Predicate`].
-    Abrupt(Predicate<M>, super::AbruptError),
+    Abrupt(Predicate<M>, super::Error),
 }
 
 fn check_definite_predicate<
@@ -554,12 +554,12 @@ fn check_definite_predicate<
     environment: &mut Environment<M, N>,
     remove_on_check: bool,
     predicates: &[T],
-    overflow_predicates: &mut Vec<(Predicate<M>, super::AbruptError)>,
+    overflow_predicates: &mut Vec<(Predicate<M>, super::Error)>,
     definite_predicates: &mut Vec<Predicate<M>>,
     definite_check: impl Fn(
         &T,
         &Environment<M, N>,
-    ) -> Result<bool, super::AbruptError>,
+    ) -> Result<bool, super::Error>,
 ) {
     // pick a predicate
     'outer: for predicate_i in predicates {
@@ -626,13 +626,13 @@ fn check_ambiguous_predicates<
     environment: &mut Environment<M, N>,
     remove_on_check: bool,
     predicates: &[T],
-    overflow_predicates: &mut Vec<(Predicate<M>, super::AbruptError)>,
+    overflow_predicates: &mut Vec<(Predicate<M>, super::Error)>,
     ambiguous_predicates: &mut Vec<Vec<T>>,
     ambiguity_check: impl Fn(
         &T,
         &T,
         &Environment<M, N>,
-    ) -> Result<bool, super::AbruptError>,
+    ) -> Result<bool, super::Error>,
 ) {
     // pick a predicate
     'outer: for (i, predicate_i) in predicates.iter().enumerate() {
@@ -768,7 +768,7 @@ fn check_ambiguous_generic_arguments<M: Model>(
     lhs: &GenericArguments<M>,
     rhs: &GenericArguments<M>,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<bool, super::AbruptError> {
+) -> Result<bool, super::Error> {
     // check if the arguments counts are the same
     if lhs.lifetimes.len() != rhs.lifetimes.len()
         || lhs.types.len() != rhs.types.len()

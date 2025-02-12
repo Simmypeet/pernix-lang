@@ -607,7 +607,7 @@ impl<
         include_suboptimal_flag: bool,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> term::GenericArguments<infer::Model> {
-        let handler_wrapper = self.create_handler_wrapper(handler);
+        let handler_wrapper = handler;
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
@@ -650,7 +650,7 @@ impl<
         term::GenericArguments<infer::Model>,
         resolution::ResolveTermError,
     > {
-        let handler_wrapper = self.create_handler_wrapper(handler);
+        let handler_wrapper = handler;
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
@@ -688,7 +688,7 @@ impl<
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Option<Resolution<infer::Model>> {
-        let handler = self.create_handler_wrapper(handler);
+        let handler = handler;
 
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
@@ -764,7 +764,7 @@ impl<
         syntax_tree: &syntax_tree::r#type::Type,
         handler: &dyn Handler<Box<dyn error::Error>>,
     ) -> Option<Type<infer::Model>> {
-        let handler = self.create_handler_wrapper(handler);
+        let handler = handler;
 
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
@@ -965,7 +965,7 @@ impl<
                     || Ok(true),
                     |error| {
                         if include_suboptimal_flag {
-                            self.create_handler_wrapper(handler).receive(error);
+                            handler.receive(error);
                         } else {
                             handler.receive(error);
                         }
@@ -998,7 +998,7 @@ impl<
                     });
 
                     if include_suboptimal_flag {
-                        self.create_handler_wrapper(handler).receive(error);
+                        handler.receive(error);
                     } else {
                         handler.receive(error);
                     }

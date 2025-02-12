@@ -19,7 +19,6 @@ use pernixc_term::{
     r#type::{Qualifier, Reference, Type},
     Model, Symbol,
 };
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{
     diagnostic::{
@@ -31,7 +30,7 @@ use super::{
         UnexpectedAssociatedPattern,
     },
     infer::{self, Expected},
-    AbruptError, AddContextExt, Binder,
+    Abort, Binder,
 };
 use crate::{
     address::{self, Address, Memory, Variant},
@@ -77,7 +76,7 @@ pub(super) trait Pattern:
         ty: &Type<infer::Model>,
         syntax_tree: &Self::SyntaxTree,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Self>, AbruptError>;
+    ) -> Result<Option<Self>, Abort>;
 
     #[allow(clippy::too_many_arguments)]
     fn insert_named_binding_point(
@@ -89,7 +88,7 @@ pub(super) trait Pattern:
         must_copy: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError>;
+    ) -> Result<(), Abort>;
 }
 
 impl Pattern for Refutable {
@@ -100,7 +99,7 @@ impl Pattern for Refutable {
         ty: &Type<infer::Model>,
         syntax_tree: &Self::SyntaxTree,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Self>, AbruptError> {
+    ) -> Result<Option<Self>, Abort> {
         match syntax_tree {
             syntax_tree::pattern::Refutable::Boolean(boolean) => {
                 Ok(binder.bind_boolean(boolean, ty, handler)?.map(Into::into))
@@ -138,7 +137,7 @@ impl Pattern for Refutable {
         must_copy: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError> {
+    ) -> Result<(), Abort> {
         match pattern {
             Self::Named(pat) => {
                 match (pat.reference_binding, binding.kind) {
@@ -363,7 +362,7 @@ impl Pattern for Irrefutable {
         ty: &Type<infer::Model>,
         syntax_tree: &Self::SyntaxTree,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Self>, AbruptError> {
+    ) -> Result<Option<Self>, Abort> {
         match syntax_tree {
             syntax_tree::pattern::Irrefutable::Structural(structural) => {
                 Ok(binder
@@ -392,7 +391,7 @@ impl Pattern for Irrefutable {
         must_copy: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError> {
+    ) -> Result<(), Abort> {
         match pattern {
             Self::Named(pat) => {
                 match (pat.reference_binding, binding.kind) {
@@ -548,7 +547,7 @@ impl Binder<'_> {
         syntax_tree: &syntax_tree::pattern::Tuple<T::SyntaxTree>,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Tuple<T>>, AbruptError> {
+    ) -> Result<Option<Tuple<T>>, Abort> {
         ty = ty.reduce_reference();
 
         let Type::Tuple(tuple_ty) = ty else {
@@ -769,7 +768,7 @@ impl Binder<'_> {
         syntax_tree: &syntax_tree::expression::Boolean,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Boolean>, AbruptError> {
+    ) -> Result<Option<Boolean>, Abort> {
         ty = ty.reduce_reference();
 
         if self.type_check(
@@ -778,7 +777,6 @@ impl Binder<'_> {
                 pernixc_term::r#type::Primitive::Bool,
             )),
             syntax_tree.span(),
-            true,
             handler,
         )? {
             Ok(Some(Boolean {
@@ -802,7 +800,7 @@ impl Binder<'_> {
         syntax_tree: &syntax_tree::pattern::Structural<T::SyntaxTree>,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Structural<T>>, AbruptError> {
+    ) -> Result<Option<Structural<T>>, Abort> {
         ty = ty.reduce_reference();
 
         // must be a struct type
@@ -886,13 +884,14 @@ impl Binder<'_> {
                 infer::Model::from_default_type(field_sym.r#type.clone());
 
             instantiation::instantiate(&mut field_ty, &instantiation);
-            let simplification =
-                self.create_environment().simplify(field_ty).map_err(|x| {
-                    x.into_type_system_overflow(
-                        OverflowOperation::TypeOf,
-                        field.span(),
-                    )
-                })?;
+            let simplification = self
+                .create_environment()
+                .simplify(field_ty)
+                .map_err(|x| {
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(field.span(), handler)
+                })
+            })?;
             field_ty = simplification.result.clone();
 
             // the pattern for the field
@@ -966,7 +965,7 @@ impl Binder<'_> {
         syntax_tree: &syntax_tree::pattern::Enum,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Enum>, AbruptError> {
+    ) -> Result<Option<Enum>, Abort> {
         ty = ty.reduce_reference();
 
         // must be an enum type
@@ -977,14 +976,10 @@ impl Binder<'_> {
                     .inference_context
                     .transform_type_into_constraint_model(
                         ty.clone(),
+                        syntax_tree.span(),
                         self.table,
-                    )
-                    .map_err(|x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            syntax_tree.span(),
-                        )
-                    })?,
+                        handler,
+                    )?,
                 pattern_span: syntax_tree.span(),
             }));
             return Ok(None);
@@ -1045,10 +1040,12 @@ impl Binder<'_> {
                     .create_environment()
                     .simplify(variant_ty)
                     .map_err(|x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            pat.span(),
-                        )
+                        x.report_overflow(|x| {
+                            x.report_as_type_calculating_overflow(
+                                syntax_tree.span(),
+                                handler,
+                            )
+                        })
                     })?;
 
                 let pattern = Refutable::bind(
@@ -1094,7 +1091,7 @@ impl Binder<'_> {
         mut ty: &Type<infer::Model>,
         syntax_tree: &syntax_tree::pattern::Integer,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Integer>, AbruptError> {
+    ) -> Result<Option<Integer>, Abort> {
         ty = ty.reduce_reference();
         let mut value = match syntax_tree.numeric().span.str().parse::<i128>() {
             Ok(value) => value,
@@ -1123,7 +1120,6 @@ impl Binder<'_> {
                 Constraint::Integer
             }),
             syntax_tree.span(),
-            true,
             handler,
         )? {
             Ok(Some(Integer { value, span: syntax_tree.span() }))
@@ -1137,7 +1133,7 @@ impl Binder<'_> {
         ty: &Type<infer::Model>,
         syntax_tree: &T::SyntaxTree,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<T>, AbruptError> {
+    ) -> Result<Option<T>, Abort> {
         T::bind(self, ty, syntax_tree, handler)
     }
 
@@ -1163,7 +1159,7 @@ impl Binder<'_> {
         must_copy: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError> {
+    ) -> Result<(), Abort> {
         Irrefutable::insert_named_binding_point(
             self,
             name_binding_point,
@@ -1203,7 +1199,7 @@ impl Binder<'_> {
         must_copy: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError> {
+    ) -> Result<(), Abort> {
         Refutable::insert_named_binding_point(
             self,
             name_binding_point,
@@ -1293,7 +1289,7 @@ impl Binder<'_> {
         must_copy: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError> {
+    ) -> Result<(), Abort> {
         binding = reduce_reference(binding);
 
         let Type::Tuple(tuple_ty) = binding.r#type else {
@@ -1645,7 +1641,7 @@ impl Binder<'_> {
         must_copy: bool,
         scope_id: ID<Scope>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), AbruptError> {
+    ) -> Result<(), Abort> {
         binding = reduce_reference(binding);
 
         // must be a struct type
@@ -1685,14 +1681,16 @@ impl Binder<'_> {
                 .create_environment()
                 .simplify(field_ty)
                 .map_err(|x| {
-                    x.into_type_system_overflow(
-                        OverflowOperation::TypeOf,
-                        structural
-                            .patterns_by_field_id
-                            .get(&field_id)
-                            .unwrap()
-                            .span(),
-                    )
+                    x.report_overflow(|x| {
+                        x.report_as_type_calculating_overflow(
+                            structural
+                                .patterns_by_field_id
+                                .get(&field_id)
+                                .unwrap()
+                                .span(),
+                            handler,
+                        )
+                    })
                 })?
                 .result
                 .clone();
@@ -1872,10 +1870,8 @@ impl Binder<'_> {
         path: &Path,
         address: Address<infer::Model>,
         ty: Type<infer::Model>,
-    ) -> Result<
-        (Address<infer::Model>, Type<infer::Model>, &'r Refutable),
-        AbruptError,
-    > {
+    ) -> Result<(Address<infer::Model>, Type<infer::Model>, &'r Refutable), Abort>
+    {
         match path {
             Path::Base => {
                 let (ty, address) =

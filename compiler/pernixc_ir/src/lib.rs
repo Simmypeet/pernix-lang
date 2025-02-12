@@ -5,8 +5,9 @@ use alloca::Alloca;
 use control_flow_graph::ControlFlowGraph;
 use getset::Getters;
 use model::Transform;
+use pernixc_abort::Abort;
 use pernixc_arena::{Arena, Key, ID};
-use pernixc_table::{component::Derived, query::CyclicDependencyError, Table};
+use pernixc_table::{component::Derived, Table};
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, Model,
 };
@@ -62,7 +63,7 @@ impl<M: Model> Representation<M> {
     #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<
         U: Model,
-        E: From<CyclicDependencyError>,
+        E: From<Abort>,
         T: Transform<Lifetime<M>, Target = U, Error = E>
             + Transform<Type<M>, Target = U, Error = E>
             + Transform<Constant<M>, Target = U, Error = E>,

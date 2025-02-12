@@ -52,10 +52,10 @@ impl Bind<&syntax_tree::expression::Array> for Binder<'_> {
         let mut iter = elements.iter();
 
         let first_element = iter.next().unwrap();
-        let first_ty = self.type_of_value(first_element)?;
+        let first_ty = self.type_of_value(first_element, handler)?;
 
         for element in iter {
-            let element_ty = self.type_of_value(element)?;
+            let element_ty = self.type_of_value(element, handler)?;
 
             let _ = self.type_check(
                 &element_ty,
@@ -72,7 +72,6 @@ impl Bind<&syntax_tree::expression::Array> for Binder<'_> {
                         .unwrap(),
                     Value::Literal(literal) => literal.span().cloned().unwrap(),
                 },
-                true,
                 handler,
             )?;
         }

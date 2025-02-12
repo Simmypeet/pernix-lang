@@ -8,12 +8,12 @@ use crate::{
     environment::{Environment, Query},
     normalizer::Normalizer,
     term::Term,
-    AbruptError, Satisfiability, Satisfied, Succeeded,
+    Error, Satisfiability, Satisfied, Succeeded,
 };
 
 #[derive(Debug)]
 struct Visitor<'a, N: Normalizer<M>, M: Model> {
-    definite: Result<Option<Succeeded<Satisfied, M>>, AbruptError>,
+    definite: Result<Option<Succeeded<Satisfied, M>>, Error>,
 
     environment: &'a Environment<'a, M, N>,
 }
@@ -69,7 +69,7 @@ impl<T: Term> Query for Definite<T> {
     type Parameter = ();
     type InProgress = ();
     type Result = Succeeded<Satisfied, T::Model>;
-    type Error = super::AbruptError;
+    type Error = super::Error;
 
     fn query(
         &self,

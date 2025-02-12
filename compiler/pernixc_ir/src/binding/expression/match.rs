@@ -17,7 +17,6 @@ use pernixc_term::{
     r#type::{Primitive, Qualifier, Type},
     Symbol,
 };
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression, Target};
 use crate::{
@@ -26,7 +25,7 @@ use crate::{
         diagnostic::{NonExhaustiveMatch, UnreachableMatchArm},
         infer::{self, Expected},
         pattern::Path,
-        AbruptError, AddContextExt, Binder, Error,
+        Abort, Binder, Error,
     },
     control_flow_graph::Block,
     instruction::{
@@ -480,6 +479,7 @@ impl Binder<'_> {
                                             decimal_stirng: None,
                                             r#type: self.type_of_register(
                                                 numeric_value,
+                                                handler,
                                             )?,
                                             span: Some(match_info.span.clone()),
                                         },
@@ -818,7 +818,8 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
                             self.stack.current_scope().scope_id(),
                             None,
                             syntax_tree.parenthesized().span(),
-                        ),
+                            handler,
+                        )?,
                     )),
                     Qualifier::Mutable, /* has the highest mutability */
                     false,
@@ -826,7 +827,7 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             }
 
             Err(err) => match err {
-                Error::Semantic(semantic_error) => {
+                Error::Binding(semantic_error) => {
                     (
                         Address::Memory(Memory::Alloca({
                             let ty_inference = self
@@ -841,30 +842,28 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
                                 self.stack.current_scope().scope_id(),
                                 None,
                                 syntax_tree.parenthesized().span(),
-                            )
+                                handler,
+                            )?
                         })),
                         Qualifier::Mutable, /* has the highest mutability */
                         false,
                     )
                 }
-                Error::Abrupt(abrupt_error) => {
-                    return Err(Error::Abrupt(abrupt_error))
+                Error::Unrecoverable(abrupt_error) => {
+                    return Err(Error::Unrecoverable(abrupt_error))
                 }
             },
         };
         let ty = self
             .create_environment()
-            .simplify(self.type_of_address(&address).map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeOf,
-                    syntax_tree.parenthesized().span(),
-                )
-            })?)
+            .simplify(self.type_of_address(&address, handler)?)
             .map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeOf,
-                    syntax_tree.parenthesized().span(),
-                )
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(
+                        syntax_tree.parenthesized().span(),
+                        handler,
+                    )
+                })
             })?;
 
         let arm_count = syntax_tree
@@ -898,11 +897,7 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             .zip(scope_ids)
             .map(|(x, scope_id)| {
                 let mut pat = self
-                    .bind_pattern(
-                        &ty.result,
-                        x.refutable_pattern(),
-                        &self.create_handler_wrapper(handler),
-                    )?
+                    .bind_pattern(&ty.result, x.refutable_pattern(), handler)?
                     .unwrap_or_else(|| {
                         Wildcard { span: x.refutable_pattern().span() }.into()
                     });
@@ -916,7 +911,7 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
                     reftuable_pattern: pat,
                 })
             })
-            .collect::<Result<Vec<_>, AbruptError>>()?;
+            .collect::<Result<Vec<_>, Abort>>()?;
 
         let arm_states = arm_infos
             .iter()
@@ -962,11 +957,9 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
         for unreachable in
             arm_infos.drain_filter(|x| x.binding_result.is_none())
         {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                UnreachableMatchArm {
-                    match_arm_span: unreachable.expression.span(),
-                },
-            ));
+            handler.receive(Box::new(UnreachableMatchArm {
+                match_arm_span: unreachable.expression.span(),
+            }));
         }
 
         if arm_infos.is_empty() {
@@ -987,14 +980,12 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             };
 
             if !is_inhabited {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    NonExhaustiveMatch {
-                        match_expression_span: syntax_tree
-                            .match_keyword()
-                            .span
-                            .join(&syntax_tree.parenthesized().span()),
-                    },
-                ));
+                handler.receive(Box::new(NonExhaustiveMatch {
+                    match_expression_span: syntax_tree
+                        .match_keyword()
+                        .span
+                        .join(&syntax_tree.parenthesized().span()),
+                }));
             }
 
             Ok(Expression::RValue(Value::Literal(
@@ -1002,14 +993,12 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             )))
         } else {
             if !non_exhaustives.is_empty() {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    NonExhaustiveMatch {
-                        match_expression_span: syntax_tree
-                            .match_keyword()
-                            .span
-                            .join(&syntax_tree.parenthesized().span()),
-                    },
-                ));
+                handler.receive(Box::new(NonExhaustiveMatch {
+                    match_expression_span: syntax_tree
+                        .match_keyword()
+                        .span
+                        .join(&syntax_tree.parenthesized().span()),
+                }));
             }
 
             // no match arms reach the successor block
@@ -1032,19 +1021,20 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
                     .as_ref()
                     .unwrap()
                     .value,
+                handler,
             )?;
 
             // do type check for each match arm
             for arm in arm_infos.iter().skip(first_reachable_arm_index + 1) {
                 let ty = self.type_of_value(
                     &arm.binding_result.as_ref().unwrap().value,
+                    handler,
                 )?;
 
                 self.type_check(
                     &ty,
                     Expected::Known(match_ty.clone()),
                     arm.expression.span(),
-                    true,
                     handler,
                 )?;
             }

@@ -12,7 +12,7 @@ use crate::{
         diagnostic::{BlockWithGivenLableNameNotFound, ExpressOutsideBlock},
         infer::Expected,
         stack::Scope,
-        Binder, Error, SemanticError,
+        Binder, BindingError, Error,
     },
     instruction::{Instruction, Jump, ScopePop, Terminator, UnconditionalJump},
     model::Constraint,
@@ -64,27 +64,25 @@ impl Bind<&syntax_tree::expression::Express> for Binder<'_> {
         // block state not found report the error
         let Some(scope_id) = scope_id else {
             if label.is_some() {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    BlockWithGivenLableNameNotFound {
-                        span: syntax_tree
-                            .label()
-                            .as_ref()
-                            .map(|x| x.identifier().span.clone())
-                            .unwrap(),
-                    },
-                ));
+                handler.receive(Box::new(BlockWithGivenLableNameNotFound {
+                    span: syntax_tree
+                        .label()
+                        .as_ref()
+                        .map(|x| x.identifier().span.clone())
+                        .unwrap(),
+                }));
             } else {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    ExpressOutsideBlock { span: syntax_tree.span() },
-                ));
+                handler.receive(Box::new(ExpressOutsideBlock {
+                    span: syntax_tree.span(),
+                }));
             };
 
-            return Err(Error::Semantic(SemanticError(syntax_tree.span())));
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
         let value_type = value.as_ref().map_or_else(
             || Ok(Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })),
-            |x| self.type_of_value(x),
+            |x| self.type_of_value(x, handler),
         )?;
 
         if let Some(express_type) =
@@ -94,7 +92,6 @@ impl Bind<&syntax_tree::expression::Express> for Binder<'_> {
                 &value_type,
                 Expected::Known(express_type.clone()),
                 syntax_tree.span(),
-                true,
                 handler,
             )?;
         } else {

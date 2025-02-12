@@ -962,7 +962,7 @@ impl<
                     .bind_pattern(
                         &ty,
                         x.refutable_pattern(),
-                        &self.create_handler_wrapper(handler),
+                        &handler,
                     )?
                     .unwrap_or_else(|| {
                         Wildcard { span: x.refutable_pattern().span() }.into()
@@ -1027,7 +1027,7 @@ impl<
         for unreachable in
             arm_infos.drain_filter(|x| x.binding_result.is_none())
         {
-            self.create_handler_wrapper(handler).receive(Box::new(
+            handler.receive(Box::new(
                 UnreachableMatchArm {
                     match_arm_span: unreachable.expression.span(),
                 },
@@ -1051,7 +1051,7 @@ impl<
             }
 
             if !is_inhabited {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     NonExhaustiveMatch {
                         match_expression_span: syntax_tree
                             .match_keyword()
@@ -1067,7 +1067,7 @@ impl<
             )))
         } else {
             if !non_exhaustives.is_empty() {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     NonExhaustiveMatch {
                         match_expression_span: syntax_tree
                             .match_keyword()

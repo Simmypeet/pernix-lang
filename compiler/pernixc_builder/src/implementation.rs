@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
@@ -11,8 +12,7 @@ use pernixc_table::{
         Implements, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query::{self, CyclicDependencyError},
-    GlobalID, Table,
+    query, GlobalID, Table,
 };
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
@@ -69,7 +69,7 @@ impl query::Builder<Implementation> for Builder {
                 },
                 handler,
             )
-            .unwrap_or_else(|CyclicDependencyError| {
+            .unwrap_or_else(|Abort| {
                 // try to create generic arguments for the implemented symbol
                 // with every argument being an error
                 let Ok(implemented_generic_parameters) =

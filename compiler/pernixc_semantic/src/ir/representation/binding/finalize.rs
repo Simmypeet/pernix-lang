@@ -84,14 +84,14 @@ impl<
                     .traverse()
                     .any(|(_, x)| x.terminator().is_none())
                 {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         NotAllFlowPathsReturnAValue { callable_id },
                     ));
                 }
             }
         }
 
-        let handler_wrapper = self.create_handler_wrapper(handler);
+        let handler_wrapper = handler;
         let mut transformed_ir = transform_inference::transform_inference(
             self.intermediate_representation,
             &self.inference_context,

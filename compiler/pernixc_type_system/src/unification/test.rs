@@ -33,7 +33,7 @@ use crate::{
     normalizer,
     term::Term,
     test::{purge, purge_generic_arguments},
-    AbruptError, Satisfied, Succeeded,
+    Error, Satisfied, Succeeded,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -80,7 +80,7 @@ impl super::Predicate<Constant<Default>> for GenericParameterUnifyConfig {
 )]
 pub enum AbortError {
     #[error(transparent)]
-    Abrupt(#[from] AbruptError),
+    Abrupt(#[from] Error),
     #[error("collision to the ID generated on the table")]
     IDCollision,
 }

@@ -5,14 +5,13 @@ use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Primitive, Qualifier, Type};
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression, LValue, Target};
 use crate::{
     binding::{
         diagnostic::{AssignToNonMutable, InvalidRelationalOperation},
         infer::{self, Expected},
-        AddContextExt, Binder, Error, SemanticError,
+        Binder, BindingError, Error,
     },
     instruction::{
         self, ConditionalJump, Instruction, Jump, ScopePop, ScopePush, Store,
@@ -262,26 +261,18 @@ impl Binder<'_> {
         rhs_value: Value<infer::Model>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        let lhs_ty =
-            self.type_of_address(&lhs_address.address).map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeOf,
-                    tree.left.span(),
-                )
-            })?;
-        let rhs_ty = self.type_of_value(&rhs_value)?;
+        let lhs_ty = self.type_of_address(&lhs_address.address, handler)?;
+        let rhs_ty = self.type_of_value(&rhs_value, handler)?;
 
         let _ = self.type_check(
             &rhs_ty,
             Expected::Known(lhs_ty),
             tree.right.span(),
-            true,
             handler,
         )?;
 
         if lhs_address.qualifier != Qualifier::Mutable {
-            self.create_handler_wrapper(handler)
-                .receive(Box::new(AssignToNonMutable { span: tree.span() }));
+            handler.receive(Box::new(AssignToNonMutable { span: tree.span() }));
         }
 
         let _ = self.current_block_mut().add_instruction(Instruction::Store(
@@ -333,7 +324,7 @@ impl Binder<'_> {
                 ) {
                     Ok(address) => address,
 
-                    Err(Error::Semantic(SemanticError(span))) => {
+                    Err(Error::Binding(BindingError(span))) => {
                         let inference =
                             self.create_type_inference(Constraint::All(false));
 
@@ -346,8 +337,8 @@ impl Binder<'_> {
                         );
                     }
 
-                    Err(Error::Abrupt(internal_error)) => {
-                        return Err(Error::Abrupt(internal_error))
+                    Err(Error::Unrecoverable(internal_error)) => {
+                        return Err(Error::Unrecoverable(internal_error))
                     }
                 };
 
@@ -367,7 +358,7 @@ impl Binder<'_> {
         let rhs_value =
             self.bind_value_or_error(&syntax_tree.right, handler)?;
 
-        let lhs_register_ty = self.type_of_value(&lhs_value)?;
+        let lhs_register_ty = self.type_of_value(&lhs_value, handler)?;
 
         // left shift and right shift doesn't necessarily require the same type
         // for both operands
@@ -377,13 +368,12 @@ impl Binder<'_> {
                 BitwiseOperator::LeftShift | BitwiseOperator::RightShift
             )
         ) {
-            let rhs_register_ty = self.type_of_value(&rhs_value)?;
+            let rhs_register_ty = self.type_of_value(&rhs_value, handler)?;
 
             let _ = self.type_check(
                 &rhs_register_ty,
                 Expected::Known(lhs_register_ty.clone()),
                 syntax_tree.right.span(),
-                true,
                 handler,
             )?;
         }
@@ -403,7 +393,6 @@ impl Binder<'_> {
                     &lhs_register_ty,
                     Expected::Constraint(expected_constraints),
                     syntax_tree.span(),
-                    true,
                     handler,
                 )?;
             }
@@ -412,10 +401,12 @@ impl Binder<'_> {
                     .create_environment()
                     .simplify(lhs_register_ty)
                     .map_err(|x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            syntax_tree.left.span(),
-                        )
+                        x.report_overflow(|x| {
+                            x.report_as_type_calculating_overflow(
+                                syntax_tree.left.span(),
+                                handler,
+                            )
+                        })
                     })?;
 
                 let valid = match lhs_register_ty.result.reduce_reference() {
@@ -448,23 +439,17 @@ impl Binder<'_> {
                 };
 
                 if !valid {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        InvalidRelationalOperation {
-                            found_type: self
-                                .inference_context
-                                .transform_type_into_constraint_model(
-                                    lhs_register_ty.result.clone(),
-                                    self.table,
-                                )
-                                .map_err(|x| {
-                                    x.into_type_system_overflow(
-                                        OverflowOperation::TypeOf,
-                                        syntax_tree.left.span(),
-                                    )
-                                })?,
-                            span: syntax_tree.span(),
-                        },
-                    ));
+                    handler.receive(Box::new(InvalidRelationalOperation {
+                        found_type: self
+                            .inference_context
+                            .transform_type_into_constraint_model(
+                                lhs_register_ty.result.clone(),
+                                syntax_tree.left.span(),
+                                self.table,
+                                handler,
+                            )?,
+                        span: syntax_tree.span(),
+                    }));
                 }
             }
             BinaryOperator::Bitwise(bitwise) => match bitwise {
@@ -475,10 +460,12 @@ impl Binder<'_> {
                         .create_environment()
                         .simplify(lhs_register_ty)
                         .map_err(|x| {
-                            x.into_type_system_overflow(
-                                OverflowOperation::TypeOf,
-                                syntax_tree.left.span(),
-                            )
+                            x.report_overflow(|x| {
+                                x.report_as_type_calculating_overflow(
+                                    syntax_tree.left.span(),
+                                    handler,
+                                )
+                            })
                         })?;
 
                     let valid = match &lhs_register_ty.result {
@@ -512,23 +499,17 @@ impl Binder<'_> {
                     };
 
                     if !valid {
-                        self.create_handler_wrapper(handler).receive(Box::new(
-                            InvalidRelationalOperation {
-                                found_type: self
-                                    .inference_context
-                                    .transform_type_into_constraint_model(
-                                        lhs_register_ty.result.clone(),
-                                        self.table,
-                                    )
-                                    .map_err(|x| {
-                                        x.into_type_system_overflow(
-                                            OverflowOperation::TypeOf,
-                                            syntax_tree.left.span(),
-                                        )
-                                    })?,
-                                span: syntax_tree.span(),
-                            },
-                        ));
+                        handler.receive(Box::new(InvalidRelationalOperation {
+                            found_type: self
+                                .inference_context
+                                .transform_type_into_constraint_model(
+                                    lhs_register_ty.result.clone(),
+                                    syntax_tree.left.span(),
+                                    self.table,
+                                    handler,
+                                )?,
+                            span: syntax_tree.span(),
+                        }));
                     }
                 }
 
@@ -539,17 +520,16 @@ impl Binder<'_> {
                         &lhs_register_ty,
                         Expected::Constraint(expected_constraints),
                         syntax_tree.left.span(),
-                        true,
                         handler,
                     )?;
 
-                    let rhs_value_ty = self.type_of_value(&rhs_value)?;
+                    let rhs_value_ty =
+                        self.type_of_value(&rhs_value, handler)?;
 
                     let _ = self.type_check(
                         &rhs_value_ty,
                         Expected::Constraint(expected_constraints),
                         syntax_tree.right.span(),
-                        true,
                         handler,
                     )?;
                 }
@@ -608,12 +588,11 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
                     self.bind_value_or_error(&syntax_tree.left, handler)?;
 
                 // must be a boolean
-                let lhs_ty = self.type_of_value(&lhs)?;
+                let lhs_ty = self.type_of_value(&lhs, handler)?;
                 let _ = self.type_check(
                     &lhs_ty,
                     Expected::Known(Type::Primitive(Primitive::Bool)),
                     syntax_tree.left.span(),
-                    true,
                     handler,
                 )?;
 
@@ -673,12 +652,11 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
                         let rhs = self
                             .bind_value_or_error(&syntax_tree.right, handler)?;
 
-                        let rhs_ty = self.type_of_value(&rhs)?;
+                        let rhs_ty = self.type_of_value(&rhs, handler)?;
                         let _ = self.type_check(
                             &rhs_ty,
                             Expected::Known(Type::Primitive(Primitive::Bool)),
                             syntax_tree.right.span(),
-                            true,
                             handler,
                         )?;
 
@@ -732,12 +710,11 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
                         let rhs = self
                             .bind_value_or_error(&syntax_tree.right, handler)?;
 
-                        let rhs_ty = self.type_of_value(&rhs)?;
+                        let rhs_ty = self.type_of_value(&rhs, handler)?;
                         let _ = self.type_check(
                             &rhs_ty,
                             Expected::Known(Type::Primitive(Primitive::Bool)),
                             syntax_tree.right.span(),
-                            true,
                             handler,
                         )?;
 

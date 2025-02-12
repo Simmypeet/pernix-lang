@@ -11,28 +11,10 @@ use pernixc_term::{
 
 use crate::OverflowError;
 
-/// Represents an enumeration of operations that can cause [`OverflowError`]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum OverflowOperation {
-    /// Caused by calculating the type of particular entity
-    TypeOf,
-
-    /// Caused by type checking
-    TypeCheck,
-}
-
-/// An [`OverflowError`] occurred while compiling the program.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error, new,
-)]
-#[error(
-    "ecnountered an over flow error from the `type_system` module; this \
-     should be reported to the user"
-)]
-pub struct TypeSystemOverflow {
-    /// The operation that caused the overflow.
-    pub operation: OverflowOperation,
-
+/// An [`OverflowError`] occurred while calculating the type of an expression or
+/// symbol.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct TypeCalculatingOverflow {
     /// The span where the overflow occurred.
     pub overflow_span: Span,
 
@@ -40,21 +22,37 @@ pub struct TypeSystemOverflow {
     pub overflow_error: OverflowError,
 }
 
-impl Report<&Table> for TypeSystemOverflow {
+impl Report<&Table> for TypeCalculatingOverflow {
     fn report(&self, _: &Table) -> Diagnostic {
         Diagnostic {
             span: self.overflow_span.clone(),
-            message: match &self.operation {
-                OverflowOperation::TypeOf => format!(
-                    "overflow calculating the type of `{}`",
-                    self.overflow_span.str()
-                ),
-                OverflowOperation::TypeCheck => format!(
-                    "overflow while calculating requirements for checking the \
-                     type of `{}`",
-                    self.overflow_span.str()
-                ),
-            },
+            message: "overflow calculating the type".to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "try reduce the complexity of the code; this error is the \
+                 limitation of the type-system/compiler"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// An [`OverflowError`] occurred while performing a type check operation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+pub struct TypeCheckOverflow {
+    /// The span where the overflow occurred.
+    pub overflow_span: Span,
+
+    /// The [`OverflowError`] that occurred.
+    pub overflow_error: OverflowError,
+}
+
+impl Report<&Table> for TypeCheckOverflow {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.overflow_span.clone(),
+            message: "overflow checking the type".to_string(),
             severity: Severity::Error,
             help_message: Some(
                 "try reduce the complexity of the code; this error is the \

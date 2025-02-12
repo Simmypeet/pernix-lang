@@ -14,7 +14,7 @@ use super::{
     mapping::Mapping,
     normalizer::Normalizer,
     unification::{self, Log, Unification},
-    AbruptError, Satisfied, Succeeded,
+    Error, Satisfied, Succeeded,
 };
 use crate::{environment::Environment, term::Term};
 
@@ -44,7 +44,7 @@ impl<M: Model> unification::Predicate<Lifetime<M>> for CompatiblePredicate {
         _: &Lifetime<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         Ok(Some(Succeeded::satisfied()))
     }
 }
@@ -56,7 +56,7 @@ impl<M: Model> unification::Predicate<Type<M>> for CompatiblePredicate {
         to: &Type<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         Ok((type_predicate(from) || type_predicate(to))
             .then_some(Succeeded::satisfied()))
     }
@@ -69,7 +69,7 @@ impl<M: Model> unification::Predicate<Constant<M>> for CompatiblePredicate {
         to: &Constant<M>,
         _: &[Log<M>],
         _: &[Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
         Ok((constant_predicate(from) || constant_predicate(to))
             .then_some(Succeeded::satisfied()))
     }
@@ -80,7 +80,7 @@ fn append_mapping<T: Term>(
     this: &[T],
     other: &[T],
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<bool, AbruptError> {
+) -> Result<bool, Error> {
     for (this_term, other_term) in this.iter().zip(other.iter()) {
         let Some(unifier) = environment.query(&Unification::new(
             this_term.clone(),
@@ -101,7 +101,7 @@ fn matching_copmatible<T: Term>(
     matching: BTreeMap<T, BTreeSet<T>>,
     filter: impl Fn(&T) -> bool,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<bool, AbruptError> {
+) -> Result<bool, Error> {
     for (key, matching) in matching {
         if !filter(&key) {
             continue;
@@ -132,7 +132,7 @@ fn get_generic_arguments_matching_count<M: Model>(
     this: &GenericArguments<M>,
     other: &GenericArguments<M>,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<Option<usize>, AbruptError> {
+) -> Result<Option<usize>, Error> {
     let mut mapping = Mapping::default();
 
     if !append_mapping(&mut mapping, &this.types, &other.types, environment)?
@@ -174,7 +174,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         &self,
         this: &GenericArguments<M>,
         other: &GenericArguments<M>,
-    ) -> Result<Order, AbruptError> {
+    ) -> Result<Order, Error> {
         if this.lifetimes.len() != other.lifetimes.len()
             || this.types.len() != other.types.len()
             || this.constants.len() != other.constants.len()

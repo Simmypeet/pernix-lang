@@ -211,7 +211,7 @@ impl<
             .bind_pattern(
                 &type_of_address,
                 syntax_tree.irrefutable_pattern(),
-                &self.create_handler_wrapper(handler),
+                &handler,
             )?
             .unwrap_or_else(|| {
                 Wildcard { span: syntax_tree.irrefutable_pattern().span() }
@@ -228,7 +228,7 @@ impl<
             qualifier,
             from_lvalue,
             variable_scope_id,
-            &self.create_handler_wrapper(handler),
+            &handler,
         )?;
 
         // pop temporary scope

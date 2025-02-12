@@ -253,7 +253,7 @@ impl<
         let reference_type = match operand_type {
             Type::Reference(reference) => reference,
             found_type => {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     CannotDereference {
                         found_type: self
                             .inference_context
@@ -423,11 +423,11 @@ impl<
         // loop state not found report the error
         let Some(loop_scope_id) = loop_scope_id else {
             if let Some(label) = label {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     LoopWithGivenLabelNameNotFound { span: label.span.clone() },
                 ));
             } else {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     LoopControlFlowOutsideLoop {
                         span: syntax_tree_span.clone(),
                         control_flow,
@@ -615,7 +615,7 @@ impl<
             }
 
             if !missing_value_block_ids.is_empty() {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     NotAllFlowPathsExpressValue {
                         span: block_state.span.clone(),
                     },

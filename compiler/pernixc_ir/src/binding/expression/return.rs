@@ -11,7 +11,7 @@ use crate::{
         diagnostic::ReturnIsNotAllowed,
         infer::{self, Expected, InferenceVariable},
         stack::Scope,
-        Binder, Error, SemanticError,
+        Binder, BindingError, Error,
     },
     instruction::{self, Instruction, ScopePop, Terminator},
     model::Constraint,
@@ -30,11 +30,11 @@ impl Bind<&syntax_tree::expression::Return> for Binder<'_> {
     ) -> Result<Expression, Error> {
         let current_site_kind = self.table.get::<SymbolKind>(self.current_site);
         if !current_site_kind.has_function_signature() {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                ReturnIsNotAllowed { span: syntax_tree.span() },
-            ));
+            handler.receive(Box::new(ReturnIsNotAllowed {
+                span: syntax_tree.span(),
+            }));
 
-            return Err(Error::Semantic(SemanticError(syntax_tree.span())));
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
         }
         let function_signature =
             self.table.query::<FunctionSignature>(self.current_site)?;
@@ -51,14 +51,13 @@ impl Bind<&syntax_tree::expression::Return> for Binder<'_> {
             },
             |syn| self.bind_value_or_error(syn, handler),
         )?;
-        let value_ty = self.type_of_value(&value)?;
+        let value_ty = self.type_of_value(&value, handler)?;
 
         // do type check
         self.type_check(
             &value_ty,
             Expected::Known(return_type),
             syntax_tree.span(),
-            true,
             handler,
         )?;
 

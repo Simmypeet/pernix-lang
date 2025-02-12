@@ -508,7 +508,7 @@ fn tuple_access() {
         assert_eq!(lvalue.address, tuple_address);
 
         assert_eq!(
-            binder.type_of_address(&tuple_address).unwrap(),
+            binder.type_of_address(&tuple_address, &Panic).unwrap(),
             Type::Primitive(Primitive::Int32)
         );
     }
@@ -805,7 +805,7 @@ fn adt_method() {
             .create_environment()
             .query(&Equality::new(
                 Type::Primitive(Primitive::Int32),
-                binder.type_of_register(call_register_id).unwrap()
+                binder.type_of_register(call_register_id, &Panic).unwrap()
             ))
             .unwrap()
             .unwrap()
@@ -860,7 +860,7 @@ fn adt_method() {
                     qualifier: Qualifier::Immutable,
                     pointee: Box::new(Type::Primitive(Primitive::Int32)),
                 }),
-                binder.type_of_register(call_register_id).unwrap()
+                binder.type_of_register(call_register_id, &Panic).unwrap()
             ))
             .unwrap()
             .unwrap()

@@ -10,7 +10,6 @@ use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Qualifier, Type};
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{
     diagnostic::{
@@ -18,8 +17,7 @@ use super::{
         LoopControlFlowOutsideLoop, LoopWithGivenLabelNameNotFound,
         NotAllFlowPathsExpressValue,
     },
-    infer, AbruptError, AddContextExt, Binder, BlockState, Error,
-    SemanticError,
+    infer, Abort, Binder, BindingError, BlockState, Error,
 };
 use crate::{
     address::{Address, Memory, Reference},
@@ -151,7 +149,7 @@ impl Binder<'_> {
         )? {
             Expression::RValue(value) => {
                 if create_temporary {
-                    let type_of_value = self.type_of_value(&value)?;
+                    let type_of_value = self.type_of_value(&value, handler)?;
 
                     let alloca_id =
                         self.create_alloca(type_of_value, syntax_tree.span());
@@ -175,7 +173,7 @@ impl Binder<'_> {
                         expression_span: syntax_tree.span(),
                     }));
 
-                    Err(Error::Semantic(SemanticError(syntax_tree.span())))
+                    Err(Error::Binding(BindingError(syntax_tree.span())))
                 }
             }
             Expression::LValue(lvalue) => Ok(lvalue),
@@ -216,28 +214,23 @@ impl Binder<'_> {
         let operand = self.bind_as_lvalue(dereference, true, handler)?;
 
         // expected a reference type
-        let operand_type = self.type_of_address(&operand.address).unwrap();
+        let operand_type = self.type_of_address(&operand.address, handler)?;
 
         let reference_type = match operand_type {
             Type::Reference(reference) => reference,
             found_type => {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    CannotDereference {
-                        found_type: self
-                            .inference_context
-                            .transform_type_into_constraint_model(
-                                found_type, self.table,
-                            )
-                            .map_err(|x| {
-                                x.into_type_system_overflow(
-                                    OverflowOperation::TypeOf,
-                                    dereference.span(),
-                                )
-                            })?,
-                        span: dereference.span(),
-                    },
-                ));
-                return Err(Error::Semantic(SemanticError(dereference.span())));
+                handler.receive(Box::new(CannotDereference {
+                    found_type: self
+                        .inference_context
+                        .transform_type_into_constraint_model(
+                            found_type,
+                            dereference.span(),
+                            self.table,
+                            handler,
+                        )?,
+                    span: dereference.span(),
+                }));
+                return Err(Error::Binding(BindingError(dereference.span())));
             }
         };
 
@@ -370,19 +363,17 @@ impl Binder<'_> {
         // loop state not found report the error
         let Some(loop_scope_id) = loop_scope_id else {
             if let Some(label) = label {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    LoopWithGivenLabelNameNotFound { span: label.span.clone() },
-                ));
+                handler.receive(Box::new(LoopWithGivenLabelNameNotFound {
+                    span: label.span.clone(),
+                }));
             } else {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    LoopControlFlowOutsideLoop {
-                        span: syntax_tree_span.clone(),
-                        control_flow,
-                    },
-                ));
+                handler.receive(Box::new(LoopControlFlowOutsideLoop {
+                    span: syntax_tree_span.clone(),
+                    control_flow,
+                }));
             };
 
-            return Err(Error::Semantic(SemanticError(syntax_tree_span)));
+            return Err(Error::Binding(BindingError(syntax_tree_span)));
         };
 
         Ok(loop_scope_id)
@@ -522,11 +513,9 @@ impl Bind<BlockState> for Binder<'_> {
             }
 
             if !missing_value_block_ids.is_empty() {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    NotAllFlowPathsExpressValue {
-                        span: block_state.span.clone(),
-                    },
-                ));
+                handler.receive(Box::new(NotAllFlowPathsExpressValue {
+                    span: block_state.span.clone(),
+                }));
             }
 
             match block_state.incoming_values.len() {
@@ -594,7 +583,7 @@ impl Binder<'_> {
         scope_id: ID<scope::Scope>,
         successor_block_id: ID<Block<infer::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<BlockState, AbruptError> {
+    ) -> Result<BlockState, Abort> {
         // add the scope push instruction
         let _ = self
             .current_block_mut()
@@ -655,14 +644,14 @@ impl Binder<'_> {
         &mut self,
         syntax_tree: T,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Value<infer::Model>, AbruptError>
+    ) -> Result<Value<infer::Model>, Abort>
     where
         Self: Bind<T>,
     {
         match self.bind(syntax_tree, Config { target: Target::RValue }, handler)
         {
             Ok(value) => Ok(value.into_r_value().unwrap()),
-            Err(Error::Semantic(semantic_error)) => {
+            Err(Error::Binding(semantic_error)) => {
                 let inference =
                     self.create_type_inference(Constraint::All(false));
 
@@ -671,10 +660,7 @@ impl Binder<'_> {
                     span: Some(semantic_error.0),
                 })))
             }
-            Err(Error::Abrupt(internal_error)) => Err(internal_error),
+            Err(Error::Unrecoverable(internal_error)) => Err(internal_error),
         }
     }
 }
-
-// #[cfg(test)]
-// mod test;

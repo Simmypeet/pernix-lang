@@ -1,10 +1,10 @@
+use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
 use pernixc_table::{
     component::{Parent, SymbolKind},
     diagnostic::Diagnostic,
-    query::CyclicDependencyError,
     GlobalID,
 };
 use pernixc_term::{
@@ -98,7 +98,7 @@ impl Representation<model::Model> {
         current_site: GlobalID,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), CyclicDependencyError> {
+    ) -> Result<(), Abort> {
         let register =
             self.values.registers.get(register_id).expect("Register not found");
 
@@ -403,7 +403,7 @@ impl Representation<model::Model> {
         current_site: GlobalID,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), CyclicDependencyError> {
+    ) -> Result<(), Abort> {
         for register_id in self
             .control_flow_graph
             .traverse()

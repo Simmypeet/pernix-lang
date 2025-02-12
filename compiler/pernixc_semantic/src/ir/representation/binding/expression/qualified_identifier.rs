@@ -110,7 +110,7 @@ impl<
 
                 // expected a variant type
                 if variant.associated_type.is_some() {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         error::ExpectAssociatedValue {
                             span: syntax_tree.span(),
                             variant_id: variant_res.variant,
@@ -175,7 +175,7 @@ impl<
             }) => todo!("handle constant evaluation"),
 
             resolution => {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     error::SymbolCannotBeUsedAsAnExpression {
                         span: syntax_tree.span(),
                         symbol: resolution.item_id(),

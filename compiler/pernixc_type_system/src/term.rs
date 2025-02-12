@@ -27,8 +27,8 @@ use pernixc_term::{
 
 use crate::{
     compatible, environment::Environment, equivalences, mapping,
-    normalizer::Normalizer, resolution, unification, AbruptError,
-    Satisfiability, Succeeded,
+    normalizer::Normalizer, resolution, unification, Error, Satisfiability,
+    Succeeded,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -92,7 +92,7 @@ pub trait Term:
     fn normalize(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError>;
+    ) -> Result<Option<Succeeded<Self, Self::Model>>, Error>;
 
     #[doc(hidden)]
     fn as_trait_member_compatible_predicate(
@@ -116,10 +116,8 @@ pub trait Term:
     fn definite_satisfiability(&self) -> Satisfiability;
 
     #[doc(hidden)]
-    fn get_adt_fields(
-        &self,
-        table: &Table,
-    ) -> Result<Option<Vec<Self>>, AbruptError>;
+    fn get_adt_fields(&self, table: &Table)
+        -> Result<Option<Vec<Self>>, Error>;
 
     #[doc(hidden)]
     fn outlives_satisfiability(
@@ -156,7 +154,7 @@ impl<M: Model> Term for Lifetime<M> {
     fn normalize(
         &self,
         _: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Self, Self::Model>>, Error> {
         Ok(None)
     }
 
@@ -185,10 +183,7 @@ impl<M: Model> Term for Lifetime<M> {
         Satisfiability::Satisfied
     }
 
-    fn get_adt_fields(
-        &self,
-        _: &Table,
-    ) -> Result<Option<Vec<Self>>, AbruptError> {
+    fn get_adt_fields(&self, _: &Table) -> Result<Option<Vec<Self>>, Error> {
         Ok(None)
     }
 
@@ -234,7 +229,7 @@ impl<M: Model> Term for Lifetime<M> {
 fn normalize_trait_member<M: Model>(
     trait_member: &TraitMember<M>,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<Option<Succeeded<Type<M>, M>>, AbruptError> {
+) -> Result<Option<Succeeded<Type<M>, M>>, Error> {
     let trait_id =
         environment.table().get::<Parent>(trait_member.id).parent.unwrap();
 
@@ -245,8 +240,12 @@ fn normalize_trait_member<M: Model>(
     ) {
         Ok(resolution) => resolution,
 
-        Err(resolution::Error::Abrupt(error)) => {
-            return Err(error);
+        Err(resolution::Error::Abort(error)) => {
+            return Err(Error::Abort(error));
+        }
+
+        Err(resolution::Error::Overflow(error)) => {
+            return Err(Error::Overflow(error));
         }
 
         Err(_) => return Ok(None),
@@ -351,7 +350,7 @@ impl<M: Model> Term for Type<M> {
     fn normalize(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Self, Self::Model>>, Error> {
         let normalized = match self {
             // transform the trait-member into trait-implementation-type
             // equivalent
@@ -440,7 +439,7 @@ impl<M: Model> Term for Type<M> {
     fn get_adt_fields(
         &self,
         table: &Table,
-    ) -> Result<Option<Vec<Self>>, AbruptError> {
+    ) -> Result<Option<Vec<Self>>, Error> {
         let Self::Symbol(Symbol { id, generic_arguments }) = self else {
             return Ok(None);
         };
@@ -569,7 +568,7 @@ impl<M: Model> Term for Constant<M> {
     fn normalize(
         &self,
         environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> Result<Option<Succeeded<Self, Self::Model>>, AbruptError> {
+    ) -> Result<Option<Succeeded<Self, Self::Model>>, Error> {
         let normalized = match self {
             // unpack the tuple
             Self::Tuple(tuple) => unpack_tuple(tuple),
@@ -628,10 +627,7 @@ impl<M: Model> Term for Constant<M> {
         }
     }
 
-    fn get_adt_fields(
-        &self,
-        _: &Table,
-    ) -> Result<Option<Vec<Self>>, AbruptError> {
+    fn get_adt_fields(&self, _: &Table) -> Result<Option<Vec<Self>>, Error> {
         Ok(None)
     }
 

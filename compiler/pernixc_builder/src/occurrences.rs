@@ -9,6 +9,7 @@ use diagnostic::{
 };
 use enum_as_inner::EnumAsInner;
 use parking_lot::RwLock;
+use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::Resolution;
@@ -17,7 +18,6 @@ use pernixc_syntax::syntax_tree;
 use pernixc_table::{
     component::{Input, Parent, SymbolKind},
     diagnostic::Diagnostic,
-    query::CyclicDependencyError,
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -36,10 +36,7 @@ use pernixc_term::{
 use pernixc_type_system::{
     compatible::Compatibility,
     deduction,
-    diagnostic::{
-        ImplementationIsNotGeneralEnough, OverflowOperation,
-        UnsatisfiedPredicate,
-    },
+    diagnostic::{ImplementationIsNotGeneralEnough, UnsatisfiedPredicate},
     environment::{Environment, GetActivePremiseExt},
     normalizer,
     predicate::{
@@ -48,7 +45,7 @@ use pernixc_type_system::{
     },
     resolution,
     type_check::TypeCheck,
-    AbruptError, LifetimeConstraint, OverflowError, Satisfied, Succeeded,
+    Error, LifetimeConstraint, OverflowError, Satisfied, Succeeded,
 };
 
 use crate::type_system::EnvironmentExt;
@@ -228,13 +225,12 @@ impl PredicateError {
                     return;
                 }
 
-                handler.receive(Box::new(
-                    overflow_error.into_undecidable_predicate(
-                        predicate,
-                        predicate_declaration_span,
-                        instantiation_span,
-                    ),
-                ));
+                overflow_error.report_as_undecidable_predicate(
+                    predicate,
+                    predicate_declaration_span,
+                    instantiation_span,
+                    handler,
+                );
             }
 
             Self::ImplementationIsNotGeneralEnough {
@@ -303,19 +299,15 @@ impl Checker<'_> {
                 return None; // can't continue
             }
 
-            Err(deduction::Error::Abrupt(AbruptError::CyclicDependency(
-                CyclicDependencyError,
-            ))) => {
+            Err(deduction::Error::Abort(Abort)) => {
                 return None;
             }
 
-            Err(deduction::Error::Abrupt(AbruptError::Overflow(
-                overflow_error,
-            ))) => {
-                self.handler.receive(Box::new(overflow_error.into_diagnostic(
-                    OverflowOperation::TypeCheck,
+            Err(deduction::Error::Overflow(error)) => {
+                error.report_as_type_calculating_overflow(
                     resolution_span.clone(),
-                )));
+                    self.handler,
+                );
 
                 return None;
             }
@@ -744,11 +736,9 @@ impl Checker<'_> {
                         }]
                     }
 
-                    Err(AbruptError::CyclicDependency(
-                        CyclicDependencyError,
-                    )) => Vec::new(),
+                    Err(Error::Abort(Abort)) => Vec::new(),
 
-                    Err(AbruptError::Overflow(overflow_error)) => {
+                    Err(Error::Overflow(overflow_error)) => {
                         vec![PredicateError::Undecidable {
                             predicate,
                             predicate_declaration_span,
@@ -769,11 +759,9 @@ impl Checker<'_> {
                         }]
                     }
 
-                    Err(AbruptError::CyclicDependency(
-                        CyclicDependencyError,
-                    )) => Vec::new(),
+                    Err(Error::Abort(Abort)) => Vec::new(),
 
-                    Err(AbruptError::Overflow(overflow_error)) => {
+                    Err(Error::Overflow(overflow_error)) => {
                         vec![PredicateError::Undecidable {
                             predicate,
                             predicate_declaration_span,
@@ -929,7 +917,7 @@ impl Checker<'_> {
                                         },
                                     );
                                 }
-                                Err(AbruptError::Overflow(overflow_error)) => {
+                                Err(Error::Overflow(overflow_error)) => {
                                     extra_predicate_error.push(
                                         PredicateError::Undecidable {
                                             predicate:
@@ -943,10 +931,7 @@ impl Checker<'_> {
                                     );
                                 }
 
-                                Err(AbruptError::CyclicDependency(
-                                    CyclicDependencyError,
-                                ))
-                                | Ok(Some(_)) => {}
+                                Err(Error::Abort(Abort)) | Ok(Some(_)) => {}
                             }
                         }
                     }
@@ -964,11 +949,9 @@ impl Checker<'_> {
                 extra_predicate_error
             }
 
-            Err(AbruptError::CyclicDependency(CyclicDependencyError)) => {
-                extra_predicate_error
-            }
+            Err(Error::Abort(Abort)) => extra_predicate_error,
 
-            Err(AbruptError::Overflow(overflow_error)) => {
+            Err(Error::Overflow(overflow_error)) => {
                 extra_predicate_error.push(PredicateError::Undecidable {
                     predicate,
                     predicate_declaration_span,
@@ -1007,10 +990,7 @@ impl Checker<'_> {
                 );
 
                 match self.environment.query(&outlives) {
-                    Err(AbruptError::CyclicDependency(
-                        CyclicDependencyError,
-                    ))
-                    | Ok(Some(_)) => {}
+                    Err(Error::Abort(Abort)) | Ok(Some(_)) => {}
 
                     Ok(None) => {
                         self.handler.receive(Box::new(UnsatisfiedPredicate {
@@ -1020,14 +1000,13 @@ impl Checker<'_> {
                         }));
                     }
 
-                    Err(AbruptError::Overflow(overflow_error)) => {
-                        self.handler.receive(Box::new(
-                            overflow_error.into_undecidable_predicate(
-                                Predicate::TypeOutlives(outlives),
-                                None,
-                                instantiation_span.clone(),
-                            ),
-                        ));
+                    Err(Error::Overflow(overflow_error)) => {
+                        overflow_error.report_as_undecidable_predicate(
+                            Predicate::TypeOutlives(outlives),
+                            None,
+                            instantiation_span.clone(),
+                            self.handler,
+                        );
                     }
                 }
             }
@@ -1057,22 +1036,18 @@ impl Checker<'_> {
                                     ));
                                 }
 
-                                Err(AbruptError::CyclicDependency(
-                                    CyclicDependencyError,
-                                ))
-                                | Ok(Some(_)) => {}
+                                Err(Error::Abort(Abort)) | Ok(Some(_)) => {}
 
-                                Err(AbruptError::Overflow(overflow_error)) => {
-                                    self.handler.receive(Box::new(
-                                        overflow_error
-                                            .into_undecidable_predicate(
-                                                Predicate::LifetimeOutlives(
-                                                    outlives.clone(),
-                                                ),
-                                                None,
-                                                instantiation_span.clone(),
+                                Err(Error::Overflow(overflow_error)) => {
+                                    overflow_error
+                                        .report_as_undecidable_predicate(
+                                            Predicate::LifetimeOutlives(
+                                                outlives.clone(),
                                             ),
-                                    ));
+                                            None,
+                                            instantiation_span.clone(),
+                                            self.handler,
+                                        );
                                 }
                             }
                         }
@@ -1088,17 +1063,13 @@ impl Checker<'_> {
                         ));
                     }
 
-                    Err(AbruptError::CyclicDependency(
-                        CyclicDependencyError,
-                    )) => {}
+                    Err(Error::Abort(Abort)) => {}
 
-                    Err(AbruptError::Overflow(overflow_error)) => {
-                        self.handler.receive(Box::new(
-                            overflow_error.into_diagnostic(
-                                OverflowOperation::TypeCheck,
-                                instantiation_span.clone(),
-                            ),
-                        ));
+                    Err(Error::Overflow(overflow_error)) => {
+                        overflow_error.report_as_type_check_overflow(
+                            instantiation_span.clone(),
+                            self.handler,
+                        );
                     }
                 }
             }

@@ -11,7 +11,7 @@ use pernixc_type_system::{
     normalizer,
 };
 
-use super::{diagnostic::NotAllFlowPathsReturnAValue, AbruptError, Binder};
+use super::{diagnostic::NotAllFlowPathsReturnAValue, Abort, Binder};
 use crate::{
     instruction::{Instruction, ScopePop},
     IR,
@@ -34,7 +34,7 @@ impl Binder<'_> {
     pub fn finalize(
         mut self,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<IR, AbruptError> {
+    ) -> Result<IR, Abort> {
         let root_scope_id =
             self.intermediate_representation.scope_tree.root_scope_id();
         let _ = self
@@ -63,21 +63,18 @@ impl Binder<'_> {
                     .traverse()
                     .any(|(_, x)| x.terminator().is_none())
                 {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        NotAllFlowPathsReturnAValue {
-                            callable_id: self.current_site,
-                        },
-                    ));
+                    handler.receive(Box::new(NotAllFlowPathsReturnAValue {
+                        callable_id: self.current_site,
+                    }));
                 }
             }
         }
 
-        let handler_wrapper = self.create_handler_wrapper(handler);
         let transformed_ir = transform_inference::transform_inference(
             self.intermediate_representation,
             &self.inference_context,
             self.table,
-            &handler_wrapper,
+            handler,
         )?;
 
         let environment = Environment::new(

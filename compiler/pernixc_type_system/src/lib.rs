@@ -2,10 +2,11 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use diagnostic::OverflowOperation;
 use enum_as_inner::EnumAsInner;
+use pernixc_abort::Abort;
+use pernixc_handler::Handler;
 use pernixc_source_file::Span;
-use pernixc_table::query::CyclicDependencyError;
+use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
@@ -95,31 +96,56 @@ impl<M: Model> unification::Predicate<Constant<M>>
 pub struct OverflowError;
 
 impl OverflowError {
-    /// Adds additional context to the [`OverflowError`] and turns it into a
-    /// [`diagnostic::TypeSystemOverflow`] that can be reported to the user.
-    #[must_use]
-    pub fn into_diagnostic(
+    /// Reports the [`OverflowError`] as a
+    /// [`diagnostic::TypeCalculatingOverflow`] to be reported to the user.
+    pub fn report_as_type_calculating_overflow(
         self,
-        operation: OverflowOperation,
         overflow_span: Span,
-    ) -> diagnostic::TypeSystemOverflow {
-        diagnostic::TypeSystemOverflow::new(operation, overflow_span, self)
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Abort {
+        handler.receive(Box::new(diagnostic::TypeCalculatingOverflow::new(
+            overflow_span,
+            self,
+        )));
+
+        Abort
     }
 
-    /// Adds additional context to the [`OverflowError`] and turns it into a
-    /// [`diagnostic::UndecidablePredicate`] that can be reported to the user.
-    pub fn into_undecidable_predicate<M: Model>(
+    /// Reports the [`OverflowError`] as a [`diagnostic::TypeCheckOverflow`] to
+    /// be reported to the user.
+    pub fn report_as_type_check_overflow(
+        self,
+        overflow_span: Span,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Abort {
+        handler.receive(Box::new(diagnostic::TypeCheckOverflow::new(
+            overflow_span,
+            self,
+        )));
+
+        Abort
+    }
+
+    /// Reports the [`OverflowError`] as a [`diagnostic::UndecidablePredicate`]
+    /// to be reported to the user.
+    pub fn report_as_undecidable_predicate<M: Model>(
         self,
         predicate: Predicate<M>,
         predicate_declaration_span: Option<Span>,
         instantiation_span: Span,
-    ) -> diagnostic::UndecidablePredicate<M> {
-        diagnostic::UndecidablePredicate::new(
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Abort
+    where
+        Predicate<M>: pernixc_table::Display,
+    {
+        handler.receive(Box::new(diagnostic::UndecidablePredicate::new(
             predicate,
             predicate_declaration_span,
             instantiation_span,
             self,
-        )
+        )));
+
+        Abort
     }
 }
 
@@ -137,12 +163,26 @@ impl OverflowError {
     EnumAsInner,
 )]
 #[allow(missing_docs)]
-pub enum AbruptError {
+pub enum Error {
     #[error(transparent)]
     Overflow(#[from] OverflowError),
 
     #[error(transparent)]
-    CyclicDependency(#[from] CyclicDependencyError),
+    Abort(#[from] Abort),
+}
+
+impl Error {
+    /// Invokes the closure with the [`OverflowError`] in case the error is an
+    /// [`OverflowError`].
+    pub fn report_overflow(
+        self,
+        f: impl FnOnce(OverflowError) -> Abort,
+    ) -> Abort {
+        match self {
+            Self::Overflow(overflow_error) => f(overflow_error),
+            Self::Abort(abort) => abort,
+        }
+    }
 }
 
 /// A tag type signaling that the predicate/query is satisfied.
@@ -231,12 +271,12 @@ impl<M: Model> Succeeded<Satisfied, M> {
 
 /// An alias for the result where the Ok variant can be `Option::Some(Succeeded
 /// {..})` or `None`.
-pub type Result<T, M, E = AbruptError> =
+pub type Result<T, M, E = Error> =
     std::result::Result<Option<Succeeded<T, M>>, E>;
 
 /// An alias for the result where the Ok variant can be
 /// `Option::Some(Arc<Succeeded {..})` or `None`.
-pub type ResultArc<T, M, E = AbruptError> =
+pub type ResultArc<T, M, E = Error> =
     std::result::Result<Option<Arc<Succeeded<T, M>>>, E>;
 
 /// Describes a satisfiability of a certain predicate.

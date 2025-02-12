@@ -6,13 +6,13 @@ use diagnostic::{
     MoveInLoop, MovedOutValueFromMutableReference, UseAfterMove,
     UseBeforeInitialization,
 };
+use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
 use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{self, Address, Memory},
     alloca::Alloca,
-    binding,
     control_flow_graph::Block,
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     model,
@@ -21,8 +21,7 @@ use pernixc_ir::{
 };
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic,
-    query::CyclicDependencyError, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -47,11 +46,12 @@ fn handle_store(
     stack: &mut Stack,
     ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Vec<Instruction<model::Model>>, binding::AbruptError> {
+) -> Result<Vec<Instruction<model::Model>>, Abort> {
     let state = stack.set_initialized(
         store_address,
         store_span.clone(),
         ty_environment,
+        handler,
     )?;
 
     let (state, target_address) = match state {
@@ -82,7 +82,7 @@ fn handle_load(
     current_site: GlobalID,
     ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<(), binding::AbruptError> {
+) -> Result<(), Abort> {
     let ty = values
         .type_of_address(&load.address, current_site, ty_environment)
         .unwrap();
@@ -129,6 +129,7 @@ fn handle_load(
                 &load.address,
                 register_span.clone(),
                 ty_environment,
+                handler,
             )?;
 
             match state {
@@ -169,7 +170,7 @@ fn sort_drop_addresses(
     allocas: &Arena<Alloca<model::Model>>,
     current_site: GlobalID,
     table: &Table,
-) -> Result<(), CyclicDependencyError> {
+) -> Result<(), Abort> {
     let function_signature = table.query::<FunctionSignature>(current_site)?;
 
     addresses.sort_by(|x, y| match (x, y) {
@@ -236,7 +237,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
         block_id: ID<Block<model::Model>>,
         stack: &mut Stack,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), binding::AbruptError> {
+    ) -> Result<(), Abort> {
         let mut current_index = 0;
         let block = self
             .representation
@@ -260,6 +261,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         &self.representation.values,
                         self.current_site,
                         self.ty_environment,
+                        handler,
                     )?;
                     let instructions_len = instructions.len();
 
@@ -315,6 +317,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         }),
                         tuple_pack.packed_tuple_span.clone().unwrap(),
                         self.ty_environment,
+                        handler,
                     )?;
 
                     let sumamry = match state {
@@ -370,6 +373,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         &self.representation.values,
                         self.current_site,
                         self.ty_environment,
+                        handler,
                     )?;
                     let instructions_len = instructions.len();
 
@@ -502,6 +506,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         &self.representation.values,
                         self.current_site,
                         self.ty_environment,
+                        handler,
                     )?;
                     let len = drop_instructions.len();
 
@@ -522,7 +527,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
         &mut self,
         block_id: ID<Block<model::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<WalkResult>, binding::AbruptError> {
+    ) -> Result<Option<WalkResult>, Abort> {
         // skip if already processed
         if let Some(walk_result) = self.walk_results_by_block_id.get(&block_id)
         {
@@ -669,6 +674,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         &self.representation.values,
                         self.current_site,
                         self.ty_environment,
+                        handler,
                     )?,
                 );
             }
@@ -731,6 +737,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                             &self.representation.values,
                             self.current_site,
                             self.ty_environment,
+                            handler,
                         )?,
                     );
 
@@ -765,16 +772,13 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
 
 /// Performs the use-after-move and use-before-initialization check. Moreover,
 /// inserts the drop instructions to the IR.
-///
-/// # Errors
-///
-/// See [`binding::AbruptError`] for more information
+#[allow(clippy::missing_errors_doc)]
 pub fn memory_check(
     table: &Table,
     representation: &mut Representation<model::Model>,
     current_site: GlobalID,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<(), binding::AbruptError> {
+) -> Result<(), Abort> {
     let ty_environment = TyEnvironment::new(
         std::borrow::Cow::Owned(table.get_active_premise(current_site)),
         table,

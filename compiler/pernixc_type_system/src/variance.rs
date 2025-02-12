@@ -1,7 +1,8 @@
 //! Contains the function [`Environment::get_variance_of()`]
 
+use pernixc_abort::Abort;
 use pernixc_component::variance_map::VarianceMap;
-use pernixc_table::{component::SymbolKind, query::CyclicDependencyError};
+use pernixc_table::component::SymbolKind;
 use pernixc_term::{
     generic_parameter::GenericParameters,
     r#type::{self, Type},
@@ -25,15 +26,14 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
     ///
     /// # Errors
     ///
-    /// Returns [`CyclicDependencyError`] if encounters a cyclic dependency when
-    /// querying the variance map from the table.
+    /// [`Abort`] errors mostly from the query functions.
     #[allow(clippy::too_many_lines)]
     pub fn get_variance_of(
         &self,
         ty: &Type<M>,
         parent_variance: Variance,
         mut locations: impl Iterator<Item = TermLocation>,
-    ) -> Result<Variance, CyclicDependencyError> {
+    ) -> Result<Variance, Abort> {
         let Some(location) = locations.next() else {
             return Ok(parent_variance);
         };

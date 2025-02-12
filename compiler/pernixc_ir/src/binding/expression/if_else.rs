@@ -34,10 +34,9 @@ impl Bind<&syntax_tree::expression::IfElse> for Binder<'_> {
 
         // expect the type boolean
         self.type_check(
-            &self.type_of_value(&condition)?,
+            &self.type_of_value(&condition, handler)?,
             Expected::Known(Type::Primitive(Primitive::Bool)),
             syntax_tree.parenthesized().span(),
-            true,
             handler,
         )?;
 
@@ -122,10 +121,7 @@ impl Bind<&syntax_tree::expression::IfElse> for Binder<'_> {
                 (value, successor_else_block_id)
             }
             Some(BlockOrIfElse::IfElse(if_else)) => {
-                let expression = self.bind_value_or_error(
-                    if_else,
-                    &self.create_handler_wrapper(handler),
-                )?;
+                let expression = self.bind_value_or_error(if_else, handler)?;
 
                 (expression, self.current_block_id)
             }
@@ -185,8 +181,8 @@ impl Bind<&syntax_tree::expression::IfElse> for Binder<'_> {
                             .contains(&successor_then_block_id)
                 );
 
-                let then_type = self.type_of_value(&then_value)?;
-                let else_type = self.type_of_value(&else_value)?;
+                let then_type = self.type_of_value(&then_value, handler)?;
+                let else_type = self.type_of_value(&else_value, handler)?;
 
                 if syntax_tree.else_expression().is_some() {
                     let _ = self.type_check(
@@ -196,7 +192,6 @@ impl Bind<&syntax_tree::expression::IfElse> for Binder<'_> {
                             .else_expression()
                             .as_ref()
                             .map_or(syntax_tree.span(), SourceElement::span),
-                        true,
                         handler,
                     )?;
                 } else {
@@ -204,7 +199,6 @@ impl Bind<&syntax_tree::expression::IfElse> for Binder<'_> {
                         &then_type,
                         Expected::Known(else_type),
                         syntax_tree.span(),
-                        true,
                         handler,
                     )?;
                 }

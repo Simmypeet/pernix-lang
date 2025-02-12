@@ -10,7 +10,7 @@ use crate::{
     environment::{Environment, Query},
     normalizer::Normalizer,
     term::Term,
-    AbruptError, Satisfied, Succeeded,
+    Error, Satisfied, Succeeded,
 };
 
 /// A query for checking strict equality
@@ -52,7 +52,7 @@ impl<T: Term> Query for Equality<T, T> {
     type Parameter = ();
     type InProgress = ();
     type Result = Succeeded<Satisfied, T::Model>;
-    type Error = AbruptError;
+    type Error = Error;
 
     fn query(
         &self,
@@ -130,7 +130,7 @@ fn equals_by_unification<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<Option<Succeeded<Satisfied, T::Model>>, super::AbruptError> {
+) -> Result<Option<Succeeded<Satisfied, T::Model>>, super::Error> {
     let Some(matching) = lhs.substructural_match(rhs) else {
         return Ok(None);
     };
@@ -168,7 +168,7 @@ fn equals_by_normalization<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<Option<Succeeded<Satisfied, T::Model>>, super::AbruptError> {
+) -> Result<Option<Succeeded<Satisfied, T::Model>>, super::Error> {
     if let Some(Succeeded { result: eq, mut constraints }) =
         lhs.normalize(environment)?
     {
@@ -198,7 +198,7 @@ fn equals_without_mapping<T: Term>(
     lhs: &T,
     rhs: &T,
     environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<Option<Succeeded<Satisfied, T::Model>>, super::AbruptError> {
+) -> Result<Option<Succeeded<Satisfied, T::Model>>, super::Error> {
     if lhs == rhs {
         return Ok(Some(Succeeded::satisfied()));
     }

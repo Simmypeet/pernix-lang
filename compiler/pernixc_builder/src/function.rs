@@ -2,6 +2,7 @@
 
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
+use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
 use pernixc_component::{
     function_signature::{FunctionSignature, Parameter},
@@ -19,8 +20,7 @@ use pernixc_table::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
-    query::{self, CyclicDependencyError},
-    GlobalID, Table,
+    query, GlobalID, Table,
 };
 use pernixc_term::{
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
@@ -35,7 +35,7 @@ use pernixc_term::{
 };
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt},
-    normalizer, AbruptError,
+    normalizer, Error,
 };
 
 use crate::{builder::Builder, occurrences, type_system::EnvironmentExt as _};
@@ -369,18 +369,16 @@ impl query::Builder<Intermediate> for Builder {
                         .implied_predicates
                         .insert(implied_predicate);
                 }
-                Err(AbruptError::Overflow(overflow_error)) => {
-                    handler.receive(Box::new(
-                        overflow_error.into_undecidable_predicate(
-                            implied_predicate.into(),
-                            declared_span,
-                            inst_span.clone(),
-                        ),
-                    ));
+                Err(Error::Overflow(overflow_error)) => {
+                    overflow_error.report_as_undecidable_predicate(
+                        implied_predicate.into(),
+                        declared_span,
+                        inst_span.clone(),
+                        handler,
+                    );
                 }
 
-                Err(AbruptError::CyclicDependency(CyclicDependencyError))
-                | Ok(Some(_)) => {}
+                Err(Error::Abort(Abort)) | Ok(Some(_)) => {}
             }
         }
 
@@ -467,7 +465,7 @@ impl query::Builder<FunctionSignature> for Builder {
         );
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            |CyclicDependencyError| {
+            |Abort| {
                 Arc::new(FunctionSignature {
                     parameters: Arena::default(),
                     parameter_order: Vec::new(),
@@ -498,7 +496,7 @@ impl query::Builder<ElidedLifetimes> for Builder {
         );
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            |CyclicDependencyError| {
+            |Abort| {
                 Arc::new(ElidedLifetimes { elided_lifetimes: Arena::default() })
             },
             |x| x.ellided_lifetimes.clone(),
@@ -525,7 +523,7 @@ impl query::Builder<ImpliedPredicates> for Builder {
         );
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            |CyclicDependencyError| {
+            |Abort| {
                 Arc::new(ImpliedPredicates {
                     implied_predicates: HashSet::new(),
                 })
@@ -551,7 +549,7 @@ impl query::Builder<LateBound> for Builder {
             self.start_building(table, global_id, LateBound::component_name());
 
         Some(table.query::<Intermediate>(global_id).map_or_else(
-            |CyclicDependencyError| Arc::new(LateBound::default()),
+            |Abort| Arc::new(LateBound::default()),
             |x| x.late_bound.clone(),
         ))
     }

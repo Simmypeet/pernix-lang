@@ -15,12 +15,12 @@ use crate::{
     environment::{Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     term::Term,
-    AbruptError, Satisfiability, Satisfied, Succeeded,
+    Error, Satisfiability, Satisfied, Succeeded,
 };
 
 #[derive(Debug)]
 struct Visitor<'t, N: Normalizer<M>, M: Model> {
-    constant_type: Result<Option<Succeeded<Satisfied, M>>, AbruptError>,
+    constant_type: Result<Option<Succeeded<Satisfied, M>>, Error>,
     environment: &'t Environment<'t, M, N>,
 }
 
@@ -107,7 +107,7 @@ impl<M: Model> Query for ConstantType<M> {
     type Parameter = ();
     type InProgress = QuerySource;
     type Result = Succeeded<Satisfied, M>;
-    type Error = AbruptError;
+    type Error = Error;
 
     #[allow(clippy::too_many_lines)]
     fn query(

@@ -2,10 +2,10 @@
 
 use std::collections::BTreeSet;
 
+use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation as ImplementationComponent;
 use pernixc_table::{
     component::{Implemented, Implements, SymbolKind, TraitImplementation},
-    query::CyclicDependencyError,
     GlobalID,
 };
 use pernixc_term::{
@@ -20,7 +20,7 @@ use crate::{
     environment::Environment,
     normalizer::Normalizer,
     order::Order,
-    AbruptError, LifetimeConstraint, Succeeded,
+    LifetimeConstraint, OverflowError, Succeeded,
 };
 
 /// A result of a implementation resolution query.
@@ -49,12 +49,19 @@ pub enum Error {
     #[error("no matching implementation was found")]
     NotFound,
     #[error(transparent)]
-    Abrupt(#[from] AbruptError),
+    Abort(#[from] Abort),
+    #[error(transparent)]
+    Overflow(#[from] OverflowError),
 }
 
-impl From<CyclicDependencyError> for Error {
-    fn from(error: CyclicDependencyError) -> Self {
-        Self::Abrupt(AbruptError::CyclicDependency(error))
+impl From<crate::Error> for Error {
+    fn from(value: crate::Error) -> Self {
+        match value {
+            crate::Error::Overflow(overflow_error) => {
+                Self::Overflow(overflow_error)
+            }
+            crate::Error::Abort(abort) => Self::Abort(abort),
+        }
     }
 }
 
@@ -125,8 +132,12 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
             {
                 Ok(unification) => unification,
 
-                Err(deduction::Error::Abrupt(error)) => {
+                Err(deduction::Error::Overflow(error)) => {
                     return Err(error.into())
+                }
+
+                Err(deduction::Error::Abort(abort)) => {
+                    return Err(Error::Abort(abort))
                 }
 
                 Err(
@@ -307,8 +318,10 @@ fn is_in_active_implementation<M: Model>(
                 }))
             }
 
-            Err(deduction::Error::Abrupt(err)) => {
-                return Err(Error::Abrupt(err))
+            Err(deduction::Error::Abort(err)) => return Err(Error::Abort(err)),
+
+            Err(deduction::Error::Overflow(err)) => {
+                return Err(Error::Overflow(err))
             }
 
             _ => continue,
@@ -322,7 +335,7 @@ fn predicate_satisfies<'a, M: Model>(
     predicates: impl IntoIterator<Item = &'a Predicate<Default>>,
     substitution: &Instantiation<M>,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<bool, AbruptError> {
+) -> Result<bool, Error> {
     // check if satisfies all the predicate
     for mut predicate in
         predicates.into_iter().map(|x| Predicate::from_other_model(x.clone()))

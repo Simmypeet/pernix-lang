@@ -99,7 +99,7 @@ impl<
             // more than one unpacked elements
             if tuple_type.elements.iter().filter(|x| x.is_unpacked).count() > 1
             {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     MoreThanOneUnpackedInTupleExpression {
                         span: syntax_tree.span(),
                         r#type: self

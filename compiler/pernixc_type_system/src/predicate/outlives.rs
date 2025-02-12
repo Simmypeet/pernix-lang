@@ -9,11 +9,11 @@ use crate::{
     environment::{Environment, Query},
     normalizer::Normalizer,
     term::Term,
-    AbruptError, LifetimeConstraint, Satisfiability, Satisfied, Succeeded,
+    Error, LifetimeConstraint, Satisfiability, Satisfied, Succeeded,
 };
 
 struct Visitor<'a, 'e, N: Normalizer<M>, M: Model> {
-    outlives: Result<Option<Satisfied>, AbruptError>,
+    outlives: Result<Option<Satisfied>, Error>,
     bound: &'a Lifetime<M>,
     environment: &'e Environment<'e, M, N>,
 }
@@ -50,7 +50,7 @@ impl<M: Model> LifetimeConstraint<M> {
     pub fn satisfies(
         &self,
         environment: &Environment<M, impl Normalizer<M>>,
-    ) -> Result<Option<Arc<Satisfied>>, AbruptError> {
+    ) -> Result<Option<Arc<Satisfied>>, Error> {
         match self {
             Self::LifetimeOutlives(outlives) => environment.query(outlives),
         }
@@ -63,7 +63,7 @@ impl<T: Term> Query for Outlives<T> {
     type Parameter = ();
     type InProgress = ();
     type Result = Satisfied;
-    type Error = AbruptError;
+    type Error = Error;
 
     fn query(
         &self,

@@ -1,16 +1,14 @@
 //! Contains the extension trait for the environment for interacting with the
 //! type system and the term resolution.
 
+use pernixc_abort::Abort;
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
-use pernixc_table::{diagnostic::Diagnostic, query::CyclicDependencyError};
+use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::{predicate::Predicate, r#type::Type, Model};
 use pernixc_type_system::{
-    diagnostic::{OverflowOperation, UnsatisfiedPredicate},
-    environment::Environment,
-    normalizer::Normalizer,
-    simplify::Simplify,
-    AbruptError, LifetimeConstraint,
+    diagnostic::UnsatisfiedPredicate, environment::Environment,
+    normalizer::Normalizer, simplify::Simplify, Error, LifetimeConstraint,
 };
 
 /// An extension trait for the environment for interacting with the type system
@@ -64,14 +62,13 @@ where
                 result.result.clone()
             }
 
-            Err(AbruptError::CyclicDependency(CyclicDependencyError))
-            | Ok(None) => ty.clone(),
+            Err(Error::Abort(Abort)) | Ok(None) => ty.clone(),
 
-            Err(AbruptError::Overflow(error)) => {
-                handler.receive(Box::new(error.into_diagnostic(
-                    OverflowOperation::TypeOf,
+            Err(Error::Overflow(error)) => {
+                error.report_as_type_calculating_overflow(
                     type_span.clone(),
-                )));
+                    handler,
+                );
 
                 ty.clone()
             }
@@ -90,10 +87,7 @@ where
             match constraint {
                 LifetimeConstraint::LifetimeOutlives(outlives) => {
                     match self.query(outlives) {
-                        Err(AbruptError::CyclicDependency(
-                            CyclicDependencyError,
-                        ))
-                        | Ok(Some(_)) => {}
+                        Err(Error::Abort(Abort)) | Ok(Some(_)) => {}
 
                         Ok(None) => {
                             handler.receive(Box::new(UnsatisfiedPredicate {
@@ -104,11 +98,13 @@ where
                                 predicate_declaration_span: None,
                             }));
                         }
-                        Err(AbruptError::Overflow(error)) => {
-                            handler.receive(Box::new(error.into_diagnostic(
-                                OverflowOperation::TypeCheck,
+                        Err(Error::Overflow(error)) => {
+                            error.report_as_undecidable_predicate(
+                                Predicate::LifetimeOutlives(outlives.clone()),
+                                None,
                                 span.clone(),
-                            )));
+                                handler,
+                            );
                         }
                     }
                 }

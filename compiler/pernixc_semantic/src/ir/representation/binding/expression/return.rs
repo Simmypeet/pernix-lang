@@ -49,7 +49,7 @@ impl<
     ) -> Result<Expression, Error> {
         let Some(callable_id) = CallableID::try_from(self.current_site).ok()
         else {
-            self.create_handler_wrapper(handler).receive(Box::new(
+            handler.receive(Box::new(
                 ReturnIsNotAllowed { span: syntax_tree.span() },
             ));
 

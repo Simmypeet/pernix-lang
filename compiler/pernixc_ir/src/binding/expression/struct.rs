@@ -3,7 +3,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use pernixc_arena::ID;
 use pernixc_component::fields::Field;
 use pernixc_handler::Handler;
-use pernixc_resolution::qualified_identifier::{self, Generic, Resolution};
+use pernixc_resolution::qualified_identifier::{Generic, Resolution};
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic};
@@ -21,7 +21,7 @@ use crate::{
             FieldIsNotAccessible, FieldNotFound, UninitializedFields,
         },
         infer::{self, Expected},
-        AbruptError, Binder, Error, SemanticError,
+        Binder, BindingError, Error,
     },
     value::{
         register::{Assignment, Struct},
@@ -42,31 +42,22 @@ impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
                 syntax_tree.qualified_identifier(),
                 handler,
             )
-            .map_err(|x| match x {
-                qualified_identifier::Error::FatalSemantic => {
-                    Error::Semantic(SemanticError(syntax_tree.span()))
-                }
-                qualified_identifier::Error::CyclicDependency(
-                    cyclic_dependency_error,
-                ) => Error::Abrupt(AbruptError::CyclicDependency(
-                    cyclic_dependency_error,
-                )),
-            })?;
+            .map_err(|_| Error::Binding(BindingError(syntax_tree.span())))?;
 
         // must be struct type
         let Resolution::Generic(Generic { id: struct_id, generic_arguments }) =
             resolution
         else {
-            self.create_handler_wrapper(handler)
+            handler
                 .receive(Box::new(ExpectedStruct { span: syntax_tree.span() }));
-            return Err(Error::Semantic(SemanticError(syntax_tree.span())));
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
         let symbol_kind = *self.table.get::<SymbolKind>(struct_id);
         if symbol_kind != SymbolKind::Struct {
-            self.create_handler_wrapper(handler)
+            handler
                 .receive(Box::new(ExpectedStruct { span: syntax_tree.span() }));
-            return Err(Error::Semantic(SemanticError(syntax_tree.span())));
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
         }
 
         let struct_generic_parameters =
@@ -101,15 +92,10 @@ impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
                     .get(field_syn.identifier().span.str())
                     .copied()
                 else {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        FieldNotFound {
-                            identifier_span: field_syn
-                                .identifier()
-                                .span
-                                .clone(),
-                            struct_id,
-                        },
-                    ));
+                    handler.receive(Box::new(FieldNotFound {
+                        identifier_span: field_syn.identifier().span.clone(),
+                        struct_id,
+                    }));
                     continue;
                 };
 
@@ -127,37 +113,34 @@ impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
                 self.current_site,
                 field_accessibility.into_global(struct_id.target_id),
             ) {
-                self.create_handler_wrapper(handler).receive(Box::new(
-                    FieldIsNotAccessible {
-                        field_id,
-                        struct_id,
-                        referring_site: self.current_site,
-                        referring_identifier_span: field_syn
-                            .identifier()
-                            .span
-                            .clone(),
-                    },
-                ));
+                handler.receive(Box::new(FieldIsNotAccessible {
+                    field_id,
+                    struct_id,
+                    referring_site: self.current_site,
+                    referring_identifier_span: field_syn
+                        .identifier()
+                        .span
+                        .clone(),
+                }));
             }
 
             // type check the field
             let _ = self.type_check(
-                &self.type_of_value(&value)?,
+                &self.type_of_value(&value, handler)?,
                 Expected::Known(field_ty),
                 field_syn.expression().span(),
-                true,
                 handler,
             )?;
 
             match initializers_by_field_id.entry(field_id) {
-                Entry::Occupied(entry) => self
-                    .create_handler_wrapper(handler)
-                    .receive(Box::new(DuplicatedFieldInitialization {
+                Entry::Occupied(entry) => {
+                    handler.receive(Box::new(DuplicatedFieldInitialization {
                         field_id,
                         struct_id,
                         prior_initialization_span: entry.get().1.clone(),
                         duplicate_initialization_span: field_syn.span(),
-                    })),
+                    }));
+                }
                 Entry::Vacant(entry) => {
                     entry.insert((value, field_syn.span()));
                 }
@@ -172,13 +155,11 @@ impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
             .collect::<HashSet<_>>();
 
         if !uninitialized_fields.is_empty() {
-            self.create_handler_wrapper(handler).receive(Box::new(
-                UninitializedFields {
-                    struct_id,
-                    uninitialized_fields,
-                    struct_expression_span: syntax_tree.span(),
-                },
-            ));
+            handler.receive(Box::new(UninitializedFields {
+                struct_id,
+                uninitialized_fields,
+                struct_expression_span: syntax_tree.span(),
+            }));
         }
 
         let value = Value::Register(

@@ -1,6 +1,6 @@
 //! Contains the definition of [`Binder`], the struct used for building the IR.
 
-use std::{borrow::Cow, collections::HashMap, num::NonZeroUsize, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, num::NonZeroUsize};
 
 use diagnostic::{CyclicInference, MismatchedType};
 use enum_as_inner::EnumAsInner;
@@ -8,19 +8,17 @@ use getset::Getters;
 use infer::{
     Constraint as _, Context, Expected, InferenceVariable, UnifyError,
 };
-use parking_lot::RwLock;
+use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_resolution::{
-    qualified_identifier::{self, Resolution},
-    ElidedTermProvider, Ext, ExtraNamespace, GetGenericParameterNamespaceExt,
+    qualified_identifier::Resolution, ElidedTermProvider, Ext, ExtraNamespace,
+    GetGenericParameterNamespaceExt,
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
-use pernixc_table::{
-    diagnostic::Diagnostic, query::CyclicDependencyError, GlobalID, Table,
-};
+use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -29,7 +27,6 @@ use pernixc_term::{
     Model,
 };
 use pernixc_type_system::{
-    diagnostic::{OverflowOperation, TypeSystemOverflow},
     environment::{Environment, GetActivePremiseExt, Premise},
     term::Term,
 };
@@ -112,23 +109,6 @@ pub struct Binder<'t> {
 
     block_states_by_scope_id: HashMap<ID<scope::Scope>, BlockState>,
     loop_states_by_scope_id: HashMap<ID<scope::Scope>, LoopState>,
-
-    // a boolean flag indicating whether there's already been an error reported
-    suboptimal: Arc<RwLock<bool>>,
-}
-
-#[derive(Clone)]
-struct HandlerWrapper<'h> {
-    handler: &'h dyn Handler<Box<dyn Diagnostic>>,
-    suboptimal: Arc<RwLock<bool>>,
-}
-
-impl Handler<Box<dyn Diagnostic>> for HandlerWrapper<'_> {
-    fn receive(&self, error: Box<dyn Diagnostic>) {
-        // found an error, set the flag to true
-        *self.suboptimal.write() = true;
-        self.handler.receive(error);
-    }
 }
 
 impl<'t> Binder<'t> {
@@ -144,15 +124,10 @@ impl<'t> Binder<'t> {
             Item = &'a syntax_tree::pattern::Irrefutable,
         >,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Self, AbruptError> {
+    ) -> Result<Self, Abort> {
         let premise = table.get_active_premise::<infer::Model>(function_id);
         let generic_parameter_namespace =
             table.get_generic_parameter_namepsace::<infer::Model>(function_id);
-
-        let handler = HandlerWrapper {
-            handler,
-            suboptimal: Arc::new(RwLock::new(false)),
-        };
 
         let intermediate_representation = Representation::default();
         let current_block_id =
@@ -174,8 +149,6 @@ impl<'t> Binder<'t> {
 
             block_states_by_scope_id: HashMap::new(),
             loop_states_by_scope_id: HashMap::new(),
-
-            suboptimal: handler.suboptimal.clone(),
         };
 
         let mut parameter_name_binding_point = NameBindingPoint::default();
@@ -204,7 +177,7 @@ impl<'t> Binder<'t> {
 
             // TODO: add the binding point
             let pattern = binder
-                .bind_pattern(&parameter_type, syntax_tree, &handler)?
+                .bind_pattern(&parameter_type, syntax_tree, handler)?
                 .unwrap_or_else(|| {
                     Wildcard { span: syntax_tree.span() }.into()
                 });
@@ -218,7 +191,7 @@ impl<'t> Binder<'t> {
                 Qualifier::Mutable,
                 false,
                 root_scope_id,
-                &handler,
+                handler,
             )?;
         }
 
@@ -235,63 +208,11 @@ impl<'t> Binder<'t> {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
 #[error(
-    "encountered a fatal semantic error that halts the compilation; the error \
-     diagnostics have been reported to the handler"
+    "encountered a fatal semantic error that cannot be recovered while \
+     binding an expression."
 )]
 #[allow(missing_docs)]
-pub struct SemanticError(pub Span);
-
-/// Similar to the [`pernixc_type_system::AbruptError`] but the overflow error
-/// variant is added with context to report to the user. If this error is
-/// returned, the binding process should be stopped as it left the binder in an
-/// invalid state.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum AbruptError {
-    #[error(transparent)]
-    TypeSystemOverflow(#[from] TypeSystemOverflow),
-
-    #[error(transparent)]
-    CyclicDependency(#[from] CyclicDependencyError),
-}
-
-/// An extension trait transforming from [`pernixc_type_system::AbruptError`]
-/// to the [`AbruptError`] of this module by adding more context to the error.
-pub trait AddContextExt {
-    /// Add more context to the [`pernixc_type_system::AbruptError`] and
-    /// transform it to the [`AbruptError`].
-    fn into_type_system_overflow(
-        self,
-        overflow_operation: OverflowOperation,
-        overflow_span: Span,
-    ) -> AbruptError;
-}
-
-impl AddContextExt for pernixc_type_system::AbruptError {
-    fn into_type_system_overflow(
-        self,
-        overflow_operation: OverflowOperation,
-        overflow_span: Span,
-    ) -> AbruptError {
-        match self {
-            Self::Overflow(overflow_error) => AbruptError::TypeSystemOverflow(
-                overflow_error
-                    .into_diagnostic(overflow_operation, overflow_span),
-            ),
-            Self::CyclicDependency(cyclic_dependency_error) => {
-                AbruptError::CyclicDependency(cyclic_dependency_error)
-            }
-        }
-    }
-}
-
-impl From<TypeSystemOverflow> for Error {
-    fn from(error: TypeSystemOverflow) -> Self {
-        Self::Abrupt(AbruptError::TypeSystemOverflow(error))
-    }
-}
+pub struct BindingError(pub Span);
 
 /// Is an error occurred while binding the syntax tree
 #[derive(
@@ -300,16 +221,13 @@ impl From<TypeSystemOverflow> for Error {
 #[allow(missing_docs)]
 pub enum Error {
     #[error(transparent)]
-    Semantic(#[from] SemanticError),
+    Binding(#[from] BindingError),
 
+    /// Encountered an error and the diagnostic is already reported. The binder
+    /// should not be used anymore after encountered this error variant, the
+    /// state of the binder is corrupted.
     #[error(transparent)]
-    Abrupt(#[from] AbruptError),
-}
-
-impl From<CyclicDependencyError> for Error {
-    fn from(value: CyclicDependencyError) -> Self {
-        Self::Abrupt(AbruptError::CyclicDependency(value))
-    }
+    Unrecoverable(#[from] Abort),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -323,7 +241,7 @@ impl ElidedTermProvider<Lifetime<infer::Model>> for LifetimeInferenceProvider {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 struct InferenceProvider<T> {
-    cerated_inferences: Vec<T>,
+    created_inferences: Vec<T>,
 }
 
 impl<T: Default + Clone, U: Term + From<T>> ElidedTermProvider<U>
@@ -332,7 +250,7 @@ impl<T: Default + Clone, U: Term + From<T>> ElidedTermProvider<U>
     fn create(&mut self) -> U {
         let inference = T::default();
         let inference_term = inference.clone().into();
-        self.cerated_inferences.push(inference);
+        self.created_inferences.push(inference);
 
         inference_term
     }
@@ -424,8 +342,9 @@ impl Binder<'_> {
         scope_id: ID<scope::Scope>,
         address_span: Option<Span>,
         store_span: Span,
-    ) -> ID<Alloca<infer::Model>> {
-        let ty = self.type_of_value(&value).unwrap();
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<ID<Alloca<infer::Model>>, Abort> {
+        let ty = self.type_of_value(&value, handler)?;
         let span = address_span.unwrap_or_else(|| match &value {
             Value::Register(id) => self
                 .intermediate_representation
@@ -450,7 +369,7 @@ impl Binder<'_> {
             }),
         );
 
-        alloca_id
+        Ok(alloca_id)
     }
 
     /// Returns a reference to the current control flow graph.
@@ -519,7 +438,8 @@ impl Binder<'_> {
     fn type_of_register(
         &self,
         register_id: ID<Register<infer::Model>>,
-    ) -> Result<Type<infer::Model>, AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<Type<infer::Model>, Abort> {
         self.intermediate_representation
             .values
             .type_of_register(
@@ -529,14 +449,16 @@ impl Binder<'_> {
             )
             .map(|x| x.result)
             .map_err(|x| {
-                x.into_type_system_overflow(
-                    OverflowOperation::TypeOf,
-                    self.intermediate_representation.values.registers
-                        [register_id]
-                        .span
-                        .clone()
-                        .unwrap(),
-                )
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(
+                        self.intermediate_representation.values.registers
+                            [register_id]
+                            .span
+                            .clone()
+                            .unwrap(),
+                        handler,
+                    )
+                })
             })
     }
 
@@ -544,9 +466,12 @@ impl Binder<'_> {
     fn type_of_value(
         &self,
         value: &Value<infer::Model>,
-    ) -> Result<Type<infer::Model>, AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<Type<infer::Model>, Abort> {
         match value {
-            Value::Register(register_id) => self.type_of_register(*register_id),
+            Value::Register(register_id) => {
+                self.type_of_register(*register_id, handler)
+            }
             Value::Literal(literal) => Ok(literal.r#type()),
         }
     }
@@ -555,7 +480,8 @@ impl Binder<'_> {
     fn type_of_address(
         &self,
         address: &Address<infer::Model>,
-    ) -> Result<Type<infer::Model>, pernixc_type_system::AbruptError> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<Type<infer::Model>, Abort> {
         self.intermediate_representation
             .values
             .type_of_address(
@@ -564,15 +490,36 @@ impl Binder<'_> {
                 &self.create_environment(),
             )
             .map(|x| x.result)
-    }
+            .map_err(|x| {
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(
+                        match address.get_root_memory() {
+                            Memory::Parameter(id) => {
+                                let signature = match self
+                                    .table
+                                    .query::<FunctionSignature>(
+                                    self.current_site,
+                                ) {
+                                    Ok(signature) => signature,
+                                    Err(error) => return error,
+                                };
 
-    /// Creates a handler that triggers the suboptimal flag inside this
-    /// binder when an error is received.
-    fn create_handler_wrapper<'a>(
-        &self,
-        handler: &'a dyn Handler<Box<dyn Diagnostic>>,
-    ) -> HandlerWrapper<'a> {
-        HandlerWrapper { handler, suboptimal: self.suboptimal.clone() }
+                                let parameter = &signature.parameters[*id];
+
+                                parameter.span.clone().unwrap()
+                            }
+                            Memory::Alloca(id) => {
+                                self.intermediate_representation.values.allocas
+                                    [*id]
+                                    .span
+                                    .clone()
+                                    .unwrap()
+                            }
+                        },
+                        handler,
+                    )
+                })
+            })
     }
 
     fn verify_generic_arguments_for_with_inference(
@@ -580,10 +527,8 @@ impl Binder<'_> {
         generic_arguments: GenericArguments<infer::Model>,
         resolved_id: GlobalID,
         generic_identifier_span: Span,
-        include_suboptimal_flag: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<infer::Model>, CyclicDependencyError> {
-        let handler_wrapper = self.create_handler_wrapper(handler);
+    ) -> Result<GenericArguments<infer::Model>, Abort> {
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
@@ -598,16 +543,16 @@ impl Binder<'_> {
                 observer: None,
                 extra_namespace: Some(&self.extra_namespace),
             },
-            if include_suboptimal_flag { &handler_wrapper } else { handler },
+            handler,
         )?;
 
-        for inference in type_inferences.cerated_inferences {
+        for inference in type_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Type<_>>(inference, Constraint::All(false)));
         }
 
-        for inference in constant_inferences.cerated_inferences {
+        for inference in constant_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Constant<_>>(inference, NoConstraint));
@@ -619,10 +564,8 @@ impl Binder<'_> {
     fn resolve_generic_arguments_with_inference(
         &mut self,
         generic_arguments: &syntax_tree::GenericArguments,
-        include_suboptimal_flag: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GenericArguments<infer::Model> {
-        let handler_wrapper = self.create_handler_wrapper(handler);
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
@@ -636,16 +579,16 @@ impl Binder<'_> {
                 observer: None,
                 extra_namespace: Some(&self.extra_namespace),
             },
-            if include_suboptimal_flag { &handler_wrapper } else { handler },
+            handler,
         );
 
-        for inference in type_inferences.cerated_inferences {
+        for inference in type_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Type<_>>(inference, Constraint::All(false)));
         }
 
-        for inference in constant_inferences.cerated_inferences {
+        for inference in constant_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Constant<_>>(inference, NoConstraint));
@@ -658,9 +601,7 @@ impl Binder<'_> {
         &mut self,
         syntax_tree: &syntax_tree::QualifiedIdentifier,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Resolution<infer::Model>, qualified_identifier::Error> {
-        let handler = self.create_handler_wrapper(handler);
-
+    ) -> Result<Resolution<infer::Model>, Abort> {
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
@@ -676,16 +617,16 @@ impl Binder<'_> {
                 observer: None,
                 extra_namespace: Some(&self.extra_namespace),
             },
-            &handler,
+            handler,
         )?;
 
-        for inference in type_inferences.cerated_inferences {
+        for inference in type_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Type<_>>(inference, Constraint::All(false)));
         }
 
-        for inference in constant_inferences.cerated_inferences {
+        for inference in constant_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Constant<_>>(inference, NoConstraint));
@@ -731,8 +672,6 @@ impl Binder<'_> {
         syntax_tree: &syntax_tree::r#type::Type,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Type<infer::Model> {
-        let handler = self.create_handler_wrapper(handler);
-
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
@@ -748,16 +687,16 @@ impl Binder<'_> {
                 observer: None,
                 extra_namespace: Some(&self.extra_namespace),
             },
-            &handler,
+            handler,
         );
 
-        for inference in type_inferences.cerated_inferences {
+        for inference in type_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Type<_>>(inference, Constraint::All(false)));
         }
 
-        for inference in constant_inferences.cerated_inferences {
+        for inference in constant_inferences.created_inferences {
             assert!(self
                 .inference_context
                 .register::<Constant<_>>(inference, NoConstraint));
@@ -769,24 +708,29 @@ impl Binder<'_> {
     fn get_behind_reference_qualifier(
         &self,
         address: &Address<infer::Model>,
-    ) -> Option<Qualifier> {
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<Option<Qualifier>, Abort> {
         match address {
-            Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => None,
+            Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => {
+                Ok(None)
+            }
 
             Address::Field(ad) => {
-                self.get_behind_reference_qualifier(&ad.struct_address)
+                self.get_behind_reference_qualifier(&ad.struct_address, handler)
             }
             Address::Tuple(ad) => {
-                self.get_behind_reference_qualifier(&ad.tuple_address)
+                self.get_behind_reference_qualifier(&ad.tuple_address, handler)
             }
             Address::Index(ad) => {
-                self.get_behind_reference_qualifier(&ad.array_address)
+                self.get_behind_reference_qualifier(&ad.array_address, handler)
             }
             Address::Variant(ad) => {
-                self.get_behind_reference_qualifier(&ad.enum_address)
+                self.get_behind_reference_qualifier(&ad.enum_address, handler)
             }
             Address::Reference(ad) => {
-                let ty = self.type_of_address(&ad.reference_address).unwrap();
+                let ty =
+                    self.type_of_address(&ad.reference_address, handler)?;
+
                 let ref_ty = match ty {
                     Type::Reference(ref_ty) => ref_ty,
                     found => {
@@ -796,13 +740,14 @@ impl Binder<'_> {
 
                 let mut qualifier = ref_ty.qualifier;
 
-                if let Some(inner_qual) =
-                    self.get_behind_reference_qualifier(&ad.reference_address)
-                {
+                if let Some(inner_qual) = self.get_behind_reference_qualifier(
+                    &ad.reference_address,
+                    handler,
+                )? {
                     qualifier = qualifier.min(inner_qual);
                 }
 
-                Some(qualifier)
+                Ok(Some(qualifier))
             }
         }
     }
@@ -834,27 +779,30 @@ impl Binder<'_> {
         ty: &Type<infer::Model>,
         expected_ty: Expected<infer::Model>,
         type_check_span: Span,
-        include_suboptimal_flag: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<bool, AbruptError> {
+    ) -> Result<bool, Abort> {
         let environment = self.create_environment();
 
         // simplify the types
         let simplified_ty = environment.simplify(ty.clone()).map_err(|x| {
-            x.into_type_system_overflow(
-                OverflowOperation::TypeOf,
-                type_check_span.clone(),
-            )
+            x.report_overflow(|x| {
+                x.report_as_type_calculating_overflow(
+                    type_check_span.clone(),
+                    handler,
+                )
+            })
         })?;
 
         match expected_ty {
             Expected::Known(expected_ty) => {
                 let simplified_expected =
                     environment.simplify(expected_ty).map_err(|x| {
-                        x.into_type_system_overflow(
-                            OverflowOperation::TypeOf,
-                            type_check_span.clone(),
-                        )
+                        x.report_overflow(|x| {
+                            x.report_as_type_calculating_overflow(
+                                type_check_span.clone(),
+                                handler,
+                            )
+                        })
                     })?;
 
                 let error: Option<Box<dyn Diagnostic>> = match self
@@ -875,34 +823,28 @@ impl Binder<'_> {
                             .inference_context
                             .transform_type_into_constraint_model(
                                 simplified_ty.result.clone(),
+                                type_check_span.clone(),
                                 self.table,
-                            )
-                            .map_err(|x| {
-                                x.into_type_system_overflow(
-                                    OverflowOperation::TypeOf,
-                                    type_check_span.clone(),
-                                )
-                            })?,
+                                handler,
+                            )?,
                         second: self
                             .inference_context
                             .transform_type_into_constraint_model(
                                 simplified_expected.result.clone(),
+                                type_check_span.clone(),
                                 self.table,
-                            )
-                            .map_err(|x| {
-                                x.into_type_system_overflow(
-                                    OverflowOperation::TypeOf,
-                                    type_check_span.clone(),
-                                )
-                            })?,
+                                handler,
+                            )?,
                         span: type_check_span,
                     })),
 
-                    Err(UnifyError::AbruptError(abrupt_error)) => {
-                        return Err(abrupt_error.into_type_system_overflow(
-                            OverflowOperation::TypeCheck,
-                            type_check_span,
-                        ));
+                    Err(UnifyError::TypeSystem(type_system_error)) => {
+                        return Err(type_system_error.report_overflow(|x| {
+                            x.report_as_type_check_overflow(
+                                type_check_span.clone(),
+                                handler,
+                            )
+                        }));
                     }
 
                     Err(
@@ -915,26 +857,18 @@ impl Binder<'_> {
                             .inference_context
                             .transform_type_into_constraint_model(
                                 simplified_expected.result.clone(),
+                                type_check_span.clone(),
                                 self.table,
-                            )
-                            .map_err(|x| {
-                                x.into_type_system_overflow(
-                                    OverflowOperation::TypeOf,
-                                    type_check_span.clone(),
-                                )
-                            })?,
+                                handler,
+                            )?,
                         found_type: self
                             .inference_context
                             .transform_type_into_constraint_model(
                                 simplified_ty.result.clone(),
+                                type_check_span.clone(),
                                 self.table,
-                            )
-                            .map_err(|x| {
-                                x.into_type_system_overflow(
-                                    OverflowOperation::TypeOf,
-                                    type_check_span.clone(),
-                                )
-                            })?,
+                                handler,
+                            )?,
                         span: type_check_span,
                     })),
                 };
@@ -943,11 +877,7 @@ impl Binder<'_> {
                 error.map_or_else(
                     || Ok(true),
                     |error| {
-                        if include_suboptimal_flag {
-                            self.create_handler_wrapper(handler).receive(error);
-                        } else {
-                            handler.receive(error);
-                        }
+                        handler.receive(error);
 
                         Ok(false)
                     },
@@ -974,22 +904,14 @@ impl Binder<'_> {
                             .inference_context
                             .transform_type_into_constraint_model(
                                 simplified_ty.result.clone(),
+                                type_check_span.clone(),
                                 self.table,
-                            )
-                            .map_err(|x| {
-                                x.into_type_system_overflow(
-                                    OverflowOperation::TypeOf,
-                                    type_check_span.clone(),
-                                )
-                            })?,
+                                handler,
+                            )?,
                         span: type_check_span,
                     });
 
-                    if include_suboptimal_flag {
-                        self.create_handler_wrapper(handler).receive(error);
-                    } else {
-                        handler.receive(error);
-                    }
+                    handler.receive(error);
 
                     Ok(false)
                 }

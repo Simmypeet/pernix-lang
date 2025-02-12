@@ -3,11 +3,10 @@
 use std::collections::BTreeSet;
 
 use enum_as_inner::EnumAsInner;
+use pernixc_abort::Abort;
 use pernixc_component::implied_predicates::ImpliedPredicates;
 use pernixc_source_file::Span;
-use pernixc_table::{
-    component::SymbolKind, query::CyclicDependencyError, GlobalID, Table,
-};
+use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     instantiation::{self, Instantiation},
@@ -30,7 +29,7 @@ use crate::{
         PositiveMarkerSatisfied, PositiveTraitSatisfied,
     },
     resolution::Implementation,
-    AbruptError, LifetimeConstraint, OverflowError, Succeeded,
+    LifetimeConstraint, OverflowError, Succeeded,
 };
 
 /// Representing an unsatisfied in where clause predicate.csjjj
@@ -85,7 +84,7 @@ fn get_all_predicates<M: Model>(
     table: &Table,
     global_id: GlobalID,
     instantiation: Option<&Instantiation<M>>,
-) -> Result<Vec<(Predicate<M>, Option<Span>)>, CyclicDependencyError> {
+) -> Result<Vec<(Predicate<M>, Option<Span>)>, Abort> {
     let symbol_kind = *table.get::<SymbolKind>(global_id);
     let mut predicates = Vec::new();
 
@@ -126,21 +125,17 @@ fn get_all_predicates<M: Model>(
 ///
 /// This doesn't include the additional requirements such as checking trait
 /// predicate satisfiabiltiy if the `generic_id` is trait.
-///
+/// 
 /// # Errors
-///
-/// Returns [`CyclicDependencyError`] returned when querying components from the
-/// table.
+/// 
+/// Returns [`Abort`] returned when querying components from the table.
 #[allow(clippy::type_complexity)]
 pub fn check<M: Model>(
     generic_id: GlobalID,
     instantiation: &instantiation::Instantiation<M>,
     do_outlives_check: bool,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<
-    (BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>),
-    CyclicDependencyError,
-> {
+) -> Result<(BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>), Abort> {
     let predicates = get_all_predicates(
         environment.table(),
         generic_id,
@@ -174,10 +169,7 @@ fn check_implementation_satisfied<M: Model>(
     do_outlives_check: bool,
     is_not_general_enough: bool,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<
-    (BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>),
-    CyclicDependencyError,
-> {
+) -> Result<(BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>), Abort> {
     let mut lifetime_constraints = BTreeSet::new();
     let mut errors = Vec::new();
 
@@ -220,10 +212,7 @@ fn handle_positive_marker_satisfied<M: Model>(
     predicate_declaration_span: Option<Span>,
     do_outlives_check: bool,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<
-    (BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>),
-    CyclicDependencyError,
-> {
+) -> Result<(BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>), Abort> {
     match result {
         PositiveMarkerSatisfied::Premise
         | PositiveMarkerSatisfied::Environment
@@ -270,7 +259,7 @@ fn handle_positive_marker_satisfied<M: Model>(
 ///
 /// # Errors
 ///
-/// Returns [`CyclicDependencyError`] returned when querying components from the
+/// Returns [`Abort`] returned when querying components from the
 /// table.
 #[allow(clippy::too_many_lines, clippy::type_complexity)]
 pub fn predicate_satisfied<M: Model>(
@@ -278,10 +267,7 @@ pub fn predicate_satisfied<M: Model>(
     predicate_declaration_span: Option<Span>,
     do_outlives_check: bool,
     environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<
-    (BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>),
-    CyclicDependencyError,
-> {
+) -> Result<(BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>), Abort> {
     let (result, mut extra_predicate_error) = match &predicate {
         Predicate::TraitTypeCompatible(equality) => {
             let result = Type::TraitMember(equality.lhs.clone()).compatible(
@@ -327,7 +313,7 @@ pub fn predicate_satisfied<M: Model>(
                             },
                         )]))
                     }
-                    Err(AbruptError::Overflow(overflow_error)) => {
+                    Err(crate::Error::Overflow(overflow_error)) => {
                         return Ok((BTreeSet::new(), vec![Error::Undecidable(
                             Undecidable {
                                 predicate,
@@ -337,9 +323,7 @@ pub fn predicate_satisfied<M: Model>(
                         )]))
                     }
 
-                    Err(AbruptError::CyclicDependency(error)) => {
-                        return Err(error)
-                    }
+                    Err(crate::Error::Abort(error)) => return Err(error),
                 }
             }
             (
@@ -366,7 +350,7 @@ pub fn predicate_satisfied<M: Model>(
                         )]))
                     }
 
-                    Err(AbruptError::Overflow(overflow_error)) => {
+                    Err(crate::Error::Overflow(overflow_error)) => {
                         return Ok((BTreeSet::new(), vec![Error::Undecidable(
                             Undecidable {
                                 predicate,
@@ -376,9 +360,7 @@ pub fn predicate_satisfied<M: Model>(
                         )]))
                     }
 
-                    Err(AbruptError::CyclicDependency(error)) => {
-                        return Err(error)
-                    }
+                    Err(crate::Error::Abort(error)) => return Err(error),
                 }
             }
 
@@ -559,11 +541,11 @@ pub fn predicate_satisfied<M: Model>(
                                 ));
                             }
 
-                            Err(AbruptError::CyclicDependency(error)) => {
+                            Err(crate::Error::Abort(error)) => {
                                 return Err(error);
                             }
 
-                            Err(AbruptError::Overflow(overflow_error)) => {
+                            Err(crate::Error::Overflow(overflow_error)) => {
                                 extra_predicate_error.push(Error::Undecidable(
                                     Undecidable {
                                         predicate: Predicate::LifetimeOutlives(
@@ -594,7 +576,7 @@ pub fn predicate_satisfied<M: Model>(
             Ok((BTreeSet::new(), extra_predicate_error))
         }
 
-        Err(AbruptError::Overflow(overflow_error)) => {
+        Err(crate::Error::Overflow(overflow_error)) => {
             extra_predicate_error.push(Error::Undecidable(Undecidable {
                 predicate,
                 predicate_declaration_span,
@@ -604,6 +586,6 @@ pub fn predicate_satisfied<M: Model>(
             Ok((BTreeSet::new(), extra_predicate_error))
         }
 
-        Err(AbruptError::CyclicDependency(error)) => Err(error),
+        Err(crate::Error::Abort(error)) => Err(error),
     }
 }

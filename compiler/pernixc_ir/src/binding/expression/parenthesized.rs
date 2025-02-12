@@ -3,13 +3,12 @@ use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::r#type::Type;
-use pernixc_type_system::diagnostic::OverflowOperation;
 
 use super::{Bind, Config, Expression};
 use crate::{
     binding::{
-        diagnostic::MoreThanOneUnpackedInTupleExpression, infer, AddContextExt,
-        Binder, Error, SemanticError,
+        diagnostic::MoreThanOneUnpackedInTupleExpression, infer, Binder,
+        BindingError, Error,
     },
     value::{
         literal::{self, Literal},
@@ -58,7 +57,7 @@ impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {
                     elements: elements
                         .iter()
                         .map(|x| {
-                            self.type_of_value(&x.value).map(|ty| {
+                            self.type_of_value(&x.value, handler).map(|ty| {
                                 pernixc_term::TupleElement {
                                     term: ty,
                                     is_unpacked: x.is_unpacked,
@@ -68,10 +67,12 @@ impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {
                         .collect::<Result<Vec<_>, _>>()?,
                 }))
                 .map_err(|x| {
-                    x.into_type_system_overflow(
-                        OverflowOperation::TypeOf,
-                        syntax_tree.span(),
-                    )
+                    x.report_overflow(|x| {
+                        x.report_as_type_calculating_overflow(
+                            syntax_tree.span(),
+                            handler,
+                        )
+                    })
                 })?;
 
             // more than one unpacked elements
@@ -85,25 +86,21 @@ impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {
                 .count()
                 > 1
             {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     MoreThanOneUnpackedInTupleExpression {
                         span: syntax_tree.span(),
                         r#type: self
                             .inference_context
                             .transform_type_into_constraint_model(
                                 tuple_type.result.clone(),
+                                syntax_tree.span(),
                                 self.table,
-                            )
-                            .map_err(|x| {
-                                x.into_type_system_overflow(
-                                    OverflowOperation::TypeOf,
-                                    syntax_tree.span(),
-                                )
-                            })?,
+                                handler,
+                            )?,
                     },
                 ));
 
-                Err(Error::Semantic(SemanticError(syntax_tree.span())))
+                Err(Error::Binding(BindingError(syntax_tree.span())))
             } else {
                 let value = if elements.is_empty() {
                     // return unit Tuple

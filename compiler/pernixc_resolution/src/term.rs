@@ -3,6 +3,7 @@
 
 use std::fmt::Debug;
 
+use pernixc_abort::Abort;
 use pernixc_component::type_alias::TypeAlias;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::Identifier;
@@ -11,8 +12,7 @@ use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
 };
 use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic,
-    query::CyclicDependencyError, GlobalID, Table,
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -43,7 +43,7 @@ pub(super) fn resolve_generic_arguments_for<M: Model>(
     referring_site: GlobalID,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<GenericArguments<M>, CyclicDependencyError> {
+) -> Result<GenericArguments<M>, Abort> {
     let generic_arguments = generic_identifier
         .generic_arguments()
         .as_ref()
@@ -254,7 +254,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
     generic_identifier_span: Span,
     mut config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<GenericArguments<M>, CyclicDependencyError> {
+) -> Result<GenericArguments<M>, Abort> {
     let generic_parameters = table.query::<GenericParameters>(generic_id)?;
 
     let (

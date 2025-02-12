@@ -1,5 +1,5 @@
 use pernixc_handler::Handler;
-use pernixc_resolution::qualified_identifier::{self, Resolution};
+use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
 use pernixc_table::{
@@ -21,7 +21,7 @@ use crate::{
             ExpectedAssociatedValue, SymbolCannotBeUsedAsAnExpression,
         },
         expression::{LValue, Target},
-        infer, AbruptError, Binder, Error, SemanticError,
+        infer, Binder, BindingError, Error,
     },
     value::{
         literal::{self, Literal},
@@ -81,7 +81,10 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
                         };
 
                         let final_qualifier = self
-                            .get_behind_reference_qualifier(&name.load_address)
+                            .get_behind_reference_qualifier(
+                                &name.load_address,
+                                handler,
+                            )?
                             .map_or(name_qualifier, |x| x.min(name_qualifier));
 
                         return Ok(Expression::LValue(LValue {
@@ -94,18 +97,10 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
             }
         };
 
-        let resolution = match self
+        let Ok(resolution) = self
             .resolve_qualified_identifier_with_inference(syntax_tree, handler)
-        {
-            Ok(resolution) => resolution,
-            Err(qualified_identifier::Error::CyclicDependency(error)) => {
-                return Err(Error::Abrupt(AbruptError::CyclicDependency(
-                    error,
-                )));
-            }
-            Err(qualified_identifier::Error::FatalSemantic) => {
-                return Err(Error::Semantic(SemanticError(syntax_tree.span())));
-            }
+        else {
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
         let id = match resolution {
@@ -127,12 +122,10 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
 
                 // expected a variant type
                 if variant.associated_type.is_some() {
-                    self.create_handler_wrapper(handler).receive(Box::new(
-                        ExpectedAssociatedValue {
-                            span: syntax_tree.span(),
-                            variant_id: variant_res.variant_id,
-                        },
-                    ));
+                    handler.receive(Box::new(ExpectedAssociatedValue {
+                        span: syntax_tree.span(),
+                        variant_id: variant_res.variant_id,
+                    }));
                 }
 
                 let associated_value = if let Some(associated_type) =
@@ -200,14 +193,12 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
             resolution => resolution.global_id(),
         };
 
-        self.create_handler_wrapper(handler).receive(Box::new(
-            SymbolCannotBeUsedAsAnExpression {
-                span: syntax_tree.span(),
-                symbol: id,
-            },
-        ));
+        handler.receive(Box::new(SymbolCannotBeUsedAsAnExpression {
+            span: syntax_tree.span(),
+            symbol: id,
+        }));
 
-        Err(Error::Semantic(SemanticError(syntax_tree.span())))
+        Err(Error::Binding(BindingError(syntax_tree.span())))
     }
 }
 

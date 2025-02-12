@@ -55,7 +55,7 @@ impl<
                 "us" => r#type::Primitive::Usize,
                 "is" => r#type::Primitive::Isize,
                 _ => {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         InvalidNumericSuffix { suffix_span: suffix.span() },
                     ));
 
@@ -83,7 +83,7 @@ impl<
             // decimal point
 
             if syntax_tree.decimal().is_some() && primitive_type_is_integral {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     FloatingPointLiteralHasIntegralSuffix {
                         numeric_literal_span: syntax_tree.span(),
                     },

@@ -300,7 +300,7 @@ impl<
         )?;
 
         if lhs_address.qualifier != Qualifier::Mutable {
-            self.create_handler_wrapper(handler).receive(Box::new(
+            handler.receive(Box::new(
                 error::AssignToNonMutable {
                     span: tree.span(),
                     qualifier: lhs_address.qualifier,
@@ -474,7 +474,7 @@ impl<
                 };
 
                 if !valid {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         InvalidRelationalOperation {
                             found_type: self
                                 .inference_context
@@ -539,7 +539,7 @@ impl<
                     };
 
                     if !valid {
-                        self.create_handler_wrapper(handler).receive(Box::new(
+                        handler.receive(Box::new(
                             InvalidRelationalOperation {
                                 found_type: self
                                     .inference_context

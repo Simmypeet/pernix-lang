@@ -10,7 +10,7 @@ use crate::{
         diagnostic::{
             FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
         },
-        Binder, Error, SemanticError,
+        Binder, Error, BindingError,
     },
     model::Constraint,
     value::{
@@ -42,11 +42,11 @@ impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {
                 "us" => r#type::Primitive::Usize,
                 "is" => r#type::Primitive::Isize,
                 _ => {
-                    self.create_handler_wrapper(handler).receive(Box::new(
+                    handler.receive(Box::new(
                         InvalidNumericSuffix { suffix_span: suffix.span() },
                     ));
 
-                    return Err(Error::Semantic(SemanticError(
+                    return Err(Error::Binding(BindingError(
                         syntax_tree.span(),
                     )));
                 }
@@ -70,12 +70,12 @@ impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {
             // decimal point
 
             if syntax_tree.decimal().is_some() && primitive_type_is_integral {
-                self.create_handler_wrapper(handler).receive(Box::new(
+                handler.receive(Box::new(
                     FloatingPointLiteralHasIntegralSuffix {
                         numeric_literal_span: syntax_tree.span(),
                     },
                 ));
-                return Err(Error::Semantic(SemanticError(syntax_tree.span())));
+                return Err(Error::Binding(BindingError(syntax_tree.span())));
             }
 
             Type::Primitive(primitive_type)
