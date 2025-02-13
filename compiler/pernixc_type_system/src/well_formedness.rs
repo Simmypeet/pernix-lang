@@ -10,6 +10,7 @@ use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     instantiation::{self, Instantiation},
+    lifetime::Lifetime,
     predicate::{Outlives, Predicate},
     r#type::Type,
     variance::Variance,
@@ -125,9 +126,9 @@ fn get_all_predicates<M: Model>(
 ///
 /// This doesn't include the additional requirements such as checking trait
 /// predicate satisfiabiltiy if the `generic_id` is trait.
-/// 
+///
 /// # Errors
-/// 
+///
 /// Returns [`Abort`] returned when querying components from the table.
 #[allow(clippy::type_complexity)]
 pub fn check<M: Model>(
@@ -167,11 +168,58 @@ fn check_implementation_satisfied<M: Model>(
     generic_arguments: &GenericArguments<M>,
     predicate_declaration_span: Option<Span>,
     do_outlives_check: bool,
-    is_not_general_enough: bool,
+    mut is_not_general_enough: bool,
     environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<(BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>), Abort> {
     let mut lifetime_constraints = BTreeSet::new();
     let mut errors = Vec::new();
+
+    // check for each predicate in the implementation
+    for (mut predicate, span) in
+        get_all_predicates(environment.table(), id, Some(instantiation))?
+    {
+        match &predicate {
+            Predicate::LifetimeOutlives(outlives) => {
+                if outlives.operand.is_forall() {
+                    is_not_general_enough = true;
+                    continue;
+                }
+            }
+            Predicate::TypeOutlives(outlives) => {
+                if RecursiveIterator::new(&outlives.operand)
+                    .any(|x| x.0.as_lifetime().is_some_and(|x| x.is_forall()))
+                {
+                    is_not_general_enough = true;
+                    continue;
+                }
+            }
+            _ => {}
+        }
+
+        match &mut predicate {
+            Predicate::LifetimeOutlives(outlives)
+                if outlives.bound.is_forall() =>
+            {
+                outlives.bound = Lifetime::Static;
+            }
+
+            Predicate::TypeOutlives(outlives) if outlives.bound.is_forall() => {
+                outlives.bound = Lifetime::Static;
+            }
+
+            _ => {}
+        }
+
+        let (new_lifetime_constraints, new_erros) = predicate_satisfied(
+            predicate,
+            span,
+            do_outlives_check,
+            environment,
+        )?;
+
+        lifetime_constraints.extend(new_lifetime_constraints);
+        errors.extend(new_erros);
+    }
 
     if is_not_general_enough {
         errors.push(Error::ImplementationIsNotGeneralEnough(
@@ -185,21 +233,6 @@ fn check_implementation_satisfied<M: Model>(
                 predicate_declaration_span,
             },
         ));
-    }
-
-    // check for each predicate in the implementation
-    for predicate in
-        get_all_predicates(environment.table(), id, Some(instantiation))?
-    {
-        let (new_lifetime_constraints, new_erros) = predicate_satisfied(
-            predicate.0,
-            predicate.1,
-            do_outlives_check,
-            environment,
-        )?;
-
-        lifetime_constraints.extend(new_lifetime_constraints);
-        errors.extend(new_erros);
     }
 
     Ok((lifetime_constraints, errors))

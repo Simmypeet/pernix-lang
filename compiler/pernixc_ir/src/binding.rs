@@ -116,7 +116,7 @@ impl<'t> Binder<'t> {
     ///
     /// # Errors
     ///
-    /// See [`AbruptError`] for more information
+    /// See [`Abort`] for more information
     pub fn new_function<'a>(
         table: &'t Table,
         function_id: GlobalID,
