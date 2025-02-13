@@ -288,6 +288,35 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                         )
                     }
 
+                    (
+                        r#type::SubTypeLocation::TraitMember(location),
+                        Type::TraitMember(trait_member),
+                    ) => {
+                        let inner_term = if location.0.from_parent {
+                            trait_member
+                                .0
+                                .parent_generic_arguments
+                                .types
+                                .get(location.0.index)
+                        } else {
+                            trait_member
+                                .0
+                                .member_generic_arguments
+                                .types
+                                .get(location.0.index)
+                        }
+                        .unwrap();
+
+                        let current_variance =
+                            parent_variance.xfrom(Variance::Invariant);
+
+                        self.get_variance_of(
+                            inner_term,
+                            current_variance,
+                            locations,
+                        )
+                    }
+
                     _ => panic!("invalid location"),
                 }
             }

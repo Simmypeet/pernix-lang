@@ -100,3 +100,6 @@ pub fn check(
         }
     }
 }
+
+#[cfg(test)]
+mod test;
