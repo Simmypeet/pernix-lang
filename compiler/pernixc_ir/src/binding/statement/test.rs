@@ -1,16 +1,17 @@
-use crate::ir::representation::binding::test::{parse_statement, TestTemplate};
+use pernixc_handler::Panic;
+use pernixc_syntax::utility::parse;
+
+use crate::binding::test::Template;
 
 #[test]
 fn variable_declaration_with_type_annotation() {
-    let template = TestTemplate::new();
-    let (mut binder, storage) = template.create_binder();
-
     const SOURCE: &str = "let mutable x: int32 = 32;";
-    let statement =
-        parse_statement(SOURCE).into_variable_declaration().unwrap();
+
+    let template = Template::new();
+    let mut binder = template.create_binder();
 
     let (new_alloca_id, _) =
-        binder.bind_variable_declaration(&statement, &storage).unwrap();
+        binder.bind_variable_declaration(&parse(SOURCE), &Panic).unwrap();
 
     let named = binder.stack.search("x").unwrap();
 
