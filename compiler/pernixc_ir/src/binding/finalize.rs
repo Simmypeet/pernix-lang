@@ -17,9 +17,6 @@ use crate::{
     IR,
 };
 
-// mod borrow;
-// mod memory;
-// mod simplify_drop;
 mod check;
 mod transform_inference;
 
