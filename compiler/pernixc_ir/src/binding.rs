@@ -522,29 +522,32 @@ impl Binder<'_> {
             })
     }
 
+    #[allow(clippy::type_complexity)]
     fn verify_generic_arguments_for_with_inference(
         &mut self,
         generic_arguments: GenericArguments<infer::Model>,
         resolved_id: GlobalID,
         generic_identifier_span: Span,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<infer::Model>, Abort> {
+    ) -> Result<(GenericArguments<infer::Model>, Vec<Box<dyn Diagnostic>>), Abort>
+    {
         let mut type_inferences = InferenceProvider::default();
         let mut constant_inferences = InferenceProvider::default();
 
-        let generic_arguments = self.table.verify_generic_arguments_for(
-            generic_arguments,
-            resolved_id,
-            generic_identifier_span,
-            pernixc_resolution::Config {
-                elided_lifetime_provider: Some(&mut LifetimeInferenceProvider),
-                elided_type_provider: Some(&mut type_inferences),
-                elided_constant_provider: Some(&mut constant_inferences),
-                observer: None,
-                extra_namespace: Some(&self.extra_namespace),
-            },
-            handler,
-        )?;
+        let (generic_arguments, diagnostics) =
+            self.table.verify_generic_arguments_for(
+                generic_arguments,
+                resolved_id,
+                generic_identifier_span,
+                pernixc_resolution::Config {
+                    elided_lifetime_provider: Some(
+                        &mut LifetimeInferenceProvider,
+                    ),
+                    elided_type_provider: Some(&mut type_inferences),
+                    elided_constant_provider: Some(&mut constant_inferences),
+                    observer: None,
+                    extra_namespace: Some(&self.extra_namespace),
+                },
+            )?;
 
         for inference in type_inferences.created_inferences {
             assert!(self
@@ -558,7 +561,7 @@ impl Binder<'_> {
                 .register::<Constant<_>>(inference, NoConstraint));
         }
 
-        Ok(generic_arguments)
+        Ok((generic_arguments, diagnostics))
     }
 
     fn resolve_generic_arguments_with_inference(
@@ -752,35 +755,14 @@ impl Binder<'_> {
         }
     }
 
-    /// Performs type checking on the given `ty`.
-    ///
-    /// This function performs type inference as well as type checking. Any
-    /// error, error found will make the binder suboptimal.
-    ///
-    /// # Parameters
-    ///
-    /// - `ty`: The type to check.
-    /// - `expected_ty`: The type or constraint that `ty` should satisfy.
-    /// - `type_check_span`: The span of the type check. This is used for error
-    ///   reoprting.
-    /// - `handler`: The handler to report errors to.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if an unregistered inference variable is found.
-    ///
-    /// # Errors
-    ///
-    /// If the type check fails, an error is returned with the span of
-    /// `type_check_span`
     #[allow(clippy::too_many_lines)]
-    fn type_check(
+    fn type_check_as_diagnostic(
         &mut self,
         ty: &Type<infer::Model>,
         expected_ty: Expected<infer::Model>,
         type_check_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<bool, Abort> {
+    ) -> Result<Option<Box<dyn Diagnostic>>, Abort> {
         let environment = self.create_environment();
 
         // simplify the types
@@ -874,14 +856,7 @@ impl Binder<'_> {
                 };
 
                 // report the error
-                error.map_or_else(
-                    || Ok(true),
-                    |error| {
-                        handler.receive(error);
-
-                        Ok(false)
-                    },
-                )
+                Ok(error)
             }
             Expected::Constraint(constraint) => {
                 let result = if let Type::Inference(inference_var) =
@@ -896,7 +871,7 @@ impl Binder<'_> {
 
                 // report the error
                 if result {
-                    Ok(true)
+                    Ok(None)
                 } else {
                     let error = Box::new(MismatchedType {
                         expected_type: Type::Inference(constraint),
@@ -911,12 +886,47 @@ impl Binder<'_> {
                         span: type_check_span,
                     });
 
-                    handler.receive(error);
-
-                    Ok(false)
+                    Ok(Some(error))
                 }
             }
         }
+    }
+
+    /// Performs type checking on the given `ty`.
+    ///
+    /// This function performs type inference as well as type checking. Any
+    /// error, error found will make the binder suboptimal.
+    ///
+    /// # Parameters
+    ///
+    /// - `ty`: The type to check.
+    /// - `expected_ty`: The type or constraint that `ty` should satisfy.
+    /// - `type_check_span`: The span of the type check. This is used for error
+    ///   reoprting.
+    /// - `handler`: The handler to report errors to.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if an unregistered inference variable is found.
+    #[allow(clippy::too_many_lines)]
+    fn type_check(
+        &mut self,
+        ty: &Type<infer::Model>,
+        expected_ty: Expected<infer::Model>,
+        type_check_span: Span,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Result<bool, Abort> {
+        let error = self.type_check_as_diagnostic(
+            ty,
+            expected_ty,
+            type_check_span,
+            handler,
+        )?;
+
+        error.map_or(Ok(true), |error| {
+            handler.receive(error);
+            Ok(false)
+        })
     }
 }
 

@@ -4,7 +4,7 @@ use pernixc_arena::ID;
 use pernixc_component::{
     function_signature::FunctionSignature, implementation::Implementation,
 };
-use pernixc_handler::{Handler, Storage};
+use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
@@ -306,16 +306,14 @@ impl Binder<'_> {
 
             self.inference_context = starting_inference_context.clone();
 
-            let storage = Storage::<Box<dyn Diagnostic>>::default();
-            let function_generic_arguments = self
+            let (function_generic_arguments, diagnostics) = self
                 .verify_generic_arguments_for_with_inference(
                     generic_arguments.clone(),
                     trait_function_id,
                     method_ident.span(),
-                    &storage,
                 )?;
 
-            if !storage.as_vec().is_empty() {
+            if !diagnostics.is_empty() {
                 continue;
             }
 
@@ -410,18 +408,16 @@ impl Binder<'_> {
 
                 instantiation::instantiate(&mut parameter_ty, &instantiation);
 
-                let storage = Storage::<Box<dyn Diagnostic>>::default();
-                if !self.type_check(
-                    &self.type_of_value(argument_value, handler)?,
-                    Expected::Known(parameter_ty),
-                    argument_span.clone(),
-                    &storage,
-                )? {
+                if self
+                    .type_check_as_diagnostic(
+                        &self.type_of_value(argument_value, handler)?,
+                        Expected::Known(parameter_ty),
+                        argument_span.clone(),
+                        handler,
+                    )?
+                    .is_some()
+                {
                     continue 'candidate;
-                }
-
-                if !storage.as_vec().is_empty() {
-                    continue;
                 }
             }
 
@@ -729,23 +725,20 @@ impl Binder<'_> {
             );
         };
 
-        let storage = Storage::<Box<dyn Diagnostic>>::default();
-        let function_generic_arguments = self
+        let (function_generic_arguments, diagnostics) = self
             .verify_generic_arguments_for_with_inference(
                 generic_arguments,
                 adt_implementation_function_id,
                 method_ident.span(),
-                &storage,
             )?;
 
-        let storage = storage.into_vec();
-        if !storage.is_empty() {
+        if !diagnostics.is_empty() {
             return self.on_binding_adt_method_error(
                 postfix.span(),
                 reciever_expression,
                 arguments,
                 trait_method_candidates,
-                |_| storage.into_iter(),
+                |_| diagnostics.into_iter(),
                 handler,
             );
         }

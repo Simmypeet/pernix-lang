@@ -310,14 +310,14 @@ pub trait Ext {
     ///
     /// Returns [`Abort`] from cyclic dependency while querying the components
     /// from the table.
+    #[allow(clippy::type_complexity)]
     fn verify_generic_arguments_for<M: Model>(
         &self,
         generic_arguments: GenericArguments<M>,
         generic_id: GlobalID,
         generic_identifier_span: Span,
         config: Config<M>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, Abort>;
+    ) -> Result<(GenericArguments<M>, Vec<Box<dyn Diagnostic>>), Abort>;
 
     /// Resolves for a [`Lifetime`] based on the given [`syntax_tree::Lifetime`]
     fn resolve_lifetime<M: Model>(
@@ -411,15 +411,13 @@ impl Ext for Table {
         generic_id: GlobalID,
         generic_identifier_span: Span,
         config: Config<M>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<GenericArguments<M>, Abort> {
+    ) -> Result<(GenericArguments<M>, Vec<Box<dyn Diagnostic>>), Abort> {
         term::verify_generic_arguments_for(
             self,
             generic_arguments,
             generic_id,
             generic_identifier_span,
             config,
-            handler,
         )
     }
 

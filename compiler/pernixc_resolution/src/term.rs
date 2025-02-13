@@ -56,13 +56,18 @@ pub(super) fn resolve_generic_arguments_for<M: Model>(
             )
         });
 
-    table.verify_generic_arguments_for(
+    let (generic_arguments, diagnostics) = table.verify_generic_arguments_for(
         generic_arguments,
         symbol_id,
         generic_identifier.span(),
         config,
-        handler,
-    )
+    )?;
+
+    for diagnostic in diagnostics {
+        handler.receive(diagnostic);
+    }
+
+    Ok(generic_arguments)
 }
 
 pub(super) fn resolve_generic_arguments<M: Model>(
@@ -164,7 +169,7 @@ fn resolve_generic_arguments_kinds<
         &'x mut Config<T::Model>,
     ) -> Option<&'x mut dyn ElidedTermProvider<T>>,
     from_default_model: impl Fn(T::Rebind<Default>) -> T,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
+    diagnostics: &mut Vec<Box<dyn Diagnostic>>,
 ) -> Vec<T>
 where
     T::Rebind<Default>: 'a + Clone,
@@ -175,7 +180,7 @@ where
         }
 
         let Some(provider) = get_provider(&mut config) else {
-            handler.receive(Box::new(MismatchedGenericArgumentCount {
+            diagnostics.push(Box::new(MismatchedGenericArgumentCount {
                 generic_kind,
                 generic_identifier_span,
                 expected_count: parameters.len(),
@@ -200,7 +205,7 @@ where
 
         // check if the number of supplied generic arugmnets is valid
         if !valid_count {
-            handler.receive(Box::new(MismatchedGenericArgumentCount {
+            diagnostics.push(Box::new(MismatchedGenericArgumentCount {
                 generic_identifier_span,
                 generic_kind,
                 expected_count: parameters.len(),
@@ -246,15 +251,14 @@ where
     }
 }
 
-#[allow(clippy::option_if_let_else)]
+#[allow(clippy::option_if_let_else, clippy::type_complexity)]
 pub(super) fn verify_generic_arguments_for<M: Model>(
     table: &Table,
     generic_arguments: GenericArguments<M>,
     generic_id: GlobalID,
     generic_identifier_span: Span,
     mut config: Config<M>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<GenericArguments<M>, Abort> {
+) -> Result<(GenericArguments<M>, Vec<Box<dyn Diagnostic>>), Abort> {
     let generic_parameters = table.query::<GenericParameters>(generic_id)?;
 
     let (
@@ -285,7 +289,8 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
         )
     };
 
-    Ok(GenericArguments {
+    let mut diagnostics = Vec::new();
+    let generic_args = GenericArguments {
         lifetimes: resolve_generic_arguments_kinds(
             generic_arguments.lifetimes.into_iter(),
             lifetime_parameter_orders.iter(),
@@ -298,7 +303,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
                 None => None,
             },
             M::from_default_lifetime,
-            handler,
+            &mut diagnostics,
         ),
         types: resolve_generic_arguments_kinds(
             generic_arguments.types.into_iter(),
@@ -312,7 +317,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
                 None => None,
             },
             M::from_default_type,
-            handler,
+            &mut diagnostics,
         ),
         constants: resolve_generic_arguments_kinds(
             generic_arguments.constants.into_iter(),
@@ -326,9 +331,11 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
                 None => None,
             },
             M::from_default_constant,
-            handler,
+            &mut diagnostics,
         ),
-    })
+    };
+
+    Ok((generic_args, diagnostics))
 }
 
 pub(super) fn resolve_lifetime<M: Model>(
