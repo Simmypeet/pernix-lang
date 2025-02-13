@@ -15,6 +15,7 @@ use getset::{CopyGetters, Getters};
 use pernixc_component::implied_predicates::{
     ImpliedPredicate, ImpliedPredicates,
 };
+use pernixc_source_file::Span;
 use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -59,6 +60,13 @@ pub trait GetActivePremiseExt {
         &self,
         current_site: GlobalID,
     ) -> Premise<M>;
+
+    /// Retrieves the active premise of the current site with the span of the
+    /// predicates.
+    fn get_active_premise_predicates_with_span<M: Model>(
+        &self,
+        current_site: GlobalID,
+    ) -> HashMap<Predicate<M>, Vec<Span>>;
 }
 
 impl GetActivePremiseExt for Table {
@@ -113,6 +121,42 @@ impl GetActivePremiseExt for Table {
         }
 
         premise
+    }
+
+    fn get_active_premise_predicates_with_span<M: Model>(
+        &self,
+        current_site: GlobalID,
+    ) -> HashMap<Predicate<M>, Vec<Span>> {
+        let mut spans_by_predicate: HashMap<Predicate<M>, Vec<Span>> =
+            HashMap::default();
+
+        for global_id in self
+            .scope_walker(current_site)
+            .map(|x| GlobalID::new(current_site.target_id, x))
+        {
+            let symbol_kind = *self.get::<SymbolKind>(global_id);
+
+            if symbol_kind.has_where_clause() {
+                if let Ok(where_clause) = self.query::<WhereClause>(global_id) {
+                    for predicate in &where_clause.predicates {
+                        let Some(span) = predicate.span.clone() else {
+                            continue;
+                        };
+
+                        let predicate = Predicate::from_other_model(
+                            predicate.predicate.clone(),
+                        );
+
+                        spans_by_predicate
+                            .entry(predicate)
+                            .or_default()
+                            .push(span);
+                    }
+                }
+            }
+        }
+
+        spans_by_predicate
     }
 }
 
@@ -556,10 +600,7 @@ fn check_definite_predicate<
     predicates: &[T],
     overflow_predicates: &mut Vec<(Predicate<M>, super::Error)>,
     definite_predicates: &mut Vec<Predicate<M>>,
-    definite_check: impl Fn(
-        &T,
-        &Environment<M, N>,
-    ) -> Result<bool, super::Error>,
+    definite_check: impl Fn(&T, &Environment<M, N>) -> Result<bool, super::Error>,
 ) {
     // pick a predicate
     'outer: for predicate_i in predicates {

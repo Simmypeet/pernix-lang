@@ -26,7 +26,7 @@ use crate::{
         check_orphan_rule, check_overlapping, check_unused_generic_parameters,
     },
     occurrences::{self, check_occurrences},
-    variance_map,
+    variance_map, where_clause_check,
 };
 
 /// A struct for starting the building of a target.
@@ -226,6 +226,12 @@ pub fn build(
         }
         if symbol_kind.has_variance_map() {
             build_component::<VarianceMap>(table, x);
+        }
+
+        if symbol_kind.has_where_clause()
+            || symbol_kind.has_implied_predicates()
+        {
+            where_clause_check::check(table, x, &**table.handler());
         }
 
         // check the well-formedness of all occurrences so far

@@ -15,6 +15,7 @@ pub mod utility;
 pub mod variance_map;
 pub mod variant;
 pub mod where_clause;
+pub mod where_clause_check;
 
 mod build;
 
