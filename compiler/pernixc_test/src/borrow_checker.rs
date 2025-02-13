@@ -15,7 +15,9 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},
 };
-use pernixc_type_system::diagnostic::UnsatisfiedPredicate;
+use pernixc_type_system::diagnostic::{
+    ImplementationIsNotGeneralEnough, UnsatisfiedPredicate,
+};
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH: &str = r"
 public function consume[T](x: T) {}
@@ -2170,4 +2172,83 @@ fn universal_regions_always_flows() {
     assert!(universal_regions.contains(&UniversalRegion::NonStatic(
         NonStaticUniversalRegion::Named(b_lt)
     )));
+}
+
+const IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH: &str = r"
+using {Drop, Copy} from core;
+
+public struct Vector[T] {
+	private x: phantom T
+}
+
+implements[T] Vector[T] {
+	public function new(): this {
+		return this { x: phantom };
+	}
+
+	public function push['a](self: &'a mutable this, value: T)
+	where
+		T: 'a
+	{
+		panic;
+	}
+}
+
+public trait DoSomething['a, T] {
+	public type Output;
+
+	public function doSomething['b](
+		self: &'b mutable T, 
+		object: &'a mutable int32
+	)
+	where
+		T: 'b;
+}
+
+implements['a, 'c] DoSomething['a, Vector[&'c mutable int32]]  
+where
+	'a: 'c
+{
+	public type Output = int32;
+
+	public function doSomething['b](
+		self: &'b mutable Vector[&'c mutable int32], 
+		object: &'a mutable int32
+	) 
+	where	
+		Vector[&'c mutable int32]: 'b {
+		self->push(&mutable *object);
+	}
+}
+
+public function use['a, T](object: &'a mutable T)
+where
+	trait for['x] DoSomething['x, T],
+	T: 'a
+{
+	let mutable number = 32;
+	
+	object->doSomething(&mutable number);
+	object->doSomething(&mutable number);
+}
+
+public function main() {
+	let mutable vector = Vector[&mutable int32]::new();
+
+	use(&mutable vector);
+}
+";
+
+#[test]
+fn implementation_is_not_general_enough() {
+    let (_, errs) = build_table(IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH);
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0]
+        .as_any()
+        .downcast_ref::<ImplementationIsNotGeneralEnough<IRModel>>()
+        .unwrap();
+
+    assert_eq!(error.instantiation_span.str(), "use(&mutable vector)");
 }
