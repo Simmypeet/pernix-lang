@@ -260,6 +260,7 @@ fn initialize_drop_trait(
         )
     ));
     assert!(table.add_component(drop_trait_id, Accessibility::Public));
+    assert!(table.add_component(drop_trait_id, Implemented::default()));
 
     assert!(member.insert("Drop".to_string(), drop_trait_id.id).is_none());
 

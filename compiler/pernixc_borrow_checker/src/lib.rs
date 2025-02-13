@@ -207,20 +207,37 @@
 //! Now it's more clear that `?x` is a set of `{%r1, %r2}`, which is the
 //! possible `Borrow` expressions that it might come from.
 
+use std::collections::HashSet;
+
+use cache::{RegionVariances, RegisterInfos};
 use enum_as_inner::EnumAsInner;
+use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
-use pernixc_table::Table;
+use pernixc_handler::Handler;
+use pernixc_ir::{address::Address, Representation, Values};
+use pernixc_source_file::Span;
+use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_term::{
     constant::Constant,
     elided_lifetimes::ElidedLifetimeID,
     generic_parameter::{GenericParameters, LifetimeParameterID},
     lifetime::Lifetime,
-    r#type::Type,
+    r#type::{Qualifier, Type},
+    visitor::RecursiveIterator,
     ModelOf, Never,
 };
+use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod cache;
+pub(crate) mod check;
+pub(crate) mod invalidate;
+pub(crate) mod liveness;
+pub(crate) mod local_region_generator;
+pub(crate) mod subset;
+pub(crate) mod transform;
+
+pub mod diagnostic;
 
 /// A new type wrapper over a [`ID<LocalRegion>`] to overcome the constraint
 /// over orphan-rule
@@ -415,4 +432,181 @@ impl pernixc_term::Model for Model {
     ) -> Constant<Self> {
         Constant::from_other_model(constant)
     }
+}
+
+/// Gets the regions that got dereferenced when using the given address
+fn get_dereferenced_regions_in_address(
+    values: &Values<Model>,
+    mut address: &Address<Model>,
+    span: &Span,
+    current_site: GlobalID,
+    environment: &Environment<Model, impl Normalizer<Model>>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Result<HashSet<Region>, Abort> {
+    let mut regions = HashSet::new();
+
+    loop {
+        match address {
+            Address::Memory(_) => break Ok(regions),
+
+            Address::Field(field) => {
+                address = &field.struct_address;
+            }
+            Address::Tuple(tuple) => {
+                address = &tuple.tuple_address;
+            }
+            Address::Index(index) => {
+                address = &index.array_address;
+            }
+            Address::Variant(variant) => {
+                address = &variant.enum_address;
+            }
+
+            Address::Reference(reference) => {
+                let pointee_ty = values
+                    .type_of_address(
+                        &reference.reference_address,
+                        current_site,
+                        environment,
+                    )
+                    .map_err(|x| {
+                        x.report_overflow(|x| {
+                            x.report_as_type_calculating_overflow(
+                                span.clone(),
+                                handler,
+                            )
+                        })
+                    })?
+                    .result;
+
+                let pointee_reference_ty = pointee_ty.into_reference().unwrap();
+
+                regions.extend(
+                    Region::try_from(pointee_reference_ty.lifetime).ok(),
+                );
+
+                address = &reference.reference_address;
+            }
+        }
+    }
+}
+
+/// Gets the regions that appears when using the given address
+fn get_regions_in_address(
+    values: &Values<Model>,
+    mut address: &Address<Model>,
+    span: &Span,
+    include_deref: bool,
+    current_site: GlobalID,
+    environment: &Environment<Model, impl Normalizer<Model>>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Result<HashSet<Region>, Abort> {
+    let address_ty = values
+        .type_of_address(address, current_site, environment)
+        .map_err(|x| {
+            x.report_overflow(|x| {
+                x.report_as_type_calculating_overflow(span.clone(), handler)
+            })
+        })?
+        .result;
+
+    let mut regions = RecursiveIterator::new(&address_ty)
+        .filter_map(|x| x.0.into_lifetime().ok())
+        .filter_map(|x| Region::try_from(*x).ok())
+        .collect::<HashSet<_>>();
+
+    if include_deref {
+        loop {
+            match address {
+                Address::Memory(_) => break,
+
+                Address::Field(field) => {
+                    address = &field.struct_address;
+                }
+                Address::Tuple(tuple) => {
+                    address = &tuple.tuple_address;
+                }
+                Address::Index(index) => {
+                    address = &index.array_address;
+                }
+                Address::Variant(variant) => {
+                    address = &variant.enum_address;
+                }
+
+                Address::Reference(reference) => {
+                    let pointee_ty = values
+                        .type_of_address(
+                            &reference.reference_address,
+                            current_site,
+                            environment,
+                        )
+                        .map_err(|x| {
+                            x.report_overflow(|x| {
+                                x.report_as_type_calculating_overflow(
+                                    span.clone(),
+                                    handler,
+                                )
+                            })
+                        })?
+                        .result;
+
+                    let pointee_reference_ty =
+                        pointee_ty.into_reference().unwrap();
+
+                    regions.extend(
+                        Region::try_from(pointee_reference_ty.lifetime).ok(),
+                    );
+
+                    if pointee_reference_ty.qualifier == Qualifier::Immutable {
+                        break;
+                    }
+
+                    address = &reference.reference_address;
+                }
+            }
+        }
+    }
+
+    Ok(regions)
+}
+
+/// Performs the borrow check analysis.
+#[allow(clippy::missing_errors_doc)]
+pub fn borrow_check(
+    ir: &Representation<pernixc_ir::model::Model>,
+    current_site: GlobalID,
+    environment: &Environment<Model, impl Normalizer<Model>>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) -> Result<(), Abort> {
+    // NOTE: we clone the whole ir here, is there a better way to do this?
+    let (ir, _) =
+        transform::transform_to_borrow_model(ir.clone(), environment.table());
+
+    let register_infos =
+        RegisterInfos::new(&ir, current_site, environment, handler)?;
+    let region_variances =
+        RegionVariances::new(&ir, current_site, environment)?;
+    let reachability = ir.control_flow_graph.reachability();
+
+    let subset = subset::analyze(
+        &ir,
+        &register_infos,
+        &region_variances,
+        current_site,
+        environment,
+        handler,
+    )?;
+
+    check::borrow_check_internal(
+        &ir,
+        &subset,
+        &register_infos,
+        &region_variances,
+        &reachability,
+        current_site,
+        environment,
+        handler,
+    )?;
+
+    Ok(())
 }

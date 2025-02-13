@@ -10,13 +10,23 @@ publish = false
 [dev-dependencies]
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_memory_checker = { path = "../pernixc_memory_checker" }
+pernixc_borrow_checker = { path = "../pernixc_borrow_checker" }
+pernixc_resolution = { path = "../pernixc_resolution" }
+pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_table = { path = "../pernixc_table" }
 pernixc_builder = { path = "../pernixc_builder" }
+pernixc_ir = { path = "../pernixc_ir" }
+pernixc_term = { path = "../pernixc_term" }
+pernixc_type_system = { path = "../pernixc_type_system" }
 
 
 [[test]]
 name = "memory_checker"
 path = "src/memory_checker.rs"
+
+[[test]]
+name = "borrow_checker"
+path = "src/borrow_checker.rs"
 
 [lints]
 workspace = true

@@ -395,11 +395,11 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         if scope_push.0
                             == self.representation.scope_tree.root_scope_id()
                         {
-                            if *self
+                            if !self
                                 .ty_environment
                                 .table()
                                 .get::<SymbolKind>(self.current_site)
-                                != SymbolKind::Function
+                                .has_function_signature()
                             {
                                 break 'out;
                             }

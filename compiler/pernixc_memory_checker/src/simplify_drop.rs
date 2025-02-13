@@ -201,6 +201,16 @@ pub(super) fn simplify_drop(
                         .map(|x| GlobalID::new(symbol.id.target_id, x))
                     {
                         // recursively simplify the drop instructions
+                        let variant_sym = environment
+                            .table()
+                            .query::<pernixc_component::variant::Variant>(
+                            variant_id,
+                        )?;
+
+                        if variant_sym.associated_type.is_none() {
+                            continue;
+                        }
+
                         if !simplify_drop(
                             &Drop {
                                 address: Address::Variant(Variant {

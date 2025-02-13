@@ -22,6 +22,8 @@ members = [
     "compiler/pernixc_transitive_closure",
     "compiler/pernixc_intrinsic",
     "compiler/pernixc_memory_checker",
+    "compiler/pernixc_borrow_checker",
+    "compiler/pernixc_abort",
     "compiler/pernixc_test",
     "lsp/pernix_server",
 ]

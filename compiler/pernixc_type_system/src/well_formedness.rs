@@ -370,7 +370,7 @@ pub fn predicate_satisfied<M: Model>(
             )
         }
         Predicate::TypeOutlives(outlives) => {
-            if !do_outlives_check {
+            if do_outlives_check {
                 match environment.query(outlives) {
                     Ok(Some(_)) => return Ok((BTreeSet::new(), Vec::new())),
 

@@ -1,9 +1,9 @@
 //! Builds the IR for the function body.
 
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use pernixc_abort::Abort;
-use pernixc_handler::Handler;
+use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{binding::Binder, IR};
 use pernixc_syntax::syntax_tree::{item::Parameter, ConnectedList};
 use pernixc_table::{
@@ -11,6 +11,10 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     query::Builder,
     GlobalID, Table,
+};
+use pernixc_type_system::{
+    environment::{Environment, GetActivePremiseExt},
+    normalizer,
 };
 
 use crate::builder;
@@ -35,7 +39,9 @@ impl Builder<IR> for builder::Builder {
             table.get::<component::syntax_tree::FunctionSignature>(global_id);
         let body = table.get::<component::syntax_tree::FunctionBody>(global_id);
 
-        match Binder::new_function(
+        let storage = Storage::<Box<dyn Diagnostic>>::new();
+
+        let result = match Binder::new_function(
             table,
             global_id,
             signature
@@ -44,24 +50,49 @@ impl Builder<IR> for builder::Builder {
                 .iter()
                 .flat_map(ConnectedList::elements)
                 .map(Parameter::irrefutable_pattern),
-            handler,
+            &storage,
         )
         .and_then(|mut binder| {
             for statement in body.statements.tree() {
-                binder.bind_statement(statement, handler)?;
+                binder.bind_statement(statement, &storage)?;
             }
 
-            binder.finalize(handler)
+            binder.finalize(&storage)
         })
         .and_then(|mut ir| {
-            pernixc_memory_checker::memory_check(
-                table, &mut ir, global_id, handler,
-            )?;
+            if storage.as_vec().is_empty() {
+                pernixc_memory_checker::memory_check(
+                    table, &mut ir, global_id, &storage,
+                )?;
+            }
+
+            Ok(ir)
+        })
+        .and_then(|ir| {
+            if storage.as_vec().is_empty() {
+                let active_premise = table.get_active_premise(global_id);
+                let environment = Environment::new(
+                    Cow::Borrowed(&active_premise),
+                    table,
+                    normalizer::NO_OP,
+                );
+
+                pernixc_borrow_checker::borrow_check(
+                    &ir,
+                    global_id,
+                    &environment,
+                    &storage,
+                )?;
+            }
 
             Ok(ir)
         }) {
             Ok(result) => Some(Arc::new(result)),
             Err(Abort) => Some(Arc::new(IR::default())),
-        }
+        };
+
+        storage.propagate(handler);
+
+        result
     }
 }
