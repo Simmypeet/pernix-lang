@@ -1,0 +1,20 @@
+[package]
+name = "pernixc_codegen"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_table = { path = "../pernixc_table" }
+pernixc_handler = { path = "../pernixc_handler" }
+pernixc_term = { path = "../pernixc_term" }
+pernixc_ir = { path = "../pernixc_ir" }
+pernixc_type_system = { path = "../pernixc_type_system" }
+pernixc_abort = { path = "../pernixc_abort" }
+inkwell = { workspace = true }
+getset = { workspace = true }
+
+[lints]
+workspace = true

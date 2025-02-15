@@ -2,7 +2,7 @@
 
 use std::{
     fs::File,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::ExitCode,
     sync::Arc,
     time::{Duration, Instant},
@@ -10,8 +10,12 @@ use std::{
 
 use bincode::{DefaultOptions, Options};
 use indicatif::{ProgressBar, ProgressStyle};
+use inkwell::targets::{
+    InitializationConfig, Target as LLVMTarget, TargetMachine,
+    TargetMachineOptions,
+};
 use parking_lot::RwLock;
-use pernixc_builder::Compilation;
+use pernixc_builder::{reflector::ComponentTag, Compilation};
 use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
 use pernixc_intrinsic::IntrinsicExt;
@@ -20,9 +24,11 @@ use pernixc_log::{
     Message, Severity,
 };
 use pernixc_source_file::SourceFile;
+use pernixc_storage::{serde::Reflector, ArcTrait};
 use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_table::{
-    AddTargetError, CompilationMetaData, GlobalID, Table, TargetID,
+    component::Member, diagnostic::Diagnostic, AddTargetError,
+    CompilationMetaData, GlobalID, Table, TargetID,
 };
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
@@ -125,10 +131,7 @@ fn update_message(
     progress_bar.set_message(message);
 }
 
-/// Runs the program with the given arguments.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn run(argument: Arguments) -> ExitCode {
+fn create_root_source_file(argument: &Arguments) -> Option<Arc<SourceFile>> {
     let file = match File::open(&argument.file) {
         Ok(file) => file,
         Err(error) => {
@@ -138,7 +141,7 @@ pub fn run(argument: Arguments) -> ExitCode {
             );
 
             eprintln!("{msg}");
-            return ExitCode::FAILURE;
+            return None;
         }
     };
 
@@ -151,7 +154,7 @@ pub fn run(argument: Arguments) -> ExitCode {
             );
 
             eprintln!("{msg}");
-            return ExitCode::FAILURE;
+            return None;
         }
         Err(pernixc_source_file::Error::Utf8(error)) => {
             let msg = Message::new(
@@ -160,16 +163,23 @@ pub fn run(argument: Arguments) -> ExitCode {
             );
 
             eprintln!("{msg}");
-            return ExitCode::FAILURE;
+            return None;
         }
     };
 
+    Some(source_file)
+}
+
+fn parse_target(
+    source_file: &Arc<SourceFile>,
+    target_name_argument: Option<String>,
+) -> Option<Target> {
     let printer = Printer::new();
 
     // syntactic analysis
     let target = Target::parse(
-        &source_file,
-        argument.target_name.map_or_else(
+        source_file,
+        target_name_argument.map_or_else(
             || {
                 source_file
                     .full_path()
@@ -186,12 +196,19 @@ pub fn run(argument: Arguments) -> ExitCode {
 
     // early exit
     if printer.has_printed() {
-        return ExitCode::FAILURE;
+        return None;
     }
 
-    // retrieve the output path
-    let output_path = if let Some(output) = argument.output {
-        output
+    Some(target)
+}
+
+fn get_output_path(
+    argument_output: Option<PathBuf>,
+    target_kind: TargetKind,
+    target: &Target,
+) -> Option<PathBuf> {
+    if let Some(output) = argument_output {
+        Some(output)
     } else {
         let mut output = match std::env::current_dir() {
             Ok(dir) => dir,
@@ -202,33 +219,30 @@ pub fn run(argument: Arguments) -> ExitCode {
                 );
 
                 eprintln!("{msg}");
-                return ExitCode::FAILURE;
+                return None;
             }
         };
 
         output.push(target.name());
 
-        if argument.kind == TargetKind::Library {
+        if target_kind == TargetKind::Library {
             output.set_extension("plib");
         }
 
-        output
-    };
+        Some(output)
+    }
+}
 
-    let storage = Arc::new(Storage::<
-        Box<dyn pernixc_table::diagnostic::Diagnostic>,
-    >::new());
-
-    let reflector = pernixc_builder::reflector::get();
-    let mut table = Table::new(storage.clone());
-
-    table.initialize_core();
-
+fn link_libraries(
+    table: &mut Table,
+    library_paths: Vec<PathBuf>,
+    reflector: &Reflector<GlobalID, ArcTrait, ComponentTag, String>,
+) -> Option<Vec<TargetID>> {
     let mut inplace_table_deserializer =
-        table.as_incremental_library_deserializer(&reflector);
+        table.as_incremental_library_deserializer(reflector);
     let mut link_library_ids = Vec::new();
 
-    for link_library in argument.library_paths {
+    for link_library in library_paths {
         let library_file = match std::fs::read(&link_library) {
             Ok(file) => file,
             Err(error) => {
@@ -238,7 +252,7 @@ pub fn run(argument: Arguments) -> ExitCode {
                 );
 
                 eprintln!("{msg}");
-                return ExitCode::FAILURE;
+                return None;
             }
         };
 
@@ -257,12 +271,38 @@ pub fn run(argument: Arguments) -> ExitCode {
                     );
 
                     eprintln!("{msg}");
-                    return ExitCode::FAILURE;
+                    return None;
                 }
             };
 
         link_library_ids.push(library_meta_data.target_id);
     }
+
+    Some(link_library_ids)
+}
+
+#[allow(clippy::type_complexity)]
+fn semantic_analysis(
+    target: Target,
+    show_progress: bool,
+    library_paths: Vec<PathBuf>,
+) -> Option<(
+    Table,
+    TargetID,
+    Arc<Storage<Box<dyn Diagnostic>>>,
+    Reflector<GlobalID, ArcTrait, ComponentTag, String>,
+)> {
+    let storage = Arc::new(Storage::<
+        Box<dyn pernixc_table::diagnostic::Diagnostic>,
+    >::new());
+
+    let reflector = pernixc_builder::reflector::get();
+
+    let mut table = Table::new(storage.clone());
+    table.initialize_core();
+
+    let link_library_ids =
+        link_libraries(&mut table, library_paths, &reflector)?;
 
     let target_id = match table.add_compilation_target(
         target.name().clone(),
@@ -279,7 +319,7 @@ pub fn run(argument: Arguments) -> ExitCode {
             );
 
             eprintln!("{msg}");
-            return ExitCode::FAILURE;
+            return None;
         }
 
         Err(AddTargetError::UnknownTargetLink(id)) => {
@@ -302,8 +342,7 @@ pub fn run(argument: Arguments) -> ExitCode {
     );
     progress.enable_steady_tick(Duration::from_millis(100));
 
-    let building = argument
-        .show_progress
+    let building = show_progress
         .then(|| Arc::new(RwLock::new(Vec::<(GlobalID, &str)>::new())));
 
     let timer = Instant::now();
@@ -361,45 +400,58 @@ pub fn run(argument: Arguments) -> ExitCode {
         timer.elapsed()
     ));
 
-    let vec = storage.as_vec();
+    Some((table, target_id, storage, reflector))
+}
 
-    if argument.dump_ron {
-        let file = match File::create(format!("{}.ron", output_path.display()))
-        {
-            Ok(file) => file,
-            Err(error) => {
-                let msg = Message::new(
-                    Severity::Error,
-                    format!("failed to create file: {error}"),
-                );
+fn dump_ron(
+    table: &Table,
+    target_id: TargetID,
+    reflector: &Reflector<GlobalID, ArcTrait, ComponentTag, String>,
+    output_path: &Path,
+) -> bool {
+    let file = match File::create(format!("{}.ron", output_path.display())) {
+        Ok(file) => file,
+        Err(error) => {
+            let msg = Message::new(
+                Severity::Error,
+                format!("failed to create file: {error}"),
+            );
 
-                eprintln!("{msg}");
-                return ExitCode::FAILURE;
-            }
-        };
+            eprintln!("{msg}");
+            return false;
+        }
+    };
 
-        match ron::ser::to_writer_pretty(
-            file,
-            &table.as_library(&CompilationMetaData { target_id }, &reflector),
-            PrettyConfig::default(),
-        ) {
-            Ok(()) => {}
+    match ron::ser::to_writer_pretty(
+        file,
+        &table.as_library(&CompilationMetaData { target_id }, reflector),
+        PrettyConfig::default(),
+    ) {
+        Ok(()) => true,
 
-            Err(error) => {
-                let msg = Message::new(
-                    Severity::Error,
-                    format!("failed to serialize table: {error}"),
-                );
+        Err(error) => {
+            let msg = Message::new(
+                Severity::Error,
+                format!("failed to serialize table: {error}"),
+            );
 
-                eprintln!("{msg}");
-                return ExitCode::FAILURE;
-            }
+            eprintln!("{msg}");
+            false
         }
     }
+}
 
-    if !vec.is_empty() {
+fn check_semantic_error(
+    table: &Table,
+    storage: &Arc<Storage<Box<dyn Diagnostic>>>,
+) -> bool {
+    let vec = storage.as_vec();
+
+    if vec.is_empty() {
+        true
+    } else {
         for error in vec.iter() {
-            let diag = error.report(&table);
+            let diag = error.report(table);
 
             eprintln!("{diag}\n");
         }
@@ -412,66 +464,222 @@ pub fn run(argument: Arguments) -> ExitCode {
             )
         );
 
-        return ExitCode::FAILURE;
+        false
     }
+}
 
-    if argument.kind == TargetKind::Library {
-        // save `bincode` format
-        let instant = Instant::now();
+#[allow(clippy::single_match_else)]
+fn emit_as_library(
+    table: &Table,
+    target_id: TargetID,
+    reflector: &Reflector<GlobalID, ArcTrait, ComponentTag, String>,
+    output_path: &Path,
+) -> bool {
+    // save `bincode` format
+    let instant = Instant::now();
 
-        let progress = ProgressBar::new(0);
-        progress.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.green} {msg}")
-                .unwrap()
-                .progress_chars("=>-"),
-        );
-        progress.set_message(format!(
-            "{} to {}",
-            Style::Bold.with(Color::Green.with("Writing")),
-            output_path.display()
-        ));
-        progress.enable_steady_tick(Duration::from_millis(100));
+    let progress = ProgressBar::new(0);
+    progress.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    progress.set_message(format!(
+        "{} to {}",
+        Style::Bold.with(Color::Green.with("Writing")),
+        output_path.display()
+    ));
+    progress.enable_steady_tick(Duration::from_millis(100));
 
-        let file = match File::create(&output_path) {
-            Ok(file) => file,
-            Err(error) => {
-                let msg = Message::new(
-                    Severity::Error,
-                    format!("failed to create file: {error}"),
-                );
+    let file = match File::create(output_path) {
+        Ok(file) => file,
+        Err(error) => {
+            let msg = Message::new(
+                Severity::Error,
+                format!("failed to create file: {error}"),
+            );
 
-                eprintln!("{msg}");
-                return ExitCode::FAILURE;
-            }
-        };
-
-        let result = DefaultOptions::new().serialize_into(
-            file,
-            &table.as_library(&CompilationMetaData { target_id }, &reflector),
-        );
-
-        progress.finish_with_message(format!(
-            "{} to {} finished in {:?}",
-            Style::Bold.with(Color::Green.with("Written")),
-            output_path.display(),
-            instant.elapsed()
-        ));
-
-        match result {
-            Ok(()) => {}
-
-            Err(error) => {
-                let msg = Message::new(
-                    Severity::Error,
-                    format!("failed to serialize table: {error}"),
-                );
-
-                eprintln!("{msg}");
-                return ExitCode::FAILURE;
-            }
+            eprintln!("{msg}");
+            return false;
         }
     };
 
-    ExitCode::SUCCESS
+    let result = DefaultOptions::new().serialize_into(
+        file,
+        &table.as_library(&CompilationMetaData { target_id }, reflector),
+    );
+
+    progress.finish_with_message(format!(
+        "{} to {} finished in {:?}",
+        Style::Bold.with(Color::Green.with("Written")),
+        output_path.display(),
+        instant.elapsed()
+    ));
+
+    match result {
+        Ok(()) => true,
+
+        Err(error) => {
+            let msg = Message::new(
+                Severity::Error,
+                format!("failed to serialize table: {error}"),
+            );
+
+            eprintln!("{msg}");
+
+            false
+        }
+    }
+}
+
+#[allow(clippy::single_match_else, clippy::let_and_return)]
+fn emit_as_exe(table: &Table, target_id: TargetID, output_path: &Path) -> bool {
+    let progress = ProgressBar::new(0);
+    progress.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {msg}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    progress.set_message("Generating code");
+    progress.enable_steady_tick(Duration::from_millis(100));
+
+    let storage = Storage::<Box<dyn Diagnostic>>::new();
+
+    // initialize the target
+    inkwell::targets::Target::initialize_native(
+        &InitializationConfig::default(),
+    )
+    .unwrap();
+
+    let this_tripple = TargetMachine::get_default_triple();
+    let target = LLVMTarget::from_triple(&this_tripple).unwrap();
+    let inkwell_context = inkwell::context::Context::create();
+
+    let result = if let Some(main_function_id) = table
+        .get::<Member>(GlobalID::new(target_id, pernixc_table::ID::ROOT_MODULE))
+        .get("main")
+        .copied()
+    {
+        pernixc_codegen::codegen(&pernixc_codegen::Input {
+            table,
+            main_function_id: GlobalID::new(target_id, main_function_id),
+            handler: &storage,
+            inkwell_context: &inkwell_context,
+        })
+    } else {
+        progress.finish_and_clear();
+        eprintln!(
+            "{}",
+            Message::new(
+                Severity::Error,
+                "no main function found in the target"
+            )
+        );
+
+        return false;
+    };
+
+    let has_error = !storage.as_vec().is_empty();
+
+    // for some reason, the boolean value needs to be stored in a variable
+    // otherwise the borrow checker will complain about the lifetime of
+    // `inkwell_context`, which is probably a bug in the rust compiler.
+    let result = match (result, has_error) {
+        (Ok(module), false) => {
+            let target_machine = target
+                .create_target_machine_from_options(
+                    &this_tripple,
+                    TargetMachineOptions::default(),
+                )
+                .unwrap();
+
+            let result = target_machine.write_to_file(
+                &module,
+                inkwell::targets::FileType::Object,
+                output_path,
+            );
+
+            if let Err(error) = result {
+                progress.finish_and_clear();
+                eprintln!(
+                    "{}",
+                    Message::new(
+                        Severity::Error,
+                        format!("failed to write object file: {error}")
+                    )
+                );
+
+                return false;
+            }
+
+            true
+        }
+
+        (_, true) | (Err(_), _) => {
+            progress.finish_and_clear();
+            for error in storage.as_vec().iter() {
+                let diag = error.report(table);
+
+                eprintln!("{diag}\n");
+            }
+
+            false
+        }
+    };
+
+    result
+}
+
+/// Runs the program with the given arguments.
+#[must_use]
+pub fn run(argument: Arguments) -> ExitCode {
+    let Some(source_file) = create_root_source_file(&argument) else {
+        return ExitCode::FAILURE;
+    };
+    let Some(target) = parse_target(&source_file, argument.target_name) else {
+        return ExitCode::FAILURE;
+    };
+
+    // retrieve the output path
+    let Some(output_path) =
+        get_output_path(argument.output, argument.kind, &target)
+    else {
+        return ExitCode::FAILURE;
+    };
+
+    // perform semantic analysis
+    let Some((table, target_id, storage, reflector)) = semantic_analysis(
+        target,
+        argument.show_progress,
+        argument.library_paths,
+    ) else {
+        return ExitCode::FAILURE;
+    };
+
+    // dump ron if specified
+    if argument.dump_ron
+        && !dump_ron(&table, target_id, &reflector, &output_path)
+    {
+        return ExitCode::FAILURE;
+    }
+
+    // check for semantic errors
+    if !check_semantic_error(&table, &storage) {
+        return ExitCode::FAILURE;
+    }
+
+    let result = match argument.kind {
+        TargetKind::Executable => emit_as_exe(&table, target_id, &output_path),
+        TargetKind::Library => {
+            emit_as_library(&table, target_id, &reflector, &output_path)
+        }
+    };
+
+    if result {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
