@@ -10,9 +10,12 @@ use std::{
 
 use bincode::{DefaultOptions, Options};
 use indicatif::{ProgressBar, ProgressStyle};
-use inkwell::targets::{
-    InitializationConfig, Target as LLVMTarget, TargetMachine,
-    TargetMachineOptions,
+use inkwell::{
+    passes::PassBuilderOptions,
+    targets::{
+        InitializationConfig, RelocMode, Target as LLVMTarget, TargetMachine,
+        TargetMachineOptions,
+    },
 };
 use parking_lot::RwLock;
 use pernixc_builder::{reflector::ComponentTag, Compilation};
@@ -32,6 +35,108 @@ use pernixc_table::{
 };
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
+
+/// Optimizations level for the compiler.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum,
+)]
+#[allow(missing_docs)]
+pub enum OptimizationLevel {
+    #[clap(name = "0")]
+    O0,
+
+    #[clap(name = "1")]
+    O1,
+
+    #[clap(name = "2")]
+    O2,
+
+    #[clap(name = "3")]
+    O3,
+}
+
+impl OptimizationLevel {
+    /// Returns the passes that should be used for the optimization level.
+    #[allow(clippy::too_many_lines)]
+    #[must_use]
+    pub fn get_passes(&self) -> String {
+        let o0 = ["verify", "ee-instrument", "forceattrs", "always-inline"];
+
+        let o1 = [
+            "forceattrs",
+            "inferattrs",
+            "ipsccp",
+            "called-value-propagation",
+            "globalopt",
+            "mem2reg",
+            "deadargelim",
+            "instcombine",
+            "simplifycfg",
+            "always-inline",
+            "sroa",
+            "speculative-execution",
+            "jump-threading",
+            "correlated-propagation",
+            "libcalls-shrinkwrap",
+            "pgo-memop-opt",
+            "tailcallelim",
+            "reassociate",
+            "loop-simplify",
+            "lcssa",
+            "loop-rotate",
+            "licm",
+            "indvars",
+            "loop-idiom",
+            "loop-deletion",
+            "loop-unroll",
+            "memcpyopt",
+            "sccp",
+            "bdce",
+            "dse",
+            "adce",
+            "globaldce",
+            "float2int",
+            "loop-distribute",
+            "loop-vectorize",
+            "loop-load-elim",
+            "alignment-from-assumptions",
+            "strip-dead-prototypes",
+            "loop-sink",
+            "instsimplify",
+            "div-rem-pairs",
+            "verify",
+            "ee-instrument",
+            "early-cse",
+            "lower-expect",
+        ];
+
+        let o2 = [
+            "inline",
+            "mldst-motion",
+            "gvn",
+            "elim-avail-extern",
+            "slp-vectorizer",
+            "constmerge",
+        ];
+
+        let o3 = ["callsite-splitting", "argpromotion"];
+
+        match self {
+            Self::O0 => o0.join(","),
+            Self::O1 => o0.into_iter().chain(o1).collect::<Vec<_>>().join(","),
+            Self::O2 => {
+                o0.into_iter().chain(o1).chain(o2).collect::<Vec<_>>().join(",")
+            }
+            Self::O3 => o0
+                .into_iter()
+                .chain(o1)
+                .chain(o2)
+                .chain(o3)
+                .collect::<Vec<_>>()
+                .join(","),
+        }
+    }
+}
 
 /// The compilation format of the target.
 #[derive(
@@ -57,6 +162,10 @@ pub enum TargetKind {
 pub struct Arguments {
     /// The input file to run the program on.
     pub file: PathBuf,
+
+    /// The optimization level of the compiler.
+    #[clap(long = "opt", default_value = "0")]
+    pub opt_level: OptimizationLevel,
 
     /// The target name of the program. If not specified, the target name will
     /// be inferred from the file name.
@@ -533,8 +642,18 @@ fn emit_as_library(
     }
 }
 
-#[allow(clippy::single_match_else, clippy::let_and_return)]
-fn emit_as_exe(table: &Table, target_id: TargetID, output_path: &Path) -> bool {
+#[allow(
+    clippy::single_match_else,
+    clippy::let_and_return,
+    clippy::too_many_lines
+)]
+fn emit_as_exe(
+    table: &Table,
+    target_id: TargetID,
+    output_path: &Path,
+    opt_level: OptimizationLevel,
+) -> bool {
+    let instant = Instant::now();
     let progress = ProgressBar::new(0);
     progress.set_style(
         ProgressStyle::default_spinner()
@@ -555,6 +674,14 @@ fn emit_as_exe(table: &Table, target_id: TargetID, output_path: &Path) -> bool {
 
     let this_tripple = TargetMachine::get_default_triple();
     let target = LLVMTarget::from_triple(&this_tripple).unwrap();
+    let target_machine = target
+        .create_target_machine_from_options(
+            &this_tripple,
+            TargetMachineOptions::default().set_reloc_mode(RelocMode::PIC),
+        )
+        .unwrap();
+    let target_data = target_machine.get_target_data();
+
     let inkwell_context = inkwell::context::Context::create();
 
     let result = if let Some(main_function_id) = table
@@ -562,11 +689,12 @@ fn emit_as_exe(table: &Table, target_id: TargetID, output_path: &Path) -> bool {
         .get("main")
         .copied()
     {
-        pernixc_codegen::codegen(&pernixc_codegen::Input {
+        pernixc_codegen::codegen(pernixc_codegen::Input {
             table,
             main_function_id: GlobalID::new(target_id, main_function_id),
             handler: &storage,
             inkwell_context: &inkwell_context,
+            target_data,
         })
     } else {
         progress.finish_and_clear();
@@ -588,12 +716,19 @@ fn emit_as_exe(table: &Table, target_id: TargetID, output_path: &Path) -> bool {
     // `inkwell_context`, which is probably a bug in the rust compiler.
     let result = match (result, has_error) {
         (Ok(module), false) => {
-            let target_machine = target
-                .create_target_machine_from_options(
-                    &this_tripple,
-                    TargetMachineOptions::default(),
+            module.print_to_stderr();
+
+            let passes = opt_level.get_passes();
+
+            module
+                .run_passes(
+                    &passes,
+                    &target_machine,
+                    PassBuilderOptions::create(),
                 )
                 .unwrap();
+
+            module.print_to_stderr();
 
             let result = target_machine.write_to_file(
                 &module,
@@ -613,6 +748,12 @@ fn emit_as_exe(table: &Table, target_id: TargetID, output_path: &Path) -> bool {
 
                 return false;
             }
+
+            progress.finish_with_message(format!(
+                "{} finished in {:?}",
+                Style::Bold.with(Color::Green.with("Code Generation")),
+                instant.elapsed()
+            ));
 
             true
         }
@@ -671,7 +812,9 @@ pub fn run(argument: Arguments) -> ExitCode {
     }
 
     let result = match argument.kind {
-        TargetKind::Executable => emit_as_exe(&table, target_id, &output_path),
+        TargetKind::Executable => {
+            emit_as_exe(&table, target_id, &output_path, argument.opt_level)
+        }
         TargetKind::Library => {
             emit_as_library(&table, target_id, &reflector, &output_path)
         }

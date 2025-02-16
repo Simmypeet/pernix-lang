@@ -32,6 +32,7 @@ mod arbitrary;
     Hash,
     Serialize,
     Deserialize,
+    EnumAsInner,
     derive_more::Display,
 )]
 #[allow(missing_docs)]
