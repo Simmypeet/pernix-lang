@@ -12,9 +12,14 @@ use pernixc_abort::Abort;
 use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    address::{self, Address, Field, Memory, Variant},
+    address::{self, Address, Field, Index, Memory, Variant},
     instruction::{Drop, DropUnpackTuple, Instruction},
-    model, Values,
+    model,
+    value::{
+        literal::{self, Literal, Unreachable},
+        Value,
+    },
+    Values,
 };
 use pernixc_table::{
     component::{Member, SymbolKind},
@@ -24,7 +29,7 @@ use pernixc_table::{
 use pernixc_term::{
     generic_arguments::GenericArguments,
     predicate::{PositiveTrait, Predicate},
-    r#type::Type,
+    r#type::{Primitive, Type},
 };
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
@@ -339,7 +344,36 @@ pub(super) fn simplify_drop(
             Ok(Vec::new())
         }
 
-        Type::Array(_) | Type::TraitMember(_) | Type::Parameter(_) => {
+        Type::Array(_) => {
+            if simplify_drop(
+                &Drop {
+                    address: Address::Index(Index {
+                        array_address: Box::new(drop.address.clone()),
+                        indexing_value: Value::Literal(Literal::Unreachable(
+                            Unreachable {
+                                r#type: Type::Primitive(Primitive::Usize),
+                                span: None,
+                            },
+                        )),
+                    }),
+                },
+                values,
+                visited_types,
+                current_site,
+                environment,
+                handler,
+            )?
+            .is_empty()
+            {
+                visited_types.remove(&ty);
+                Ok(Vec::new())
+            } else {
+                visited_types.remove(&ty);
+                Ok(vec![Instruction::Drop(drop.clone())])
+            }
+        }
+
+        Type::TraitMember(_) | Type::Parameter(_) => {
             visited_types.remove(&ty);
             Ok(vec![Instruction::Drop(drop.clone())])
         }
