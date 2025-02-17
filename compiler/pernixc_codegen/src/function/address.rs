@@ -127,7 +127,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 );
 
                 let LlvmType::Basic(pointee_type) =
-                    self.type_of_address(address)
+                    self.type_of_address(&reference.reference_address)
                 else {
                     return Ok(LlvmValue::Zst);
                 };

@@ -86,14 +86,17 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// Gets the hardcoded string value. The string value is stored somewhere
     /// in the `.data` section or similar in the final binary.
     pub fn get_string(
-        &self,
-        _: &pernixc_ir::value::literal::String,
+        &mut self,
+        string: &pernixc_ir::value::literal::String,
     ) -> inkwell::values::BasicValueEnum<'ctx> {
-        todo!()
+        self.context
+            .get_global_const_string(string.value.as_ref())
+            .as_pointer_value()
+            .into()
     }
 
     pub fn get_literal_value(
-        &self,
+        &mut self,
         literal: &Literal<Model>,
     ) -> Result<LlvmValue<'ctx>, Error> {
         match literal {

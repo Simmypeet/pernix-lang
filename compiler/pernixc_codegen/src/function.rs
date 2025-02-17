@@ -414,8 +414,9 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
             })
             .enumerate()
         {
-            let alloca =
-                builder.build_alloca(ty, &format!("param_{index}")).unwrap();
+            let alloca = builder
+                .build_alloca(ty, &format!("param_{param_id:?}"))
+                .unwrap();
 
             builder
                 .build_store(
@@ -491,7 +492,7 @@ macro_rules! into_basic {
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// Translates the value to LLVM value.
     fn get_value(
-        &self,
+        &mut self,
         value: &Value<Model>,
     ) -> Result<LlvmValue<'ctx>, Error> {
         match value {

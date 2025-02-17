@@ -21,6 +21,7 @@ use pernixc_term::{
     where_clause::WhereClause,
 };
 
+pub mod constant;
 pub mod context;
 pub mod diagnostic;
 pub mod function;

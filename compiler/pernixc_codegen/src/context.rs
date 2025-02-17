@@ -6,7 +6,7 @@ use inkwell::targets::TargetData;
 use pernixc_handler::Handler;
 use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
 
-use crate::{function, r#type};
+use crate::{constant, function, r#type};
 
 /// The main state used for the code generation process.
 #[derive(MutGetters, Getters, CopyGetters)]
@@ -36,6 +36,11 @@ pub struct Context<'i, 'ctx> {
     #[get = "pub"]
     #[get_mut = "pub"]
     function_map: function::Map<'ctx>,
+
+    /// The mapper object between the Pernix constant and the LLVM constant.
+    #[get = "pub"]
+    #[get_mut = "pub"]
+    constant_map: constant::Map<'ctx>,
 
     /// The mapper object between the Pernix type and the LLVM type.
     #[get = "pub"]
@@ -73,6 +78,7 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
     ) -> Self {
         let function_map = function::Map::default();
         let type_map = r#type::Map::default();
+        let constant_map = constant::Map::default();
 
         Self {
             context,
@@ -81,6 +87,7 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
             handler,
             module,
             function_map,
+            constant_map,
             type_map,
             main_function_id,
         }
