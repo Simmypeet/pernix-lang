@@ -721,10 +721,13 @@ pub(super) fn get_changes_of_function_call(
         .map(|x| function_signature.parameters.get(x).unwrap())
         .zip(&function_call.arguments)
     {
+        /*
+        The c-varargs will break this assertion
         assert_eq!(
             function_signature.parameter_order.len(),
             function_call.arguments.len()
         );
+        */
 
         let mut parameter_ty = Type::from_other_model(parameter.r#type.clone());
         instantiation::instantiate(
