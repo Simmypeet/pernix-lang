@@ -1,6 +1,7 @@
 //! Implements various builders for each components of the symbols.
 
 pub mod builder;
+pub mod extern_function_check;
 pub mod fields;
 pub mod function;
 pub mod generic_parameters;
