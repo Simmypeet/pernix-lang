@@ -16,7 +16,7 @@ use pernixc_ir::{
     instruction::{Drop, DropUnpackTuple, Instruction},
     model,
     value::{
-        literal::{self, Literal, Unreachable},
+        literal::{Literal, Unreachable},
         Value,
     },
     Values,
