@@ -66,7 +66,7 @@ pub struct Map<'ctx> {
 }
 
 impl<'ctx> Context<'_, 'ctx> {
-    fn get_qualified_name(
+    fn get_function_qualified_name(
         &self,
         symbol_kind: SymbolKind,
         callable_id: GlobalID,
@@ -74,6 +74,10 @@ impl<'ctx> Context<'_, 'ctx> {
     ) -> String {
         match symbol_kind {
             SymbolKind::Function => {
+                if callable_id == self.main_function_id() {
+                    return "main".to_string();
+                }
+
                 let qualified_name =
                     self.table().get_qualified_name(callable_id);
 
@@ -213,7 +217,7 @@ impl<'ctx> Context<'_, 'ctx> {
         }
 
         let symbol_kind = *self.table().get::<SymbolKind>(key.callable_id);
-        let qualified_name = self.get_qualified_name(
+        let qualified_name = self.get_function_qualified_name(
             symbol_kind,
             key.callable_id,
             &key.instantiation,

@@ -4,7 +4,7 @@
 use getset::{CopyGetters, Getters, MutGetters};
 use inkwell::targets::TargetData;
 use pernixc_handler::Handler;
-use pernixc_table::{diagnostic::Diagnostic, Table};
+use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
 
 use crate::{function, r#type};
 
@@ -41,6 +41,10 @@ pub struct Context<'i, 'ctx> {
     #[get = "pub"]
     #[get_mut = "pub"]
     type_map: r#type::Map<'ctx>,
+
+    /// The ID of the main function.
+    #[get_copy = "pub"]
+    main_function_id: GlobalID,
 }
 
 impl std::fmt::Debug for Context<'_, '_> {
@@ -50,6 +54,9 @@ impl std::fmt::Debug for Context<'_, '_> {
             .field("target_data", &self.target_data)
             .field("table", &self.table)
             .field("module", &self.module)
+            .field("function_map", &self.function_map)
+            .field("type_map", &self.type_map)
+            .field("main_function_id", &self.main_function_id)
             .finish_non_exhaustive()
     }
 }
@@ -62,6 +69,7 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
         table: &'i Table,
         handler: &'i dyn Handler<Box<dyn Diagnostic>>,
         module: inkwell::module::Module<'ctx>,
+        main_function_id: GlobalID,
     ) -> Self {
         let function_map = function::Map::default();
         let type_map = r#type::Map::default();
@@ -74,6 +82,7 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
             module,
             function_map,
             type_map,
+            main_function_id,
         }
     }
 
