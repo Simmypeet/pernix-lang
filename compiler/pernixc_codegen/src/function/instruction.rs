@@ -673,6 +673,37 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
+    fn handle_phi(
+        &mut self,
+        phi: &register::Phi<Model>,
+        reg_id: ID<Register<Model>>,
+    ) -> Result<LlvmValue<'ctx>, Error> {
+        let mut incoming_values = Vec::new();
+        for (block_id, value) in &phi.incoming_values {
+            let block = self.basic_block_map[block_id];
+            let value = self.get_value(value)?;
+
+            let value = into_basic!(value);
+
+            incoming_values.push((value, block));
+        }
+
+        let LlvmType::Basic(ty) = self.type_of_register(reg_id) else {
+            return Ok(LlvmValue::Zst);
+        };
+
+        let phi = self
+            .inkwell_builder
+            .build_phi(ty, &format!("phi_{reg_id:?}"))
+            .unwrap();
+
+        for (value, block) in incoming_values {
+            phi.add_incoming(&[(&value, block)]);
+        }
+
+        Ok(LlvmValue::Basic(phi.as_basic_value()))
+    }
+
     fn get_register_assignment_value(
         &mut self,
         register_assignment: &Assignment<Model>,
@@ -703,7 +734,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
             Assignment::Binary(binary) => self.handle_binary(binary, reg_id),
             Assignment::Array(array) => self.handle_array(array, reg_id),
-            Assignment::Phi(phi) => todo!(),
+            Assignment::Phi(phi) => self.handle_phi(phi, reg_id),
             Assignment::Cast(cast) => todo!(),
             Assignment::VariantNumber(variant_number) => todo!(),
         }
@@ -731,11 +762,23 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     /// Translates the Pernix's basic block to LLVM's basic block if haven't
     pub fn build_basic_block(&mut self, block_id: ID<Block<Model>>) {
+        // already built, or being built currently.
         if !self.built.insert(block_id) {
             return;
         }
 
         let current_block = self.basic_block_map[&block_id];
+
+        // build the predecessors, bottom-up
+        for predecessor in self.function_ir.control_flow_graph.blocks()
+            [block_id]
+            .predecessors()
+            .iter()
+            .copied()
+        {
+            self.build_basic_block(predecessor);
+        }
+
         self.inkwell_builder.position_at_end(current_block);
 
         let block = &self.function_ir.control_flow_graph.blocks()[block_id];
@@ -799,8 +842,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         self.basic_block_map[&jump.target],
                     )
                     .unwrap();
-
-                self.build_basic_block(jump.target);
             }
 
             Some(Terminator::Jump(Jump::Conditional(jump))) => {
@@ -819,9 +860,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         self.basic_block_map[&jump.false_target],
                     )
                     .unwrap();
-
-                self.build_basic_block(jump.true_target);
-                self.build_basic_block(jump.false_target);
             }
 
             Some(Terminator::Jump(Jump::Select(select))) => {}

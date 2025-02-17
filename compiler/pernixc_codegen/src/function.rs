@@ -10,6 +10,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use inkwell::{
+    execution_engine,
     module::Linkage,
     types::{BasicType, FunctionType},
     values::FunctionValue,
@@ -30,7 +31,8 @@ use pernixc_table::{
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
-    instantiation::Instantiation, Model as _,
+    instantiation::Instantiation, r#type::SubFunctionSignatureLocation,
+    Model as _,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -291,7 +293,6 @@ impl<'ctx> Context<'_, 'ctx> {
             .insert(key.clone(), llvm_function_signatue.clone());
 
         let pernix_ir = self.table().query::<IR>(key.callable_id).unwrap();
-        let entry = pernix_ir.control_flow_graph.entry_block_id();
 
         let mut builder = Builder::new(
             self,
@@ -302,7 +303,9 @@ impl<'ctx> Context<'_, 'ctx> {
             llvm_function_signatue.clone(),
         );
 
-        builder.build_basic_block(entry);
+        for block_id in pernix_ir.control_flow_graph.blocks().ids() {
+            builder.build_basic_block(block_id);
+        }
 
         llvm_function_signatue
     }
@@ -365,9 +368,17 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
         let mut basic_block_map = HashMap::default();
         let mut address_map = HashMap::default();
 
+        let entry_block_id = function_ir.control_flow_graph.entry_block_id();
         let builder = context.context().create_builder();
 
-        for id in function_ir.control_flow_graph.blocks().ids() {
+        // llvm decides that the first block created is the entry block
+        for id in std::iter::once(entry_block_id).chain(
+            function_ir
+                .control_flow_graph
+                .blocks()
+                .ids()
+                .filter(|x| *x != entry_block_id),
+        ) {
             let bb = context.context().append_basic_block(
                 llvm_function_signature.llvm_function_value,
                 &format!("block_{id:?}"),
@@ -376,9 +387,7 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
             basic_block_map.insert(id, bb);
         }
 
-        builder.position_at_end(
-            basic_block_map[&function_ir.control_flow_graph.entry_block_id()],
-        );
+        builder.position_at_end(basic_block_map[&entry_block_id]);
 
         // move the parameters to the alloca
         for (index, (param_id, ty)) in function_signature
