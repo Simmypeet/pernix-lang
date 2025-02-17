@@ -510,4 +510,15 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 .monomorphize_term(ty.unwrap().result, self.instantiation),
         )
     }
+
+    /// Retrieves the [`LlvmType`] of the given value.
+    fn type_of_value(&mut self, value: &Value<Model>) -> LlvmType<'ctx> {
+        match value {
+            Value::Register(id) => self.type_of_register(*id),
+            Value::Literal(literal) => self.context.get_type(
+                self.context
+                    .monomorphize_term(literal.r#type(), self.instantiation),
+            ),
+        }
+    }
 }

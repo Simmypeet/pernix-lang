@@ -1,6 +1,7 @@
 //! Contains the logic mapping from the Pernix type to LLVM's type.
 
 use std::{
+    any::Any,
     borrow::Cow,
     collections::{BTreeSet, HashMap},
 };
@@ -107,6 +108,38 @@ impl MutableRecursive<Constant<Model>> for EraseLifetime {
 }
 
 impl<'ctx> Context<'_, 'ctx> {
+    /// Performs [`Self::normalize_term`] on all the terms in the generic
+    /// arguments.
+    pub fn normalize_instantiation(
+        &self,
+        instantiation: &mut Instantiation<Model>,
+    ) {
+        let mut erase_lifetime = EraseLifetime;
+
+        for lifetime in instantiation.lifetimes.values_mut() {
+            pernixc_term::visitor::accept_recursive_mut(
+                lifetime,
+                &mut erase_lifetime,
+            );
+        }
+
+        for ty in &mut instantiation.types.values_mut() {
+            pernixc_term::visitor::accept_recursive_mut(
+                ty,
+                &mut erase_lifetime,
+            );
+            take_mut::take(ty, |ty| self.normalize_term(ty));
+        }
+
+        for constant in &mut instantiation.constants.values_mut() {
+            pernixc_term::visitor::accept_recursive_mut(
+                constant,
+                &mut erase_lifetime,
+            );
+            take_mut::take(constant, |constant| self.normalize_term(constant));
+        }
+    }
+
     /// Performs [`Self::normalize_term`] on all the terms in the generic
     /// arguments.
     pub fn normalize_generic_arguments(
@@ -342,10 +375,36 @@ impl<'ctx> Context<'_, 'ctx> {
                 }
             }
 
-            Type::Tuple(_)
-            | Type::Phantom(_)
-            | Type::MemberSymbol(_)
-            | Type::TraitMember(_) => panic!("unsupported type {ty:?}"),
+            Type::Tuple(tuple) => {
+                let mut elements = Vec::new();
+
+                for element in tuple.elements {
+                    assert!(
+                        element.is_unpacked,
+                        "unpacked tuple element found {element:?}"
+                    );
+
+                    if let LlvmType::Basic(llvm_ty) =
+                        self.get_type(element.term)
+                    {
+                        elements.push(llvm_ty);
+                    }
+                }
+
+                if elements.is_empty() {
+                    LlvmType::Zst
+                } else {
+                    LlvmType::Basic(
+                        self.context().struct_type(&elements, false).into(),
+                    )
+                }
+            }
+
+            Type::Phantom(_) => LlvmType::Zst,
+
+            Type::MemberSymbol(_) | Type::TraitMember(_) => {
+                panic!("unsupported type {ty:?}")
+            }
 
             Type::FunctionSignature(function_signature) => {
                 panic!("should not be here {function_signature:?}")

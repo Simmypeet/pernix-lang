@@ -1,13 +1,15 @@
+use inkwell::values::BasicValueEnum;
 use pernixc_arena::ID;
 use pernixc_component::fields::Fields;
 use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{Instruction, Jump, RegisterAssignment, Terminator},
-    value::register::{self, Assignment, Register},
+    value::register::{self, Assignment, BinaryOperator, Register},
 };
 use pernixc_table::component::SymbolKind;
+use pernixc_term::{instantiation, r#type::Primitive};
 
-use super::{Builder, Error, LlvmValue};
+use super::{Builder, Call, Error, LlvmValue};
 use crate::{into_basic, r#type::LlvmType, Model};
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
@@ -129,7 +131,11 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 }
 
                 self.inkwell_builder
-                    .build_call(llvm_function, &args, "call")
+                    .build_call(
+                        llvm_function,
+                        &args,
+                        &format!("call_{reg_id:?}"),
+                    )
                     .unwrap()
                     .try_as_basic_value()
                     .left()
@@ -137,7 +143,56 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         Ok(LlvmValue::Basic(value))
                     })
             }
-            _ => todo!(),
+            SymbolKind::Function
+            | SymbolKind::AdtImplementationFunction
+            | SymbolKind::TraitImplementationFunction => {
+                let mut args = Vec::new();
+                for arg in &function_call.arguments {
+                    let LlvmValue::Basic(val) = self.get_value(arg)? else {
+                        continue;
+                    };
+
+                    args.push(val.into());
+                }
+
+                let mut calling_inst = function_call.instantiation.clone();
+
+                calling_inst.lifetimes.values_mut().for_each(|term| {
+                    instantiation::instantiate(term, self.instantiation);
+                });
+                calling_inst.types.values_mut().for_each(|term| {
+                    instantiation::instantiate(term, self.instantiation);
+                });
+                calling_inst.constants.values_mut().for_each(|term| {
+                    instantiation::instantiate(term, self.instantiation);
+                });
+
+                self.context.normalize_instantiation(&mut calling_inst);
+
+                let llvm_function = self.context.get_function(&Call {
+                    callable_id: function_call.callable_id,
+                    instantiation: calling_inst,
+                });
+
+                self.inkwell_builder
+                    .build_call(
+                        llvm_function.llvm_function_value,
+                        &args,
+                        &format!("call_{reg_id:?}"),
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .left()
+                    .map_or(Ok(LlvmValue::Zst), |value| {
+                        Ok(LlvmValue::Basic(value))
+                    })
+            }
+
+            SymbolKind::TraitFunction => {
+                todo!()
+            }
+
+            kind => panic!("unexpected symbol kind: {kind:?}"),
         }
     }
 
@@ -196,6 +251,205 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         ))
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn handle_binary(
+        &mut self,
+        binary: &register::Binary<Model>,
+        reg_id: ID<Register<Model>>,
+    ) -> Result<LlvmValue<'ctx>, Error> {
+        let lhs = self.get_value(&binary.lhs)?;
+        let rhs = self.get_value(&binary.rhs)?;
+
+        let lhs = into_basic!(lhs);
+        let rhs = into_basic!(rhs);
+
+        let lhs_ty = self.type_of_value(&binary.lhs).into_basic().unwrap();
+        let rhs_ty = self.type_of_value(&binary.rhs).into_basic().unwrap();
+
+        match binary.operator {
+            BinaryOperator::Arithmetic(arithmetic_operator) => {
+                enum Kind {
+                    Signed,
+                    Unsigned,
+                    Float,
+                }
+
+                let pernix_lhs_ty = self
+                    .function_ir
+                    .values
+                    .type_of_value(
+                        &binary.lhs,
+                        self.callable_id,
+                        &self.environment,
+                    )
+                    .unwrap()
+                    .result
+                    .into_primitive()
+                    .unwrap();
+
+                let kind = match pernix_lhs_ty {
+                    Primitive::Int8
+                    | Primitive::Int16
+                    | Primitive::Int32
+                    | Primitive::Int64
+                    | Primitive::Isize => Kind::Signed,
+
+                    Primitive::Uint8
+                    | Primitive::Uint16
+                    | Primitive::Uint32
+                    | Primitive::Uint64
+                    | Primitive::Usize => Kind::Unsigned,
+
+                    Primitive::Float32 | Primitive::Float64 => Kind::Float,
+
+                    Primitive::Bool => unreachable!("bool is not arithmetic"),
+                };
+
+                let value: BasicValueEnum = match (kind, arithmetic_operator) {
+                    (
+                        Kind::Signed | Kind::Unsigned,
+                        register::ArithmeticOperator::Add,
+                    ) => self
+                        .inkwell_builder
+                        .build_int_add(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            &format!("add_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+
+                    (
+                        Kind::Signed | Kind::Unsigned,
+                        register::ArithmeticOperator::Subtract,
+                    ) => self
+                        .inkwell_builder
+                        .build_int_sub(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            &format!("sub_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+
+                    (
+                        Kind::Signed | Kind::Unsigned,
+                        register::ArithmeticOperator::Multiply,
+                    ) => self
+                        .inkwell_builder
+                        .build_int_mul(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            &format!("mul_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+
+                    (Kind::Signed, register::ArithmeticOperator::Divide) => {
+                        self.inkwell_builder
+                            .build_int_signed_div(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                &format!("div_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into()
+                    }
+
+                    (Kind::Signed, register::ArithmeticOperator::Modulo) => {
+                        self.inkwell_builder
+                            .build_int_signed_rem(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                &format!("rem_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into()
+                    }
+
+                    (Kind::Unsigned, register::ArithmeticOperator::Divide) => {
+                        self.inkwell_builder
+                            .build_int_unsigned_div(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                &format!("div_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into()
+                    }
+
+                    (Kind::Unsigned, register::ArithmeticOperator::Modulo) => {
+                        self.inkwell_builder
+                            .build_int_unsigned_rem(
+                                lhs.into_int_value(),
+                                rhs.into_int_value(),
+                                &format!("rem_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into()
+                    }
+
+                    (Kind::Float, register::ArithmeticOperator::Add) => self
+                        .inkwell_builder
+                        .build_float_add(
+                            lhs.into_float_value(),
+                            rhs.into_float_value(),
+                            &format!("add_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+
+                    (Kind::Float, register::ArithmeticOperator::Subtract) => {
+                        self.inkwell_builder
+                            .build_float_sub(
+                                lhs.into_float_value(),
+                                rhs.into_float_value(),
+                                &format!("sub_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into()
+                    }
+
+                    (Kind::Float, register::ArithmeticOperator::Multiply) => {
+                        self.inkwell_builder
+                            .build_float_mul(
+                                lhs.into_float_value(),
+                                rhs.into_float_value(),
+                                &format!("mul_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into()
+                    }
+
+                    (Kind::Float, register::ArithmeticOperator::Divide) => self
+                        .inkwell_builder
+                        .build_float_div(
+                            lhs.into_float_value(),
+                            rhs.into_float_value(),
+                            &format!("div_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+                    (Kind::Float, register::ArithmeticOperator::Modulo) => self
+                        .inkwell_builder
+                        .build_float_rem(
+                            lhs.into_float_value(),
+                            rhs.into_float_value(),
+                            &format!("rem_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+                };
+
+                Ok(LlvmValue::Basic(value))
+            }
+            BinaryOperator::Relational(relational_operator) => {
+                todo!()
+            }
+            BinaryOperator::Bitwise(bitwise_operator) => todo!(),
+        }
+    }
+
     fn get_register_assignment_value(
         &mut self,
         register_assignment: &Assignment<Model>,
@@ -207,7 +461,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
             Assignment::Load(load) => self.handle_load(load, reg_id),
             Assignment::Borrow(borrow) => {
-                self.get_address_value(&borrow.address)
+                match self.get_address_value(&borrow.address)? {
+                    LlvmValue::Basic(basic_value_enum) => {
+                        Ok(LlvmValue::Basic(basic_value_enum))
+                    }
+                    LlvmValue::Zst => todo!(),
+                }
             }
             Assignment::Prefix(prefix) => todo!(),
             Assignment::Struct(struct_lit) => {
@@ -219,7 +478,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::FunctionCall(function_call) => {
                 self.handle_function_call(function_call, reg_id)
             }
-            Assignment::Binary(binary) => todo!(),
+            Assignment::Binary(binary) => self.handle_binary(binary, reg_id),
             Assignment::Array(array) => self.handle_array(array, reg_id),
             Assignment::Phi(phi) => todo!(),
             Assignment::Cast(cast) => todo!(),
