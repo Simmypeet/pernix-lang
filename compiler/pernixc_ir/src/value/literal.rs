@@ -223,7 +223,7 @@ impl<M: pernixc_term::Model> Literal<M> {
                     r#type: Box::new(Type::Primitive(Primitive::Uint8)),
                     length: pernixc_term::constant::Constant::Primitive(
                         pernixc_term::constant::Primitive::Usize(
-                            string.value.len() as u128,
+                            string.value.len() as u64,
                         ),
                     ),
                 })),

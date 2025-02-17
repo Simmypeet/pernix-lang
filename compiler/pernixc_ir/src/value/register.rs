@@ -720,7 +720,7 @@ impl<M: pernixc_term::Model> Values<M> {
                     r#type: Box::new(array.element_type.clone()),
                     length: Constant::Primitive(
                         pernixc_term::constant::Primitive::Usize(
-                            array.elements.len() as u128,
+                            array.elements.len() as u64,
                         ),
                     ),
                 }))

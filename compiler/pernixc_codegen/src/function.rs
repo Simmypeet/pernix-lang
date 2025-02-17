@@ -10,7 +10,6 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use inkwell::{
-    execution_engine,
     module::Linkage,
     types::{BasicType, FunctionType},
     values::FunctionValue,
@@ -26,13 +25,12 @@ use pernixc_ir::{
     IR,
 };
 use pernixc_table::{
-    component::{Implements, Name, Parent, SymbolKind},
+    component::{Extern, Implements, Name, Parent, SymbolKind},
     DisplayObject, GlobalID,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
-    instantiation::Instantiation, r#type::SubFunctionSignatureLocation,
-    Model as _,
+    instantiation::Instantiation, Model as _,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -175,6 +173,7 @@ impl<'ctx> Context<'_, 'ctx> {
         &mut self,
         function_signature: &FunctionSignature,
         instantiation: &Instantiation<Model>,
+        var_args: bool,
     ) -> (FunctionType<'ctx>, Vec<LlvmType<'ctx>>, LlvmType<'ctx>) {
         // NOTE: because of filtering out the zst types, the parameter types
         // might not have the same number of parameters as the original pernix's
@@ -204,12 +203,14 @@ impl<'ctx> Context<'_, 'ctx> {
 
         match return_ty {
             LlvmType::Basic(basic_type_enum) => (
-                basic_type_enum.fn_type(&filtered_param_tys, false),
+                basic_type_enum.fn_type(&filtered_param_tys, var_args),
                 param_tys,
                 return_ty,
             ),
             LlvmType::Zst => (
-                self.context().void_type().fn_type(&filtered_param_tys, false),
+                self.context()
+                    .void_type()
+                    .fn_type(&filtered_param_tys, var_args),
                 param_tys,
                 return_ty,
             ),
@@ -233,11 +234,17 @@ impl<'ctx> Context<'_, 'ctx> {
         let function_signature =
             self.table().query::<FunctionSignature>(callable_id).unwrap();
 
+        let ext = *self.table().get::<Extern>(callable_id);
         let name = self.table().get::<Name>(callable_id).0.clone();
 
         let (llvm_function_type, _, _) = self.create_function_type(
             &function_signature,
             &Instantiation::default(),
+            match ext {
+                Extern::C(extern_c) => extern_c.var_args,
+
+                Extern::Unknown => unreachable!("unknown extern function"),
+            },
         );
 
         let llvm_function_value = self.module().add_function(
@@ -274,8 +281,12 @@ impl<'ctx> Context<'_, 'ctx> {
         let function_signature =
             self.table().query::<FunctionSignature>(key.callable_id).unwrap();
 
-        let (llvm_function_type, parameter_tys, return_ty) =
-            self.create_function_type(&function_signature, &key.instantiation);
+        let (llvm_function_type, parameter_tys, return_ty) = self
+            .create_function_type(
+                &function_signature,
+                &key.instantiation,
+                false,
+            );
 
         let llvm_function_value = self.module().add_function(
             &qualified_name,

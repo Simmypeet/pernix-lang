@@ -46,7 +46,7 @@ pub enum Primitive {
     #[display(fmt = "{_0}")]
     Int64(i64),
     #[display(fmt = "{_0}")]
-    Isize(i128),
+    Isize(i64),
     #[display(fmt = "{_0}")]
     Uint8(u8),
     #[display(fmt = "{_0}")]
@@ -56,7 +56,7 @@ pub enum Primitive {
     #[display(fmt = "{_0}")]
     Uint64(u64),
     #[display(fmt = "{_0}")]
-    Usize(u128),
+    Usize(u64),
     #[display(fmt = "{_0}")]
     Bool(bool),
 }

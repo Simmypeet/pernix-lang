@@ -22,8 +22,8 @@ impl Arbitrary for Primitive {
             proptest::num::u16::ANY.prop_map(Self::Uint16),
             proptest::num::u32::ANY.prop_map(Self::Uint32),
             proptest::num::u64::ANY.prop_map(Self::Uint64),
-            proptest::num::i128::ANY.prop_map(Self::Isize),
-            proptest::num::u128::ANY.prop_map(Self::Usize),
+            proptest::num::i64::ANY.prop_map(Self::Isize),
+            proptest::num::u64::ANY.prop_map(Self::Usize),
             proptest::bool::ANY.prop_map(Self::Bool),
         ]
         .boxed()

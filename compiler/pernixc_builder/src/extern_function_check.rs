@@ -23,7 +23,7 @@ pub fn extern_function_check(
     let calling_conventation = *table.get::<Extern>(function_id);
 
     match calling_conventation {
-        Extern::C => {
+        Extern::C(_) => {
             let generic_parameters =
                 table.query::<GenericParameters>(function_id)?;
 

@@ -367,7 +367,7 @@ impl<M: Model> Query for TypeCheck<M> {
                 // check array type
                 (Type::Array(array_ty), Constant::Array(array_value)) => {
                     let len = Constant::Primitive(constant::Primitive::Usize(
-                        array_value.elements.len() as u128,
+                        array_value.elements.len() as u64,
                     ));
 
                     // check the length equals
