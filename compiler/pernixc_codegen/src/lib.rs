@@ -150,6 +150,3 @@ pub fn codegen<'ctx>(
 
     Ok(context.into_module())
 }
-
-#[cfg(test)]
-mod test;

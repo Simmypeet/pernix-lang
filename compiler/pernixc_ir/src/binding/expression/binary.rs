@@ -21,8 +21,7 @@ use crate::{
     value::{
         literal::{self, Boolean, Literal},
         register::{
-            ArithmeticOperator, Assignment, Binary, BinaryOperator,
-            BitwiseOperator, Load, Phi,
+            Assignment, Binary, BinaryOperator, BitwiseOperator, Load, Phi,
         },
         Value,
     },
@@ -379,19 +378,10 @@ impl Binder<'_> {
         }
 
         match op {
-            BinaryOperator::Arithmetic(arith_op) => {
-                let expected_constraints = match arith_op {
-                    ArithmeticOperator::Add
-                    | ArithmeticOperator::Subtract
-                    | ArithmeticOperator::Multiply
-                    | ArithmeticOperator::Divide => Constraint::Number,
-
-                    ArithmeticOperator::Modulo => Constraint::Integer,
-                };
-
+            BinaryOperator::Arithmetic(_) => {
                 let _ = self.type_check(
                     &lhs_register_ty,
-                    Expected::Constraint(expected_constraints),
+                    Expected::Constraint(Constraint::Number),
                     syntax_tree.span(),
                     handler,
                 )?;
@@ -409,12 +399,12 @@ impl Binder<'_> {
                         })
                     })?;
 
-                let valid = match lhs_register_ty.result.reduce_reference() {
+                let valid = match lhs_register_ty.result {
                     Type::Primitive(_) => true,
                     Type::Inference(inference) => {
                         let constraint_id = *self
                             .inference_context
-                            .get_inference(*inference)
+                            .get_inference(inference)
                             .unwrap()
                             .as_inferring()
                             .unwrap();
@@ -514,11 +504,9 @@ impl Binder<'_> {
                 }
 
                 BitwiseOperator::LeftShift | BitwiseOperator::RightShift => {
-                    let expected_constraints = Constraint::Integer;
-
                     let _ = self.type_check(
                         &lhs_register_ty,
-                        Expected::Constraint(expected_constraints),
+                        Expected::Constraint(Constraint::Integer),
                         syntax_tree.left.span(),
                         handler,
                     )?;
@@ -528,7 +516,7 @@ impl Binder<'_> {
 
                     let _ = self.type_check(
                         &rhs_value_ty,
-                        Expected::Constraint(expected_constraints),
+                        Expected::Constraint(Constraint::UnsignedInteger),
                         syntax_tree.right.span(),
                         handler,
                     )?;
