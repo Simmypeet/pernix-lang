@@ -609,9 +609,54 @@ impl Display for Parameter {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ParameterKind {
+    Regular(Parameter),
+    VarArgs,
+}
+
+impl Input<&super::ParameterKind> for &ParameterKind {
+    fn assert(self, output: &super::ParameterKind) -> TestCaseResult {
+        match (self, output) {
+            (ParameterKind::Regular(i), super::ParameterKind::Regular(o)) => {
+                i.assert(o)
+            }
+            (ParameterKind::VarArgs, super::ParameterKind::VarArgs(_)) => {
+                Ok(())
+            }
+
+            _ => Err(TestCaseError::fail(format!(
+                "Expected {self:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl Arbitrary for ParameterKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            6 => Parameter::arbitrary().prop_map(Self::Regular),
+            1 => Just(Self::VarArgs),
+        ]
+        .boxed()
+    }
+}
+
+impl Display for ParameterKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Regular(parameter) => Display::fmt(parameter, f),
+            Self::VarArgs => write!(f, "..."),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Parameters {
     pub parameter_list:
-        Option<ConnectedList<Parameter, ConstantPunctuation<','>>>,
+        Option<ConnectedList<ParameterKind, ConstantPunctuation<','>>>,
 }
 
 impl Input<&super::Parameters> for &Parameters {
@@ -626,7 +671,7 @@ impl Arbitrary for Parameters {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         proptest::option::of(ConnectedList::arbitrary_with(
-            Parameter::arbitrary(),
+            ParameterKind::arbitrary(),
             ConstantPunctuation::arbitrary(),
         ))
         .prop_map(|parameter_list| Self { parameter_list })

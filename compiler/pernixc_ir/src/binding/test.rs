@@ -6,7 +6,10 @@ use pernixc_component::{
     implied_predicates::ImpliedPredicates,
 };
 use pernixc_handler::{Panic, Storage};
-use pernixc_syntax::syntax_tree::{item::Parameter, ConnectedList};
+use pernixc_syntax::syntax_tree::{
+    item::{Parameter, ParameterKind},
+    ConnectedList,
+};
 use pernixc_table::{
     component::{Member, Name, Parent, SymbolKind},
     diagnostic::Diagnostic,
@@ -147,6 +150,7 @@ impl CreateBinderAtExt for Table {
                 .as_ref()
                 .into_iter()
                 .flat_map(ConnectedList::elements)
+                .filter_map(ParameterKind::as_regular)
                 .map(Parameter::irrefutable_pattern),
             &Panic,
         )

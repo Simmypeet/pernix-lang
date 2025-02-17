@@ -9,7 +9,9 @@ use pernixc_lexical::token::Identifier;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{
     self,
-    item::{ImplementationKind, ImplementationMember, UsingKind},
+    item::{
+        ImplementationKind, ImplementationMember, ParameterKind, UsingKind,
+    },
     ConnectedList, QualifiedIdentifierRoot,
 };
 
@@ -28,15 +30,16 @@ use super::{
 use crate::{
     component::{
         self, syntax_tree as syntax_tree_component, Accessibility, Extern,
-        Implemented, Implements, Import, LocationSpan, Member, Name, Parent,
-        PositiveTraitImplementation, SymbolKind, TraitImplementation, Using,
-        VariantDeclarationOrder,
+        ExternC, Implemented, Implements, Import, LocationSpan, Member, Name,
+        Parent, PositiveTraitImplementation, SymbolKind, TraitImplementation,
+        Using, VariantDeclarationOrder,
     },
     diagnostic::{
         ConflictingUsing, Diagnostic, ExpectModule,
         ExpectedImplementationWithBodyForAdt, InvalidConstImplementation,
         InvalidFinalImplementation, ItemRedifinition,
         NonFinalMarkerImplementation, UnknownExternCallingConvention,
+        VariadicArgumentsAreNotAllowed, VariadicArgumentsMustBeTrailing,
     },
     resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
     Target,
@@ -405,6 +408,11 @@ impl Representation {
                     };
 
                     // add the parameters
+                    Self::validate_parameters_syntax(
+                        &parameters,
+                        false,
+                        handler,
+                    );
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionSignature {
@@ -561,6 +569,11 @@ impl Representation {
                     );
 
                     // add the parameters
+                    Self::validate_parameters_syntax(
+                        &parameters,
+                        false,
+                        handler,
+                    );
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionSignature {
@@ -1286,6 +1299,11 @@ impl Representation {
                     );
 
                     // add the parameters
+                    Self::validate_parameters_syntax(
+                        &parameters,
+                        false,
+                        handler,
+                    );
                     assert!(self.storage.add_component(
                         trait_function_id,
                         syntax_tree_component::FunctionSignature {
@@ -1366,6 +1384,38 @@ impl Representation {
         }
 
         trait_id
+    }
+
+    fn validate_parameters_syntax(
+        parameters: &syntax_tree::item::Parameters,
+        can_have_var_ars: bool,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) {
+        let count = parameters
+            .connected_list()
+            .as_ref()
+            .map_or(0, |x| x.rest().len() + 1);
+
+        for (index, param) in parameters
+            .connected_list()
+            .iter()
+            .flat_map(ConnectedList::elements)
+            .enumerate()
+        {
+            // not-allowed
+            if !can_have_var_ars && param.is_var_args() {
+                handler.receive(Box::new(VariadicArgumentsAreNotAllowed {
+                    span: param.span(),
+                }));
+            }
+
+            // not-trailing
+            if param.is_var_args() && index != (count - 1) {
+                handler.receive(Box::new(VariadicArgumentsMustBeTrailing {
+                    span: param.span(),
+                }));
+            }
+        }
     }
 
     #[allow(
@@ -1491,6 +1541,12 @@ impl Representation {
                     );
 
                     // add the signature
+                    Self::validate_parameters_syntax(
+                        &parameters,
+                        false,
+                        handler,
+                    );
+
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionSignature {
@@ -1633,18 +1689,13 @@ impl Representation {
                     let (_, calling_convention, functions) = syn.dissolve();
 
                     // get the calling convention of this extern
-                    let calling_convention =
-                        if calling_convention.value.as_deref() == Some("C") {
-                            Extern::C
-                        } else {
-                            handler.receive(Box::new(
-                                UnknownExternCallingConvention {
-                                    span: calling_convention.span.clone(),
-                                },
-                            ));
-
-                            Extern::Unknown
-                        };
+                    if calling_convention.value.as_deref() != Some("C") {
+                        handler.receive(Box::new(
+                            UnknownExternCallingConvention {
+                                span: calling_convention.span.clone(),
+                            },
+                        ));
+                    }
 
                     for function in functions.dissolve().1 {
                         let (access_modifier, signature, _) =
@@ -1659,6 +1710,21 @@ impl Representation {
                             where_clause,
                         ) = signature.dissolve();
 
+                        let calling_convention = match calling_convention
+                            .value
+                            .as_deref()
+                        {
+                            Some("C") => Extern::C(ExternC {
+                                var_args: parameters
+                                    .connected_list()
+                                    .iter()
+                                    .flat_map(ConnectedList::elements)
+                                    .last()
+                                    .is_some_and(ParameterKind::is_var_args),
+                            }),
+                            _ => Extern::Unknown,
+                        };
+
                         let function_id = self.insert_member(
                             module_id,
                             &ident,
@@ -1672,6 +1738,12 @@ impl Representation {
                             ),
                             generic_parameters,
                             where_clause,
+                            handler,
+                        );
+
+                        Self::validate_parameters_syntax(
+                            &parameters,
+                            matches!(calling_convention, Extern::C(..)),
                             handler,
                         );
 

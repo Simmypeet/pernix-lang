@@ -9,6 +9,7 @@ use pernixc_term::{
     generic_parameter::{GenericParameters, TypeParameterID},
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Reference, Type},
+    Model,
 };
 use pernixc_type_system::equality::Equality;
 
@@ -25,6 +26,7 @@ use crate::{
         test::{build_table, BindExt, CreateBinderAtExt, Template},
     },
     model::{self, Constraint, Erased},
+    value::Value,
 };
 
 #[test]
@@ -294,7 +296,7 @@ public module math {
     public struct Vector2 {
         public x: float32,
         public y: float32,
-        
+
         private secret: float32,
     }
 }
@@ -1325,4 +1327,106 @@ fn variant_call_mismatched_argument_count_error() {
         assert_eq!(error.expected_count, 0);
         assert_eq!(error.found_count, 1);
     }
+}
+
+const VAR_ARGS: &str = r#"
+extern "C" {
+    public function fizz(a: int32, ...);
+}
+
+public function test() {}
+"#;
+
+fn test_integer(value: &Value<impl Model>, int: &str) {
+    let num = value.as_literal().unwrap().as_numeric().unwrap();
+
+    assert_eq!(num.integer_string, int);
+    assert_eq!(num.decimal_stirng, None);
+}
+
+#[test]
+fn var_args_eqals() {
+    let table = build_table(VAR_ARGS);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
+
+    let call_register_id = binder
+        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Postfixable>(
+            "fizz(0)",
+        ))
+        .into_register()
+        .unwrap();
+
+    let call = binder.intermediate_representation.values.registers
+        [call_register_id]
+        .assignment
+        .as_function_call()
+        .unwrap();
+
+    assert_eq!(call.callable_id, fizz_id);
+    assert_eq!(call.arguments.len(), 1);
+
+    test_integer(&call.arguments[0], "0");
+}
+
+#[test]
+fn var_args_greater() {
+    let table = build_table(VAR_ARGS);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
+
+    let call_register_id = binder
+        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Postfixable>(
+            "fizz(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)",
+        ))
+        .into_register()
+        .unwrap();
+
+    let call = binder.intermediate_representation.values.registers
+        [call_register_id]
+        .assignment
+        .as_function_call()
+        .unwrap();
+
+    assert_eq!(call.callable_id, fizz_id);
+    assert_eq!(call.arguments.len(), 11);
+
+    for i in 0..11 {
+        test_integer(&call.arguments[i], &i.to_string());
+    }
+}
+
+#[test]
+fn var_args_lesser() {
+    let table = build_table(VAR_ARGS);
+    let mut binder = table.create_binder_at(["test", "test"]);
+
+    let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
+
+    let (value, error) = binder.bind_as_rvalue_error(&parse::<
+        syntax_tree::expression::Postfixable,
+    >("fizz()"));
+
+    let call = binder
+        .intermediate_representation
+        .values
+        .registers
+        .get(value.into_register().unwrap())
+        .unwrap()
+        .assignment
+        .as_function_call()
+        .unwrap();
+
+    assert_eq!(call.callable_id, fizz_id);
+
+    assert_eq!(error.len(), 1);
+
+    let err =
+        error[0].as_any().downcast_ref::<MismatchedArgumentCount>().unwrap();
+
+    assert_eq!(err.expected_count, 1);
+    assert_eq!(err.found_count, 0);
+    assert_eq!(err.called_id, fizz_id);
 }

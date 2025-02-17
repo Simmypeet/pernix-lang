@@ -21,7 +21,7 @@ use super::{
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Branch, Parse},
+        parse::{self, Branch, ExpectExt, Parse},
         StateMachine,
     },
 };
@@ -1230,6 +1230,74 @@ impl SourceElement for TraitMember {
     }
 }
 
+/// Syntax synopsis:
+/// ``` txt
+/// Ellipsis:
+///     '...'
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct Ellipsis {
+    #[get = "pub"]
+    first: Punctuation,
+    #[get = "pub"]
+    second: Punctuation,
+    #[get = "pub"]
+    third: Punctuation,
+}
+
+impl SourceElement for Ellipsis {
+    fn span(&self) -> Span { self.first.span.join(&self.third.span) }
+}
+
+impl SyntaxTree for Ellipsis {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        ('.'.to_owned(), '.'.no_skip().to_owned(), '.'.no_skip().to_owned())
+            .commit_in(3)
+            .map(|(f, s, t)| Self { first: f, second: s, third: t })
+            .parse(state_machine, handler)
+    }
+}
+
+/// Syntax Synopsis:
+/// ``` txt
+/// ParameterKind:
+///     Parameter
+///     | Ellipsis
+///     ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum ParameterKind {
+    Regular(Parameter),
+    VarArgs(Ellipsis),
+}
+
+impl SourceElement for ParameterKind {
+    fn span(&self) -> Span {
+        match self {
+            Self::Regular(parameter) => parameter.span(),
+            Self::VarArgs(ellipsis) => ellipsis.span(),
+        }
+    }
+}
+
+impl SyntaxTree for ParameterKind {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            Parameter::parse.map(Self::Regular),
+            Ellipsis::parse.map(Self::VarArgs),
+        )
+            .branch()
+            .parse(state_machine, handler)
+    }
+}
+
 /// Syntax Synopsis:
 /// ``` txt
 /// Parameter:
@@ -1270,17 +1338,17 @@ impl SourceElement for Parameter {
 /// Syntax Synopsis:
 /// ``` txt
 /// Parameters:
-///     '(' ParameterList? ')'
+///     '(' ParameterKind (',' ParameterKind)* (',')? ')'
 ///     ;
 /// ```
-pub type Parameters = EnclosedConnectedList<Parameter, Punctuation>;
+pub type Parameters = EnclosedConnectedList<ParameterKind, Punctuation>;
 
 impl SyntaxTree for Parameters {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        Parameter::parse
+        ParameterKind::parse
             .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
             .parse(state_machine, handler)
     }

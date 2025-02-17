@@ -5,7 +5,10 @@ use std::{borrow::Cow, sync::Arc};
 use pernixc_abort::Abort;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{binding::Binder, IR};
-use pernixc_syntax::syntax_tree::{item::Parameter, ConnectedList};
+use pernixc_syntax::syntax_tree::{
+    item::{Parameter, ParameterKind},
+    ConnectedList,
+};
 use pernixc_table::{
     component::{self, Derived, SymbolKind},
     diagnostic::Diagnostic,
@@ -49,6 +52,7 @@ impl Builder<IR> for builder::Builder {
                 .connected_list()
                 .iter()
                 .flat_map(ConnectedList::elements)
+                .filter_map(ParameterKind::as_regular)
                 .map(Parameter::irrefutable_pattern),
             &storage,
         )

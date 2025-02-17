@@ -14,7 +14,7 @@ use pernixc_resolution::{
     Config, ElidedTermProvider, Ext, GetGenericParameterNamespaceExt as _,
 };
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::ConnectedList;
+use pernixc_syntax::syntax_tree::{item::ParameterKind, ConnectedList};
 use pernixc_table::{
     component::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
@@ -224,6 +224,7 @@ impl query::Builder<Intermediate> for Builder {
             .connected_list()
             .iter()
             .flat_map(ConnectedList::elements)
+            .filter_map(ParameterKind::as_regular)
             .map(|syn| {
                 (
                     table.resolve_type(

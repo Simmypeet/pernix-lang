@@ -466,6 +466,24 @@ impl SymbolKind {
     }
 }
 
+/// Information about the extern `C` function.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
+pub struct ExternC {
+    /// `true` if the function is variadic.
+    pub var_args: bool,
+}
+
 /// A **presistent-input** component representing the external linkage of a
 /// [`SymbolKind::Function`] symbol.
 #[derive(
@@ -483,7 +501,7 @@ impl SymbolKind {
 pub enum Extern {
     /// The function is an external function that is implemented in the c call
     /// convention.
-    C,
+    C(ExternC),
 
     /// Unknown external linkage.
     Unknown,

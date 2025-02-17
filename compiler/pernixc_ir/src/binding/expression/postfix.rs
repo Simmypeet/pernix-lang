@@ -13,7 +13,10 @@ use pernixc_syntax::syntax_tree::{
     ConnectedList,
 };
 use pernixc_table::{
-    component::{Implemented, Implements, Import, Member, Parent, SymbolKind},
+    component::{
+        Extern, ExternC, Implemented, Implements, Import, Member, Parent,
+        SymbolKind,
+    },
     diagnostic::Diagnostic,
     resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
     GlobalID,
@@ -1459,6 +1462,7 @@ impl Binder<'_> {
             self.table.query::<FunctionSignature>(callable_id)?;
         let elided_lifetimes =
             self.table.query::<ElidedLifetimes>(callable_id)?;
+        let callable_kind = *self.table.get::<SymbolKind>(callable_id);
 
         instantiation.lifetimes.extend(
             elided_lifetimes.elided_lifetimes.ids().map(|x| {
@@ -1471,8 +1475,20 @@ impl Binder<'_> {
 
         let mut acutal_arguments = Vec::new();
 
+        let is_var_args = callable_kind == SymbolKind::ExternFunction
+            && matches!(
+                *self.table.get::<Extern>(callable_id),
+                Extern::C(ExternC { var_args: true })
+            );
+
         // mismatched arguments count
-        if arguments.len() != function_signature.parameter_order.len() {
+        let count_error = if is_var_args {
+            arguments.len() < function_signature.parameter_order.len()
+        } else {
+            arguments.len() != function_signature.parameter_order.len()
+        };
+
+        if count_error {
             handler.receive(Box::new(MismatchedArgumentCount {
                 called_id: callable_id,
                 expected_count: function_signature.parameter_order.len(),
@@ -1504,6 +1520,17 @@ impl Binder<'_> {
             )?;
 
             acutal_arguments.push(argument_value.clone());
+        }
+
+        // fill the var args arguments
+        if is_var_args
+            && arguments.len() > function_signature.parameter_order.len()
+        {
+            for argument in
+                arguments.iter().skip(function_signature.parameter_order.len())
+            {
+                acutal_arguments.push(argument.1.clone());
+            }
         }
 
         // fill the unsupplied arguments with error values

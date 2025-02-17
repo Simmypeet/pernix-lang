@@ -566,3 +566,44 @@ impl Report<&Table> for UnexpectedAdtImplementationMember {
         }
     }
 }
+
+/// The function variadic arguments must be trailing
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariadicArgumentsMustBeTrailing {
+    /// The span of the variadic arguments.
+    pub span: Span,
+}
+
+impl Report<&Table> for VariadicArgumentsMustBeTrailing {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
+            span: self.span.clone(),
+            message: "variadic arguments must be trailing".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The function variadic arguments must be trailing
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VariadicArgumentsAreNotAllowed {
+    /// The span of the variadic arguments.
+    pub span: Span,
+}
+
+impl Report<&Table> for VariadicArgumentsAreNotAllowed {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
+            span: self.span.clone(),
+            message: "variadic arguments are not allowed".to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "variadic arguments can only be used in extern \"C\" functions"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
