@@ -23,10 +23,9 @@ impl Bind<&token::Character> for Binder<'_> {
     ) -> Result<Expression, Error> {
         let inference_variable = InferenceVariable::new();
 
-        assert!(self.inference_context.register::<Type<_>>(
-            inference_variable,
-            Constraint::UnsignedInteger
-        ));
+        assert!(self
+            .inference_context
+            .register::<Type<_>>(inference_variable, Constraint::Integer));
 
         let value = syntax_tree.value.map_or_else(
             || {
