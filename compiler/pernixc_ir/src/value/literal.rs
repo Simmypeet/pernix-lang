@@ -89,7 +89,7 @@ pub struct Unreachable<M: pernixc_term::Model> {
 )]
 pub struct String {
     /// The value of the string.
-    pub value: Vec<u8>,
+    pub value: std::string::String,
 
     /// The span location of the string.
     #[serde(skip)]

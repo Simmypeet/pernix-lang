@@ -26,10 +26,8 @@ impl Bind<&token::String> for Binder<'_> {
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let value = if let Some(value) = &syntax_tree.value {
-            let value = value.as_bytes().to_vec();
-
             Value::Literal(Literal::String(literal::String {
-                value,
+                value: value.clone(),
                 span: Some(syntax_tree.span()),
             }))
         } else {
