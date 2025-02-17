@@ -20,6 +20,7 @@ use typed_builder::TypedBuilder;
 
 use crate::{
     builder::Builder,
+    extern_function_check::extern_function_check,
     function,
     implementation_coherence::{
         check_implementation_member, check_implemented_instantiation,
@@ -261,6 +262,11 @@ pub fn build(
                 | SymbolKind::TraitImplementationType
         ) {
             check_implementation_member(table, x, &**table.handler());
+        }
+
+        // check the extern function definition
+        if matches!(symbol_kind, SymbolKind::ExternFunction) {
+            let _ = extern_function_check(table, x, &**table.handler());
         }
 
         if symbol_kind.has_function_body() {
