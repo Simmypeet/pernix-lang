@@ -1,15 +1,25 @@
 //! Contains the LLVM code generation logic of the pernix compiler.
 
+use diagnostic::{
+    GenericParametersAreNotAllowedInMainFunction, InvalidMainFunctionSignature,
+    MainIsNotAFunction,
+};
 use function::Call;
 use inkwell::targets::TargetData;
 use pernixc_abort::Abort;
+use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_table::{
     component::{Name, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
-use pernixc_term::instantiation::Instantiation;
+use pernixc_term::{
+    generic_parameter::GenericParameters,
+    instantiation::Instantiation,
+    r#type::{Primitive, Type},
+    where_clause::WhereClause,
+};
 
 pub mod context;
 pub mod diagnostic;
@@ -47,6 +57,62 @@ impl std::fmt::Debug for Input<'_, '_> {
     }
 }
 
+fn check_function_main(input: &Input<'_, '_>) -> bool {
+    let main_function_id = input.main_function_id;
+    let symbol_kind = *input.table.get::<SymbolKind>(main_function_id);
+
+    // must be function type
+    let mut has_error = if symbol_kind == SymbolKind::Function {
+        false
+    } else {
+        input
+            .handler
+            .receive(Box::new(MainIsNotAFunction { main_function_id }));
+        true
+    };
+
+    let func_sig =
+        input.table.query::<FunctionSignature>(main_function_id).unwrap();
+
+    if !func_sig.parameters.is_empty()
+        || func_sig.return_type != Type::Primitive(Primitive::Int32)
+    {
+        input.handler.receive(Box::new(InvalidMainFunctionSignature {
+            main_function_id,
+        }));
+        has_error = true;
+    }
+
+    let generic_params =
+        input.table.query::<GenericParameters>(main_function_id).unwrap();
+
+    // must not have any generic parameters
+    if !generic_params.lifetimes().is_empty()
+        || !generic_params.types().is_empty()
+        || !generic_params.constants().is_empty()
+    {
+        input.handler.receive(Box::new(
+            GenericParametersAreNotAllowedInMainFunction { main_function_id },
+        ));
+        has_error = true;
+    }
+
+    let where_clause =
+        input.table.query::<WhereClause>(main_function_id).unwrap();
+
+    // must not have any where clause predicates
+    if !where_clause.predicates.is_empty() {
+        input.handler.receive(Box::new(
+            diagnostic::WhereClausePredicatesAreNotAllowedInMainFunction {
+                main_function_id,
+            },
+        ));
+        has_error = true;
+    }
+
+    !has_error
+}
+
 /// The main driver of the code generation process.
 ///
 /// This assumes that the table is validated and has no errors.
@@ -54,7 +120,9 @@ impl std::fmt::Debug for Input<'_, '_> {
 pub fn codegen<'ctx>(
     input: Input<'_, 'ctx>,
 ) -> Result<inkwell::module::Module<'ctx>, Abort> {
-    // Target::initialize_native(&InitializationConfig::default()).unwrap();
+    if !check_function_main(&input) {
+        return Err(Abort);
+    }
 
     let module = input.inkwell_context.create_module(
         input
@@ -66,38 +134,19 @@ pub fn codegen<'ctx>(
             .as_str(),
     );
 
-    let symbol_kind = *input.table.get::<SymbolKind>(input.main_function_id);
     let mut context = context::Context::new(
         input.inkwell_context,
         input.target_data,
         input.table,
         input.handler,
         module,
+        input.main_function_id,
     );
 
-    let user_main_function = context.get_function(&Call {
+    let _ = context.get_function(&Call {
         callable_id: input.main_function_id,
         instantiation: Instantiation::default(),
     });
-
-    // create the main function that calls the user's main function
-    let main_fn_type = context.context().i32_type().fn_type(&[], false);
-    let linkage = inkwell::module::Linkage::External;
-    let main_fn =
-        context.module().add_function("main", main_fn_type, Some(linkage));
-
-    let entry = context.context().append_basic_block(main_fn, "entry");
-    let builder = context.context().create_builder();
-
-    builder.position_at_end(entry);
-
-    let result = builder
-        .build_call(user_main_function, &[], "result")
-        .unwrap()
-        .try_as_basic_value()
-        .left()
-        .unwrap();
-    builder.build_return(Some(&result)).unwrap();
 
     Ok(context.into_module())
 }
