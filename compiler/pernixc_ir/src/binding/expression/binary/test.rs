@@ -78,7 +78,7 @@ fn assignment() {
 fn normal_operator() {
     const ARITHMETIC: &str = "1 + 2";
     const RELATIONAL: &str = "3 < 4";
-    const SHIFT: &str = "5i32 << 6i64";
+    const SHIFT: &str = "5i32 << 6u64";
     const BITWISE: &str = "7 & 8";
 
     let template = Template::new();

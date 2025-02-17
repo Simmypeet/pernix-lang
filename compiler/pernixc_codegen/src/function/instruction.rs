@@ -1,10 +1,14 @@
-use inkwell::values::BasicValueEnum;
+use std::cmp::Ordering;
+
+use inkwell::{values::BasicValueEnum, IntPredicate};
 use pernixc_arena::ID;
 use pernixc_component::fields::Fields;
 use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{Instruction, Jump, RegisterAssignment, Terminator},
-    value::register::{self, Assignment, BinaryOperator, Register},
+    value::register::{
+        self, Assignment, BinaryOperator, Register, RelationalOperator,
+    },
 };
 use pernixc_table::component::SymbolKind;
 use pernixc_term::{instantiation, r#type::Primitive};
@@ -261,10 +265,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let rhs = self.get_value(&binary.rhs)?;
 
         let lhs = into_basic!(lhs);
-        let rhs = into_basic!(rhs);
-
-        let lhs_ty = self.type_of_value(&binary.lhs).into_basic().unwrap();
-        let rhs_ty = self.type_of_value(&binary.rhs).into_basic().unwrap();
+        let mut rhs = into_basic!(rhs);
 
         match binary.operator {
             BinaryOperator::Arithmetic(arithmetic_operator) => {
@@ -443,10 +444,232 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                 Ok(LlvmValue::Basic(value))
             }
+
             BinaryOperator::Relational(relational_operator) => {
-                todo!()
+                enum Kind {
+                    Signed,
+                    Unsigned,
+                    Float,
+                    Bool,
+                }
+
+                let pernix_lhs_ty = self
+                    .function_ir
+                    .values
+                    .type_of_value(
+                        &binary.lhs,
+                        self.callable_id,
+                        &self.environment,
+                    )
+                    .unwrap()
+                    .result
+                    .into_primitive()
+                    .unwrap();
+
+                let kind = match pernix_lhs_ty {
+                    Primitive::Int8
+                    | Primitive::Int16
+                    | Primitive::Int32
+                    | Primitive::Int64
+                    | Primitive::Isize => Kind::Signed,
+
+                    Primitive::Uint8
+                    | Primitive::Uint16
+                    | Primitive::Uint32
+                    | Primitive::Uint64
+                    | Primitive::Usize => Kind::Unsigned,
+
+                    Primitive::Float32 | Primitive::Float64 => Kind::Float,
+
+                    Primitive::Bool => Kind::Bool,
+                };
+
+                match kind {
+                    Kind::Bool | Kind::Signed | Kind::Unsigned => {
+                        let pred = match (kind, relational_operator) {
+                            (
+                                Kind::Signed | Kind::Unsigned | Kind::Bool,
+                                RelationalOperator::Equal,
+                            ) => IntPredicate::EQ,
+                            (
+                                Kind::Signed | Kind::Unsigned | Kind::Bool,
+                                RelationalOperator::NotEqual,
+                            ) => IntPredicate::NE,
+                            (Kind::Signed, RelationalOperator::LessThan) => {
+                                IntPredicate::SLT
+                            }
+                            (
+                                Kind::Signed,
+                                RelationalOperator::LessThanOrEqual,
+                            ) => IntPredicate::SLE,
+                            (Kind::Signed, RelationalOperator::GreaterThan) => {
+                                IntPredicate::SGT
+                            }
+                            (
+                                Kind::Signed,
+                                RelationalOperator::GreaterThanOrEqual,
+                            ) => IntPredicate::SGE,
+                            (
+                                Kind::Unsigned | Kind::Bool,
+                                RelationalOperator::LessThan,
+                            ) => IntPredicate::ULT,
+                            (
+                                Kind::Unsigned | Kind::Bool,
+                                RelationalOperator::LessThanOrEqual,
+                            ) => IntPredicate::ULE,
+                            (
+                                Kind::Unsigned | Kind::Bool,
+                                RelationalOperator::GreaterThan,
+                            ) => IntPredicate::UGT,
+                            (
+                                Kind::Unsigned | Kind::Bool,
+                                RelationalOperator::GreaterThanOrEqual,
+                            ) => IntPredicate::UGE,
+
+                            (Kind::Float, _) => unreachable!(),
+                        };
+
+                        Ok(LlvmValue::Basic(
+                            self.inkwell_builder
+                                .build_int_compare(
+                                    pred,
+                                    lhs.into_int_value(),
+                                    rhs.into_int_value(),
+                                    &format!("cmp_{reg_id:?}"),
+                                )
+                                .unwrap()
+                                .into(),
+                        ))
+                    }
+                    Kind::Float => todo!(),
+                }
             }
-            BinaryOperator::Bitwise(bitwise_operator) => todo!(),
+
+            BinaryOperator::Bitwise(bitwise_operator) => {
+                let pernix_lhs_ty = self
+                    .function_ir
+                    .values
+                    .type_of_value(
+                        &binary.lhs,
+                        self.callable_id,
+                        &self.environment,
+                    )
+                    .unwrap()
+                    .result
+                    .into_primitive()
+                    .unwrap();
+
+                let value = match bitwise_operator {
+                    register::BitwiseOperator::And => self
+                        .inkwell_builder
+                        .build_and(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            &format!("and_{reg_id:?}"),
+                        )
+                        .unwrap(),
+                    register::BitwiseOperator::Or => self
+                        .inkwell_builder
+                        .build_or(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            &format!("or_{reg_id:?}"),
+                        )
+                        .unwrap(),
+                    register::BitwiseOperator::Xor => self
+                        .inkwell_builder
+                        .build_xor(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            &format!("xor_{reg_id:?}"),
+                        )
+                        .unwrap(),
+
+                    register::BitwiseOperator::LeftShift
+                    | register::BitwiseOperator::RightShift => {
+                        // pernix allows the rhs to have different bit size with
+                        // the lhs; therefore, we might need to extend or
+                        // truncuate
+
+                        let lhs_width =
+                            lhs.into_int_value().get_type().get_bit_width();
+                        let rhs_width =
+                            rhs.into_int_value().get_type().get_bit_width();
+
+                        match rhs_width.cmp(&lhs_width) {
+                            Ordering::Less => {
+                                // extend the rhs
+                                let extended_rhs = self
+                                    .inkwell_builder
+                                    .build_int_z_extend(
+                                        rhs.into_int_value(),
+                                        lhs.into_int_value().get_type(),
+                                        &format!("zext_{reg_id:?}"),
+                                    )
+                                    .unwrap();
+
+                                rhs = extended_rhs.into();
+                            }
+                            Ordering::Equal => {} // do nothing
+                            Ordering::Greater => {
+                                // truncuate the rhs
+                                let truncated_rhs = self
+                                    .inkwell_builder
+                                    .build_int_truncate(
+                                        rhs.into_int_value(),
+                                        lhs.into_int_value().get_type(),
+                                        &format!("trunc_{reg_id:?}"),
+                                    )
+                                    .unwrap();
+
+                                rhs = truncated_rhs.into();
+                            }
+                        }
+
+                        match bitwise_operator {
+                            register::BitwiseOperator::LeftShift => self
+                                .inkwell_builder
+                                .build_left_shift(
+                                    lhs.into_int_value(),
+                                    rhs.into_int_value(),
+                                    &format!("shl_{reg_id:?}"),
+                                )
+                                .unwrap(),
+                            register::BitwiseOperator::RightShift => self
+                                .inkwell_builder
+                                .build_right_shift(
+                                    lhs.into_int_value(),
+                                    rhs.into_int_value(),
+                                    match pernix_lhs_ty {
+                                        Primitive::Isize
+                                        | Primitive::Int8
+                                        | Primitive::Int16
+                                        | Primitive::Int32
+                                        | Primitive::Int64 => true,
+
+                                        Primitive::Uint8
+                                        | Primitive::Uint16
+                                        | Primitive::Uint32
+                                        | Primitive::Uint64
+                                        | Primitive::Bool
+                                        | Primitive::Usize => false,
+
+                                        Primitive::Float32
+                                        | Primitive::Float64 => {
+                                            unreachable!()
+                                        }
+                                    },
+                                    &format!("shr_{reg_id:?}"),
+                                )
+                                .unwrap(),
+
+                            _ => unreachable!(),
+                        }
+                    }
+                };
+
+                Ok(LlvmValue::Basic(value.into()))
+            }
         }
     }
 

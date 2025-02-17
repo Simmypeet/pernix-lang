@@ -366,7 +366,7 @@ pub enum ArithmeticOperator {
     /// Supports for all numeric types.
     Divide,
 
-    /// Supports for all integer types.
+    /// Supports for all numeric ypes.
     Modulo,
 }
 

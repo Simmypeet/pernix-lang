@@ -1,7 +1,6 @@
 //! Contains the logic mapping from the Pernix type to LLVM's type.
 
 use std::{
-    any::Any,
     borrow::Cow,
     collections::{BTreeSet, HashMap},
 };
