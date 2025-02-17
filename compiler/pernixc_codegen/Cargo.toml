@@ -13,8 +13,12 @@ pernixc_term = { path = "../pernixc_term" }
 pernixc_ir = { path = "../pernixc_ir" }
 pernixc_type_system = { path = "../pernixc_type_system" }
 pernixc_abort = { path = "../pernixc_abort" }
+pernixc_component = { path = "../pernixc_component" }
+pernixc_arena = { path = "../pernixc_arena" }
 inkwell = { workspace = true }
+derive-new = { workspace = true }
 getset = { workspace = true }
+take_mut = { workspace = true }
 
 [lints]
 workspace = true

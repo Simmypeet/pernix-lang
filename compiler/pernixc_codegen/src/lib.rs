@@ -1,9 +1,7 @@
 //! Contains the LLVM code generation logic of the pernix compiler.
 
-use inkwell::{
-    context::Context,
-    targets::{InitializationConfig, Target, TargetData, TargetMachine},
-};
+use function::Call;
+use inkwell::targets::TargetData;
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
 use pernixc_table::{
@@ -11,6 +9,7 @@ use pernixc_table::{
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
+use pernixc_term::instantiation::Instantiation;
 
 pub mod context;
 pub mod diagnostic;
@@ -24,6 +23,9 @@ pub type Model = pernixc_ir::model::Model;
 pub struct Input<'i, 'ctx> {
     /// The llvm context used for the code generation.
     pub inkwell_context: &'ctx inkwell::context::Context,
+
+    /// The target data used for the code generation.
+    pub target_data: TargetData,
 
     /// The table that contains all the information about the program.
     pub table: &'i Table,
@@ -50,7 +52,7 @@ impl std::fmt::Debug for Input<'_, '_> {
 /// This assumes that the table is validated and has no errors.
 #[allow(clippy::missing_errors_doc)]
 pub fn codegen<'ctx>(
-    input: &Input<'_, 'ctx>,
+    input: Input<'_, 'ctx>,
 ) -> Result<inkwell::module::Module<'ctx>, Abort> {
     // Target::initialize_native(&InitializationConfig::default()).unwrap();
 
@@ -65,8 +67,39 @@ pub fn codegen<'ctx>(
     );
 
     let symbol_kind = *input.table.get::<SymbolKind>(input.main_function_id);
+    let mut context = context::Context::new(
+        input.inkwell_context,
+        input.target_data,
+        input.table,
+        input.handler,
+        module,
+    );
 
-    Ok(module)
+    let user_main_function = context.get_function(&Call {
+        callable_id: input.main_function_id,
+        instantiation: Instantiation::default(),
+    });
+
+    // create the main function that calls the user's main function
+    let main_fn_type = context.context().i32_type().fn_type(&[], false);
+    let linkage = inkwell::module::Linkage::External;
+    let main_fn =
+        context.module().add_function("main", main_fn_type, Some(linkage));
+
+    let entry = context.context().append_basic_block(main_fn, "entry");
+    let builder = context.context().create_builder();
+
+    builder.position_at_end(entry);
+
+    let result = builder
+        .build_call(user_main_function, &[], "result")
+        .unwrap()
+        .try_as_basic_value()
+        .left()
+        .unwrap();
+    builder.build_return(Some(&result)).unwrap();
+
+    Ok(context.into_module())
 }
 
 #[cfg(test)]
