@@ -55,89 +55,6 @@ pub enum OptimizationLevel {
     O3,
 }
 
-impl OptimizationLevel {
-    /// Returns the passes that should be used for the optimization level.
-    #[allow(clippy::too_many_lines)]
-    #[must_use]
-    pub fn get_passes(&self) -> String {
-        let o0 = ["verify", "ee-instrument", "forceattrs", "always-inline"];
-
-        let o1 = [
-            "forceattrs",
-            "inferattrs",
-            "ipsccp",
-            "called-value-propagation",
-            "globalopt",
-            "mem2reg",
-            "deadargelim",
-            "instcombine",
-            "simplifycfg",
-            "always-inline",
-            "sroa",
-            "speculative-execution",
-            "jump-threading",
-            "correlated-propagation",
-            "libcalls-shrinkwrap",
-            "pgo-memop-opt",
-            "tailcallelim",
-            "reassociate",
-            "loop-simplify",
-            "lcssa",
-            "loop-rotate",
-            "licm",
-            "indvars",
-            "loop-idiom",
-            "loop-deletion",
-            "loop-unroll",
-            "memcpyopt",
-            "sccp",
-            "bdce",
-            "dse",
-            "adce",
-            "globaldce",
-            "float2int",
-            "loop-distribute",
-            "loop-vectorize",
-            "loop-load-elim",
-            "alignment-from-assumptions",
-            "strip-dead-prototypes",
-            "loop-sink",
-            "instsimplify",
-            "div-rem-pairs",
-            "verify",
-            "ee-instrument",
-            "early-cse",
-            "lower-expect",
-        ];
-
-        let o2 = [
-            "inline",
-            "mldst-motion",
-            "gvn",
-            "elim-avail-extern",
-            "slp-vectorizer",
-            "constmerge",
-        ];
-
-        let o3 = ["callsite-splitting", "argpromotion"];
-
-        match self {
-            Self::O0 => o0.join(","),
-            Self::O1 => o0.into_iter().chain(o1).collect::<Vec<_>>().join(","),
-            Self::O2 => {
-                o0.into_iter().chain(o1).chain(o2).collect::<Vec<_>>().join(",")
-            }
-            Self::O3 => o0
-                .into_iter()
-                .chain(o1)
-                .chain(o2)
-                .chain(o3)
-                .collect::<Vec<_>>()
-                .join(","),
-        }
-    }
-}
-
 /// The compilation format of the target.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, clap::ValueEnum,
@@ -716,19 +633,18 @@ fn emit_as_exe(
     // `inkwell_context`, which is probably a bug in the rust compiler.
     let result = match (result, has_error) {
         (Ok(module), false) => {
-            module.print_to_stderr();
-
-            let passes = opt_level.get_passes();
-
             module
                 .run_passes(
-                    &passes,
+                    match opt_level {
+                        OptimizationLevel::O0 => "default<O0>",
+                        OptimizationLevel::O1 => "default<O1>",
+                        OptimizationLevel::O2 => "default<O2>",
+                        OptimizationLevel::O3 => "default<O3>",
+                    },
                     &target_machine,
                     PassBuilderOptions::create(),
                 )
                 .unwrap();
-
-            module.print_to_stderr();
 
             let result = target_machine.write_to_file(
                 &module,
