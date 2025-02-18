@@ -157,7 +157,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 self.normalize_generic_arguments(&mut function_generic_args);
 
                 format!(
-                    "{}{}{}{}",
+                    "{}{}::{}{}",
                     self.table().get_qualified_name(implemented_id),
                     DisplayObject {
                         table: self.table(),
@@ -357,9 +357,11 @@ struct Builder<'rctx, 'ctx, 'i, 'k> {
     context: &'rctx mut Context<'i, 'ctx>,
     callable_id: GlobalID,
     instantiation: &'k Instantiation<Model>,
+    #[allow(unused)]
     function_signature: &'k FunctionSignature,
     function_ir: &'k IR,
 
+    #[allow(unused)]
     llvm_function_signature: Rc<LlvmFunctionSignature<'ctx>>,
 
     #[allow(clippy::struct_field_names)]
@@ -527,6 +529,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
+    #[allow(unused)]
     fn type_of_address_pnx(&mut self, address: &Address<Model>) -> Type<Model> {
         let ty = self.function_ir.values.type_of_address(
             address,
