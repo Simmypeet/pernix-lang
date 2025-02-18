@@ -20,18 +20,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
             Address::Field(field) => {
                 let struct_ty = self
-                    .context
-                    .normalize_term(
-                        self.function_ir
-                            .values
-                            .type_of_address(
-                                &field.struct_address,
-                                self.callable_id,
-                                &self.environment,
-                            )
-                            .unwrap()
-                            .result,
-                    )
+                    .type_of_address_pnx(&field.struct_address)
                     .into_symbol()
                     .unwrap();
 
@@ -70,18 +59,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
             Address::Tuple(index) => {
                 let tuple_ty = self
-                    .context
-                    .normalize_term(
-                        self.function_ir
-                            .values
-                            .type_of_address(
-                                &index.tuple_address,
-                                self.callable_id,
-                                &self.environment,
-                            )
-                            .unwrap()
-                            .result,
-                    )
+                    .type_of_address_pnx(&index.tuple_address)
                     .into_tuple()
                     .unwrap();
 
