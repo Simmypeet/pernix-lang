@@ -1594,11 +1594,6 @@ impl Binder<'_> {
                 )?;
             }
         } else {
-            assert_eq!(
-                tuple_ty.elements.iter().filter(|x| x.is_unpacked).count(),
-                0
-            );
-
             for (index, (tuple_ty, tuple_pat)) in tuple_ty
                 .elements
                 .iter()
