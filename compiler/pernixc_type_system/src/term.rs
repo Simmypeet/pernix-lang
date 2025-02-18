@@ -251,8 +251,7 @@ fn normalize_trait_member<M: Model>(
         Err(_) => return Ok(None),
     };
 
-    let trait_member_name =
-        environment.table().get::<Name>(trait_member.id).0.clone();
+    let trait_member_name = environment.table().get::<Name>(trait_member.id);
 
     // not a trait implementation
     if *environment.table().get::<SymbolKind>(resolution.result.id)
@@ -265,7 +264,7 @@ fn normalize_trait_member<M: Model>(
         .table()
         .get::<Member>(resolution.result.id)
         .0
-        .get(&trait_member_name)
+        .get(&trait_member_name.0)
         .copied()
         .map(|x| GlobalID::new(resolution.result.id.target_id, x))
     else {
@@ -320,6 +319,10 @@ fn unpack_tuple<T: Term + From<Tuple<T>> + TryInto<Tuple<T>, Error = T>>(
 
     if !contain_upacked {
         return None;
+    }
+
+    if tuple.elements.len() == 1 {
+        return Some(Succeeded::new(tuple.elements[0].term.clone()));
     }
 
     let mut result = Vec::new();
