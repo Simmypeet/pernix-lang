@@ -5,13 +5,29 @@ use pernixc_arena::ID;
 use pernixc_component::fields::Fields;
 use pernixc_ir::{
     control_flow_graph::Block,
-    instruction::{Instruction, Jump, RegisterAssignment, Terminator},
+    instruction::{
+        Instruction, Jump, RegisterAssignment, Terminator, TuplePack,
+    },
+    model::Erased,
     value::register::{
         self, Assignment, BinaryOperator, Register, RelationalOperator,
     },
 };
-use pernixc_table::component::SymbolKind;
-use pernixc_term::{instantiation, r#type::Primitive};
+use pernixc_table::{
+    component::{Member, Name, Parent, SymbolKind},
+    GlobalID,
+};
+use pernixc_term::{
+    constant::Constant,
+    elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
+    generic_parameter::{
+        ConstantParameterID, GenericParameters, LifetimeParameterID,
+        TypeParameterID,
+    },
+    instantiation,
+    lifetime::Lifetime,
+    r#type::{Primitive, Type},
+};
 
 use super::{Builder, Call, Error, LlvmValue};
 use crate::{into_basic, Model};
@@ -111,6 +127,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         ))
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_function_call(
         &mut self,
         function_call: &register::FunctionCall<Model>,
@@ -192,7 +209,185 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
 
             SymbolKind::TraitFunction => {
-                todo!()
+                let mut calling_inst = function_call.instantiation.clone();
+
+                calling_inst.lifetimes.values_mut().for_each(|term| {
+                    instantiation::instantiate(term, self.instantiation);
+                });
+                calling_inst.types.values_mut().for_each(|term| {
+                    instantiation::instantiate(term, self.instantiation);
+                });
+                calling_inst.constants.values_mut().for_each(|term| {
+                    instantiation::instantiate(term, self.instantiation);
+                });
+
+                self.context.normalize_instantiation(&mut calling_inst);
+
+                // get the parent trait to search for the implc
+                let parent_trait_id = GlobalID::new(
+                    function_call.callable_id.target_id,
+                    self.context
+                        .table()
+                        .get::<Parent>(function_call.callable_id)
+                        .parent
+                        .unwrap(),
+                );
+
+                let trait_generic_params = self
+                    .context
+                    .table()
+                    .query::<GenericParameters>(parent_trait_id)
+                    .unwrap();
+                let trait_func_generic_params = self
+                    .context
+                    .table()
+                    .query::<GenericParameters>(function_call.callable_id)
+                    .unwrap();
+
+                let trait_generic_args = calling_inst
+                    .create_generic_arguments(
+                        parent_trait_id,
+                        &trait_generic_params,
+                    )
+                    .unwrap();
+
+                // resolve for the trait impl
+                let resolution = self
+                    .environment
+                    .resolve_implementation(
+                        parent_trait_id,
+                        &trait_generic_args,
+                    )
+                    .unwrap();
+
+                let trait_impl_id = resolution.result.id;
+                let mut new_inst = resolution.result.instantiation;
+
+                let trait_function_name =
+                    self.context.table().get::<Name>(function_call.callable_id);
+
+                let trait_impl_fun_id = GlobalID::new(
+                    trait_impl_id.target_id,
+                    self.context.table().get::<Member>(trait_impl_id)
+                        [&trait_function_name.0],
+                );
+
+                let trait_impl_fun_generic_params = self
+                    .context
+                    .table()
+                    .query::<GenericParameters>(trait_impl_fun_id)
+                    .unwrap();
+                let trait_impl_fun_elided_lts = self
+                    .context
+                    .table()
+                    .query::<ElidedLifetimes>(trait_impl_fun_id)
+                    .unwrap();
+
+                // populate the new_inst will the generic arguments of the trait
+                // func args
+                for lt in trait_impl_fun_generic_params
+                    .lifetime_order()
+                    .iter()
+                    .copied()
+                    .map(|x| {
+                        Lifetime::<Model>::Parameter(LifetimeParameterID::new(
+                            trait_impl_fun_id,
+                            x,
+                        ))
+                    })
+                    .chain(
+                        trait_impl_fun_elided_lts.elided_lifetimes.ids().map(
+                            |x| {
+                                Lifetime::<Model>::Elided(
+                                    ElidedLifetimeID::new(trait_impl_fun_id, x),
+                                )
+                            },
+                        ),
+                    )
+                {
+                    new_inst.lifetimes.insert(lt, Lifetime::Inference(Erased));
+                }
+
+                for (trait_fun_ty, trait_impl_fun_ty) in
+                    trait_func_generic_params.type_order().iter().copied().zip(
+                        trait_impl_fun_generic_params
+                            .type_order()
+                            .iter()
+                            .copied(),
+                    )
+                {
+                    new_inst.types.insert(
+                        Type::Parameter(TypeParameterID::new(
+                            trait_impl_fun_id,
+                            trait_impl_fun_ty,
+                        )),
+                        calling_inst
+                            .types
+                            .remove(&Type::Parameter(TypeParameterID::new(
+                                function_call.callable_id,
+                                trait_fun_ty,
+                            )))
+                            .unwrap(),
+                    );
+                }
+
+                for (trait_fun_const, trait_impl_fun_const) in
+                    trait_func_generic_params
+                        .constant_order()
+                        .iter()
+                        .copied()
+                        .zip(
+                            trait_impl_fun_generic_params
+                                .constant_order()
+                                .iter()
+                                .copied(),
+                        )
+                {
+                    new_inst.constants.insert(
+                        Constant::Parameter(ConstantParameterID::new(
+                            trait_impl_fun_id,
+                            trait_impl_fun_const,
+                        )),
+                        calling_inst
+                            .constants
+                            .remove(&Constant::Parameter(
+                                ConstantParameterID::new(
+                                    function_call.callable_id,
+                                    trait_fun_const,
+                                ),
+                            ))
+                            .unwrap(),
+                    );
+                }
+
+                self.context.normalize_instantiation(&mut new_inst);
+
+                let mut args = Vec::new();
+                for arg in &function_call.arguments {
+                    let LlvmValue::Basic(val) = self.get_value(arg)? else {
+                        continue;
+                    };
+
+                    args.push(val.into());
+                }
+
+                let llvm_function = self.context.get_function(&Call {
+                    callable_id: trait_impl_fun_id,
+                    instantiation: new_inst,
+                });
+
+                self.inkwell_builder
+                    .build_call(
+                        llvm_function.llvm_function_value,
+                        &args,
+                        &format!("call_{reg_id:?}"),
+                    )
+                    .unwrap()
+                    .try_as_basic_value()
+                    .left()
+                    .map_or(Ok(LlvmValue::Zst), |value| {
+                        Ok(LlvmValue::Basic(value))
+                    })
             }
 
             kind => panic!("unexpected symbol kind: {kind:?}"),
@@ -821,6 +1016,88 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         Ok(())
     }
 
+    fn build_tuple_pack(
+        &mut self,
+        tuple_pack: &TuplePack<Model>,
+    ) -> Result<(), Error> {
+        let source_address_type = self
+            .type_of_address_pnx(&tuple_pack.tuple_address)
+            .into_tuple()
+            .unwrap();
+        let store_address_type = self
+            .type_of_address_pnx(&tuple_pack.store_address)
+            .into_tuple()
+            .unwrap();
+
+        assert!(source_address_type.elements.iter().all(|x| !x.is_unpacked));
+
+        let pack_element_count = source_address_type.elements.len()
+            - tuple_pack.after_packed_element_count
+            - tuple_pack.before_packed_element_count;
+
+        let (LlvmValue::Basic(source_address), LlvmValue::Basic(store_address)) = (
+            self.get_address_value(&tuple_pack.tuple_address)?,
+            self.get_address_value(&tuple_pack.store_address)?,
+        ) else {
+            return Ok(());
+        };
+
+        let (Ok(source_tuple_sig), Ok(store_tuple_sig)) = (
+            self.context.get_tuple_type(source_address_type),
+            self.context.get_tuple_type(store_address_type),
+        ) else {
+            return Ok(());
+        };
+
+        for i in 0..pack_element_count {
+            let (Some(store_index), Some(source_index)) = (
+                store_tuple_sig
+                    .llvm_field_indices_by_tuple_idnex
+                    .get(&i)
+                    .copied(),
+                source_tuple_sig
+                    .llvm_field_indices_by_tuple_idnex
+                    .get(&(i + tuple_pack.before_packed_element_count))
+                    .copied(),
+            ) else {
+                continue;
+            };
+
+            let source_pointer = self
+                .inkwell_builder
+                .build_struct_gep(
+                    source_tuple_sig.llvm_tuple_type,
+                    source_address.into_pointer_value(),
+                    source_index.try_into().unwrap(),
+                    &format!("tuple_pack_source_{i:?}_gep"),
+                )
+                .unwrap();
+
+            let load = self
+                .inkwell_builder
+                .build_load(
+                    source_tuple_sig.llvm_element_types[i],
+                    source_pointer,
+                    &format!("tuple_pack_load_{i:?}"),
+                )
+                .unwrap();
+
+            let store_pointer = self
+                .inkwell_builder
+                .build_struct_gep(
+                    store_tuple_sig.llvm_tuple_type,
+                    store_address.into_pointer_value(),
+                    store_index.try_into().unwrap(),
+                    &format!("tuple_pack_store_{i:?}_gep"),
+                )
+                .unwrap();
+
+            self.inkwell_builder.build_store(store_pointer, load).unwrap();
+        }
+
+        Ok(())
+    }
+
     /// Translates the Pernix's basic block to LLVM's basic block if haven't
     pub fn build_basic_block(&mut self, block_id: ID<Block<Model>>) {
         // already built, or being built currently.
@@ -850,14 +1127,15 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 Instruction::RegisterAssignment(register_assignment) => {
                     self.build_register_assignment(*register_assignment)
                 }
-                Instruction::RegisterDiscard(register_discard) => Ok(()),
                 Instruction::TuplePack(tuple_pack) => {
-                    todo!()
+                    self.build_tuple_pack(tuple_pack)
                 }
                 Instruction::DropUnpackTuple(drop_unpack_tuple) => todo!(),
                 Instruction::Drop(drop) => Ok(()),
 
-                Instruction::ScopePush(_) | Instruction::ScopePop(_) => Ok(()),
+                Instruction::RegisterDiscard(_)
+                | Instruction::ScopePush(_)
+                | Instruction::ScopePop(_) => Ok(()),
             };
 
             if let Err(err) = result {
