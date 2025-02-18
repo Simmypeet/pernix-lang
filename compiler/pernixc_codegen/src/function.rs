@@ -11,12 +11,13 @@ use std::{
 use enum_as_inner::EnumAsInner;
 use inkwell::{
     module::Linkage,
-    types::{BasicType, FunctionType},
+    types::{BasicType, BasicTypeEnum, FunctionType},
     values::FunctionValue,
 };
 use pernixc_arena::ID;
 use pernixc_component::{
-    function_signature::FunctionSignature, implementation::Implementation,
+    function_signature::{FunctionSignature, Parameter},
+    implementation::Implementation,
 };
 use pernixc_ir::{
     address::{Address, Memory},
@@ -30,14 +31,14 @@ use pernixc_table::{
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
-    instantiation::Instantiation, Model as _,
+    instantiation::Instantiation, r#type::Type, Model as _,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
     normalizer,
 };
 
-use crate::{context::Context, r#type::LlvmType, Model};
+use crate::{context::Context, zst::Zst, Model};
 
 mod address;
 mod instruction;
@@ -46,20 +47,25 @@ mod literal;
 /// Represents the translation from Pernix's function signature to LLVM's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LlvmFunctionSignature<'ctx> {
-    /// The return type of the function. If the [`LlvmType::Zst`] is present,
-    /// it means that the function has `void` return type.
-    pub return_type: LlvmType<'ctx>,
+    /// The return type of the function. If `None`, then the function returns
+    /// `void`. None will be returned if the return type is a `Zero-Sized
+    /// type`.
+    pub return_type: Option<BasicTypeEnum<'ctx>>,
 
-    /// The parameter types of the function. The number of parameters might
-    /// not match the one from the Pernix's function signature since the
-    /// `Zero-Sized type` are filtered out.
-    pub parameter_types: Vec<LlvmType<'ctx>>,
+    /// The parameter types of the function. The `Zero-Sized type` will be
+    /// filtered out. Note that the actual parameter counts created by the LLVM
+    /// might not match the original Pernix's function signature but the
+    /// ordering will be preserved.
+    pub parameter_types: Vec<BasicTypeEnum<'ctx>>,
 
     /// The llvm function value.
     ///
     /// As stated, the actual parameter counts created by the LLVM might not
     /// match the original Pernix's function signature.
     pub llvm_function_value: FunctionValue<'ctx>,
+
+    /// Maps the parameter indices to the Pernix's parameter indices.
+    pub llvm_parameter_indices_by_index: HashMap<ID<Parameter>, usize>,
 }
 
 /// Represents an instantiation of a function.
@@ -81,7 +87,7 @@ pub struct Call {
 pub struct Map<'ctx> {
     llvm_functions_by_key: HashMap<Call, Rc<LlvmFunctionSignature<'ctx>>>,
     extern_functions_by_global_id:
-        HashMap<GlobalID, inkwell::values::FunctionValue<'ctx>>,
+        HashMap<GlobalID, Rc<LlvmFunctionSignature<'ctx>>>,
 }
 
 impl<'ctx> Context<'_, 'ctx> {
@@ -174,59 +180,75 @@ impl<'ctx> Context<'_, 'ctx> {
         function_signature: &FunctionSignature,
         instantiation: &Instantiation<Model>,
         var_args: bool,
-    ) -> (FunctionType<'ctx>, Vec<LlvmType<'ctx>>, LlvmType<'ctx>) {
+    ) -> (
+        FunctionType<'ctx>,
+        Vec<BasicTypeEnum<'ctx>>,
+        Option<BasicTypeEnum<'ctx>>,
+        HashMap<ID<Parameter>, usize>,
+    ) {
         // NOTE: because of filtering out the zst types, the parameter types
         // might not have the same number of parameters as the original pernix's
         // function  signature
-        let param_tys = function_signature
-            .parameter_order
-            .iter()
-            .copied()
-            .map(|x| &function_signature.parameters[x])
-            .map(|param| {
-                self.get_type(self.monomorphize_term(
-                    Model::from_default_type(param.r#type.clone()),
-                    instantiation,
-                ))
-            })
-            .collect::<Vec<_>>();
+        let mut llvm_parameter_indices_by_index = HashMap::default();
+        let mut llvm_parameter_types =
+            Vec::with_capacity(function_signature.parameter_order.len());
 
-        let filtered_param_tys = param_tys
-            .iter()
-            .filter_map(|x| x.into_basic().ok().map(Into::into))
-            .collect::<Vec<_>>();
+        for param_id in function_signature.parameter_order.iter().copied() {
+            let param = &function_signature.parameters[param_id];
+            let ty = self.get_type(self.monomorphize_term(
+                Model::from_default_type(param.r#type.clone()),
+                instantiation,
+            ));
+
+            if let Ok(basic_type_enum) = ty {
+                llvm_parameter_indices_by_index
+                    .insert(param_id, llvm_parameter_types.len());
+                llvm_parameter_types.push(basic_type_enum);
+            }
+        }
 
         let return_ty = self.get_type(self.monomorphize_term(
             Model::from_default_type(function_signature.return_type.clone()),
             instantiation,
         ));
 
-        match return_ty {
-            LlvmType::Basic(basic_type_enum) => (
-                basic_type_enum.fn_type(&filtered_param_tys, var_args),
-                param_tys,
-                return_ty,
+        let function_ty = match &return_ty {
+            Ok(ty) => ty.fn_type(
+                &llvm_parameter_types
+                    .iter()
+                    .copied()
+                    .map(std::convert::Into::into)
+                    .collect::<Vec<_>>(),
+                var_args,
             ),
-            LlvmType::Zst => (
-                self.context()
-                    .void_type()
-                    .fn_type(&filtered_param_tys, var_args),
-                param_tys,
-                return_ty,
+            Err(Zst(_)) => self.context().void_type().fn_type(
+                &llvm_parameter_types
+                    .iter()
+                    .copied()
+                    .map(std::convert::Into::into)
+                    .collect::<Vec<_>>(),
+                var_args,
             ),
-        }
+        };
+
+        (
+            function_ty,
+            llvm_parameter_types,
+            return_ty.ok(),
+            llvm_parameter_indices_by_index,
+        )
     }
 
     /// Creates an extern function.
     pub fn get_extern_function(
         &mut self,
         callable_id: GlobalID,
-    ) -> inkwell::values::FunctionValue<'ctx> {
+    ) -> Rc<LlvmFunctionSignature<'ctx>> {
         if let Some(llvm_function) = self
             .function_map()
             .extern_functions_by_global_id
             .get(&callable_id)
-            .copied()
+            .cloned()
         {
             return llvm_function;
         }
@@ -237,15 +259,16 @@ impl<'ctx> Context<'_, 'ctx> {
         let ext = *self.table().get::<Extern>(callable_id);
         let name = self.table().get::<Name>(callable_id).0.clone();
 
-        let (llvm_function_type, _, _) = self.create_function_type(
-            &function_signature,
-            &Instantiation::default(),
-            match ext {
-                Extern::C(extern_c) => extern_c.var_args,
+        let (llvm_function_type, parameter_types, return_ty, map) = self
+            .create_function_type(
+                &function_signature,
+                &Instantiation::default(),
+                match ext {
+                    Extern::C(extern_c) => extern_c.var_args,
 
-                Extern::Unknown => unreachable!("unknown extern function"),
-            },
-        );
+                    Extern::Unknown => unreachable!("unknown extern function"),
+                },
+            );
 
         let llvm_function_value = self.module().add_function(
             &name,
@@ -253,11 +276,18 @@ impl<'ctx> Context<'_, 'ctx> {
             Some(Linkage::External),
         );
 
+        let sig = Rc::new(LlvmFunctionSignature {
+            return_type: return_ty,
+            parameter_types,
+            llvm_function_value,
+            llvm_parameter_indices_by_index: map,
+        });
+
         self.function_map_mut()
             .extern_functions_by_global_id
-            .insert(callable_id, llvm_function_value);
+            .insert(callable_id, sig.clone());
 
-        llvm_function_value
+        sig
     }
 
     /// Gets the function from the map or creates it.
@@ -281,7 +311,7 @@ impl<'ctx> Context<'_, 'ctx> {
         let function_signature =
             self.table().query::<FunctionSignature>(key.callable_id).unwrap();
 
-        let (llvm_function_type, parameter_tys, return_ty) = self
+        let (llvm_function_type, parameter_tys, return_ty, map) = self
             .create_function_type(
                 &function_signature,
                 &key.instantiation,
@@ -298,6 +328,7 @@ impl<'ctx> Context<'_, 'ctx> {
             return_type: return_ty,
             parameter_types: parameter_tys,
             llvm_function_value,
+            llvm_parameter_indices_by_index: map,
         });
         self.function_map_mut()
             .llvm_functions_by_key
@@ -346,9 +377,7 @@ struct Builder<'rctx, 'ctx, 'i, 'k> {
 }
 
 /// Represents the translateion from Pernix's value to LLVM's value.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, derive_more::From,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, EnumAsInner, derive_more::From)]
 pub enum LlvmValue<'ctx> {
     /// The value is converted successfully, default case
     Basic(inkwell::values::BasicValueEnum<'ctx>),
@@ -401,21 +430,20 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
         builder.position_at_end(basic_block_map[&entry_block_id]);
 
         // move the parameters to the alloca
-        for (index, (param_id, ty)) in function_signature
-            .parameter_order
-            .iter()
-            .copied()
-            .enumerate()
-            .filter_map(|(idx, id)| {
-                llvm_function_signature.parameter_types[idx]
-                    .into_basic()
-                    .ok()
-                    .map(|x| (id, x))
-            })
-            .enumerate()
-        {
+        for param_id in function_signature.parameter_order.iter().copied() {
+            let Some(index) = llvm_function_signature
+                .llvm_parameter_indices_by_index
+                .get(&param_id)
+                .copied()
+            else {
+                continue;
+            };
+
             let alloca = builder
-                .build_alloca(ty, &format!("param_{param_id:?}"))
+                .build_alloca(
+                    llvm_function_signature.parameter_types[index],
+                    &format!("param_{param_id:?}"),
+                )
                 .unwrap();
 
             builder
@@ -435,12 +463,10 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
         for (pernixc_alloca_id, pernix_alloca) in
             function_ir.values.allocas.iter()
         {
-            let LlvmType::Basic(ty) =
-                context.get_type(context.monomorphize_term(
-                    pernix_alloca.r#type.clone(),
-                    instantiation,
-                ))
-            else {
+            let Ok(ty) = context.get_type(context.monomorphize_term(
+                pernix_alloca.r#type.clone(),
+                instantiation,
+            )) else {
                 continue;
             };
 
@@ -496,13 +522,25 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         value: &Value<Model>,
     ) -> Result<LlvmValue<'ctx>, Error> {
         match value {
-            Value::Register(id) => Ok(self.register_map[id]),
+            Value::Register(id) => Ok(self.register_map[id].clone()),
             Value::Literal(literal) => self.get_literal_value(literal),
         }
     }
 
-    /// Retrieves the [`LlvmType`] of the given address.
-    fn type_of_address(&mut self, address: &Address<Model>) -> LlvmType<'ctx> {
+    fn type_of_address_pnx(&mut self, address: &Address<Model>) -> Type<Model> {
+        let ty = self.function_ir.values.type_of_address(
+            address,
+            self.callable_id,
+            &self.environment,
+        );
+
+        self.context.monomorphize_term(ty.unwrap().result, self.instantiation)
+    }
+
+    fn type_of_address(
+        &mut self,
+        address: &Address<Model>,
+    ) -> Result<BasicTypeEnum<'ctx>, Zst> {
         let ty = self.function_ir.values.type_of_address(
             address,
             self.callable_id,
@@ -515,11 +553,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         )
     }
 
-    /// Retrieves the [`LlvmType`] of the given register.
     fn type_of_register(
         &mut self,
         register_id: ID<Register<Model>>,
-    ) -> LlvmType<'ctx> {
+    ) -> Result<BasicTypeEnum<'ctx>, Zst> {
         let ty = self.function_ir.values.type_of_register(
             register_id,
             self.callable_id,
@@ -530,16 +567,5 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             self.context
                 .monomorphize_term(ty.unwrap().result, self.instantiation),
         )
-    }
-
-    /// Retrieves the [`LlvmType`] of the given value.
-    fn type_of_value(&mut self, value: &Value<Model>) -> LlvmType<'ctx> {
-        match value {
-            Value::Register(id) => self.type_of_register(*id),
-            Value::Literal(literal) => self.context.get_type(
-                self.context
-                    .monomorphize_term(literal.r#type(), self.instantiation),
-            ),
-        }
     }
 }

@@ -3,9 +3,9 @@
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap},
+    rc::Rc,
 };
 
-use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use inkwell::{
     types::{BasicType, BasicTypeEnum, StructType},
@@ -21,7 +21,7 @@ use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},
     lifetime::Lifetime,
-    r#type::{Primitive, Type},
+    r#type::{Primitive, Tuple, Type},
     sub_term::TermLocation,
     visitor::MutableRecursive,
     Model as _, Symbol,
@@ -32,19 +32,7 @@ use pernixc_type_system::{
     term::Term,
 };
 
-use crate::{context::Context, Model};
-
-/// The result of converting a Pernix type to an LLVM type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumAsInner)]
-pub enum LlvmType<'ctx> {
-    /// The conversion is successful.
-    Basic(BasicTypeEnum<'ctx>),
-
-    /// The type is `Zero-Sized Type` (including uninhabitable types); this can
-    /// be interpreted to many things in different scenarios such as `void`
-    /// in the return type of a function, or no-op in instruction.
-    Zst,
-}
+use crate::{context::Context, zst::Zst, Model};
 
 /// The signature of the struct in LLVM.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,11 +40,29 @@ pub struct LlvmStructSignature<'ctx> {
     /// The LLVM struct type.
     pub llvm_struct_type: StructType<'ctx>,
 
-    /// The LLVM field types in order of declaration.
-    pub llvm_field_types: Vec<LlvmType<'ctx>>,
+    /// The LLVM types might not contains all the fields defined in the Pernix
+    /// front-end, the zero-sized type fields are removed. Note that the order
+    /// of the fields in this vector is still preserved.
+    pub llvm_field_types: Vec<BasicTypeEnum<'ctx>>,
 
     /// The original struct ID in the Pernix table.
+    ///
+    /// If a particular field id does not have appear in this map, it means
+    /// that the field is a ZST.
     pub llvm_field_indices_by_field_id: HashMap<ID<Field>, usize>,
+}
+
+/// The signature of the tuple in LLVM.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlvmTupleSignature<'ctx> {
+    /// The LLVM struct type of the tuple.
+    pub llvm_tuple_type: StructType<'ctx>,
+
+    /// The LLVM types of the elements in the tuple.
+    pub llvm_element_types: Vec<BasicTypeEnum<'ctx>>,
+
+    /// The original tuple index in the Pernix front-end.
+    pub llvm_field_indices_by_tuple_idnex: HashMap<usize, usize>,
 }
 
 /// Represents the mapping between the Pernix type and the LLVM type.
@@ -65,9 +71,14 @@ pub struct Map<'ctx> {
     /// The mapping between the ADT instantiation and the LLVM type.
     ///
     /// If the value is `None`, it means that the struct is `Zero-sized type`.
-    #[get = "pub"]
     struct_sigantures:
-        HashMap<Symbol<Model>, Option<LlvmStructSignature<'ctx>>>,
+        HashMap<Symbol<Model>, Option<Rc<LlvmStructSignature<'ctx>>>>,
+
+    /// The mapping between the tuple and the LLVM type.
+    ///
+    /// If the value is `None`, it means that the tuple is `Zero-sized type`.
+    tuple_signatures:
+        HashMap<Tuple<Model>, Option<Rc<LlvmTupleSignature<'ctx>>>>,
 }
 
 /// A mutable visitor that erases all the lifetimes in the term.
@@ -206,41 +217,141 @@ impl<'ctx> Context<'_, 'ctx> {
         self.normalize_term(term)
     }
 
+    /// Gets the [`LlvmStructSignature`] from the Pernix tuple type.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn get_struct_type(
+        &mut self,
+        symbol: Symbol<Model>,
+    ) -> Result<Rc<LlvmStructSignature<'ctx>>, Zst<Symbol<Model>>> {
+        let generic_params =
+            self.table().query::<GenericParameters>(symbol.id).unwrap();
+
+        let instantiation = Instantiation::from_generic_arguments(
+            symbol.generic_arguments.clone(),
+            symbol.id,
+            &generic_params,
+        )
+        .unwrap();
+
+        // already monomorphized
+        if let Some(value) =
+            self.type_map_mut().struct_sigantures.get(&symbol).cloned()
+        {
+            return value.ok_or(Zst(symbol));
+        }
+
+        let fields = self.table().query::<Fields>(symbol.id).unwrap();
+
+        let mut llvm_field_types = Vec::new();
+        let mut llvm_field_indices_by_field_id = HashMap::new();
+        let mut current_order = 0;
+
+        for field_id in fields.field_declaration_order.iter().copied() {
+            let field = &fields.fields[field_id];
+            let llvm_field_ty = self.get_type(self.monomorphize_term(
+                Model::from_default_type(field.r#type.clone()),
+                &instantiation,
+            ));
+
+            if let Ok(ty) = llvm_field_ty {
+                llvm_field_types.push(ty);
+                llvm_field_indices_by_field_id.insert(field_id, current_order);
+                current_order += 1;
+            }
+        }
+
+        let ty = if llvm_field_types.is_empty() {
+            None
+        } else {
+            Some(Rc::new(LlvmStructSignature {
+                llvm_struct_type: self
+                    .context()
+                    .struct_type(&llvm_field_types, false),
+                llvm_field_types,
+                llvm_field_indices_by_field_id,
+            }))
+        };
+
+        self.type_map_mut()
+            .struct_sigantures
+            .insert(symbol.clone(), ty.clone());
+
+        ty.ok_or(Zst(symbol))
+    }
+
+    /// Gets the [`LlvmTupleSignature`] from the Pernix tuple type.
+    #[allow(clippy::missing_errors_doc)]
+    pub fn get_tuple_type(
+        &mut self,
+        tuple: Tuple<Model>,
+    ) -> Result<Rc<LlvmTupleSignature<'ctx>>, Zst<Tuple<Model>>> {
+        if let Some(value) =
+            self.type_map_mut().tuple_signatures.get(&tuple).cloned()
+        {
+            return value.ok_or(Zst(tuple));
+        }
+
+        let mut llvm_indices_by_tuple_index = HashMap::new();
+        let mut elements = Vec::new();
+
+        for (index, element) in tuple.elements.iter().enumerate() {
+            assert!(
+                !element.is_unpacked,
+                "unpacked tuple element found {element:?}"
+            );
+
+            if let Ok(llvm_ty) = self.get_type(element.term.clone()) {
+                llvm_indices_by_tuple_index.insert(index, elements.len());
+                elements.push(llvm_ty);
+            }
+        }
+
+        let ty = if elements.is_empty() {
+            None
+        } else {
+            Some(Rc::new(LlvmTupleSignature {
+                llvm_tuple_type: self.context().struct_type(&elements, false),
+                llvm_element_types: elements,
+                llvm_field_indices_by_tuple_idnex: llvm_indices_by_tuple_index,
+            }))
+        };
+
+        self.type_map_mut().tuple_signatures.insert(tuple.clone(), ty.clone());
+
+        ty.ok_or(Zst(tuple))
+    }
+
     /// Retrieves the LLVM type from the Pernix type. The Pernix type must be
     /// fully monomorphized, meaning that there shouldn't be generic parameters,
     /// trait members, or non-erased lifetimes.
-    #[allow(clippy::too_many_lines)]
-    pub fn get_type(&mut self, ty: Type<Model>) -> LlvmType<'ctx> {
+    #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
+    pub fn get_type(
+        &mut self,
+        ty: Type<Model>,
+    ) -> Result<BasicTypeEnum<'ctx>, Zst> {
         match ty {
             Type::Primitive(primitive) => match primitive {
                 Primitive::Int8 | Primitive::Uint8 => {
-                    LlvmType::Basic(self.context().i8_type().into())
+                    Ok(self.context().i8_type().into())
                 }
                 Primitive::Int16 | Primitive::Uint16 => {
-                    LlvmType::Basic(self.context().i16_type().into())
+                    Ok(self.context().i16_type().into())
                 }
                 Primitive::Int32 | Primitive::Uint32 => {
-                    LlvmType::Basic(self.context().i32_type().into())
+                    Ok(self.context().i32_type().into())
                 }
                 Primitive::Int64 | Primitive::Uint64 => {
-                    LlvmType::Basic(self.context().i64_type().into())
+                    Ok(self.context().i64_type().into())
                 }
 
-                Primitive::Float32 => {
-                    LlvmType::Basic(self.context().f32_type().into())
-                }
-                Primitive::Float64 => {
-                    LlvmType::Basic(self.context().f64_type().into())
-                }
-                Primitive::Bool => {
-                    LlvmType::Basic(self.context().bool_type().into())
-                }
+                Primitive::Float32 => Ok(self.context().f32_type().into()),
+                Primitive::Float64 => Ok(self.context().f64_type().into()),
+                Primitive::Bool => Ok(self.context().bool_type().into()),
 
-                Primitive::Isize | Primitive::Usize => LlvmType::Basic(
-                    self.context()
-                        .ptr_sized_int_type(self.target_data(), None)
-                        .into(),
-                ),
+                Primitive::Isize | Primitive::Usize => Ok(self
+                    .context()
+                    .ptr_sized_int_type(self.target_data(), None)
+                    .into()),
             },
 
             Type::Error(error) => {
@@ -250,9 +361,9 @@ impl<'ctx> Context<'_, 'ctx> {
                 panic!("non-monomorphized type found {member_id:?}")
             }
 
-            Type::Reference(_) | Type::Pointer(_) => LlvmType::Basic(
-                self.context().ptr_type(AddressSpace::default()).into(),
-            ),
+            Type::Reference(_) | Type::Pointer(_) => {
+                Ok(self.context().ptr_type(AddressSpace::default()).into())
+            }
 
             Type::Inference(infer) => match infer {},
 
@@ -260,112 +371,34 @@ impl<'ctx> Context<'_, 'ctx> {
                 if *array_ty.length.as_primitive().unwrap().as_usize().unwrap()
                     == 0
                 {
-                    return LlvmType::Zst;
+                    return Err(Zst(Type::Array(array_ty)));
                 }
-                let LlvmType::Basic(element_ty) =
-                    self.get_type(*array_ty.r#type)
-                else {
-                    return LlvmType::Zst;
-                };
+                let element_ty = self.get_type(*array_ty.r#type)?;
 
-                LlvmType::Basic(
-                    element_ty
-                        .array_type(
-                            (*array_ty
-                                .length
-                                .as_primitive()
-                                .unwrap()
-                                .as_usize()
-                                .unwrap())
-                            .try_into()
-                            .unwrap(),
-                        )
-                        .into(),
-                )
+                Ok(element_ty
+                    .array_type(
+                        (*array_ty
+                            .length
+                            .as_primitive()
+                            .unwrap()
+                            .as_usize()
+                            .unwrap())
+                        .try_into()
+                        .unwrap(),
+                    )
+                    .into())
             }
 
             Type::Symbol(symbol) => {
-                let generic_params =
-                    self.table().query::<GenericParameters>(symbol.id).unwrap();
                 let symbol_kind = *self.table().get::<SymbolKind>(symbol.id);
-
-                let instantiation = Instantiation::from_generic_arguments(
-                    symbol.generic_arguments.clone(),
-                    symbol.id,
-                    &generic_params,
-                )
-                .unwrap();
 
                 match symbol_kind {
                     SymbolKind::Struct => {
-                        // already monomorphized
-                        if let Some(value) =
-                            self.type_map_mut().struct_sigantures.get(&symbol)
-                        {
-                            match value {
-                                Some(ty) => {
-                                    return LlvmType::Basic(
-                                        ty.llvm_struct_type.into(),
-                                    )
-                                }
-                                None => return LlvmType::Zst,
-                            }
-                        }
-                        let fields =
-                            self.table().query::<Fields>(symbol.id).unwrap();
+                        let struct_signature = self
+                            .get_struct_type(symbol)
+                            .map_err(|x| Zst(x.0.into()))?;
 
-                        let mut llvm_field_types = Vec::new();
-                        let mut llvm_field_indices_by_field_id = HashMap::new();
-                        let mut current_order = 0;
-
-                        for field_id in
-                            fields.field_declaration_order.iter().copied()
-                        {
-                            let field = &fields.fields[field_id];
-                            let llvm_field_ty =
-                                self.get_type(self.monomorphize_term(
-                                    Model::from_default_type(
-                                        field.r#type.clone(),
-                                    ),
-                                    &instantiation,
-                                ));
-
-                            llvm_field_types.push(llvm_field_ty);
-
-                            if llvm_field_ty.is_basic() {
-                                llvm_field_indices_by_field_id
-                                    .insert(field_id, current_order);
-                                current_order += 1;
-                            }
-                        }
-
-                        let ty = if llvm_field_types.is_empty() {
-                            LlvmType::Zst
-                        } else {
-                            LlvmType::Basic(
-                                self.context()
-                                    .struct_type(
-                                        &llvm_field_types
-                                            .iter()
-                                            .copied()
-                                            .filter_map(|x| x.into_basic().ok())
-                                            .collect::<Vec<_>>(),
-                                        false,
-                                    )
-                                    .into(),
-                            )
-                        };
-
-                        self.type_map_mut().struct_sigantures.insert(
-                            symbol,
-                            ty.into_basic().ok().map(|x| LlvmStructSignature {
-                                llvm_struct_type: x.into_struct_type(),
-                                llvm_field_types,
-                                llvm_field_indices_by_field_id,
-                            }),
-                        );
-
-                        ty
+                        Ok(struct_signature.llvm_struct_type.into())
                     }
 
                     SymbolKind::Enum => todo!(),
@@ -375,31 +408,13 @@ impl<'ctx> Context<'_, 'ctx> {
             }
 
             Type::Tuple(tuple) => {
-                let mut elements = Vec::new();
+                let tuple_signature =
+                    self.get_tuple_type(tuple).map_err(|x| Zst(x.0.into()))?;
 
-                for element in tuple.elements {
-                    assert!(
-                        element.is_unpacked,
-                        "unpacked tuple element found {element:?}"
-                    );
-
-                    if let LlvmType::Basic(llvm_ty) =
-                        self.get_type(element.term)
-                    {
-                        elements.push(llvm_ty);
-                    }
-                }
-
-                if elements.is_empty() {
-                    LlvmType::Zst
-                } else {
-                    LlvmType::Basic(
-                        self.context().struct_type(&elements, false).into(),
-                    )
-                }
+                Ok(tuple_signature.llvm_tuple_type.into())
             }
 
-            Type::Phantom(_) => LlvmType::Zst,
+            ty @ Type::Phantom(_) => Err(Zst(ty)),
 
             Type::MemberSymbol(_) | Type::TraitMember(_) => {
                 panic!("unsupported type {ty:?}")

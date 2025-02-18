@@ -26,6 +26,7 @@ pub mod context;
 pub mod diagnostic;
 pub mod function;
 pub mod r#type;
+pub mod zst;
 
 /// The model used for the code generation process.
 pub type Model = pernixc_ir::model::Model;

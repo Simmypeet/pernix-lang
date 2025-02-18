@@ -14,7 +14,7 @@ use pernixc_table::component::SymbolKind;
 use pernixc_term::{instantiation, r#type::Primitive};
 
 use super::{Builder, Call, Error, LlvmValue};
-use crate::{into_basic, r#type::LlvmType, Model};
+use crate::{into_basic, Model};
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     fn build_store(
@@ -43,8 +43,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         reg_id: ID<Register<Model>>,
     ) -> Result<LlvmValue<'ctx>, Error> {
         let ptr = into_basic!(self.get_address_value(&load.address)?);
-        let LlvmType::Basic(pointee_ty) = self.type_of_address(&load.address)
-        else {
+        let Ok(pointee_ty) = self.type_of_address(&load.address) else {
             return Ok(LlvmValue::Zst);
         };
 
@@ -74,7 +73,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .map(|(id, val)| Ok((id, self.get_value(val)?)))
             .collect::<Result<Vec<_>, Error>>()?;
 
-        let LlvmType::Basic(struct_ty) = self.type_of_register(reg_id) else {
+        let Ok(struct_ty) = self.type_of_register(reg_id) else {
             return Ok(LlvmValue::Zst);
         };
 
@@ -136,7 +135,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                 self.inkwell_builder
                     .build_call(
-                        llvm_function,
+                        llvm_function.llvm_function_value,
                         &args,
                         &format!("call_{reg_id:?}"),
                     )
@@ -214,7 +213,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             values.push(value);
         }
 
-        let LlvmType::Basic(array_ty) = self.type_of_register(reg_id) else {
+        let Ok(array_ty) = self.type_of_register(reg_id) else {
             return Ok(LlvmValue::Zst);
         };
 
@@ -688,7 +687,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             incoming_values.push((value, block));
         }
 
-        let LlvmType::Basic(ty) = self.type_of_register(reg_id) else {
+        let Ok(ty) = self.type_of_register(reg_id) else {
             return Ok(LlvmValue::Zst);
         };
 
@@ -704,15 +703,77 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         Ok(LlvmValue::Basic(phi.as_basic_value()))
     }
 
+    fn handle_tuple(
+        &mut self,
+        tuple: &register::Tuple<Model>,
+        reg_id: ID<Register<Model>>,
+    ) -> Result<LlvmValue<'ctx>, Error> {
+        let mut values = Vec::new();
+        for element in &tuple.elements {
+            let LlvmValue::Basic(value) = self.get_value(&element.value)?
+            else {
+                continue;
+            };
+
+            if element.is_unpacked {
+                // tuple is struct avlue
+                let struct_value = value.into_struct_value();
+                let count = struct_value.get_type().count_fields();
+
+                for i in 0..count {
+                    values.push(
+                        self.inkwell_builder
+                            .build_extract_value(
+                                struct_value,
+                                i,
+                                &format!(
+                                    "extract_tuple_{reg_id:?}_index_{i:?}"
+                                ),
+                            )
+                            .unwrap(),
+                    );
+                }
+            } else {
+                values.push(value);
+            }
+        }
+
+        let Ok(ty) = self.type_of_register(reg_id) else {
+            return Ok(LlvmValue::Zst);
+        };
+
+        let tmp = self
+            .inkwell_builder
+            .build_alloca(ty, &format!("tmp_tuple_{reg_id:?}"))
+            .unwrap();
+
+        for (index, element) in values.into_iter().enumerate() {
+            let pointer_value = self
+                .inkwell_builder
+                .build_struct_gep(
+                    ty,
+                    tmp,
+                    index.try_into().unwrap(),
+                    &format!("init_tuple_{reg_id:?}_index_{index:?}_gep"),
+                )
+                .unwrap();
+            self.inkwell_builder.build_store(pointer_value, element).unwrap();
+        }
+
+        Ok(LlvmValue::Basic(
+            self.inkwell_builder
+                .build_load(ty, tmp, &format!("load_tmp_tuple_{reg_id:?}_lit"))
+                .unwrap(),
+        ))
+    }
+
     fn get_register_assignment_value(
         &mut self,
         register_assignment: &Assignment<Model>,
         reg_id: ID<Register<Model>>,
     ) -> Result<LlvmValue<'ctx>, Error> {
         match register_assignment {
-            Assignment::Tuple(tuple) => {
-                todo!()
-            }
+            Assignment::Tuple(tuple) => self.handle_tuple(tuple, reg_id),
             Assignment::Load(load) => self.handle_load(load, reg_id),
             Assignment::Borrow(borrow) => {
                 match self.get_address_value(&borrow.address)? {

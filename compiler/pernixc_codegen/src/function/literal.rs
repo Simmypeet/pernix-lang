@@ -1,5 +1,5 @@
 use pernixc_ir::value::literal::{Literal, Numeric};
-use pernixc_term::r#type::Primitive;
+use pernixc_term::r#type::{Primitive, Type};
 
 use super::{Builder, Error, LlvmValue};
 use crate::Model;
@@ -118,7 +118,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.context.context().bool_type().const_zero().into()
                 }))
             }
-
             Literal::Error(error) => {
                 unreachable!("error literal found {error:?}")
             }

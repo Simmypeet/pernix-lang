@@ -18,6 +18,8 @@ mod hello_world;
 mod max;
 mod recursion;
 mod struct_access;
+mod tuple;
+mod tuple_unpack;
 mod zst_optimization;
 
 fn invoke_linker_command(obj: &Path, out: &Path) {
