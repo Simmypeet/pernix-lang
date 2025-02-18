@@ -18,6 +18,9 @@ pernixc_builder = { path = "../pernixc_builder" }
 pernixc_ir = { path = "../pernixc_ir" }
 pernixc_term = { path = "../pernixc_term" }
 pernixc_type_system = { path = "../pernixc_type_system" }
+pernixc_driver = { path = "../pernixc_driver" }
+assert_cmd = { workspace = true }
+tempfile = { workspace = true }
 
 
 [[test]]
@@ -27,6 +30,11 @@ path = "src/memory_checker.rs"
 [[test]]
 name = "borrow_checker"
 path = "src/borrow_checker.rs"
+
+[[test]]
+name = "codegen"
+path = "src/codegen/mod.rs"
+
 
 [lints]
 workspace = true
