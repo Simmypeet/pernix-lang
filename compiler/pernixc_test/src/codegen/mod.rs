@@ -22,6 +22,8 @@ mod tuple;
 mod tuple_unpack;
 mod zst_optimization;
 
+mod tuple_pack;
+
 fn invoke_linker_command(obj: &Path, out: &Path) {
     if cfg!(target_os = "macos") {
         Command::new("cc")
