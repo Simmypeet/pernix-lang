@@ -669,7 +669,7 @@ fn traverse_block_internal<M: pernixc_term::Model, T: Traverser<M>>(
 
                 Ok(T::fold_result(true_usages, false_usages).0)
             }
-            Jump::Select(select_jump) => {
+            Jump::Switch(select_jump) => {
                 let mut blocks = select_jump
                     .branches
                     .values()

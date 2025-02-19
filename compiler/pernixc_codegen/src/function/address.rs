@@ -2,7 +2,7 @@ use inkwell::values::{AsValueRef, PointerValue};
 use pernixc_ir::address::Address;
 
 use super::{Builder, Error, LlvmValue};
-use crate::{into_basic, Model};
+use crate::{into_basic, r#type::LlvmEnumSignature, Model};
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// Gets the LLVM address value of the given address.
@@ -146,7 +146,53 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     ))
                 }
             }
-            Address::Variant(_) => todo!(),
+            Address::Variant(variant_address) => {
+                let address = self
+                    .get_address_value(dbg!(&variant_address.enum_address))?;
+                let symbol = self
+                    .type_of_address_pnx(&variant_address.enum_address)
+                    .into_symbol()
+                    .unwrap();
+
+                let enum_signature = self.context.get_enum_type(symbol);
+
+                match &*enum_signature {
+                    LlvmEnumSignature::Zst => Ok(LlvmValue::Zst),
+                    LlvmEnumSignature::NullablePointer(_) => {
+                        assert!(address.is_basic(), "pointer is not zst");
+
+                        Ok(address)
+                    }
+                    LlvmEnumSignature::Transparent(_) => Ok(address),
+                    LlvmEnumSignature::Numeric(_) => {
+                        unreachable!(
+                            "numeric enum shouldn't have associated value"
+                        )
+                    }
+                    LlvmEnumSignature::TaggedUnion(tagged_union) => {
+                        let layout = tagged_union.llvm_variant_types
+                            [&variant_address.id];
+
+                        let payload_address = dbg!(self
+                            .inkwell_builder
+                            .build_struct_gep(
+                                layout,
+                                address
+                                    .into_basic()
+                                    .unwrap()
+                                    .into_pointer_value(),
+                                1,
+                                &format!(
+                                    "variant_{:?}_payload_gep",
+                                    variant_address.id
+                                ),
+                            )
+                            .unwrap());
+
+                        Ok(LlvmValue::Basic(payload_address.into()))
+                    }
+                }
+            }
             Address::Reference(reference) => {
                 let pointee_address = into_basic!(
                     self.get_address_value(&reference.reference_address)?

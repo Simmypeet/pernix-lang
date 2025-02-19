@@ -17,7 +17,7 @@ use pernixc_component::{
 };
 use pernixc_source_file::Span;
 use pernixc_table::{
-    component::{Parent, SymbolKind},
+    component::{Member, Parent, SymbolKind},
     GlobalID, Table,
 };
 use pernixc_term::{
@@ -26,7 +26,7 @@ use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},
     lifetime::Lifetime,
-    r#type::{Qualifier, Type},
+    r#type::{Primitive, Qualifier, Type},
     MemberSymbol, ModelOf, Symbol,
 };
 use pernixc_type_system::{
@@ -596,6 +596,41 @@ impl<M: pernixc_term::Model> Cast<M> {
 pub struct VariantNumber<M: pernixc_term::Model> {
     /// Address to the num to get the variant number of.
     pub address: Address<M>,
+
+    /// The enum ID of the enum.
+    pub enum_id: GlobalID,
+}
+
+impl<M: pernixc_term::Model> Values<M> {
+    fn type_of_variant_number(
+        variant_number: &VariantNumber<M>,
+        environment: &Environment<M, impl Normalizer<M>>,
+    ) -> Type<M> {
+        let mut answer = Primitive::Uint8;
+        let variant_count =
+            environment.table().get::<Member>(variant_number.enum_id).len();
+
+        let int_capacity = |a: Primitive| match a {
+            Primitive::Uint8 => 2u64.pow(8),
+            Primitive::Uint16 => 2u64.pow(16),
+            Primitive::Uint32 => 2u64.pow(32),
+            Primitive::Uint64 => 2u64.pow(64),
+            _ => unreachable!(),
+        };
+
+        let next = |a: Primitive| match a {
+            Primitive::Uint8 => Primitive::Uint16,
+            Primitive::Uint16 => Primitive::Uint32,
+            Primitive::Uint32 => Primitive::Uint64,
+            _ => unreachable!(),
+        };
+
+        while int_capacity(answer) < variant_count as u64 {
+            answer = next(answer);
+        }
+
+        Type::Primitive(answer)
+    }
 }
 
 /// An enumeration of the different kinds of values that can be assigned in the
@@ -726,8 +761,11 @@ impl<M: pernixc_term::Model> Values<M> {
                 }))
             }
             Assignment::Cast(cast) => Ok(cast.r#type.clone()),
-            Assignment::VariantNumber(_) => {
-                Ok(Type::Primitive(pernixc_term::r#type::Primitive::Usize))
+            Assignment::VariantNumber(variant) => {
+                return Ok(Succeeded::new(Self::type_of_variant_number(
+                    variant,
+                    environment,
+                )))
             }
         }?;
 
@@ -1079,6 +1117,7 @@ impl<M: pernixc_term::Model> Register<M> {
                         address: variant_number
                             .address
                             .transform_model(transformer)?,
+                        enum_id: variant_number.enum_id,
                     })
                 }
             },

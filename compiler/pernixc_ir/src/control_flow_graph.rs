@@ -334,7 +334,7 @@ impl<M: pernixc_term::Model> ControlFlowGraph<M> {
                         block_ids_to_index[&jump.false_target],
                     ));
                 }
-                Jump::Select(select) => {
+                Jump::Switch(select) => {
                     for target in select.branches.values() {
                         edges.push((
                             block_ids_to_index[&block_id],
@@ -457,7 +457,7 @@ impl<M: pernixc_term::Model> ControlFlowGraph<M> {
                     visited,
                 ),
 
-            Terminator::Jump(Jump::Select(condition)) => {
+            Terminator::Jump(Jump::Switch(condition)) => {
                 let blocks = condition
                     .branches
                     .values()
@@ -587,7 +587,7 @@ impl<M: pernixc_term::Model> ControlFlowGraph<M> {
                     visited,
                 )?,
             ),
-            Jump::Select(select_jump) => {
+            Jump::Switch(select_jump) => {
                 let blocks = select_jump
                     .branches
                     .values()
@@ -642,7 +642,7 @@ impl<M: pernixc_term::Model> ControlFlowGraph<M> {
                     Some(Terminator::Jump(Jump::Conditional(jump)));
             }
 
-            Terminator::Jump(Jump::Select(select)) => {
+            Terminator::Jump(Jump::Switch(select)) => {
                 for target in
                     select.branches.values().copied().chain(select.otherwise)
                 {
@@ -650,7 +650,7 @@ impl<M: pernixc_term::Model> ControlFlowGraph<M> {
                 }
 
                 self[block_id].terminator =
-                    Some(Terminator::Jump(Jump::Select(select)));
+                    Some(Terminator::Jump(Jump::Switch(select)));
             }
 
             Terminator::Return(ret) => {

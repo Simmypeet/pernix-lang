@@ -1,6 +1,9 @@
 //! Contains the code to bind a pattern syntax tree to the IR.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    num::NonZero,
+};
 
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
@@ -35,7 +38,7 @@ use super::{
 use crate::{
     address::{self, Address, Memory, Variant},
     binding::diagnostic::FoundPackTuplePatternInReferenceBoundTupleType,
-    instruction::{Instruction, Store, TuplePack},
+    instruction::{Instruction, Store, SwitchValue, TuplePack},
     model::{Constraint, Erased},
     pattern::{
         Boolean, Enum, Integer, Irrefutable, NameBinding, NameBindingPoint,
@@ -1093,7 +1096,7 @@ impl Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Option<Integer>, Abort> {
         ty = ty.reduce_reference();
-        let mut value = match syntax_tree.numeric().span.str().parse::<i128>() {
+        let value = match syntax_tree.numeric().span.str().parse::<u64>() {
             Ok(value) => value,
             Err(err) => match err.kind() {
                 std::num::IntErrorKind::NegOverflow
@@ -1108,13 +1111,11 @@ impl Binder<'_> {
             },
         };
 
-        if syntax_tree.minus().is_some() {
-            value = -value;
-        }
+        let is_negative = syntax_tree.minus().is_some() && value != 0;
 
         if self.type_check(
             ty,
-            infer::Expected::Constraint(if syntax_tree.minus().is_some() {
+            infer::Expected::Constraint(if is_negative {
                 Constraint::SignedInteger
             } else {
                 Constraint::Integer
@@ -1122,7 +1123,14 @@ impl Binder<'_> {
             syntax_tree.span(),
             handler,
         )? {
-            Ok(Some(Integer { value, span: syntax_tree.span() }))
+            Ok(Some(Integer {
+                value: if is_negative {
+                    SwitchValue::Negative(NonZero::new(value).unwrap())
+                } else {
+                    SwitchValue::Positive(value)
+                },
+                span: syntax_tree.span(),
+            }))
         } else {
             Ok(None)
         }
@@ -1842,15 +1850,16 @@ impl Binder<'_> {
         mut address: Address<infer::Model>,
     ) -> (Type<infer::Model>, Address<infer::Model>) {
         loop {
+            dbg!(&ty, &address);
             match ty {
                 Type::Reference(reference) => {
                     // update the address, reference binding
                     // info, and binding ty
                     ty = *reference.pointee;
-                    address = Address::Reference(address::Reference {
+                    address = dbg!(Address::Reference(address::Reference {
                         qualifier: reference.qualifier,
                         reference_address: Box::new(address),
-                    });
+                    }));
                 }
 
                 _ => break (ty, address),
@@ -1875,6 +1884,8 @@ impl Binder<'_> {
             }
 
             Path::Variant(variant) => {
+                dbg!(refutable_pattern, &variant.enum_path, &address, &ty);
+
                 let (address, ty, reftuable_pattern) = self
                     .get_address_and_type_from_path(
                         refutable_pattern,

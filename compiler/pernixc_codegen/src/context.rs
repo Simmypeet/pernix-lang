@@ -2,7 +2,10 @@
 //! generation process.
 
 use getset::{CopyGetters, Getters, MutGetters};
-use inkwell::targets::TargetData;
+use inkwell::{
+    intrinsics::Intrinsic, llvm_sys::transforms, module::Linkage,
+    targets::TargetData, values::FunctionValue,
+};
 use pernixc_handler::Handler;
 use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
 
@@ -50,6 +53,10 @@ pub struct Context<'i, 'ctx> {
     /// The ID of the main function.
     #[get_copy = "pub"]
     main_function_id: GlobalID,
+
+    /// The function that is called when a panic occurs.
+    #[get_copy = "pub"]
+    panic_function: FunctionValue<'ctx>,
 }
 
 impl std::fmt::Debug for Context<'_, '_> {
@@ -62,6 +69,7 @@ impl std::fmt::Debug for Context<'_, '_> {
             .field("function_map", &self.function_map)
             .field("type_map", &self.type_map)
             .field("main_function_id", &self.main_function_id)
+            .field("panic_function", &self.panic_function)
             .finish_non_exhaustive()
     }
 }
@@ -80,6 +88,9 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
         let type_map = r#type::Map::default();
         let constant_map = constant::Map::default();
 
+        let trap = Intrinsic::find("llvm.trap").unwrap();
+        let abort = trap.get_declaration(&module, &[]).unwrap();
+
         Self {
             context,
             target_data,
@@ -90,6 +101,7 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
             constant_map,
             type_map,
             main_function_id,
+            panic_function: abort,
         }
     }
 

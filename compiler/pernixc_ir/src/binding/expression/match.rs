@@ -29,8 +29,8 @@ use crate::{
     },
     control_flow_graph::Block,
     instruction::{
-        ConditionalJump, Instruction, Jump, ScopePop, ScopePush, SelectJump,
-        Terminator, UnconditionalJump,
+        ConditionalJump, Instruction, Jump, ScopePop, ScopePush, SwitchJump,
+        SwitchValue, Terminator, UnconditionalJump,
     },
     model::Constraint,
     pattern::{NameBindingPoint, Refutable, Wildcard},
@@ -46,14 +46,16 @@ use crate::{
 };
 
 impl Refutable {
-    fn get_conditional_value(&self, table: &Table) -> Option<i128> {
+    fn get_conditional_value(&self, table: &Table) -> Option<SwitchValue> {
         match self {
-            Self::Boolean(boolean) => Some(i128::from(boolean.value)),
+            Self::Boolean(boolean) => {
+                Some(SwitchValue::Positive(boolean.value.into()))
+            }
             Self::Integer(integer) => Some(integer.value),
-            Self::Enum(variant) => Some(
+            Self::Enum(variant) => Some(SwitchValue::Positive(
                 table.get::<VariantDeclarationOrder>(variant.variant_id).order
-                    as i128,
-            ),
+                    as u64,
+            )),
 
             _ => None,
         }
@@ -64,7 +66,7 @@ impl Binder<'_> {
     #[allow(clippy::cast_sign_loss)]
     fn is_exhaustive(
         &self,
-        values: impl Iterator<Item = i128>,
+        values: impl Iterator<Item = SwitchValue>,
         pattern: &Refutable,
         ty: &Type<infer::Model>,
     ) -> bool {
@@ -76,14 +78,14 @@ impl Binder<'_> {
                 let mut false_found = false;
 
                 for value in values {
-                    if value == 0 {
+                    if value == SwitchValue::Positive(0) {
                         assert!(!false_found, "duplicated false value");
                         false_found = true;
-                    } else if value == 1 {
+                    } else if value == SwitchValue::Positive(1) {
                         assert!(!true_found, "duplicated true value");
                         true_found = true;
                     } else {
-                        panic!("unexpected value {value}");
+                        panic!("unexpected value {value:?}");
                     }
                 }
 
@@ -106,11 +108,22 @@ impl Binder<'_> {
 
                 for value in values {
                     assert!(
-                        !variant_handled.get(value as usize).unwrap(),
-                        "duplicate variant {value}"
+                        !variant_handled
+                            .get(
+                                value
+                                    .into_positive()
+                                    .unwrap()
+                                    .try_into()
+                                    .unwrap()
+                            )
+                            .unwrap(),
+                        "duplicate variant {value:?}"
                     );
 
-                    variant_handled.set(value as usize, true);
+                    variant_handled.set(
+                        value.into_positive().unwrap().try_into().unwrap(),
+                        true,
+                    );
                 }
 
                 variant_handled.all()
@@ -166,7 +179,7 @@ impl Binder<'_> {
         }
 
         let mut free_arms = Vec::new();
-        let mut arm_states_by_value = HashMap::<_, Vec<_>>::new();
+        let mut arm_states_by_value = HashMap::<SwitchValue, Vec<_>>::new();
 
         for arm_state in arm_states {
             let pattern = arm_infos[arm_state.arm_info_index]
@@ -253,18 +266,22 @@ impl Binder<'_> {
                                 non_exhaustives.push(NonExhaustive {
                                     path: main_path,
                                     missing_value: MissingValue::Known(vec![
-                                        i128::from(value == 0),
+                                        SwitchValue::Positive(u64::from(
+                                            value == SwitchValue::Positive(0),
+                                        )),
                                     ]),
                                 });
 
                                 // use unreachable block
                                 match_info.non_exhaustive_block_id
                             });
-                        let (true_block, false_block) = if value == 1 {
-                            (block_for_arms, alternative_block)
-                        } else {
-                            (alternative_block, block_for_arms)
-                        };
+
+                        let (true_block, false_block) =
+                            if value == SwitchValue::Positive(1) {
+                                (block_for_arms, alternative_block)
+                            } else {
+                                (alternative_block, block_for_arms)
+                            };
 
                         self.intermediate_representation
                             .control_flow_graph
@@ -317,11 +334,12 @@ impl Binder<'_> {
 
                         assert!(arm_states_iter.next().is_none());
 
-                        let (true_group, false_group) = if first.0 == 1 {
-                            (first.1, second.1)
-                        } else {
-                            (second.1, first.1)
-                        };
+                        let (true_group, false_group) =
+                            if first.0 == SwitchValue::Positive(1) {
+                                (first.1, second.1)
+                            } else {
+                                (second.1, first.1)
+                            };
 
                         self.intermediate_representation
                             .control_flow_graph
@@ -373,12 +391,20 @@ impl Binder<'_> {
                         match_info.span.clone(),
                     ),
 
-                    Refutable::Enum(_) => self.create_register_assignmnet(
-                        Assignment::VariantNumber(VariantNumber {
-                            address: match_info.address.clone(),
-                        }),
-                        match_info.span.clone(),
-                    ),
+                    Refutable::Enum(pattern) => self
+                        .create_register_assignmnet(
+                            Assignment::VariantNumber(VariantNumber {
+                                address: load_address,
+                                enum_id: GlobalID::new(
+                                    pattern.variant_id.target_id,
+                                    self.table
+                                        .get::<Parent>(pattern.variant_id)
+                                        .parent
+                                        .unwrap(),
+                                ),
+                            }),
+                            match_info.span.clone(),
+                        ),
 
                     _ => unreachable!(),
                 };
@@ -445,7 +471,7 @@ impl Binder<'_> {
                                                             ),
                                                         )
                                                         .len())
-                                                        .map(|x| x as i128)
+                                                        .map(|x| SwitchValue::Positive(x as u64))
                                                         .filter(|x| {
                                                             *x != first_value
                                                         })
@@ -579,7 +605,11 @@ impl Binder<'_> {
                                                         ),
                                                     )
                                                     .len())
-                                                    .map(|x| x as i128)
+                                                    .map(|x| {
+                                                        SwitchValue::Positive(
+                                                            x as u64,
+                                                        )
+                                                    })
                                                     .filter(|x| {
                                                         !groups.iter().any(
                                                             |(_, val, _)| {
@@ -603,7 +633,7 @@ impl Binder<'_> {
                             .control_flow_graph
                             .insert_terminator(
                                 self.current_block_id,
-                                Terminator::Jump(Jump::Select(SelectJump {
+                                Terminator::Jump(Jump::Switch(SwitchJump {
                                     integer: Value::Register(numeric_value),
                                     branches: groups
                                         .iter()
@@ -780,7 +810,7 @@ struct MatchInfo<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MissingValue {
-    Known(Vec<i128>),
+    Known(Vec<SwitchValue>),
     Unknown,
 }
 

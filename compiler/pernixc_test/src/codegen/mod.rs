@@ -11,18 +11,19 @@ use pernixc_driver::{Arguments, OptimizationLevel, TargetKind};
 
 mod array_index;
 mod arrow_access;
+mod r#enum;
 mod exit_failure;
 mod exit_success;
 mod fibonacci_program;
 mod hello_world;
 mod max;
+mod number_match;
 mod recursion;
 mod struct_access;
 mod tuple;
+mod tuple_pack;
 mod tuple_unpack;
 mod zst_optimization;
-
-mod tuple_pack;
 
 fn invoke_linker_command(obj: &Path, out: &Path) {
     if cfg!(target_os = "macos") {
@@ -80,7 +81,7 @@ fn compile_file_with(
     assert_eq!(
         pernixc_driver::run(Arguments {
             file: source_file,
-            opt_level: OptimizationLevel::O3,
+            opt_level: OptimizationLevel::O0,
             target_name: Some("test".to_string()),
             kind: TargetKind::Executable,
             library_paths: Vec::new(),

@@ -110,6 +110,9 @@ pub struct TaggedUnion<'ctx> {
     /// variant's associated type is ZST or not.
     pub llvm_variant_types: HashMap<GlobalID, StructType<'ctx>>,
 
+    /// The layout of the tagged union of the most aligned variant.
+    pub most_alignment_type: StructType<'ctx>,
+
     /// The LLVM type of the tag.
     pub llvm_tag_type: IntType<'ctx>,
 }
@@ -628,6 +631,7 @@ impl<'ctx> Context<'_, 'ctx> {
             LlvmEnumSignature::TaggedUnion(TaggedUnion {
                 llvm_struct_type: repr,
                 llvm_variant_types: llvm_variant_with_tag_types,
+                most_alignment_type: max_abi_aligned_ty.into_struct_type(),
                 llvm_tag_type: tag_ty,
             })
         };

@@ -1,12 +1,18 @@
 use std::cmp::Ordering;
 
-use inkwell::{values::BasicValueEnum, AddressSpace, IntPredicate};
+use inkwell::{
+    attributes::{Attribute, AttributeLoc},
+    types::BasicType,
+    values::BasicValueEnum,
+    AddressSpace, IntPredicate,
+};
 use pernixc_arena::ID;
 use pernixc_component::fields::Fields;
 use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{
-        Instruction, Jump, RegisterAssignment, Terminator, TuplePack,
+        Instruction, Jump, RegisterAssignment, SwitchValue, Terminator,
+        TuplePack,
     },
     model::Erased,
     value::register::{
@@ -1088,6 +1094,120 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn handle_variant_number(
+        &mut self,
+        variant_number: &register::VariantNumber<Model>,
+        reg_id: ID<Register<Model>>,
+    ) -> Result<LlvmValue<'ctx>, Error> {
+        let address = self.get_address_value(&variant_number.address)?;
+        let enum_type = self
+            .type_of_address_pnx(&variant_number.address)
+            .into_symbol()
+            .unwrap();
+
+        let llvm_enum_sig = dbg!(self.context.get_enum_type(enum_type));
+
+        match &*llvm_enum_sig {
+            LlvmEnumSignature::Transparent(_) | LlvmEnumSignature::Zst => {
+                Ok(LlvmValue::Basic(
+                    self.context
+                        .context()
+                        .bool_type()
+                        .const_int(0, false)
+                        .into(),
+                ))
+            }
+
+            LlvmEnumSignature::NullablePointer(nullable_pointer) => {
+                let pointer_val = self
+                    .inkwell_builder
+                    .build_load(
+                        self.context
+                            .context()
+                            .ptr_type(AddressSpace::default()),
+                        address.into_basic().unwrap().into_pointer_value(),
+                        &format!("load_{reg_id:?}_ptr"),
+                    )
+                    .unwrap();
+
+                let is_null = self
+                    .inkwell_builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        pointer_val.into_pointer_value(),
+                        self.context
+                            .context()
+                            .ptr_type(AddressSpace::default())
+                            .const_null(),
+                        &format!("cmp_{reg_id:?}_is_null"),
+                    )
+                    .unwrap();
+
+                let (mut then, mut els_) = (0, 1);
+                if nullable_pointer.null_variant_index != 0 {
+                    std::mem::swap(&mut then, &mut els_);
+                }
+
+                Ok(LlvmValue::Basic(
+                    self.inkwell_builder
+                        .build_select(
+                            is_null,
+                            self.context
+                                .context()
+                                .bool_type()
+                                .const_int(then, false),
+                            self.context
+                                .context()
+                                .bool_type()
+                                .const_int(els_, false),
+                            &format!("select_{reg_id:?}"),
+                        )
+                        .unwrap(),
+                ))
+            }
+
+            LlvmEnumSignature::Numeric(int_type) => {
+                // directly load the variant number
+                Ok(LlvmValue::Basic(
+                    self.inkwell_builder
+                        .build_load(
+                            *int_type,
+                            address.into_basic().unwrap().into_pointer_value(),
+                            &format!("load_{reg_id:?}_variant_number"),
+                        )
+                        .unwrap(),
+                ))
+            }
+
+            LlvmEnumSignature::TaggedUnion(tagged_union) => {
+                let pointer_cast = self
+                    .inkwell_builder
+                    .build_pointer_cast(
+                        dbg!(address
+                            .into_basic()
+                            .unwrap()
+                            .into_pointer_value()),
+                        tagged_union
+                            .llvm_tag_type
+                            .ptr_type(AddressSpace::default()),
+                        &format!("cast_{reg_id:?}_tag"),
+                    )
+                    .unwrap();
+
+                Ok(LlvmValue::Basic(
+                    self.inkwell_builder
+                        .build_load(
+                            tagged_union.llvm_tag_type,
+                            pointer_cast,
+                            &format!("load_{reg_id:?}_tag"),
+                        )
+                        .unwrap(),
+                ))
+            }
+        }
+    }
+
     fn get_register_assignment_value(
         &mut self,
         register_assignment: &Assignment<Model>,
@@ -1118,7 +1238,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::Array(array) => self.handle_array(array, reg_id),
             Assignment::Phi(phi) => self.handle_phi(phi, reg_id),
             Assignment::Cast(cast) => todo!(),
-            Assignment::VariantNumber(variant_number) => todo!(),
+            Assignment::VariantNumber(variant_number) => {
+                self.handle_variant_number(variant_number, reg_id)
+            }
         }
     }
 
@@ -1225,6 +1347,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     /// Translates the Pernix's basic block to LLVM's basic block if haven't
+    #[allow(clippy::too_many_lines)]
     pub fn build_basic_block(&mut self, block_id: ID<Block<Model>>) {
         // already built, or being built currently.
         if !self.built.insert(block_id) {
@@ -1277,6 +1400,13 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         // build the terminator
         match block.terminator() {
             Some(Terminator::Panic) => {
+                self.inkwell_builder
+                    .build_call(
+                        self.context.panic_function(),
+                        &[],
+                        &format!("panic_{block_id:?}"),
+                    )
+                    .unwrap();
                 self.inkwell_builder.build_unreachable().unwrap();
             }
 
@@ -1327,7 +1457,65 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .unwrap();
             }
 
-            Some(Terminator::Jump(Jump::Select(select))) => {}
+            Some(Terminator::Jump(Jump::Switch(select))) => {
+                let int_value = match self.get_value(&select.integer) {
+                    Ok(val) => val
+                        .into_basic()
+                        .expect("integer is not zst")
+                        .into_int_value(),
+                    Err(Error::Unreachable) => {
+                        self.inkwell_builder.build_unreachable().unwrap();
+                        return;
+                    }
+                };
+
+                let int_ty = int_value.get_type();
+
+                // the switches value and block to jump
+                let mut switches = Vec::with_capacity(select.branches.len());
+
+                for (value, target) in &select.branches {
+                    let value = *value;
+
+                    let const_int_value = match value {
+                        SwitchValue::Positive(positive) => {
+                            int_ty.const_int(positive, false)
+                        }
+                        SwitchValue::Negative(non_zero) => {
+                            // do the two's complement
+                            let mut non_zero = non_zero.get();
+                            non_zero -= 1;
+                            non_zero = !non_zero;
+
+                            int_ty.const_int(non_zero, true)
+                        }
+                    };
+
+                    switches
+                        .push((const_int_value, self.basic_block_map[target]));
+                }
+
+                let else_block = if let Some(else_block) = select.otherwise {
+                    self.basic_block_map[&else_block]
+                } else {
+                    let else_block = self.context.context().append_basic_block(
+                        self.llvm_function_signature.llvm_function_value,
+                        &format!("select_else_{block_id:?}"),
+                    );
+
+                    // build unreachable at the else block
+                    self.inkwell_builder.position_at_end(else_block);
+                    self.inkwell_builder.build_unreachable().unwrap();
+
+                    self.inkwell_builder.position_at_end(current_block);
+
+                    else_block
+                };
+
+                self.inkwell_builder
+                    .build_switch(int_value, else_block, &switches)
+                    .unwrap();
+            }
 
             None => {
                 self.inkwell_builder.build_return(None).unwrap();

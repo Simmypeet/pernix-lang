@@ -11,7 +11,7 @@ use pernixc_source_file::{SourceElement, Span};
 use pernixc_table::{diagnostic::Diagnostic, GlobalID};
 use pernixc_term::r#type::Qualifier;
 
-use crate::address::Address;
+use crate::{address::Address, instruction::SwitchValue};
 
 pub mod diagnostic;
 
@@ -19,7 +19,7 @@ pub mod diagnostic;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Integer {
     /// The value of the ingteger literal.
-    pub value: i128,
+    pub value: SwitchValue,
 
     /// The span of the integer literal.
     pub span: Span,

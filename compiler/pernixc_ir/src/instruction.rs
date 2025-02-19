@@ -1,6 +1,6 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, num::NonZero};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::{Key, ID};
@@ -53,15 +53,36 @@ pub struct ConditionalJump<M: pernixc_term::Model> {
     pub false_target: ID<Block<M>>,
 }
 
+/// Switch value for the switch jump.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumAsInner,
+    derive_more::Display,
+)]
+#[allow(missing_docs)]
+pub enum SwitchValue {
+    Positive(u64),
+    Negative(NonZero<u64>),
+}
+
 /// Represents a jump to another block based on a the matching of an integer
 /// value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SelectJump<M: pernixc_term::Model> {
+pub struct SwitchJump<M: pernixc_term::Model> {
     /// The integer value to match.
     pub integer: Value<M>,
 
     /// Mapping of the integer value to the target block to jump to.
-    pub branches: HashMap<i128, ID<Block<M>>>,
+    pub branches: HashMap<SwitchValue, ID<Block<M>>>,
 
     /// If none of the branches match, jump to this block.
     pub otherwise: Option<ID<Block<M>>>,
@@ -73,7 +94,7 @@ pub struct SelectJump<M: pernixc_term::Model> {
 pub enum Jump<M: pernixc_term::Model> {
     Unconditional(UnconditionalJump<M>),
     Conditional(ConditionalJump<M>),
-    Select(SelectJump<M>),
+    Switch(SwitchJump<M>),
 }
 
 impl<M: pernixc_term::Model> Jump<M> {
@@ -96,7 +117,7 @@ impl<M: pernixc_term::Model> Jump<M> {
                 false_target: ID::from_index(jump.false_target.into_index()),
             }),
 
-            Self::Select(jump) => Jump::Select(SelectJump {
+            Self::Switch(jump) => Jump::Switch(SwitchJump {
                 integer: jump.integer.transform_model(transformer)?,
                 branches: jump
                     .branches
@@ -119,7 +140,7 @@ impl<M: pernixc_term::Model> Jump<M> {
             Self::Conditional(jump) => {
                 vec![jump.true_target, jump.false_target]
             }
-            Self::Select(jump) => {
+            Self::Switch(jump) => {
                 let mut targets =
                     jump.branches.values().copied().collect::<Vec<_>>();
                 if let Some(otherwise) = jump.otherwise {
