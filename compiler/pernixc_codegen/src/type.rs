@@ -8,13 +8,19 @@ use std::{
 
 use getset::Getters;
 use inkwell::{
-    types::{BasicType, BasicTypeEnum, StructType},
+    types::{BasicType, BasicTypeEnum, IntType, PointerType, StructType},
     AddressSpace,
 };
 use pernixc_arena::ID;
-use pernixc_component::fields::{Field, Fields};
+use pernixc_component::{
+    fields::{Field, Fields},
+    variant::Variant,
+};
 use pernixc_ir::model::Erased;
-use pernixc_table::component::SymbolKind;
+use pernixc_table::{
+    component::{Member, SymbolKind, VariantDeclarationOrder},
+    GlobalID,
+};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -65,6 +71,75 @@ pub struct LlvmTupleSignature<'ctx> {
     pub llvm_field_indices_by_tuple_idnex: HashMap<usize, usize>,
 }
 
+/// A niche optimization on the enum that can be represented as a nullable
+/// pointer.
+///
+/// It's when the enum contains 2 variants where one of the is ZST and  the
+/// other is reference type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NullablePointer<'ctx> {
+    /// The LLVM pointer type
+    pub pointer: PointerType<'ctx>,
+
+    /// The variant index that is ZST.
+    pub null_variant_index: u8,
+}
+
+/// Enum represented as a tagged union.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaggedUnion<'ctx> {
+    /// The LLVM struct type of the tagged union.
+    ///
+    /// The representation looks like this:
+    /// ``` txt
+    /// type { {tag_ty, payload }, [i8 x extra_bytes_needed] }
+    /// ```
+    /// where the `{tag_ty, payload}` is the variant that has the most
+    /// alignment requirement and `[i8 x extra_bytes_needed]` is the padding
+    /// to make sure that the size of the tagged union is equal to the size of
+    /// the largest variant.
+    pub llvm_struct_type: StructType<'ctx>,
+
+    /// The LLVM types of each variant in the tagged union.
+    ///
+    /// The pointer will be casted from the [`Self::llvm_struct_type`] to the
+    /// variant type.
+    ///
+    /// The representation looks like this:
+    /// `type { tag_ty, payload } or type { tag_ty }` depending on whether the
+    /// variant's associated type is ZST or not.
+    pub llvm_variant_types: HashMap<GlobalID, StructType<'ctx>>,
+
+    /// The LLVM type of the tag.
+    pub llvm_tag_type: IntType<'ctx>,
+}
+
+/// Represents a translation from the Pernix enum to the LLVM enum.
+///
+/// The Pernix enum can be translated into different flavours of structure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LlvmEnumSignature<'ctx> {
+    /// The enum is a zero-sized type. Either it has no variants at all all has
+    /// one variant that is ZST.
+    Zst,
+
+    /// The enum can be represented as a nullable pointer; there're 2
+    /// variants in the enum  where one of them is `ZST` and the other is a
+    /// reference.
+    NullablePointer(NullablePointer<'ctx>),
+
+    /// The enum is a transparent enum; it has only one variant that is  not
+    /// ZST.
+    Transparent(BasicTypeEnum<'ctx>),
+
+    /// The enum is a numeric enum; it has multiple variants where all of them
+    /// are ZST.
+    Numeric(IntType<'ctx>),
+
+    /// The enum is a tagged union; the most general form of the enum.
+    TaggedUnion(TaggedUnion<'ctx>),
+}
+
 /// Represents the mapping between the Pernix type and the LLVM type.
 #[derive(Debug, Default, Getters)]
 pub struct Map<'ctx> {
@@ -79,6 +154,9 @@ pub struct Map<'ctx> {
     /// If the value is `None`, it means that the tuple is `Zero-sized type`.
     tuple_signatures:
         HashMap<Tuple<Model>, Option<Rc<LlvmTupleSignature<'ctx>>>>,
+
+    /// The mapping between the enum and the LLVM type.
+    enum_signatures: HashMap<Symbol<Model>, Rc<LlvmEnumSignature<'ctx>>>,
 }
 
 /// A mutable visitor that erases all the lifetimes in the term.
@@ -222,7 +300,7 @@ impl<'ctx> Context<'_, 'ctx> {
     pub fn get_struct_type(
         &mut self,
         symbol: Symbol<Model>,
-    ) -> Result<Rc<LlvmStructSignature<'ctx>>, Zst<Symbol<Model>>> {
+    ) -> Result<Rc<LlvmStructSignature<'ctx>>, Zst> {
         let generic_params =
             self.table().query::<GenericParameters>(symbol.id).unwrap();
 
@@ -237,7 +315,7 @@ impl<'ctx> Context<'_, 'ctx> {
         if let Some(value) =
             self.type_map_mut().struct_sigantures.get(&symbol).cloned()
         {
-            return value.ok_or(Zst(symbol));
+            return value.ok_or(Zst);
         }
 
         let fields = self.table().query::<Fields>(symbol.id).unwrap();
@@ -272,11 +350,9 @@ impl<'ctx> Context<'_, 'ctx> {
             }))
         };
 
-        self.type_map_mut()
-            .struct_sigantures
-            .insert(symbol.clone(), ty.clone());
+        self.type_map_mut().struct_sigantures.insert(symbol, ty.clone());
 
-        ty.ok_or(Zst(symbol))
+        ty.ok_or(Zst)
     }
 
     /// Gets the [`LlvmTupleSignature`] from the Pernix tuple type.
@@ -284,11 +360,11 @@ impl<'ctx> Context<'_, 'ctx> {
     pub fn get_tuple_type(
         &mut self,
         tuple: Tuple<Model>,
-    ) -> Result<Rc<LlvmTupleSignature<'ctx>>, Zst<Tuple<Model>>> {
+    ) -> Result<Rc<LlvmTupleSignature<'ctx>>, Zst> {
         if let Some(value) =
             self.type_map_mut().tuple_signatures.get(&tuple).cloned()
         {
-            return value.ok_or(Zst(tuple));
+            return value.ok_or(Zst);
         }
 
         let mut llvm_indices_by_tuple_index = HashMap::new();
@@ -316,9 +392,255 @@ impl<'ctx> Context<'_, 'ctx> {
             }))
         };
 
-        self.type_map_mut().tuple_signatures.insert(tuple.clone(), ty.clone());
+        self.type_map_mut().tuple_signatures.insert(tuple, ty.clone());
 
-        ty.ok_or(Zst(tuple))
+        ty.ok_or(Zst)
+    }
+
+    /// Retrieves the [`LlvmEnumSignature`] from the Pernix enum type.
+    #[allow(
+        clippy::missing_errors_doc,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::too_many_lines
+    )]
+    pub fn get_enum_type(
+        &mut self,
+        symbol: Symbol<Model>,
+    ) -> Rc<LlvmEnumSignature<'ctx>> {
+        fn get_bit_count(length: usize) -> usize {
+            // calculates the number of bits required to represent the enum
+            let bits = (length as f64).log2().ceil() as u32;
+            let mut ceiled_bit_count = 1;
+
+            while bits > ceiled_bit_count {
+                // i1 -> i8
+                if ceiled_bit_count == 1 {
+                    ceiled_bit_count = 8;
+                }
+                // i8 -> i16 -> i32 -> i64, etc.
+                else {
+                    ceiled_bit_count *= 2;
+                }
+            }
+
+            ceiled_bit_count as usize
+        }
+
+        if let Some(value) =
+            self.type_map_mut().enum_signatures.get(&symbol).cloned()
+        {
+            return value;
+        }
+
+        let generic_params =
+            self.table().query::<GenericParameters>(symbol.id).unwrap();
+
+        let instantiation = Instantiation::from_generic_arguments(
+            symbol.generic_arguments.clone(),
+            symbol.id,
+            &generic_params,
+        )
+        .unwrap();
+
+        let mut variants = self
+            .table()
+            .get::<Member>(symbol.id)
+            .0
+            .values()
+            .copied()
+            .map(|x| GlobalID::new(symbol.id.target_id, x))
+            .collect::<Vec<_>>();
+
+        variants.sort_by_cached_key(|x| {
+            self.table().get::<VariantDeclarationOrder>(*x).order
+        });
+
+        let mut llvm_variant_types = Vec::new();
+
+        // gets the of each enum variants
+        for variant_id in variants.iter().copied() {
+            let variant = self.table().query::<Variant>(variant_id).unwrap();
+
+            if let Some(associated_ty) = &variant.associated_type {
+                let mut ty = Model::from_default_type(associated_ty.clone());
+                ty = self.monomorphize_term(ty, &instantiation);
+
+                llvm_variant_types
+                    .push(self.get_type(ty.clone()).ok().map(|x| (x, ty)));
+            } else {
+                llvm_variant_types.push(None);
+            }
+        }
+
+        // the enum can be categorized into five kinds
+        //
+        // 1. Nullable pointer, for example Option[&T] like type
+        // 2. ZST, for example enum { A(()) } or enum {}
+        // 3. Transparent enum, for example enum { A(T) }
+        // 4. Numeric enum, for example enum { A, B, C }
+        // 5. Tagged union, for example enum { A(i32), B(f32), C(bool) }
+
+        // must have 2 variants, one is `zst` and the other is `reference`. In
+        // pnx, null reference is not allowed therefore, we can safely
+        // assume that the `0` pointer value is the `zst` variant.
+
+        // the enum is ZST
+        let enum_ty = if llvm_variant_types.is_empty()
+            || (llvm_variant_types.len() == 1
+                && llvm_variant_types[0].is_none())
+        {
+            LlvmEnumSignature::Zst
+        }
+        // the enum is nullable pointer
+        else if llvm_variant_types.len() == 2
+            && llvm_variant_types.iter().any(Option::is_none)
+            && llvm_variant_types
+                .iter()
+                .any(|x| x.as_ref().is_some_and(|x| x.1.is_reference()))
+        {
+            let (null_index, pointer_index) = if llvm_variant_types[0].is_none()
+            {
+                (0u8, 1)
+            } else {
+                (1u8, 0)
+            };
+            LlvmEnumSignature::NullablePointer(NullablePointer {
+                pointer: llvm_variant_types[pointer_index]
+                    .as_ref()
+                    .unwrap()
+                    .0
+                    .into_pointer_type(),
+                null_variant_index: null_index,
+            })
+        }
+        // the enum is transparent
+        else if llvm_variant_types.len() == 1
+            && llvm_variant_types[0].is_some()
+        {
+            LlvmEnumSignature::Transparent(
+                llvm_variant_types[0].as_ref().unwrap().0,
+            )
+        }
+        // the enum is numeric
+        else if llvm_variant_types.iter().all(Option::is_none) {
+            LlvmEnumSignature::Numeric(self.context().custom_width_int_type(
+                get_bit_count(llvm_variant_types.len()).try_into().unwrap(),
+            ))
+        }
+        // normal tagged union
+        else {
+            let tag_bit_count = get_bit_count(llvm_variant_types.len());
+            let tag_ty = self
+                .context()
+                .custom_width_int_type(tag_bit_count.try_into().unwrap());
+
+            let mut llvm_variant_with_tag_types = HashMap::new();
+            for (variant_id, variant) in
+                variants.iter().copied().zip(llvm_variant_types)
+            {
+                let ty = if let Some((llvm_ty, _)) = variant {
+                    self.context().struct_type(&[tag_ty.into(), llvm_ty], false)
+                } else {
+                    self.context().struct_type(&[tag_ty.into()], false)
+                };
+
+                llvm_variant_with_tag_types.insert(variant_id, ty);
+            }
+
+            // we'll pick the most aligned variant as the representation of the
+            // enum and add a storage to make sure that it can hold up to the
+            // largest variant.
+            //
+            // type { most_aligned_variant, [i8 x extra_bytes_needed] }
+
+            let max_abi_aligned_variant = llvm_variant_with_tag_types
+                .iter()
+                .max_by_key(|(_, x)| self.target_data().get_abi_alignment(&**x))
+                .map(|(x, _)| *x)
+                .unwrap();
+            let max_size_variant = llvm_variant_with_tag_types
+                .iter()
+                .max_by_key(|(_, x)| self.target_data().get_abi_size(&**x))
+                .map(|(x, _)| *x)
+                .unwrap();
+
+            let max_abi_aligned_ty = BasicTypeEnum::from(
+                llvm_variant_with_tag_types
+                    .get(&max_abi_aligned_variant)
+                    .copied()
+                    .unwrap(),
+            );
+            let max_size_ty = BasicTypeEnum::from(
+                llvm_variant_with_tag_types
+                    .get(&max_size_variant)
+                    .copied()
+                    .unwrap(),
+            );
+
+            // the minimum number of bytes needed to make sure that the
+            // representation can hold up to the largest variant in the enum
+            let extra_bytes_needed =
+                self.target_data().get_abi_size(&max_size_ty)
+                    - self.target_data().get_abi_size(&max_abi_aligned_ty);
+
+            let repr = if extra_bytes_needed == 0 {
+                self.context().struct_type(&[max_abi_aligned_ty], false)
+            } else {
+                // pedantic check
+                assert_eq!(
+                    self.target_data()
+                        .get_abi_alignment(&self.context().i8_type()),
+                    1
+                );
+                assert_eq!(
+                    self.target_data().get_abi_size(&self.context().i8_type()),
+                    1
+                );
+
+                self.context().struct_type(
+                    &[
+                        max_abi_aligned_ty,
+                        self.context()
+                            .i8_type()
+                            .array_type(extra_bytes_needed.try_into().unwrap())
+                            .into(),
+                    ],
+                    false,
+                )
+            };
+
+            // make sure it can accommodate the largest variant. the size might
+            // not exactly matches the size of the largest variant since the
+            // added extra bytes might not align with the alignment of the
+            // largest variant in the enum.
+            assert!(
+                self.target_data().get_abi_size(&repr)
+                    >= self.target_data().get_abi_size(&max_size_ty)
+            );
+
+            assert_eq!(
+                self.target_data().get_abi_alignment(&repr),
+                self.target_data().get_abi_alignment(&max_abi_aligned_ty)
+            );
+
+            LlvmEnumSignature::TaggedUnion(TaggedUnion {
+                llvm_struct_type: repr,
+                llvm_variant_types: llvm_variant_with_tag_types,
+                llvm_tag_type: tag_ty,
+            })
+        };
+
+        let ty = Rc::new(enum_ty);
+
+        assert!(self
+            .type_map_mut()
+            .enum_signatures
+            .insert(symbol, ty.clone())
+            .is_none());
+
+        ty
     }
 
     /// Retrieves the LLVM type from the Pernix type. The Pernix type must be
@@ -371,7 +693,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 if *array_ty.length.as_primitive().unwrap().as_usize().unwrap()
                     == 0
                 {
-                    return Err(Zst(Type::Array(array_ty)));
+                    return Err(Zst);
                 }
                 let element_ty = self.get_type(*array_ty.r#type)?;
 
@@ -394,14 +716,31 @@ impl<'ctx> Context<'_, 'ctx> {
 
                 match symbol_kind {
                     SymbolKind::Struct => {
-                        let struct_signature = self
-                            .get_struct_type(symbol)
-                            .map_err(|x| Zst(x.0.into()))?;
+                        let struct_signature =
+                            self.get_struct_type(symbol).map_err(|_| Zst)?;
 
                         Ok(struct_signature.llvm_struct_type.into())
                     }
 
-                    SymbolKind::Enum => todo!(),
+                    SymbolKind::Enum => {
+                        let enum_signature = self.get_enum_type(symbol);
+
+                        match &*enum_signature {
+                            LlvmEnumSignature::Zst => Err(Zst),
+                            LlvmEnumSignature::NullablePointer(
+                                nullable_pointer,
+                            ) => Ok(nullable_pointer.pointer.into()),
+                            LlvmEnumSignature::Transparent(basic_type_enum) => {
+                                Ok(*basic_type_enum)
+                            }
+                            LlvmEnumSignature::Numeric(int_type) => {
+                                Ok((*int_type).into())
+                            }
+                            LlvmEnumSignature::TaggedUnion(tagged_union) => {
+                                Ok(tagged_union.llvm_struct_type.into())
+                            }
+                        }
+                    }
 
                     _ => panic!("unsupported symbol kind {symbol_kind:?}"),
                 }
@@ -409,12 +748,12 @@ impl<'ctx> Context<'_, 'ctx> {
 
             Type::Tuple(tuple) => {
                 let tuple_signature =
-                    self.get_tuple_type(tuple).map_err(|x| Zst(x.0.into()))?;
+                    self.get_tuple_type(tuple).map_err(|_| Zst)?;
 
                 Ok(tuple_signature.llvm_tuple_type.into())
             }
 
-            ty @ Type::Phantom(_) => Err(Zst(ty)),
+            Type::Phantom(_) => Err(Zst),
 
             Type::MemberSymbol(_) | Type::TraitMember(_) => {
                 panic!("unsupported type {ty:?}")

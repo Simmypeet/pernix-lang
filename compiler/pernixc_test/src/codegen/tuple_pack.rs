@@ -11,7 +11,7 @@ implements Add[int32] {
     }
 }
 
-public trait SumTuple[T] 
+public trait SumTuple[T]
 where
     tuple T
 {
@@ -28,7 +28,7 @@ where
 
     public function sum(elements: (T,)): this::Output {
         return elements.0;
-    } 
+    }
 }
 
 implements[T, Rest] SumTuple[(T, ...Rest)]
@@ -40,7 +40,7 @@ where
     public type Output = T;
 
     public function sum((first, ...rest): (T, ...Rest)): this::Output {
-        return first.add(SumTuple[Rest]::sum(rest));
+        return first.add(rest.sum());
     }
 }
 

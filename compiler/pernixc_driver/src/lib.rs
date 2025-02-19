@@ -67,6 +67,10 @@ pub enum TargetKind {
     /// Compiles as a library which can be later linked to other targets.
     #[clap(name = "lib")]
     Library,
+
+    /// Compiles as LLVM IR.
+    #[clap(name = "llvm")]
+    LLvmIR,
 }
 
 /// The arguments to the program.
@@ -569,6 +573,7 @@ fn emit_as_exe(
     target_id: TargetID,
     output_path: &Path,
     opt_level: OptimizationLevel,
+    kind: TargetKind,
 ) -> bool {
     let instant = Instant::now();
     let progress = ProgressBar::new(0);
@@ -646,11 +651,16 @@ fn emit_as_exe(
                 )
                 .unwrap();
 
-            let result = target_machine.write_to_file(
-                &module,
-                inkwell::targets::FileType::Object,
-                output_path,
-            );
+            let result = match kind {
+                TargetKind::Executable => target_machine.write_to_file(
+                    &module,
+                    inkwell::targets::FileType::Object,
+                    output_path,
+                ),
+                TargetKind::LLvmIR => module.print_to_file(output_path),
+
+                TargetKind::Library => unreachable!(),
+            };
 
             if let Err(error) = result {
                 progress.finish_and_clear();
@@ -728,9 +738,13 @@ pub fn run(argument: Arguments) -> ExitCode {
     }
 
     let result = match argument.kind {
-        TargetKind::Executable => {
-            emit_as_exe(&table, target_id, &output_path, argument.opt_level)
-        }
+        TargetKind::Executable | TargetKind::LLvmIR => emit_as_exe(
+            &table,
+            target_id,
+            &output_path,
+            argument.opt_level,
+            argument.kind,
+        ),
         TargetKind::Library => {
             emit_as_library(&table, target_id, &reflector, &output_path)
         }

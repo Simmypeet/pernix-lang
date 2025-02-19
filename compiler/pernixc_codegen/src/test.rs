@@ -1,34 +1,42 @@
-use inkwell::{
-    llvm_sys::core::{LLVMBuildAlloca, LLVMBuildStore, LLVMGetUndef},
-    types::AsTypeRef,
+use inkwell::targets::{
+    InitializationConfig, RelocMode, Target, TargetMachine,
+    TargetMachineOptions,
 };
 
 #[test]
 fn test_struct() {
+    inkwell::targets::Target::initialize_native(
+        &InitializationConfig::default(),
+    )
+    .unwrap();
+
+    let this_tripple = TargetMachine::get_default_triple();
+    let target = Target::from_triple(&this_tripple).unwrap();
+    let target_machine = target
+        .create_target_machine_from_options(
+            &this_tripple,
+            TargetMachineOptions::default().set_reloc_mode(RelocMode::PIC),
+        )
+        .unwrap();
+    let target_data = target_machine.get_target_data();
+
     let context = inkwell::context::Context::create();
-    let module = context.create_module("test");
 
-    let function = context.void_type().fn_type(&[], false);
-    let func_val = module.add_function("test", function, None);
+    let first = context.i8_type();
+    let second = context.i32_type();
+    let third = context.i64_type();
+    let fourth = context.f128_type();
 
-    let builder = context.create_builder();
-    let entry = context.append_basic_block(func_val, "entry");
+    let struct_ty = context.struct_type(
+        &[first.into(), second.into(), third.into(), fourth.into()],
+        false,
+    );
 
-    builder.position_at_end(entry);
-
-    unsafe {
-        let alloca = LLVMBuildAlloca(
-            builder.as_mut_ptr(),
-            context.void_type().as_type_ref(),
-            c"test".as_ptr().cast(),
-        );
-
-        let undef = LLVMGetUndef(context.void_type().as_type_ref());
-
-        LLVMBuildStore(builder.as_mut_ptr(), undef, alloca);
-    }
-
-    builder.build_return(None).unwrap();
-    module.verify().unwrap();
-    module.print_to_stderr();
+    println!("{}", target_data.get_abi_size(&struct_ty));
+    println!("{}", target_data.get_abi_alignment(&struct_ty));
+    println!(
+        "{}",
+        target_data.get_abi_size(&context.custom_width_int_type(10))
+    );
+    println!("{}", target_data.get_abi_alignment(&context.bool_type()));
 }

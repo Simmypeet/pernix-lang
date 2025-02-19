@@ -217,15 +217,15 @@ impl<'ctx> Context<'_, 'ctx> {
                 &llvm_parameter_types
                     .iter()
                     .copied()
-                    .map(std::convert::Into::into)
+                    .map(Into::into)
                     .collect::<Vec<_>>(),
                 var_args,
             ),
-            Err(Zst(_)) => self.context().void_type().fn_type(
+            Err(Zst) => self.context().void_type().fn_type(
                 &llvm_parameter_types
                     .iter()
                     .copied()
-                    .map(std::convert::Into::into)
+                    .map(Into::into)
                     .collect::<Vec<_>>(),
                 var_args,
             ),
@@ -570,5 +570,18 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             self.context
                 .monomorphize_term(ty.unwrap().result, self.instantiation),
         )
+    }
+
+    fn type_of_register_pnx(
+        &mut self,
+        register_id: ID<Register<Model>>,
+    ) -> Type<Model> {
+        let ty = self.function_ir.values.type_of_register(
+            register_id,
+            self.callable_id,
+            &self.environment,
+        );
+
+        self.context.monomorphize_term(ty.unwrap().result, self.instantiation)
     }
 }

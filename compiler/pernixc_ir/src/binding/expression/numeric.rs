@@ -10,7 +10,7 @@ use crate::{
         diagnostic::{
             FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
         },
-        Binder, Error, BindingError,
+        Binder, BindingError, Error,
     },
     model::Constraint,
     value::{
@@ -42,9 +42,9 @@ impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {
                 "us" => r#type::Primitive::Usize,
                 "is" => r#type::Primitive::Isize,
                 _ => {
-                    handler.receive(Box::new(
-                        InvalidNumericSuffix { suffix_span: suffix.span() },
-                    ));
+                    handler.receive(Box::new(InvalidNumericSuffix {
+                        suffix_span: suffix.span(),
+                    }));
 
                     return Err(Error::Binding(BindingError(
                         syntax_tree.span(),

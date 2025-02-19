@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use inkwell::{values::BasicValueEnum, IntPredicate};
+use inkwell::{values::BasicValueEnum, AddressSpace, IntPredicate};
 use pernixc_arena::ID;
 use pernixc_component::fields::Fields;
 use pernixc_ir::{
@@ -14,7 +14,7 @@ use pernixc_ir::{
     },
 };
 use pernixc_table::{
-    component::{Member, Name, Parent, SymbolKind},
+    component::{Member, Name, Parent, SymbolKind, VariantDeclarationOrder},
     GlobalID,
 };
 use pernixc_term::{
@@ -30,7 +30,7 @@ use pernixc_term::{
 };
 
 use super::{Builder, Call, Error, LlvmValue};
-use crate::{into_basic, Model};
+use crate::{into_basic, r#type::LlvmEnumSignature, Model};
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     fn build_store(
@@ -150,7 +150,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     args.push(val.into());
                 }
 
-                self.inkwell_builder
+                let function_call = self
+                    .inkwell_builder
                     .build_call(
                         llvm_function.llvm_function_value,
                         &args,
@@ -161,7 +162,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .left()
                     .map_or(Ok(LlvmValue::Zst), |value| {
                         Ok(LlvmValue::Basic(value))
-                    })
+                    });
+
+                function_call
             }
             SymbolKind::Function
             | SymbolKind::AdtImplementationFunction
@@ -962,6 +965,129 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         ))
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn handle_variant(
+        &mut self,
+        variant: &register::Variant<Model>,
+        reg_id: ID<Register<Model>>,
+    ) -> Result<LlvmValue<'ctx>, Error> {
+        let value = variant
+            .associated_value
+            .as_ref()
+            .map(|variant| self.get_value(variant))
+            .transpose()?;
+
+        let ty = self.type_of_register_pnx(reg_id).into_symbol().unwrap();
+        let llvm_enum_sig = self.context.get_enum_type(ty);
+
+        match &*llvm_enum_sig {
+            LlvmEnumSignature::Zst => Ok(LlvmValue::Zst),
+            LlvmEnumSignature::NullablePointer(nullable_pointer) => {
+                if nullable_pointer.null_variant_index as usize
+                    == self
+                        .context
+                        .table()
+                        .get::<VariantDeclarationOrder>(variant.variant_id)
+                        .order
+                {
+                    Ok(LlvmValue::Basic(
+                        self.context
+                            .context()
+                            .ptr_type(AddressSpace::default())
+                            .const_null()
+                            .into(),
+                    ))
+                } else {
+                    Ok(LlvmValue::Basic(
+                        value
+                            .expect("should have associated value")
+                            .into_basic()
+                            .expect("pointer is not zst"),
+                    ))
+                }
+            }
+            LlvmEnumSignature::Transparent(_) => Ok(value.unwrap()),
+            LlvmEnumSignature::Numeric(int_type) => Ok(LlvmValue::Basic(
+                int_type
+                    .const_int(
+                        self.context
+                            .table()
+                            .get::<VariantDeclarationOrder>(variant.variant_id)
+                            .order
+                            .try_into()
+                            .unwrap(),
+                        false,
+                    )
+                    .into(),
+            )),
+            LlvmEnumSignature::TaggedUnion(tagged_union) => {
+                // create the alloca as the given enum repr
+                let alloca = self
+                    .inkwell_builder
+                    .build_alloca(
+                        tagged_union.llvm_struct_type,
+                        &format!("tmp_variant_{reg_id:?}"),
+                    )
+                    .unwrap();
+
+                let variant_repr =
+                    tagged_union.llvm_variant_types[&variant.variant_id];
+
+                let variant_index = self
+                    .context
+                    .table()
+                    .get::<VariantDeclarationOrder>(variant.variant_id)
+                    .order;
+
+                let tag_pointer = self
+                    .inkwell_builder
+                    .build_struct_gep(
+                        variant_repr,
+                        alloca,
+                        0,
+                        &format!("tag_{reg_id:?}_gep"),
+                    )
+                    .unwrap();
+
+                self.inkwell_builder
+                    .build_store(
+                        tag_pointer,
+                        tagged_union.llvm_tag_type.const_int(
+                            variant_index.try_into().unwrap(),
+                            false,
+                        ),
+                    )
+                    .unwrap();
+
+                if let Some(LlvmValue::Basic(value)) = value {
+                    let payload_pointer = self
+                        .inkwell_builder
+                        .build_struct_gep(
+                            variant_repr,
+                            alloca,
+                            1,
+                            &format!("payload_{reg_id:?}_gep"),
+                        )
+                        .unwrap();
+
+                    self.inkwell_builder
+                        .build_store(payload_pointer, value)
+                        .unwrap();
+                }
+
+                Ok(LlvmValue::Basic(
+                    self.inkwell_builder
+                        .build_load(
+                            tagged_union.llvm_struct_type,
+                            alloca,
+                            &format!("load_tmp_variant_{reg_id:?}_lit"),
+                        )
+                        .unwrap(),
+                ))
+            }
+        }
+    }
+
     fn get_register_assignment_value(
         &mut self,
         register_assignment: &Assignment<Model>,
@@ -983,7 +1109,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 self.handle_struct_lit(struct_lit, reg_id)
             }
             Assignment::Variant(variant) => {
-                todo!()
+                self.handle_variant(variant, reg_id)
             }
             Assignment::FunctionCall(function_call) => {
                 self.handle_function_call(function_call, reg_id)
