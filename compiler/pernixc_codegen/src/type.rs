@@ -18,8 +18,8 @@ use pernixc_component::{
 };
 use pernixc_ir::model::Erased;
 use pernixc_table::{
-    component::{Member, SymbolKind, VariantDeclarationOrder},
-    GlobalID,
+    component::{Member, Name, SymbolKind, VariantDeclarationOrder},
+    DisplayObject, GlobalID,
 };
 use pernixc_term::{
     constant::Constant,
@@ -344,10 +344,17 @@ impl<'ctx> Context<'_, 'ctx> {
         let ty = if llvm_field_types.is_empty() {
             None
         } else {
+            let qualified_name =
+                DisplayObject { display: &symbol, table: self.table() }
+                    .to_string();
+
+            let llvm_struct_type =
+                self.context().opaque_struct_type(&qualified_name);
+
+            assert!(llvm_struct_type.set_body(&llvm_field_types, false));
+
             Some(Rc::new(LlvmStructSignature {
-                llvm_struct_type: self
-                    .context()
-                    .struct_type(&llvm_field_types, false),
+                llvm_struct_type,
                 llvm_field_types,
                 llvm_field_indices_by_field_id,
             }))
@@ -388,8 +395,17 @@ impl<'ctx> Context<'_, 'ctx> {
         let ty = if elements.is_empty() {
             None
         } else {
+            let qualified_name =
+                DisplayObject { display: &tuple, table: self.table() }
+                    .to_string();
+
+            let llvm_tuple_type =
+                self.context().opaque_struct_type(&qualified_name);
+
+            assert!(llvm_tuple_type.set_body(&elements, false));
+
             Some(Rc::new(LlvmTupleSignature {
-                llvm_tuple_type: self.context().struct_type(&elements, false),
+                llvm_tuple_type,
                 llvm_element_types: elements,
                 llvm_field_indices_by_tuple_idnex: llvm_indices_by_tuple_index,
             }))
@@ -534,6 +550,10 @@ impl<'ctx> Context<'_, 'ctx> {
         }
         // normal tagged union
         else {
+            let enum_qualified_name =
+                DisplayObject { display: &symbol, table: self.table() }
+                    .to_string();
+
             let tag_bit_count = get_bit_count(llvm_variant_types.len());
             let tag_ty = self
                 .context()
@@ -543,10 +563,19 @@ impl<'ctx> Context<'_, 'ctx> {
             for (variant_id, variant) in
                 variants.iter().copied().zip(llvm_variant_types)
             {
-                let ty = if let Some((llvm_ty, _)) = variant {
-                    self.context().struct_type(&[tag_ty.into(), llvm_ty], false)
+                let variant_qualified_name = format!(
+                    "{}::{}",
+                    enum_qualified_name,
+                    self.table().get::<Name>(variant_id).0
+                );
+
+                let ty =
+                    self.context().opaque_struct_type(&variant_qualified_name);
+
+                if let Some((llvm_ty, _)) = variant {
+                    assert!(ty.set_body(&[tag_ty.into(), llvm_ty], false));
                 } else {
-                    self.context().struct_type(&[tag_ty.into()], false)
+                    assert!(ty.set_body(&[tag_ty.into()], false));
                 };
 
                 llvm_variant_with_tag_types.insert(variant_id, ty);
@@ -588,8 +617,10 @@ impl<'ctx> Context<'_, 'ctx> {
                 self.target_data().get_abi_size(&max_size_ty)
                     - self.target_data().get_abi_size(&max_abi_aligned_ty);
 
-            let repr = if extra_bytes_needed == 0 {
-                self.context().struct_type(&[max_abi_aligned_ty], false)
+            let repr = self.context().opaque_struct_type(&enum_qualified_name);
+
+            if extra_bytes_needed == 0 {
+                assert!(repr.set_body(&[max_abi_aligned_ty], false));
             } else {
                 // pedantic check
                 assert_eq!(
@@ -602,7 +633,7 @@ impl<'ctx> Context<'_, 'ctx> {
                     1
                 );
 
-                self.context().struct_type(
+                assert!(repr.set_body(
                     &[
                         max_abi_aligned_ty,
                         self.context()
@@ -611,7 +642,7 @@ impl<'ctx> Context<'_, 'ctx> {
                             .into(),
                     ],
                     false,
-                )
+                ));
             };
 
             // make sure it can accommodate the largest variant. the size might
