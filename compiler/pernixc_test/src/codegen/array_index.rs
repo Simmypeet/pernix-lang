@@ -27,6 +27,6 @@ public function main() {
 fn array_index() {
     let output = compile_file(SOURCE);
 
-    assert_eq!(output.status.code(), Some(0));
+    assert!(output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "15");
 }

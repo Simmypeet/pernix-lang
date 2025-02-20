@@ -81,7 +81,7 @@ fn compile_file_with(
     assert_eq!(
         pernixc_driver::run(Arguments {
             file: source_file,
-            opt_level: OptimizationLevel::O0,
+            opt_level: OptimizationLevel::O3,
             target_name: Some("test".to_string()),
             kind: TargetKind::Executable,
             library_paths: Vec::new(),

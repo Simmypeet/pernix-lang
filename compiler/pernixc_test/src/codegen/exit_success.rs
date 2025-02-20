@@ -3,9 +3,7 @@
 use crate::compile_file;
 
 const SOURCE: &str = r"
-public function main(): int32 {
-    return 0;
-}
+public function main() {}
 ";
 
 #[test]

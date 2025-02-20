@@ -34,7 +34,7 @@ public function fibonacci(n: int32): int32 {
 }
 
 
-public function main(): int32 {
+public function main() {
     printf(&"Enter the number: \0"->[0]);
 
     let mutable number = 0;
@@ -42,9 +42,6 @@ public function main(): int32 {
 
     let result = fibonacci(number);
     printf(&"fibonacci(%d) = %d\n\0"->[0], number, result);
-
-    
-    return 0;
 }
 "#;
 

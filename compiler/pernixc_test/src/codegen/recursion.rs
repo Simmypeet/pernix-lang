@@ -1,8 +1,13 @@
 //! Target on function call, branching, and recursion
 
-use crate::compile_file;
+use crate::compile_file_with;
 
-const SOURCE: &str = r"
+const SOURCE: &str = r#"
+extern "C" {
+    public function printf(format: &uint8, ...): int32;
+    public function scanf(format: &uint8, ...): int32;
+}
+
 public function fib(n: int32): int32 {
     if (n <= 1) { 
         return n;
@@ -11,14 +16,26 @@ public function fib(n: int32): int32 {
     return fib(n - 1) + fib(n - 2);
 }
 
-public function main(): int32 {
-    return fib(6);
+public function main() {
+    let mutable input: int32 = 0;
+
+    scanf(&"%d\0"->[0], &mutable input);
+
+    let result = fib(input);
+
+    printf(&"fib(%d) = %d\0"->[0], input, result);
 }
-";
+"#;
 
 #[test]
 fn recursion() {
-    let output = compile_file(SOURCE);
+    let output = compile_file_with(SOURCE, |x| {
+        x.write_stdin("6\n");
+    });
 
-    assert_eq!(output.status.code(), Some(8));
+    assert!(output.status.success());
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().as_str(),
+        "fib(6) = 8"
+    );
 }

@@ -1,8 +1,13 @@
 //! Target on the Zero Sized Type (ZST) optimization
 
-use crate::compile_file;
+use crate::compile_file_with;
 
-const SOURCE: &str = r"
+const SOURCE: &str = r#"
+extern "C" {
+    public function printf(format: &uint8, ...): int32; 
+    public function scanf(format: &uint8, ...): int32;
+}
+
 public struct Zst {}
 
 public function annoyingSum(
@@ -15,14 +20,25 @@ public function annoyingSum(
     return a + b + c;
 }
 
-public function main(): int32 {
-    return annoyingSum(1, (), 2, Zst {}, 3);
+public function main() {
+    let mutable a = 0i32;
+    let mutable b = 0i32;
+    let mutable c = 0i32;
+
+    scanf(&"%d %d %d\0"->[0], &mutable a, &mutable b, &mutable c);
+
+    let sum = annoyingSum(a, (), b, Zst{}, c);
+
+    printf(&"%d\0"->[0], sum);
 }
-";
+"#;
 
 #[test]
 fn zst_optimization() {
-    let output = compile_file(SOURCE);
+    let output = compile_file_with(SOURCE, |output| {
+        output.write_stdin("1 2 3\n");
+    });
 
-    assert_eq!(output.status.code(), Some(6));
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "6");
 }

@@ -1,6 +1,11 @@
-use crate::compile_file;
+use crate::compile_file_with;
 
-const TUPLE_PACK: &str = r"
+const SOURCE: &str = r#"
+extern "C" {
+    public function printf(format: &uint8, ...): int32;
+    public function scanf(format: &uint8, ...): int32;
+}
+
 public trait Add[T] {
     public function add(a: T, b: T): T;
 }
@@ -44,15 +49,35 @@ where
     }
 }
 
-public function main(): int32 {
-    let myTuple = (1i32, 2i32, 3i32, 4i32, 5i32, 6i32);
-    return myTuple.sum();
+public function main() {
+    let mutable nums = (
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+    );
+
+    scanf(&"%d %d %d %d %d %d\0"->[0], 
+        &mutable nums.0,
+        &mutable nums.1,
+        &mutable nums.2,
+        &mutable nums.3,
+        &mutable nums.4,
+        &mutable nums.5,
+    );
+
+    printf(&"%d\0"->[0], nums.sum());
 }
-";
+"#;
 
 #[test]
 fn tuple_pack() {
-    let output = compile_file(TUPLE_PACK);
+    let output = compile_file_with(SOURCE, |x| {
+        x.write_stdin("1 2 3 4 5 6\n");
+    });
 
-    assert_eq!(output.status.code(), Some(21));
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap().as_str(), "21");
 }

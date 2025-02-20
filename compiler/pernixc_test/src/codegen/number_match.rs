@@ -6,7 +6,7 @@ extern "C" {
     public function scanf(format: &uint8, ...): int32;
 }
 
-public function main(): int32 {
+public function main() {
     let mutable input = 0i32;
     scanf(&"%d\0"->[0], &input);
 
@@ -18,8 +18,6 @@ public function main(): int32 {
         -1: printf(&"this is negative one\0"->[0]),
         a: printf(&"%d is something else\0"->[0], a),
     }
-
-    return 0;
 }
 "#;
 

@@ -1,20 +1,35 @@
 //! Target on the tuple literal and tuple inedxing
 
-use crate::compile_file;
+use crate::compile_file_with;
 
-const SOURCE: &str = r"
+const SOURCE: &str = r#"
+extern "C" {
+    public function printf(format: &uint8, ...): int32;
+    public function scanf(format: &uint8, ...): int32;
+}
+
 public struct Zst {}
 
-public function main(): int32 {
-    let test = (1, (), 2, Zst{}, 3, (), 4);
+public function main() {
+    let mutable test = (0i32, (), 0i32, Zst{}, 0i32, (), 0i32);
 
-    return test.0 + test.2 + test.-2 + test.-0;
+    scanf(&"%d %d %d %d"->[0],
+        &mutable test.0,
+        &mutable test.2,
+        &mutable test.-2,
+        &mutable test.-0
+    );
+
+    printf(&"%d"->[0], test.0 + test.2 + test.-2 + test.-0);
 }
-";
+"#;
 
 #[test]
 fn struct_access() {
-    let output = compile_file(SOURCE);
+    let output = compile_file_with(SOURCE, |output| {
+        output.write_stdin("1 2 3 4\n");
+    });
 
-    assert_eq!(output.status.code(), Some(10));
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "10");
 }

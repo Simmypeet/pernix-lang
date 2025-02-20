@@ -9,10 +9,8 @@ extern "C" {
     public function printf(format: &uint8, ...): int32;
 }
 
-public function main(): int32 {
+public function main() {
     printf(&"Hello, World!\n\0"->[0]);
-
-    return 0;
 }
 "#;
 

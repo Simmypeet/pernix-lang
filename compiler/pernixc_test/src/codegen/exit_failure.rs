@@ -2,11 +2,15 @@
 
 use crate::compile_file;
 
-const SOURCE: &str = r"
-public function main(): int32 {
-    return 1;
+const SOURCE: &str = r#"
+extern "C" {
+    public function exit(code: int32);
 }
-";
+
+public function main() {
+    exit(1);
+}
+"#;
 
 #[test]
 fn exit_failure() {
