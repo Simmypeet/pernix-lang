@@ -412,8 +412,6 @@ fn constant_parameter_type_mismatched() {
         impl_output_generic_params.constant_parameter_ids_by_name()["Y"],
     );
 
-    dbg!(&errors, trait_w_const_id, impl_w_const_id);
-
     assert!(errors.iter().any(|x| x
         .as_any()
         .downcast_ref::<MismatchedImplementationConstantTypeParameter>()

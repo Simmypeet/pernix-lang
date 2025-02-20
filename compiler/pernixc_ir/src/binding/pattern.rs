@@ -1850,16 +1850,15 @@ impl Binder<'_> {
         mut address: Address<infer::Model>,
     ) -> (Type<infer::Model>, Address<infer::Model>) {
         loop {
-            dbg!(&ty, &address);
             match ty {
                 Type::Reference(reference) => {
                     // update the address, reference binding
                     // info, and binding ty
                     ty = *reference.pointee;
-                    address = dbg!(Address::Reference(address::Reference {
+                    address = Address::Reference(address::Reference {
                         qualifier: reference.qualifier,
                         reference_address: Box::new(address),
-                    }));
+                    });
                 }
 
                 _ => break (ty, address),
@@ -1884,8 +1883,6 @@ impl Binder<'_> {
             }
 
             Path::Variant(variant) => {
-                dbg!(refutable_pattern, &variant.enum_path, &address, &ty);
-
                 let (address, ty, reftuable_pattern) = self
                     .get_address_and_type_from_path(
                         refutable_pattern,

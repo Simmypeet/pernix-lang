@@ -46,8 +46,7 @@ impl Report<&Table> for InvalidMainFunctionSignature {
 
         Diagnostic {
             span,
-            message: "main function must have the signature `function(): \
-                      int32`"
+            message: "main function must have the signature `function()`"
                 .to_string(),
             severity: Severity::Error,
             help_message: None,

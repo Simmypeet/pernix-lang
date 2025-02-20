@@ -40,6 +40,24 @@ use pernixc_type_system::{
 
 use crate::{context::Context, zst::Zst, Model};
 
+/// An extension trait for [`BasicTypeEnum`] to check whether the type is an
+/// aggregate type.
+pub trait IsAggregateTypeExt {
+    /// Checks whether the type is an aggregate type.
+    fn is_aggregate(&self) -> bool;
+}
+
+impl IsAggregateTypeExt for BasicTypeEnum<'_> {
+    fn is_aggregate(&self) -> bool {
+        matches!(
+            self,
+            BasicTypeEnum::ArrayType(_)
+                | BasicTypeEnum::StructType(_)
+                | BasicTypeEnum::VectorType(_)
+        )
+    }
+}
+
 /// The signature of the struct in LLVM.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LlvmStructSignature<'ctx> {
@@ -688,7 +706,7 @@ impl<'ctx> Context<'_, 'ctx> {
     ) -> Result<BasicTypeEnum<'ctx>, Zst> {
         match ty {
             Type::Primitive(primitive) => match primitive {
-                Primitive::Int8 | Primitive::Uint8 => {
+                Primitive::Int8 | Primitive::Uint8 | Primitive::Bool => {
                     Ok(self.context().i8_type().into())
                 }
                 Primitive::Int16 | Primitive::Uint16 => {
@@ -703,7 +721,6 @@ impl<'ctx> Context<'_, 'ctx> {
 
                 Primitive::Float32 => Ok(self.context().f32_type().into()),
                 Primitive::Float64 => Ok(self.context().f64_type().into()),
-                Primitive::Bool => Ok(self.context().bool_type().into()),
 
                 Primitive::Isize | Primitive::Usize => Ok(self
                     .context()

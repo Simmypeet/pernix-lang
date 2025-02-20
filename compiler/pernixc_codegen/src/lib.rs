@@ -15,10 +15,8 @@ use pernixc_table::{
     GlobalID, Table,
 };
 use pernixc_term::{
-    generic_parameter::GenericParameters,
-    instantiation::Instantiation,
-    r#type::{Primitive, Type},
-    where_clause::WhereClause,
+    generic_parameter::GenericParameters, instantiation::Instantiation,
+    r#type::Type, where_clause::WhereClause, Tuple,
 };
 
 pub mod constant;
@@ -77,7 +75,7 @@ fn check_function_main(input: &Input<'_, '_>) -> bool {
         input.table.query::<FunctionSignature>(main_function_id).unwrap();
 
     if !func_sig.parameters.is_empty()
-        || func_sig.return_type != Type::Primitive(Primitive::Int32)
+        || func_sig.return_type != Type::Tuple(Tuple { elements: Vec::new() })
     {
         input.handler.receive(Box::new(InvalidMainFunctionSignature {
             main_function_id,
@@ -145,10 +143,29 @@ pub fn codegen<'ctx>(
         input.main_function_id,
     );
 
-    let _ = context.get_function(&Call {
+    let main = context.get_function(&Call {
         callable_id: input.main_function_id,
         instantiation: Instantiation::default(),
     });
+
+    // create a real function main that call `core::main`
+    let c_int_type = context.context().i32_type();
+    let main_type = c_int_type.fn_type(&[], false);
+
+    let main_function = context.module().add_function(
+        "main",
+        main_type,
+        Some(inkwell::module::Linkage::External),
+    );
+
+    let builder = context.context().create_builder();
+    let entry_block =
+        context.context().append_basic_block(main_function, "entry");
+
+    builder.position_at_end(entry_block);
+
+    builder.build_call(main.llvm_function_value, &[], "call_main").unwrap();
+    builder.build_return(Some(&c_int_type.const_zero())).unwrap();
 
     Ok(context.into_module())
 }

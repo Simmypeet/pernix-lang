@@ -596,14 +596,15 @@ fn emit_as_exe(
 
     let this_tripple = TargetMachine::get_default_triple();
     let target = LLVMTarget::from_triple(&this_tripple).unwrap();
+
     let target_machine = target
         .create_target_machine_from_options(
             &this_tripple,
             TargetMachineOptions::default().set_reloc_mode(RelocMode::PIC),
         )
         .unwrap();
-    let target_data = target_machine.get_target_data();
 
+    let target_data = target_machine.get_target_data();
     let inkwell_context = inkwell::context::Context::create();
 
     let result = if let Some(main_function_id) = table

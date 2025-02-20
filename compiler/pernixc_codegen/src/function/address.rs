@@ -1,22 +1,35 @@
 use inkwell::values::{AsValueRef, PointerValue};
 use pernixc_ir::address::Address;
 
-use super::{Builder, Error, LlvmValue};
-use crate::{into_basic, r#type::LlvmEnumSignature, Model};
+use super::{Builder, Error, LlvmAddress, LlvmValue};
+use crate::{r#type::LlvmEnumSignature, Model};
+
+/// Shortcircuits the function if the value is a `Zero-Sized type`.
+macro_rules! into_regular_address {
+    ($e:expr) => {
+        match $e {
+            Some(address) => address,
+            None => return Ok(None),
+        }
+    };
+}
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// Gets the LLVM address value of the given address.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(None)` meanings that the address is pointer to `ZST` (Zero Sized
+    /// Type) and further instructions shall be reduced to no-op.
     #[allow(clippy::too_many_lines)]
-    pub fn get_address_value(
+    pub fn get_address(
         &mut self,
         address: &Address<Model>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmAddress<'ctx>>, Error> {
         match address {
-            Address::Memory(memory) => Ok(self
-                .address_map
-                .get(memory)
-                .copied()
-                .map_or(LlvmValue::Zst, Into::into)),
+            Address::Memory(memory) => {
+                Ok(self.address_map.get(memory).copied())
+            }
 
             Address::Field(field) => {
                 let struct_ty = self
@@ -24,13 +37,14 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .into_symbol()
                     .unwrap();
 
-                let base_address =
-                    into_basic!(self.get_address_value(&field.struct_address)?);
+                let base_address = into_regular_address!(
+                    self.get_address(&field.struct_address)?
+                );
 
                 let struct_id = struct_ty.id;
                 let Ok(llvm_struct) = self.context.get_struct_type(struct_ty)
                 else {
-                    return Ok(LlvmValue::Zst);
+                    return Ok(None);
                 };
 
                 let Some(llvm_field_index) = llvm_struct
@@ -38,23 +52,24 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .get(&field.id)
                     .copied()
                 else {
-                    return Ok(LlvmValue::Zst);
+                    return Ok(None);
                 };
 
-                Ok(LlvmValue::Basic(
-                    self.inkwell_builder
-                        .build_struct_gep(
-                            llvm_struct.llvm_struct_type,
-                            base_address.into_pointer_value(),
-                            llvm_field_index.try_into().unwrap(),
-                            &format!(
-                                "struct_{:?}_field_{:?}_gep",
-                                struct_id, field.id
-                            ),
-                        )
-                        .unwrap()
-                        .into(),
-                ))
+                let field_ty = llvm_struct.llvm_field_types[llvm_field_index];
+                let gep = self
+                    .inkwell_builder
+                    .build_struct_gep(
+                        llvm_struct.llvm_struct_type,
+                        base_address.address,
+                        llvm_field_index.try_into().unwrap(),
+                        &format!(
+                            "struct_{:?}_field_{:?}_gep",
+                            struct_id, field.id
+                        ),
+                    )
+                    .unwrap();
+
+                Ok(Some(LlvmAddress::new(gep, field_ty)))
             }
 
             Address::Tuple(index) => {
@@ -63,13 +78,14 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .into_tuple()
                     .unwrap();
 
-                let base_address =
-                    into_basic!(self.get_address_value(&index.tuple_address)?);
+                let base_address = into_regular_address!(
+                    self.get_address(&index.tuple_address)?
+                );
 
                 let elements_len = tuple_ty.elements.len();
                 let Ok(llvm_tuple) = self.context.get_tuple_type(tuple_ty)
                 else {
-                    return Ok(LlvmValue::Zst);
+                    return Ok(None);
                 };
 
                 let tuple_index = match index.offset {
@@ -85,29 +101,40 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .get(&tuple_index)
                     .copied()
                 else {
-                    return Ok(LlvmValue::Zst);
+                    return Ok(None);
                 };
 
-                Ok(LlvmValue::Basic(
-                    self.inkwell_builder
-                        .build_struct_gep(
-                            llvm_tuple.llvm_tuple_type,
-                            base_address.into_pointer_value(),
-                            llvm_field_index.try_into().unwrap(),
-                            &format!("tuple_field_{tuple_index:?}_gep"),
-                        )
-                        .unwrap()
-                        .into(),
-                ))
+                let tuple_element_ty =
+                    llvm_tuple.llvm_element_types[llvm_field_index];
+
+                let gep = self
+                    .inkwell_builder
+                    .build_struct_gep(
+                        llvm_tuple.llvm_tuple_type,
+                        base_address.address,
+                        llvm_field_index.try_into().unwrap(),
+                        &format!(
+                            "tuple_{tuple_index:?}_field_{llvm_field_index:?\
+                             }_gep"
+                        ),
+                    )
+                    .unwrap();
+
+                Ok(Some(LlvmAddress::new(gep, tuple_element_ty)))
             }
 
             Address::Index(index) => {
                 // left to right, avoiding inconsistencies
-                let base_address =
-                    self.get_address_value(&index.array_address)?;
-                let index_value =
-                    into_basic!(self.get_value(&index.indexing_value)?);
-                let base_address = into_basic!(base_address);
+                let base_address = self.get_address(&index.array_address)?;
+                let index_value = match self.get_value(&index.indexing_value)? {
+                    Some(LlvmValue::Scalar(index)) => index,
+                    Some(LlvmValue::TmpAggegate(_)) => {
+                        unreachable!("indexing value is not an tmp aggregate")
+                    }
+
+                    None => return Ok(None),
+                };
+                let base_address = into_regular_address!(base_address);
 
                 let Ok(pointee_type) = self.context.get_type(
                     self.context.monomorphize_term(
@@ -123,32 +150,33 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         self.instantiation,
                     ),
                 ) else {
-                    return Ok(LlvmValue::Zst);
+                    return Ok(None);
                 };
 
-                unsafe {
-                    Ok(LlvmValue::Basic(
-                        self.inkwell_builder
-                            .build_gep(
-                                pointee_type,
-                                PointerValue::new(base_address.as_value_ref()),
-                                &[
-                                    self.context
-                                        .context()
-                                        .i64_type()
-                                        .const_zero(),
-                                    index_value.into_int_value(),
-                                ],
-                                "indexing",
-                            )
-                            .unwrap()
-                            .into(),
-                    ))
-                }
+                let element_type =
+                    pointee_type.into_array_type().get_element_type();
+
+                let gep = unsafe {
+                    self.inkwell_builder
+                        .build_gep(
+                            pointee_type,
+                            PointerValue::new(
+                                base_address.address.as_value_ref(),
+                            ),
+                            &[
+                                self.context.context().i64_type().const_zero(),
+                                index_value.into_int_value(),
+                            ],
+                            "indexing",
+                        )
+                        .unwrap()
+                };
+
+                Ok(Some(LlvmAddress::new(gep, element_type)))
             }
             Address::Variant(variant_address) => {
-                let address = self
-                    .get_address_value(dbg!(&variant_address.enum_address))?;
+                let address =
+                    self.get_address(&variant_address.enum_address)?;
                 let symbol = self
                     .type_of_address_pnx(&variant_address.enum_address)
                     .into_symbol()
@@ -157,9 +185,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 let enum_signature = self.context.get_enum_type(symbol);
 
                 match &*enum_signature {
-                    LlvmEnumSignature::Zst => Ok(LlvmValue::Zst),
+                    LlvmEnumSignature::Zst => Ok(None),
                     LlvmEnumSignature::NullablePointer(_) => {
-                        assert!(address.is_basic(), "pointer is not zst");
+                        assert!(address.is_some(), "pointer is not zst");
 
                         Ok(address)
                     }
@@ -173,46 +201,54 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         let layout = tagged_union.llvm_variant_types
                             [&variant_address.id];
 
-                        let payload_address = dbg!(self
+                        let payload_address = self
                             .inkwell_builder
                             .build_struct_gep(
                                 layout,
-                                address
-                                    .into_basic()
-                                    .unwrap()
-                                    .into_pointer_value(),
+                                address.unwrap().address,
                                 1,
                                 &format!(
                                     "variant_{:?}_payload_gep",
                                     variant_address.id
                                 ),
                             )
-                            .unwrap());
+                            .unwrap();
 
-                        Ok(LlvmValue::Basic(payload_address.into()))
+                        let payload_ty =
+                            layout.get_field_type_at_index(1).unwrap();
+
+                        Ok(Some(LlvmAddress::new(payload_address, payload_ty)))
                     }
                 }
             }
             Address::Reference(reference) => {
-                let pointee_address = into_basic!(
-                    self.get_address_value(&reference.reference_address)?
+                let pointee_address = into_regular_address!(
+                    self.get_address(&reference.reference_address)?
                 );
 
                 let Ok(pointee_type) =
                     self.type_of_address(&reference.reference_address)
                 else {
-                    return Ok(LlvmValue::Zst);
+                    return Ok(None);
                 };
 
-                Ok(LlvmValue::Basic(
-                    self.inkwell_builder
-                        .build_load(
-                            pointee_type,
-                            pointee_address.into_pointer_value(),
-                            "dereference",
-                        )
-                        .unwrap(),
-                ))
+                let Ok(loaded_type) = self.type_of_address(address) else {
+                    return Ok(None);
+                };
+
+                let load = self
+                    .inkwell_builder
+                    .build_load(
+                        pointee_type,
+                        pointee_address.address,
+                        "dereference",
+                    )
+                    .unwrap();
+
+                Ok(Some(LlvmAddress::new(
+                    load.into_pointer_value(),
+                    loaded_type,
+                )))
             }
         }
     }

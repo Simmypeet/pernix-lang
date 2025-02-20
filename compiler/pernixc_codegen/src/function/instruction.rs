@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Add};
 
 use inkwell::{
-    attributes::{Attribute, AttributeLoc},
-    types::BasicType,
-    values::BasicValueEnum,
+    attributes::AttributeLoc,
+    types::{BasicType, BasicTypeEnum},
+    values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue},
     AddressSpace, IntPredicate,
 };
 use pernixc_arena::ID;
@@ -15,8 +15,11 @@ use pernixc_ir::{
         TuplePack,
     },
     model::Erased,
-    value::register::{
-        self, Assignment, BinaryOperator, Register, RelationalOperator,
+    value::{
+        register::{
+            self, Assignment, BinaryOperator, Register, RelationalOperator,
+        },
+        Value,
     },
 };
 use pernixc_table::{
@@ -35,26 +38,68 @@ use pernixc_term::{
     r#type::{Primitive, Type},
 };
 
-use super::{Builder, Call, Error, LlvmValue};
-use crate::{into_basic, r#type::LlvmEnumSignature, Model};
+use super::{
+    Builder, Call, Error, LlvmAddress, LlvmFunctionSignature, LlvmValue,
+};
+use crate::{
+    function::ReturnType,
+    r#type::{IsAggregateTypeExt, LlvmEnumSignature},
+    Model,
+};
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
+    fn build_memcpy(
+        &mut self,
+        dst: PointerValue<'ctx>,
+        src: PointerValue<'ctx>,
+        ty: BasicTypeEnum<'ctx>,
+    ) {
+        let alignment = self.context.target_data().get_abi_alignment(&ty);
+        let size = self.context.target_data().get_abi_size(&ty);
+
+        let int_ptr_size = self
+            .context
+            .context()
+            .ptr_sized_int_type(self.context.target_data(), None);
+
+        self.inkwell_builder
+            .build_memcpy(
+                dst,
+                alignment,
+                src,
+                alignment,
+                int_ptr_size.const_int(size, false),
+            )
+            .unwrap();
+    }
+
     fn build_store(
         &mut self,
         store: &pernixc_ir::instruction::Store<Model>,
     ) -> Result<(), Error> {
-        let value = self.get_value(&store.value)?;
-        let address = self.get_address_value(&store.address)?;
+        let dest_value = self.get_value(&store.value)?;
+        let store_address = self.get_address(&store.address)?;
 
-        let (LlvmValue::Basic(value), LlvmValue::Basic(address)) =
-            (value, address)
+        let (Some(dest_value), Some(store_address)) =
+            (dest_value, store_address)
         else {
             return Ok(());
         };
 
-        self.inkwell_builder
-            .build_store(address.into_pointer_value(), value)
-            .unwrap();
+        match dest_value {
+            LlvmValue::Scalar(basic_value_enum) => {
+                self.inkwell_builder
+                    .build_store(store_address.address, basic_value_enum)
+                    .unwrap();
+            }
+            LlvmValue::TmpAggegate(dest_address) => {
+                self.build_memcpy(
+                    store_address.address,
+                    dest_address.address,
+                    dest_address.r#type,
+                );
+            }
+        };
 
         Ok(())
     }
@@ -63,28 +108,38 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         load: &register::Load<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
-        let ptr = into_basic!(self.get_address_value(&load.address)?);
-        let Ok(pointee_ty) = self.type_of_address(&load.address) else {
-            return Ok(LlvmValue::Zst);
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
+        let Some(ptr) = self.get_address(&load.address)? else {
+            return Ok(None);
         };
 
-        Ok(LlvmValue::Basic(
-            self.inkwell_builder
-                .build_load(
-                    pointee_ty,
-                    ptr.into_pointer_value(),
-                    &format!("load_{reg_id:?}"),
-                )
-                .unwrap(),
-        ))
+        if ptr.r#type.is_aggregate() {
+            let tmp = self.create_aggregate_temporary(ptr.r#type, reg_id);
+
+            self.build_memcpy(tmp.address, ptr.address, ptr.r#type);
+
+            Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+                tmp.address,
+                ptr.r#type,
+            ))))
+        } else {
+            Ok(Some(LlvmValue::Scalar(
+                self.inkwell_builder
+                    .build_load(
+                        ptr.r#type,
+                        ptr.address,
+                        &format!("load_{reg_id:?}"),
+                    )
+                    .unwrap(),
+            )))
+        }
     }
 
     fn handle_struct_lit(
         &mut self,
         struct_lit: &register::Struct<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let fields =
             self.context.table().query::<Fields>(struct_lit.struct_id).unwrap();
         let values = fields
@@ -96,41 +151,127 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .collect::<Result<Vec<_>, Error>>()?;
 
         let Ok(struct_ty) = self.type_of_register(reg_id) else {
-            return Ok(LlvmValue::Zst);
+            return Ok(None);
         };
 
-        let tmp = self
-            .inkwell_builder
-            .build_alloca(struct_ty, &format!("tmp_struct_{reg_id:?}"))
-            .unwrap();
+        let tmp = self.create_aggregate_temporary(struct_ty, reg_id);
 
-        for (index, (field_id, val)) in values
-            .into_iter()
-            .filter_map(|x| x.1.into_basic().ok().map(|y| (x.0, y)))
-            .enumerate()
+        for (index, (field_id, val)) in
+            values.into_iter().filter_map(|x| x.1.map(|y| (x.0, y))).enumerate()
         {
             let pointer_value = self
                 .inkwell_builder
                 .build_struct_gep(
                     struct_ty,
-                    tmp,
+                    tmp.address,
                     index.try_into().unwrap(),
                     &format!("init_struct_{reg_id:?}_field_{field_id:?}_gep"),
                 )
                 .unwrap();
 
-            self.inkwell_builder.build_store(pointer_value, val).unwrap();
+            match val {
+                LlvmValue::Scalar(basic_value_enum) => {
+                    self.inkwell_builder
+                        .build_store(pointer_value, basic_value_enum)
+                        .unwrap();
+                }
+                LlvmValue::TmpAggegate(llvm_address) => {
+                    self.build_memcpy(
+                        pointer_value,
+                        llvm_address.address,
+                        llvm_address.r#type,
+                    );
+                }
+            }
         }
 
-        Ok(LlvmValue::Basic(
-            self.inkwell_builder
-                .build_load(
-                    struct_ty,
-                    tmp,
-                    &format!("load_tmp_struct_{reg_id:?}_lit"),
-                )
-                .unwrap(),
-        ))
+        Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+            tmp.address,
+            struct_ty,
+        ))))
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn create_function_call(
+        &mut self,
+        llvm_function_signature: &LlvmFunctionSignature<'ctx>,
+        arguments: &[Value<Model>],
+        reg_id: ID<Register<Model>>,
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
+        let mut args = Vec::with_capacity(arguments.len());
+        for arg in arguments {
+            let Some(val) = self.get_value(arg)? else {
+                continue;
+            };
+
+            args.push(val);
+        }
+
+        let mut sret = match &llvm_function_signature.return_type {
+            ReturnType::Scalar(_) | ReturnType::Void => None,
+            ReturnType::Sret(basic_type_enum) => {
+                Some(self.create_aggregate_temporary(*basic_type_enum, reg_id))
+            }
+        };
+
+        let mut llvm_arguments: Vec<BasicMetadataValueEnum> =
+            Vec::with_capacity(args.len() + usize::from(sret.is_some()));
+
+        // add `sret` to the first argument
+        if let Some(sret) = sret.as_mut() {
+            llvm_arguments.push(sret.address.into());
+        }
+
+        llvm_arguments.extend(args.iter().copied().map(|x| match x {
+            LlvmValue::Scalar(basic_value_enum) => {
+                BasicMetadataValueEnum::from(basic_value_enum)
+            }
+            LlvmValue::TmpAggegate(llvm_address) => llvm_address.address.into(),
+        }));
+
+        let call = self
+            .inkwell_builder
+            .build_call(
+                llvm_function_signature.llvm_function_value,
+                &llvm_arguments,
+                &format!("call_{reg_id:?}"),
+            )
+            .unwrap();
+
+        // add sret attribute
+        if let ReturnType::Sret(sret_ty) = &llvm_function_signature.return_type
+        {
+            call.add_attribute(
+                AttributeLoc::Param(0),
+                self.context.create_type_attribute("sret", *sret_ty),
+            );
+        }
+
+        // add required byval attributes
+        for (mut index, arg) in args.iter().enumerate() {
+            index += usize::from(sret.is_some());
+
+            if let LlvmValue::TmpAggegate(temp_arg) = arg {
+                call.add_attribute(
+                    AttributeLoc::Param(index.try_into().unwrap()),
+                    self.context
+                        .create_type_attribute("byval", temp_arg.r#type),
+                );
+            }
+        }
+
+        match &llvm_function_signature.return_type {
+            ReturnType::Void => Ok(None),
+            ReturnType::Scalar(_) => Ok(Some(LlvmValue::Scalar(
+                call.try_as_basic_value().left().unwrap(),
+            ))),
+            ReturnType::Sret(basic_type_enum) => {
+                Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+                    sret.unwrap().address,
+                    *basic_type_enum,
+                ))))
+            }
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -138,7 +279,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         function_call: &register::FunctionCall<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let symbol_kind =
             *self.context.table().get::<SymbolKind>(function_call.callable_id);
 
@@ -147,43 +288,15 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 let llvm_function =
                     self.context.get_extern_function(function_call.callable_id);
 
-                let mut args = Vec::new();
-                for arg in &function_call.arguments {
-                    let LlvmValue::Basic(val) = self.get_value(arg)? else {
-                        continue;
-                    };
-
-                    args.push(val.into());
-                }
-
-                let function_call = self
-                    .inkwell_builder
-                    .build_call(
-                        llvm_function.llvm_function_value,
-                        &args,
-                        &format!("call_{reg_id:?}"),
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .left()
-                    .map_or(Ok(LlvmValue::Zst), |value| {
-                        Ok(LlvmValue::Basic(value))
-                    });
-
-                function_call
+                self.create_function_call(
+                    &llvm_function,
+                    &function_call.arguments,
+                    reg_id,
+                )
             }
             SymbolKind::Function
             | SymbolKind::AdtImplementationFunction
             | SymbolKind::TraitImplementationFunction => {
-                let mut args = Vec::new();
-                for arg in &function_call.arguments {
-                    let LlvmValue::Basic(val) = self.get_value(arg)? else {
-                        continue;
-                    };
-
-                    args.push(val.into());
-                }
-
                 let mut calling_inst = function_call.instantiation.clone();
 
                 calling_inst.lifetimes.values_mut().for_each(|term| {
@@ -203,18 +316,11 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     instantiation: calling_inst,
                 });
 
-                self.inkwell_builder
-                    .build_call(
-                        llvm_function.llvm_function_value,
-                        &args,
-                        &format!("call_{reg_id:?}"),
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .left()
-                    .map_or(Ok(LlvmValue::Zst), |value| {
-                        Ok(LlvmValue::Basic(value))
-                    })
+                self.create_function_call(
+                    &llvm_function,
+                    &function_call.arguments,
+                    reg_id,
+                )
             }
 
             SymbolKind::TraitFunction => {
@@ -371,32 +477,16 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                 self.context.normalize_instantiation(&mut new_inst);
 
-                let mut args = Vec::new();
-                for arg in &function_call.arguments {
-                    let LlvmValue::Basic(val) = self.get_value(arg)? else {
-                        continue;
-                    };
-
-                    args.push(val.into());
-                }
-
                 let llvm_function = self.context.get_function(&Call {
                     callable_id: trait_impl_fun_id,
                     instantiation: new_inst,
                 });
 
-                self.inkwell_builder
-                    .build_call(
-                        llvm_function.llvm_function_value,
-                        &args,
-                        &format!("call_{reg_id:?}"),
-                    )
-                    .unwrap()
-                    .try_as_basic_value()
-                    .left()
-                    .map_or(Ok(LlvmValue::Zst), |value| {
-                        Ok(LlvmValue::Basic(value))
-                    })
+                self.create_function_call(
+                    &llvm_function,
+                    &function_call.arguments,
+                    reg_id,
+                )
             }
 
             kind => panic!("unexpected symbol kind: {kind:?}"),
@@ -407,10 +497,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         array: &register::Array<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut values = Vec::new();
         for element in &array.elements {
-            let LlvmValue::Basic(value) = self.get_value(element)? else {
+            let Some(value) = self.get_value(element)? else {
                 continue;
             };
 
@@ -418,20 +508,17 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
 
         let Ok(array_ty) = self.type_of_register(reg_id) else {
-            return Ok(LlvmValue::Zst);
+            return Ok(None);
         };
 
-        let tmp = self
-            .inkwell_builder
-            .build_alloca(array_ty, &format!("tmp_array_{reg_id:?}"))
-            .unwrap();
+        let tmp = self.create_aggregate_temporary(array_ty, reg_id);
 
         for (index, element) in values.into_iter().enumerate() {
             let pointer_value = unsafe {
                 self.inkwell_builder
                     .build_gep(
                         array_ty,
-                        tmp,
+                        tmp.address,
                         &[
                             self.context.context().i64_type().const_zero(),
                             self.context
@@ -444,18 +531,23 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .unwrap()
             };
 
-            self.inkwell_builder.build_store(pointer_value, element).unwrap();
+            match element {
+                LlvmValue::Scalar(basic_value_enum) => {
+                    self.inkwell_builder
+                        .build_store(pointer_value, basic_value_enum)
+                        .unwrap();
+                }
+                LlvmValue::TmpAggegate(llvm_address) => {
+                    self.build_memcpy(
+                        pointer_value,
+                        llvm_address.address,
+                        llvm_address.r#type,
+                    );
+                }
+            }
         }
 
-        Ok(LlvmValue::Basic(
-            self.inkwell_builder
-                .build_load(
-                    array_ty,
-                    tmp,
-                    &format!("load_tmp_array_{reg_id:?}_lit",),
-                )
-                .unwrap(),
-        ))
+        Ok(Some(LlvmValue::TmpAggegate(tmp)))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -463,12 +555,14 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         binary: &register::Binary<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let lhs = self.get_value(&binary.lhs)?;
         let rhs = self.get_value(&binary.rhs)?;
 
-        let lhs = into_basic!(lhs);
-        let mut rhs = into_basic!(rhs);
+        // currently, we don't support operator overloadings, thefore, only
+        // primitive types are allowed
+        let lhs = lhs.unwrap().into_scalar().unwrap();
+        let mut rhs = rhs.unwrap().into_scalar().unwrap();
 
         match binary.operator {
             BinaryOperator::Arithmetic(arithmetic_operator) => {
@@ -645,7 +739,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .into(),
                 };
 
-                Ok(LlvmValue::Basic(value))
+                Ok(Some(LlvmValue::Scalar(value)))
             }
 
             BinaryOperator::Relational(relational_operator) => {
@@ -732,7 +826,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                             (Kind::Float, _) => unreachable!(),
                         };
 
-                        Ok(LlvmValue::Basic(
+                        Ok(Some(LlvmValue::Scalar(
                             self.inkwell_builder
                                 .build_int_compare(
                                     pred,
@@ -742,7 +836,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                                 )
                                 .unwrap()
                                 .into(),
-                        ))
+                        )))
                     }
                     Kind::Float => todo!(),
                 }
@@ -871,7 +965,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     }
                 };
 
-                Ok(LlvmValue::Basic(value.into()))
+                Ok(Some(LlvmValue::Scalar(value.into())))
             }
         }
     }
@@ -880,19 +974,21 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         phi: &register::Phi<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut incoming_values = Vec::new();
         for (block_id, value) in &phi.incoming_values {
             let block = self.basic_block_map[block_id];
             let value = self.get_value(value)?;
 
-            let value = into_basic!(value);
+            let Some(value) = value else {
+                continue;
+            };
 
             incoming_values.push((value, block));
         }
 
         let Ok(ty) = self.type_of_register(reg_id) else {
-            return Ok(LlvmValue::Zst);
+            return Ok(None);
         };
 
         let phi = self
@@ -901,41 +997,72 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .unwrap();
 
         for (value, block) in incoming_values {
+            let value = match value {
+                LlvmValue::Scalar(basic_value_enum) => basic_value_enum,
+                LlvmValue::TmpAggegate(llvm_address) => {
+                    llvm_address.address.into()
+                }
+            };
             phi.add_incoming(&[(&value, block)]);
         }
 
-        Ok(LlvmValue::Basic(phi.as_basic_value()))
+        if ty.is_aggregate() {
+            Ok(Some(LlvmValue::TmpAggegate(LlvmAddress::new(
+                phi.as_basic_value().into_pointer_value(),
+                ty,
+            ))))
+        } else {
+            Ok(Some(LlvmValue::Scalar(phi.as_basic_value())))
+        }
     }
 
     fn handle_tuple(
         &mut self,
         tuple: &register::Tuple<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut values = Vec::new();
         for element in &tuple.elements {
-            let LlvmValue::Basic(value) = self.get_value(&element.value)?
-            else {
+            let Some(value) = self.get_value(&element.value)? else {
                 continue;
             };
 
             if element.is_unpacked {
                 // tuple is struct avlue
-                let struct_value = value.into_struct_value();
-                let count = struct_value.get_type().count_fields();
+                let tuple_address = value.into_tmp_aggegate().unwrap();
+                let tuple_as_struct = tuple_address.r#type.into_struct_type();
+                let count = tuple_as_struct.count_fields();
 
                 for i in 0..count {
-                    values.push(
-                        self.inkwell_builder
-                            .build_extract_value(
-                                struct_value,
-                                i,
-                                &format!(
-                                    "extract_tuple_{reg_id:?}_index_{i:?}"
-                                ),
-                            )
-                            .unwrap(),
-                    );
+                    let ty =
+                        tuple_as_struct.get_field_type_at_index(i).unwrap();
+
+                    let address = self
+                        .inkwell_builder
+                        .build_struct_gep(
+                            tuple_as_struct,
+                            tuple_address.address,
+                            i,
+                            &format!("extract_tuple_{reg_id:?}_index_{i:?}"),
+                        )
+                        .unwrap();
+
+                    values.push(if ty.is_aggregate() {
+                        LlvmValue::TmpAggegate(LlvmAddress::new(address, ty))
+                    } else {
+                        LlvmValue::Scalar(
+                            self.inkwell_builder
+                                .build_load(
+                                    ty,
+                                    address,
+                                    &format!(
+                                        "load_extract_tuple_{reg_id:?\
+                                         }_index_{i:?}"
+                                    ),
+                                )
+                                .unwrap(),
+                        )
+                    });
                 }
             } else {
                 values.push(value);
@@ -943,32 +1070,39 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
 
         let Ok(ty) = self.type_of_register(reg_id) else {
-            return Ok(LlvmValue::Zst);
+            return Ok(None);
         };
 
-        let tmp = self
-            .inkwell_builder
-            .build_alloca(ty, &format!("tmp_tuple_{reg_id:?}"))
-            .unwrap();
+        let tmp = self.create_aggregate_temporary(ty, reg_id);
 
         for (index, element) in values.into_iter().enumerate() {
             let pointer_value = self
                 .inkwell_builder
                 .build_struct_gep(
                     ty,
-                    tmp,
+                    tmp.address,
                     index.try_into().unwrap(),
                     &format!("init_tuple_{reg_id:?}_index_{index:?}_gep"),
                 )
                 .unwrap();
-            self.inkwell_builder.build_store(pointer_value, element).unwrap();
+
+            match element {
+                LlvmValue::Scalar(basic_value_enum) => {
+                    self.inkwell_builder
+                        .build_store(pointer_value, basic_value_enum)
+                        .unwrap();
+                }
+                LlvmValue::TmpAggegate(llvm_address) => {
+                    self.build_memcpy(
+                        pointer_value,
+                        llvm_address.address,
+                        llvm_address.r#type,
+                    );
+                }
+            }
         }
 
-        Ok(LlvmValue::Basic(
-            self.inkwell_builder
-                .build_load(ty, tmp, &format!("load_tmp_tuple_{reg_id:?}_lit"))
-                .unwrap(),
-        ))
+        Ok(Some(LlvmValue::TmpAggegate(tmp)))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -976,7 +1110,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         variant: &register::Variant<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let value = variant
             .associated_value
             .as_ref()
@@ -987,7 +1121,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let llvm_enum_sig = self.context.get_enum_type(ty);
 
         match &*llvm_enum_sig {
-            LlvmEnumSignature::Zst => Ok(LlvmValue::Zst),
+            LlvmEnumSignature::Zst => Ok(None),
             LlvmEnumSignature::NullablePointer(nullable_pointer) => {
                 if nullable_pointer.null_variant_index as usize
                     == self
@@ -996,45 +1130,47 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .get::<VariantDeclarationOrder>(variant.variant_id)
                         .order
                 {
-                    Ok(LlvmValue::Basic(
+                    Ok(Some(LlvmValue::Scalar(
                         self.context
                             .context()
                             .ptr_type(AddressSpace::default())
                             .const_null()
                             .into(),
-                    ))
+                    )))
                 } else {
-                    Ok(LlvmValue::Basic(
+                    Ok(Some(LlvmValue::Scalar(
                         value
                             .expect("should have associated value")
-                            .into_basic()
-                            .expect("pointer is not zst"),
-                    ))
+                            .expect("pointer is not zst")
+                            .into_scalar()
+                            .unwrap(),
+                    )))
                 }
             }
             LlvmEnumSignature::Transparent(_) => Ok(value.unwrap()),
-            LlvmEnumSignature::Numeric(int_type) => Ok(LlvmValue::Basic(
-                int_type
-                    .const_int(
-                        self.context
-                            .table()
-                            .get::<VariantDeclarationOrder>(variant.variant_id)
-                            .order
-                            .try_into()
-                            .unwrap(),
-                        false,
-                    )
-                    .into(),
-            )),
+            LlvmEnumSignature::Numeric(int_type) => {
+                Ok(Some(LlvmValue::Scalar(
+                    int_type
+                        .const_int(
+                            self.context
+                                .table()
+                                .get::<VariantDeclarationOrder>(
+                                    variant.variant_id,
+                                )
+                                .order
+                                .try_into()
+                                .unwrap(),
+                            false,
+                        )
+                        .into(),
+                )))
+            }
             LlvmEnumSignature::TaggedUnion(tagged_union) => {
                 // create the alloca as the given enum repr
-                let alloca = self
-                    .inkwell_builder
-                    .build_alloca(
-                        tagged_union.llvm_struct_type,
-                        &format!("tmp_variant_{reg_id:?}"),
-                    )
-                    .unwrap();
+                let tmp = self.create_aggregate_temporary(
+                    tagged_union.llvm_struct_type.into(),
+                    reg_id,
+                );
 
                 let variant_repr =
                     tagged_union.llvm_variant_types[&variant.variant_id];
@@ -1049,7 +1185,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .inkwell_builder
                     .build_struct_gep(
                         variant_repr,
-                        alloca,
+                        tmp.address,
                         0,
                         &format!("tag_{reg_id:?}_gep"),
                     )
@@ -1065,31 +1201,45 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     )
                     .unwrap();
 
-                if let Some(LlvmValue::Basic(value)) = value {
-                    let payload_pointer = self
-                        .inkwell_builder
-                        .build_struct_gep(
-                            variant_repr,
-                            alloca,
-                            1,
-                            &format!("payload_{reg_id:?}_gep"),
-                        )
-                        .unwrap();
+                match value {
+                    Some(Some(LlvmValue::Scalar(value))) => {
+                        let payload_pointer = self
+                            .inkwell_builder
+                            .build_struct_gep(
+                                variant_repr,
+                                tmp.address,
+                                1,
+                                &format!("payload_{reg_id:?}_gep"),
+                            )
+                            .unwrap();
 
-                    self.inkwell_builder
-                        .build_store(payload_pointer, value)
-                        .unwrap();
+                        self.inkwell_builder
+                            .build_store(payload_pointer, value)
+                            .unwrap();
+                    }
+
+                    Some(Some(LlvmValue::TmpAggegate(value))) => {
+                        let payload_pointer = self
+                            .inkwell_builder
+                            .build_struct_gep(
+                                variant_repr,
+                                tmp.address,
+                                1,
+                                &format!("payload_{reg_id:?}_gep"),
+                            )
+                            .unwrap();
+
+                        self.build_memcpy(
+                            payload_pointer,
+                            value.address,
+                            value.r#type,
+                        );
+                    }
+
+                    Some(None) | None => {}
                 }
 
-                Ok(LlvmValue::Basic(
-                    self.inkwell_builder
-                        .build_load(
-                            tagged_union.llvm_struct_type,
-                            alloca,
-                            &format!("load_tmp_variant_{reg_id:?}_lit"),
-                        )
-                        .unwrap(),
-                ))
+                Ok(Some(LlvmValue::TmpAggegate(tmp)))
             }
         }
     }
@@ -1099,24 +1249,24 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         variant_number: &register::VariantNumber<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
-        let address = self.get_address_value(&variant_number.address)?;
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
+        let address = self.get_address(&variant_number.address)?;
         let enum_type = self
             .type_of_address_pnx(&variant_number.address)
             .into_symbol()
             .unwrap();
 
-        let llvm_enum_sig = dbg!(self.context.get_enum_type(enum_type));
+        let llvm_enum_sig = self.context.get_enum_type(enum_type);
 
         match &*llvm_enum_sig {
             LlvmEnumSignature::Transparent(_) | LlvmEnumSignature::Zst => {
-                Ok(LlvmValue::Basic(
+                Ok(Some(LlvmValue::Scalar(
                     self.context
                         .context()
                         .bool_type()
                         .const_int(0, false)
                         .into(),
-                ))
+                )))
             }
 
             LlvmEnumSignature::NullablePointer(nullable_pointer) => {
@@ -1126,7 +1276,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         self.context
                             .context()
                             .ptr_type(AddressSpace::default()),
-                        address.into_basic().unwrap().into_pointer_value(),
+                        address.unwrap().address,
                         &format!("load_{reg_id:?}_ptr"),
                     )
                     .unwrap();
@@ -1144,66 +1294,60 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     )
                     .unwrap();
 
-                let (mut then, mut els_) = (0, 1);
+                let (mut then, mut else_) = (
+                    self.context.context().i8_type().const_zero(),
+                    self.context.context().i8_type().const_all_ones(),
+                );
+
                 if nullable_pointer.null_variant_index != 0 {
-                    std::mem::swap(&mut then, &mut els_);
+                    std::mem::swap(&mut then, &mut else_);
                 }
 
-                Ok(LlvmValue::Basic(
+                Ok(Some(LlvmValue::Scalar(
                     self.inkwell_builder
                         .build_select(
                             is_null,
-                            self.context
-                                .context()
-                                .bool_type()
-                                .const_int(then, false),
-                            self.context
-                                .context()
-                                .bool_type()
-                                .const_int(els_, false),
+                            then,
+                            else_,
                             &format!("select_{reg_id:?}"),
                         )
                         .unwrap(),
-                ))
+                )))
             }
 
             LlvmEnumSignature::Numeric(int_type) => {
                 // directly load the variant number
-                Ok(LlvmValue::Basic(
+                Ok(Some(LlvmValue::Scalar(
                     self.inkwell_builder
                         .build_load(
                             *int_type,
-                            address.into_basic().unwrap().into_pointer_value(),
+                            address.unwrap().address,
                             &format!("load_{reg_id:?}_variant_number"),
                         )
                         .unwrap(),
-                ))
+                )))
             }
 
             LlvmEnumSignature::TaggedUnion(tagged_union) => {
-                let pointer_cast = self
+                let tag_gep = self
                     .inkwell_builder
-                    .build_pointer_cast(
-                        dbg!(address
-                            .into_basic()
-                            .unwrap()
-                            .into_pointer_value()),
-                        tagged_union
-                            .llvm_tag_type
-                            .ptr_type(AddressSpace::default()),
-                        &format!("cast_{reg_id:?}_tag"),
+                    .build_struct_gep(
+                        tagged_union.llvm_struct_type,
+                        address.unwrap().address,
+                        0,
+                        &format!("gep_{reg_id:?}_tag"),
                     )
                     .unwrap();
 
-                Ok(LlvmValue::Basic(
+                Ok(Some(LlvmValue::Scalar(
                     self.inkwell_builder
                         .build_load(
                             tagged_union.llvm_tag_type,
-                            pointer_cast,
+                            tag_gep,
                             &format!("load_{reg_id:?}_tag"),
                         )
                         .unwrap(),
-                ))
+                )))
             }
         }
     }
@@ -1212,18 +1356,18 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         register_assignment: &Assignment<Model>,
         reg_id: ID<Register<Model>>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         match register_assignment {
             Assignment::Tuple(tuple) => self.handle_tuple(tuple, reg_id),
             Assignment::Load(load) => self.handle_load(load, reg_id),
-            Assignment::Borrow(borrow) => {
-                match self.get_address_value(&borrow.address)? {
-                    LlvmValue::Basic(basic_value_enum) => {
-                        Ok(LlvmValue::Basic(basic_value_enum))
-                    }
-                    LlvmValue::Zst => todo!(),
-                }
-            }
+            Assignment::Borrow(borrow) => (self
+                .get_address(&borrow.address)?)
+            .map_or_else(
+                || todo!(),
+                |basic_value_enum| {
+                    Ok(Some(LlvmValue::Scalar(basic_value_enum.address.into())))
+                },
+            ),
             Assignment::Prefix(prefix) => todo!(),
             Assignment::Struct(struct_lit) => {
                 self.handle_struct_lit(struct_lit, reg_id)
@@ -1283,9 +1427,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             - tuple_pack.after_packed_element_count
             - tuple_pack.before_packed_element_count;
 
-        let (LlvmValue::Basic(source_address), LlvmValue::Basic(store_address)) = (
-            self.get_address_value(&tuple_pack.tuple_address)?,
-            self.get_address_value(&tuple_pack.store_address)?,
+        let (Some(source_address), Some(store_address)) = (
+            self.get_address(&tuple_pack.tuple_address)?,
+            self.get_address(&tuple_pack.store_address)?,
         ) else {
             return Ok(());
         };
@@ -1311,11 +1455,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 continue;
             };
 
+            let ty = source_tuple_sig.llvm_element_types[i];
             let source_pointer = self
                 .inkwell_builder
                 .build_struct_gep(
                     source_tuple_sig.llvm_tuple_type,
-                    source_address.into_pointer_value(),
+                    source_address.address,
                     source_index.try_into().unwrap(),
                     &format!("tuple_pack_source_{i:?}_gep"),
                 )
@@ -1334,11 +1479,13 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 .inkwell_builder
                 .build_struct_gep(
                     store_tuple_sig.llvm_tuple_type,
-                    store_address.into_pointer_value(),
+                    store_address.address,
                     store_index.try_into().unwrap(),
                     &format!("tuple_pack_store_{i:?}_gep"),
                 )
                 .unwrap();
+
+            self.build_memcpy(store_pointer, source_pointer, ty);
 
             self.inkwell_builder.build_store(store_pointer, load).unwrap();
         }
@@ -1419,13 +1566,31 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     }
                 };
 
-                match val {
-                    LlvmValue::Basic(basic_value_enum) => {
+                match &self.llvm_function_signature.return_type {
+                    ReturnType::Void => {
+                        self.inkwell_builder.build_return(None).unwrap();
+                    }
+                    ReturnType::Scalar(basic_type_enum) => {
                         self.inkwell_builder
-                            .build_return(Some(&basic_value_enum))
+                            .build_return(Some(
+                                &val.unwrap().into_scalar().unwrap(),
+                            ))
                             .unwrap();
                     }
-                    LlvmValue::Zst => {
+                    ReturnType::Sret(basic_type_enum) => {
+                        let aggregate =
+                            val.unwrap().into_tmp_aggegate().unwrap();
+
+                        self.build_memcpy(
+                            self.llvm_function_signature
+                                .llvm_function_value
+                                .get_first_param()
+                                .unwrap()
+                                .into_pointer_value(),
+                            aggregate.address,
+                            aggregate.r#type,
+                        );
+
                         self.inkwell_builder.build_return(None).unwrap();
                     }
                 }
@@ -1441,7 +1606,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
             Some(Terminator::Jump(Jump::Conditional(jump))) => {
                 let condition = match self.get_value(&jump.condition) {
-                    Ok(val) => val.into_basic().expect("boolean is not zst"),
+                    Ok(val) => {
+                        val.expect("boolean is not zst").into_scalar().unwrap()
+                    }
                     Err(Error::Unreachable) => {
                         self.inkwell_builder.build_unreachable().unwrap();
                         return;
@@ -1460,8 +1627,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Some(Terminator::Jump(Jump::Switch(select))) => {
                 let int_value = match self.get_value(&select.integer) {
                     Ok(val) => val
-                        .into_basic()
                         .expect("integer is not zst")
+                        .into_scalar()
+                        .unwrap()
                         .into_int_value(),
                     Err(Error::Unreachable) => {
                         self.inkwell_builder.build_unreachable().unwrap();

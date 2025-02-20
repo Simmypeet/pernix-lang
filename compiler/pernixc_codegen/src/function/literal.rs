@@ -98,31 +98,32 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     pub fn get_literal_value(
         &mut self,
         literal: &Literal<Model>,
-    ) -> Result<LlvmValue<'ctx>, Error> {
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         match literal {
-            Literal::String(string) => Ok(self.get_string(string).into()),
-            Literal::Character(character) => Ok(self
-                .get_integer_value(
+            Literal::String(string) => Ok(Some(self.get_string(string).into())),
+            Literal::Character(character) => Ok(Some(
+                self.get_integer_value(
                     character.character as u64,
                     *character.r#type.as_primitive().unwrap(),
                 )
-                .into()),
+                .into(),
+            )),
             Literal::Unreachable(_) => Err(Error::Unreachable),
             Literal::Numeric(numeric) => {
-                Ok(self.get_numeric_value(numeric).into())
+                Ok(Some(self.get_numeric_value(numeric).into()))
             }
             Literal::Boolean(boolean) => {
-                Ok(LlvmValue::Basic(if boolean.value {
-                    self.context.context().bool_type().const_all_ones().into()
+                Ok(Some(LlvmValue::Scalar(if boolean.value {
+                    self.context.context().i8_type().const_all_ones().into()
                 } else {
-                    self.context.context().bool_type().const_zero().into()
-                }))
+                    self.context.context().i8_type().const_zero().into()
+                })))
             }
             Literal::Error(error) => {
                 unreachable!("error literal found {error:?}")
             }
 
-            Literal::Unit(_) | Literal::Phantom(_) => Ok(LlvmValue::Zst),
+            Literal::Unit(_) | Literal::Phantom(_) => Ok(None),
         }
     }
 }

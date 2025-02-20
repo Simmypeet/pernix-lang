@@ -2,8 +2,12 @@
 
 use crate::compile_file;
 
-const SOURCE: &str = r"
-public function main(): int32 {
+const SOURCE: &str = r#"
+extern "C" {
+    public function printf(format: &uint8, ...): int32;
+}
+
+public function main() {
     let arr = [1, 2, 3, 4, 5];
     let count = 5;
 
@@ -15,13 +19,14 @@ public function main(): int32 {
         i = i + 1;
     }
 
-    return sum;
+    printf(&"%d\0"->[0], sum);
 }
-";
+"#;
 
 #[test]
 fn array_index() {
     let output = compile_file(SOURCE);
 
-    assert_eq!(output.status.code(), Some(15));
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "15");
 }

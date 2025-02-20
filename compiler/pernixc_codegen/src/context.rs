@@ -3,8 +3,7 @@
 
 use getset::{CopyGetters, Getters, MutGetters};
 use inkwell::{
-    intrinsics::Intrinsic, llvm_sys::transforms, module::Linkage,
-    targets::TargetData, values::FunctionValue,
+    intrinsics::Intrinsic, targets::TargetData, values::FunctionValue,
 };
 use pernixc_handler::Handler;
 use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
