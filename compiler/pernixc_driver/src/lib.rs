@@ -71,6 +71,10 @@ pub enum TargetKind {
     /// Compiles as LLVM IR.
     #[clap(name = "llvm")]
     LLvmIR,
+
+    /// Compiles to nothing and only performs semantic analysis.
+    #[clap(name = "none")]
+    None,
 }
 
 /// The arguments to the program.
@@ -660,7 +664,7 @@ fn emit_as_exe(
                 ),
                 TargetKind::LLvmIR => module.print_to_file(output_path),
 
-                TargetKind::Library => unreachable!(),
+                TargetKind::None | TargetKind::Library => unreachable!(),
             };
 
             if let Err(error) = result {
@@ -749,6 +753,7 @@ pub fn run(argument: Arguments) -> ExitCode {
         TargetKind::Library => {
             emit_as_library(&table, target_id, &reflector, &output_path)
         }
+        TargetKind::None => true,
     };
 
     if result {
