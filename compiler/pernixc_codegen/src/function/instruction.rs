@@ -1,8 +1,8 @@
-use std::{cmp::Ordering, ops::Add};
+use std::cmp::Ordering;
 
 use inkwell::{
     attributes::AttributeLoc,
-    types::{BasicType, BasicTypeEnum},
+    types::BasicTypeEnum,
     values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue},
     AddressSpace, IntPredicate,
 };
@@ -993,7 +993,17 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
         let phi = self
             .inkwell_builder
-            .build_phi(ty, &format!("phi_{reg_id:?}"))
+            .build_phi(
+                if ty.is_aggregate() {
+                    self.context
+                        .context()
+                        .ptr_type(AddressSpace::default())
+                        .into()
+                } else {
+                    ty
+                },
+                &format!("phi_{reg_id:?}"),
+            )
             .unwrap();
 
         for (value, block) in incoming_values {
@@ -1368,7 +1378,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Ok(Some(LlvmValue::Scalar(basic_value_enum.address.into())))
                 },
             ),
-            Assignment::Prefix(prefix) => todo!(),
+            Assignment::Prefix(_) => todo!(),
             Assignment::Struct(struct_lit) => {
                 self.handle_struct_lit(struct_lit, reg_id)
             }
@@ -1381,7 +1391,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::Binary(binary) => self.handle_binary(binary, reg_id),
             Assignment::Array(array) => self.handle_array(array, reg_id),
             Assignment::Phi(phi) => self.handle_phi(phi, reg_id),
-            Assignment::Cast(cast) => todo!(),
+            Assignment::Cast(_) => todo!(),
             Assignment::VariantNumber(variant_number) => {
                 self.handle_variant_number(variant_number, reg_id)
             }
@@ -1526,8 +1536,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 Instruction::TuplePack(tuple_pack) => {
                     self.build_tuple_pack(tuple_pack)
                 }
-                Instruction::DropUnpackTuple(drop_unpack_tuple) => todo!(),
-                Instruction::Drop(drop) => Ok(()),
+                Instruction::DropUnpackTuple(_) => todo!(),
+                Instruction::Drop(_) => todo!(),
 
                 Instruction::RegisterDiscard(_)
                 | Instruction::ScopePush(_)
@@ -1570,14 +1580,14 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     ReturnType::Void => {
                         self.inkwell_builder.build_return(None).unwrap();
                     }
-                    ReturnType::Scalar(basic_type_enum) => {
+                    ReturnType::Scalar(_) => {
                         self.inkwell_builder
                             .build_return(Some(
                                 &val.unwrap().into_scalar().unwrap(),
                             ))
                             .unwrap();
                     }
-                    ReturnType::Sret(basic_type_enum) => {
+                    ReturnType::Sret(_) => {
                         let aggregate =
                             val.unwrap().into_tmp_aggegate().unwrap();
 
