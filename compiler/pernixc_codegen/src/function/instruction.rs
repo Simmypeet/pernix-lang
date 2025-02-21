@@ -4,7 +4,7 @@ use inkwell::{
     attributes::AttributeLoc,
     types::BasicTypeEnum,
     values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue},
-    AddressSpace, IntPredicate,
+    AddressSpace, FloatPredicate, IntPredicate,
 };
 use pernixc_arena::ID;
 use pernixc_component::fields::Fields;
@@ -838,7 +838,34 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                                 .into(),
                         )))
                     }
-                    Kind::Float => todo!(),
+                    Kind::Float => {
+                        let float_pred = match relational_operator {
+                            RelationalOperator::LessThan => FloatPredicate::OLT,
+                            RelationalOperator::LessThanOrEqual => {
+                                FloatPredicate::OLE
+                            }
+                            RelationalOperator::GreaterThan => {
+                                FloatPredicate::OGT
+                            }
+                            RelationalOperator::GreaterThanOrEqual => {
+                                FloatPredicate::OGE
+                            }
+                            RelationalOperator::Equal => FloatPredicate::OEQ,
+                            RelationalOperator::NotEqual => FloatPredicate::ONE,
+                        };
+
+                        Ok(Some(LlvmValue::Scalar(
+                            self.inkwell_builder
+                                .build_float_compare(
+                                    float_pred,
+                                    lhs.into_float_value(),
+                                    rhs.into_float_value(),
+                                    &format!("cmp_{reg_id:?}"),
+                                )
+                                .unwrap()
+                                .into(),
+                        )))
+                    }
                 }
             }
 
