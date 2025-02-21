@@ -696,6 +696,35 @@ impl<'ctx> Context<'_, 'ctx> {
         ty
     }
 
+    /// Gets the LLVM type from the Pernix type.
+    pub fn get_primitive_type(
+        &mut self,
+        primitive_ty: Primitive,
+    ) -> BasicTypeEnum<'ctx> {
+        match primitive_ty {
+            Primitive::Int8 | Primitive::Uint8 | Primitive::Bool => {
+                self.context().i8_type().into()
+            }
+            Primitive::Int16 | Primitive::Uint16 => {
+                self.context().i16_type().into()
+            }
+            Primitive::Int32 | Primitive::Uint32 => {
+                self.context().i32_type().into()
+            }
+            Primitive::Int64 | Primitive::Uint64 => {
+                self.context().i64_type().into()
+            }
+
+            Primitive::Float32 => self.context().f32_type().into(),
+            Primitive::Float64 => self.context().f64_type().into(),
+
+            Primitive::Isize | Primitive::Usize => self
+                .context()
+                .ptr_sized_int_type(self.target_data(), None)
+                .into(),
+        }
+    }
+
     /// Retrieves the LLVM type from the Pernix type. The Pernix type must be
     /// fully monomorphized, meaning that there shouldn't be generic parameters,
     /// trait members, or non-erased lifetimes.
@@ -705,28 +734,9 @@ impl<'ctx> Context<'_, 'ctx> {
         ty: Type<Model>,
     ) -> Result<BasicTypeEnum<'ctx>, Zst> {
         match ty {
-            Type::Primitive(primitive) => match primitive {
-                Primitive::Int8 | Primitive::Uint8 | Primitive::Bool => {
-                    Ok(self.context().i8_type().into())
-                }
-                Primitive::Int16 | Primitive::Uint16 => {
-                    Ok(self.context().i16_type().into())
-                }
-                Primitive::Int32 | Primitive::Uint32 => {
-                    Ok(self.context().i32_type().into())
-                }
-                Primitive::Int64 | Primitive::Uint64 => {
-                    Ok(self.context().i64_type().into())
-                }
-
-                Primitive::Float32 => Ok(self.context().f32_type().into()),
-                Primitive::Float64 => Ok(self.context().f64_type().into()),
-
-                Primitive::Isize | Primitive::Usize => Ok(self
-                    .context()
-                    .ptr_sized_int_type(self.target_data(), None)
-                    .into()),
-            },
+            Type::Primitive(primitive) => {
+                Ok(self.get_primitive_type(primitive))
+            }
 
             Type::Error(error) => {
                 panic!("error type found {error:?}")

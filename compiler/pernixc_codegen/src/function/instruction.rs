@@ -1295,7 +1295,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         Ok(Some(LlvmValue::Scalar(value.into())))
     }
 
-    #[allow(clippy::too_many_lines)]
     fn handle_variant_number(
         &mut self,
         variant_number: &register::VariantNumber<Model>,
@@ -1403,6 +1402,215 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn handle_cast(
+        &mut self,
+        cast: &register::Cast<Model>,
+        reg_id: ID<Register<Model>>,
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
+        // NOTE: in the future, the pointer casting will be here.
+        #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+        enum PrimitiveKind {
+            Signed,
+            Unsigned,
+            Float,
+        }
+
+        let operand = self
+            .get_value(&cast.value)?
+            .expect("scalar is not zst")
+            .into_scalar()
+            .expect("cast only available on scalar values");
+
+        let operand_pnx_type =
+            self.type_of_value_pnx(&cast.value).into_primitive().unwrap();
+        let cast_to_pnx_type = cast.r#type.clone().into_primitive().unwrap();
+
+        let get_kind = |ty: Primitive| match ty {
+            Primitive::Isize
+            | Primitive::Int8
+            | Primitive::Int16
+            | Primitive::Int32
+            | Primitive::Int64 => PrimitiveKind::Signed,
+
+            Primitive::Bool
+            | Primitive::Usize
+            | Primitive::Uint8
+            | Primitive::Uint16
+            | Primitive::Uint32
+            | Primitive::Uint64 => PrimitiveKind::Unsigned,
+
+            Primitive::Float32 | Primitive::Float64 => PrimitiveKind::Float,
+        };
+
+        let cast_to_kind = get_kind(cast_to_pnx_type);
+        let operand_kind = get_kind(operand_pnx_type);
+
+        let operand_type = self.context.get_primitive_type(operand_pnx_type);
+        let cast_type = self.context.get_primitive_type(cast_to_pnx_type);
+
+        let float_bit_width = |ty| match ty {
+            Primitive::Float32 => 32,
+            Primitive::Float64 => 64,
+            _ => unreachable!(),
+        };
+
+        match (operand_kind, cast_to_kind) {
+            (
+                PrimitiveKind::Unsigned | PrimitiveKind::Signed,
+                PrimitiveKind::Unsigned | PrimitiveKind::Signed,
+            ) => {
+                let value_bit_width =
+                    operand_type.into_int_type().get_bit_width();
+                let cast_to_bit_width =
+                    cast_type.into_int_type().get_bit_width();
+
+                match value_bit_width.cmp(&cast_to_bit_width) {
+                    // sext or zext, smaller to bigger
+                    Ordering::Less => {
+                        let is_signed = operand_kind == PrimitiveKind::Signed;
+
+                        if is_signed {
+                            Ok(Some(LlvmValue::Scalar(
+                                self.inkwell_builder
+                                    .build_int_s_extend(
+                                        operand.into_int_value(),
+                                        cast_type.into_int_type(),
+                                        &format!("sext_{reg_id:?}"),
+                                    )
+                                    .unwrap()
+                                    .into(),
+                            )))
+                        } else {
+                            Ok(Some(LlvmValue::Scalar(
+                                self.inkwell_builder
+                                    .build_int_z_extend(
+                                        operand.into_int_value(),
+                                        cast_type.into_int_type(),
+                                        &format!("zext_{reg_id:?}"),
+                                    )
+                                    .unwrap()
+                                    .into(),
+                            )))
+                        }
+                    }
+
+                    // trunc, bigger to smaller
+                    Ordering::Greater => Ok(Some(LlvmValue::Scalar(
+                        self.inkwell_builder
+                            .build_int_truncate(
+                                operand.into_int_value(),
+                                cast_type.into_int_type(),
+                                &format!("trunc_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into(),
+                    ))),
+
+                    // no-op
+                    Ordering::Equal => Ok(Some(LlvmValue::Scalar(operand))),
+                }
+            }
+
+            // int to float
+            (
+                PrimitiveKind::Signed | PrimitiveKind::Unsigned,
+                PrimitiveKind::Float,
+            ) => {
+                let operand_is_signed = operand_kind == PrimitiveKind::Signed;
+
+                if operand_is_signed {
+                    Ok(Some(LlvmValue::Scalar(
+                        self.inkwell_builder
+                            .build_signed_int_to_float(
+                                operand.into_int_value(),
+                                cast_type.into_float_type(),
+                                &format!("sitofp_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into(),
+                    )))
+                } else {
+                    Ok(Some(LlvmValue::Scalar(
+                        self.inkwell_builder
+                            .build_unsigned_int_to_float(
+                                operand.into_int_value(),
+                                cast_type.into_float_type(),
+                                &format!("uitofp_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into(),
+                    )))
+                }
+            }
+
+            (
+                PrimitiveKind::Float,
+                PrimitiveKind::Signed | PrimitiveKind::Unsigned,
+            ) => {
+                let cast_to_is_signed = cast_to_kind == PrimitiveKind::Signed;
+
+                if cast_to_is_signed {
+                    Ok(Some(LlvmValue::Scalar(
+                        self.inkwell_builder
+                            .build_float_to_signed_int(
+                                operand.into_float_value(),
+                                cast_type.into_int_type(),
+                                &format!("fptosi_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into(),
+                    )))
+                } else {
+                    Ok(Some(LlvmValue::Scalar(
+                        self.inkwell_builder
+                            .build_float_to_unsigned_int(
+                                operand.into_float_value(),
+                                cast_type.into_int_type(),
+                                &format!("fptoui_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into(),
+                    )))
+                }
+            }
+
+            (PrimitiveKind::Float, PrimitiveKind::Float) => {
+                let value_bit_width = float_bit_width(operand_pnx_type);
+                let cast_to_bit_width = float_bit_width(cast_to_pnx_type);
+
+                match value_bit_width.cmp(&cast_to_bit_width) {
+                    // smaller to bigger
+                    Ordering::Less => Ok(Some(LlvmValue::Scalar(
+                        self.inkwell_builder
+                            .build_float_ext(
+                                operand.into_float_value(),
+                                cast_type.into_float_type(),
+                                &format!("fpext_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into(),
+                    ))),
+
+                    // bigger to smaller
+                    Ordering::Greater => Ok(Some(LlvmValue::Scalar(
+                        self.inkwell_builder
+                            .build_float_trunc(
+                                operand.into_float_value(),
+                                cast_type.into_float_type(),
+                                &format!("fptrunc_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into(),
+                    ))),
+
+                    // no-op instruction
+                    Ordering::Equal => Ok(Some(LlvmValue::Scalar(operand))),
+                }
+            }
+        }
+    }
+
     fn get_register_assignment_value(
         &mut self,
         register_assignment: &Assignment<Model>,
@@ -1432,7 +1640,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::Binary(binary) => self.handle_binary(binary, reg_id),
             Assignment::Array(array) => self.handle_array(array, reg_id),
             Assignment::Phi(phi) => self.handle_phi(phi, reg_id),
-            Assignment::Cast(_) => todo!(),
+            Assignment::Cast(cast) => self.handle_cast(cast, reg_id),
             Assignment::VariantNumber(variant_number) => {
                 self.handle_variant_number(variant_number, reg_id)
             }

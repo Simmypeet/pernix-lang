@@ -720,6 +720,16 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         self.context.monomorphize_term(ty.unwrap().result, self.instantiation)
     }
 
+    fn type_of_value_pnx(&mut self, value: &Value<Model>) -> Type<Model> {
+        let ty = self.function_ir.values.type_of_value(
+            value,
+            self.callable_id,
+            &self.environment,
+        );
+
+        self.context.monomorphize_term(ty.unwrap().result, self.instantiation)
+    }
+
     fn create_aggregate_temporary(
         &mut self,
         ty: BasicTypeEnum<'ctx>,
