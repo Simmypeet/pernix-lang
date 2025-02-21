@@ -11,6 +11,7 @@ use pernixc_driver::{Arguments, OptimizationLevel, TargetKind};
 
 mod array_index;
 mod arrow_access;
+mod cast;
 mod r#enum;
 mod exit_failure;
 mod exit_success;
