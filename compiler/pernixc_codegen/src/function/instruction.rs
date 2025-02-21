@@ -1255,6 +1255,47 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(clippy::too_many_lines)]
+    fn handle_prefix(
+        &mut self,
+        prefix: &register::Prefix<Model>,
+        reg_id: ID<Register<Model>>,
+    ) -> Result<Option<LlvmValue<'ctx>>, Error> {
+        let operand = self
+            .get_value(&prefix.operand)?
+            .expect("prefix operators operate on scalar values")
+            .into_scalar()
+            .unwrap();
+
+        let value = match prefix.operator {
+            register::PrefixOperator::Negate => self
+                .inkwell_builder
+                .build_int_neg(
+                    operand.into_int_value(),
+                    &format!("neg_{reg_id:?}"),
+                )
+                .unwrap(),
+
+            register::PrefixOperator::LogicalNot => {
+                let zero = self.context.context().i8_type().const_zero();
+                self.inkwell_builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        operand.into_int_value(),
+                        zero,
+                        &format!("not_{reg_id:?}"),
+                    )
+                    .unwrap()
+            }
+            register::PrefixOperator::BitwiseNot => self
+                .inkwell_builder
+                .build_not(operand.into_int_value(), &format!("not_{reg_id:?}"))
+                .unwrap(),
+        };
+
+        Ok(Some(LlvmValue::Scalar(value.into())))
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn handle_variant_number(
         &mut self,
         variant_number: &register::VariantNumber<Model>,
@@ -1378,7 +1419,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Ok(Some(LlvmValue::Scalar(basic_value_enum.address.into())))
                 },
             ),
-            Assignment::Prefix(_) => todo!(),
+            Assignment::Prefix(prefix) => self.handle_prefix(prefix, reg_id),
             Assignment::Struct(struct_lit) => {
                 self.handle_struct_lit(struct_lit, reg_id)
             }
@@ -1539,6 +1580,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 Instruction::DropUnpackTuple(_) => todo!(),
                 Instruction::Drop(_) => todo!(),
 
+                // TODO: check if the discaded value needs to be dropped
                 Instruction::RegisterDiscard(_)
                 | Instruction::ScopePush(_)
                 | Instruction::ScopePop(_) => Ok(()),

@@ -18,6 +18,7 @@ mod fibonacci_program;
 mod hello_world;
 mod max;
 mod number_match;
+mod prefix;
 mod recursion;
 mod struct_access;
 mod tuple;
