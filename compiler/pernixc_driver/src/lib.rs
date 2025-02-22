@@ -643,6 +643,7 @@ fn emit_as_exe(
     // `inkwell_context`, which is probably a bug in the rust compiler.
     let result = match (result, has_error) {
         (Ok(module), false) => {
+            module.verify().unwrap();
             module
                 .run_passes(
                     match opt_level {
