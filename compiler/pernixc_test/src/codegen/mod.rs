@@ -49,8 +49,8 @@ fn invoke_linker_command(obj: &Path, out: &Path) {
             .arg(out)
             .arg(obj)
             .arg("-no-pie")
-            .arg("-Wl")
-            .arg("--gc-sections")
+            .arg("-W")
+            .arg("--data-sections")
             .assert()
             .success();
     } else if cfg!(target_os = "windows") {
