@@ -34,15 +34,16 @@ public function main():
     let mut unsigned = third as uint32
     third = -third
 
-    let sitofp = third as float32
-    let uitofp = unsigned as float32
+    let sitofp = third as float64;
+    let uitofp = unsigned as float64;
 
-    printf(&"%.2f %.2f\n\0"->[0], sitofp, uitofp)
+    printf(&"%.2lf %.2lf\n\0"->[0], sitofp, uitofp);
 
-    let fpext = sitofp as float64
-    let fprtunc = uitofp as float32
+    let fptrunc = uitofp as float32;
+    let fpnext = fptrunc as float64;
 
-    printf(&"%.2f %.2f\n\0"->[0], fpext, fprtunc)
+    printf(&"%.2lf %.2lf\n\0"->[0], fpnext, -fpnext);
+}
 "#;
 
 #[test]
@@ -54,6 +55,6 @@ fn cast() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "-1 1\n2\n-3.00 3.00\n-3.00 3.00\n"
+        "-1 1\n2\n-3.00 3.00\n3.00 -3.00\n"
     );
 }
