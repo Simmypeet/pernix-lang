@@ -1294,13 +1294,28 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .unwrap();
 
         let value = match prefix.operator {
-            register::PrefixOperator::Negate => self
-                .inkwell_builder
-                .build_int_neg(
-                    operand.into_int_value(),
-                    &format!("neg_{reg_id:?}"),
-                )
-                .unwrap(),
+            register::PrefixOperator::Negate => match operand.get_type() {
+                BasicTypeEnum::FloatType(_) => self
+                    .inkwell_builder
+                    .build_float_neg(
+                        operand.into_float_value(),
+                        &format!("neg_{reg_id:?}"),
+                    )
+                    .unwrap()
+                    .into(),
+                BasicTypeEnum::IntType(_) => self
+                    .inkwell_builder
+                    .build_int_neg(
+                        operand.into_int_value(),
+                        &format!("neg_{reg_id:?}"),
+                    )
+                    .unwrap()
+                    .into(),
+
+                unexpected => {
+                    panic!("unexpected type for negation: {unexpected:?}")
+                }
+            },
 
             register::PrefixOperator::LogicalNot => {
                 let zero = self.context.context().bool_type().const_zero();
@@ -1312,14 +1327,16 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         &format!("not_{reg_id:?}"),
                     )
                     .unwrap()
+                    .into()
             }
             register::PrefixOperator::BitwiseNot => self
                 .inkwell_builder
                 .build_not(operand.into_int_value(), &format!("not_{reg_id:?}"))
-                .unwrap(),
+                .unwrap()
+                .into(),
         };
 
-        Ok(Some(LlvmValue::Scalar(value.into())))
+        Ok(Some(LlvmValue::Scalar(value)))
     }
 
     fn handle_variant_number(
