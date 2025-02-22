@@ -1303,7 +1303,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 .unwrap(),
 
             register::PrefixOperator::LogicalNot => {
-                let zero = self.context.context().i8_type().const_zero();
+                let zero = self.context.context().bool_type().const_zero();
                 self.inkwell_builder
                     .build_int_compare(
                         IntPredicate::EQ,
@@ -1372,8 +1372,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .unwrap();
 
                 let (mut then, mut else_) = (
-                    self.context.context().i8_type().const_zero(),
-                    self.context.context().i8_type().const_all_ones(),
+                    self.context.context().bool_type().const_zero(),
+                    self.context.context().bool_type().const_all_ones(),
                 );
 
                 if nullable_pointer.null_variant_index != 0 {

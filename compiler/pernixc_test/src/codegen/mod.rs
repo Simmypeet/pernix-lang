@@ -13,6 +13,7 @@ mod aggregate_drop;
 mod array_index;
 mod arrow_access;
 mod cast;
+mod discarded_drop;
 mod drop;
 mod r#enum;
 mod exit_failure;

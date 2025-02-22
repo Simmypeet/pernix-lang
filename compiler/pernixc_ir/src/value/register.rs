@@ -606,11 +606,12 @@ impl<M: pernixc_term::Model> Values<M> {
         variant_number: &VariantNumber<M>,
         environment: &Environment<M, impl Normalizer<M>>,
     ) -> Type<M> {
-        let mut answer = Primitive::Uint8;
+        let mut answer = Primitive::Bool;
         let variant_count =
             environment.table().get::<Member>(variant_number.enum_id).len();
 
         let int_capacity = |a: Primitive| match a {
+            Primitive::Bool => 2u64,
             Primitive::Uint8 => 2u64.pow(8),
             Primitive::Uint16 => 2u64.pow(16),
             Primitive::Uint32 => 2u64.pow(32),
@@ -619,6 +620,7 @@ impl<M: pernixc_term::Model> Values<M> {
         };
 
         let next = |a: Primitive| match a {
+            Primitive::Bool => Primitive::Uint8,
             Primitive::Uint8 => Primitive::Uint16,
             Primitive::Uint16 => Primitive::Uint32,
             Primitive::Uint32 => Primitive::Uint64,

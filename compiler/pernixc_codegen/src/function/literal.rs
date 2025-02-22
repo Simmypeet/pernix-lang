@@ -79,7 +79,15 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 llvm_float_type.const_float(value).into()
             }
 
-            Primitive::Bool => unreachable!(),
+            Primitive::Bool => self
+                .context
+                .context()
+                .bool_type()
+                .const_int(
+                    numeric_value.integer_string.parse::<u64>().unwrap(),
+                    false,
+                )
+                .into(),
         }
     }
 
@@ -114,9 +122,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
             Literal::Boolean(boolean) => {
                 Ok(Some(LlvmValue::Scalar(if boolean.value {
-                    self.context.context().i8_type().const_all_ones().into()
+                    self.context.context().bool_type().const_all_ones().into()
                 } else {
-                    self.context.context().i8_type().const_zero().into()
+                    self.context.context().bool_type().const_zero().into()
                 })))
             }
             Literal::Error(error) => {
