@@ -30,6 +30,7 @@ mod struct_access;
 mod tuple;
 mod tuple_pack;
 mod tuple_unpack;
+mod zst_borrowing;
 mod zst_optimization;
 
 fn invoke_linker_command(obj: &Path, out: &Path) {
