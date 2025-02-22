@@ -35,7 +35,7 @@ use pernixc_table::{
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
-    instantiation::Instantiation, r#type::Type, Model as _,
+    instantiation::Instantiation, r#type::Type, Model as _, Symbol, Tuple,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -45,6 +45,7 @@ use pernixc_type_system::{
 use crate::{context::Context, r#type::IsAggregateTypeExt, zst::Zst, Model};
 
 mod address;
+mod drop;
 mod instruction;
 mod literal;
 
@@ -136,6 +137,10 @@ pub struct Map<'ctx> {
     llvm_functions_by_key: HashMap<Call, Rc<LlvmFunctionSignature<'ctx>>>,
     extern_functions_by_global_id:
         HashMap<GlobalID, Rc<LlvmFunctionSignature<'ctx>>>,
+
+    tuple_drop: HashMap<Tuple<Type<Model>>, Option<FunctionValue<'ctx>>>,
+    adt_drop: HashMap<Symbol<Model>, Option<FunctionValue<'ctx>>>,
+    array_drop: HashMap<(Type<Model>, u64), Option<FunctionValue<'ctx>>>,
 }
 
 impl<'ctx> Context<'_, 'ctx> {
@@ -414,7 +419,7 @@ impl<'ctx> Context<'_, 'ctx> {
             &key.instantiation,
             false,
             &qualified_name,
-            Some(Linkage::External),
+            Some(Linkage::Private),
         ));
 
         self.function_map_mut()

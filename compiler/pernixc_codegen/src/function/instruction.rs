@@ -1779,6 +1779,21 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         Ok(())
     }
 
+    pub fn build_non_null_dangling(&mut self) -> PointerValue<'ctx> {
+        let ptr_sized_int = self.context.context().ptr_sized_int_type(
+            self.context.target_data(),
+            Some(AddressSpace::default()),
+        );
+
+        self.inkwell_builder
+            .build_int_to_ptr(
+                ptr_sized_int.const_int(1, false),
+                self.context.context().ptr_type(AddressSpace::default()),
+                "non_null_dangling",
+            )
+            .unwrap()
+    }
+
     /// Translates the Pernix's basic block to LLVM's basic block if haven't
     #[allow(clippy::too_many_lines)]
     pub fn build_basic_block(&mut self, block_id: ID<Block<Model>>) {
@@ -1812,13 +1827,55 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 Instruction::TuplePack(tuple_pack) => {
                     self.build_tuple_pack(tuple_pack)
                 }
-                Instruction::DropUnpackTuple(_) => todo!(),
-                Instruction::Drop(_) => todo!(),
 
-                // TODO: check if the discaded value needs to be dropped
-                Instruction::RegisterDiscard(_)
-                | Instruction::ScopePush(_)
-                | Instruction::ScopePop(_) => Ok(()),
+                Instruction::DropUnpackTuple(_) => todo!(),
+
+                Instruction::Drop(drop) => 'ext: {
+                    let address = match self.get_address(&drop.address) {
+                        Ok(address) => address,
+                        Err(error) => break 'ext Err(error),
+                    };
+                    let adress_pnx_type =
+                        self.type_of_address_pnx(&drop.address);
+
+                    let pointer = address.map_or_else(
+                        || self.build_non_null_dangling(),
+                        |x| x.address,
+                    );
+
+                    self.build_drop(pointer, adress_pnx_type);
+
+                    Ok(())
+                }
+
+                Instruction::RegisterDiscard(reg_dis) => {
+                    let value = self.register_map[&reg_dis.id];
+
+                    match value {
+                        // scalar values (primitives) never need to be dropped
+                        Some(LlvmValue::Scalar(_)) => {}
+
+                        Some(LlvmValue::TmpAggegate(_)) | None => {
+                            let pnx_type =
+                                self.type_of_register_pnx(reg_dis.id);
+
+                            let ptr_value = value.map_or_else(
+                                || self.build_non_null_dangling(),
+                                |x| {
+                                    x.into_tmp_aggegate()
+                                        .map(|x| x.address)
+                                        .unwrap()
+                                },
+                            );
+
+                            self.build_drop(ptr_value, pnx_type);
+                        }
+                    }
+
+                    Ok(())
+                }
+
+                Instruction::ScopePush(_) | Instruction::ScopePop(_) => Ok(()),
             };
 
             if let Err(err) = result {

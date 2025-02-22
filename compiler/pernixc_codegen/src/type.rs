@@ -449,17 +449,11 @@ impl<'ctx> Context<'_, 'ctx> {
         fn get_bit_count(length: usize) -> usize {
             // calculates the number of bits required to represent the enum
             let bits = (length as f64).log2().ceil() as u32;
-            let mut ceiled_bit_count = 1;
+            let mut ceiled_bit_count = 8;
 
             while bits > ceiled_bit_count {
-                // i1 -> i8
-                if ceiled_bit_count == 1 {
-                    ceiled_bit_count = 8;
-                }
                 // i8 -> i16 -> i32 -> i64, etc.
-                else {
-                    ceiled_bit_count *= 2;
-                }
+                ceiled_bit_count *= 2;
             }
 
             ceiled_bit_count as usize
