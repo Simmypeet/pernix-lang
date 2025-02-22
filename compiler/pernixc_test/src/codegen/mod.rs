@@ -9,9 +9,11 @@ use std::{path::Path, process::ExitCode};
 use assert_cmd::Command;
 use pernixc_driver::{Arguments, OptimizationLevel, TargetKind};
 
+mod aggregate_drop;
 mod array_index;
 mod arrow_access;
 mod cast;
+mod drop;
 mod r#enum;
 mod exit_failure;
 mod exit_success;
