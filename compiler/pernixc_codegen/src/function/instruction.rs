@@ -1649,7 +1649,11 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Assignment::Borrow(borrow) => (self
                 .get_address(&borrow.address)?)
             .map_or_else(
-                || todo!(),
+                || {
+                    Ok(Some(LlvmValue::Scalar(
+                        self.build_non_null_dangling().into(),
+                    )))
+                },
                 |basic_value_enum| {
                     Ok(Some(LlvmValue::Scalar(basic_value_enum.address.into())))
                 },
