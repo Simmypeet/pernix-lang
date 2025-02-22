@@ -1170,6 +1170,26 @@ impl<M: Model> Match for Type<M> {
     }
 }
 
+impl<M: Model> pernixc_table::Display for Array<M>
+where
+    M::TypeInference: pernixc_table::Display,
+    Constant<M>: pernixc_table::Display,
+    Lifetime<M>: pernixc_table::Display,
+{
+    fn fmt(
+        &self,
+        table: &Table,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}: {}]",
+            DisplayObject { table, display: &*self.r#type },
+            DisplayObject { table, display: &self.length }
+        )
+    }
+}
+
 impl<M: Model> pernixc_table::Display for Type<M>
 where
     M::TypeInference: pernixc_table::Display,
