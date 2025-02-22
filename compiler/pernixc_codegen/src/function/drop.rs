@@ -488,8 +488,18 @@ impl<'ctx> Context<'_, 'ctx> {
                         .map(|x| (x, Lifetime::Inference(Erased))),
                 );
 
-                let member_drop =
-                    self.build_member_drop_adt(&inst, symbol_ty.clone());
+                let member_drop = self.build_member_drop_adt(
+                    &Instantiation::from_generic_arguments(
+                        symbol_ty.generic_arguments.clone(),
+                        symbol_ty.id,
+                        &self
+                            .table()
+                            .query::<GenericParameters>(symbol_ty.id)
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                    symbol_ty.clone(),
+                );
                 let impl_func = self.get_function(&super::Call {
                     callable_id: impl_func_id,
                     instantiation: inst,

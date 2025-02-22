@@ -1828,7 +1828,70 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.build_tuple_pack(tuple_pack)
                 }
 
-                Instruction::DropUnpackTuple(_) => todo!(),
+                Instruction::DropUnpackTuple(drop_unpack_tuple) => 'ext: {
+                    let tuple_ty_pnx = self
+                        .type_of_address_pnx(&drop_unpack_tuple.tuple_address)
+                        .into_tuple()
+                        .unwrap();
+
+                    let drop_element_count = tuple_ty_pnx.elements.len()
+                        - drop_unpack_tuple.before_unpacked_element_count
+                        - drop_unpack_tuple.after_unpacked_element_count;
+
+                    let tuple_ty =
+                        self.context.get_tuple_type(tuple_ty_pnx.clone()).ok();
+                    let tuple_address = match self
+                        .get_address(&drop_unpack_tuple.tuple_address)
+                    {
+                        Ok(address) => address,
+                        Err(error) => {
+                            break 'ext Err(error);
+                        }
+                    };
+
+                    let non_null_dangling = self.build_non_null_dangling();
+
+                    for (i, eleme) in tuple_ty_pnx.elements[drop_unpack_tuple
+                        .before_unpacked_element_count
+                        ..(drop_unpack_tuple.before_unpacked_element_count
+                            + drop_element_count)]
+                        .iter()
+                        .enumerate()
+                    {
+                        let i =
+                            i + drop_unpack_tuple.before_unpacked_element_count;
+
+                        let ptr = tuple_ty
+                            .as_ref()
+                            .and_then(|x| {
+                                x.llvm_field_indices_by_tuple_idnex
+                                    .get(&i)
+                                    .copied()
+                            })
+                            .map_or_else(
+                                || non_null_dangling,
+                                |x| {
+                                    self.inkwell_builder
+                                        .build_struct_gep(
+                                            tuple_ty
+                                                .as_ref()
+                                                .unwrap()
+                                                .llvm_tuple_type,
+                                            tuple_address.unwrap().address,
+                                            x.try_into().unwrap(),
+                                            &format!(
+                                                "gep_{block_id:?}_index_{i:?}"
+                                            ),
+                                        )
+                                        .unwrap()
+                                },
+                            );
+
+                        self.build_drop(ptr, eleme.term.clone());
+                    }
+
+                    Ok(())
+                }
 
                 Instruction::Drop(drop) => 'ext: {
                     let address = match self.get_address(&drop.address) {

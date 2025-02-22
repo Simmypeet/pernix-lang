@@ -1,3 +1,6 @@
+//! Targeting the code generation of aggregate types with `Drop`
+//! implementations.
+
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
