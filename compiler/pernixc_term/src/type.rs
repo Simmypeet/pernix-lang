@@ -359,9 +359,9 @@ impl<M: Model> ModelOf for Type<M> {
         Ok(match term {
             Type::Primitive(primitive) => Self::Primitive(primitive),
             Type::Parameter(parameter) => Self::Parameter(parameter),
-            Type::Inference(inference) => Self::Inference(
-                M::TypeInference::try_from(inference).map_err(Into::into)?,
-            ),
+            Type::Inference(inference) => {
+                Self::Inference(M::TypeInference::try_from(inference)?)
+            }
             Type::Symbol(symbol) => {
                 Self::Symbol(Symbol::try_from_other_model(symbol)?)
             }
