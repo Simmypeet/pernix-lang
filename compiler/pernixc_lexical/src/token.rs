@@ -277,6 +277,17 @@ lazy_static! {
     };
 }
 
+/// Represents a single whitespace character.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NewLine {
+    /// The span to the new line character, either `\n` or `\r\n`.
+    pub span: Span,
+}
+
+impl SourceElement for NewLine {
+    fn span(&self) -> Span { self.span.clone() }
+}
+
 /// Is an enumeration containing all kinds of tokens in the Pernix programming
 /// language.
 #[derive(
@@ -292,6 +303,7 @@ pub enum Token {
     Comment(Comment),
     Character(Character),
     String(String),
+    NewLine(NewLine),
 }
 
 impl Token {
@@ -307,6 +319,7 @@ impl Token {
             Self::Comment(token) => &token.span,
             Self::Character(token) => &token.span,
             Self::String(token) => &token.span,
+            Self::NewLine(token) => &token.span,
         }
     }
 
@@ -316,7 +329,7 @@ impl Token {
     #[must_use]
     pub const fn is_significant(&self) -> bool {
         match self {
-            Self::WhiteSpaces(_) | Self::Comment(_) => false,
+            Self::NewLine(_) | Self::WhiteSpaces(_) | Self::Comment(_) => false,
 
             Self::Identifier(_)
             | Self::Keyword(_)
@@ -331,6 +344,7 @@ impl Token {
 impl SourceElement for Token {
     fn span(&self) -> Span {
         match self {
+            Self::NewLine(token) => token.span(),
             Self::WhiteSpaces(token) => token.span(),
             Self::Identifier(token) => token.span(),
             Self::Keyword(token) => token.span(),
@@ -552,11 +566,15 @@ impl Token {
                 && !character.is_ascii_punctuation())
     }
 
+    fn is_whitespace(character: char) -> bool {
+        character.is_whitespace() && character != '\n' && character != '\r'
+    }
+
     fn handle_whitespace(
         iter: &mut pernixc_source_file::Iterator,
         start: ByteIndex,
     ) -> Self {
-        Self::walk_iter(iter, char::is_whitespace);
+        Self::walk_iter(iter, Self::is_whitespace);
 
         WhiteSpaces { span: Self::create_span(start, iter) }.into()
     }
@@ -821,6 +839,23 @@ impl Token {
         }
     }
 
+    fn handle_new_line(
+        iter: &mut pernixc_source_file::Iterator,
+        start: ByteIndex,
+        character: char,
+    ) -> Self {
+        // cr
+        if character == '\r' {
+            //  lf
+            if let Some((_, '\n')) = iter.peek() {
+                // crlf
+                iter.next();
+            }
+        }
+
+        NewLine { span: Self::create_span(start, iter) }.into()
+    }
+
     /// Lexes the source code from the given iterator.
     ///
     /// The tokenization starts at the current location of the iterator. The
@@ -841,8 +876,12 @@ impl Token {
             iter.next().ok_or(Error::EndOfSourceCodeIteratorArgument)?;
 
         // Found white spaces
-        if character.is_whitespace() {
+        if Self::is_whitespace(character) {
             Ok(Self::handle_whitespace(iter, start))
+        }
+        // Found new line character
+        else if character == '\n' || character == '\r' {
+            Ok(Self::handle_new_line(iter, start, character))
         }
         // Found identifier/keyword
         else if Self::is_first_identifier_character(character) {

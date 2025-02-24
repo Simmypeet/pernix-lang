@@ -218,6 +218,7 @@ impl Report<()> for Error {
                 Token::Comment(_) => "comment".to_string(),
                 Token::Character(_) => "character literal".to_string(),
                 Token::String(_) => "string literal".to_string(),
+                Token::NewLine(_) => "new line".to_string(),
             },
 
             Found::EndOfFile(_) => "EOF".to_string(),

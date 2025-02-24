@@ -284,7 +284,6 @@ impl Input<&super::Punctuation> for &Punctuation {
 pub enum WhiteSpaces {
     Spaces(u8),
     Tabs(u8),
-    NewLines(u8),
 }
 
 impl Arbitrary for WhiteSpaces {
@@ -294,11 +293,7 @@ impl Arbitrary for WhiteSpaces {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (1u8..4)
             .prop_flat_map(|x| {
-                prop_oneof![
-                    Just(Self::Spaces(x)),
-                    Just(Self::Tabs(x)),
-                    Just(Self::NewLines(x))
-                ]
+                prop_oneof![Just(Self::Spaces(x)), Just(Self::Tabs(x)),]
             })
             .boxed()
     }
@@ -315,11 +310,6 @@ impl Display for WhiteSpaces {
             Self::Tabs(x) => {
                 for _ in 0..*x {
                     f.write_char('\t')?;
-                }
-            }
-            Self::NewLines(x) => {
-                for _ in 0..*x {
-                    f.write_char('\n')?;
                 }
             }
         }
@@ -339,10 +329,6 @@ impl WhiteSpaces {
             Self::Tabs(i) => {
                 prop_assert_eq!(output.span.str().len(), i as usize);
                 prop_assert!(output.span.str().chars().all(|x| x == '\t'));
-            }
-            Self::NewLines(i) => {
-                prop_assert_eq!(output.span.str().len(), i as usize);
-                prop_assert!(output.span.str().chars().all(|x| x == '\n'));
             }
         }
 
@@ -486,6 +472,45 @@ impl Input<&super::String> for &String {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NewLine {
+    LF,
+    Crlf,
+}
+
+impl Arbitrary for NewLine {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![Just(Self::LF), Just(Self::Crlf),].boxed()
+    }
+}
+
+impl Display for NewLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LF => f.write_char('\n'),
+            Self::Crlf => f.write_str("\r\n"),
+        }
+    }
+}
+
+impl Input<&super::NewLine> for &NewLine {
+    fn assert(self, output: &super::NewLine) -> TestCaseResult {
+        match self {
+            NewLine::LF => {
+                prop_assert_eq!(output.span.str(), "\n");
+            }
+            &NewLine::Crlf => {
+                prop_assert_eq!(output.span.str(), "\r\n");
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Represents an input for the [`super::Identifier`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
@@ -498,6 +523,7 @@ pub enum Token {
     Punctuation(Punctuation),
     Character(Character),
     String(String),
+    NewLine(NewLine),
 }
 
 impl Arbitrary for Token {
@@ -513,7 +539,8 @@ impl Arbitrary for Token {
             WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
             Punctuation::arbitrary().prop_map(Self::Punctuation),
             Character::arbitrary().prop_map(Self::Character),
-            String::arbitrary().prop_map(Self::String)
+            String::arbitrary().prop_map(Self::String),
+            NewLine::arbitrary().prop_map(Self::NewLine),
         ]
         .boxed()
     }
@@ -530,6 +557,7 @@ impl Display for Token {
             Self::Punctuation(x) => Display::fmt(x, f),
             Self::Character(x) => Display::fmt(x, f),
             Self::String(x) => Display::fmt(x, f),
+            Self::NewLine(x) => Display::fmt(x, f),
         }
     }
 }
@@ -561,6 +589,9 @@ impl Input<&super::Token> for &Token {
                 i.assert(o)?;
             }
             (Token::String(i), super::Token::String(o)) => {
+                i.assert(o)?;
+            }
+            (Token::NewLine(i), super::Token::NewLine(o)) => {
                 i.assert(o)?;
             }
             _ => {
