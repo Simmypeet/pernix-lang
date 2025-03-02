@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pernixc_handler::Storage;
 use pernixc_lexical::{
     token::KeywordKind,
-    token_stream::{Delimiter, TokenStream, Tree},
+    token_stream::{DelimiterKind, TokenStream, Tree},
 };
 use pernixc_source_file::SourceFile;
 use pernixc_test_input::Input;
@@ -72,7 +72,7 @@ fn empty_enclosed_connected_list() {
 
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
-            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Bracket)
             .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 
@@ -90,7 +90,7 @@ fn single_trailing_separator_enclosed_connected_list() {
 
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
-            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Bracket)
             .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 
@@ -113,7 +113,7 @@ fn multiple_elements_enclosed_connected_list() {
 
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
-            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Bracket)
             .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 
@@ -144,7 +144,7 @@ fn multiple_elements_with_trailing_separator_enclosed_connected_list() {
 
     let EnclosedConnectedList { open, connected_list, close } =
         KeywordKind::Continue
-            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Bracket)
             .parse(&mut state_machine, &pernixc_handler::Panic)
             .unwrap();
 

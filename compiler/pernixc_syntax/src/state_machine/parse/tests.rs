@@ -3,7 +3,7 @@ use std::sync::Arc;
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation, Token},
-    token_stream::{Delimiter, TokenStream, Tree},
+    token_stream::{DelimiterKind, TokenStream, Tree},
 };
 use pernixc_source_file::SourceFile;
 
@@ -125,7 +125,7 @@ fn step_into() {
 
     let (open, continues, close) = KeywordKind::Continue
         .keep_take()
-        .step_into(Delimiter::Bracket)
+        .step_into(DelimiterKind::Bracket)
         .parse_syntax(&tree, &pernixc_handler::Panic)
         .unwrap();
 
@@ -144,7 +144,7 @@ fn step_into_mismatched_delimiter() {
     let storage = Storage::<error::Error>::new();
     let result = KeywordKind::Continue
         .keep_take()
-        .step_into(Delimiter::Brace)
+        .step_into(DelimiterKind::Brace)
         .parse_syntax(&tree, &storage);
 
     assert!(result.is_none());
@@ -155,7 +155,7 @@ fn step_into_mismatched_delimiter() {
     let error = errors.pop().unwrap();
 
     assert_eq!(error.expected().len(), 1);
-    assert!(error.expected().contains(&Delimiter::Brace.into()));
+    assert!(error.expected().contains(&DelimiterKind::Brace.into()));
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn step_into_dont_take_all() {
 
     let (open, continues, close) = KeywordKind::Continue
         .keep_take()
-        .step_into(Delimiter::Bracket)
+        .step_into(DelimiterKind::Bracket)
         .parse_syntax(&tree, &storage)
         .unwrap();
 

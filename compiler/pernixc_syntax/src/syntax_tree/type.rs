@@ -7,7 +7,7 @@ use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
-    token_stream::Delimiter,
+    token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 
@@ -215,7 +215,7 @@ impl SyntaxTree for Tuple {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         Unpackable::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Parenthesis)
             .parse(state_machine, handler)
     }
 }
@@ -246,7 +246,7 @@ impl SyntaxTree for Array {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (Type::parse.map(Box::new), ':'.to_owned(), Constant::parse)
-            .step_into(Delimiter::Bracket)
+            .step_into(DelimiterKind::Bracket)
             .map(|(open, tree, close)| Self {
                 left_bracket: open.clone(),
                 operand: tree.0,

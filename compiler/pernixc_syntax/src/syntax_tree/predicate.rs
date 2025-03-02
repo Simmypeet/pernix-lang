@@ -6,7 +6,7 @@ use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
-    token_stream::Delimiter,
+    token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 
@@ -45,8 +45,10 @@ impl SyntaxTree for HigherRankedLifetimes {
     ) -> parse::Result<Self> {
         (
             KeywordKind::For.to_owned(),
-            LifetimeParameter::parse
-                .enclosed_connected_list(','.to_owned(), Delimiter::Bracket),
+            LifetimeParameter::parse.enclosed_connected_list(
+                ','.to_owned(),
+                DelimiterKind::Bracket,
+            ),
         )
             .map(|(for_keyword, lifetime_parameters)| Self {
                 for_keyword,

@@ -7,7 +7,7 @@ use paste::paste;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{KeywordKind, Punctuation},
-    token_stream::{Delimiter, NodeKind, Tree},
+    token_stream::{DelimiterKind, NodeKind, Tree},
 };
 
 use super::{StateMachine, StepIntoError};
@@ -194,7 +194,7 @@ pub trait Parse<'a> {
     /// Steps into a delimited token stream and parses the inner tokens.
     ///
     /// The parser expected to consume all the tokens inside the delimiter.
-    fn step_into(self, delimiter: Delimiter) -> StepInto<Self>
+    fn step_into(self, delimiter: DelimiterKind) -> StepInto<Self>
     where
         Self: Sized,
     {
@@ -312,7 +312,7 @@ expect_implements_parse!(expect::String);
 expect_implements_parse!(expect::Character);
 expect_implements_parse!(KeywordKind);
 expect_implements_parse!(char);
-expect_implements_parse!(Delimiter);
+expect_implements_parse!(DelimiterKind);
 
 impl<
         'a,
@@ -467,7 +467,7 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTake<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StepInto<P> {
     parser: P,
-    delimiter: Delimiter,
+    delimiter: DelimiterKind,
 }
 
 impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
@@ -481,8 +481,12 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
         let result = state_machine.next_step_into(
             |state_machine, location| -> Result<Self::Output> {
                 match state_machine.current_node().kind {
-                    NodeKind::Delimited { delimited, .. } => {
-                        if delimited.delimiter != self.delimiter {
+                    NodeKind::Fragment { fragment: delimited, .. } => {
+                        if delimited
+                            .kind
+                            .as_delimiter()
+                            .is_none_or(|x| x.delimiter != self.delimiter)
+                        {
                             state_machine.expected.push(self.delimiter.into());
                             return Err(Unexpected {
                                 token_index: Some(location.token_index),
@@ -506,9 +510,9 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                                     commit_count: 1,
                                 },
                                 vec![match self.delimiter {
-                                    Delimiter::Parenthesis => ')',
-                                    Delimiter::Brace => '}',
-                                    Delimiter::Bracket => ']',
+                                    DelimiterKind::Parenthesis => ')',
+                                    DelimiterKind::Brace => '}',
+                                    DelimiterKind::Bracket => ']',
                                 }
                                 .into()],
                             ));
@@ -519,9 +523,12 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                                 .tree
                                 .get_node(state_machine.current_node_index())
                                 .unwrap()
-                                .as_delimited()
+                                .as_fragment()
                                 .unwrap()
-                                .0;
+                                .0
+                                .kind
+                                .as_delimiter()
+                                .unwrap();
 
                             (&delimited.open, &delimited.close)
                         };

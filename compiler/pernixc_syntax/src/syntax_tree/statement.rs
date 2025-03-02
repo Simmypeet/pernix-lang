@@ -8,7 +8,7 @@ use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
-    token_stream::Delimiter,
+    token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 
@@ -241,7 +241,7 @@ impl SyntaxTree for Statements {
     ) -> parse::Result<Self> {
         Statement::parse
             .keep_take_all()
-            .enclosed_tree(Delimiter::Brace)
+            .enclosed_tree(DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }

@@ -8,7 +8,7 @@ use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{self, Identifier, Keyword, KeywordKind, Punctuation},
-    token_stream::Delimiter,
+    token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 
@@ -210,7 +210,7 @@ impl SyntaxTree for UsingFrom {
     ) -> parse::Result<Self> {
         (
             Import::parse
-                .enclosed_connected_list(','.to_owned(), Delimiter::Brace),
+                .enclosed_connected_list(','.to_owned(), DelimiterKind::Brace),
             From::parse,
         )
             .map(|(imports, from)| Self { imports, from })
@@ -470,7 +470,7 @@ impl SyntaxTree for ModuleBody {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         ModuleContent::parse
-            .enclosed_tree(Delimiter::Brace)
+            .enclosed_tree(DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -694,7 +694,7 @@ impl SyntaxTree for GenericParameters {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         GenericParameter::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Bracket)
             .parse(state_machine, handler)
     }
 }
@@ -847,7 +847,7 @@ impl SyntaxTree for TraitBody {
     ) -> parse::Result<Self> {
         TraitMember::parse
             .keep_take_all()
-            .enclosed_tree(Delimiter::Brace)
+            .enclosed_tree(DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -1349,7 +1349,7 @@ impl SyntaxTree for Parameters {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         ParameterKind::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Parenthesis)
             .parse(state_machine, handler)
     }
 }
@@ -1785,7 +1785,7 @@ impl SyntaxTree for StructBody {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         Field::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -2075,7 +2075,7 @@ impl SyntaxTree for ImplementationBody {
     ) -> parse::Result<Self> {
         ImplementationMember::parse
             .keep_take_all()
-            .enclosed_tree(Delimiter::Brace)
+            .enclosed_tree(DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -2239,7 +2239,7 @@ impl SyntaxTree for VariantAssociation {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         r#type::Type::parse
-            .enclosed_tree(Delimiter::Parenthesis)
+            .enclosed_tree(DelimiterKind::Parenthesis)
             .parse(state_machine, handler)
     }
 }
@@ -2302,7 +2302,7 @@ impl SyntaxTree for EnumBody {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         Variant::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -2595,7 +2595,7 @@ impl SyntaxTree for ExternBody {
     ) -> parse::Result<Self> {
         ExternFunction::parse
             .keep_take_all()
-            .enclosed_tree(Delimiter::Brace)
+            .enclosed_tree(DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }

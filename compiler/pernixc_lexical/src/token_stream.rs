@@ -7,18 +7,69 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_source_file::SourceFile;
+use proptest::bits::usize;
 
 use crate::{
-    error::{self, UndelimitedDelimiter},
-    token::{self, Punctuation, Token},
+    error::{self, InvalidIndentation, UndelimitedDelimiter},
+    token::{self, Comment, CommentKind, Punctuation, Token},
 };
 
 pub mod strategy;
 
-/// Is an enumeration of the different types of delimiters in the [`Delimited`].
+/// The represents how the [`TokenStream`] is structured in a fragment.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+pub enum FragmentKind {
+    /// The [`TokenStream`] is enclosed by a pair of delimiters.
+    Delimiter(Delimiter),
+
+    /// The [`TokenStream`] is grouped by having the same indentation level.
+    Indentation(Indentation),
+}
+
+/// Represents a delimiter pair such as `( ... )`, `{ ... }`, or `[ ... ]`
+/// delimiters.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Delimiter {
+    /// The opening delimiter.
+    pub open: Punctuation,
+
+    /// The closing delimiter.
+    pub close: Punctuation,
+
+    /// The type of delimiter.
+    pub delimiter: DelimiterKind,
+}
+
+/// The token stream is grouped by having the same indentation level. The
+/// indentation group is started by a colon followed by a newline character.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Indentation {
+    /// The indentation level of the group (in space or tab characters count,
+    /// not how many levels deep).
+    pub indentation_size: usize,
+
+    /// The colon character signifying the start of the indentation group.
+    pub colon: Punctuation,
+
+    /// List of insignificant tokens that appear before the
+    /// [`Self::new_line_or_line_comment`].
+    ///
+    /// For example, `: /*comment*/ \n` would have `:` as the colon,
+    /// `/*comment*/` as the `prior_new_line_tokens`, and `\n` as the
+    /// `new_line_or_line_comment`.
+    pub prior_new_line_tokens: Vec<Token>,
+
+    /// The new line character or line comment that follows the colon.
+    ///
+    /// The colon can be followed by a line comment as well since the line
+    /// comment is also ended by a new line character.
+    pub new_line_or_line_comment: Token,
+}
+
+/// Is an enumeration of the different types of delimiters in the [`Delimiter`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Delimiter {
+pub enum DelimiterKind {
     Parenthesis,
     Brace,
     Bracket,
@@ -26,18 +77,12 @@ pub enum Delimiter {
 
 /// Represents a list of tokens enclosed by a pair of delimiters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Delimited {
-    /// The opening delimiter.
-    pub open: Punctuation,
+pub struct Fragment {
+    /// The kind of this fragment.
+    pub kind: FragmentKind,
 
     /// The stream of tokens inside the delimiter.
     pub token_stream: TokenStream,
-
-    /// The closing delimiter.
-    pub close: Punctuation,
-
-    /// The type of delimiter.
-    pub delimiter: Delimiter,
 }
 
 /// Is an enumeration of either a [`Token`] or a [`Delimited`].
@@ -47,18 +92,14 @@ pub struct Delimited {
 #[allow(missing_docs)]
 pub enum TokenKind {
     Token(Token),
-    Delimited(Delimited),
+    Fragment(Fragment),
 }
 
 /// Is a list of well structured tokens in a tree-like structure.
 ///
-/// The tree-like structure is formed by the [`Delimited`] tokens. The [`Token`]
-/// tokens are the leaves of the tree. This struct isn't very easy to traverse
-/// since it doesn't have a clear parent-child relationship between the tokens.
-/// To make it easier to traverse, the [`Tree`] struct is used.
-///
-/// This struct is the final output of the lexical analysis phase and is meant
-/// to be used by the next stage of the compilation process.
+/// The [`TokenStream`] consists of a list of [`TokenKind`]s. It's structured
+/// similarly to a tree where [`TokenKind::Token`] represents a leaf node and
+/// [`TokenKind::Fragment`] represents a branch node.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, Getters,
 )]
@@ -71,7 +112,16 @@ pub struct TokenStream {
     source_file: Arc<SourceFile>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum IndentationLevel {
+    Found(usize),
+    EndOfStream,
+}
+
 impl TokenStream {
+    /// The size of a space character a tab character is equivalent to.
+    pub const TAB_INDENT_SIZE: usize = 4;
+
     /// Tokenizes the given source code.
     ///
     /// This function tokenizes the given iterator of source code by calling the
@@ -111,15 +161,359 @@ impl TokenStream {
         // structure the tokens into a token stream
         let mut token_trees = Vec::new();
         while let Some(token_tree) =
-            Self::handle_token(&mut tokens, &source_file, handler)
+            Self::pop_token(&mut tokens, &source_file, handler)
         {
             token_trees.push(token_tree);
         }
 
+        Self::handle_indentation(
+            &mut token_trees,
+            &mut vec![],
+            &source_file,
+            handler,
+        );
+
         Self { tokens: token_trees, source_file }
     }
 
-    fn handle_token(
+    fn get_indentation_level(
+        tokens: &[TokenKind],
+    ) -> (usize, IndentationLevel) {
+        let mut size = 0;
+        for (idx, token) in tokens.iter().enumerate() {
+            match token {
+                TokenKind::Token(token) => match token {
+                    // no indentation level here, start a new line
+                    Token::Comment(Comment {
+                        kind: CommentKind::Line, ..
+                    })
+                    | Token::NewLine(_) => {
+                        size = 0;
+                    }
+
+                    Token::Character(_)
+                    | Token::String(_)
+                    | Token::Numeric(_)
+                    | Token::Punctuation(_)
+                    | Token::Identifier(_)
+                    | Token::Keyword(_)
+                    | Token::Comment(Comment {
+                        kind: CommentKind::Delimited,
+                        ..
+                    }) => return (idx, IndentationLevel::Found(size)),
+
+                    // count the space
+                    Token::WhiteSpaces(whitespaces) => {
+                        whitespaces.span.str().chars().for_each(|x| {
+                            let val = if x == '\t' {
+                                Self::TAB_INDENT_SIZE
+                            } else {
+                                1
+                            };
+
+                            size += val;
+                        });
+                    } // found a significant token
+                },
+                TokenKind::Fragment(_) => {
+                    return (idx, IndentationLevel::Found(size))
+                }
+            }
+        }
+
+        (tokens.len(), IndentationLevel::EndOfStream)
+    }
+
+    fn pop_indentation(
+        tokens: &mut Vec<TokenKind>,
+        indentation_levels: &mut Vec<(usize, Indentation)>,
+        source_file: &Arc<SourceFile>,
+        pop_count: usize,
+        mut end_index: usize,
+    ) -> usize {
+        for _ in 0..pop_count {
+            let (indentation_start_index, indentation) =
+                indentation_levels.pop().unwrap();
+
+            // +2 is for the new line character and colon
+            let eaten_token_by_indentation =
+                indentation.prior_new_line_tokens.len() + 2;
+
+            let pop_range = (indentation_start_index
+                + eaten_token_by_indentation)
+                ..=end_index;
+
+            let indented_tokens = tokens.drain(pop_range).collect::<Vec<_>>();
+
+            // replace the indentation with the indented tokens
+            tokens.splice(
+                indentation_start_index
+                    ..(indentation_start_index + eaten_token_by_indentation),
+                std::iter::once(TokenKind::Fragment(Fragment {
+                    kind: FragmentKind::Indentation(indentation),
+                    token_stream: Self {
+                        tokens: indented_tokens,
+                        source_file: source_file.clone(),
+                    },
+                })),
+            );
+
+            end_index = indentation_start_index;
+        }
+
+        end_index
+    }
+
+    fn followed_by_new_line(tokens: &[TokenKind]) -> Option<usize> {
+        for (i, token) in tokens.iter().enumerate() {
+            match token {
+                TokenKind::Token(token) => match token {
+                    Token::WhiteSpaces(_) => {}
+
+                    Token::Identifier(_)
+                    | Token::Keyword(_)
+                    | Token::Punctuation(_)
+                    | Token::Numeric(_)
+                    | Token::Comment(Comment {
+                        kind: CommentKind::Delimited,
+                        ..
+                    })
+                    | Token::Character(_)
+                    | Token::String(_) => return None,
+
+                    Token::Comment(Comment {
+                        kind: CommentKind::Line, ..
+                    })
+                    | Token::NewLine(_) => return Some(i),
+                },
+                TokenKind::Fragment(_) => return None,
+            }
+        }
+
+        None
+    }
+
+    fn handle_possible_indentation(
+        tokens: &mut [TokenKind],
+        indentation_levels: &mut Vec<(usize, Indentation)>,
+        new_line_offset: usize,
+        index: usize,
+        handler: &dyn Handler<error::Error>,
+    ) -> usize {
+        let indentation_start_index = index;
+        let new_line_index = new_line_offset + index + 1;
+        let prior_new_line_tokens_range = (index + 1)..new_line_index;
+
+        let mut search_index = new_line_index + 1;
+
+        let level = loop {
+            if search_index >= tokens.len() {
+                return tokens.len();
+            }
+
+            let (offset, level) =
+                Self::get_indentation_level(&tokens[search_index..]);
+
+            if let IndentationLevel::Found(level) = level {
+                search_index += offset;
+                break level;
+            }
+
+            search_index += offset + 1;
+        };
+
+        if indentation_levels
+            .last()
+            .is_none_or(|x| x.1.indentation_size < level)
+        {
+            indentation_levels.push((indentation_start_index, Indentation {
+                indentation_size: level,
+                colon: tokens[index]
+                    .clone()
+                    .as_token()
+                    .unwrap()
+                    .as_punctuation()
+                    .unwrap()
+                    .clone(),
+                prior_new_line_tokens: tokens[prior_new_line_tokens_range]
+                    .iter()
+                    .map(|x| x.as_token().unwrap().clone())
+                    .collect(),
+                new_line_or_line_comment: tokens[new_line_index]
+                    .as_token()
+                    .unwrap()
+                    .clone(),
+            }));
+        } else {
+            handler.receive(error::Error::InvalidNewIndentationLevel(
+                error::InvalidNewIndentationLevel {
+                    span: match &tokens[index] {
+                        TokenKind::Token(token) => token.span().clone(),
+                        TokenKind::Fragment(fragment) => match &fragment.kind {
+                            FragmentKind::Delimiter(delimiter) => {
+                                delimiter.open.span.clone()
+                            }
+                            FragmentKind::Indentation(indentation) => {
+                                indentation.colon.span.clone()
+                            }
+                        },
+                    },
+                },
+            ));
+        }
+
+        search_index - 1
+    }
+
+    fn handle_new_indentation_line(
+        tokens: &mut Vec<TokenKind>,
+        indentation_levels: &mut Vec<(usize, Indentation)>,
+        new_line_index: usize,
+        source_file: &Arc<SourceFile>,
+        handler: &dyn Handler<error::Error>,
+    ) -> usize {
+        let search_index = new_line_index + 1;
+
+        // calculate the indentation level
+        let (offset, level) =
+            Self::get_indentation_level(&tokens[search_index..]);
+
+        let pop_count = match level {
+            IndentationLevel::Found(level) => {
+                let mut pop_count = None::<usize>;
+
+                for i in 0..indentation_levels.len() {
+                    let current =
+                        &indentation_levels[indentation_levels.len() - i - 1];
+
+                    if current.1.indentation_size == level {
+                        pop_count = Some(i);
+                        break;
+                    }
+                }
+
+                let less_than_first = indentation_levels
+                    .first()
+                    .is_none_or(|x| x.1.indentation_size > level);
+
+                // if the indentation level is not found, then it is
+                // an indentation error
+                if pop_count.is_none() && !less_than_first {
+                    handler.receive(error::Error::InvalidIndentation(
+                        InvalidIndentation {
+                            span: match &tokens[search_index + offset] {
+                                TokenKind::Token(token) => token.span().clone(),
+                                TokenKind::Fragment(fragment) => {
+                                    match &fragment.kind {
+                                        FragmentKind::Delimiter(delimiter) => {
+                                            delimiter.open.span.clone()
+                                        }
+                                        FragmentKind::Indentation(
+                                            indentation,
+                                        ) => indentation.colon.span.clone(),
+                                    }
+                                }
+                            },
+                        },
+                    ));
+                }
+
+                pop_count.unwrap_or(if less_than_first {
+                    indentation_levels.len()
+                } else {
+                    0
+                })
+            }
+
+            IndentationLevel::EndOfStream => indentation_levels.len(),
+        };
+
+        let diff = search_index - new_line_index;
+
+        Self::pop_indentation(
+            tokens,
+            indentation_levels,
+            source_file,
+            pop_count,
+            new_line_index,
+        ) + diff
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn handle_indentation(
+        tokens: &mut Vec<TokenKind>,
+        indentation_levels: &mut Vec<(usize, Indentation)>,
+        source_file: &Arc<SourceFile>,
+        handler: &dyn Handler<error::Error>,
+    ) {
+        let mut index = 0;
+
+        while index < tokens.len() {
+            // check for the new indentation level
+            if let (
+                TokenKind::Token(Token::Punctuation(Punctuation {
+                    punctuation: ':',
+                    ..
+                })),
+                Some(offset),
+            ) = (
+                &tokens[index],
+                Self::followed_by_new_line(&tokens[(index + 1)..]),
+            ) {
+                index = Self::handle_possible_indentation(
+                    tokens,
+                    indentation_levels,
+                    offset,
+                    index,
+                    handler,
+                );
+            }
+            // recursively handle the indentation in the delimited fragmnet
+            else if tokens[index].is_fragment() {
+                let fragmnet = tokens[index].as_fragment_mut().unwrap();
+                assert!(fragmnet.kind.is_delimiter());
+
+                Self::handle_indentation(
+                    &mut fragmnet.token_stream.tokens,
+                    &mut vec![],
+                    source_file,
+                    handler,
+                );
+
+                index += 1;
+            }
+            // handle indentation level
+            else if matches!(
+                &tokens[index],
+                TokenKind::Token(
+                    Token::Comment(Comment { kind: CommentKind::Line, .. })
+                        | Token::NewLine(_),
+                )
+            ) {
+                index = Self::handle_new_indentation_line(
+                    tokens,
+                    indentation_levels,
+                    index,
+                    source_file,
+                    handler,
+                );
+            } else {
+                index += 1;
+            }
+        }
+
+        if !indentation_levels.is_empty() {
+            Self::pop_indentation(
+                tokens,
+                indentation_levels,
+                source_file,
+                indentation_levels.len(),
+                tokens.len() - 1,
+            );
+        }
+    }
+
+    fn pop_token(
         tokens: &mut Vec<Token>,
         source_file: &Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
@@ -140,32 +534,33 @@ impl TokenStream {
                 Self::handle_delimited(
                     tokens,
                     pun,
-                    Delimiter::Brace,
+                    DelimiterKind::Brace,
                     source_file,
                     handler,
                 )
-                .map(TokenKind::Delimited)
+                .map(TokenKind::Fragment)
             }
             Token::Punctuation(pun) if pun.punctuation == '[' => {
                 Self::handle_delimited(
                     tokens,
                     pun,
-                    Delimiter::Bracket,
+                    DelimiterKind::Bracket,
                     source_file,
                     handler,
                 )
-                .map(TokenKind::Delimited)
+                .map(TokenKind::Fragment)
             }
             Token::Punctuation(pun) if pun.punctuation == '(' => {
                 Self::handle_delimited(
                     tokens,
                     pun,
-                    Delimiter::Parenthesis,
+                    DelimiterKind::Parenthesis,
                     source_file,
                     handler,
                 )
-                .map(TokenKind::Delimited)
+                .map(TokenKind::Fragment)
             }
+
             token => Some(TokenKind::Token(token)),
         }
     }
@@ -173,51 +568,57 @@ impl TokenStream {
     fn handle_delimited(
         tokens: &mut Vec<Token>,
         open: Punctuation,
-        delimiter: Delimiter,
+        delimiter: DelimiterKind,
         source_file: &Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
-    ) -> Option<Delimited> {
+    ) -> Option<Fragment> {
         let mut token_trees = Vec::new();
 
         while let Some(token) = tokens.pop() {
             match (token, delimiter) {
-                (Token::Punctuation(close), Delimiter::Brace)
+                (Token::Punctuation(close), DelimiterKind::Brace)
                     if close.punctuation == '}' =>
                 {
-                    return Some(Delimited {
-                        open,
+                    return Some(Fragment {
+                        kind: FragmentKind::Delimiter(Delimiter {
+                            open,
+                            close,
+                            delimiter,
+                        }),
                         token_stream: Self {
                             tokens: token_trees,
                             source_file: source_file.clone(),
                         },
-                        close,
-                        delimiter,
                     })
                 }
-                (Token::Punctuation(close), Delimiter::Bracket)
+                (Token::Punctuation(close), DelimiterKind::Bracket)
                     if close.punctuation == ']' =>
                 {
-                    return Some(Delimited {
-                        open,
+                    return Some(Fragment {
                         token_stream: Self {
                             tokens: token_trees,
                             source_file: source_file.clone(),
                         },
-                        close,
-                        delimiter,
+                        kind: FragmentKind::Delimiter(Delimiter {
+                            open,
+                            close,
+                            delimiter,
+                        }),
                     })
                 }
-                (Token::Punctuation(close), Delimiter::Parenthesis)
+                (Token::Punctuation(close), DelimiterKind::Parenthesis)
                     if close.punctuation == ')' =>
                 {
-                    return Some(Delimited {
-                        open,
+                    return Some(Fragment {
                         token_stream: Self {
                             tokens: token_trees,
                             source_file: source_file.clone(),
                         },
-                        close,
-                        delimiter,
+                        kind: FragmentKind::Delimiter(Delimiter {
+                            open,
+                            close,
+                            delimiter,
+                        }),
                     })
                 }
                 (token, _) => {
@@ -253,7 +654,7 @@ impl Index<usize> for TokenStream {
     fn index(&self, index: usize) -> &Self::Output { &self.tokens[index] }
 }
 
-/// Represents a kind of node in the tree; either the root or a child delimited
+/// Represents a kind of node in the tree; either the root or a child fragment
 /// node.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
@@ -262,10 +663,10 @@ pub enum NodeKind<'a> {
     /// The root of the tree. Always has the index `0`.
     Root(&'a TokenStream),
 
-    /// The child node, which is delimited.
-    Delimited {
-        /// The delimited node
-        delimited: &'a Delimited,
+    /// The child node, which is a fragment node.
+    Fragment {
+        /// The fragment node
+        fragment: &'a Fragment,
 
         /// The index of the parent node.
         parent: usize,
@@ -279,7 +680,7 @@ impl<'a> NodeKind<'a> {
     pub const fn get_parent(&self) -> Option<usize> {
         match &self {
             NodeKind::Root(_) => None,
-            NodeKind::Delimited { parent, .. } => Some(*parent),
+            NodeKind::Fragment { parent, .. } => Some(*parent),
         }
     }
 
@@ -288,7 +689,9 @@ impl<'a> NodeKind<'a> {
     pub const fn token_stream(&self) -> &'a TokenStream {
         match &self {
             NodeKind::Root(token_stream) => token_stream,
-            NodeKind::Delimited { delimited, .. } => &delimited.token_stream,
+            NodeKind::Fragment { fragment: delimited, .. } => {
+                &delimited.token_stream
+            }
         }
     }
 }
@@ -358,13 +761,16 @@ impl<'a> Tree<'a> {
 
     fn add(&mut self, token_stream: &'a TokenStream, node_index: usize) {
         for (tok_index, tree) in token_stream.iter().enumerate() {
-            let TokenKind::Delimited(delimited) = tree else {
+            let TokenKind::Fragment(delimited) = tree else {
                 continue;
             };
 
             let child_index = self.nodes.len();
             self.nodes.push(Node {
-                kind: NodeKind::Delimited { delimited, parent: node_index },
+                kind: NodeKind::Fragment {
+                    fragment: delimited,
+                    parent: node_index,
+                },
                 child_ids_by_token_index: HashMap::new(),
             });
 

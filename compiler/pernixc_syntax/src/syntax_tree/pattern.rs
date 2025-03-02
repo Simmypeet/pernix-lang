@@ -7,7 +7,7 @@ use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{self, Identifier, Keyword, KeywordKind, Punctuation},
-    token_stream::Delimiter,
+    token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 
@@ -133,7 +133,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Structural<Pattern> {
             Field::parse.connected_list(','.to_owned()).or_none(),
             Wildcard::parse.or_none(),
         )
-            .step_into(Delimiter::Brace)
+            .step_into(DelimiterKind::Brace)
             .map(|(open, (fields, wildcard), close)| Self {
                 left_brace: open.clone(),
                 fields,
@@ -163,7 +163,7 @@ impl SyntaxTree for EnumAssociation {
     ) -> parse::Result<Self> {
         Refutable::parse
             .map(Box::new)
-            .enclosed_tree(Delimiter::Parenthesis)
+            .enclosed_tree(DelimiterKind::Parenthesis)
             .parse(state_machine, handler)
     }
 }
@@ -304,7 +304,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Tuple<Pattern> {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         TupleElement::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Parenthesis)
             .parse(state_machine, handler)
     }
 }

@@ -7,7 +7,7 @@ use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{self, Character, Identifier, Keyword, KeywordKind, Punctuation},
-    token_stream::Delimiter,
+    token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 
@@ -193,7 +193,7 @@ impl SyntaxTree for MatchArms {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         MatchArm::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -906,7 +906,7 @@ impl SyntaxTree for Parenthesized {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         Unpackable::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Parenthesis)
             .parse(state_machine, handler)
     }
 }
@@ -968,7 +968,7 @@ impl SyntaxTree for FieldInitializers {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         FieldInitializer::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Brace)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -1027,7 +1027,7 @@ impl SyntaxTree for Array {
     ) -> parse::Result<Self> {
         Expression::parse
             .map(Box::new)
-            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Bracket)
             .map(|arguments| Self { arguments })
             .parse(state_machine, handler)
     }
@@ -1183,7 +1183,7 @@ impl SyntaxTree for Call {
     ) -> parse::Result<Self> {
         Expression::parse
             .map(Box::new)
-            .enclosed_connected_list(','.to_owned(), Delimiter::Parenthesis)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Parenthesis)
             .map(|arguments| Self { arguments })
             .parse(state_machine, handler)
     }
@@ -1279,7 +1279,7 @@ impl SyntaxTree for Index {
     ) -> parse::Result<Self> {
         Expression::parse
             .map(Box::new)
-            .enclosed_tree(Delimiter::Bracket)
+            .enclosed_tree(DelimiterKind::Bracket)
             .map(|expression| Self { expression })
             .parse(state_machine, handler)
     }

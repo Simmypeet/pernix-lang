@@ -3,7 +3,7 @@
 
 use pernixc_lexical::{
     token::{self, KeywordKind, Token},
-    token_stream::{self, Delimiter, TokenKind},
+    token_stream::{self, DelimiterKind, TokenKind},
 };
 
 /// Expecting the [`TokenKind`] to be an [`token::Identifier`] token.
@@ -46,7 +46,7 @@ pub enum Expected {
     Keyword(KeywordKind),
 
     /// Expecting a [`TokenKind::Delimited`] token.
-    Delimited(Delimiter),
+    Delimited(DelimiterKind),
 }
 
 /// A trait for expecting a certain [`TokenKind`] from a token stream.
@@ -138,13 +138,17 @@ impl Expect for KeywordKind {
     }
 }
 
-impl Expect for Delimiter {
-    type Output = token_stream::Delimited;
+impl Expect for DelimiterKind {
+    type Output = token_stream::Fragment;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Delimited(delimited) = token {
-            if delimited.delimiter == *self {
-                Some(delimited)
+        if let TokenKind::Fragment(fragment) = token {
+            if fragment
+                .kind
+                .as_delimiter()
+                .is_some_and(|x| x.delimiter == *self)
+            {
+                Some(fragment)
             } else {
                 None
             }

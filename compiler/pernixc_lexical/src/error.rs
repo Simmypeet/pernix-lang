@@ -8,7 +8,7 @@ use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
 
-use crate::token_stream::Delimiter;
+use crate::token_stream::DelimiterKind;
 
 /// The source code contains an unclosed `/*` comment.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -37,7 +37,7 @@ pub struct UndelimitedDelimiter {
     pub opening_span: Span,
 
     /// The kind of the delimiter.
-    pub delimiter: Delimiter,
+    pub delimiter: DelimiterKind,
 }
 
 impl Report<()> for UndelimitedDelimiter {
@@ -94,6 +94,46 @@ impl Report<()> for InvalidEscapeSequence {
     }
 }
 
+/// Found a token in an invalid indentation level.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct InvalidIndentation {
+    /// The span of the invalid indentation.
+    pub span: Span,
+}
+
+impl Report<()> for InvalidIndentation {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: "the token is in an invalid indentation level".to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The source code contains an invalid new indentation level.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+pub struct InvalidNewIndentationLevel {
+    /// The span of the invalid new indentation level.
+    pub span: Span,
+}
+
+impl Report<()> for InvalidNewIndentationLevel {
+    fn report(&self, (): ()) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: "found an invalid new indentation level, it must be \
+                      deeper than the previous indentation level"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
 /// Is an enumeration containing all kinds of lexical errors that can occur
 /// while tokenizing the source code.
 #[derive(
@@ -105,6 +145,8 @@ pub enum Error {
     UndelimitedDelimiter(UndelimitedDelimiter),
     UnterminatedStringLiteral(UnterminatedStringLiteral),
     InvalidEscapeSequence(InvalidEscapeSequence),
+    InvalidIndentation(InvalidIndentation),
+    InvalidNewIndentationLevel(InvalidNewIndentationLevel),
 }
 
 impl Error {
@@ -116,6 +158,8 @@ impl Error {
             Self::UndelimitedDelimiter(err) => &err.opening_span,
             Self::UnterminatedStringLiteral(err) => &err.span,
             Self::InvalidEscapeSequence(err) => &err.span,
+            Self::InvalidIndentation(err) => &err.span,
+            Self::InvalidNewIndentationLevel(err) => &err.span,
         }
     }
 }
@@ -127,6 +171,8 @@ impl Report<()> for Error {
             Self::UndelimitedDelimiter(err) => err.report(()),
             Self::UnterminatedStringLiteral(err) => err.report(()),
             Self::InvalidEscapeSequence(err) => err.report(()),
+            Self::InvalidIndentation(err) => err.report(()),
+            Self::InvalidNewIndentationLevel(err) => err.report(()),
         }
     }
 }

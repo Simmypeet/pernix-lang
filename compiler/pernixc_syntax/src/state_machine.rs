@@ -83,7 +83,7 @@ impl<'a> StateMachine<'a> {
                     return Some((token, current_tok_index));
                 }
 
-                TokenKind::Delimited(_) => {
+                TokenKind::Fragment(_) => {
                     return Some((token, current_tok_index));
                 }
 
@@ -185,7 +185,7 @@ impl<'a> StateMachine<'a> {
         let (token, tok_index) =
             self.peek().ok_or(StepIntoError::EndOfStream)?;
 
-        let result = if let TokenKind::Delimited(_) = token {
+        let result = if let TokenKind::Fragment(_) = token {
             let delimited_node_index = self
                 .tree
                 .get_node(self.location.node_index)

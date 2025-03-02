@@ -33,22 +33,20 @@ public enum Fizz {
     Quaduplet(Quaduplet),
 }
 
-implements Fizz { 
+implements Fizz {
     public function printSum(self: &this) {
         let sum = match (self) {
             case Single(num): *num,
 
             case Pair(pair): pair->first + pair->second,
 
-            case Triplet(triplet): 
-                triplet->first 
-                + triplet->second 
+            case Triplet(triplet): triplet->first
+                + triplet->second
                 + triplet->third,
 
-            case Quaduplet(quad):
-                quad->first 
-                + quad->second 
-                + quad->third 
+            case Quaduplet(quad): quad->first
+                + quad->second
+                + quad->third
                 + quad->fourth,
         };
 
@@ -79,9 +77,9 @@ public function main() {
             scanf(format, &mutable first);
             scanf(format, &mutable second);
 
-            express Fizz::Pair(Pair { 
-                first: first, 
-                second: second 
+            express Fizz::Pair(Pair {
+                first: first,
+                second: second
             });
         },
 
@@ -94,10 +92,10 @@ public function main() {
             scanf(format, &mutable second);
             scanf(format, &mutable third);
 
-            express Fizz::Triplet(Triplet { 
-                first: first, 
-                second: second, 
-                third: third 
+            express Fizz::Triplet(Triplet {
+                first: first,
+                second: second,
+                third: third
             });
         },
         4: {
@@ -111,9 +109,9 @@ public function main() {
             scanf(format, &mutable third);
             scanf(format, &mutable fourth);
 
-            express Fizz::Quaduplet(Quaduplet { 
-                first: first, 
-                second: second, 
+            express Fizz::Quaduplet(Quaduplet {
+                first: first,
+                second: second,
                 third: third ,
                 fourth: fourth
             });

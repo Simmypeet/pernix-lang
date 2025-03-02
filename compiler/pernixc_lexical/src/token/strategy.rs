@@ -1,11 +1,13 @@
 #![allow(missing_docs)]
 
 use std::{
+    borrow::Cow,
     fmt::{Display, Write},
     str::FromStr,
 };
 
 use derive_more::{Deref, DerefMut};
+use enum_as_inner::EnumAsInner;
 use lazy_static::lazy_static;
 use pernixc_test_input::Input;
 use proptest::{
@@ -180,7 +182,7 @@ impl std::fmt::Display for LineComment {
 }
 
 /// Represents an input for the [`super::Comment`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Comment {
     Line(LineComment),
@@ -246,20 +248,26 @@ impl Arbitrary for Punctuation {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::char::any()
-            .prop_filter_map("allows only ascii punctuation", |x| {
-                if x.is_ascii_punctuation()
-                    && x != '_'
-                    && x != '@'
-                    && x != '\''
-                    && x != '"'
-                {
-                    Some(Self { punctuation: x })
-                } else {
-                    None
-                }
-            })
-            .boxed()
+        proptest::char::ranges(Cow::Owned(vec![
+            ('!'..='/'),
+            (':'..='@'),
+            ('['..='`'),
+            ('{'..='~'),
+        ]))
+        .prop_filter_map("allows only ascii punctuation", |x| {
+            if x.is_ascii_punctuation()
+                && x != '_'
+                && x != '@'
+                && x != '\''
+                && x != '"'
+                && x != '/'
+            {
+                Some(Self { punctuation: x })
+            } else {
+                None
+            }
+        })
+        .boxed()
     }
 }
 
@@ -512,13 +520,13 @@ impl Input<&super::NewLine> for &NewLine {
 }
 
 /// Represents an input for the [`super::Identifier`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Token {
     Identifier(Identifier),
     Comment(Comment),
     Keyword(Keyword),
-    NumericLiteral(Numeric),
+    Nueric(Numeric),
     WhiteSpaces(WhiteSpaces),
     Punctuation(Punctuation),
     Character(Character),
@@ -532,15 +540,15 @@ impl Arbitrary for Token {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Identifier::arbitrary().prop_map(Self::Identifier),
-            Comment::arbitrary().prop_map(Self::Comment),
-            Keyword::arbitrary().prop_map(Self::Keyword),
-            Numeric::arbitrary().prop_map(Self::NumericLiteral),
-            WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
-            Punctuation::arbitrary().prop_map(Self::Punctuation),
-            Character::arbitrary().prop_map(Self::Character),
-            String::arbitrary().prop_map(Self::String),
-            NewLine::arbitrary().prop_map(Self::NewLine),
+            3 => Identifier::arbitrary().prop_map(Self::Identifier),
+            1 => Comment::arbitrary().prop_map(Self::Comment),
+            3 => Keyword::arbitrary().prop_map(Self::Keyword),
+            3 => Numeric::arbitrary().prop_map(Self::Nueric),
+            2 => WhiteSpaces::arbitrary().prop_map(Self::WhiteSpaces),
+            3 => Punctuation::arbitrary().prop_map(Self::Punctuation),
+            3 => Character::arbitrary().prop_map(Self::Character),
+            3 => String::arbitrary().prop_map(Self::String),
+            1 => NewLine::arbitrary().prop_map(Self::NewLine),
         ]
         .boxed()
     }
@@ -552,7 +560,7 @@ impl Display for Token {
             Self::Identifier(x) => Display::fmt(x, f),
             Self::Comment(x) => Display::fmt(x, f),
             Self::Keyword(x) => Display::fmt(x, f),
-            Self::NumericLiteral(x) => Display::fmt(x, f),
+            Self::Nueric(x) => Display::fmt(x, f),
             Self::WhiteSpaces(x) => Display::fmt(x, f),
             Self::Punctuation(x) => Display::fmt(x, f),
             Self::Character(x) => Display::fmt(x, f),
@@ -573,7 +581,7 @@ impl Input<&super::Token> for &Token {
             (Token::Keyword(i), super::Token::Keyword(o)) => {
                 i.assert(o)?;
             }
-            (Token::NumericLiteral(i), super::Token::Numeric(o)) => {
+            (Token::Nueric(i), super::Token::Numeric(o)) => {
                 i.assert(o)?;
             }
             (Token::Comment(i), super::Token::Comment(o)) => {

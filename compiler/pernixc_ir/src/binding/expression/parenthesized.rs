@@ -25,7 +25,7 @@ impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let bind_as_tuple =
-            syntax_tree.connected_list().as_ref().map_or(true, |x| {
+            syntax_tree.connected_list().as_ref().is_none_or(|x| {
                 !x.rest().is_empty()
                     || x.trailing_separator().is_some()
                     || x.first().ellipsis().is_some()

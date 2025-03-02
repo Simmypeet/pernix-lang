@@ -59,7 +59,7 @@ fn symmetric() {
     });
 
     assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(2)),
+        parent: Some(ID(2))
     }));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(2)), SymbolKind::Trait));
@@ -110,7 +110,7 @@ fn not_equal() {
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
     assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(2)),
+        parent: Some(ID(2))
     }));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(2)), SymbolKind::Trait));
@@ -163,10 +163,10 @@ fn transitivity() {
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
     assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(3)),
+        parent: Some(ID(3))
     }));
     assert!(table.add_component(GlobalID::new(TargetID(1), ID(2)), Parent {
-        parent: Some(ID(3)),
+        parent: Some(ID(3))
     }));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(3)), SymbolKind::Trait));
@@ -230,10 +230,10 @@ fn congruence() {
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
     assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(3)),
+        parent: Some(ID(3))
     }));
     assert!(table.add_component(GlobalID::new(TargetID(1), ID(2)), Parent {
-        parent: Some(ID(3)),
+        parent: Some(ID(3))
     }));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(3)), SymbolKind::Trait));

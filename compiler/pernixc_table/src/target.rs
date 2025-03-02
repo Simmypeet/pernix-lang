@@ -237,7 +237,7 @@ impl Representation {
                 assert!(self
                     .storage
                     .add_component(new_symbol_id, TraitImplementation {
-                        is_final: final_keword.is_some(),
+                        is_final: final_keword.is_some()
                     }));
             }
 
@@ -245,7 +245,7 @@ impl Representation {
                 assert!(self
                     .storage
                     .add_component(new_symbol_id, TraitImplementation {
-                        is_final: final_keword.is_some(),
+                        is_final: final_keword.is_some()
                     }));
 
                 if let Some(const_keyword) = const_keyword {

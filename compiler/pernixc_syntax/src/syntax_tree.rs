@@ -10,7 +10,7 @@ use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation},
-    token_stream::Delimiter,
+    token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 use r#type::Type;
@@ -40,7 +40,7 @@ pub trait ParseExt<'a>: Parse<'a> {
     #[allow(clippy::type_complexity)]
     fn enclosed_tree(
         self,
-        delimiter: Delimiter,
+        delimiter: DelimiterKind,
     ) -> parse::Map<
         StepInto<Self>,
         fn(
@@ -62,7 +62,7 @@ pub trait ParseExt<'a>: Parse<'a> {
     fn enclosed_connected_list<SeparatorParser>(
         self,
         separator_parser: SeparatorParser,
-        delimiter: Delimiter,
+        delimiter: DelimiterKind,
     ) -> EnclosedConnectedListParser<Self, SeparatorParser>
     where
         Self: Sized,
@@ -334,7 +334,7 @@ impl<Element, Separator> EnclosedConnectedList<Element, Separator> {
 /// Created by the [`ParseExt::enclosed_connected_list`] method.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnclosedConnectedListParser<Element, Separator> {
-    delimiter: Delimiter,
+    delimiter: DelimiterKind,
     element_parser: Element,
     separator_parser: Separator,
 }
@@ -697,7 +697,7 @@ impl SyntaxTree for ConstantArgument {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         Constant::parse
-            .enclosed_tree(Delimiter::Brace)
+            .enclosed_tree(DelimiterKind::Brace)
             .parse(state_machine, handler)
     }
 }
@@ -767,7 +767,7 @@ impl SyntaxTree for GenericArguments {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         GenericArgument::parse
-            .enclosed_connected_list(','.to_owned(), Delimiter::Bracket)
+            .enclosed_connected_list(','.to_owned(), DelimiterKind::Bracket)
             .parse(state_machine, handler)
     }
 }

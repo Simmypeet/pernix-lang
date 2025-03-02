@@ -86,7 +86,7 @@ impl Template {
             return_type: ty,
         }));
         assert!(table.add_component(test_function_id, Parent {
-            parent: Some(test_root_module_id.id),
+            parent: Some(test_root_module_id.id)
         }));
 
         Self {

@@ -138,7 +138,7 @@ impl Default for Representation {
             .targets_by_id
             .insert(TargetID::CORE, Target {
                 generated_ids: 0,
-                linked_targets: HashSet::new(),
+                linked_targets: HashSet::new()
             })
             .is_none());
         assert!(repr

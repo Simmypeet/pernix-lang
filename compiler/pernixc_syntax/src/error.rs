@@ -7,7 +7,7 @@ use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_lexical::{
     token::Token,
-    token_stream::{Delimiter, Location, TokenKind, Tree},
+    token_stream::{DelimiterKind, FragmentKind, Location, TokenKind, Tree},
 };
 use pernixc_log::Severity;
 use pernixc_source_file::{SourceFile, Span};
@@ -64,7 +64,7 @@ fn find_prior_insignificant_token<'a>(
                     break;
                 }
             }
-            TokenKind::Delimited(_) => break,
+            TokenKind::Fragment(_) => break,
         }
 
         current_token_index = next;
@@ -79,11 +79,8 @@ fn find_prior_insignificant_token<'a>(
 
 impl Error {
     /// Converts the [`Unexpected`] error into an [`Error`] instance
-    ///
-    /// # Errors
-    ///
-    /// See [`ConvertUnexpectedError`] for possible errors
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn new(
         tree: &Tree,
         unexpected: Unexpected,
@@ -102,15 +99,19 @@ impl Error {
                     )
                 } else {
                     (
-                        Found::Token(Token::Punctuation(
-                            tree.get_node(unexpected.node_index)
-                                .unwrap()
-                                .as_delimited()
-                                .unwrap()
-                                .0
-                                .close
-                                .clone(),
-                        )),
+                        match &tree
+                            .get_node(unexpected.node_index)
+                            .unwrap()
+                            .as_fragment()
+                            .unwrap()
+                            .0
+                            .kind
+                        {
+                            FragmentKind::Delimiter(delimiter) => Found::Token(
+                                Token::Punctuation(delimiter.close.clone()),
+                            ),
+                            FragmentKind::Indentation(indentation) => todo!(),
+                        },
                         tree.get_node(unexpected.node_index)
                             .unwrap()
                             .token_stream()
@@ -128,8 +129,15 @@ impl Error {
                         .expect("invalid token index")
                     {
                         TokenKind::Token(token) => Found::Token(token.clone()),
-                        TokenKind::Delimited(delimited) => Found::Token(
-                            Token::Punctuation(delimited.open.clone()),
+                        TokenKind::Fragment(fragment) => Found::Token(
+                            Token::Punctuation(match &fragment.kind {
+                                FragmentKind::Delimiter(delimiter) => {
+                                    delimiter.open.clone()
+                                }
+                                FragmentKind::Indentation(indentation) => {
+                                    indentation.colon.clone()
+                                }
+                            }),
                         ),
                     },
                     token_index,
@@ -144,8 +152,15 @@ impl Error {
         )
         .map(|token| match token {
             TokenKind::Token(token) => token.clone(),
-            TokenKind::Delimited(delimited) => {
-                Token::Punctuation(delimited.open.clone())
+            TokenKind::Fragment(fragment) => {
+                Token::Punctuation(match &fragment.kind {
+                    FragmentKind::Delimiter(delimiter) => {
+                        delimiter.open.clone()
+                    }
+                    FragmentKind::Indentation(indentation) => {
+                        indentation.colon.clone()
+                    }
+                })
             }
         });
 
@@ -195,9 +210,9 @@ impl Report<()> for Error {
                 }
                 Expected::Delimited(delimiter) => {
                     format!("`{}` punctuation", match delimiter {
-                        Delimiter::Parenthesis => '(',
-                        Delimiter::Brace => '{',
-                        Delimiter::Bracket => '[',
+                        DelimiterKind::Parenthesis => '(',
+                        DelimiterKind::Brace => '{',
+                        DelimiterKind::Bracket => '[',
                     })
                 }
             })
