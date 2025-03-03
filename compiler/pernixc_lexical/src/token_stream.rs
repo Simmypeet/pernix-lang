@@ -64,6 +64,14 @@ pub struct Indentation {
     /// The colon can be followed by a line comment as well since the line
     /// comment is also ended by a new line character.
     pub new_line_or_line_comment: Token,
+
+    /// The token that marks an end of the indentation group.
+    ///
+    /// This can either be the last new line/line comment or the closing
+    /// delimiter if the indentation group is enclosed by a pair of delimiters.
+    /// Alternatively, it can be `None` if the indentation group appears last
+    /// in the file (EOF).
+    pub ending_token: Option<Token>,
 }
 
 /// Is an enumeration of the different types of delimiters in the [`Delimiter`].
@@ -113,9 +121,18 @@ pub struct TokenStream {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum IndentationLevel {
+enum IndentationLevelSearch {
     Found(usize),
     EndOfStream,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct IndentationMark {
+    indentation_size: usize,
+    colon: Punctuation,
+    prior_new_line_tokens: Vec<Token>,
+    new_line_or_line_comment: Token,
+    starting_index: usize,
 }
 
 impl TokenStream {
@@ -170,6 +187,7 @@ impl TokenStream {
             &mut token_trees,
             &mut vec![],
             &source_file,
+            None,
             handler,
         );
 
@@ -178,7 +196,7 @@ impl TokenStream {
 
     fn get_indentation_level(
         tokens: &[TokenKind],
-    ) -> (usize, IndentationLevel) {
+    ) -> (usize, IndentationLevelSearch) {
         let mut size = 0;
         for (idx, token) in tokens.iter().enumerate() {
             match token {
@@ -200,7 +218,7 @@ impl TokenStream {
                     | Token::Comment(Comment {
                         kind: CommentKind::Delimited,
                         ..
-                    }) => return (idx, IndentationLevel::Found(size)),
+                    }) => return (idx, IndentationLevelSearch::Found(size)),
 
                     // count the space
                     Token::WhiteSpaces(whitespaces) => {
@@ -216,41 +234,57 @@ impl TokenStream {
                     } // found a significant token
                 },
                 TokenKind::Fragment(_) => {
-                    return (idx, IndentationLevel::Found(size))
+                    return (idx, IndentationLevelSearch::Found(size))
                 }
             }
         }
 
-        (tokens.len(), IndentationLevel::EndOfStream)
+        (tokens.len(), IndentationLevelSearch::EndOfStream)
     }
 
     fn pop_indentation(
         tokens: &mut Vec<TokenKind>,
-        indentation_levels: &mut Vec<(usize, Indentation)>,
+        indentation_levels: &mut Vec<IndentationMark>,
         source_file: &Arc<SourceFile>,
         pop_count: usize,
+        enclosing_delimiter: Option<&Punctuation>,
         mut end_index: usize,
     ) -> usize {
         for _ in 0..pop_count {
-            let (indentation_start_index, indentation) =
-                indentation_levels.pop().unwrap();
+            let indentation = indentation_levels.pop().unwrap();
 
             // +2 is for the new line character and colon
             let eaten_token_by_indentation =
                 indentation.prior_new_line_tokens.len() + 2;
 
-            let pop_range = (indentation_start_index
+            let pop_range = (indentation.starting_index
                 + eaten_token_by_indentation)
                 ..end_index;
 
+            let ending_token = tokens
+                .get(end_index)
+                .cloned()
+                .map(|x| x.into_token().unwrap())
+                .or_else(|| {
+                    enclosing_delimiter.map(|x| Token::Punctuation(x.clone()))
+                });
             let indented_tokens = tokens.drain(pop_range).collect::<Vec<_>>();
 
             // replace the indentation with the indented tokens
             tokens.splice(
-                indentation_start_index
-                    ..(indentation_start_index + eaten_token_by_indentation),
+                indentation.starting_index
+                    ..(indentation.starting_index + eaten_token_by_indentation),
                 std::iter::once(TokenKind::Fragment(Fragment {
-                    kind: FragmentKind::Indentation(indentation),
+                    kind: FragmentKind::Indentation(Indentation {
+                        indentation_size: indentation.indentation_size,
+                        colon: indentation.colon,
+                        prior_new_line_tokens: indentation
+                            .prior_new_line_tokens
+                            .clone(),
+                        new_line_or_line_comment: indentation
+                            .new_line_or_line_comment,
+                        ending_token,
+                    }),
                     token_stream: Self {
                         tokens: indented_tokens,
                         source_file: source_file.clone(),
@@ -258,7 +292,7 @@ impl TokenStream {
                 })),
             );
 
-            end_index = indentation_start_index + 1;
+            end_index = indentation.starting_index + 1;
         }
 
         end_index
@@ -295,7 +329,7 @@ impl TokenStream {
 
     fn handle_possible_indentation(
         tokens: &mut [TokenKind],
-        indentation_levels: &mut Vec<(usize, Indentation)>,
+        indentation_levels: &mut Vec<IndentationMark>,
         new_line_offset: usize,
         index: usize,
         handler: &dyn Handler<error::Error>,
@@ -314,7 +348,7 @@ impl TokenStream {
             let (offset, level) =
                 Self::get_indentation_level(&tokens[search_index..]);
 
-            if let IndentationLevel::Found(level) = level {
+            if let IndentationLevelSearch::Found(level) = level {
                 search_index += offset;
                 break level;
             }
@@ -322,11 +356,9 @@ impl TokenStream {
             search_index += offset + 1;
         };
 
-        if indentation_levels
-            .last()
-            .is_none_or(|x| x.1.indentation_size < level)
+        if indentation_levels.last().is_none_or(|x| x.indentation_size < level)
         {
-            indentation_levels.push((indentation_start_index, Indentation {
+            indentation_levels.push(IndentationMark {
                 indentation_size: level,
                 colon: tokens[index]
                     .clone()
@@ -343,7 +375,8 @@ impl TokenStream {
                     .as_token()
                     .unwrap()
                     .clone(),
-            }));
+                starting_index: indentation_start_index,
+            });
         } else {
             handler.receive(error::Error::InvalidNewIndentationLevel(
                 error::InvalidNewIndentationLevel {
@@ -367,9 +400,10 @@ impl TokenStream {
 
     fn handle_new_indentation_line(
         tokens: &mut Vec<TokenKind>,
-        indentation_levels: &mut Vec<(usize, Indentation)>,
+        indentation_levels: &mut Vec<IndentationMark>,
         new_line_index: usize,
         source_file: &Arc<SourceFile>,
+        enclosing_delimiter: Option<&Punctuation>,
         handler: &dyn Handler<error::Error>,
     ) -> usize {
         let search_index = new_line_index + 1;
@@ -379,14 +413,14 @@ impl TokenStream {
             Self::get_indentation_level(&tokens[search_index..]);
 
         let pop_count = match level {
-            IndentationLevel::Found(level) => {
+            IndentationLevelSearch::Found(level) => {
                 let mut pop_count = None::<usize>;
 
                 for i in 0..indentation_levels.len() {
                     let current =
                         &indentation_levels[indentation_levels.len() - i - 1];
 
-                    if current.1.indentation_size == level {
+                    if current.indentation_size == level {
                         pop_count = Some(i);
                         break;
                     }
@@ -394,7 +428,7 @@ impl TokenStream {
 
                 let less_than_first = indentation_levels
                     .first()
-                    .is_none_or(|x| x.1.indentation_size > level);
+                    .is_none_or(|x| x.indentation_size > level);
 
                 // if the indentation level is not found, then it is
                 // an indentation error
@@ -425,7 +459,7 @@ impl TokenStream {
                 })
             }
 
-            IndentationLevel::EndOfStream => indentation_levels.len(),
+            IndentationLevelSearch::EndOfStream => indentation_levels.len(),
         };
 
         let diff = search_index - new_line_index;
@@ -435,6 +469,7 @@ impl TokenStream {
             indentation_levels,
             source_file,
             pop_count,
+            enclosing_delimiter,
             new_line_index,
         ) + diff
     }
@@ -442,8 +477,9 @@ impl TokenStream {
     #[allow(clippy::too_many_lines)]
     fn handle_indentation(
         tokens: &mut Vec<TokenKind>,
-        indentation_levels: &mut Vec<(usize, Indentation)>,
+        indentation_levels: &mut Vec<IndentationMark>,
         source_file: &Arc<SourceFile>,
+        enclosing_delimiter: Option<&Punctuation>,
         handler: &dyn Handler<error::Error>,
     ) {
         let mut index = 0;
@@ -477,6 +513,7 @@ impl TokenStream {
                     &mut fragmnet.token_stream.tokens,
                     &mut vec![],
                     source_file,
+                    Some(&fragmnet.kind.as_delimiter().unwrap().close),
                     handler,
                 );
 
@@ -495,6 +532,7 @@ impl TokenStream {
                     indentation_levels,
                     index,
                     source_file,
+                    enclosing_delimiter,
                     handler,
                 );
             } else {
@@ -508,6 +546,7 @@ impl TokenStream {
                 indentation_levels,
                 source_file,
                 indentation_levels.len(),
+                enclosing_delimiter,
                 tokens.len(),
             );
         }
