@@ -9,11 +9,12 @@ use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary,
     prop_assert_eq, prop_oneof,
-    strategy::{BoxedStrategy, Just, Strategy},
+    strategy::{BoxedStrategy, Just, LazyJust, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
 };
 
 use super::{expression::strategy::Expression, r#type::strategy::Type};
+use crate::state_machine::parse;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identifier {
@@ -820,5 +821,114 @@ impl Arbitrary for LifetimeParameter {
 impl Display for LifetimeParameter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "'{}", self.identifier)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Passable<T> {
+    Pass,
+    SyntaxTree(T),
+}
+
+impl<T> Passable<T> {
+    pub const fn as_ref(&self) -> Passable<&T> {
+        match self {
+            Self::Pass => Passable::Pass,
+            Self::SyntaxTree(i) => Passable::SyntaxTree(i),
+        }
+    }
+}
+
+impl<T: Arbitrary + 'static> Arbitrary for Passable<T> {
+    type Parameters = T::Parameters;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            1 =>
+            LazyJust::new(|| Self::Pass),
+            10 =>
+            T::arbitrary_with(args).prop_map(Self::SyntaxTree),
+        ]
+        .boxed()
+    }
+}
+
+impl<O: Debug, T: Debug> Input<&parse::Passable<O>> for &Passable<T>
+where
+    for<'x, 'y> &'x T: Input<&'y O>,
+{
+    fn assert(self, output: &parse::Passable<O>) -> TestCaseResult {
+        match (self, output) {
+            (Passable::Pass, parse::Passable::Pass(_)) => Ok(()),
+            (Passable::SyntaxTree(i), parse::Passable::SyntaxTree(o)) => {
+                i.assert(o)
+            }
+            (i, output) => Err(TestCaseError::fail(format!(
+                "Expected {i:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl<O: Debug, T: Debug> Input<parse::Passable<&O>> for Passable<&T>
+where
+    for<'x, 'y> &'x T: Input<&'y O>,
+{
+    fn assert(self, output: parse::Passable<&O>) -> TestCaseResult {
+        match (self, output) {
+            (Passable::Pass, parse::Passable::Pass(_)) => Ok(()),
+            (Passable::SyntaxTree(i), parse::Passable::SyntaxTree(o)) => {
+                i.assert(o)
+            }
+            (i, output) => Err(TestCaseError::fail(format!(
+                "Expected {i:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl<T: Display> Display for Passable<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pass => f.write_str("pass"),
+            Self::SyntaxTree(i) => Display::fmt(i, f),
+        }
+    }
+}
+
+/// A wrapper trait over the `std::fmt::Display` trait that allows for
+/// displaying the item with indentation.
+pub trait IndentDisplay {
+    /// Display the item with indentation.
+    #[allow(clippy::missing_errors_doc)]
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result;
+}
+
+/// Write a line with indentation to the formatter.
+#[allow(clippy::missing_errors_doc)]
+pub fn write_indent_line(
+    f: &mut std::fmt::Formatter,
+    o: impl Display,
+    indent: usize,
+) -> std::fmt::Result {
+    for _ in 0..indent {
+        f.write_str("    ")?;
+    }
+
+    writeln!(f, "{o}")
+}
+
+/// A wrapper over a `Display` item that includes the indentation level.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IndentDisplayItem<'a, T>(pub usize, pub &'a T);
+
+impl<T: IndentDisplay> Display for IndentDisplayItem<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.1.fmt(f, self.0)
     }
 }

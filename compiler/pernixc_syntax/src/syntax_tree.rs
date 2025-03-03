@@ -18,7 +18,7 @@ use r#type::Type;
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Branch, ExpectExt, Parse, StepInto},
+        parse::{self, Branch, ExpectExt, Parse, StepIntoDelimited},
         StateMachine,
     },
 };
@@ -42,7 +42,7 @@ pub trait ParseExt<'a>: Parse<'a> {
         self,
         delimiter: DelimiterKind,
     ) -> parse::Map<
-        StepInto<Self>,
+        StepIntoDelimited<Self>,
         fn(
             (&'a Punctuation, Self::Output, &'a Punctuation),
         ) -> EnclosedTree<Self::Output>,
@@ -50,10 +50,8 @@ pub trait ParseExt<'a>: Parse<'a> {
     where
         Self: Sized,
     {
-        self.step_into(delimiter).map(|(open, tree, close)| EnclosedTree {
-            open: open.clone(),
-            tree,
-            close: close.clone(),
+        self.step_into_delimited(delimiter).map(|(open, tree, close)| {
+            EnclosedTree { open: open.clone(), tree, close: close.clone() }
         })
     }
 
@@ -450,7 +448,7 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
             };
 
         inner_connected_list
-            .step_into(self.delimiter)
+            .step_into_delimited(self.delimiter)
             .map(|(open, tree, close)| EnclosedConnectedList {
                 open: open.clone(),
                 connected_list: tree,

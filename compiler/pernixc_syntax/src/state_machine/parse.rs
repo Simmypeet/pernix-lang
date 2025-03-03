@@ -6,14 +6,14 @@ use std::{borrow, cmp::Ordering, fmt::Debug, vec::Drain};
 use paste::paste;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
-    token::{KeywordKind, Punctuation},
-    token_stream::{DelimiterKind, NodeKind, Tree},
+    token::{Keyword, KeywordKind, Punctuation, Token},
+    token_stream::{DelimiterKind, FragmentKind, NodeKind, Tree},
 };
 
 use super::{StateMachine, StepIntoError};
 use crate::{
     error,
-    expect::{self, Expect, Expected},
+    expect::{self, Expect, Expected, Fragment},
 };
 
 /// A shorthand for the [`Result`] type that is used by the parser.
@@ -191,14 +191,27 @@ pub trait Parse<'a> {
         KeepTakeAll { element_parser: self }
     }
 
-    /// Steps into a delimited token stream and parses the inner tokens.
+    /// Steps into an indentation fragment and parses the inner tokens.
     ///
-    /// The parser expected to consume all the tokens inside the delimiter.
-    fn step_into(self, delimiter: DelimiterKind) -> StepInto<Self>
+    /// The parser expected to consume all the tokens inside the indentation.
+    fn step_into_indentation(self) -> StepIntoIndentation<Self>
     where
         Self: Sized,
     {
-        StepInto { parser: self, delimiter }
+        StepIntoIndentation { parser: self }
+    }
+
+    /// Steps into a delimited token stream and parses the inner tokens.
+    ///
+    /// The parser expected to consume all the tokens inside the delimiter.
+    fn step_into_delimited(
+        self,
+        delimiter: DelimiterKind,
+    ) -> StepIntoDelimited<Self>
+    where
+        Self: Sized,
+    {
+        StepIntoDelimited { parser: self, delimiter }
     }
 
     /// Keeps parsing the parser while the **first** token matches the parser
@@ -231,6 +244,20 @@ pub trait Parse<'a> {
                 None
             }
         }
+    }
+
+    /// Starts parsing the syntax tree as an indentation item.
+    ///
+    /// The parser will skip to the nearest significant token and then parse
+    /// the syntax tree as usual except that the new line is now a significant.
+    ///
+    /// The parser should end at a new line token or end of the token stream to
+    /// be considered as a successful indentation item.
+    fn indentation_item(self) -> IndentationItem<Self>
+    where
+        Self: Sized,
+    {
+        IndentationItem(self)
     }
 
     /// Parses the given parser and drains the expected tokens if failed.
@@ -312,7 +339,7 @@ expect_implements_parse!(expect::String);
 expect_implements_parse!(expect::Character);
 expect_implements_parse!(KeywordKind);
 expect_implements_parse!(char);
-expect_implements_parse!(DelimiterKind);
+expect_implements_parse!(Fragment);
 
 impl<
         'a,
@@ -463,15 +490,15 @@ impl<'a, T: Parse<'a> + Clone> Parse<'a> for KeepTake<T> {
     }
 }
 
-/// Created by the [`Parse::step_into`] method.
+/// Used for stepping into the token stream fragment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StepInto<P> {
     parser: P,
-    delimiter: DelimiterKind,
+    fragment: Fragment,
 }
 
 impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
-    type Output = (&'a Punctuation, P::Output, &'a Punctuation);
+    type Output = (&'a FragmentKind, P::Output);
 
     fn parse(
         self,
@@ -481,13 +508,19 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
         let result = state_machine.next_step_into(
             |state_machine, location| -> Result<Self::Output> {
                 match state_machine.current_node().kind {
-                    NodeKind::Fragment { fragment: delimited, .. } => {
-                        if delimited
-                            .kind
-                            .as_delimiter()
-                            .is_none_or(|x| x.delimiter != self.delimiter)
-                        {
-                            state_machine.expected.push(self.delimiter.into());
+                    NodeKind::Fragment { fragment, .. } => {
+                        let kind_match = match self.fragment {
+                            Fragment::Delimited(delimiter_kind) => fragment
+                                .kind
+                                .as_delimiter()
+                                .is_some_and(|x| x.delimiter == delimiter_kind),
+                            Fragment::Indetation => {
+                                fragment.kind.is_indentation()
+                            }
+                        };
+
+                        if !kind_match {
+                            state_machine.expected.push(self.fragment.into());
                             return Err(Unexpected {
                                 token_index: Some(location.token_index),
                                 node_index: location.node_index,
@@ -500,7 +533,6 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                         // should be none, no more tokens to parse
                         if let Some((_, index)) = state_machine.next() {
                             // this is a soft error, the tree is still valid
-
                             handler.receive(error::Error::new(
                                 state_machine.tree,
                                 Unexpected {
@@ -509,31 +541,33 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                                         .current_node_index(),
                                     commit_count: 1,
                                 },
-                                vec![match self.delimiter {
-                                    DelimiterKind::Parenthesis => ')',
-                                    DelimiterKind::Brace => '}',
-                                    DelimiterKind::Bracket => ']',
-                                }
-                                .into()],
+                                vec![match self.fragment {
+                                    Fragment::Delimited(delimiter_kind) => {
+                                        match delimiter_kind {
+                                            DelimiterKind::Parenthesis => {
+                                                ')'.into()
+                                            }
+                                            DelimiterKind::Brace => '}'.into(),
+                                            DelimiterKind::Bracket => {
+                                                ']'.into()
+                                            }
+                                        }
+                                    }
+                                    Fragment::Indetation => todo!(),
+                                }],
                             ));
                         }
 
-                        let (open, close) = {
-                            let delimited = state_machine
-                                .tree
-                                .get_node(state_machine.current_node_index())
-                                .unwrap()
-                                .as_fragment()
-                                .unwrap()
-                                .0
-                                .kind
-                                .as_delimiter()
-                                .unwrap();
+                        let fragment_kind = &state_machine
+                            .tree
+                            .get_node(state_machine.current_node_index())
+                            .unwrap()
+                            .as_fragment()
+                            .unwrap()
+                            .0
+                            .kind;
 
-                            (&delimited.open, &delimited.close)
-                        };
-
-                        Ok((open, tree, close))
+                        Ok((fragment_kind, tree))
                     }
 
                     NodeKind::Root(_) => unreachable!(),
@@ -544,7 +578,7 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
         match result {
             Ok(result) => result,
             Err(error) => {
-                state_machine.expected.push(self.delimiter.into());
+                state_machine.expected.push(self.fragment.into());
 
                 match error {
                     StepIntoError::EndOfStream => Err(Unexpected {
@@ -552,7 +586,7 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                         node_index: state_machine.current_node_index(),
                         commit_count: 1,
                     }),
-                    StepIntoError::NotDelimited => Err(Unexpected {
+                    StepIntoError::NotFragment => Err(Unexpected {
                         token_index: Some(
                             state_machine.current_token_index() - 1,
                         ),
@@ -562,6 +596,56 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                 }
             }
         }
+    }
+}
+
+/// Created by the [`Parse::step_into_indentation`] method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StepIntoIndentation<P> {
+    parser: P,
+}
+
+impl<'a, P: Parse<'a>> Parse<'a> for StepIntoIndentation<P> {
+    type Output = (&'a Punctuation, P::Output);
+
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output> {
+        StepInto { parser: self.parser, fragment: Fragment::Indetation }
+            .map(|(fragment, tree)| {
+                (&fragment.as_indentation().unwrap().colon, tree)
+            })
+            .parse(state_machine, handler)
+    }
+}
+
+/// Created by the [`Parse::step_into_delimited`] method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StepIntoDelimited<P> {
+    parser: P,
+    delimiter: DelimiterKind,
+}
+
+impl<'a, P: Parse<'a>> Parse<'a> for StepIntoDelimited<P> {
+    type Output = (&'a Punctuation, P::Output, &'a Punctuation);
+
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output> {
+        StepInto {
+            parser: self.parser,
+            fragment: Fragment::Delimited(self.delimiter),
+        }
+        .map(|(x, tree)| {
+            let delimiter = x.as_delimiter().unwrap();
+
+            (&delimiter.open, tree, &delimiter.close)
+        })
+        .parse(state_machine, handler)
     }
 }
 
@@ -844,6 +928,88 @@ implements_tuple_branch!(
     A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y,
     Z
 );
+
+/// Represents an item that is defined in the indentation block which can be
+/// skipped by using the `pass` keyword.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Passable<T> {
+    Pass(Keyword),
+    SyntaxTree(T),
+}
+
+/// Created by the [`Parse::indent_item`] method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IndentationItem<T>(T);
+
+impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T> {
+    type Output = Passable<T::Output>;
+
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output> {
+        let current_new_line_significant = state_machine.new_line_significant;
+
+        // skip to the nearest significant token
+        if let Some((_, tok_index)) = state_machine.peek() {
+            state_machine.location.token_index = tok_index;
+        }
+
+        state_machine.new_line_significant = true;
+
+        let result = (
+            KeywordKind::Pass.to_owned().map(Passable::Pass),
+            self.0.map(Passable::SyntaxTree),
+        )
+            .branch()
+            .parse(state_machine, handler);
+
+        let current = state_machine.peek();
+
+        // it must end on a new line or just end of the token stream
+        if let Some((token, mut index)) = current {
+            if token.as_token().is_none_or(|x| !x.is_new_line()) {
+                handler.receive(error::Error::new(
+                    state_machine.tree,
+                    Unexpected {
+                        token_index: Some(index),
+                        node_index: state_machine.current_node_index(),
+                        commit_count: 1,
+                    },
+                    vec![Expected::NewLine],
+                ));
+
+                // find the nearest line
+                while index < state_machine.current_node().token_stream().len()
+                {
+                    if state_machine
+                        .current_node()
+                        .token_stream()
+                        .get(index)
+                        .and_then(|x| x.as_token())
+                        .and_then(|x| x.as_new_line())
+                        .is_some()
+                    {
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+
+            // eat new line
+            assert!(state_machine.next().is_none_or(|x| x
+                .0
+                .as_token()
+                .is_some_and(Token::is_new_line)));
+        }
+
+        state_machine.new_line_significant = current_new_line_significant;
+
+        result
+    }
+}
 
 #[cfg(test)]
 mod tests;

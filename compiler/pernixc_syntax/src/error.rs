@@ -12,7 +12,10 @@ use pernixc_lexical::{
 use pernixc_log::Severity;
 use pernixc_source_file::{SourceFile, Span};
 
-use crate::{expect::Expected, state_machine::parse::Unexpected};
+use crate::{
+    expect::{Expected, Fragment},
+    state_machine::parse::Unexpected,
+};
 
 /// An unexpected token or end of file
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -110,7 +113,21 @@ impl Error {
                             FragmentKind::Delimiter(delimiter) => Found::Token(
                                 Token::Punctuation(delimiter.close.clone()),
                             ),
-                            FragmentKind::Indentation(indentation) => todo!(),
+                            FragmentKind::Indentation(indentation) => {
+                                indentation.ending_token.clone().map_or_else(
+                                    || {
+                                        // should never happen, because it
+                                        // should've been caught by upper
+                                        // if statement
+                                        Found::EndOfFile(
+                                            tree.root_token_stream()
+                                                .source_file()
+                                                .clone(),
+                                        )
+                                    },
+                                    Found::Token,
+                                )
+                            }
                         },
                         tree.get_node(unexpected.node_index)
                             .unwrap()
@@ -208,13 +225,17 @@ impl Report<()> for Error {
                 Expected::Keyword(keyword_kind) => {
                     format!("`{keyword_kind}` keyword",)
                 }
-                Expected::Delimited(delimiter) => {
-                    format!("`{}` punctuation", match delimiter {
-                        DelimiterKind::Parenthesis => '(',
-                        DelimiterKind::Brace => '{',
-                        DelimiterKind::Bracket => '[',
-                    })
-                }
+                Expected::Fragment(delimiter) => match delimiter {
+                    Fragment::Delimited(delimiter_kind) => {
+                        format!("`{}` punctuation", match delimiter_kind {
+                            DelimiterKind::Parenthesis => '(',
+                            DelimiterKind::Brace => '{',
+                            DelimiterKind::Bracket => '[',
+                        })
+                    }
+                    Fragment::Indetation => "indentation block".to_string(),
+                },
+                Expected::NewLine => "new line".to_string(),
             })
             .collect::<Vec<_>>()
             .join(", ");

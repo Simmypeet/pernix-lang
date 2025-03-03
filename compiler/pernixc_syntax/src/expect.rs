@@ -45,8 +45,11 @@ pub enum Expected {
     /// Expecting a keyword token.
     Keyword(KeywordKind),
 
-    /// Expecting a [`TokenKind::Delimited`] token.
-    Delimited(DelimiterKind),
+    /// Expecting a fragment token.
+    Fragment(Fragment),
+
+    /// Expecting a newline token.
+    NewLine,
 }
 
 /// A trait for expecting a certain [`TokenKind`] from a token stream.
@@ -138,20 +141,31 @@ impl Expect for KeywordKind {
     }
 }
 
-impl Expect for DelimiterKind {
+/// Expects a [`TokenKind::Fragment`] token with the specified kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Fragment {
+    /// Expects a [`TokenKind::Fragment`] token enclosed in the specified
+    /// delimiter.
+    Delimited(DelimiterKind),
+
+    /// Expects a [`TokenKind::Fragment`] token as an indentation block.
+    Indetation,
+}
+
+impl Expect for Fragment {
     type Output = token_stream::Fragment;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
         if let TokenKind::Fragment(fragment) = token {
-            if fragment
-                .kind
-                .as_delimiter()
-                .is_some_and(|x| x.delimiter == *self)
-            {
-                Some(fragment)
-            } else {
-                None
-            }
+            let kind_match = match self {
+                Self::Delimited(delimiter_kind) => fragment
+                    .kind
+                    .as_delimiter()
+                    .is_some_and(|x| x.delimiter == *delimiter_kind),
+                Self::Indetation => fragment.kind.is_indentation(),
+            };
+
+            kind_match.then_some(fragment)
         } else {
             None
         }

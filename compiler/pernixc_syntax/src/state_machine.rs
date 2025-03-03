@@ -28,6 +28,10 @@ pub struct StateMachine<'a> {
     #[get_copy = "pub"]
     eaten_tokens: usize,
 
+    /// Determines whether the new line character is considered a significant
+    /// token.
+    new_line_significant: bool,
+
     correct_expected_len: usize,
     expected: Vec<Expected>,
 }
@@ -46,8 +50,8 @@ pub struct StateMachine<'a> {
     displaydoc::Display,
 )]
 pub enum StepIntoError {
-    /// Thetoken is not [`Delimited`] and cannot be stepped into.
-    NotDelimited,
+    /// Thetoken is not [`Fragment`] and cannot be stepped into.
+    NotFragment,
 
     /// The token stream has reached the end of the stream.
     EndOfStream,
@@ -62,6 +66,7 @@ impl<'a> StateMachine<'a> {
             location: Location::new(0, 0),
             eaten_tokens: 0,
             expected: Vec::new(),
+            new_line_significant: false,
             correct_expected_len: 0,
         }
     }
@@ -79,7 +84,11 @@ impl<'a> StateMachine<'a> {
             ))?;
 
             match token {
-                TokenKind::Token(token_unit) if token_unit.is_significant() => {
+                TokenKind::Token(token_unit)
+                    if token_unit.is_significant()
+                        || (token_unit.is_new_line()
+                            && self.new_line_significant) =>
+                {
                     return Some((token, current_tok_index));
                 }
 
@@ -153,7 +162,7 @@ impl<'a> StateMachine<'a> {
         Some((token, tok_index))
     }
 
-    /// Steps into the nearest **significant** [`TokenKind::Delimited`] token
+    /// Steps into the nearest **significant** [`TokenKind::Fragment`] token
     /// in the token stream and invokes the given function.
     ///
     /// This counts as a token that has been choosen by the parser; therefore,
@@ -197,6 +206,7 @@ impl<'a> StateMachine<'a> {
                 location: Location::new(delimited_node_index, 0),
                 eaten_tokens: 0,
                 correct_expected_len: self.correct_expected_len,
+                new_line_significant: false,
                 expected: self.take_expected(),
             };
 
@@ -214,7 +224,7 @@ impl<'a> StateMachine<'a> {
             Ok(result)
         } else {
             self.location.token_index = tok_index + 1;
-            return Err(StepIntoError::NotDelimited);
+            return Err(StepIntoError::NotFragment);
         };
 
         self.location.token_index = tok_index + 1;

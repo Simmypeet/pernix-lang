@@ -9,7 +9,7 @@ use proptest::{
 };
 
 use crate::syntax_tree::{
-    r#type::strategy::Type,
+    r#type::strategy::Type as TypeTerm,
     strategy::{
         ConnectedList, ConstantPunctuation, Lifetime, LifetimeParameter,
         QualifiedIdentifier,
@@ -277,72 +277,93 @@ impl Display for Trait {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TraitTypeEquality {
+pub struct QualifiedIdentifierBound {
+    pub negation: bool,
     pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub is_const: bool,
     pub qualified_identifier: QualifiedIdentifier,
-    pub r#type: Type,
 }
 
-impl Input<&super::TraitTypeEquality> for &TraitTypeEquality {
-    fn assert(self, output: &super::TraitTypeEquality) -> TestCaseResult {
+impl Input<&super::QualifiedIdentifierBound> for &QualifiedIdentifierBound {
+    fn assert(
+        self,
+        output: &super::QualifiedIdentifierBound,
+    ) -> TestCaseResult {
+        prop_assert_eq!(self.negation, output.negation.is_some());
         self.higher_ranked_lifetimes
             .as_ref()
             .assert(output.higher_ranked_lifetimes().as_ref())?;
-        self.qualified_identifier.assert(output.qualified_identifier())?;
-        self.r#type.assert(output.r#type())
+        prop_assert_eq!(self.is_const, output.const_keyword.is_some());
+        self.qualified_identifier.assert(output.qualified_identifier())
     }
 }
 
-impl Arbitrary for TraitTypeEquality {
+impl Arbitrary for QualifiedIdentifierBound {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
+            proptest::bool::ANY,
             proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            proptest::bool::ANY,
             QualifiedIdentifier::arbitrary(),
-            Type::arbitrary(),
         )
             .prop_map(
-                |(higher_ranked_lifetimes, qualified_identifier, r#type)| {
-                    Self {
-                        higher_ranked_lifetimes,
-                        qualified_identifier,
-                        r#type,
-                    }
+                |(
+                    negation,
+                    higher_ranked_lifetimes,
+                    is_const,
+                    qualified_identifier,
+                )| Self {
+                    negation,
+                    higher_ranked_lifetimes,
+                    is_const,
+                    qualified_identifier,
                 },
             )
             .boxed()
     }
 }
 
-impl Display for TraitTypeEquality {
+impl Display for QualifiedIdentifierBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.negation {
+            f.write_char('!')?;
+        }
+
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
             write!(f, "{higher_ranked_lifetimes} ")?;
         }
 
-        Display::fmt(&self.qualified_identifier, f)?;
-        f.write_str(" = ")?;
-        Display::fmt(&self.r#type, f)
+        if self.is_const {
+            f.write_str("const ")?;
+        }
+
+        Display::fmt(&self.qualified_identifier, f)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum OutlivesOperand {
-    LifetimeParameter(LifetimeParameter),
-    Type(Type),
+pub enum TypeBound {
+    QualifiedIdentifier(QualifiedIdentifierBound),
+    Const,
+    Tuple,
+    Outlives(Lifetime),
 }
 
-impl Input<&super::OutlivesOperand> for &OutlivesOperand {
-    fn assert(self, output: &super::OutlivesOperand) -> TestCaseResult {
+impl Input<&super::TypeBound> for &TypeBound {
+    fn assert(self, output: &super::TypeBound) -> TestCaseResult {
         match (self, output) {
             (
-                OutlivesOperand::LifetimeParameter(a),
-                super::OutlivesOperand::LifetimeParameter(b),
+                TypeBound::QualifiedIdentifier(a),
+                super::TypeBound::QualifiedIdentifier(b),
             ) => a.assert(b),
 
-            (OutlivesOperand::Type(a), super::OutlivesOperand::Type(b)) => {
+            (TypeBound::Const, super::TypeBound::Const(_))
+            | (TypeBound::Tuple, super::TypeBound::Tuple(_)) => Ok(()),
+
+            (TypeBound::Outlives(a), super::TypeBound::Outlives(b)) => {
                 a.assert(b)
             }
 
@@ -353,52 +374,152 @@ impl Input<&super::OutlivesOperand> for &OutlivesOperand {
     }
 }
 
-impl Arbitrary for OutlivesOperand {
+impl Arbitrary for TypeBound {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            LifetimeParameter::arbitrary()
-                .prop_map(OutlivesOperand::LifetimeParameter),
-            Type::arbitrary().prop_map(OutlivesOperand::Type),
+            QualifiedIdentifierBound::arbitrary()
+                .prop_map(Self::QualifiedIdentifier),
+            proptest::strategy::Just(Self::Const),
+            proptest::strategy::Just(Self::Tuple),
+            Lifetime::arbitrary().prop_map(Self::Outlives),
         ]
         .boxed()
     }
 }
 
-impl Display for OutlivesOperand {
+impl Display for TypeBound {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::LifetimeParameter(lifetime_parameter) => {
-                Display::fmt(lifetime_parameter, f)
+            Self::QualifiedIdentifier(qualified_identifier_bound) => {
+                Display::fmt(qualified_identifier_bound, f)
             }
 
-            Self::Type(r#type) => Display::fmt(r#type, f),
+            Self::Const => f.write_str("const"),
+
+            Self::Tuple => f.write_str("tuple"),
+
+            Self::Outlives(lifetime) => Display::fmt(lifetime, f),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Outlives {
-    pub operand: OutlivesOperand,
-    pub bounds: BoundList<Lifetime>,
+pub struct Type {
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub r#type: TypeTerm,
+    pub bounds: BoundList<TypeBound>,
 }
 
-impl Input<&super::Outlives> for &Outlives {
-    fn assert(self, output: &super::Outlives) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.bounds.assert(output.bounds())
+impl Input<&super::Type> for &Type {
+    fn assert(self, output: &super::Type) -> TestCaseResult {
+        self.higher_ranked_lifetimes
+            .as_ref()
+            .assert(output.higher_ranked_lifetimes().as_ref())?;
+        self.r#type.assert(output.r#type())?;
+        self.bounds.assert(&output.bounds)
     }
 }
 
-impl Arbitrary for Outlives {
+impl Arbitrary for Type {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
-            OutlivesOperand::arbitrary(),
+            proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            TypeTerm::arbitrary(),
+            BoundList::arbitrary_with(TypeBound::arbitrary()),
+        )
+            .prop_map(|(higher_ranked_lifetimes, r#type, bounds)| Self {
+                higher_ranked_lifetimes,
+                r#type,
+                bounds,
+            })
+            .boxed()
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
+            write!(f, "{higher_ranked_lifetimes} ")?;
+        }
+
+        write!(f, "{}: {}", self.r#type, self.bounds)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TraitTypeEquality {
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub lhs_type: TypeTerm,
+    pub rhs_type: TypeTerm,
+}
+
+impl Input<&super::TraitTypeEquality> for &TraitTypeEquality {
+    fn assert(self, output: &super::TraitTypeEquality) -> TestCaseResult {
+        self.higher_ranked_lifetimes
+            .as_ref()
+            .assert(output.higher_ranked_lifetimes().as_ref())?;
+        self.lhs_type.assert(output.lhs_type())?;
+        self.rhs_type.assert(output.rhs_type())
+    }
+}
+
+impl Arbitrary for TraitTypeEquality {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            TypeTerm::arbitrary(),
+            TypeTerm::arbitrary(),
+        )
+            .prop_map(|(higher_ranked_lifetimes, lhs_type, rhs_type)| Self {
+                higher_ranked_lifetimes,
+                lhs_type,
+                rhs_type,
+            })
+            .boxed()
+    }
+}
+
+impl Display for TraitTypeEquality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
+            write!(f, "{higher_ranked_lifetimes} ")?;
+        }
+
+        Display::fmt(&self.lhs_type, f)?;
+        f.write_str(" = ")?;
+        Display::fmt(&self.rhs_type, f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LifetimeOutlives {
+    pub operand: Lifetime,
+    pub bounds: BoundList<Lifetime>,
+}
+
+impl Input<&super::LifetimeOutlives> for &LifetimeOutlives {
+    fn assert(self, output: &super::LifetimeOutlives) -> TestCaseResult {
+        self.operand.assert(output.operand())?;
+        self.bounds.assert(output.bounds())
+    }
+}
+
+impl Arbitrary for LifetimeOutlives {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+        (
+            Lifetime::arbitrary(),
             BoundList::arbitrary_with(Lifetime::arbitrary()),
         )
             .prop_map(|(operand, bounds)| Self { operand, bounds })
@@ -406,151 +527,9 @@ impl Arbitrary for Outlives {
     }
 }
 
-impl Display for Outlives {
+impl Display for LifetimeOutlives {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.operand, f)?;
-        f.write_str(": ")?;
-        Display::fmt(&self.bounds, f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstantTypeBound {
-    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    pub r#type: Type,
-}
-
-impl Input<&super::ConstantTypeBound> for &ConstantTypeBound {
-    fn assert(self, output: &super::ConstantTypeBound) -> TestCaseResult {
-        self.higher_ranked_lifetimes
-            .as_ref()
-            .assert(output.higher_ranked_lifetimes().as_ref())?;
-        self.r#type.assert(output.r#type())
-    }
-}
-
-impl Arbitrary for ConstantTypeBound {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        (
-            proptest::option::of(HigherRankedLifetimes::arbitrary()),
-            Type::arbitrary(),
-        )
-            .prop_map(|(higher_ranked_lifetimes, r#type)| Self {
-                higher_ranked_lifetimes,
-                r#type,
-            })
-            .boxed()
-    }
-}
-
-impl Display for ConstantTypeBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
-        }
-
-        Display::fmt(&self.r#type, f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstantType {
-    pub bounds: BoundList<ConstantTypeBound>,
-}
-
-impl Input<&super::ConstantType> for &ConstantType {
-    fn assert(self, output: &super::ConstantType) -> TestCaseResult {
-        self.bounds.assert(&output.bounds)
-    }
-}
-
-impl Arbitrary for ConstantType {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        BoundList::arbitrary_with(ConstantTypeBound::arbitrary())
-            .prop_map(|bounds| Self { bounds })
-            .boxed()
-    }
-}
-
-impl Display for ConstantType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "const {}", self.bounds)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TupleOperand {
-    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    pub r#type: Type,
-}
-
-impl Input<&super::TupleOperand> for &TupleOperand {
-    fn assert(self, output: &super::TupleOperand) -> TestCaseResult {
-        self.higher_ranked_lifetimes
-            .as_ref()
-            .assert(output.higher_ranked_lifetimes().as_ref())?;
-        self.r#type.assert(output.r#type())
-    }
-}
-
-impl Arbitrary for TupleOperand {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        (
-            proptest::option::of(HigherRankedLifetimes::arbitrary()),
-            Type::arbitrary(),
-        )
-            .prop_map(|(higher_ranked_lifetimes, r#type)| Self {
-                higher_ranked_lifetimes,
-                r#type,
-            })
-            .boxed()
-    }
-}
-
-impl Display for TupleOperand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
-        }
-
-        Display::fmt(&self.r#type, f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Tuple {
-    pub operands: BoundList<TupleOperand>,
-}
-
-impl Input<&super::Tuple> for &Tuple {
-    fn assert(self, output: &super::Tuple) -> TestCaseResult {
-        self.operands.assert(&output.operands)
-    }
-}
-
-impl Arbitrary for Tuple {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        BoundList::arbitrary_with(TupleOperand::arbitrary())
-            .prop_map(|operands| Self { operands })
-            .boxed()
-    }
-}
-
-impl Display for Tuple {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "tuple {}", self.operands)
+        write!(f, "{}: {}", self.operand, self.bounds)
     }
 }
 
@@ -558,9 +537,7 @@ impl Display for Tuple {
 pub enum Predicate {
     Trait(Trait),
     TraitTypeEquality(TraitTypeEquality),
-    Outlives(Outlives),
-    ConstantType(ConstantType),
-    Tuple(Tuple),
+    LifetimeOutlives(LifetimeOutlives),
     Marker(Marker),
 }
 
@@ -574,15 +551,10 @@ impl Input<&super::Predicate> for &Predicate {
 
             (Predicate::Trait(a), super::Predicate::Trait(b)) => a.assert(b),
 
-            (Predicate::Outlives(a), super::Predicate::Outlives(b)) => {
-                a.assert(b)
-            }
-
-            (Predicate::ConstantType(a), super::Predicate::ConstantType(b)) => {
-                a.assert(b)
-            }
-
-            (Predicate::Tuple(a), super::Predicate::Tuple(b)) => a.assert(b),
+            (
+                Predicate::LifetimeOutlives(a),
+                super::Predicate::LifetimeOutlives(b),
+            ) => a.assert(b),
 
             (Predicate::Marker(a), super::Predicate::Marker(b)) => a.assert(b),
 
@@ -602,9 +574,7 @@ impl Arbitrary for Predicate {
             Trait::arbitrary().prop_map(Predicate::Trait),
             TraitTypeEquality::arbitrary()
                 .prop_map(Predicate::TraitTypeEquality),
-            Outlives::arbitrary().prop_map(Predicate::Outlives),
-            ConstantType::arbitrary().prop_map(Predicate::ConstantType),
-            Tuple::arbitrary().prop_map(Predicate::Tuple),
+            LifetimeOutlives::arbitrary().prop_map(Predicate::LifetimeOutlives),
             Marker::arbitrary().prop_map(Predicate::Marker),
         ]
         .boxed()
@@ -619,9 +589,7 @@ impl Display for Predicate {
                 Display::fmt(trait_type_equality, f)
             }
 
-            Self::Outlives(outlives) => Display::fmt(outlives, f),
-            Self::ConstantType(constant_type) => Display::fmt(constant_type, f),
-            Self::Tuple(tuple) => Display::fmt(tuple, f),
+            Self::LifetimeOutlives(outlives) => Display::fmt(outlives, f),
             Self::Marker(marker) => Display::fmt(marker, f),
         }
     }

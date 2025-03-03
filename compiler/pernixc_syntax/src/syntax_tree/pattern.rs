@@ -133,7 +133,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Structural<Pattern> {
             Field::parse.connected_list(','.to_owned()).or_none(),
             Wildcard::parse.or_none(),
         )
-            .step_into(DelimiterKind::Brace)
+            .step_into_delimited(DelimiterKind::Brace)
             .map(|(open, (fields, wildcard), close)| Self {
                 left_brace: open.clone(),
                 fields,

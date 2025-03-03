@@ -10,6 +10,7 @@ use pernixc_source_file::SourceFile;
 use super::ExpectExt;
 use crate::{
     error::{self, Found},
+    expect::Fragment,
     state_machine::{
         parse::{self, Branch, Parse},
         StateMachine,
@@ -125,7 +126,7 @@ fn step_into() {
 
     let (open, continues, close) = KeywordKind::Continue
         .keep_take()
-        .step_into(DelimiterKind::Bracket)
+        .step_into_delimited(DelimiterKind::Bracket)
         .parse_syntax(&tree, &pernixc_handler::Panic)
         .unwrap();
 
@@ -144,7 +145,7 @@ fn step_into_mismatched_delimiter() {
     let storage = Storage::<error::Error>::new();
     let result = KeywordKind::Continue
         .keep_take()
-        .step_into(DelimiterKind::Brace)
+        .step_into_delimited(DelimiterKind::Brace)
         .parse_syntax(&tree, &storage);
 
     assert!(result.is_none());
@@ -155,7 +156,9 @@ fn step_into_mismatched_delimiter() {
     let error = errors.pop().unwrap();
 
     assert_eq!(error.expected().len(), 1);
-    assert!(error.expected().contains(&DelimiterKind::Brace.into()));
+    assert!(error
+        .expected()
+        .contains(&Fragment::Delimited(DelimiterKind::Brace).into()));
 }
 
 #[test]
@@ -169,7 +172,7 @@ fn step_into_dont_take_all() {
 
     let (open, continues, close) = KeywordKind::Continue
         .keep_take()
-        .step_into(DelimiterKind::Bracket)
+        .step_into_delimited(DelimiterKind::Bracket)
         .parse_syntax(&tree, &storage)
         .unwrap();
 

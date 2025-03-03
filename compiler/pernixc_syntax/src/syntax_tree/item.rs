@@ -27,6 +27,7 @@ use crate::{
 };
 
 pub mod strategy;
+pub mod where_clause;
 
 /// Syntax Synopsis:
 /// ``` txt

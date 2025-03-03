@@ -246,7 +246,7 @@ impl SyntaxTree for Array {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (Type::parse.map(Box::new), ':'.to_owned(), Constant::parse)
-            .step_into(DelimiterKind::Bracket)
+            .step_into_delimited(DelimiterKind::Bracket)
             .map(|(open, tree, close)| Self {
                 left_bracket: open.clone(),
                 operand: tree.0,
