@@ -241,7 +241,7 @@ impl TokenStream {
 
             let pop_range = (indentation_start_index
                 + eaten_token_by_indentation)
-                ..=end_index;
+                ..end_index;
 
             let indented_tokens = tokens.drain(pop_range).collect::<Vec<_>>();
 
@@ -258,7 +258,7 @@ impl TokenStream {
                 })),
             );
 
-            end_index = indentation_start_index;
+            end_index = indentation_start_index + 1;
         }
 
         end_index
@@ -508,7 +508,7 @@ impl TokenStream {
                 indentation_levels,
                 source_file,
                 indentation_levels.len(),
-                tokens.len() - 1,
+                tokens.len(),
             );
         }
     }

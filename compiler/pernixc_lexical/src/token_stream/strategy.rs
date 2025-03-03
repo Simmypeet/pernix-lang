@@ -15,7 +15,7 @@ use super::{
     DelimiterKind,
 };
 use crate::token::{
-    strategy::{Keyword, Punctuation, WhiteSpaces},
+    strategy::{Keyword, NewLine, Punctuation, WhiteSpaces},
     KeywordKind,
 };
 
@@ -44,8 +44,8 @@ impl Indentation {
 
         let mut i = 0;
 
-        for a in &self.block.lines {
-            match a {
+        for (line_no, token) in self.block.lines.iter().enumerate() {
+            match token {
                 IndentationLine::Normal(token_stream, end_with_indentation) => {
                     if self.size > 0 {
                         let current = &output.token_stream[i];
@@ -83,14 +83,9 @@ impl Indentation {
 
                         indentation
                             .assert_internal(fragment, prev_size + self.size)?;
-                    } else {
-                        prop_assert!(&output.token_stream[i]
-                            .as_token()
-                            .and_then(|x| x.as_new_line())
-                            .is_some());
-                    }
 
-                    i += 1;
+                        i += 1;
+                    }
                 }
 
                 IndentationLine::WhiteSpaces(whitespace_len) => {
@@ -109,14 +104,16 @@ impl Indentation {
                     );
 
                     i += 1;
-
-                    prop_assert!(&output.token_stream[i]
-                        .as_token()
-                        .and_then(|x| x.as_new_line())
-                        .is_some());
-
-                    i += 1;
                 }
+            }
+
+            if line_no != self.block.lines.len() - 1 {
+                prop_assert!(&output.token_stream[i]
+                    .as_token()
+                    .and_then(|x| x.as_new_line())
+                    .is_some());
+
+                i += 1;
             }
         }
 
@@ -216,7 +213,7 @@ impl IndentationBlock {
         f: &mut Formatter,
         indentation_size: usize,
     ) -> std::fmt::Result {
-        for line in &self.lines {
+        for (line_no, line) in self.lines.iter().enumerate() {
             match line {
                 IndentationLine::Normal(token_stream, end_with_indentation) => {
                     for _ in 0..indentation_size {
@@ -227,8 +224,6 @@ impl IndentationBlock {
 
                     if let Some(indentation) = end_with_indentation {
                         indentation.fmt_internal(f, indentation_size)?;
-                    } else {
-                        writeln!(f)?;
                     }
                 }
 
@@ -236,9 +231,11 @@ impl IndentationBlock {
                     for _ in 0..*size {
                         write!(f, " ")?;
                     }
-
-                    writeln!(f)?;
                 }
+            }
+
+            if line_no != self.lines.len() - 1 {
+                writeln!(f)?;
             }
         }
 
@@ -578,7 +575,40 @@ impl TokenStream {
             }
             changed |= self.remove_consecutive_whitespaces();
             changed |= self.remove_consecutive_identifiers();
+            if !is_in_indent {
+                changed |= self.add_new_line_after_indentation();
+            }
         }
+    }
+
+    pub fn add_new_line_after_indentation(&mut self) -> bool {
+        let mut i = 0;
+        let mut changed = false;
+
+        while i < self.tokens.len() {
+            let TokenKind::Fragment(Fragment::Indentation(_)) = &self.tokens[i]
+            else {
+                i += 1;
+                continue;
+            };
+
+            let Some(next) = self.tokens.get(i + 1) else {
+                break;
+            };
+
+            if next.as_token().is_some_and(Token::is_new_line) {
+                i += 1;
+            } else {
+                changed = true;
+                self.tokens.insert(
+                    i + 1,
+                    TokenKind::Token(Token::NewLine(NewLine::LF)),
+                );
+                i += 2;
+            }
+        }
+
+        changed
     }
 
     pub fn remove_consecutive_whitespaces(&mut self) -> bool {
