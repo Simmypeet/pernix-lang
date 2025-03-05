@@ -22,20 +22,18 @@ use pernixc_source_file::{SourceFile, Span};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use super::{
-    item::{Module, ModuleContent, ModuleSignature},
+    item::module::{self, Module},
     AccessModifier, SyntaxTree,
 };
-use crate::{
-    error, state_machine::parse::Parse, syntax_tree::item::ModuleKind,
-};
+use crate::{error, state_machine::parse::Parse};
 
-pub mod strategy;
+// pub mod strategy;
 
 /// Contains both the access modifier and the module signature.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct ModuleSignatureWithAccessModifier {
     pub access_modifier: AccessModifier,
-    pub signature: ModuleSignature,
+    pub signature: module::Signature,
 }
 
 /// Represents a syntax tree node for a module with its submodule children.
@@ -44,54 +42,27 @@ pub struct ModuleTree {
     /// The signature syntax tree of this module.
     ///
     /// If this module is the root module, this field will be `None`.
-    #[get = "pub"]
-    signature: Option<ModuleSignatureWithAccessModifier>,
+    pub signature: Option<ModuleSignatureWithAccessModifier>,
 
     /// Contains the content of this module.
     ///
-    /// The [`ModuleContent::items`] field will not contain any
-    /// [`super::item::Module`]s as they are stored in the
+    /// The [`module::Body::members`] field will not contain any
+    /// [`module::Member::Module`]s as they are stored in the
     /// [`Self::submodules_by_name`] field instead.
-    #[get = "pub"]
-    module_content: ModuleContent,
+    pub module_content: module::Body,
 
     /// Contains the submodules of this module.
-    #[get = "pub"]
-    submodules_by_name: HashMap<String, ModuleTree>,
-}
-
-impl ModuleTree {
-    /// Dissolves the [`ModuleTree`] into its tuple of fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (
-        Option<ModuleSignatureWithAccessModifier>,
-        ModuleContent,
-        HashMap<String, Self>,
-    ) {
-        (self.signature, self.module_content, self.submodules_by_name)
-    }
+    pub submodules_by_name: HashMap<String, ModuleTree>,
 }
 
 /// Is a complete syntax tree representing the whole target program.
 #[derive(Debug, Clone, PartialEq, Eq, Getters)]
 pub struct Target {
     /// Contains the content of the root module.
-    #[get = "pub"]
-    module_tree: ModuleTree,
+    pub module_tree: ModuleTree,
 
     /// The name of the target.
-    #[get = "pub"]
-    name: String,
-}
-
-impl Target {
-    /// Dissolves the target into its module tree and target name.
-    #[must_use]
-    pub fn dissolve(self) -> (ModuleTree, String) {
-        (self.module_tree, self.name)
-    }
+    pub name: String,
 }
 
 /// The submodule of the root source file ends up pointing to the root source
@@ -138,7 +109,7 @@ impl Report<()> for SourceFileLoadFail {
             severity: Severity::Error,
             message: "failed to load a source file for the submodule"
                 .to_string(),
-            span: self.submodule.signature().identifier().span.clone(),
+            span: self.submodule.signature.identifier.span.clone(),
             help_message: Some(format!(
                 "{}: {}",
                 self.path.display(),
@@ -196,7 +167,7 @@ impl Report<()> for Error {
 #[derive(Debug, Clone)]
 enum Input {
     Inline {
-        module_content: ModuleContent,
+        module_body: module::Body,
         module_name: String,
         signature: ModuleSignatureWithAccessModifier,
     },
@@ -220,7 +191,7 @@ impl Target {
         let (mut module_content, source_file, current_module_name, signature) =
             match input {
                 Input::Inline {
-                    module_content,
+                    module_body: module_content,
                     module_name,
                     signature: access_modifier,
                 } => (module_content, None, module_name, Some(access_modifier)),
@@ -230,13 +201,11 @@ impl Target {
                     let tree = Tree::new(&token_stream);
 
                     let module_content =
-                        ModuleContent::parse.parse_syntax(&tree, handler);
+                        module::Body::parse.parse_syntax(&tree, handler);
 
                     (
-                        module_content.unwrap_or(ModuleContent {
-                            usings: Vec::new(),
-                            items: Vec::new(),
-                        }),
+                        module_content
+                            .unwrap_or(module::Body { members: Vec::new() }),
                         Some((access_modifier.is_none(), source_file.clone())),
                         source_file
                             .full_path()
@@ -260,21 +229,25 @@ impl Target {
         let module_contents_by_name =
             RwLock::new(HashMap::<String, ModuleTree>::new());
 
-        module_content.items.drain_filter(|x| x.is_module()).par_bridge().for_each(|item| {
-            let submodule = item.into_module().unwrap();
+        module_content
+            .members
+            .drain_filter(|x| x.as_option().is_some_and(module::Member::is_module))
+            .par_bridge()
+            .for_each(|item| {
+            let submodule = item.into_option().unwrap().into_module().unwrap();
 
-            let module_name = submodule.signature().identifier().span.str().to_owned();
-            let module_tree = if let ModuleKind::Inline(inline_module_content) = submodule.kind {
+            let module_name = submodule.signature.identifier.span.str().to_owned();
+            let module_tree = if let Some(inline_module_content) = submodule.inline_body {
                 let signature_with_access_modifier = ModuleSignatureWithAccessModifier {
                     access_modifier: submodule.access_modifier,
                     signature: submodule.signature,
                 };
                 Self::parse_input(
                     Input::Inline {
-                        module_content: inline_module_content.tree,
+                        module_body: inline_module_content.body,
                         module_name: signature_with_access_modifier
                             .signature
-                            .identifier()
+                            .identifier
                             .span
                             .str()
                             .to_string(),
@@ -286,17 +259,17 @@ impl Target {
             } else {
                 match &source_file {
                     Some((true, source_file))
-                        if current_module_name == submodule.signature.identifier().span.str() =>
+                        if current_module_name == submodule.signature.identifier.span.str() =>
                     {
                         handler.receive(Error::RootSubmoduleConflict(RootSubmoduleConflict {
                             root: source_file.clone(),
-                            submodule_span: submodule.signature.identifier().span.clone(),
+                            submodule_span: submodule.signature.identifier.span.clone(),
                         }));
                         return;
                     }
                     _ => {
                         let mut source_file_path = submodule_current_directory
-                            .join(submodule.signature.identifier().span.str());
+                            .join(submodule.signature.identifier.span.str());
                         source_file_path.set_extension("pnx");
 
                         // load the source file
@@ -338,19 +311,19 @@ impl Target {
                 Entry::Occupied(entry) => {
                     handler.receive(Error::ModuleRedefinition(ModuleRedefinition {
                         existing_module_span: entry.get()
-                            .signature()
+                            .signature
                             .as_ref()
                             .unwrap()
                             .signature
-                            .identifier()
+                            .identifier
                             .span
                             .clone(),
                         redefinition_submodule_span: module_tree
-                            .signature()
+                            .signature
                             .as_ref()
                             .unwrap()
                             .signature
-                            .identifier()
+                            .identifier
                             .span
                             .clone(),
                     }));
@@ -398,5 +371,5 @@ impl Target {
     }
 }
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

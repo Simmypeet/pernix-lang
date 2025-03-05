@@ -3,7 +3,6 @@
 use std::{fmt::Debug, option::Option};
 
 use enum_as_inner::EnumAsInner;
-use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{self, Identifier, Keyword, KeywordKind, Punctuation},
@@ -12,8 +11,8 @@ use pernixc_lexical::{
 use pernixc_source_file::{SourceElement, Span};
 
 use super::{
-    expression::Boolean, ConnectedList, EnclosedConnectedList, EnclosedTree,
-    Parse, ParseExt, ReferenceOf, SyntaxTree,
+    expression::unit::Boolean, ConnectedList, EnclosedConnectedList,
+    EnclosedTree, Parse, ParseExt, ReferenceOf, SyntaxTree,
 };
 use crate::{
     error, expect,
@@ -23,22 +22,11 @@ use crate::{
     },
 };
 
-pub mod strategy;
-
-/// Syntax Synopsis:
-/// ``` txt
-/// FieldAssociation:
-///     Identifier ':' Pattern
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldAssociation<Pattern> {
-    #[get = "pub"]
-    identifier: Identifier,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    pattern: Box<Pattern>,
+    pub identifier: Identifier,
+    pub colon: Punctuation,
+    pub pattern: Box<Pattern>,
 }
 
 impl<Pattern: SyntaxTree + 'static> SyntaxTree for FieldAssociation<Pattern> {
@@ -61,18 +49,9 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for FieldAssociation<Pattern> {
 }
 
 impl<Pattern: SourceElement> SourceElement for FieldAssociation<Pattern> {
-    fn span(&self) -> Span {
-        self.identifier.span().join(&self.pattern().span())
-    }
+    fn span(&self) -> Span { self.identifier.span().join(&self.pattern.span()) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Field:
-///     FieldAssociation
-///     | Named
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Field<Pattern> {
     Association(FieldAssociation<Pattern>),
@@ -106,22 +85,12 @@ impl<Pattern: SourceElement> SourceElement for Field<Pattern> {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Structural:
-///     '{' (Field (',' Field)* ','?)? '..'? '}'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Structural<Pattern> {
-    #[get = "pub"]
-    left_brace: Punctuation,
-    #[get = "pub"]
-    fields: Option<ConnectedList<Field<Pattern>, Punctuation>>,
-    #[get = "pub"]
-    wildcard: Option<Wildcard>,
-    #[get = "pub"]
-    right_brace: Punctuation,
+    pub left_brace: Punctuation,
+    pub fields: Option<ConnectedList<Field<Pattern>, Punctuation>>,
+    pub wildcard: Option<Wildcard>,
+    pub right_brace: Punctuation,
 }
 
 impl<Pattern: SyntaxTree + 'static> SyntaxTree for Structural<Pattern> {
@@ -148,12 +117,6 @@ impl<Pattern> SourceElement for Structural<Pattern> {
     fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// EnumAssociation:
-///     '(' Pattern ')'
-///     ;
-/// ```
 pub type EnumAssociation = EnclosedTree<Box<Refutable>>;
 
 impl SyntaxTree for EnumAssociation {
@@ -174,13 +137,10 @@ impl SyntaxTree for EnumAssociation {
 ///     'case' Identifier EnumAssociation?
 ///     ;
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum {
-    #[get = "pub"]
     case_keyword: Keyword,
-    #[get = "pub"]
     identifier: Identifier,
-    #[get = "pub"]
     association: Option<EnumAssociation>,
 }
 
@@ -212,12 +172,6 @@ impl SourceElement for Enum {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Wildcard:
-///     '..'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Wildcard(Punctuation, Punctuation);
 
@@ -236,18 +190,10 @@ impl SourceElement for Wildcard {
     fn span(&self) -> Span { self.0.span.join(&self.1.span) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// TupleElement:
-///     '...'? Pattern
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleElement<Pattern> {
-    #[get = "pub"]
-    ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
-    #[get = "pub"]
-    pattern: Box<Pattern>,
+    pub ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
+    pub pattern: Box<Pattern>,
 }
 
 impl<Pattern: SyntaxTree + 'static> SyntaxTree for TupleElement<Pattern> {
@@ -289,12 +235,6 @@ impl<Pattern> TupleElement<Pattern> {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Tuple:
-///     '(' (TupleElement (',' TupleElement)* ','?)? ')'
-///     ;
-/// ```
 pub type Tuple<Pattern> =
     EnclosedConnectedList<TupleElement<Pattern>, Punctuation>;
 
@@ -309,20 +249,11 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Tuple<Pattern> {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Named:
-///     'mutable'? Qualifier? Identifier
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
-    #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
-    #[get = "pub"]
-    reference_of: Option<ReferenceOf>,
-    #[get = "pub"]
-    identifier: Identifier,
+    pub mutable_keyword: Option<Keyword>,
+    pub reference_of: Option<ReferenceOf>,
+    pub identifier: Identifier,
 }
 
 impl SyntaxTree for Named {
@@ -331,7 +262,7 @@ impl SyntaxTree for Named {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
-            KeywordKind::Mutable.to_owned().or_none(),
+            KeywordKind::Mut.to_owned().or_none(),
             ReferenceOf::parse.or_none(),
             expect::Identifier.to_owned(),
         )
@@ -360,19 +291,10 @@ impl SourceElement for Named {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Integer:
-///     '-'?
-///     NumericToken
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Integer {
-    #[get = "pub"]
-    minus: Option<Punctuation>,
-    #[get = "pub"]
-    numeric: token::Numeric,
+    pub minus: Option<Punctuation>,
+    pub numeric: token::Numeric,
 }
 
 impl SyntaxTree for Integer {
@@ -395,16 +317,6 @@ impl SourceElement for Integer {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Refutable:
-///     Boolean
-///     | Numeric
-///     | Structural
-///     | Enum
-///     | Named
-///     | Tuple
-/// ```
 #[derive(
     Debug,
     Clone,
@@ -459,15 +371,6 @@ impl SourceElement for Refutable {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Irrefutable:
-///     Structural
-///     | Enum
-///     | Named
-///     | Tuple
-///     ;
-/// ```
 #[derive(
     Debug,
     Clone,
@@ -501,6 +404,7 @@ impl SyntaxTree for Irrefutable {
             .parse(state_machine, handler)
     }
 }
+
 impl Irrefutable {
     /// Returns `true` if the pattern contains a named pattern.
     pub fn contains_named(&self) -> bool {
@@ -537,6 +441,3 @@ impl SourceElement for Irrefutable {
         }
     }
 }
-
-#[cfg(test)]
-mod test;

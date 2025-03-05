@@ -6,7 +6,6 @@ use std::fmt::Debug;
 
 use enum_as_inner::EnumAsInner;
 use expression::Expression;
-use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation},
@@ -29,7 +28,6 @@ pub mod json;
 pub mod pattern;
 pub mod predicate;
 pub mod statement;
-pub mod strategy;
 pub mod target;
 pub mod r#type;
 
@@ -121,25 +119,16 @@ pub trait SyntaxTree {
 
 /// Represents a syntax tree node with a pattern of syntax tree node enclosed
 /// within a pair of delimiter tokens.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnclosedTree<T> {
     /// The opening delimiter token.
-    #[get = "pub"]
-    open: Punctuation,
-    /// The enclosed syntax tree node.
-    #[get = "pub"]
-    tree: T,
-    /// The closing delimiter token.
-    #[get = "pub"]
-    close: Punctuation,
-}
+    pub open: Punctuation,
 
-impl<T> EnclosedTree<T> {
-    /// Destructs the [`EnclosedTree`] into its components.
-    #[must_use]
-    pub fn dissolve(self) -> (Punctuation, T, Punctuation) {
-        (self.open, self.tree, self.close)
-    }
+    /// The enclosed syntax tree node.
+    pub tree: T,
+
+    /// The closing delimiter token.
+    pub close: Punctuation,
 }
 
 impl<T> SourceElement for EnclosedTree<T> {
@@ -153,23 +142,20 @@ impl<T> SourceElement for EnclosedTree<T> {
 /// by a separator. For example, a comma separated list of expressions such as
 /// `1, 2, 3` can be represented by a [`ConnectedList`] with the separator being
 /// a comma token and the elements being the expressions.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectedList<Element, Separator> {
     /// The first element of the list.
-    #[get = "pub"]
-    first: Element,
+    pub first: Element,
 
     /// The rest of the elements of the list.
     ///
     /// Each element of the list is a tuple containing the separator and the
     /// element. The separator is the token/syntax tree node that separates
     /// the current element from the prior one.
-    #[get = "pub"]
-    rest: Vec<(Separator, Element)>,
+    pub rest: Vec<(Separator, Element)>,
 
     /// The trailing separator of the list.
-    #[get = "pub"]
-    trailing_separator: Option<Separator>,
+    pub trailing_separator: Option<Separator>,
 }
 
 impl<Element: SourceElement, Separator: SourceElement> SourceElement
@@ -296,37 +282,23 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
 
 /// Represents a pattern of [`ConnectedList`] enclosed within a pair of
 /// delimiter tokens. For example, `(1, 2, 3)`
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EnclosedConnectedList<Element, Separator> {
     /// The open delimiter of the list.
-    #[get = "pub"]
-    open: Punctuation,
+    pub open: Punctuation,
 
     /// The inner list of elements. If `None` then the list is empty
     /// (immediately closed with the close delimiter).
-    #[get = "pub"]
-    connected_list: Option<ConnectedList<Element, Separator>>,
+    pub connected_list: Option<ConnectedList<Element, Separator>>,
 
     /// The close delimiter of the list.
-    #[get = "pub"]
-    close: Punctuation,
+    pub close: Punctuation,
 }
 
 impl<Element, Separator> SourceElement
     for EnclosedConnectedList<Element, Separator>
 {
     fn span(&self) -> Span { self.open.span().join(&self.close.span()) }
-}
-
-impl<Element, Separator> EnclosedConnectedList<Element, Separator> {
-    /// Destructs the [`EnclosedConnectedList`] into its components.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Punctuation, Option<ConnectedList<Element, Separator>>, Punctuation)
-    {
-        (self.open, self.connected_list, self.close)
-    }
 }
 
 /// Created by the [`ParseExt::enclosed_connected_list`] method.
@@ -458,16 +430,7 @@ impl<'a, Element: Parse<'a> + Clone, Separator: Parse<'a> + Clone> Parse<'a>
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// AccessModifier:
-///     'public'
-///      | 'private'
-///      | 'internal'
-///      ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
 pub enum AccessModifier {
     Public(Keyword),
     Private(Keyword),
@@ -499,17 +462,10 @@ impl SourceElement for AccessModifier {
     }
 }
 
-/// Represents a syntax tree node of two consecutive colon tokens.
-///
-/// This syntax tree is used to represent the scope separator `::` in the
-/// qualified identifier syntax
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeSeparator {
-    #[get = "pub"]
-    first: Punctuation,
-    #[get = "pub"]
-    second: Punctuation,
+    pub first: Punctuation,
+    pub second: Punctuation,
 }
 
 impl SyntaxTree for ScopeSeparator {
@@ -528,18 +484,10 @@ impl SourceElement for ScopeSeparator {
     fn span(&self) -> Span { self.first.span.join(&self.second.span) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Elided:
-///     '..'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Elided {
-    #[get = "pub"]
-    first_dot: Punctuation,
-    #[get = "pub"]
-    second_dot: Punctuation,
+    pub first_dot: Punctuation,
+    pub second_dot: Punctuation,
 }
 
 impl SyntaxTree for Elided {
@@ -561,14 +509,6 @@ impl SourceElement for Elided {
     fn span(&self) -> Span { self.first_dot.span.join(&self.second_dot.span) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// LifetimeIdentifier:
-///     Identifier
-///     | 'static'
-///     | '..'
-///     ;
-/// ```
 #[derive(
     Debug,
     Clone,
@@ -612,19 +552,10 @@ impl SyntaxTree for LifetimeIdentifier {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Lifetime:
-///     '/'' LifetimeIdentifier
-///     ;
-/// ``
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lifetime {
-    #[get = "pub"]
-    apostrophe: Punctuation,
-    #[get = "pub"]
-    identifier: LifetimeIdentifier,
+    pub apostrophe: Punctuation,
+    pub identifier: LifetimeIdentifier,
 }
 
 impl SourceElement for Lifetime {
@@ -645,13 +576,6 @@ impl SyntaxTree for Lifetime {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Constant:
-///     Expression
-///     | Elided
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Constant {
     Expression(Box<Expression>),
@@ -681,12 +605,6 @@ impl SourceElement for Constant {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// ConstantArgument:
-///     '{' Constant '}'
-///     ;
-/// ```
 pub type ConstantArgument = EnclosedTree<Constant>;
 
 impl SyntaxTree for ConstantArgument {
@@ -700,14 +618,6 @@ impl SyntaxTree for ConstantArgument {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// GenericArgument:
-///     Type
-///     | ConstantArgument
-///     | Lifetime
-///     ;
-/// ```
 #[derive(
     Debug,
     Clone,
@@ -719,7 +629,6 @@ impl SyntaxTree for ConstantArgument {
     EnumAsInner,
     derive_more::From,
 )]
-#[allow(missing_docs)]
 pub enum GenericArgument {
     Type(Box<Type>),
     Constant(ConstantArgument),
@@ -751,12 +660,6 @@ impl SourceElement for GenericArgument {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// GenericArguments:
-///     '[' (GenericArgument (',' GenericArgument)*)? ']'
-///     ;
-/// ```
 pub type GenericArguments = EnclosedConnectedList<GenericArgument, Punctuation>;
 
 impl SyntaxTree for GenericArguments {
@@ -770,19 +673,10 @@ impl SyntaxTree for GenericArguments {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// GenericIdentifier:
-///     Identifier GenericArguments?
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct GenericIdentifier {
-    #[get = "pub"]
-    identifier: Identifier,
-    #[get = "pub"]
-    generic_arguments: Option<GenericArguments>,
+    pub identifier: Identifier,
+    pub generic_arguments: Option<GenericArguments>,
 }
 
 impl SyntaxTree for GenericIdentifier {
@@ -812,18 +706,10 @@ impl SourceElement for GenericIdentifier {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// LifetimeParameter:
-///     '\'' Identifier
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeParameter {
-    #[get = "pub"]
-    apostrophe: Punctuation,
-    #[get = "pub"]
-    identifier: Identifier,
+    pub apostrophe: Punctuation,
+    pub identifier: Identifier,
 }
 
 impl SyntaxTree for LifetimeParameter {
@@ -844,13 +730,6 @@ impl SourceElement for LifetimeParameter {
     fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span) }
 }
 
-/// Syntax Synopsis:
-/// ```txt
-/// SimplePathRoot:
-///     'target'
-///     | Identifier
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum SimplePathRoot {
     Target(Keyword),
@@ -880,18 +759,10 @@ impl SourceElement for SimplePathRoot {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// SimplePath:
-///     SimplePathRoot ('::' Identifier)*
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SimplePath {
-    #[get = "pub"]
-    root: SimplePathRoot,
-    #[get = "pub"]
-    rest: Vec<(ScopeSeparator, Identifier)>,
+    pub root: SimplePathRoot,
+    pub rest: Vec<(ScopeSeparator, Identifier)>,
 }
 
 impl SyntaxTree for SimplePath {
@@ -917,15 +788,6 @@ impl SourceElement for SimplePath {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// QualifiedIdentifierRoot:
-///     'target'
-///     | 'this'
-///     | 'super'
-///     | GenericIdentifier
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum QualifiedIdentifierRoot {
     Target(Keyword),
@@ -957,19 +819,10 @@ impl SourceElement for QualifiedIdentifierRoot {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// QualifiedIdentifier:
-///     '::'? GenericIdentifier ('::' GenericIdentifier)*
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct QualifiedIdentifier {
-    #[get = "pub"]
-    root: QualifiedIdentifierRoot,
-    #[get = "pub"]
-    rest: Vec<(ScopeSeparator, GenericIdentifier)>,
+    pub root: QualifiedIdentifierRoot,
+    pub rest: Vec<(ScopeSeparator, GenericIdentifier)>,
 }
 
 impl SyntaxTree for QualifiedIdentifier {
@@ -995,19 +848,10 @@ impl SourceElement for QualifiedIdentifier {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Label:
-///     '\'' Identifier
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Label {
-    #[get = "pub"]
-    apostrophe: Punctuation,
-    #[get = "pub"]
-    identifier: Identifier,
+    pub apostrophe: Punctuation,
+    pub identifier: Identifier,
 }
 
 impl SyntaxTree for Label {
@@ -1028,19 +872,10 @@ impl SourceElement for Label {
     fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span) }
 }
 
-/// Syntax Synopsis:
-///
-/// ``` txt
-/// ReferenceOf:
-///    '&' 'mutable'?
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReferenceOf {
-    #[get = "pub"]
-    ampersand: Punctuation,
-    #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
+    pub ampersand: Punctuation,
+    pub mutable_keyword: Option<Keyword>,
 }
 
 impl SyntaxTree for ReferenceOf {
@@ -1050,7 +885,7 @@ impl SyntaxTree for ReferenceOf {
     ) -> parse::Result<Self> {
         Ok(Self {
             ampersand: '&'.to_owned().parse(state_machine, handler)?,
-            mutable_keyword: KeywordKind::Mutable
+            mutable_keyword: KeywordKind::Mut
                 .to_owned()
                 .or_none()
                 .parse(state_machine, handler)?,
@@ -1069,15 +904,13 @@ impl SourceElement for ReferenceOf {
 
 /// Similar to [`ConnectedList`] but specifically for list of arguments
 /// separated by plus sings and has no trailing separator.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnionList<T> {
     /// The first element of the list.
-    #[get = "pub"]
-    first: T,
+    pub first: T,
 
     /// The rest of the elements of the list.
-    #[get = "pub"]
-    rest: Vec<(Punctuation, T)>,
+    pub rest: Vec<(Punctuation, T)>,
 }
 
 impl<T> UnionList<T> {
@@ -1101,6 +934,3 @@ impl<T: SourceElement> SourceElement for UnionList<T> {
         }
     }
 }
-
-#[cfg(test)]
-mod test;

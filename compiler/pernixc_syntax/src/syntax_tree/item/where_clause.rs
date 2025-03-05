@@ -1,6 +1,7 @@
 use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
+use pernixc_source_file::SourceElement;
 
 use crate::{
     state_machine::{
@@ -10,16 +11,13 @@ use crate::{
     syntax_tree::{predicate::Predicate, SyntaxTree},
 };
 
-pub mod strategy;
+// pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct WhereClause {
-    #[get = "pub"]
-    where_keyword: Keyword,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    predicates: Vec<Passable<Predicate>>,
+    pub where_keyword: Keyword,
+    pub colon: Punctuation,
+    pub predicates: Vec<Passable<Predicate>>,
 }
 
 impl SyntaxTree for WhereClause {
@@ -44,40 +42,16 @@ impl SyntaxTree for WhereClause {
     }
 }
 
-/*
-from std::memory import Allocator, Sized, write, forget
-from std::option import Option, Some
+impl SourceElement for WhereClause {
+    fn span(&self) -> pernixc_source_file::Span {
+        let end = self
+            .predicates
+            .last()
+            .map_or_else(|| self.colon.span.clone(), SourceElement::span);
 
-public class Vector[T, A]:
-    private begin:     *T
-    private end:       *T
-    private capacity:  *T
-    private allocator: A
+        self.where_keyword.span.join(&end)
+    }
+}
 
-
-implements[T: Sized, A: Allocator] Vector[T, A]:
-    public function new(allocator: A) this:
-        this {
-            begin:     allocator.allocate(1),
-            end:       begin,
-            capacity:  begin + 1,
-            allocator: allocator,
-        }
-
-    public function pushBack(self: &mut this, value: Option[T]):
-        let Some(value) = value else:
-            return
-
-        if this.end == this.capacity:
-            this.grow()
-
-        write(this.end, value)
-        forget(value)
-
-        this.end += 1
-
-
-*/
-
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

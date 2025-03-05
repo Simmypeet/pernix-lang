@@ -8,6 +8,7 @@ use proptest::{
     test_runner::{TestCaseError, TestCaseResult},
 };
 
+use super::generic_parameter::strategy::GenericParameters;
 use crate::syntax_tree::{
     expression::strategy::Expression,
     pattern::strategy::Irrefutable,
@@ -16,7 +17,7 @@ use crate::syntax_tree::{
     statement::strategy::Statements,
     strategy::{
         AccessModifier, ConnectedList, ConstantPunctuation, Identifier,
-        LifetimeParameter, QualifiedIdentifier, SimplePath,
+        QualifiedIdentifier, SimplePath,
     },
 };
 
@@ -364,183 +365,6 @@ impl Display for ModuleKind {
             Self::File => write!(f, ";"),
             Self::Inline(module_body) => write!(f, "{{ {module_body} }}",),
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConstantParameter {
-    pub identifier: Identifier,
-    pub ty: r#type::strategy::Type,
-    pub default: Option<Expression>,
-}
-
-impl Input<&super::ConstantParameter> for &ConstantParameter {
-    fn assert(self, output: &super::ConstantParameter) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
-        self.ty.assert(output.r#type())?;
-        self.default
-            .as_ref()
-            .assert(output.default().as_ref().map(|x| &x.value))
-    }
-}
-
-impl Arbitrary for ConstantParameter {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        (
-            Identifier::arbitrary(),
-            r#type::strategy::Type::arbitrary(),
-            proptest::option::of(Expression::arbitrary()),
-        )
-            .prop_map(|(identifier, ty, default)| Self {
-                identifier,
-                ty,
-                default,
-            })
-            .boxed()
-    }
-}
-
-impl Display for ConstantParameter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "const {}: {}", self.identifier, self.ty)?;
-
-        if let Some(default) = self.default.as_ref() {
-            write!(f, " = {default}")?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeParameter {
-    pub identifier: Identifier,
-    pub default: Option<r#type::strategy::Type>,
-}
-
-impl Input<&super::TypeParameter> for &TypeParameter {
-    fn assert(self, output: &super::TypeParameter) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
-        self.default.as_ref().assert(output.default.as_ref().map(|x| &x.value))
-    }
-}
-
-impl Arbitrary for TypeParameter {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        (
-            Identifier::arbitrary(),
-            proptest::option::of(r#type::strategy::Type::arbitrary()),
-        )
-            .prop_map(|(identifier, ty)| Self { identifier, default: ty })
-            .boxed()
-    }
-}
-
-impl Display for TypeParameter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.identifier, f)?;
-
-        if let Some(type_parameter) = self.default.as_ref() {
-            write!(f, " = {type_parameter}")?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum GenericParameter {
-    Lifetime(LifetimeParameter),
-    Type(TypeParameter),
-    Const(ConstantParameter),
-}
-
-impl Input<&super::GenericParameter> for &GenericParameter {
-    fn assert(self, output: &super::GenericParameter) -> TestCaseResult {
-        match (self, output) {
-            (
-                GenericParameter::Lifetime(i),
-                super::GenericParameter::Lifetime(o),
-            ) => i.assert(o),
-            (GenericParameter::Type(i), super::GenericParameter::Type(o)) => {
-                i.assert(o)
-            }
-            (
-                GenericParameter::Const(i),
-                super::GenericParameter::Constant(o),
-            ) => i.assert(o),
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, found {output:?}"
-            ))),
-        }
-    }
-}
-
-impl Arbitrary for GenericParameter {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        proptest::prop_oneof![
-            LifetimeParameter::arbitrary().prop_map(Self::Lifetime),
-            TypeParameter::arbitrary().prop_map(Self::Type),
-            ConstantParameter::arbitrary().prop_map(Self::Const),
-        ]
-        .boxed()
-    }
-}
-
-impl Display for GenericParameter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Lifetime(l) => Display::fmt(l, f),
-            Self::Type(t) => Display::fmt(t, f),
-            Self::Const(c) => Display::fmt(c, f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GenericParameters {
-    pub parameter_list:
-        Option<ConnectedList<GenericParameter, ConstantPunctuation<','>>>,
-}
-
-impl Input<&super::GenericParameters> for &GenericParameters {
-    fn assert(self, output: &super::GenericParameters) -> TestCaseResult {
-        self.parameter_list.as_ref().assert(output.connected_list.as_ref())
-    }
-}
-
-impl Arbitrary for GenericParameters {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        proptest::option::of(ConnectedList::arbitrary_with(
-            GenericParameter::arbitrary(),
-            ConstantPunctuation::arbitrary(),
-        ))
-        .prop_map(|parameter_list| Self { parameter_list })
-        .boxed()
-    }
-}
-
-impl Display for GenericParameters {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('[')?;
-
-        if let Some(parameter_list) = &self.parameter_list {
-            Display::fmt(parameter_list, f)?;
-        }
-
-        f.write_char(']')
     }
 }
 

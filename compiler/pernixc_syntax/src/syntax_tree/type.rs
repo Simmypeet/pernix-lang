@@ -3,7 +3,6 @@
 #![allow(missing_docs)]
 
 use enum_as_inner::EnumAsInner;
-use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
@@ -24,26 +23,7 @@ use crate::{
     syntax_tree::QualifiedIdentifier,
 };
 
-pub mod strategy;
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Primitive:
-///     'bool'
-///     | 'float32'
-///     | 'float64'
-///     | 'int8'
-///     | 'int16'
-///     | 'int32'
-///     | 'int64'
-///     | 'uint8'
-///     | 'uint16'
-///     | 'uint32'
-///     | 'uint64'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
 pub enum Primitive {
     Bool(Keyword),
     Float32(Keyword),
@@ -59,6 +39,7 @@ pub enum Primitive {
     Usize(Keyword),
     Isize(Keyword),
 }
+
 impl SyntaxTree for Primitive {
     fn parse(
         state_machine: &mut StateMachine,
@@ -104,23 +85,12 @@ impl SourceElement for Primitive {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Reference:
-///      Qualifier Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reference {
-    #[get = "pub"]
-    ampersand: Punctuation,
-    #[get = "pub"]
-    lifetime: Option<Lifetime>,
-    #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
-    #[get = "pub"]
-    operand: Box<Type>,
+    pub ampersand: Punctuation,
+    pub lifetime: Option<Lifetime>,
+    pub mutable_keyword: Option<Keyword>,
+    pub operand: Box<Type>,
 }
 
 impl SourceElement for Reference {
@@ -135,7 +105,7 @@ impl SyntaxTree for Reference {
         (
             '&'.to_owned(),
             Lifetime::parse.or_none(),
-            KeywordKind::Mutable.to_owned().or_none(),
+            KeywordKind::Mut.to_owned().or_none(),
             Type::parse.map(Box::new),
         )
             .map(|(ampersand, lifetime, mutable_keyword, operand)| Self {
@@ -148,28 +118,10 @@ impl SyntaxTree for Reference {
     }
 }
 
-impl Reference {
-    /// Destructs the `Reference` into its components.
-    #[must_use]
-    pub fn destruct(
-        self,
-    ) -> (Punctuation, Option<Lifetime>, Option<Keyword>, Box<Type>) {
-        (self.ampersand, self.lifetime, self.mutable_keyword, self.operand)
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Unpackable:
-///     '...'? Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Unpackable {
-    #[get = "pub"]
-    ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
-    #[get = "pub"]
-    r#type: Box<Type>,
+    pub ellipsis: Option<(Punctuation, Punctuation, Punctuation)>,
+    pub r#type: Box<Type>,
 }
 
 impl SyntaxTree for Unpackable {
@@ -201,12 +153,6 @@ impl SourceElement for Unpackable {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Tuple:
-///     '(' UnpackableList? ')'
-///     ;
-/// ```
 pub type Tuple = EnclosedConnectedList<Unpackable, Punctuation>;
 
 impl SyntaxTree for Tuple {
@@ -220,24 +166,13 @@ impl SyntaxTree for Tuple {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Array:
-///     '[' Type ':' Constant ']'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Array {
-    #[get = "pub"]
-    left_bracket: Punctuation,
-    #[get = "pub"]
-    operand: Box<Type>,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    constant: Constant,
-    #[get = "pub"]
-    right_bracket: Punctuation,
+    pub left_bracket: Punctuation,
+    pub operand: Box<Type>,
+    pub colon: Punctuation,
+    pub constant: Constant,
+    pub right_bracket: Punctuation,
 }
 
 impl SyntaxTree for Array {
@@ -264,20 +199,11 @@ impl SourceElement for Array {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Pointer:
-///     '*' mutable? Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pointer {
-    #[get = "pub"]
-    asterisk: Punctuation,
-    #[get = "pub"]
-    mutable_keyword: Option<Keyword>,
-    #[get = "pub"]
-    operand: Box<Type>,
+    pub asterisk: Punctuation,
+    pub mutable_keyword: Option<Keyword>,
+    pub operand: Box<Type>,
 }
 
 impl SyntaxTree for Pointer {
@@ -287,7 +213,7 @@ impl SyntaxTree for Pointer {
     ) -> parse::Result<Self> {
         (
             '*'.to_owned(),
-            KeywordKind::Mutable.to_owned().or_none(),
+            KeywordKind::Mut.to_owned().or_none(),
             Type::parse.map(Box::new),
         )
             .map(|(asterisk, mutable_keyword, operand)| Self {
@@ -303,19 +229,10 @@ impl SourceElement for Pointer {
     fn span(&self) -> Span { self.asterisk.span.join(&self.operand.span()) }
 }
 
-/// Syntax Synopsis:
-///
-/// ``` txt
-/// Phantom:
-///     'phantom' Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Phantom {
-    #[get = "pub"]
-    phantom_keyword: Keyword,
-    #[get = "pub"]
-    r#type: Box<Type>,
+    pub phantom_keyword: Keyword,
+    pub r#type: Box<Type>,
 }
 
 impl SyntaxTree for Phantom {
@@ -335,20 +252,6 @@ impl SourceElement for Phantom {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Type:
-///     Primitive
-///     | QualifiedIdentifier
-///     | Reference
-///     | Pointer
-///     | Tuple
-///     | Local
-///     | Array
-///     | Phantom
-///     | Elided
-///     ;
-/// ```
 #[derive(
     Debug,
     Clone,
@@ -406,6 +309,3 @@ impl SourceElement for Type {
         }
     }
 }
-
-#[cfg(test)]
-mod test;

@@ -2,7 +2,6 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
@@ -22,20 +21,11 @@ use crate::{
     },
 };
 
-pub mod strategy;
-
-/// Syntax Synopsis:
-/// ``` txt
-/// HigherRankedLifetimes:
-///     'for' '[' (LifetimeParameter (',' LifetimeParameter)* ','?)? ']'
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HigherRankedLifetimes {
-    #[get = "pub"]
-    for_keyword: Keyword,
-    #[get = "pub"]
-    lifetime_parameters: EnclosedConnectedList<LifetimeParameter, Punctuation>,
+    pub for_keyword: Keyword,
+    pub lifetime_parameters:
+        EnclosedConnectedList<LifetimeParameter, Punctuation>,
 }
 
 impl SyntaxTree for HigherRankedLifetimes {
@@ -64,22 +54,12 @@ impl SourceElement for HigherRankedLifetimes {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// QualifiedIdentifierBound:
-///     '!'? HigherRankedLifetimes? `const`? QualifiedIdentifier
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct QualifiedIdentifierBound {
-    #[get = "pub"]
-    negation: Option<Punctuation>,
-    #[get = "pub"]
-    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    #[get = "pub"]
-    const_keyword: Option<Keyword>,
-    #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
+    pub negation: Option<Punctuation>,
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub const_keyword: Option<Keyword>,
+    pub qualified_identifier: QualifiedIdentifier,
 }
 
 impl SourceElement for QualifiedIdentifierBound {
@@ -98,26 +78,6 @@ impl SourceElement for QualifiedIdentifierBound {
         };
 
         first.join(&self.qualified_identifier.span())
-    }
-}
-
-impl QualifiedIdentifierBound {
-    /// Dissolves the [`QualifiedIdentifierBound`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (
-        Option<Punctuation>,
-        Option<HigherRankedLifetimes>,
-        Option<Keyword>,
-        QualifiedIdentifier,
-    ) {
-        (
-            self.negation,
-            self.higher_ranked_lifetimes,
-            self.const_keyword,
-            self.qualified_identifier,
-        )
     }
 }
 
@@ -151,15 +111,6 @@ impl SyntaxTree for QualifiedIdentifierBound {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// TypeBound:
-///     QualifiedIdentifierBound
-///     | 'const'
-///     | 'tuple'
-///     | Lifetime
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum TypeBound {
     /// Represent either trait or marker bound.
@@ -201,37 +152,12 @@ impl SyntaxTree for TypeBound {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Type:
-///     HigherRankedLifetimes? Type ':' (TypeBound ('+' TypeBound)*)?
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Type {
-    #[get = "pub"]
-    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    #[get = "pub"]
-    r#type: r#type::Type,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    bounds: UnionList<TypeBound>,
-}
-
-impl Type {
-    /// Dissolves the [`Type`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (
-        Option<HigherRankedLifetimes>,
-        r#type::Type,
-        Punctuation,
-        UnionList<TypeBound>,
-    ) {
-        (self.higher_ranked_lifetimes, self.r#type, self.colon, self.bounds)
-    }
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub r#type: r#type::Type,
+    pub colon: Punctuation,
+    pub bounds: UnionList<TypeBound>,
 }
 
 impl SyntaxTree for Type {
@@ -264,22 +190,12 @@ impl SourceElement for Type {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// TraitTypeEquality:
-///     HigherRankedLifetimes? QualifiedIdentifier '=' Type
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitTypeEquality {
-    #[get = "pub"]
-    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    #[get = "pub"]
-    lhs_type: r#type::Type,
-    #[get = "pub"]
-    equals: Punctuation,
-    #[get = "pub"]
-    rhs_type: r#type::Type,
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub lhs_type: r#type::Type,
+    pub equals: Punctuation,
+    pub rhs_type: r#type::Type,
 }
 
 impl SyntaxTree for TraitTypeEquality {
@@ -303,22 +219,6 @@ impl SyntaxTree for TraitTypeEquality {
     }
 }
 
-impl TraitTypeEquality {
-    /// Dissolves the [`TraitTypeEquality`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Option<HigherRankedLifetimes>, r#type::Type, Punctuation, r#type::Type)
-    {
-        (
-            self.higher_ranked_lifetimes,
-            self.lhs_type,
-            self.equals,
-            self.rhs_type,
-        )
-    }
-}
-
 impl SourceElement for TraitTypeEquality {
     fn span(&self) -> Span {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
@@ -328,22 +228,12 @@ impl SourceElement for TraitTypeEquality {
     }
 }
 
-/// Syntax Synopsis:
-/// ```txt
-/// TraitBound:
-///     '!'? HigherRankedLifetimes? `const`? QualifiedIdentifier?
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitBound {
-    #[get = "pub"]
-    negation: Option<Punctuation>,
-    #[get = "pub"]
-    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    #[get = "pub"]
-    const_keyword: Option<Keyword>,
-    #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
+    pub negation: Option<Punctuation>,
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub const_keyword: Option<Keyword>,
+    pub qualified_identifier: QualifiedIdentifier,
 }
 
 impl SyntaxTree for TraitBound {
@@ -376,21 +266,6 @@ impl SyntaxTree for TraitBound {
     }
 }
 
-impl TraitBound {
-    /// Dissolves the [`TraitBound`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Option<HigherRankedLifetimes>, Option<Keyword>, QualifiedIdentifier)
-    {
-        (
-            self.higher_ranked_lifetimes,
-            self.const_keyword,
-            self.qualified_identifier,
-        )
-    }
-}
-
 impl SourceElement for TraitBound {
     fn span(&self) -> Span {
         let first = match (
@@ -410,18 +285,10 @@ impl SourceElement for TraitBound {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// TraitBound:
-///     'trait' TraitBound ('+' TraitBound)*
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Trait {
-    #[get = "pub"]
-    trait_keyword: Keyword,
-    #[get = "pub"]
-    bounds: UnionList<TraitBound>,
+    pub trait_keyword: Keyword,
+    pub bounds: UnionList<TraitBound>,
 }
 
 impl SyntaxTree for Trait {
@@ -435,31 +302,15 @@ impl SyntaxTree for Trait {
     }
 }
 
-impl Trait {
-    /// Dissolves the [`Trait`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Keyword, UnionList<TraitBound>) {
-        (self.trait_keyword, self.bounds)
-    }
-}
-
 impl SourceElement for Trait {
     fn span(&self) -> Span { self.trait_keyword.span.join(&self.bounds.span()) }
 }
 
-/// ```txt
-/// MarkerBound:
-///     '!'? HigherRankedLifetimes? QualifiedIdentifier
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MarkerBound {
-    #[get = "pub"]
-    negation: Option<Punctuation>,
-    #[get = "pub"]
-    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    #[get = "pub"]
-    qualified_identifier: QualifiedIdentifier,
+    pub negation: Option<Punctuation>,
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub qualified_identifier: QualifiedIdentifier,
 }
 
 impl SyntaxTree for MarkerBound {
@@ -479,17 +330,6 @@ impl SyntaxTree for MarkerBound {
     }
 }
 
-impl MarkerBound {
-    /// Dissolves the [`MarkerBound`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(
-        self,
-    ) -> (Option<Punctuation>, Option<HigherRankedLifetimes>, QualifiedIdentifier)
-    {
-        (self.negation, self.higher_ranked_lifetimes, self.qualified_identifier)
-    }
-}
-
 impl SourceElement for MarkerBound {
     fn span(&self) -> Span {
         let begin = self.negation.as_ref().map_or_else(
@@ -506,18 +346,10 @@ impl SourceElement for MarkerBound {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Marker:
-///     'marker' MarkerBound ('+' MarkerBound)*
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Marker {
-    #[get = "pub"]
-    marker_keyword: Keyword,
-    #[get = "pub"]
-    bounds: UnionList<MarkerBound>,
+    pub marker_keyword: Keyword,
+    pub bounds: UnionList<MarkerBound>,
 }
 
 impl SyntaxTree for Marker {
@@ -537,28 +369,11 @@ impl SourceElement for Marker {
     }
 }
 
-impl Marker {
-    /// Dissolves the [`Marker`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Keyword, UnionList<MarkerBound>) {
-        (self.marker_keyword, self.bounds)
-    }
-}
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Outlives:
-///     OutlivesOperand ':' Lifetime ('+' Lifetime)*
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeOutlives {
-    #[get = "pub"]
-    operand: Lifetime,
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    bounds: UnionList<Lifetime>,
+    pub operand: Lifetime,
+    pub colon: Punctuation,
+    pub bounds: UnionList<Lifetime>,
 }
 
 impl SyntaxTree for LifetimeOutlives {
@@ -572,30 +387,14 @@ impl SyntaxTree for LifetimeOutlives {
     }
 }
 
-impl LifetimeOutlives {
-    /// Dissolves the [`LifetimeOutlives`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Lifetime, Punctuation, UnionList<Lifetime>) {
-        (self.operand, self.colon, self.bounds)
-    }
-}
-
 impl SourceElement for LifetimeOutlives {
     fn span(&self) -> Span { self.operand.span().join(&self.bounds.span()) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// TupleOperand:
-///     HigherRankedLifetimes? TupleOperandKind
-///     ;
-/// ```
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleOperand {
-    #[get = "pub"]
-    higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
-    #[get = "pub"]
-    r#type: r#type::Type,
+    pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
+    pub r#type: r#type::Type,
 }
 
 impl SyntaxTree for TupleOperand {
@@ -612,14 +411,6 @@ impl SyntaxTree for TupleOperand {
     }
 }
 
-impl TupleOperand {
-    /// Dissolves the [`TupleOperand`] into a tuple of its fields.
-    #[must_use]
-    pub fn dissolve(self) -> (Option<HigherRankedLifetimes>, r#type::Type) {
-        (self.higher_ranked_lifetimes, self.r#type)
-    }
-}
-
 impl SourceElement for TupleOperand {
     fn span(&self) -> Span {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
@@ -629,16 +420,6 @@ impl SourceElement for TupleOperand {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Predicate:
-///     TraitTypeEquality
-///     | Trait
-///     | Outlives
-///     | ConstantType
-///     | Tuple
-///     ;
-/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
@@ -716,6 +497,3 @@ impl SourceElement for Predicate {
         }
     }
 }
-
-#[cfg(test)]
-mod test;

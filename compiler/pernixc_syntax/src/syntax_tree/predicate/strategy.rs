@@ -239,7 +239,7 @@ impl<T: Display> Display for BoundList<T> {
 }
 
 impl<T: std::fmt::Debug> BoundList<T> {
-    fn arbitrary_with(
+    pub fn arbitrary_with(
         args: impl Strategy<Value = T> + Clone + 'static,
     ) -> BoxedStrategy<Self> {
         (args.clone(), proptest::collection::vec(args, 0..=6))

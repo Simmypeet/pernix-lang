@@ -9,6 +9,7 @@ use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation, Token},
     token_stream::{DelimiterKind, FragmentKind, NodeKind, Tree},
 };
+use pernixc_source_file::SourceElement;
 
 use super::{StateMachine, StepIntoError};
 use crate::{
@@ -253,7 +254,16 @@ pub trait Parse<'a> {
     ///
     /// The parser should end at a new line token or end of the token stream to
     /// be considered as a successful indentation item.
-    fn indentation_item(self) -> IndentationItem<Self>
+    fn indentation_item(self) -> IndentationItem<Self, true>
+    where
+        Self: Sized,
+    {
+        IndentationItem(self)
+    }
+
+    /// Similar to [`Parse::indentation_item`] but it does not allow `pass`
+    /// tokens to be considered as a successful indentation item.
+    fn non_passable_indentation_item(self) -> IndentationItem<Self, false>
     where
         Self: Sized,
     {
@@ -938,11 +948,40 @@ pub enum Passable<T> {
     SyntaxTree(T),
 }
 
-/// Created by the [`Parse::indent_item`] method.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IndentationItem<T>(T);
+impl<T> Passable<T> {
+    /// Converts the passable item into an option.
+    #[must_use]
+    pub fn into_option(self) -> Option<T> {
+        match self {
+            Self::Pass(_) => None,
+            Self::SyntaxTree(tree) => Some(tree),
+        }
+    }
 
-impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T> {
+    /// Converts the passable item into an option.
+    #[must_use]
+    pub const fn as_option(&self) -> Option<&T> {
+        match self {
+            Self::Pass(_) => None,
+            Self::SyntaxTree(tree) => Some(tree),
+        }
+    }
+}
+
+impl<T: SourceElement> SourceElement for Passable<T> {
+    fn span(&self) -> pernixc_source_file::Span {
+        match self {
+            Self::Pass(keyword) => keyword.span(),
+            Self::SyntaxTree(tree) => tree.span(),
+        }
+    }
+}
+
+/// Created by the [`Parse::indentation_item`] method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IndentationItem<T, const PASSABLE: bool>(T);
+
+impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
     type Output = Passable<T::Output>;
 
     fn parse(
@@ -965,6 +1004,70 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T> {
         )
             .branch()
             .parse(state_machine, handler);
+
+        let current = state_machine.peek();
+
+        // it must end on a new line or just end of the token stream
+        if let Some((token, mut index)) = current {
+            if token.as_token().is_none_or(|x| !x.is_new_line()) {
+                handler.receive(error::Error::new(
+                    state_machine.tree,
+                    Unexpected {
+                        token_index: Some(index),
+                        node_index: state_machine.current_node_index(),
+                        commit_count: 1,
+                    },
+                    vec![Expected::NewLine],
+                ));
+
+                // find the nearest line
+                while index < state_machine.current_node().token_stream().len()
+                {
+                    if state_machine
+                        .current_node()
+                        .token_stream()
+                        .get(index)
+                        .and_then(|x| x.as_token())
+                        .and_then(|x| x.as_new_line())
+                        .is_some()
+                    {
+                        break;
+                    }
+                    index += 1;
+                }
+            }
+
+            // eat new line
+            assert!(state_machine.next().is_none_or(|x| x
+                .0
+                .as_token()
+                .is_some_and(Token::is_new_line)));
+        }
+
+        state_machine.new_line_significant = current_new_line_significant;
+
+        result
+    }
+}
+
+impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
+    type Output = T::Output;
+
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output> {
+        let current_new_line_significant = state_machine.new_line_significant;
+
+        // skip to the nearest significant token
+        if let Some((_, tok_index)) = state_machine.peek() {
+            state_machine.location.token_index = tok_index;
+        }
+
+        state_machine.new_line_significant = true;
+
+        let result = self.0.parse(state_machine, handler);
 
         let current = state_machine.peek();
 

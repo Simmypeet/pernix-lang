@@ -13,7 +13,7 @@ use pernixc_lexical::{
 use pernixc_source_file::{SourceElement, Span};
 
 use super::{
-    expression::{Brace, Expression},
+    expression::{brace::Brace, Expression},
     pattern::Irrefutable,
     r#type::Type,
     EnclosedTree, Parse, ParseExt, SyntaxTree,
@@ -26,14 +26,6 @@ use crate::{
     },
 };
 
-pub mod strategy;
-
-/// Syntax Synopsis:
-/// ``` txt
-/// Statement:
-///     VariableDeclaration
-///     | Expressive
-/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
@@ -57,11 +49,11 @@ impl SyntaxTree for Statement {
 
                 match expression {
                     Expression::Binary(binary)
-                        if binary.first().is_brace()
-                            && binary.chain().is_empty() =>
+                        if binary.first.is_brace()
+                            && binary.chain.is_empty() =>
                     {
                         Ok(Self::Expressive(Expressive::Brace(
-                            binary.destruct().0.into_brace().unwrap(),
+                            binary.first.into_brace().unwrap(),
                         )))
                     }
 
@@ -90,18 +82,10 @@ impl SourceElement for Statement {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// TypeAnnotation:
-///     ':' Type
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct TypeAnnotation {
-    #[get = "pub"]
-    colon: Punctuation,
-    #[get = "pub"]
-    r#type: Type,
+    pub colon: Punctuation,
+    pub r#type: Type,
 }
 
 impl SyntaxTree for TypeAnnotation {
@@ -119,27 +103,14 @@ impl SourceElement for TypeAnnotation {
     fn span(&self) -> Span { self.colon.span().join(&self.r#type.span()) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// VariableDeclaration:
-///     'let' Irrefutable TypeAnnotation? = Expression ';'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
 pub struct VariableDeclaration {
-    #[get = "pub"]
-    let_keyword: Keyword,
-    #[get = "pub"]
-    irrefutable_pattern: Irrefutable,
-    #[get = "pub"]
-    type_annotation: Option<TypeAnnotation>,
-    #[get = "pub"]
-    equals: Punctuation,
-    #[get = "pub"]
-    expression: Expression,
-    #[get = "pub"]
-    semicolon: Punctuation,
+    pub let_keyword: Keyword,
+    pub irrefutable_pattern: Irrefutable,
+    pub type_annotation: Option<TypeAnnotation>,
+    pub equals: Punctuation,
+    pub expression: Expression,
+    pub semicolon: Punctuation,
 }
 
 impl SyntaxTree for VariableDeclaration {
@@ -182,13 +153,6 @@ impl SourceElement for VariableDeclaration {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Expressive:
-///     Semi
-///     | Imperative
-///     ;
-/// ```
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
@@ -207,31 +171,16 @@ impl SourceElement for Expressive {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Semi:
-///     Functional ';'
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-#[allow(missing_docs)]
 pub struct Semi {
-    #[get = "pub"]
-    expression: Expression,
-    #[get = "pub"]
-    semicolon: Punctuation,
+    pub expression: Expression,
+    pub semicolon: Punctuation,
 }
 
 impl SourceElement for Semi {
     fn span(&self) -> Span { self.expression.span().join(&self.semicolon.span) }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Statements:
-///     '{' Statement* '}'
-///     ;
-/// ```
 pub type Statements = EnclosedTree<Vec<Statement>>;
 
 impl SyntaxTree for Statements {
@@ -245,6 +194,3 @@ impl SyntaxTree for Statements {
             .parse(state_machine, handler)
     }
 }
-
-#[cfg(test)]
-mod test;

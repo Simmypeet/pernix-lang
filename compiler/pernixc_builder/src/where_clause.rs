@@ -296,7 +296,7 @@ fn create_outlives_predicates(
     table: &Table,
     global_id: GlobalID,
     extra_namespace: &ExtraNamespace<Default>,
-    syntax_tree: &syntax_tree::predicate::Outlives,
+    syntax_tree: &syntax_tree::predicate::LifetimeOutlives,
     where_clause: &mut WhereClause,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
@@ -555,7 +555,7 @@ impl query::Builder<WhereClause> for Builder {
                     );
                 }
 
-                syntax_tree::predicate::Predicate::Outlives(
+                syntax_tree::predicate::Predicate::LifetimeOutlives(
                     lifetime_outlives,
                 ) => {
                     create_outlives_predicates(

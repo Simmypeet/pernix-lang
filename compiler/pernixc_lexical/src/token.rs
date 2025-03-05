@@ -41,8 +41,10 @@ pub enum KeywordKind {
     If,
     /// `else` keyword.
     Else,
-    /// `mutable` keyword.
-    Mutable,
+    /// `mut` keyword.
+    Mut,
+    /// `not` keyword.
+    Not,
     /// `while` keyword.
     While,
     /// `break` keyword.
@@ -107,8 +109,8 @@ pub enum KeywordKind {
     Where,
     /// `trait` keyword.
     Trait,
-    /// `using` keyword.
-    Using,
+    /// `import` keyword.
+    Import,
     /// `function` keyword.
     Function,
     /// `unsafe` keyword.
@@ -205,7 +207,7 @@ impl KeywordKind {
             Self::If => "if",
             Self::Else => "else",
             Self::While => "while",
-            Self::Mutable => "mutable",
+            Self::Mut => "mut",
             Self::Break => "break",
             Self::Continue => "continue",
             Self::Return => "return",
@@ -234,7 +236,7 @@ impl KeywordKind {
             Self::Static => "static",
             Self::Where => "where",
             Self::Trait => "trait",
-            Self::Using => "using",
+            Self::Import => "import",
             Self::Unsafe => "unsafe",
             Self::Match => "match",
             Self::Tuple => "tuple",
@@ -254,6 +256,7 @@ impl KeywordKind {
             Self::Marker => "marker",
             Self::Panic => "panic",
             Self::Pass => "pass",
+            Self::Not => "not",
         }
     }
 }
