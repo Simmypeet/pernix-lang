@@ -12,6 +12,8 @@ use crate::{
     syntax_tree::{r#type::Type as TypeTerm, AccessModifier, SyntaxTree},
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
     pub type_keyword: Keyword,
@@ -116,3 +118,6 @@ impl SourceElement for Type {
         )
     }
 }
+
+#[cfg(test)]
+mod test;
