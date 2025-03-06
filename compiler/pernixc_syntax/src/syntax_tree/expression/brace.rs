@@ -1,27 +1,22 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
-use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation},
-    token_stream::DelimiterKind,
-};
+use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
 use pernixc_source_file::{SourceElement, Span};
 
 use super::{unit::Parenthesized, Expression, LabelSpecifier};
 use crate::{
     error,
     state_machine::{
-        parse::{self, Branch, Parse},
+        parse::{self, Branch, Parse, Passable},
         StateMachine,
     },
-    syntax_tree::{
-        pattern::Refutable, statement::Statements, EnclosedConnectedList,
-        ParseExt, SyntaxTree,
-    },
+    syntax_tree::{pattern::Refutable, statement::Statements, SyntaxTree},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[allow(clippy::large_enum_variant)]
 pub enum Brace {
-    Block(Block),
+    Scope(Scope),
     IfElse(IfElse),
     Loop(Loop),
     Match(Match),
@@ -34,7 +29,7 @@ impl SyntaxTree for Brace {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
-            Block::parse.map(Self::Block),
+            Scope::parse.map(Self::Scope),
             IfElse::parse.map(Self::IfElse),
             Loop::parse.map(Self::Loop),
             Match::parse.map(Self::Match),
@@ -48,7 +43,7 @@ impl SyntaxTree for Brace {
 impl SourceElement for Brace {
     fn span(&self) -> Span {
         match self {
-            Self::Block(syn) => syn.span(),
+            Self::Scope(syn) => syn.span(),
             Self::IfElse(syn) => syn.span(),
             Self::Loop(syn) => syn.span(),
             Self::Match(syn) => syn.span(),
@@ -60,8 +55,7 @@ impl SourceElement for Brace {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchArm {
     pub refutable_pattern: Refutable,
-    pub colon: Punctuation,
-    pub expression: Box<Expression>,
+    pub block: Block,
 }
 
 impl SyntaxTree for MatchArm {
@@ -69,40 +63,55 @@ impl SyntaxTree for MatchArm {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (Refutable::parse, ':'.to_owned(), Expression::parse.map(Box::new))
-            .map(|(refutable_pattern, colon, expression)| Self {
-                refutable_pattern,
-                colon,
-                expression,
-            })
+        (Refutable::parse, Block::parse)
+            .map(|(refutable_pattern, block)| Self { refutable_pattern, block })
             .parse(state_machine, handler)
     }
 }
 
 impl SourceElement for MatchArm {
     fn span(&self) -> Span {
-        self.refutable_pattern.span().join(&self.expression.span())
+        self.refutable_pattern.span().join(&self.block.span())
     }
 }
 
-pub type MatchArms = EnclosedConnectedList<MatchArm, Punctuation>;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MatchBody {
+    colon: Punctuation,
+    arms: Vec<Passable<MatchArm>>,
+}
 
-impl SyntaxTree for MatchArms {
+impl SyntaxTree for MatchBody {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         MatchArm::parse
-            .enclosed_connected_list(','.to_owned(), DelimiterKind::Brace)
+            .indentation_item()
+            .keep_take_all()
+            .step_into_indentation()
+            .map(|(colon, arms)| Self { colon: colon.clone(), arms })
             .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for MatchBody {
+    fn span(&self) -> Span {
+        let start = self.colon.span();
+        let end = self
+            .arms
+            .iter()
+            .fold(start.clone(), |span, arm| span.join(&arm.span()));
+
+        start.join(&end)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Match {
     pub match_keyword: Keyword,
-    pub parenthesized: Parenthesized,
-    pub arms: MatchArms,
+    pub expression: Box<Expression>,
+    pub body: MatchBody,
 }
 
 impl SyntaxTree for Match {
@@ -110,25 +119,138 @@ impl SyntaxTree for Match {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::Match.to_owned(), Parenthesized::parse, MatchArms::parse)
-            .map(|(match_keyword, parenthesized, arms)| Self {
+        (
+            KeywordKind::Match.to_owned(),
+            Expression::parse.map(Box::new),
+            MatchBody::parse,
+        )
+            .map(|(match_keyword, expression, body)| Self {
                 match_keyword,
-                parenthesized,
-                arms,
+                expression,
+                body,
             })
             .parse(state_machine, handler)
     }
 }
 
 impl SourceElement for Match {
-    fn span(&self) -> Span { self.match_keyword.span.join(&self.arms.span()) }
+    fn span(&self) -> Span { self.match_keyword.span.join(&self.body.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Block {
-    pub label_specifier: Option<LabelSpecifier>,
+pub struct Scope {
     pub unsafe_keyword: Option<Keyword>,
+    pub scope_keyword: Keyword,
+    pub label_specifier: Option<LabelSpecifier>,
     pub statements: Statements,
+}
+
+impl SyntaxTree for Scope {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Unsafe.to_owned().or_none(),
+            KeywordKind::Scope.to_owned(),
+            LabelSpecifier::parse.or_none(),
+            Statements::parse,
+        )
+            .map(
+                |(
+                    unsafe_keyword,
+                    scope_keyword,
+                    label_specifier,
+                    statements,
+                )| Self {
+                    unsafe_keyword,
+                    scope_keyword,
+                    label_specifier,
+                    statements,
+                },
+            )
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for Scope {
+    fn span(&self) -> Span {
+        let start = self
+            .unsafe_keyword
+            .as_ref()
+            .map_or_else(|| self.scope_keyword.span(), SourceElement::span);
+
+        start.join(&self.statements.span())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IndentedBlock {
+    pub unsafe_keyword: Option<Keyword>,
+    pub label_specifier: Option<LabelSpecifier>,
+    pub statements: Statements,
+}
+
+impl SyntaxTree for IndentedBlock {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (
+            KeywordKind::Unsafe.to_owned().or_none(),
+            LabelSpecifier::parse.or_none(),
+            Statements::parse,
+        )
+            .map(|(unsafe_keyword, label_specifier, statements)| Self {
+                unsafe_keyword,
+                label_specifier,
+                statements,
+            })
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for IndentedBlock {
+    fn span(&self) -> Span {
+        let end = self.statements.span();
+        let start = self.unsafe_keyword.as_ref().map_or_else(
+            || {
+                self.label_specifier
+                    .as_ref()
+                    .map_or_else(|| end.clone(), SourceElement::span)
+            },
+            SourceElement::span,
+        );
+
+        start.join(&self.statements.span())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InlineBlock {
+    pub colon: Punctuation,
+    pub expression: Box<Expression>,
+}
+
+impl SyntaxTree for InlineBlock {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (':'.to_owned(), Expression::parse.map(Box::new))
+            .map(|(colon, expression)| Self { colon, expression })
+            .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for InlineBlock {
+    fn span(&self) -> Span { self.colon.span().join(&self.expression.span()) }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Block {
+    Indented(IndentedBlock),
+    Inline(InlineBlock),
 }
 
 impl SyntaxTree for Block {
@@ -137,31 +259,20 @@ impl SyntaxTree for Block {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
-            LabelSpecifier::parse.or_none(),
-            KeywordKind::Unsafe.to_owned().or_none(),
-            Statements::parse,
+            IndentedBlock::parse.map(Self::Indented),
+            InlineBlock::parse.map(Self::Inline),
         )
-            .map(|(label_specifier, unsafe_keyword, statements)| Self {
-                label_specifier,
-                unsafe_keyword,
-                statements,
-            })
+            .branch()
             .parse(state_machine, handler)
     }
 }
 
 impl SourceElement for Block {
     fn span(&self) -> Span {
-        let start = self.label_specifier.as_ref().map_or_else(
-            || {
-                self.unsafe_keyword
-                    .as_ref()
-                    .map_or_else(|| self.statements.span(), SourceElement::span)
-            },
-            SourceElement::span,
-        );
-        let end = self.statements.span();
-        start.join(&end)
+        match self {
+            Self::Indented(block) => block.span(),
+            Self::Inline(block) => block.span(),
+        }
     }
 }
 

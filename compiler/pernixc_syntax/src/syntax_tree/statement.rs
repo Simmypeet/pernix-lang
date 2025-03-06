@@ -6,22 +6,17 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_handler::Handler;
-use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation},
-    token_stream::DelimiterKind,
-};
+use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
 use pernixc_source_file::{SourceElement, Span};
 
 use super::{
-    expression::{brace::Brace, Expression},
-    pattern::Irrefutable,
-    r#type::Type,
-    EnclosedTree, Parse, ParseExt, SyntaxTree,
+    expression::Expression, pattern::Irrefutable, r#type::Type, Parse,
+    SyntaxTree,
 };
 use crate::{
     error,
     state_machine::{
-        parse::{self, Branch},
+        parse::{self, Branch, Passable},
         StateMachine,
     },
 };
@@ -32,7 +27,7 @@ use crate::{
 #[allow(missing_docs)]
 pub enum Statement {
     VariableDeclaration(VariableDeclaration),
-    Expressive(Expressive),
+    Expression(Expression),
 }
 
 impl SyntaxTree for Statement {
@@ -42,31 +37,7 @@ impl SyntaxTree for Statement {
     ) -> parse::Result<Self> {
         (
             VariableDeclaration::parse.map(Self::VariableDeclaration),
-            |state_machine: &mut StateMachine<'_>,
-             handler: &dyn Handler<error::Error>| {
-                let expression =
-                    Expression::parse.parse(state_machine, handler)?;
-
-                match expression {
-                    Expression::Binary(binary)
-                        if binary.first.is_brace()
-                            && binary.chain.is_empty() =>
-                    {
-                        Ok(Self::Expressive(Expressive::Brace(
-                            binary.first.into_brace().unwrap(),
-                        )))
-                    }
-
-                    expression => {
-                        Ok(Self::Expressive(Expressive::Semi(Semi {
-                            expression,
-                            semicolon: ';'
-                                .to_owned()
-                                .parse(state_machine, handler)?,
-                        })))
-                    }
-                }
-            },
+            Expression::parse.map(Self::Expression),
         )
             .branch()
             .parse(state_machine, handler)
@@ -77,7 +48,7 @@ impl SourceElement for Statement {
     fn span(&self) -> Span {
         match self {
             Self::VariableDeclaration(declaration) => declaration.span(),
-            Self::Expressive(expression) => expression.span(),
+            Self::Expression(expression) => expression.span(),
         }
     }
 }
@@ -153,35 +124,11 @@ impl SourceElement for VariableDeclaration {
     }
 }
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
-)]
-#[allow(missing_docs)]
-pub enum Expressive {
-    Semi(Semi),
-    Brace(Brace),
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Statements {
+    pub colon: Punctuation,
+    pub statements: Vec<Passable<Statement>>,
 }
-
-impl SourceElement for Expressive {
-    fn span(&self) -> Span {
-        match self {
-            Self::Semi(expression) => expression.span(),
-            Self::Brace(expression) => expression.span(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct Semi {
-    pub expression: Expression,
-    pub semicolon: Punctuation,
-}
-
-impl SourceElement for Semi {
-    fn span(&self) -> Span { self.expression.span().join(&self.semicolon.span) }
-}
-
-pub type Statements = EnclosedTree<Vec<Statement>>;
 
 impl SyntaxTree for Statements {
     fn parse(
@@ -189,8 +136,26 @@ impl SyntaxTree for Statements {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         Statement::parse
+            .indentation_item()
             .keep_take_all()
-            .enclosed_tree(DelimiterKind::Brace)
+            .step_into_indentation()
+            .map(|(colon, statements)| Self {
+                colon: colon.clone(),
+                statements,
+            })
             .parse(state_machine, handler)
+    }
+}
+
+impl SourceElement for Statements {
+    fn span(&self) -> Span {
+        let begin = self.colon.span();
+
+        begin.join(
+            &self
+                .statements
+                .last()
+                .map_or_else(|| begin.clone(), SourceElement::span),
+        )
     }
 }

@@ -153,6 +153,8 @@ pub enum KeywordKind {
     Panic,
     /// `pass` keyword.
     Pass,
+    /// `scope` keyword.
+    Scope,
 }
 
 impl std::fmt::Display for KeywordKind {
@@ -257,6 +259,7 @@ impl KeywordKind {
             Self::Panic => "panic",
             Self::Pass => "pass",
             Self::Not => "not",
+            Self::Scope => "scope",
         }
     }
 }

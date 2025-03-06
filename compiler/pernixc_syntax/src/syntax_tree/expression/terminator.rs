@@ -2,18 +2,14 @@ use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind};
 use pernixc_source_file::{SourceElement, Span};
 
-use super::{
-    binary::{Binary, BinaryNode, BinaryOperator},
-    brace::{Block, Brace},
-    LabelSpecifier,
-};
+use super::binary::Binary;
 use crate::{
     error,
     state_machine::{
         parse::{self, Branch, Parse},
         StateMachine,
     },
-    syntax_tree::{statement::Statements, Label, SyntaxTree},
+    syntax_tree::{Label, SyntaxTree},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -111,32 +107,8 @@ impl SyntaxTree for TerminatorTarget {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (
-            (
-                LabelSpecifier::parse,
-                KeywordKind::Unsafe.to_owned().or_none(),
-                Statements::parse,
-                (BinaryOperator::parse, BinaryNode::parse).keep_take(),
-            )
-                .map(
-                    |(label_specifier, unsafe_keyword, statements, chain)| {
-                        Self(
-                            None,
-                            Some(Binary {
-                                first: BinaryNode::Brace(Brace::Block(Block {
-                                    label_specifier: Some(label_specifier),
-                                    unsafe_keyword,
-                                    statements,
-                                })),
-                                chain,
-                            }),
-                        )
-                    },
-                ),
-            (Label::parse.or_none(), Binary::parse.or_none())
-                .map(|(label, binary)| Self(label, binary)),
-        )
-            .branch()
+        (Label::parse.or_none(), Binary::parse.or_none())
+            .map(|(label, binary)| Self(label, binary))
             .parse(state_machine, handler)
     }
 }
