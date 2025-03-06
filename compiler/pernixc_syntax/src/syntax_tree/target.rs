@@ -27,7 +27,7 @@ use super::{
 };
 use crate::{error, state_machine::parse::Parse};
 
-// pub mod strategy;
+pub mod strategy;
 
 /// Contains both the access modifier and the module signature.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -371,5 +371,5 @@ impl Target {
     }
 }
 
-// #[cfg(test)]
-// mod test;
+ #[cfg(test)]
+ mod test;

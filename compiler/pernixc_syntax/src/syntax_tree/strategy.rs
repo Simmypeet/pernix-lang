@@ -898,7 +898,9 @@ impl Display for LifetimeParameter {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 pub enum Passable<T> {
     Pass,
     SyntaxTree(T),

@@ -1,6 +1,7 @@
-use std::{collections::HashMap, fmt::Display, path::Path, str::FromStr};
+use std::{collections::HashMap, path::Path, str::FromStr};
 
 use derive_more::From;
+use drain_filter_polyfill::VecExt;
 use pernixc_lexical::token::KeywordKind;
 use pernixc_test_input::Input;
 use proptest::{
@@ -9,14 +10,15 @@ use proptest::{
 };
 
 use crate::syntax_tree::{
-    self, item,
-    strategy::{self, AccessModifier},
+    self,
+    item::{self, module},
+    strategy::{self, AccessModifier, IndentDisplay, IndentDisplayItem},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModuleTree {
     pub signature: Option<AccessModifier>,
-    pub module_content: item::strategy::ModuleContent,
+    pub module_content: item::module::strategy::Body,
     pub submodules_by_name: HashMap<String, ModuleTree>,
 }
 
@@ -64,10 +66,17 @@ impl Arbitrary for ModuleTree {
     type Parameters = ();
     type Strategy = proptest::strategy::BoxedStrategy<Self>;
 
+    #[allow(clippy::redundant_closure)]
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let module_content = item::strategy::ModuleContent::arbitrary_with(
-            Some(item::strategy::Item::arbitrary_with(true)),
-        );
+        let module_content =
+            module::strategy::Body::arbitrary().prop_map(|mut x| {
+                x.members.drain_filter(|x| {
+                    x.as_syntax_tree()
+                        .is_some_and(module::strategy::Member::is_module)
+                });
+
+                x
+            });
         let submodule_name = proptest::string::string_regex("[a-z]+")
             .unwrap()
             .prop_filter("filter out keyword", |x| {
@@ -109,14 +118,18 @@ impl Arbitrary for ModuleTree {
     }
 }
 
-impl Display for ModuleTree {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.module_content)?;
+impl IndentDisplay for ModuleTree {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.module_content.indent_fmt(f, indent)?;
 
         for (name, content) in &self.submodules_by_name {
             writeln!(
                 f,
-                "{} module {};",
+                "{} module {}",
                 match content.signature {
                     Some(strategy::AccessModifier::Public) | None => "public",
                     Some(strategy::AccessModifier::Private) => "private",
@@ -154,7 +167,7 @@ impl ModuleTree {
             std::fs::create_dir(file_path.with_extension(""))?;
         }
 
-        write!(file, "{self}")?;
+        write!(file, "{}", IndentDisplayItem(0, self))?;
 
         for (name, content) in &self.submodules_by_name {
             content.create_file(

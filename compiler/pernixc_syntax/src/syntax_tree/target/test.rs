@@ -35,7 +35,7 @@ proptest! {
             return Err(TestCaseError::fail(format!("parsing error: {:#?}",storage.as_vec())));
         }
 
-        target_module_tree.assert(target.module_tree())?;
+        target_module_tree.assert(&target.module_tree)?;
     }
 }
 

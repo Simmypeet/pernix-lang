@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
@@ -267,7 +268,7 @@ impl Input<&super::Module> for &Module {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Member {
     Module(Module),
     Import(Import),
