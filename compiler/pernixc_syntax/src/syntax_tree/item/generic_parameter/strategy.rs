@@ -25,11 +25,9 @@ pub struct ConstantParameter {
 
 impl Input<&super::ConstantParameter> for &ConstantParameter {
     fn assert(self, output: &super::ConstantParameter) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
-        self.ty.assert(output.r#type())?;
-        self.default
-            .as_ref()
-            .assert(output.default().as_ref().map(|x| &x.value))
+        self.identifier.assert(&output.identifier)?;
+        self.ty.assert(&output.r#type)?;
+        self.default.as_ref().assert(output.default.as_ref().map(|x| &x.value))
     }
 }
 
@@ -53,15 +51,17 @@ impl Arbitrary for ConstantParameter {
 }
 
 impl IndentDisplay for ConstantParameter {
-    fn fmt(
+    fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter,
-        _indent: usize,
+        indent: usize,
     ) -> std::fmt::Result {
-        write!(f, "const {}: {}", self.identifier, self.ty)?;
+        write!(f, "const {}: ", self.identifier)?;
+        self.ty.indent_fmt(f, indent)?;
 
         if let Some(default) = self.default.as_ref() {
-            write!(f, " = {default}")?;
+            write!(f, " = ")?;
+            default.indent_fmt(f, indent)?;
         }
 
         Ok(())
@@ -77,7 +77,7 @@ pub struct TypeParameter {
 
 impl Input<&super::TypeParameter> for &TypeParameter {
     fn assert(self, output: &super::TypeParameter) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
+        self.identifier.assert(&output.identifier)?;
         self.bounds
             .as_ref()
             .assert(output.bounds.as_ref().map(|x| &x.bounds))?;
@@ -107,19 +107,21 @@ impl Arbitrary for TypeParameter {
 }
 
 impl IndentDisplay for TypeParameter {
-    fn fmt(
+    fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter,
-        _indent: usize,
+        indent: usize,
     ) -> std::fmt::Result {
         write!(f, "{}", self.identifier)?;
 
         if let Some(bounds) = self.bounds.as_ref() {
-            write!(f, ": {bounds}")?;
+            write!(f, ": ")?;
+            bounds.indent_fmt(f, indent)?;
         }
 
         if let Some(type_parameter) = self.default.as_ref() {
-            write!(f, " = {type_parameter}")?;
+            write!(f, " = ")?;
+            type_parameter.indent_fmt(f, indent)?;
         }
 
         Ok(())
@@ -169,15 +171,15 @@ impl Arbitrary for GenericParameter {
 }
 
 impl IndentDisplay for GenericParameter {
-    fn fmt(
+    fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
         match self {
             Self::Lifetime(l) => Display::fmt(l, f),
-            Self::Type(t) => IndentDisplay::fmt(t, f, indent),
-            Self::Const(c) => IndentDisplay::fmt(c, f, indent),
+            Self::Type(t) => t.indent_fmt(f, indent),
+            Self::Const(c) => c.indent_fmt(f, indent),
         }
     }
 }
@@ -209,7 +211,7 @@ impl Arbitrary for GenericParameters {
 }
 
 impl IndentDisplay for GenericParameters {
-    fn fmt(
+    fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter<'_>,
         indent: usize,
@@ -217,7 +219,7 @@ impl IndentDisplay for GenericParameters {
         f.write_char('[')?;
 
         if let Some(parameter_list) = &self.parameter_list {
-            Display::fmt(parameter_list, f)?;
+            parameter_list.indent_fmt(f, indent)?;
         }
 
         f.write_char(']')

@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-// pub mod strategy;
+pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DefaultGenericParameter<Value> {
@@ -223,5 +223,5 @@ impl SyntaxTree for GenericParameters {
     }
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;
