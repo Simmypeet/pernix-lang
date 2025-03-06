@@ -12,6 +12,8 @@ use crate::{
     syntax_tree::{r#type::Type, AccessModifier, SyntaxTree},
 };
 
+mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
     pub struct_keyword: Keyword,
@@ -148,3 +150,6 @@ impl SourceElement for Struct {
         self.access_modifier.span().join(&self.body.span())
     }
 }
+
+#[cfg(test)]
+mod test;
