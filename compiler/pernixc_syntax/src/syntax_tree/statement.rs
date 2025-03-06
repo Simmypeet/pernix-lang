@@ -157,3 +157,6 @@ impl SourceElement for Statements {
         )
     }
 }
+
+#[cfg(test)]
+mod test;
