@@ -311,3 +311,6 @@ impl SourceElement for Type {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
