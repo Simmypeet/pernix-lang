@@ -15,6 +15,8 @@ use crate::{
     syntax_tree::{AccessModifier, SyntaxTree},
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
     pub trait_keyword: Keyword,
@@ -83,7 +85,7 @@ impl<T: SourceElement> SourceElement for MemberTemplate<T> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Member {
     Type(MemberTemplate<r#type::Signature>),
-    Funtion(MemberTemplate<function::Signature>),
+    Function(MemberTemplate<function::Signature>),
     Constant(MemberTemplate<constant::Signature>),
 }
 
@@ -94,7 +96,7 @@ impl SyntaxTree for Member {
     ) -> parse::Result<Self> {
         (
             MemberTemplate::<r#type::Signature>::parse.map(Member::Type),
-            MemberTemplate::<function::Signature>::parse.map(Member::Funtion),
+            MemberTemplate::<function::Signature>::parse.map(Member::Function),
             MemberTemplate::<constant::Signature>::parse.map(Member::Constant),
         )
             .branch()
@@ -106,7 +108,7 @@ impl SourceElement for Member {
     fn span(&self) -> Span {
         match self {
             Self::Type(signature) => signature.span(),
-            Self::Funtion(signature) => signature.span(),
+            Self::Function(signature) => signature.span(),
             Self::Constant(signature) => signature.span(),
         }
     }
@@ -139,3 +141,6 @@ impl SourceElement for Trait {
         self.access_modifier.span().join(&self.body.span())
     }
 }
+
+#[cfg(test)]
+mod test;
