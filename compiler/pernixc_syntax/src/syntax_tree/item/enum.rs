@@ -17,6 +17,8 @@ use crate::{
     },
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
     pub enum_keyword: Keyword,
@@ -160,3 +162,6 @@ impl SourceElement for Enum {
         self.access_modifier.span().join(&self.body.span())
     }
 }
+
+#[cfg(test)]
+mod test;
