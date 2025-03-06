@@ -83,7 +83,6 @@ pub struct VariableDeclaration {
     pub type_annotation: Option<TypeAnnotation>,
     pub equals: Punctuation,
     pub expression: Expression,
-    pub semicolon: Punctuation,
 }
 
 impl SyntaxTree for VariableDeclaration {
@@ -97,7 +96,6 @@ impl SyntaxTree for VariableDeclaration {
             TypeAnnotation::parse.or_none(),
             '='.to_owned(),
             Expression::parse,
-            ';'.to_owned(),
         )
             .map(
                 |(
@@ -106,14 +104,12 @@ impl SyntaxTree for VariableDeclaration {
                     type_annotation,
                     equals,
                     expression,
-                    semicolon,
                 )| Self {
                     let_keyword,
                     irrefutable_pattern,
                     type_annotation,
                     equals,
                     expression,
-                    semicolon,
                 },
             )
             .parse(state_machine, handler)
@@ -122,7 +118,7 @@ impl SyntaxTree for VariableDeclaration {
 
 impl SourceElement for VariableDeclaration {
     fn span(&self) -> Span {
-        self.let_keyword.span().join(&self.semicolon.span)
+        self.let_keyword.span().join(&self.expression.span())
     }
 }
 

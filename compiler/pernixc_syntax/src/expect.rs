@@ -22,6 +22,10 @@ pub struct String;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Character;
 
+/// Expects a [`TokenKind`]  to be a [`token::NewLine`] token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NewLine;
+
 /// An enumeration of all possible expected tokens.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
@@ -49,7 +53,7 @@ pub enum Expected {
     Fragment(Fragment),
 
     /// Expecting a newline token.
-    NewLine,
+    NewLine(NewLine),
 }
 
 /// A trait for expecting a certain [`TokenKind`] from a token stream.
@@ -166,6 +170,18 @@ impl Expect for Fragment {
             };
 
             kind_match.then_some(fragment)
+        } else {
+            None
+        }
+    }
+}
+
+impl Expect for NewLine {
+    type Output = token::NewLine;
+
+    fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
+        if let TokenKind::Token(Token::NewLine(new_line)) = token {
+            Some(new_line)
         } else {
             None
         }

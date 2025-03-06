@@ -1,4 +1,4 @@
-use std::fmt::{Display, Write};
+use std::fmt::Display;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_test_input::Input;
@@ -14,8 +14,8 @@ use crate::syntax_tree::{
     pattern::strategy::Irrefutable,
     r#type::strategy::Type,
     strategy::{
-        write_indent_line, write_indent_line_for_indent_display, IndentDisplay,
-        Passable, QualifiedIdentifier,
+        write_indent_line_for_indent_display, IndentDisplay, Passable,
+        QualifiedIdentifier,
     },
 };
 
@@ -50,9 +50,15 @@ impl Arbitrary for Statement {
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
-            Expression::arbitrary_with((args.1.clone(), None, None))
+            4 => args.0
+                .clone()
+                .unwrap_or_else(|| Expression::arbitrary_with((
+                    args.1.clone(),
+                    None,
+                    None
+                )))
                 .prop_map(Self::Expression),
-            VariableDeclaration::arbitrary_with(args)
+            1 => VariableDeclaration::arbitrary_with(args)
                 .prop_map(Self::VariableDeclaration),
         ]
         .boxed()
@@ -131,9 +137,7 @@ impl IndentDisplay for VariableDeclaration {
         }
 
         f.write_str(" = ")?;
-        self.expression.indent_fmt(f, indent)?;
-
-        f.write_char(';')
+        self.expression.indent_fmt(f, indent)
     }
 }
 
@@ -180,9 +184,9 @@ impl IndentDisplay for Statements {
         f: &mut std::fmt::Formatter,
         indent: usize,
     ) -> std::fmt::Result {
-        write_indent_line(f, &":", indent)?;
+        writeln!(f, ":",)?;
         for statement in &self.statements {
-            write_indent_line_for_indent_display(f, statement, indent)?;
+            write_indent_line_for_indent_display(f, statement, indent + 1)?;
         }
 
         Ok(())

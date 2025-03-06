@@ -3,7 +3,7 @@ use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
 use pernixc_source_file::{SourceElement, Span};
 
-use super::Expression;
+use super::{binary::Binary, Expression};
 use crate::{
     error,
     state_machine::{
@@ -114,7 +114,7 @@ impl SourceElement for MatchBody {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Match {
     pub match_keyword: Keyword,
-    pub expression: Box<Expression>,
+    pub binary: Box<Binary>,
     pub body: MatchBody,
 }
 
@@ -125,12 +125,12 @@ impl SyntaxTree for Match {
     ) -> parse::Result<Self> {
         (
             KeywordKind::Match.to_owned(),
-            Expression::parse.map(Box::new),
+            Binary::parse.map(Box::new),
             MatchBody::parse,
         )
-            .map(|(match_keyword, expression, body)| Self {
+            .map(|(match_keyword, binary, body)| Self {
                 match_keyword,
-                expression,
+                binary,
                 body,
             })
             .parse(state_machine, handler)
@@ -160,6 +160,7 @@ impl SyntaxTree for Scope {
             Label::parse.or_none(),
             Statements::parse,
         )
+            .commit_in(2)
             .map(|(unsafe_keyword, scope_keyword, label, statements)| Self {
                 unsafe_keyword,
                 scope_keyword,
@@ -311,7 +312,10 @@ impl SyntaxTree for Else {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::Else.to_owned(), GroupOrIfElse::parse.map(Box::new))
+        (
+            KeywordKind::Else.new_line_significant(false).to_owned(),
+            GroupOrIfElse::parse.map(Box::new),
+        )
             .map(|(else_keyword, expression)| Self { else_keyword, expression })
             .parse(state_machine, handler)
     }
@@ -326,7 +330,7 @@ impl SourceElement for Else {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IfElse {
     pub if_keyword: Keyword,
-    pub expression: Box<Expression>,
+    pub binary: Box<Binary>,
     pub then_expression: Group,
     pub else_expression: Option<Else>,
 }
@@ -338,20 +342,13 @@ impl SyntaxTree for IfElse {
     ) -> parse::Result<Self> {
         (
             KeywordKind::If.to_owned(),
-            Expression::parse.map(Box::new),
+            Binary::parse.map(Box::new),
             Group::parse,
             Else::parse.or_none(),
         )
-            .map(
-                |(if_keyword, expression, then_expression, else_expression)| {
-                    Self {
-                        if_keyword,
-                        expression,
-                        then_expression,
-                        else_expression,
-                    }
-                },
-            )
+            .map(|(if_keyword, binary, then_expression, else_expression)| {
+                Self { if_keyword, binary, then_expression, else_expression }
+            })
             .parse(state_machine, handler)
     }
 }
@@ -373,7 +370,7 @@ impl SourceElement for IfElse {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct While {
     pub while_keyword: Keyword,
-    pub expression: Box<Expression>,
+    pub binary: Box<Binary>,
     pub group: Group,
 }
 
@@ -384,12 +381,12 @@ impl SyntaxTree for While {
     ) -> parse::Result<Self> {
         (
             KeywordKind::While.to_owned(),
-            Expression::parse.map(Box::new),
+            Binary::parse.map(Box::new),
             Group::parse,
         )
-            .map(|(while_keyword, expression, group)| Self {
+            .map(|(while_keyword, binary, group)| Self {
                 while_keyword,
-                expression,
+                binary,
                 group,
             })
             .parse(state_machine, handler)

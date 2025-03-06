@@ -55,7 +55,7 @@ impl Arbitrary for Named {
 impl Display for Named {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_mutable {
-            write!(f, "mutable ")?;
+            write!(f, "mut ")?;
         }
 
         if let Some(reference_of) = &self.reference_of {

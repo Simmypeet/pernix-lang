@@ -235,7 +235,7 @@ impl Report<()> for Error {
                     }
                     Fragment::Indetation => "indentation block".to_string(),
                 },
-                Expected::NewLine => "new line".to_string(),
+                Expected::NewLine(_) => "new line".to_string(),
             })
             .collect::<Vec<_>>()
             .join(", ");

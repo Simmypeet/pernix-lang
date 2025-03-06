@@ -148,8 +148,10 @@ impl<'a> StateMachine<'a> {
             self.expected.len(),
             self.correct_expected_len,
             "invariant violated: make sure that you haven't discarded the \
-             error; expected: {:#?}",
-            self.expected
+             error; expected: {:#?}, {} != {}",
+            self.expected,
+            self.expected.len(),
+            self.correct_expected_len,
         );
 
         // counts as eaten no matter what

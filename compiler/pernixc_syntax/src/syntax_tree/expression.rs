@@ -54,3 +54,6 @@ impl SourceElement for Expression {
         }
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -65,7 +65,7 @@ impl IndentDisplay for Reference {
         }
 
         if self.is_mutable {
-            write!(f, "mutable ")?;
+            write!(f, "mut ")?;
         }
 
         self.operand_type.indent_fmt(f, indent)
@@ -241,7 +241,7 @@ impl IndentDisplay for Pointer {
         f.write_char('*')?;
 
         if self.is_mutable {
-            write!(f, "mutable ")?;
+            write!(f, "mut ")?;
         }
 
         self.operand.indent_fmt(f, indent)

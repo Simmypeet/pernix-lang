@@ -184,7 +184,7 @@ impl Arbitrary for PrefixOperator {
 impl Display for PrefixOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::LogicalNot => f.write_char('!'),
+            Self::LogicalNot => f.write_str("not "),
             Self::Negate => f.write_char('-'),
             Self::BitwiseNot => f.write_char('~'),
             Self::Dereference => f.write_char('*'),

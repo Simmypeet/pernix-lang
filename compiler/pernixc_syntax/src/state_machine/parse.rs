@@ -6,7 +6,7 @@ use std::{borrow, cmp::Ordering, fmt::Debug, vec::Drain};
 use paste::paste;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation, Token},
+    token::{Keyword, KeywordKind, Punctuation},
     token_stream::{DelimiterKind, FragmentKind, NodeKind, Tree},
 };
 use pernixc_source_file::SourceElement;
@@ -14,7 +14,7 @@ use pernixc_source_file::SourceElement;
 use super::{StateMachine, StepIntoError};
 use crate::{
     error,
-    expect::{self, Expect, Expected, Fragment},
+    expect::{self, Expect, Expected, Fragment, NewLine},
 };
 
 /// A shorthand for the [`Result`] type that is used by the parser.
@@ -270,6 +270,14 @@ pub trait Parse<'a> {
         IndentationItem(self)
     }
 
+    /// Changes the flag of the new line token to be significant or not.
+    fn new_line_significant(self, significant: bool) -> NewLineSignificant<Self>
+    where
+        Self: Sized,
+    {
+        NewLineSignificant { parser: self, new_line_significant: significant }
+    }
+
     /// Parses the given parser and drains the expected tokens if failed.
     ///
     /// # Errors
@@ -350,6 +358,7 @@ expect_implements_parse!(expect::Character);
 expect_implements_parse!(KeywordKind);
 expect_implements_parse!(char);
 expect_implements_parse!(Fragment);
+expect_implements_parse!(NewLine);
 
 impl<
         'a,
@@ -1010,15 +1019,17 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
         // it must end on a new line or just end of the token stream
         if let Some((token, mut index)) = current {
             if token.as_token().is_none_or(|x| !x.is_new_line()) {
-                handler.receive(error::Error::new(
-                    state_machine.tree,
-                    Unexpected {
-                        token_index: Some(index),
-                        node_index: state_machine.current_node_index(),
-                        commit_count: 1,
-                    },
-                    vec![Expected::NewLine],
-                ));
+                if result.is_ok() {
+                    handler.receive(error::Error::new(
+                        state_machine.tree,
+                        Unexpected {
+                            token_index: Some(index),
+                            node_index: state_machine.current_node_index(),
+                            commit_count: 1,
+                        },
+                        vec![Expected::NewLine(NewLine)],
+                    ));
+                }
 
                 // find the nearest line
                 while index < state_machine.current_node().token_stream().len()
@@ -1037,11 +1048,14 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
                 }
             }
 
-            // eat new line
-            assert!(state_machine.next().is_none_or(|x| x
-                .0
-                .as_token()
-                .is_some_and(Token::is_new_line)));
+            state_machine.location.token_index = index;
+
+            if state_machine.location.token_index
+                < state_machine.current_node().token_stream().len()
+            {
+                // eat new line
+                state_machine.location.token_index += 1;
+            }
         }
 
         state_machine.new_line_significant = current_new_line_significant;
@@ -1074,15 +1088,17 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
         // it must end on a new line or just end of the token stream
         if let Some((token, mut index)) = current {
             if token.as_token().is_none_or(|x| !x.is_new_line()) {
-                handler.receive(error::Error::new(
-                    state_machine.tree,
-                    Unexpected {
-                        token_index: Some(index),
-                        node_index: state_machine.current_node_index(),
-                        commit_count: 1,
-                    },
-                    vec![Expected::NewLine],
-                ));
+                if result.is_ok() {
+                    handler.receive(error::Error::new(
+                        state_machine.tree,
+                        Unexpected {
+                            token_index: Some(index),
+                            node_index: state_machine.current_node_index(),
+                            commit_count: 1,
+                        },
+                        vec![Expected::NewLine(NewLine)],
+                    ));
+                }
 
                 // find the nearest line
                 while index < state_machine.current_node().token_stream().len()
@@ -1101,12 +1117,42 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
                 }
             }
 
-            // eat new line
-            assert!(state_machine.next().is_none_or(|x| x
-                .0
-                .as_token()
-                .is_some_and(Token::is_new_line)));
+            state_machine.location.token_index = index;
+
+            if state_machine.location.token_index
+                < state_machine.current_node().token_stream().len()
+            {
+                // eat new line
+                state_machine.location.token_index += 1;
+            }
         }
+
+        state_machine.new_line_significant = current_new_line_significant;
+
+        result
+    }
+}
+
+/// Created by the [`Parse::new_line_significant`] method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NewLineSignificant<P> {
+    parser: P,
+    new_line_significant: bool,
+}
+
+impl<'a, P: Parse<'a>> Parse<'a> for NewLineSignificant<P> {
+    type Output = P::Output;
+
+    fn parse(
+        self,
+        state_machine: &mut StateMachine<'a>,
+        handler: &dyn Handler<error::Error>,
+    ) -> Result<Self::Output> {
+        let current_new_line_significant = state_machine.new_line_significant;
+
+        state_machine.new_line_significant = self.new_line_significant;
+
+        let result = self.parser.parse(state_machine, handler);
 
         state_machine.new_line_significant = current_new_line_significant;
 

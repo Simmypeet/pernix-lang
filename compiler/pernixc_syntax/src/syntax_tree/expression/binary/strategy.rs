@@ -311,7 +311,22 @@ impl Arbitrary for Binary {
                 0..=3,
             ),
         )
-            .prop_map(|(first, chain)| Self { first, chain })
+            .prop_filter_map(
+                "block cannot appear in the middle of the bianry",
+                |(first, chain)| {
+                    if !chain.is_empty() {
+                        for i in std::iter::once(&first).chain(
+                            chain.iter().take(chain.len() - 1).map(|x| &x.1),
+                        ) {
+                            if matches!(i, BinaryNode::Block(_)) {
+                                return None;
+                            }
+                        }
+                    }
+
+                    Some(Self { first, chain })
+                },
+            )
             .boxed()
     }
 }

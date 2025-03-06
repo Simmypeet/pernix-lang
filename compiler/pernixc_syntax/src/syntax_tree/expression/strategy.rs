@@ -75,14 +75,14 @@ impl Arbitrary for Expression {
 
         leaf.prop_recursive(4, 64, 16, move |inner| {
             prop_oneof![
-                Binary::arbitrary_with((
+                2 => Binary::arbitrary_with((
                     Some(inner.clone()),
                     args.0.clone(),
                     args.1.clone(),
                     args.2.clone()
                 ))
                 .prop_map(Expression::Binary),
-                Terminator::arbitrary_with((
+                1 => Terminator::arbitrary_with((
                     Some(inner),
                     args.0.clone(),
                     args.1.clone(),

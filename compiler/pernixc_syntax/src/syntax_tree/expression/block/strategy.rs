@@ -1,15 +1,18 @@
-use std::fmt::{Debug, Write};
+use std::fmt::{Display, Write};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_test_input::Input;
 use proptest::{
-    prelude::{Arbitrary, BoxedStrategy, Strategy, TestCaseError},
+    prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
     prop_assert_eq, prop_oneof,
     test_runner::TestCaseResult,
 };
 
 use crate::syntax_tree::{
-    expression::strategy::Expression,
+    expression::{
+        binary::strategy::Binary, strategy::Expression,
+        terminator::strategy::Terminator,
+    },
     pattern::strategy::Refutable,
     r#type::strategy::Type,
     statement::strategy::{Statement, Statements},
@@ -190,6 +193,37 @@ impl Arbitrary for Group {
                 .unwrap_or_else(|| {
                     Expression::arbitrary_with((args.1, args.2, args.3))
                 })
+                .prop_filter("filter block appear last", |x| {
+                    !match x {
+                        Expression::Binary(binary) => {
+                            let node = binary
+                                .chain
+                                .last()
+                                .map_or_else(|| &binary.first, |x| &x.1);
+
+                            node.is_block()
+                        }
+                        Expression::Terminator(terminator) => {
+                            let binary = match terminator {
+                                Terminator::Return(a) => a.binary.as_ref(),
+                                Terminator::Continue(_) => None,
+                                Terminator::Express(a) => a.binary.as_ref(),
+                                Terminator::Break(a) => a.binary.as_ref(),
+                            };
+
+                            let Some(binary) = binary else {
+                                return true;
+                            };
+
+                            let node = binary
+                                .chain
+                                .last()
+                                .map_or_else(|| &binary.first, |x| &x.1);
+
+                            node.is_block()
+                        }
+                    }
+                })
                 .prop_map(|expression| Self::Inline(Box::new(expression))),
         ]
         .boxed()
@@ -270,49 +304,8 @@ impl IndentDisplay for IndentedGroup {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct InlineExpression {
-    pub expression: Box<Expression>,
-}
-
-impl Input<&super::InlineExpression> for &InlineExpression {
-    fn assert(self, output: &super::InlineExpression) -> TestCaseResult {
-        self.expression.assert(&output.expression)
-    }
-}
-
-impl Arbitrary for InlineExpression {
-    type Parameters = (
-        Option<BoxedStrategy<Expression>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<QualifiedIdentifier>>,
-        Option<BoxedStrategy<Statement>>,
-    );
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let strat = args.0.unwrap_or_else(|| {
-            Expression::arbitrary_with((args.1, args.2, args.3))
-        });
-
-        strat
-            .prop_map(|expression| Self { expression: Box::new(expression) })
-            .boxed()
-    }
-}
-
-impl IndentDisplay for InlineExpression {
-    fn indent_fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        indent: usize,
-    ) -> std::fmt::Result {
-        self.expression.indent_fmt(f, indent)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IfElse {
-    pub expression: Box<Expression>,
+    pub binary: Box<Binary>,
     pub then_expression: Group,
     pub else_expression: Option<Else>,
 }
@@ -327,27 +320,31 @@ impl Arbitrary for IfElse {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.0.clone().unwrap_or_else(|| {
-            Expression::arbitrary_with((
-                args.1.clone(),
-                args.2.clone(),
-                args.3.clone(),
-            ))
-        });
+        let binary = args
+            .0
+            .clone()
+            .unwrap_or_else(|| {
+                Expression::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
+            })
+            .prop_filter_map("need binary", |x| x.into_binary().ok());
 
         let leaf = (
-            expression.clone().prop_map(Box::new),
+            binary.clone().prop_map(Box::new),
             Group::arbitrary_with(args.clone()),
         )
-            .prop_map(|(expression, then_expression)| Self {
-                expression,
+            .prop_map(|(binary, then_expression)| Self {
+                binary,
                 then_expression,
                 else_expression: None,
             });
 
         leaf.prop_recursive(4, 24, 6, move |inner| {
             (
-                expression.clone().prop_map(Box::new),
+                binary.clone().prop_map(Box::new),
                 Group::arbitrary_with(args.clone()),
                 proptest::option::of(prop_oneof![
                     Group::arbitrary_with(args.clone()).prop_map(|x| {
@@ -359,8 +356,8 @@ impl Arbitrary for IfElse {
                 ]),
             )
                 .prop_map(
-                    |(expression, then_expression, else_expression)| Self {
-                        expression,
+                    |(binary, then_expression, else_expression)| Self {
+                        binary,
                         then_expression,
                         else_expression,
                     },
@@ -372,7 +369,7 @@ impl Arbitrary for IfElse {
 
 impl Input<&super::IfElse> for &IfElse {
     fn assert(self, output: &super::IfElse) -> TestCaseResult {
-        self.expression.assert(&output.expression)?;
+        self.binary.assert(&output.binary)?;
         self.then_expression.assert(&output.then_expression)?;
         self.else_expression.as_ref().assert(output.else_expression.as_ref())
     }
@@ -385,7 +382,7 @@ impl IndentDisplay for IfElse {
         indent: usize,
     ) -> std::fmt::Result {
         write!(f, "if ")?;
-        self.expression.indent_fmt(f, indent)?;
+        self.binary.indent_fmt(f, indent)?;
         self.then_expression.indent_fmt(f, indent)?;
 
         if let Some(else_expression) = &self.else_expression {
@@ -393,7 +390,15 @@ impl IndentDisplay for IfElse {
                 f.write_char(' ')?;
             }
 
-            else_expression.indent_fmt(f, indent)?;
+            if self.then_expression.is_indented() {
+                write_indent_line_for_indent_display(
+                    f,
+                    else_expression,
+                    indent,
+                )?;
+            } else {
+                else_expression.indent_fmt(f, indent)?;
+            }
         }
 
         Ok(())
@@ -454,6 +459,14 @@ impl IndentDisplay for Else {
         indent: usize,
     ) -> std::fmt::Result {
         f.write_str("else")?;
+        let should_space = match &*self.expression {
+            GroupOrIfElse::Group(group) => group.is_inline(),
+            GroupOrIfElse::IfElse(_) => true,
+        };
+
+        if should_space {
+            f.write_char(' ')?;
+        }
 
         self.expression.indent_fmt(f, indent)
     }
@@ -497,13 +510,13 @@ impl IndentDisplay for Loop {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct While {
-    pub expression: Box<Expression>,
+    pub binary: Box<Binary>,
     pub group: Group,
 }
 
 impl Input<&super::While> for &While {
     fn assert(self, output: &super::While) -> TestCaseResult {
-        self.expression.assert(&output.expression)?;
+        self.binary.assert(&output.binary)?;
         self.group.assert(&output.group)
     }
 }
@@ -518,16 +531,20 @@ impl Arbitrary for While {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let expression = args.0.clone().unwrap_or_else(|| {
-            Expression::arbitrary_with((
-                args.1.clone(),
-                args.2.clone(),
-                args.3.clone(),
-            ))
-        });
+        let binary = args
+            .0
+            .clone()
+            .unwrap_or_else(|| {
+                Expression::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
+            })
+            .prop_filter_map("need binary", |x| x.into_binary().ok());
 
-        (expression.prop_map(Box::new), Group::arbitrary_with(args))
-            .prop_map(|(expression, group)| Self { expression, group })
+        (binary.prop_map(Box::new), Group::arbitrary_with(args))
+            .prop_map(|(binary, group)| Self { binary, group })
             .boxed()
     }
 }
@@ -539,7 +556,7 @@ impl IndentDisplay for While {
         indent: usize,
     ) -> std::fmt::Result {
         write!(f, "while ")?;
-        self.expression.indent_fmt(f, indent)?;
+        self.binary.indent_fmt(f, indent)?;
         self.group.indent_fmt(f, indent)
     }
 }
@@ -589,13 +606,13 @@ impl IndentDisplay for MatchArm {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Match {
-    pub expression: Box<Expression>,
+    pub binary: Box<Binary>,
     pub arms: Vec<Passable<MatchArm>>,
 }
 
 impl Input<&super::Match> for &Match {
     fn assert(self, output: &super::Match) -> TestCaseResult {
-        self.expression.assert(&output.expression)?;
+        self.binary.assert(&output.binary)?;
         self.arms.assert(&output.body.arms)
     }
 }
@@ -610,20 +627,30 @@ impl Arbitrary for Match {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let binary = args
+            .0
+            .clone()
+            .unwrap_or_else(|| {
+                Expression::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
+            })
+            .prop_filter_map("need binary", |x| x.into_binary().ok());
+
         (
-            args.0
-                .clone()
-                .unwrap_or_else(|| {
-                    Expression::arbitrary_with((
-                        args.1.clone(),
-                        args.2.clone(),
-                        args.3.clone(),
-                    ))
-                })
-                .prop_map(Box::new),
-            proptest::collection::vec(Passable::<MatchArm>::arbitrary(), 1..10),
+            binary.prop_map(Box::new),
+            proptest::collection::vec(
+                prop_oneof![
+                    10 => MatchArm::arbitrary_with(args)
+                        .prop_map(Passable::SyntaxTree),
+                    1 => Just(Passable::Pass),
+                ],
+                1..10,
+            ),
         )
-            .prop_map(|(expression, arms)| Self { expression, arms })
+            .prop_map(|(binary, arms)| Self { binary, arms })
             .boxed()
     }
 }
@@ -635,7 +662,7 @@ impl IndentDisplay for Match {
         indent: usize,
     ) -> std::fmt::Result {
         write!(f, "match ")?;
-        self.expression.indent_fmt(f, indent)?;
+        self.binary.indent_fmt(f, indent)?;
         write_indent_line(f, &":", indent)?;
 
         for arm in &self.arms {

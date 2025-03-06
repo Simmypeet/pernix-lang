@@ -6,19 +6,13 @@ use pernixc_lexical::{
     token_stream::{DelimiterKind, TokenStream, Tree},
 };
 use pernixc_source_file::SourceFile;
-use pernixc_test_input::Input;
-use proptest::{
-    prelude::{Arbitrary, TestCaseError},
-    proptest,
-};
+use proptest::prelude::TestCaseError;
 
 use super::SyntaxTree;
 use crate::{
     error,
     state_machine::{parse::Parse, StateMachine},
-    syntax_tree::{
-        strategy::QualifiedIdentifier, EnclosedConnectedList, ParseExt,
-    },
+    syntax_tree::{EnclosedConnectedList, ParseExt},
 };
 
 pub fn parse<S: SyntaxTree>(source: &str) -> Result<S, TestCaseError> {
@@ -44,23 +38,6 @@ pub fn parse<S: SyntaxTree>(source: &str) -> Result<S, TestCaseError> {
         },
         |output| Ok(output),
     )
-}
-
-proptest! {
-    #![proptest_config(proptest::test_runner::Config {
-        max_shrink_iters: 10000,
-        ..proptest::test_runner::Config::default()
-    })]
-    #[allow(clippy::ignored_unit_patterns)]
-    #[test]
-    fn qualified_identifier(
-        qualified_identifier_input in QualifiedIdentifier::arbitrary(),
-    ) {
-        let source = qualified_identifier_input.to_string();
-        let qualified_identifier = parse::<super::QualifiedIdentifier>(&source)?;
-
-        qualified_identifier_input.assert(&qualified_identifier)?;
-    }
 }
 
 #[test]

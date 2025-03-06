@@ -1,6 +1,6 @@
 //! Contains all definition of pattern syntax trees.
 
-use std::{fmt::Debug, option::Option};
+use std::option::Option;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;

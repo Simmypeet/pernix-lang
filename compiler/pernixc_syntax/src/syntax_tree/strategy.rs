@@ -582,7 +582,7 @@ impl Arbitrary for ReferenceOf {
 
 impl Display for ReferenceOf {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "&{}", if self.is_mutable { "mutable " } else { "" })
+        write!(f, "&{}", if self.is_mutable { "mut " } else { "" })
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

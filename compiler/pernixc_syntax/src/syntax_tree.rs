@@ -936,3 +936,6 @@ impl<T: SourceElement> SourceElement for UnionList<T> {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
