@@ -11,8 +11,8 @@ use proptest::{
 use crate::syntax_tree::{
     r#type::strategy::Type as TypeTerm,
     strategy::{
-        ConnectedList, ConstantPunctuation, Lifetime, LifetimeParameter,
-        QualifiedIdentifier,
+        ConnectedList, ConstantPunctuation, IndentDisplay, Lifetime,
+        LifetimeParameter, QualifiedIdentifier,
     },
 };
 
@@ -44,8 +44,12 @@ impl Arbitrary for HigherRankedLifetimes {
     }
 }
 
-impl Display for HigherRankedLifetimes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for HigherRankedLifetimes {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        _indent: usize,
+    ) -> std::fmt::Result {
         f.write_str("for[")?;
 
         if let Some(lifetime_parameter_list) = &self.lifetime_parameter_list {
@@ -66,12 +70,12 @@ pub struct TraitBound {
 
 impl Input<&super::TraitBound> for &TraitBound {
     fn assert(self, output: &super::TraitBound) -> TestCaseResult {
-        prop_assert_eq!(self.negation, output.negation.is_some());
+        prop_assert_eq!(self.negation, output.not_keyword.is_some());
         self.higher_ranked_lifetimes
             .as_ref()
-            .assert(output.higher_ranked_lifetimes().as_ref())?;
-        prop_assert_eq!(self.const_keyword, output.const_keyword().is_some());
-        self.qualified_identifier.assert(output.qualified_identifier())
+            .assert(output.higher_ranked_lifetimes.as_ref())?;
+        prop_assert_eq!(self.const_keyword, output.const_keyword.is_some());
+        self.qualified_identifier.assert(&output.qualified_identifier)
     }
 }
 
@@ -103,21 +107,25 @@ impl Arbitrary for TraitBound {
     }
 }
 
-impl Display for TraitBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for TraitBound {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         if self.negation {
-            f.write_char('!')?;
+            f.write_str("not ")?;
         }
 
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
+            higher_ranked_lifetimes.indent_fmt(f, indent)?;
         }
 
         if self.const_keyword {
             f.write_str("const ")?;
         }
 
-        Display::fmt(&self.qualified_identifier, f)
+        self.qualified_identifier.indent_fmt(f, indent)
     }
 }
 
@@ -130,11 +138,11 @@ pub struct MarkerBound {
 
 impl Input<&super::MarkerBound> for &MarkerBound {
     fn assert(self, output: &super::MarkerBound) -> TestCaseResult {
-        prop_assert_eq!(self.negation, output.negation.is_some());
+        prop_assert_eq!(self.negation, output.not_keyword.is_some());
         self.higher_ranked_lifetimes
             .as_ref()
-            .assert(output.higher_ranked_lifetimes().as_ref())?;
-        self.qualified_identifier.assert(output.qualified_identifier())
+            .assert(output.higher_ranked_lifetimes.as_ref())?;
+        self.qualified_identifier.assert(&output.qualified_identifier)
     }
 }
 
@@ -161,17 +169,21 @@ impl Arbitrary for MarkerBound {
     }
 }
 
-impl Display for MarkerBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for MarkerBound {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         if self.negation {
-            f.write_char('!')?;
+            f.write_str("not ")?;
         }
 
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
+            higher_ranked_lifetimes.indent_fmt(f, indent)?;
         }
 
-        Display::fmt(&self.qualified_identifier, f)
+        self.qualified_identifier.indent_fmt(f, indent)
     }
 }
 
@@ -197,9 +209,14 @@ impl Arbitrary for Marker {
     }
 }
 
-impl Display for Marker {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "marker {}", self.bounds)
+impl IndentDisplay for Marker {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("marker ")?;
+        self.bounds.indent_fmt(f, indent)
     }
 }
 
@@ -226,12 +243,17 @@ where
     }
 }
 
-impl<T: Display> Display for BoundList<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.first, f)?;
+impl<T: IndentDisplay> IndentDisplay for BoundList<T> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.first.indent_fmt(f, indent)?;
 
         for bound in &self.rest {
-            write!(f, " + {bound}")?;
+            f.write_str(" + ")?;
+            bound.indent_fmt(f, indent)?;
         }
 
         Ok(())
@@ -270,9 +292,14 @@ impl Arbitrary for Trait {
     }
 }
 
-impl Display for Trait {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "trait {}", self.bounds)
+impl IndentDisplay for Trait {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("trait ")?;
+        self.bounds.indent_fmt(f, indent)
     }
 }
 
@@ -289,12 +316,12 @@ impl Input<&super::QualifiedIdentifierBound> for &QualifiedIdentifierBound {
         self,
         output: &super::QualifiedIdentifierBound,
     ) -> TestCaseResult {
-        prop_assert_eq!(self.negation, output.negation.is_some());
+        prop_assert_eq!(self.negation, output.not_keyword.is_some());
         self.higher_ranked_lifetimes
             .as_ref()
-            .assert(output.higher_ranked_lifetimes().as_ref())?;
+            .assert(output.higher_ranked_lifetimes.as_ref())?;
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
-        self.qualified_identifier.assert(output.qualified_identifier())
+        self.qualified_identifier.assert(&output.qualified_identifier)
     }
 }
 
@@ -326,21 +353,25 @@ impl Arbitrary for QualifiedIdentifierBound {
     }
 }
 
-impl Display for QualifiedIdentifierBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for QualifiedIdentifierBound {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         if self.negation {
-            f.write_char('!')?;
+            f.write_str("not ")?;
         }
 
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
+            higher_ranked_lifetimes.indent_fmt(f, indent)?;
         }
 
         if self.is_const {
             f.write_str("const ")?;
         }
 
-        Display::fmt(&self.qualified_identifier, f)
+        self.qualified_identifier.indent_fmt(f, indent)
     }
 }
 
@@ -390,11 +421,15 @@ impl Arbitrary for TypeBound {
     }
 }
 
-impl Display for TypeBound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for TypeBound {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         match self {
             Self::QualifiedIdentifier(qualified_identifier_bound) => {
-                Display::fmt(qualified_identifier_bound, f)
+                qualified_identifier_bound.indent_fmt(f, indent)
             }
 
             Self::Const => f.write_str("const"),
@@ -417,8 +452,8 @@ impl Input<&super::Type> for &Type {
     fn assert(self, output: &super::Type) -> TestCaseResult {
         self.higher_ranked_lifetimes
             .as_ref()
-            .assert(output.higher_ranked_lifetimes().as_ref())?;
-        self.r#type.assert(output.r#type())?;
+            .assert(output.higher_ranked_lifetimes.as_ref())?;
+        self.r#type.assert(&output.r#type)?;
         self.bounds.assert(&output.bounds)
     }
 }
@@ -442,13 +477,19 @@ impl Arbitrary for Type {
     }
 }
 
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Type {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
+            higher_ranked_lifetimes.indent_fmt(f, indent)?;
         }
 
-        write!(f, "{}: {}", self.r#type, self.bounds)
+        self.r#type.indent_fmt(f, indent)?;
+        f.write_str(": ")?;
+        self.bounds.indent_fmt(f, indent)
     }
 }
 
@@ -463,9 +504,9 @@ impl Input<&super::TraitTypeEquality> for &TraitTypeEquality {
     fn assert(self, output: &super::TraitTypeEquality) -> TestCaseResult {
         self.higher_ranked_lifetimes
             .as_ref()
-            .assert(output.higher_ranked_lifetimes().as_ref())?;
-        self.lhs_type.assert(output.lhs_type())?;
-        self.rhs_type.assert(output.rhs_type())
+            .assert(output.higher_ranked_lifetimes.as_ref())?;
+        self.lhs_type.assert(&output.lhs_type)?;
+        self.rhs_type.assert(&output.rhs_type)
     }
 }
 
@@ -488,15 +529,19 @@ impl Arbitrary for TraitTypeEquality {
     }
 }
 
-impl Display for TraitTypeEquality {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for TraitTypeEquality {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
-            write!(f, "{higher_ranked_lifetimes} ")?;
+            higher_ranked_lifetimes.indent_fmt(f, indent)?;
         }
 
-        Display::fmt(&self.lhs_type, f)?;
+        self.lhs_type.indent_fmt(f, indent)?;
         f.write_str(" = ")?;
-        Display::fmt(&self.rhs_type, f)
+        self.rhs_type.indent_fmt(f, indent)
     }
 }
 
@@ -508,8 +553,8 @@ pub struct LifetimeOutlives {
 
 impl Input<&super::LifetimeOutlives> for &LifetimeOutlives {
     fn assert(self, output: &super::LifetimeOutlives) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.bounds.assert(output.bounds())
+        self.operand.assert(&output.operand)?;
+        self.bounds.assert(&output.bounds)
     }
 }
 
@@ -527,9 +572,14 @@ impl Arbitrary for LifetimeOutlives {
     }
 }
 
-impl Display for LifetimeOutlives {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.operand, self.bounds)
+impl IndentDisplay for LifetimeOutlives {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{}: ", self.operand)?;
+        self.bounds.indent_fmt(f, indent)
     }
 }
 
@@ -581,16 +631,20 @@ impl Arbitrary for Predicate {
     }
 }
 
-impl Display for Predicate {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Predicate {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         match self {
-            Self::Trait(trait_) => Display::fmt(trait_, f),
+            Self::Trait(trait_) => trait_.indent_fmt(f, indent),
             Self::TraitTypeEquality(trait_type_equality) => {
-                Display::fmt(trait_type_equality, f)
+                trait_type_equality.indent_fmt(f, indent)
             }
 
-            Self::LifetimeOutlives(outlives) => Display::fmt(outlives, f),
-            Self::Marker(marker) => Display::fmt(marker, f),
+            Self::LifetimeOutlives(outlives) => outlives.indent_fmt(f, indent),
+            Self::Marker(marker) => marker.indent_fmt(f, indent),
         }
     }
 }

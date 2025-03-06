@@ -140,6 +140,16 @@ impl Display for Lifetime {
     }
 }
 
+impl IndentDisplay for Lifetime {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        _indent: usize,
+    ) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct ConstantPunctuation<const CHAR: char>;
 

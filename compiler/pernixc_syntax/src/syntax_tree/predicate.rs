@@ -21,6 +21,8 @@ use crate::{
     },
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HigherRankedLifetimes {
     pub for_keyword: Keyword,
@@ -56,7 +58,7 @@ impl SourceElement for HigherRankedLifetimes {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct QualifiedIdentifierBound {
-    pub negation: Option<Punctuation>,
+    pub not_keyword: Option<Keyword>,
     pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     pub const_keyword: Option<Keyword>,
     pub qualified_identifier: QualifiedIdentifier,
@@ -65,7 +67,7 @@ pub struct QualifiedIdentifierBound {
 impl SourceElement for QualifiedIdentifierBound {
     fn span(&self) -> Span {
         let first = match (
-            &self.negation,
+            &self.not_keyword,
             &self.higher_ranked_lifetimes,
             &self.const_keyword,
         ) {
@@ -87,20 +89,20 @@ impl SyntaxTree for QualifiedIdentifierBound {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
-            '!'.to_owned().or_none(),
+            KeywordKind::Not.to_owned().or_none(),
             HigherRankedLifetimes::parse.or_none(),
             KeywordKind::Const.to_owned().or_none(),
             QualifiedIdentifier::parse,
         )
             .map(
                 |(
-                    negation,
+                    not_keyword,
                     higher_ranked_lifetimes,
                     const_keyword,
                     qualified_identifier,
                 )| {
                     Self {
-                        negation,
+                        not_keyword,
                         higher_ranked_lifetimes,
                         const_keyword,
                         qualified_identifier,
@@ -230,7 +232,7 @@ impl SourceElement for TraitTypeEquality {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TraitBound {
-    pub negation: Option<Punctuation>,
+    pub not_keyword: Option<Keyword>,
     pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     pub const_keyword: Option<Keyword>,
     pub qualified_identifier: QualifiedIdentifier,
@@ -242,20 +244,20 @@ impl SyntaxTree for TraitBound {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
-            '!'.to_owned().or_none(),
+            KeywordKind::Not.to_owned().or_none(),
             HigherRankedLifetimes::parse.or_none(),
             KeywordKind::Const.to_owned().or_none(),
             QualifiedIdentifier::parse,
         )
             .map(
                 |(
-                    negation,
+                    not_keyword,
                     higher_ranked_lifetimes,
                     const_keyword,
                     qualified_identifier,
                 )| {
                     Self {
-                        negation,
+                        not_keyword,
                         higher_ranked_lifetimes,
                         const_keyword,
                         qualified_identifier,
@@ -269,7 +271,7 @@ impl SyntaxTree for TraitBound {
 impl SourceElement for TraitBound {
     fn span(&self) -> Span {
         let first = match (
-            &self.negation,
+            &self.not_keyword,
             &self.higher_ranked_lifetimes,
             &self.const_keyword,
         ) {
@@ -308,7 +310,7 @@ impl SourceElement for Trait {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MarkerBound {
-    pub negation: Option<Punctuation>,
+    pub not_keyword: Option<Keyword>,
     pub higher_ranked_lifetimes: Option<HigherRankedLifetimes>,
     pub qualified_identifier: QualifiedIdentifier,
 }
@@ -319,20 +321,30 @@ impl SyntaxTree for MarkerBound {
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
-            '!'.to_owned().or_none(),
+            KeywordKind::Not.to_owned().or_none(),
             HigherRankedLifetimes::parse.or_none(),
             QualifiedIdentifier::parse,
         )
-            .map(|(negation, higher_ranked_lifetimes, qualified_identifier)| {
-                Self { negation, higher_ranked_lifetimes, qualified_identifier }
-            })
+            .map(
+                |(
+                    not_keyword,
+                    higher_ranked_lifetimes,
+                    qualified_identifier,
+                )| {
+                    Self {
+                        not_keyword,
+                        higher_ranked_lifetimes,
+                        qualified_identifier,
+                    }
+                },
+            )
             .parse(state_machine, handler)
     }
 }
 
 impl SourceElement for MarkerBound {
     fn span(&self) -> Span {
-        let begin = self.negation.as_ref().map_or_else(
+        let begin = self.not_keyword.as_ref().map_or_else(
             || {
                 self.higher_ranked_lifetimes.as_ref().map_or_else(
                     || self.qualified_identifier.span(),
@@ -497,3 +509,6 @@ impl SourceElement for Predicate {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
