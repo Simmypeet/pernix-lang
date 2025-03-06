@@ -3,7 +3,7 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy};
 
 use crate::syntax_tree::{
     predicate::strategy::Predicate,
-    strategy::{write_indent_line, IndentDisplay, Passable},
+    strategy::{write_indent_line_for_indent_display, IndentDisplay, Passable},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -32,15 +32,15 @@ impl Input<&super::WhereClause> for &WhereClause {
 }
 
 impl IndentDisplay for WhereClause {
-    fn fmt(
+    fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter,
         indent: usize,
     ) -> std::fmt::Result {
-        write_indent_line(f, "where:", indent)?;
+        writeln!(f, "where:")?;
 
         for predicate in &self.predicates {
-            write_indent_line(f, predicate, indent + 1)?;
+            write_indent_line_for_indent_display(f, predicate, indent + 1)?;
         }
 
         Ok(())

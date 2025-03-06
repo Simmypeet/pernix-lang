@@ -7,10 +7,6 @@ use crate::syntax_tree::{
 };
 
 proptest! {
-    #![proptest_config(proptest::test_runner::Config {
-        max_shrink_iters: 10000,
-        ..proptest::test_runner::Config::default()
-    })]
     #[test]
     fn where_clause(
         where_clause in WhereClause::arbitrary(),
