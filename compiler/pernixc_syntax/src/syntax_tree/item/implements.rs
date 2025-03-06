@@ -17,18 +17,30 @@ use crate::{
     },
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
     pub final_keyword: Option<Keyword>,
+    pub const_keyword: Option<Keyword>,
     pub implements_keyword: Keyword,
     pub generic_parameters: Option<GenericParameters>,
-    pub const_keyword: Option<Keyword>,
     pub qualified_identifier: QualifiedIdentifier,
 }
 
 impl SourceElement for Signature {
     fn span(&self) -> Span {
-        self.implements_keyword.span().join(&self.qualified_identifier.span())
+        let begin = self.final_keyword.as_ref().map_or_else(
+            || {
+                self.const_keyword.as_ref().map_or_else(
+                    || self.implements_keyword.span(),
+                    SourceElement::span,
+                )
+            },
+            SourceElement::span,
+        );
+
+        begin.join(&self.qualified_identifier.span())
     }
 }
 
@@ -39,23 +51,23 @@ impl SyntaxTree for Signature {
     ) -> parse::Result<Self> {
         (
             KeywordKind::Final.to_owned().or_none(),
+            KeywordKind::Const.to_owned().or_none(),
             KeywordKind::Implements.to_owned(),
             GenericParameters::parse.or_none(),
-            KeywordKind::Const.to_owned().or_none(),
             QualifiedIdentifier::parse,
         )
             .map(
                 |(
                     final_keyword,
+                    const_keyword,
                     implements_keyword,
                     generic_parameters,
-                    const_keyword,
                     qualified_identifier,
                 )| Self {
                     final_keyword,
+                    const_keyword,
                     implements_keyword,
                     generic_parameters,
-                    const_keyword,
                     qualified_identifier,
                 },
             )
@@ -101,11 +113,39 @@ impl<S: SyntaxTree, B: SyntaxTree> SyntaxTree for MemberTemplate<S, B> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FunctionSignature {
+    pub const_keyword: Option<Keyword>,
+    pub signature: function::Signature,
+}
+
+impl SourceElement for FunctionSignature {
+    fn span(&self) -> Span {
+        let begin = self
+            .const_keyword
+            .as_ref()
+            .map_or_else(|| self.signature.span(), SourceElement::span);
+
+        begin.join(&self.signature.span())
+    }
+}
+
+impl SyntaxTree for FunctionSignature {
+    fn parse(
+        state_machine: &mut StateMachine,
+        handler: &dyn Handler<error::Error>,
+    ) -> parse::Result<Self> {
+        (KeywordKind::Const.to_owned().or_none(), function::Signature::parse)
+            .map(|(const_keyword, signature)| Self { const_keyword, signature })
+            .parse(state_machine, handler)
+    }
+}
+
 /// Represents a member of an implementation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Member {
     Constant(MemberTemplate<constant::Signature, constant::Body>),
-    Function(MemberTemplate<function::Signature, super::Body<Statement>>),
+    Function(MemberTemplate<FunctionSignature, super::Body<Statement>>),
     Type(MemberTemplate<r#type::Signature, r#type::Body>),
 }
 
@@ -116,7 +156,7 @@ impl SyntaxTree for Member {
     ) -> parse::Result<Self> {
         enum MemberWithoutAccessModifier {
             Constant((constant::Signature, constant::Body)),
-            Function((function::Signature, super::Body<Statement>)),
+            Function((FunctionSignature, super::Body<Statement>)),
             Type((r#type::Signature, r#type::Body)),
         }
 
@@ -125,7 +165,7 @@ impl SyntaxTree for Member {
             (
                 (constant::Signature::parse, constant::Body::parse)
                     .map(MemberWithoutAccessModifier::Constant),
-                (function::Signature::parse, super::Body::parse)
+                (FunctionSignature::parse, super::Body::parse)
                     .map(MemberWithoutAccessModifier::Function),
                 (r#type::Signature::parse, r#type::Body::parse)
                     .map(MemberWithoutAccessModifier::Type),
@@ -253,3 +293,6 @@ impl SyntaxTree for Implements {
 impl SourceElement for Implements {
     fn span(&self) -> Span { self.signature.span().join(&self.body.span()) }
 }
+
+#[cfg(test)]
+mod test;

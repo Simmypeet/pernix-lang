@@ -66,6 +66,7 @@ impl SourceElement for Signature {
 pub struct Body {
     pub equals: Punctuation,
     pub expression: Expression,
+    pub trailing_where_clause: Option<TrailingWhereClause>,
 }
 
 impl SyntaxTree for Body {
@@ -73,8 +74,16 @@ impl SyntaxTree for Body {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('='.to_owned(), Expression::parse)
-            .map(|(equals, expression)| Self { equals, expression })
+        (
+            '='.to_owned(),
+            Expression::parse,
+            TrailingWhereClause::parse.or_none(),
+        )
+            .map(|(equals, expression, trailing_where_clause)| Self {
+                equals,
+                expression,
+                trailing_where_clause,
+            })
             .parse(state_machine, handler)
     }
 }
@@ -88,7 +97,6 @@ pub struct Constant {
     pub access_modifier: AccessModifier,
     pub signature: Signature,
     pub body: Body,
-    pub trailing_where_clause: Option<TrailingWhereClause>,
 }
 
 impl SyntaxTree for Constant {
@@ -96,14 +104,11 @@ impl SyntaxTree for Constant {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (
-            AccessModifier::parse,
-            Signature::parse,
-            Body::parse,
-            TrailingWhereClause::parse.or_none(),
-        )
-            .map(|(access_modifier, signature, body, trailing_where_clause)| {
-                Self { access_modifier, signature, body, trailing_where_clause }
+        (AccessModifier::parse, Signature::parse, Body::parse)
+            .map(|(access_modifier, signature, body)| Self {
+                access_modifier,
+                signature,
+                body,
             })
             .parse(state_machine, handler)
     }
@@ -111,12 +116,7 @@ impl SyntaxTree for Constant {
 
 impl SourceElement for Constant {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(
-            &self
-                .trailing_where_clause
-                .as_ref()
-                .map_or_else(|| self.body.span(), SourceElement::span),
-        )
+        self.access_modifier.span().join(&self.body.span())
     }
 }
 

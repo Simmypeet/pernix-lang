@@ -55,6 +55,7 @@ impl SourceElement for Signature {
 pub struct Body {
     pub equals: Punctuation,
     pub r#type: TypeTerm,
+    pub trailing_where_clause: Option<TrailingWhereClause>,
 }
 
 impl SyntaxTree for Body {
@@ -62,8 +63,12 @@ impl SyntaxTree for Body {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        ('='.to_owned(), TypeTerm::parse)
-            .map(|(equals, r#type)| Self { equals, r#type })
+        ('='.to_owned(), TypeTerm::parse, TrailingWhereClause::parse.or_none())
+            .map(|(equals, r#type, trailing_where_clause)| Self {
+                equals,
+                r#type,
+                trailing_where_clause,
+            })
             .parse(state_machine, handler)
     }
 }
@@ -77,7 +82,6 @@ pub struct Type {
     pub access_modifier: AccessModifier,
     pub signature: Signature,
     pub body: Body,
-    pub trailing_where_clause: Option<TrailingWhereClause>,
 }
 
 impl SyntaxTree for Type {
@@ -85,37 +89,19 @@ impl SyntaxTree for Type {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (
-            AccessModifier::parse,
-            Signature::parse,
-            Body::parse,
-            TrailingWhereClause::parse.or_none(),
-        )
-            .map(
-                |(
-                    access_modifier,
-                    signature,
-                    definition,
-                    trailing_where_clause,
-                )| Self {
-                    access_modifier,
-                    signature,
-                    body: definition,
-                    trailing_where_clause,
-                },
-            )
+        (AccessModifier::parse, Signature::parse, Body::parse)
+            .map(|(access_modifier, signature, definition)| Self {
+                access_modifier,
+                signature,
+                body: definition,
+            })
             .parse(state_machine, handler)
     }
 }
 
 impl SourceElement for Type {
     fn span(&self) -> Span {
-        self.access_modifier.span().join(
-            &self
-                .trailing_where_clause
-                .as_ref()
-                .map_or_else(|| self.body.span(), SourceElement::span),
-        )
+        self.access_modifier.span().join(&self.body.span())
     }
 }
 

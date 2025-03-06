@@ -65,21 +65,71 @@ impl IndentDisplay for Signature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Body {
+    pub r#type: syntax_tree::r#type::strategy::Type,
+    pub trailing_where_clause: Option<WhereClause>,
+}
+
+impl Input<&super::Body> for &Body {
+    fn assert(self, output: &super::Body) -> TestCaseResult {
+        self.r#type.assert(&output.r#type)?;
+        self.trailing_where_clause.as_ref().assert(
+            output.trailing_where_clause.as_ref().map(|x| &x.where_clause),
+        )
+    }
+}
+
+impl Arbitrary for Body {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            syntax_tree::r#type::strategy::Type::arbitrary(),
+            proptest::option::of(WhereClause::arbitrary()),
+        )
+            .prop_map(|(r#type, trailing_where_clause)| Self {
+                r#type,
+                trailing_where_clause,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for Body {
+    fn indent_fmt(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        formatter.write_str(" = ")?;
+        self.r#type.indent_fmt(formatter, indent)?;
+
+        if let Some(where_clause) = &self.trailing_where_clause {
+            writeln!(formatter, ":")?;
+            write_indent_line_for_indent_display(
+                formatter,
+                where_clause,
+                indent + 1,
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Type {
     access_modifier: AccessModifier,
     signature: Signature,
-    r#type: syntax_tree::r#type::strategy::Type,
-    where_clause: Option<WhereClause>,
+    body: Body,
 }
 
 impl Input<&super::Type> for &Type {
     fn assert(self, output: &super::Type) -> TestCaseResult {
         self.access_modifier.assert(&output.access_modifier)?;
         self.signature.assert(&output.signature)?;
-        self.r#type.assert(&output.body.r#type)?;
-        self.where_clause.as_ref().assert(
-            output.trailing_where_clause.as_ref().map(|x| &x.where_clause),
-        )
+        self.body.assert(&output.body)
     }
 }
 
@@ -88,14 +138,11 @@ impl Arbitrary for Type {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            AccessModifier::arbitrary(),
-            Signature::arbitrary(),
-            syntax_tree::r#type::strategy::Type::arbitrary(),
-            proptest::option::of(WhereClause::arbitrary()),
-        )
-            .prop_map(|(access_modifier, signature, r#type, where_clause)| {
-                Self { access_modifier, signature, r#type, where_clause }
+        (AccessModifier::arbitrary(), Signature::arbitrary(), Body::arbitrary())
+            .prop_map(|(access_modifier, signature, body)| Self {
+                access_modifier,
+                signature,
+                body,
             })
             .boxed()
     }
@@ -109,18 +156,6 @@ impl IndentDisplay for Type {
     ) -> std::fmt::Result {
         write!(formatter, "{} ", self.access_modifier)?;
         self.signature.indent_fmt(formatter, indent)?;
-        formatter.write_str(" = ")?;
-        self.r#type.indent_fmt(formatter, indent)?;
-
-        if let Some(where_clause) = &self.where_clause {
-            writeln!(formatter, ":")?;
-            write_indent_line_for_indent_display(
-                formatter,
-                where_clause,
-                indent + 1,
-            )?;
-        }
-
-        Ok(())
+        self.body.indent_fmt(formatter, indent)
     }
 }
