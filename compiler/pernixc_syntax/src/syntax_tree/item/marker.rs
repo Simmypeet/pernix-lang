@@ -12,6 +12,8 @@ use crate::{
     syntax_tree::{AccessModifier, SyntaxTree},
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
     pub marker_keyword: Keyword,
@@ -85,3 +87,6 @@ impl SyntaxTree for Marker {
             .parse(state_machine, handler)
     }
 }
+
+#[cfg(test)]
+mod test;
