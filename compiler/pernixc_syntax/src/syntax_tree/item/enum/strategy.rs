@@ -2,21 +2,14 @@ use std::fmt::Write;
 
 use pernixc_test_input::Input;
 use proptest::{
-    prelude::{Arbitrary, BoxedStrategy, Just, Strategy},
-    prop_oneof,
+    prelude::{Arbitrary, BoxedStrategy, Strategy},
     test_runner::TestCaseResult,
 };
 
 use crate::syntax_tree::{
-    item::{
-        generic_parameter::strategy::GenericParameters,
-        where_clause::strategy::WhereClause,
-    },
+    item::{generic_parameter::strategy::GenericParameters, strategy::Body},
     r#type::strategy::Type,
-    strategy::{
-        write_indent_line_for_indent_display, AccessModifier, Identifier,
-        IndentDisplay, Passable,
-    },
+    strategy::{AccessModifier, Identifier, IndentDisplay},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -115,65 +108,10 @@ impl IndentDisplay for Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Body {
-    pub where_clause: Option<WhereClause>,
-    pub variant_list: Vec<Passable<Variant>>,
-}
-
-impl Input<&super::Body> for &Body {
-    fn assert(self, output: &super::Body) -> TestCaseResult {
-        self.where_clause.as_ref().assert(output.where_clause.as_ref())?;
-        self.variant_list.assert(&output.variants)
-    }
-}
-
-impl Arbitrary for Body {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        let variant = prop_oneof![
-            4 => Variant::arbitrary().prop_map(Passable::SyntaxTree),
-            1 => Just(Passable::Pass),
-        ];
-
-        (
-            proptest::option::of(WhereClause::arbitrary()),
-            proptest::collection::vec(variant, 1..=10),
-        )
-            .prop_map(|(where_clause, variant_list)| Self {
-                where_clause,
-                variant_list,
-            })
-            .boxed()
-    }
-}
-
-impl IndentDisplay for Body {
-    fn indent_fmt(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        indent: usize,
-    ) -> std::fmt::Result {
-        writeln!(f, ":")?;
-
-        if let Some(where_clause) = self.where_clause.as_ref() {
-            write_indent_line_for_indent_display(f, where_clause, indent + 1)?;
-        }
-
-        for variant in &self.variant_list {
-            write_indent_line_for_indent_display(f, variant, indent + 1)?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum {
     pub access_modifier: AccessModifier,
     pub signature: Signature,
-    pub body: Body,
+    pub body: Body<Variant>,
 }
 
 impl Input<&super::Enum> for &Enum {

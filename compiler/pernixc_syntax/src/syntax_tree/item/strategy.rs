@@ -1,3 +1,4 @@
+/*
 use std::fmt::{Debug, Display, Write};
 
 use pernixc_test_input::Input;
@@ -399,272 +400,6 @@ impl Display for WhereClause {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Parameter {
-    pub irrefutable_pattern: Irrefutable,
-    pub r#type: r#type::strategy::Type,
-}
-
-impl Input<&super::Parameter> for &Parameter {
-    fn assert(self, output: &super::Parameter) -> TestCaseResult {
-        self.irrefutable_pattern.assert(output.irrefutable_pattern())?;
-        self.r#type.assert(output.r#type())
-    }
-}
-
-impl Arbitrary for Parameter {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Irrefutable::arbitrary(), r#type::strategy::Type::arbitrary())
-            .prop_map(|(irrefutable_pattern, ty)| Self {
-                irrefutable_pattern,
-                r#type: ty,
-            })
-            .boxed()
-    }
-}
-
-impl Display for Parameter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.irrefutable_pattern, self.r#type)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ParameterKind {
-    Regular(Parameter),
-    VarArgs,
-}
-
-impl Input<&super::ParameterKind> for &ParameterKind {
-    fn assert(self, output: &super::ParameterKind) -> TestCaseResult {
-        match (self, output) {
-            (ParameterKind::Regular(i), super::ParameterKind::Regular(o)) => {
-                i.assert(o)
-            }
-            (ParameterKind::VarArgs, super::ParameterKind::VarArgs(_)) => {
-                Ok(())
-            }
-
-            _ => Err(TestCaseError::fail(format!(
-                "Expected {self:?}, got {output:?}",
-            ))),
-        }
-    }
-}
-
-impl Arbitrary for ParameterKind {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        prop_oneof![
-            6 => Parameter::arbitrary().prop_map(Self::Regular),
-            1 => Just(Self::VarArgs),
-        ]
-        .boxed()
-    }
-}
-
-impl Display for ParameterKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Regular(parameter) => Display::fmt(parameter, f),
-            Self::VarArgs => write!(f, "..."),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Parameters {
-    pub parameter_list:
-        Option<ConnectedList<ParameterKind, ConstantPunctuation<','>>>,
-}
-
-impl Input<&super::Parameters> for &Parameters {
-    fn assert(self, output: &super::Parameters) -> TestCaseResult {
-        self.parameter_list.as_ref().assert(output.connected_list.as_ref())
-    }
-}
-
-impl Arbitrary for Parameters {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::option::of(ConnectedList::arbitrary_with(
-            ParameterKind::arbitrary(),
-            ConstantPunctuation::arbitrary(),
-        ))
-        .prop_map(|parameter_list| Self { parameter_list })
-        .boxed()
-    }
-}
-
-impl Display for Parameters {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char('(')?;
-        if let Some(parameter_list) = &self.parameter_list {
-            Display::fmt(parameter_list, f)?;
-        }
-        f.write_char(')')
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ReturnType {
-    pub r#type: r#type::strategy::Type,
-}
-
-impl Input<&super::ReturnType> for &ReturnType {
-    fn assert(self, output: &super::ReturnType) -> TestCaseResult {
-        self.r#type.assert(output.r#type())
-    }
-}
-
-impl Arbitrary for ReturnType {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        r#type::strategy::Type::arbitrary()
-            .prop_map(|ty| Self { r#type: ty })
-            .boxed()
-    }
-}
-
-impl Display for ReturnType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.r#type, f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FunctionSignature {
-    identifier: Identifier,
-    generic_parameters: Option<GenericParameters>,
-    parameters: Parameters,
-    return_type: Option<ReturnType>,
-    where_clause: Option<WhereClause>,
-}
-
-impl Input<&super::FunctionSignature> for &FunctionSignature {
-    fn assert(self, output: &super::FunctionSignature) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
-        self.generic_parameters
-            .as_ref()
-            .assert(output.generic_parameters().as_ref())?;
-        self.parameters.assert(output.parameters())?;
-        self.return_type.as_ref().assert(output.return_type().as_ref())?;
-        self.where_clause.as_ref().assert(output.where_clause().as_ref())
-    }
-}
-
-impl Arbitrary for FunctionSignature {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            Identifier::arbitrary(),
-            proptest::option::of(GenericParameters::arbitrary()),
-            Parameters::arbitrary(),
-            proptest::option::of(ReturnType::arbitrary()),
-            proptest::option::of(WhereClause::arbitrary()),
-        )
-            .prop_map(
-                |(
-                    identifier,
-                    generic_parameters,
-                    parameters,
-                    return_type,
-                    where_clause,
-                )| {
-                    Self {
-                        identifier,
-                        generic_parameters,
-                        parameters,
-                        return_type,
-                        where_clause,
-                    }
-                },
-            )
-            .boxed()
-    }
-}
-
-impl Display for FunctionSignature {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("function ")?;
-
-        Display::fmt(&self.identifier, formatter)?;
-
-        if let Some(generic_parameters) = &self.generic_parameters {
-            Display::fmt(generic_parameters, formatter)?;
-        }
-
-        Display::fmt(&self.parameters, formatter)?;
-
-        if let Some(return_type) = &self.return_type {
-            write!(formatter, ": {return_type}")?;
-        }
-
-        if let Some(where_clause) = &self.where_clause {
-            write!(formatter, " {where_clause}")?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Function {
-    pub access_modifier: AccessModifier,
-    pub is_const: bool,
-    pub signature: FunctionSignature,
-    pub statements: Statements,
-}
-
-impl Input<&super::Function> for &Function {
-    fn assert(self, output: &super::Function) -> TestCaseResult {
-        self.access_modifier.assert(output.access_modifier())?;
-        prop_assert_eq!(self.is_const, output.const_keyword().is_some());
-        self.signature.assert(output.signature())?;
-        self.statements.assert(output.statements())
-    }
-}
-
-impl Arbitrary for Function {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (
-            AccessModifier::arbitrary(),
-            proptest::bool::ANY,
-            FunctionSignature::arbitrary(),
-            Statements::arbitrary(),
-        )
-            .prop_map(|(access_modifier, is_const, signature, statements)| {
-                Self { access_modifier, is_const, signature, statements }
-            })
-            .boxed()
-    }
-}
-
-impl Display for Function {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{} ", self.access_modifier)?;
-
-        if self.is_const {
-            write!(formatter, "const ")?;
-        }
-
-        write!(formatter, "{} {}", self.signature, self.statements)
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantSignature {
@@ -1810,5 +1545,78 @@ impl Arbitrary for Implementation {
 impl Display for Implementation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.signature, self.kind)
+    }
+}
+*/
+
+use std::fmt::Debug;
+
+use pernixc_test_input::Input;
+use proptest::{
+    prelude::{Arbitrary, BoxedStrategy, Just, Strategy},
+    prop_oneof,
+    test_runner::TestCaseResult,
+};
+
+use super::where_clause::strategy::WhereClause;
+use crate::syntax_tree::strategy::{
+    write_indent_line_for_indent_display, IndentDisplay, Passable,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Body<T> {
+    pub where_clause: Option<WhereClause>,
+    pub members: Vec<Passable<T>>,
+}
+
+impl<O: Debug, T: Debug> Input<&super::Body<O>> for &Body<T>
+where
+    for<'x, 'y> &'x T: Input<&'y O>,
+{
+    fn assert(self, output: &super::Body<O>) -> TestCaseResult {
+        self.where_clause.as_ref().assert(output.where_clause.as_ref())?;
+        self.members.assert(&output.members)
+    }
+}
+
+impl<T: 'static + Arbitrary + Clone> Arbitrary for Body<T>
+where
+    <T as Arbitrary>::Strategy: 'static,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        let variant = prop_oneof![
+            4 => T::arbitrary().prop_map(Passable::SyntaxTree),
+            1 => Just(Passable::Pass),
+        ];
+
+        (
+            proptest::option::of(WhereClause::arbitrary()),
+            proptest::collection::vec(variant, 1..=10),
+        )
+            .prop_map(|(where_clause, members)| Self { where_clause, members })
+            .boxed()
+    }
+}
+
+impl<T: IndentDisplay> IndentDisplay for Body<T> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        writeln!(f, ":")?;
+
+        if let Some(where_clause) = self.where_clause.as_ref() {
+            write_indent_line_for_indent_display(f, where_clause, indent + 1)?;
+        }
+
+        for member in &self.members {
+            write_indent_line_for_indent_display(f, member, indent + 1)?;
+        }
+
+        Ok(())
     }
 }

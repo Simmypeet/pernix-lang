@@ -1,15 +1,15 @@
 use pernixc_handler::Handler;
-use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation};
+use pernixc_lexical::token::{Identifier, Keyword, KeywordKind};
 use pernixc_source_file::{SourceElement, Span};
 
 use super::{
-    constant, function, generic_parameter::GenericParameters, r#type,
-    where_clause::WhereClause, TrailingWhereClause,
+    constant, function, generic_parameter::GenericParameters, r#type, Body,
+    TrailingWhereClause,
 };
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Branch, Parse, Passable},
+        parse::{self, Branch, Parse},
         StateMachine,
     },
     syntax_tree::{AccessModifier, SyntaxTree},
@@ -113,47 +113,10 @@ impl SourceElement for Member {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Body {
-    pub colon: Punctuation,
-    pub where_clause: Option<WhereClause>,
-    pub members: Vec<Passable<Member>>,
-}
-
-impl SyntaxTree for Body {
-    fn parse(
-        state_machine: &mut StateMachine,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<Self> {
-        (
-            WhereClause::parse.or_none().non_passable_indentation_item(),
-            Member::parse.indentation_item().keep_take_all(),
-        )
-            .step_into_indentation()
-            .map(|(colon, (where_clause, members))| Self {
-                colon: colon.clone(),
-                where_clause,
-                members,
-            })
-            .parse(state_machine, handler)
-    }
-}
-
-impl SourceElement for Body {
-    fn span(&self) -> Span {
-        self.colon.span().join(
-            &self
-                .members
-                .last()
-                .map_or_else(|| self.colon.span(), SourceElement::span),
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Trait {
     pub access_modifier: AccessModifier,
     pub signature: Signature,
-    pub body: Body,
+    pub body: Body<Member>,
 }
 
 impl SyntaxTree for Trait {

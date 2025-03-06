@@ -1,18 +1,20 @@
 use pernixc_handler::Handler;
-use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
+use pernixc_lexical::token::{Keyword, KeywordKind};
 use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     constant, function, generic_parameter::GenericParameters, r#type,
-    where_clause::WhereClause, TrailingWhereClause,
+    TrailingWhereClause,
 };
 use crate::{
     error,
     state_machine::{
-        parse::{self, Branch, Parse, Passable},
+        parse::{self, Branch, Parse},
         StateMachine,
     },
-    syntax_tree::{AccessModifier, QualifiedIdentifier, SyntaxTree},
+    syntax_tree::{
+        statement::Statement, AccessModifier, QualifiedIdentifier, SyntaxTree,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -103,7 +105,7 @@ impl<S: SyntaxTree, B: SyntaxTree> SyntaxTree for MemberTemplate<S, B> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Member {
     Constant(MemberTemplate<constant::Signature, constant::Body>),
-    Function(MemberTemplate<function::Signature, function::Body>),
+    Function(MemberTemplate<function::Signature, super::Body<Statement>>),
     Type(MemberTemplate<r#type::Signature, r#type::Body>),
 }
 
@@ -114,7 +116,7 @@ impl SyntaxTree for Member {
     ) -> parse::Result<Self> {
         enum MemberWithoutAccessModifier {
             Constant((constant::Signature, constant::Body)),
-            Function((function::Signature, function::Body)),
+            Function((function::Signature, super::Body<Statement>)),
             Type((r#type::Signature, r#type::Body)),
         }
 
@@ -123,7 +125,7 @@ impl SyntaxTree for Member {
             (
                 (constant::Signature::parse, constant::Body::parse)
                     .map(MemberWithoutAccessModifier::Constant),
-                (function::Signature::parse, function::Body::parse)
+                (function::Signature::parse, super::Body::parse)
                     .map(MemberWithoutAccessModifier::Function),
                 (r#type::Signature::parse, r#type::Body::parse)
                     .map(MemberWithoutAccessModifier::Type),
@@ -166,6 +168,8 @@ impl SourceElement for Member {
         }
     }
 }
+
+pub type PositiveBody = super::Body<Member>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Body {
@@ -225,43 +229,6 @@ impl SourceElement for NegativeBody {
                 .trailing_where_clause
                 .as_ref()
                 .map_or_else(|| begin.clone(), SourceElement::span),
-        )
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PositiveBody {
-    pub colon: Punctuation,
-    pub where_clause: Option<WhereClause>,
-    pub members: Vec<Passable<Member>>,
-}
-
-impl SyntaxTree for PositiveBody {
-    fn parse(
-        state_machine: &mut StateMachine,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<Self> {
-        (
-            WhereClause::parse.or_none().non_passable_indentation_item(),
-            Member::parse.indentation_item().keep_take_all(),
-        )
-            .step_into_indentation()
-            .map(|(colon, (where_clause, members))| Self {
-                colon: colon.clone(),
-                where_clause,
-                members,
-            })
-            .parse(state_machine, handler)
-    }
-}
-
-impl SourceElement for PositiveBody {
-    fn span(&self) -> Span {
-        self.colon.span().join(
-            &self
-                .members
-                .last()
-                .map_or_else(|| self.colon.span(), SourceElement::span),
         )
     }
 }

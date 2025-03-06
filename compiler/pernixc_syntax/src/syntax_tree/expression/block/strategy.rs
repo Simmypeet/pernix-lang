@@ -330,7 +330,15 @@ impl Arbitrary for IfElse {
                     args.3.clone(),
                 ))
             })
-            .prop_filter_map("need binary", |x| x.into_binary().ok());
+            .prop_filter_map("need binary and must not contain block", |x| {
+                x.into_binary().ok().and_then(|x| {
+                    (!x.chain
+                        .last()
+                        .map_or_else(|| &x.first, |x| &x.1)
+                        .is_block())
+                    .then_some(x)
+                })
+            });
 
         let leaf = (
             binary.clone().prop_map(Box::new),
@@ -541,7 +549,15 @@ impl Arbitrary for While {
                     args.3.clone(),
                 ))
             })
-            .prop_filter_map("need binary", |x| x.into_binary().ok());
+            .prop_filter_map("need binary and must not contain block", |x| {
+                x.into_binary().ok().and_then(|x| {
+                    (!x.chain
+                        .last()
+                        .map_or_else(|| &x.first, |x| &x.1)
+                        .is_block())
+                    .then_some(x)
+                })
+            });
 
         (binary.prop_map(Box::new), Group::arbitrary_with(args))
             .prop_map(|(binary, group)| Self { binary, group })
@@ -637,7 +653,15 @@ impl Arbitrary for Match {
                     args.3.clone(),
                 ))
             })
-            .prop_filter_map("need binary", |x| x.into_binary().ok());
+            .prop_filter_map("need binary and must not contain block", |x| {
+                x.into_binary().ok().and_then(|x| {
+                    (!x.chain
+                        .last()
+                        .map_or_else(|| &x.first, |x| &x.1)
+                        .is_block())
+                    .then_some(x)
+                })
+            });
 
         (
             binary.prop_map(Box::new),

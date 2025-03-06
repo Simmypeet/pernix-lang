@@ -6,21 +6,20 @@ use pernixc_lexical::{
 };
 use pernixc_source_file::{SourceElement, Span};
 
-use super::{
-    generic_parameter::GenericParameters, r#type::Type,
-    where_clause::WhereClause,
-};
+use super::{generic_parameter::GenericParameters, Body};
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Branch, ExpectExt, Parse, Passable},
+        parse::{self, Branch, ExpectExt, Parse},
         StateMachine,
     },
     syntax_tree::{
-        pattern::Irrefutable, statement::Statement, AccessModifier,
-        EnclosedConnectedList, ParseExt, SyntaxTree,
+        pattern::Irrefutable, r#type::Type, statement::Statement,
+        AccessModifier, EnclosedConnectedList, ParseExt, SyntaxTree,
     },
 };
+
+pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Ellipsis {
@@ -198,7 +197,8 @@ impl SyntaxTree for Signature {
 
 impl SourceElement for Signature {
     fn span(&self) -> Span {
-        let being = self.function_keyword.span.clone();
+        let being = self.function_keyword.span();
+
         let end = self
             .return_type
             .as_ref()
@@ -209,52 +209,11 @@ impl SourceElement for Signature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Body {
-    pub colon: Punctuation,
-    pub where_clause: Option<WhereClause>,
-    pub statements: Vec<Passable<Statement>>,
-}
-
-impl SourceElement for Body {
-    fn span(&self) -> Span {
-        let being = self.colon.span.clone();
-        let end = self.statements.last().map_or_else(
-            || {
-                self.where_clause
-                    .as_ref()
-                    .map_or_else(|| being.clone(), SourceElement::span)
-            },
-            SourceElement::span,
-        );
-
-        being.join(&end)
-    }
-}
-
-impl SyntaxTree for Body {
-    fn parse(
-        state_machine: &mut StateMachine,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<Self> {
-        (
-            WhereClause::parse.or_none().non_passable_indentation_item(),
-            Statement::parse.indentation_item().keep_take_all(),
-        )
-            .step_into_indentation()
-            .map(|(colon, (where_clause, statements))| Self {
-                colon: colon.to_owned(),
-                where_clause,
-                statements,
-            })
-            .parse(state_machine, handler)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function {
     pub access_modifier: AccessModifier,
+    pub const_keyword: Option<Keyword>,
     pub signature: Signature,
-    pub body: Body,
+    pub body: Body<Statement>,
 }
 
 impl SyntaxTree for Function {
@@ -262,9 +221,15 @@ impl SyntaxTree for Function {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (AccessModifier::parse, Signature::parse, Body::parse)
-            .map(|(access_modifier, signature, body)| Self {
+        (
+            AccessModifier::parse,
+            KeywordKind::Const.to_owned().or_none(),
+            Signature::parse,
+            Body::parse,
+        )
+            .map(|(access_modifier, const_keyword, signature, body)| Self {
                 access_modifier,
+                const_keyword,
                 signature,
                 body,
             })
@@ -277,3 +242,6 @@ impl SourceElement for Function {
         self.access_modifier.span().join(&self.body.span())
     }
 }
+
+#[cfg(test)]
+mod test;

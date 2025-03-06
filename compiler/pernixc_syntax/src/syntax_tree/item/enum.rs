@@ -1,15 +1,15 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::{
-    token::{Identifier, Keyword, KeywordKind, Punctuation},
+    token::{Identifier, Keyword, KeywordKind},
     token_stream::DelimiterKind,
 };
 use pernixc_source_file::{SourceElement, Span};
 
-use super::{generic_parameter::GenericParameters, where_clause::WhereClause};
+use super::{generic_parameter::GenericParameters, Body};
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Parse, Passable},
+        parse::{self, Parse},
         StateMachine,
     },
     syntax_tree::{
@@ -99,47 +99,10 @@ impl SourceElement for Variant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Body {
-    pub colon: Punctuation,
-    pub where_clause: Option<WhereClause>,
-    pub variants: Vec<Passable<Variant>>,
-}
-
-impl SyntaxTree for Body {
-    fn parse(
-        state_machine: &mut StateMachine,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<Self> {
-        (
-            WhereClause::parse.non_passable_indentation_item().or_none(),
-            Variant::parse.indentation_item().keep_take_all(),
-        )
-            .step_into_indentation()
-            .map(|(colon, (where_clause, variants))| Self {
-                colon: colon.clone(),
-                where_clause,
-                variants,
-            })
-            .parse(state_machine, handler)
-    }
-}
-
-impl SourceElement for Body {
-    fn span(&self) -> Span {
-        let end = self
-            .variants
-            .last()
-            .map_or_else(|| self.colon.span.clone(), SourceElement::span);
-
-        self.colon.span.join(&end)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum {
     pub access_modifier: AccessModifier,
     pub signature: Signature,
-    pub body: Body,
+    pub body: Body<Variant>,
 }
 
 impl SyntaxTree for Enum {

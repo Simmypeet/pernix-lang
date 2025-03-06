@@ -2,11 +2,11 @@ use pernixc_handler::Handler;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation};
 use pernixc_source_file::{SourceElement, Span};
 
-use super::{generic_parameter::GenericParameters, where_clause::WhereClause};
+use super::{generic_parameter::GenericParameters, Body};
 use crate::{
     error, expect,
     state_machine::{
-        parse::{self, Parse, Passable},
+        parse::{self, Parse},
         StateMachine,
     },
     syntax_tree::{r#type::Type, AccessModifier, SyntaxTree},
@@ -87,47 +87,10 @@ impl SourceElement for Field {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Body {
-    pub colon: Punctuation,
-    pub where_clause: Option<WhereClause>,
-    pub fields: Vec<Passable<Field>>,
-}
-
-impl SyntaxTree for Body {
-    fn parse(
-        state_machine: &mut StateMachine,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<Self> {
-        (
-            WhereClause::parse.non_passable_indentation_item().or_none(),
-            Field::parse.indentation_item().keep_take_all(),
-        )
-            .step_into_indentation()
-            .map(|(colon, (where_clause, fields))| Self {
-                colon: colon.clone(),
-                where_clause,
-                fields,
-            })
-            .parse(state_machine, handler)
-    }
-}
-
-impl SourceElement for Body {
-    fn span(&self) -> Span {
-        let end = self
-            .fields
-            .last()
-            .map_or_else(|| self.colon.span.clone(), SourceElement::span);
-
-        self.colon.span.join(&end)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Struct {
     pub access_modifier: AccessModifier,
     pub signature: Signature,
-    pub body: Body,
+    pub body: Body<Field>,
 }
 
 impl SyntaxTree for Struct {
