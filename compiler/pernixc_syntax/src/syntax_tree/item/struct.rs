@@ -12,7 +12,7 @@ use crate::{
     syntax_tree::{r#type::Type, AccessModifier, SyntaxTree},
 };
 
-mod strategy;
+pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {

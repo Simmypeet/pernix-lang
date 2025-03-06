@@ -12,6 +12,8 @@ use crate::{
     syntax_tree::{AccessModifier, SyntaxTree},
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function {
     pub access_modifier: AccessModifier,
@@ -90,3 +92,6 @@ impl SyntaxTree for Extern {
             .parse(state_machine, handler)
     }
 }
+
+#[cfg(test)]
+mod test;
