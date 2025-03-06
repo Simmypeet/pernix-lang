@@ -11,7 +11,7 @@ use crate::{
     syntax_tree::{predicate::Predicate, SyntaxTree},
 };
 
-// pub mod strategy;
+//  pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct WhereClause {

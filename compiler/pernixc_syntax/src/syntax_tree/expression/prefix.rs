@@ -13,6 +13,8 @@ use crate::{
     syntax_tree::{ReferenceOf, SyntaxTree},
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Prefix {
     pub operator: PrefixOperator,

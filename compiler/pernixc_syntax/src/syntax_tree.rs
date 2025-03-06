@@ -31,6 +31,8 @@ pub mod statement;
 pub mod target;
 pub mod r#type;
 
+pub mod strategy;
+
 /// An extension trait for the [`Parse`] trait allowing for more complex parsing
 /// operations.
 pub trait ParseExt<'a>: Parse<'a> {

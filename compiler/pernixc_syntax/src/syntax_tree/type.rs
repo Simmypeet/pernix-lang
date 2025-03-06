@@ -23,6 +23,8 @@ use crate::{
     syntax_tree::QualifiedIdentifier,
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Primitive {
     Bool(Keyword),

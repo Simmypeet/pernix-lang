@@ -11,8 +11,11 @@ use proptest::{
 };
 
 use crate::syntax_tree::{
-    expression::strategy::Boolean,
-    strategy::{ConnectedList, ConstantPunctuation, Identifier, ReferenceOf},
+    expression::unit::strategy::Boolean,
+    strategy::{
+        ConnectedList, ConstantPunctuation, Identifier, IndentDisplay,
+        ReferenceOf,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -172,6 +175,16 @@ impl<Pattern: Display> Display for Field<Pattern> {
             Self::Association(association) => write!(f, "{association}"),
             Self::Named(named) => write!(f, "{named}"),
         }
+    }
+}
+
+impl<Pattern: Display> IndentDisplay for Field<Pattern> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        _indent: usize,
+    ) -> std::fmt::Result {
+        self.fmt(f)
     }
 }
 

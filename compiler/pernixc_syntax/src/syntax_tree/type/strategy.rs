@@ -13,7 +13,7 @@ use proptest::{
 use crate::syntax_tree::{
     expression::strategy::Expression,
     strategy::{
-        ConnectedList, Constant, ConstantPunctuation, Lifetime,
+        ConnectedList, Constant, ConstantPunctuation, IndentDisplay, Lifetime,
         QualifiedIdentifier,
     },
 };
@@ -48,12 +48,16 @@ impl Input<&super::Reference> for &Reference {
     fn assert(self, output: &super::Reference) -> TestCaseResult {
         prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
         self.lifetime.as_ref().assert(output.lifetime.as_ref())?;
-        self.operand_type.assert(output.operand())
+        self.operand_type.assert(&output.operand)
     }
 }
 
-impl Display for Reference {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Reference {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         write!(f, "&")?;
 
         if let Some(lifetime) = &self.lifetime {
@@ -64,7 +68,7 @@ impl Display for Reference {
             write!(f, "mutable ")?;
         }
 
-        Display::fmt(&self.operand_type, f)
+        self.operand_type.indent_fmt(f, indent)
     }
 }
 
@@ -180,17 +184,21 @@ impl Arbitrary for Array {
 
 impl Input<&super::Array> for &Array {
     fn assert(self, output: &super::Array) -> TestCaseResult {
-        self.operand.assert(output.operand())?;
-        self.constant.assert(output.constant())
+        self.operand.assert(&output.operand)?;
+        self.constant.assert(&output.constant)
     }
 }
 
-impl Display for Array {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Array {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         f.write_char('[')?;
-        Display::fmt(&self.operand, f)?;
+        self.operand.indent_fmt(f, indent)?;
         f.write_str(": ")?;
-        Display::fmt(&self.constant, f)?;
+        self.constant.indent_fmt(f, indent)?;
         f.write_char(']')?;
 
         Ok(())
@@ -205,8 +213,8 @@ pub struct Pointer {
 
 impl Input<&super::Pointer> for &Pointer {
     fn assert(self, output: &super::Pointer) -> TestCaseResult {
-        prop_assert_eq!(self.is_mutable, output.mutable_keyword().is_some());
-        self.operand.assert(output.operand())
+        prop_assert_eq!(self.is_mutable, output.mutable_keyword.is_some());
+        self.operand.assert(&output.operand)
     }
 }
 
@@ -224,15 +232,19 @@ impl Arbitrary for Pointer {
     }
 }
 
-impl Display for Pointer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Pointer {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         f.write_char('*')?;
 
         if self.is_mutable {
             write!(f, "mutable ")?;
         }
 
-        Display::fmt(&self.operand, f)
+        self.operand.indent_fmt(f, indent)
     }
 }
 
@@ -244,8 +256,8 @@ pub struct Unpackable {
 
 impl Input<&super::Unpackable> for &Unpackable {
     fn assert(self, output: &super::Unpackable) -> TestCaseResult {
-        prop_assert_eq!(self.ellipsis, output.ellipsis().is_some());
-        self.r#type.assert(output.r#type())
+        prop_assert_eq!(self.ellipsis, output.ellipsis.is_some());
+        self.r#type.assert(&output.r#type)
     }
 }
 
@@ -262,13 +274,17 @@ impl Arbitrary for Unpackable {
     }
 }
 
-impl Display for Unpackable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Unpackable {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         if self.ellipsis {
             f.write_str("...")?;
         }
 
-        Display::fmt(&self.r#type, f)
+        self.r#type.indent_fmt(f, indent)
     }
 }
 
@@ -300,15 +316,19 @@ impl Arbitrary for Tuple {
     }
 }
 
-impl Display for Tuple {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Tuple {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         f.write_char('(')?;
-        if let Some(type_specifier_list) = &self.unpackable_list {
-            Display::fmt(type_specifier_list, f)?;
-        }
-        f.write_char(')')?;
 
-        Ok(())
+        if let Some(type_specifier_list) = &self.unpackable_list {
+            type_specifier_list.indent_fmt(f, indent)?;
+        }
+
+        f.write_char(')')
     }
 }
 
@@ -319,7 +339,7 @@ pub struct Phantom {
 
 impl Input<&super::Phantom> for &Phantom {
     fn assert(self, output: &super::Phantom) -> TestCaseResult {
-        self.r#type.assert(output.r#type())
+        self.r#type.assert(&output.r#type)
     }
 }
 
@@ -334,9 +354,14 @@ impl Arbitrary for Phantom {
     }
 }
 
-impl Display for Phantom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "phantom {}", &self.r#type)
+impl IndentDisplay for Phantom {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("phantom ")?;
+        self.r#type.indent_fmt(f, indent)
     }
 }
 
@@ -422,16 +447,20 @@ impl Arbitrary for Type {
     }
 }
 
-impl Display for Type {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Type {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         match self {
             Self::Primitive(i) => Display::fmt(i, f),
-            Self::Reference(i) => Display::fmt(i, f),
-            Self::QualifiedIdentifier(i) => Display::fmt(i, f),
-            Self::Array(i) => Display::fmt(i, f),
-            Self::Pointer(i) => Display::fmt(i, f),
-            Self::Tuple(i) => Display::fmt(i, f),
-            Self::Phantom(i) => Display::fmt(i, f),
+            Self::Reference(i) => i.indent_fmt(f, indent),
+            Self::QualifiedIdentifier(i) => i.indent_fmt(f, indent),
+            Self::Array(i) => i.indent_fmt(f, indent),
+            Self::Pointer(i) => i.indent_fmt(f, indent),
+            Self::Tuple(i) => i.indent_fmt(f, indent),
+            Self::Phantom(i) => i.indent_fmt(f, indent),
             Self::Elided => f.write_str(".."),
         }
     }

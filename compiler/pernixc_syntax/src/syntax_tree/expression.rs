@@ -5,11 +5,10 @@
 use binary::Binary;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
-use pernixc_lexical::token::Punctuation;
 use pernixc_source_file::{SourceElement, Span};
 use terminator::Terminator;
 
-use super::{Label, Parse, SyntaxTree};
+use super::{Parse, SyntaxTree};
 use crate::{
     error,
     state_machine::{
@@ -19,11 +18,13 @@ use crate::{
 };
 
 pub mod binary;
-pub mod brace;
+pub mod block;
 pub mod postfix;
 pub mod prefix;
 pub mod terminator;
 pub mod unit;
+
+pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Expression {
@@ -52,25 +53,4 @@ impl SourceElement for Expression {
             Self::Terminator(syn) => syn.span(),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LabelSpecifier {
-    pub label: Label,
-    pub colon: Punctuation,
-}
-
-impl SyntaxTree for LabelSpecifier {
-    fn parse(
-        state_machine: &mut StateMachine,
-        handler: &dyn Handler<error::Error>,
-    ) -> parse::Result<Self> {
-        (Label::parse, ':'.to_owned())
-            .map(|(label, colon)| Self { label, colon })
-            .parse(state_machine, handler)
-    }
-}
-
-impl SourceElement for LabelSpecifier {
-    fn span(&self) -> Span { self.label.span().join(&self.colon.span) }
 }

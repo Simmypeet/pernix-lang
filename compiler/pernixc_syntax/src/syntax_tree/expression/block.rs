@@ -3,19 +3,23 @@ use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
 use pernixc_source_file::{SourceElement, Span};
 
-use super::{unit::Parenthesized, Expression, LabelSpecifier};
+use super::Expression;
 use crate::{
     error,
     state_machine::{
         parse::{self, Branch, Parse, Passable},
         StateMachine,
     },
-    syntax_tree::{pattern::Refutable, statement::Statements, SyntaxTree},
+    syntax_tree::{
+        pattern::Refutable, statement::Statements, Label, SyntaxTree,
+    },
 };
+
+pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(clippy::large_enum_variant)]
-pub enum Brace {
+pub enum Block {
     Scope(Scope),
     IfElse(IfElse),
     Loop(Loop),
@@ -23,7 +27,7 @@ pub enum Brace {
     While(While),
 }
 
-impl SyntaxTree for Brace {
+impl SyntaxTree for Block {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
@@ -40,7 +44,7 @@ impl SyntaxTree for Brace {
     }
 }
 
-impl SourceElement for Brace {
+impl SourceElement for Block {
     fn span(&self) -> Span {
         match self {
             Self::Scope(syn) => syn.span(),
@@ -55,7 +59,7 @@ impl SourceElement for Brace {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchArm {
     pub refutable_pattern: Refutable,
-    pub block: Block,
+    pub group: Group,
 }
 
 impl SyntaxTree for MatchArm {
@@ -63,15 +67,15 @@ impl SyntaxTree for MatchArm {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (Refutable::parse, Block::parse)
-            .map(|(refutable_pattern, block)| Self { refutable_pattern, block })
+        (Refutable::parse, Group::parse)
+            .map(|(refutable_pattern, group)| Self { refutable_pattern, group })
             .parse(state_machine, handler)
     }
 }
 
 impl SourceElement for MatchArm {
     fn span(&self) -> Span {
-        self.refutable_pattern.span().join(&self.block.span())
+        self.refutable_pattern.span().join(&self.group.span())
     }
 }
 
@@ -141,7 +145,7 @@ impl SourceElement for Match {
 pub struct Scope {
     pub unsafe_keyword: Option<Keyword>,
     pub scope_keyword: Keyword,
-    pub label_specifier: Option<LabelSpecifier>,
+    pub label: Option<Label>,
     pub statements: Statements,
 }
 
@@ -153,22 +157,15 @@ impl SyntaxTree for Scope {
         (
             KeywordKind::Unsafe.to_owned().or_none(),
             KeywordKind::Scope.to_owned(),
-            LabelSpecifier::parse.or_none(),
+            Label::parse.or_none(),
             Statements::parse,
         )
-            .map(
-                |(
-                    unsafe_keyword,
-                    scope_keyword,
-                    label_specifier,
-                    statements,
-                )| Self {
-                    unsafe_keyword,
-                    scope_keyword,
-                    label_specifier,
-                    statements,
-                },
-            )
+            .map(|(unsafe_keyword, scope_keyword, label, statements)| Self {
+                unsafe_keyword,
+                scope_keyword,
+                label,
+                statements,
+            })
             .parse(state_machine, handler)
     }
 }
@@ -185,37 +182,37 @@ impl SourceElement for Scope {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IndentedBlock {
+pub struct IndentedGroup {
     pub unsafe_keyword: Option<Keyword>,
-    pub label_specifier: Option<LabelSpecifier>,
+    pub label: Option<Label>,
     pub statements: Statements,
 }
 
-impl SyntaxTree for IndentedBlock {
+impl SyntaxTree for IndentedGroup {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
             KeywordKind::Unsafe.to_owned().or_none(),
-            LabelSpecifier::parse.or_none(),
+            Label::parse.or_none(),
             Statements::parse,
         )
-            .map(|(unsafe_keyword, label_specifier, statements)| Self {
+            .map(|(unsafe_keyword, label, statements)| Self {
                 unsafe_keyword,
-                label_specifier,
+                label,
                 statements,
             })
             .parse(state_machine, handler)
     }
 }
 
-impl SourceElement for IndentedBlock {
+impl SourceElement for IndentedGroup {
     fn span(&self) -> Span {
         let end = self.statements.span();
         let start = self.unsafe_keyword.as_ref().map_or_else(
             || {
-                self.label_specifier
+                self.label
                     .as_ref()
                     .map_or_else(|| end.clone(), SourceElement::span)
             },
@@ -227,12 +224,12 @@ impl SourceElement for IndentedBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct InlineBlock {
+pub struct InlineExpression {
     pub colon: Punctuation,
     pub expression: Box<Expression>,
 }
 
-impl SyntaxTree for InlineBlock {
+impl SyntaxTree for InlineExpression {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
@@ -243,31 +240,31 @@ impl SyntaxTree for InlineBlock {
     }
 }
 
-impl SourceElement for InlineBlock {
+impl SourceElement for InlineExpression {
     fn span(&self) -> Span { self.colon.span().join(&self.expression.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Block {
-    Indented(IndentedBlock),
-    Inline(InlineBlock),
+pub enum Group {
+    Indented(IndentedGroup),
+    Inline(InlineExpression),
 }
 
-impl SyntaxTree for Block {
+impl SyntaxTree for Group {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
         (
-            IndentedBlock::parse.map(Self::Indented),
-            InlineBlock::parse.map(Self::Inline),
+            IndentedGroup::parse.map(Self::Indented),
+            InlineExpression::parse.map(Self::Inline),
         )
             .branch()
             .parse(state_machine, handler)
     }
 }
 
-impl SourceElement for Block {
+impl SourceElement for Group {
     fn span(&self) -> Span {
         match self {
             Self::Indented(block) => block.span(),
@@ -278,26 +275,26 @@ impl SourceElement for Block {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs, clippy::large_enum_variant /*false positive*/)]
-pub enum BlockOrIfElse {
-    Block(Block),
+pub enum GroupOrIfElse {
+    Group(Group),
     IfElse(IfElse),
 }
 
-impl SyntaxTree for BlockOrIfElse {
+impl SyntaxTree for GroupOrIfElse {
     fn parse(
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (Block::parse.map(Self::Block), IfElse::parse.map(Self::IfElse))
+        (Group::parse.map(Self::Group), IfElse::parse.map(Self::IfElse))
             .branch()
             .parse(state_machine, handler)
     }
 }
 
-impl SourceElement for BlockOrIfElse {
+impl SourceElement for GroupOrIfElse {
     fn span(&self) -> Span {
         match self {
-            Self::Block(block) => block.span(),
+            Self::Group(block) => block.span(),
             Self::IfElse(if_else) => if_else.span(),
         }
     }
@@ -306,7 +303,7 @@ impl SourceElement for BlockOrIfElse {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Else {
     pub else_keyword: Keyword,
-    pub expression: Box<BlockOrIfElse>,
+    pub expression: Box<GroupOrIfElse>,
 }
 
 impl SyntaxTree for Else {
@@ -314,7 +311,7 @@ impl SyntaxTree for Else {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::Else.to_owned(), BlockOrIfElse::parse.map(Box::new))
+        (KeywordKind::Else.to_owned(), GroupOrIfElse::parse.map(Box::new))
             .map(|(else_keyword, expression)| Self { else_keyword, expression })
             .parse(state_machine, handler)
     }
@@ -329,8 +326,8 @@ impl SourceElement for Else {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IfElse {
     pub if_keyword: Keyword,
-    pub parenthesized: Parenthesized,
-    pub then_expression: Block,
+    pub expression: Box<Expression>,
+    pub then_expression: Group,
     pub else_expression: Option<Else>,
 }
 
@@ -341,20 +338,15 @@ impl SyntaxTree for IfElse {
     ) -> parse::Result<Self> {
         (
             KeywordKind::If.to_owned(),
-            Parenthesized::parse,
-            Block::parse,
+            Expression::parse.map(Box::new),
+            Group::parse,
             Else::parse.or_none(),
         )
             .map(
-                |(
-                    if_keyword,
-                    parenthesized,
-                    then_expression,
-                    else_expression,
-                )| {
+                |(if_keyword, expression, then_expression, else_expression)| {
                     Self {
                         if_keyword,
-                        parenthesized,
+                        expression,
                         then_expression,
                         else_expression,
                     }
@@ -381,8 +373,8 @@ impl SourceElement for IfElse {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct While {
     pub while_keyword: Keyword,
-    pub parenthesized: Parenthesized,
-    pub block: Block,
+    pub expression: Box<Expression>,
+    pub group: Group,
 }
 
 impl SyntaxTree for While {
@@ -390,11 +382,15 @@ impl SyntaxTree for While {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::While.to_owned(), Parenthesized::parse, Block::parse)
-            .map(|(while_keyword, parenthesized, block)| Self {
+        (
+            KeywordKind::While.to_owned(),
+            Expression::parse.map(Box::new),
+            Group::parse,
+        )
+            .map(|(while_keyword, expression, group)| Self {
                 while_keyword,
-                parenthesized,
-                block,
+                expression,
+                group,
             })
             .parse(state_machine, handler)
     }
@@ -402,15 +398,7 @@ impl SyntaxTree for While {
 
 impl SourceElement for While {
     fn span(&self) -> Span {
-        self.while_keyword.span().join(&self.block.span())
-    }
-}
-
-impl While {
-    /// Destructs the while into its components
-    #[must_use]
-    pub fn destruct(self) -> (Keyword, Parenthesized, Block) {
-        (self.while_keyword, self.parenthesized, self.block)
+        self.while_keyword.span().join(&self.group.span())
     }
 }
 
@@ -418,7 +406,7 @@ impl While {
 #[allow(missing_docs)]
 pub struct Loop {
     pub loop_keyword: Keyword,
-    pub block: Block,
+    pub group: Group,
 }
 
 impl SyntaxTree for Loop {
@@ -426,12 +414,12 @@ impl SyntaxTree for Loop {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::Loop.to_owned(), Block::parse)
-            .map(|(loop_keyword, block)| Self { loop_keyword, block })
+        (KeywordKind::Loop.to_owned(), Group::parse)
+            .map(|(loop_keyword, group)| Self { loop_keyword, group })
             .parse(state_machine, handler)
     }
 }
 
 impl SourceElement for Loop {
-    fn span(&self) -> Span { self.loop_keyword.span.join(&self.block.span()) }
+    fn span(&self) -> Span { self.loop_keyword.span.join(&self.group.span()) }
 }

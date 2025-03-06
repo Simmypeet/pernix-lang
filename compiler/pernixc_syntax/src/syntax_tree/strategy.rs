@@ -1,5 +1,5 @@
 use std::{
-    fmt::{Debug, Display, Write},
+    fmt::{Display, Write},
     str::FromStr,
 };
 
@@ -128,7 +128,7 @@ impl Arbitrary for Lifetime {
 
 impl Input<&super::Lifetime> for &Lifetime {
     fn assert(self, output: &super::Lifetime) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
+        self.identifier.assert(&output.identifier)?;
         Ok(())
     }
 }
@@ -163,6 +163,16 @@ impl<const CHAR: char> Display for ConstantPunctuation<CHAR> {
     }
 }
 
+impl<const CHAR: char> IndentDisplay for ConstantPunctuation<CHAR> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        _indent: usize,
+    ) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConnectedList<T, U> {
     pub first: T,
@@ -170,42 +180,50 @@ pub struct ConnectedList<T, U> {
     pub trailing_separator: Option<U>,
 }
 
-impl<T: Debug, U: Debug, V: Debug, W: Debug> Input<&super::ConnectedList<T, U>>
-    for &ConnectedList<V, W>
+impl<
+        T: std::fmt::Debug,
+        U: std::fmt::Debug,
+        V: std::fmt::Debug,
+        W: std::fmt::Debug,
+    > Input<&super::ConnectedList<T, U>> for &ConnectedList<V, W>
 where
     for<'a, 'b> &'a V: Input<&'b T>,
     for<'a, 'b> &'a W: Input<&'b U>,
 {
     fn assert(self, output: &super::ConnectedList<T, U>) -> TestCaseResult {
-        self.first.assert(output.first())?;
-        self.rest.assert(output.rest())?;
+        self.first.assert(&output.first)?;
+        self.rest.assert(&output.rest)?;
         self.trailing_separator
             .as_ref()
-            .assert(output.trailing_separator().as_ref())?;
+            .assert(output.trailing_separator.as_ref())?;
 
         Ok(())
     }
 }
 
-impl<T: Display, U: Display> Display for ConnectedList<T, U> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.first, f)?;
+impl<T: IndentDisplay, U: IndentDisplay> IndentDisplay for ConnectedList<T, U> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.first.indent_fmt(f, indent)?;
 
         for (separator, element) in &self.rest {
-            Display::fmt(separator, f)?;
+            separator.indent_fmt(f, indent)?;
             f.write_char(' ')?;
-            Display::fmt(element, f)?;
+            element.indent_fmt(f, indent)?;
         }
 
         if let Some(separator) = self.trailing_separator.as_ref() {
-            Display::fmt(separator, f)?;
+            separator.indent_fmt(f, indent)?;
         }
 
         Ok(())
     }
 }
 
-impl<T: Debug, U: Debug> ConnectedList<T, U> {
+impl<T: std::fmt::Debug, U: std::fmt::Debug> ConnectedList<T, U> {
     pub fn arbitrary_with(
         element_strategy: impl Strategy<Value = T> + Clone,
         punctuation: impl Strategy<Value = U> + Clone,
@@ -223,6 +241,22 @@ impl<T: Debug, U: Debug> ConnectedList<T, U> {
                 rest,
                 trailing_separator,
             })
+    }
+}
+
+impl<T: Display, U: Display> Display for ConnectedList<T, U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.first.fmt(f)?;
+
+        for (separator, element) in &self.rest {
+            write!(f, "{separator} {element}")?;
+        }
+
+        if let Some(separator) = self.trailing_separator.as_ref() {
+            separator.fmt(f)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -261,10 +295,14 @@ impl Input<&super::Constant> for &Constant {
     }
 }
 
-impl Display for Constant {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for Constant {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         match self {
-            Self::Expression(i) => Display::fmt(i, f),
+            Self::Expression(i) => i.indent_fmt(f, indent),
             Self::Elided => f.write_str(".."),
         }
     }
@@ -293,9 +331,15 @@ impl Input<&super::ConstantArgument> for &ConstantArgument {
     }
 }
 
-impl Display for ConstantArgument {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{{}}}", self.constant)
+impl IndentDisplay for ConstantArgument {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('{')?;
+        self.constant.indent_fmt(f, indent)?;
+        f.write_char('}')
     }
 }
 
@@ -349,12 +393,16 @@ impl Input<&super::GenericArgument> for &GenericArgument {
     }
 }
 
-impl Display for GenericArgument {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for GenericArgument {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         match self {
-            Self::Lifetime(i) => Display::fmt(i, f),
-            Self::Type(i) => Display::fmt(i, f),
-            Self::Constant(i) => Display::fmt(i, f),
+            Self::Lifetime(i) => i.fmt(f),
+            Self::Type(i) => i.indent_fmt(f, indent),
+            Self::Constant(i) => i.indent_fmt(f, indent),
         }
     }
 }
@@ -387,11 +435,15 @@ impl Input<&super::GenericArguments> for &GenericArguments {
     }
 }
 
-impl Display for GenericArguments {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for GenericArguments {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         f.write_char('[')?;
         if let Some(argument_list) = self.argument_list.as_ref() {
-            Display::fmt(argument_list, f)?;
+            argument_list.indent_fmt(f, indent)?;
         }
         f.write_char(']')?;
 
@@ -425,19 +477,23 @@ impl Arbitrary for GenericIdentifier {
 
 impl Input<&super::GenericIdentifier> for &GenericIdentifier {
     fn assert(self, output: &super::GenericIdentifier) -> TestCaseResult {
-        self.identifier.assert(output.identifier())?;
+        self.identifier.assert(&output.identifier)?;
         self.generic_arguments
             .as_ref()
-            .assert(output.generic_arguments().as_ref())
+            .assert(output.generic_arguments.as_ref())
     }
 }
 
-impl Display for GenericIdentifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for GenericIdentifier {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         Display::fmt(&self.identifier, f)?;
 
         if let Some(generic_arguments) = self.generic_arguments.as_ref() {
-            Display::fmt(generic_arguments, f)?;
+            generic_arguments.indent_fmt(f, indent)?;
         }
 
         Ok(())
@@ -489,12 +545,16 @@ impl Input<&super::QualifiedIdentifierRoot> for &QualifiedIdentifierRoot {
     }
 }
 
-impl Display for QualifiedIdentifierRoot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl IndentDisplay for QualifiedIdentifierRoot {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
         match self {
             Self::This => f.write_str("this"),
             Self::Target => f.write_str("target"),
-            Self::GenericIdentifier(i) => Display::fmt(i, f),
+            Self::GenericIdentifier(i) => i.indent_fmt(f, indent),
         }
     }
 }
@@ -552,11 +612,11 @@ impl Arbitrary for QualifiedIdentifier {
 
 impl Input<&super::QualifiedIdentifier> for &QualifiedIdentifier {
     fn assert(self, output: &super::QualifiedIdentifier) -> TestCaseResult {
-        self.root.assert(output.root())?;
+        self.root.assert(&output.root)?;
 
-        prop_assert_eq!(self.rest.len(), output.rest().len());
+        prop_assert_eq!(self.rest.len(), output.rest.len());
 
-        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
+        for (input, (_, output)) in self.rest.iter().zip(output.rest.iter()) {
             input.assert(output)?;
         }
 
@@ -564,12 +624,16 @@ impl Input<&super::QualifiedIdentifier> for &QualifiedIdentifier {
     }
 }
 
-impl Display for QualifiedIdentifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.root, f)?;
+impl IndentDisplay for QualifiedIdentifier {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.root.indent_fmt(f, indent)?;
         for identifier in &self.rest {
             f.write_str("::")?;
-            Display::fmt(identifier, f)?;
+            identifier.indent_fmt(f, indent)?;
         }
 
         Ok(())
@@ -631,10 +695,10 @@ pub struct SimplePath {
 
 impl Input<&super::SimplePath> for &SimplePath {
     fn assert(self, output: &super::SimplePath) -> TestCaseResult {
-        self.root.assert(output.root())?;
-        prop_assert_eq!(self.rest.len(), output.rest().len());
+        self.root.assert(&output.root)?;
+        prop_assert_eq!(self.rest.len(), output.rest.len());
 
-        for (input, (_, output)) in self.rest.iter().zip(output.rest().iter()) {
+        for (input, (_, output)) in self.rest.iter().zip(output.rest.iter()) {
             input.assert(output)?;
         }
 
@@ -739,7 +803,7 @@ pub struct Label {
 
 impl Input<&super::Label> for &Label {
     fn assert(self, output: &super::Label) -> TestCaseResult {
-        self.identifier.assert(output.identifier())
+        self.identifier.assert(&output.identifier)
     }
 }
 
@@ -803,7 +867,7 @@ pub struct LifetimeParameter {
 
 impl Input<&super::LifetimeParameter> for &LifetimeParameter {
     fn assert(self, output: &super::LifetimeParameter) -> TestCaseResult {
-        self.identifier.assert(output.identifier())
+        self.identifier.assert(&output.identifier)
     }
 }
 
@@ -854,7 +918,8 @@ impl<T: Arbitrary + 'static> Arbitrary for Passable<T> {
     }
 }
 
-impl<O: Debug, T: Debug> Input<&parse::Passable<O>> for &Passable<T>
+impl<O: std::fmt::Debug, T: std::fmt::Debug> Input<&parse::Passable<O>>
+    for &Passable<T>
 where
     for<'x, 'y> &'x T: Input<&'y O>,
 {
@@ -871,7 +936,8 @@ where
     }
 }
 
-impl<O: Debug, T: Debug> Input<parse::Passable<&O>> for Passable<&T>
+impl<O: std::fmt::Debug, T: std::fmt::Debug> Input<parse::Passable<&O>>
+    for Passable<&T>
 where
     for<'x, 'y> &'x T: Input<&'y O>,
 {
@@ -892,7 +958,20 @@ impl<T: Display> Display for Passable<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Pass => f.write_str("pass"),
-            Self::SyntaxTree(i) => Display::fmt(i, f),
+            Self::SyntaxTree(i) => i.fmt(f),
+        }
+    }
+}
+
+impl<T: IndentDisplay> IndentDisplay for Passable<T> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Pass => f.write_str("pass"),
+            Self::SyntaxTree(i) => i.indent_fmt(f, indent),
         }
     }
 }
@@ -902,18 +981,28 @@ impl<T: Display> Display for Passable<T> {
 pub trait IndentDisplay {
     /// Display the item with indentation.
     #[allow(clippy::missing_errors_doc)]
-    fn fmt(
+    fn indent_fmt(
         &self,
         f: &mut std::fmt::Formatter,
         indent: usize,
     ) -> std::fmt::Result;
 }
 
+impl<T: IndentDisplay> IndentDisplay for Box<T> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        (**self).indent_fmt(f, indent)
+    }
+}
+
 /// Write a line with indentation to the formatter.
 #[allow(clippy::missing_errors_doc)]
 pub fn write_indent_line(
     f: &mut std::fmt::Formatter,
-    o: impl Display,
+    o: &impl Display,
     indent: usize,
 ) -> std::fmt::Result {
     for _ in 0..indent {
@@ -923,12 +1012,26 @@ pub fn write_indent_line(
     writeln!(f, "{o}")
 }
 
+#[allow(clippy::missing_errors_doc)]
+pub fn write_indent_line_for_indent_display(
+    f: &mut std::fmt::Formatter,
+    o: &impl IndentDisplay,
+    indent: usize,
+) -> std::fmt::Result {
+    for _ in 0..indent {
+        f.write_str("    ")?;
+    }
+
+    o.indent_fmt(f, indent)?;
+    writeln!(f)
+}
+
 /// A wrapper over a `Display` item that includes the indentation level.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IndentDisplayItem<'a, T>(pub usize, pub &'a T);
 
 impl<T: IndentDisplay> Display for IndentDisplayItem<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.1.fmt(f, self.0)
+        self.1.indent_fmt(f, self.0)
     }
 }

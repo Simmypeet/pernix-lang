@@ -12,6 +12,8 @@ use crate::{
     syntax_tree::{Label, SyntaxTree},
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Terminator {
     Return(Return),

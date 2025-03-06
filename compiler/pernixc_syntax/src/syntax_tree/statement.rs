@@ -21,6 +21,8 @@ use crate::{
     },
 };
 
+pub mod strategy;
+
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]

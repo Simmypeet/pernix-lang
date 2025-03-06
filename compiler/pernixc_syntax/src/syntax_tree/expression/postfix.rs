@@ -19,6 +19,8 @@ use crate::{
     },
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Postfix {
     pub postfixable: Box<Postfixable>,

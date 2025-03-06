@@ -3,7 +3,7 @@ use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
 use pernixc_source_file::{SourceElement, Span};
 
-use super::{brace::Brace, prefix::Prefixable};
+use super::{block::Block, prefix::Prefixable};
 use crate::{
     error,
     state_machine::{
@@ -12,6 +12,8 @@ use crate::{
     },
     syntax_tree::SyntaxTree,
 };
+
+pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BinaryOperator {
@@ -190,7 +192,7 @@ impl SyntaxTree for BinaryOperator {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum BinaryNode {
     Prefixable(Prefixable),
-    Brace(Brace),
+    Brace(Block),
 }
 
 impl SourceElement for BinaryNode {
@@ -207,7 +209,7 @@ impl SyntaxTree for BinaryNode {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (Prefixable::parse.map(Self::Prefixable), Brace::parse.map(Self::Brace))
+        (Prefixable::parse.map(Self::Prefixable), Block::parse.map(Self::Brace))
             .branch()
             .parse(state_machine, handler)
     }

@@ -22,6 +22,8 @@ use crate::{
     },
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldAssociation<Pattern> {
     pub identifier: Identifier,
