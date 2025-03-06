@@ -14,6 +14,8 @@ use crate::{
     },
 };
 
+pub mod strategy;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
     pub const_keyword: Keyword,
@@ -117,3 +119,6 @@ impl SourceElement for Constant {
         )
     }
 }
+
+#[cfg(test)]
+mod test;

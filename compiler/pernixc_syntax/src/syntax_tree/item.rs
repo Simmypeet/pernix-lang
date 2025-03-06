@@ -29,6 +29,7 @@ pub mod r#trait;
 pub mod r#type;
 pub mod where_clause;
 
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TrailingWhereClause {
     pub colon: Punctuation,
