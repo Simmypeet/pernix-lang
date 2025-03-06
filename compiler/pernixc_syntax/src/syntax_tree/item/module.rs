@@ -18,18 +18,22 @@ use crate::{
         parse::{self, Branch, Parse, Passable},
         StateMachine,
     },
-    syntax_tree::{AccessModifier, ConnectedList, ParseExt, SyntaxTree},
+    syntax_tree::{
+        AccessModifier, ConnectedList, ParseExt, SimplePath, SyntaxTree,
+    },
 };
+
+pub mod strategy;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Signature {
-    pub marker_keyword: Keyword,
+    pub module_keyword: Keyword,
     pub identifier: Identifier,
 }
 
 impl SourceElement for Signature {
     fn span(&self) -> Span {
-        self.marker_keyword.span().join(&self.identifier.span())
+        self.module_keyword.span().join(&self.identifier.span())
     }
 }
 
@@ -38,9 +42,9 @@ impl SyntaxTree for Signature {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::Marker.to_owned(), expect::Identifier.to_owned())
-            .map(|(marker_keyword, identifier)| Self {
-                marker_keyword,
+        (KeywordKind::Module.to_owned(), expect::Identifier.to_owned())
+            .map(|(module_keyword, identifier)| Self {
+                module_keyword,
                 identifier,
             })
             .parse(state_machine, handler)
@@ -50,11 +54,11 @@ impl SyntaxTree for Signature {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct From {
     pub from: Keyword,
-    pub identifier: Identifier,
+    pub simple_path: SimplePath,
 }
 
 impl SourceElement for From {
-    fn span(&self) -> Span { self.from.span().join(&self.identifier.span()) }
+    fn span(&self) -> Span { self.from.span().join(&self.simple_path.span()) }
 }
 
 impl SyntaxTree for From {
@@ -62,8 +66,8 @@ impl SyntaxTree for From {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::From.to_owned(), expect::Identifier.to_owned())
-            .map(|(from, identifier)| Self { from, identifier })
+        (KeywordKind::From.to_owned(), SimplePath::parse)
+            .map(|(from, simple_path)| Self { from, simple_path })
             .parse(state_machine, handler)
     }
 }
@@ -320,3 +324,6 @@ impl SourceElement for Member {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
