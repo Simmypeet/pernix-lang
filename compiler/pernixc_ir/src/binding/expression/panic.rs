@@ -15,10 +15,10 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Panic> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Panic> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Panic,
+        syntax_tree: &syntax_tree::expression::unit::Panic,
         _: Config,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {

@@ -9,7 +9,10 @@ use diagnostic::{
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::{self, ConnectedList};
+use pernixc_syntax::syntax_tree::{
+    item::generic_parameter::GenericParameter as GenericParameterSyn,
+    ConnectedList,
+};
 use pernixc_table::{
     component::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
@@ -66,15 +69,15 @@ impl query::Builder<GenericParameters> for Builder {
 
         // extract out the generic parameter syntax trees
         for parameter in syntax_tree.iter().flat_map(|x| {
-            x.connected_list().iter().flat_map(ConnectedList::elements)
+            x.connected_list.iter().flat_map(ConnectedList::elements)
         }) {
             match parameter {
-                syntax_tree::item::GenericParameter::Constant(constant) => {
+                GenericParameterSyn::Constant(constant) => {
                     // extract out the default constant syntax tree
                     constant_parameter_syns
-                        .push((constant.identifier(), constant.r#type()));
+                        .push((&constant.identifier, &constant.r#type));
 
-                    if let Some(default) = constant.default() {
+                    if let Some(default) = &constant.default {
                         default_constant_syns.push(default);
                     } else if !default_type_syns.is_empty()
                         || !default_constant_syns.is_empty()
@@ -82,14 +85,14 @@ impl query::Builder<GenericParameters> for Builder {
                         errornous_default_parameters = true;
                     }
                 }
-                syntax_tree::item::GenericParameter::Type(type_syn)
+                GenericParameterSyn::Type(type_syn)
                     if constant_parameter_syns.is_empty() =>
                 {
                     // extract out the default type syntax tree
 
-                    type_parameter_syns.push(type_syn.identifier());
+                    type_parameter_syns.push(&type_syn.identifier);
 
-                    if let Some(default) = type_syn.default() {
+                    if let Some(default) = &type_syn.default {
                         default_type_syns.push(default);
                     } else if !default_type_syns.is_empty()
                         || !default_constant_syns.is_empty()
@@ -97,7 +100,7 @@ impl query::Builder<GenericParameters> for Builder {
                         errornous_default_parameters = true;
                     }
                 }
-                syntax_tree::item::GenericParameter::Lifetime(lifetiem)
+                GenericParameterSyn::Lifetime(lifetiem)
                     if constant_parameter_syns.is_empty()
                         && type_parameter_syns.is_empty() =>
                 {
@@ -106,15 +109,13 @@ impl query::Builder<GenericParameters> for Builder {
                 arg => {
                     handler.receive(Box::new(MisOrderedGenericParameter {
                         generic_kind: match arg {
-                            syntax_tree::item::GenericParameter::Lifetime(
-                                _,
-                            ) => GenericKind::Lifetime,
-                            syntax_tree::item::GenericParameter::Type(_) => {
-                                GenericKind::Type
+                            GenericParameterSyn::Lifetime(_) => {
+                                GenericKind::Lifetime
                             }
-                            syntax_tree::item::GenericParameter::Constant(
-                                _,
-                            ) => GenericKind::Constant,
+                            GenericParameterSyn::Type(_) => GenericKind::Type,
+                            GenericParameterSyn::Constant(_) => {
+                                GenericKind::Constant
+                            }
                         },
                         generic_parameter_span: arg.span(),
                     }));
@@ -146,16 +147,12 @@ impl query::Builder<GenericParameters> for Builder {
 
         for lifetime_parameter_syn in lifetime_parameter_syns {
             match generic_parameters.add_lifetime_parameter(LifetimeParameter {
-                name: lifetime_parameter_syn.identifier().span.str().to_owned(),
-                span: Some(lifetime_parameter_syn.identifier().span.clone()),
+                name: lifetime_parameter_syn.identifier.span.str().to_owned(),
+                span: Some(lifetime_parameter_syn.identifier.span.clone()),
             }) {
                 Ok(id) => {
                     extra_name_space.lifetimes.insert(
-                        lifetime_parameter_syn
-                            .identifier()
-                            .span
-                            .str()
-                            .to_owned(),
+                        lifetime_parameter_syn.identifier.span.str().to_owned(),
                         Lifetime::Parameter(MemberID { parent: global_id, id }),
                     );
                 }
@@ -166,7 +163,7 @@ impl query::Builder<GenericParameters> for Builder {
                             id,
                         },
                         duplicating_generic_parameter_span:
-                            lifetime_parameter_syn.identifier().span.clone(),
+                            lifetime_parameter_syn.identifier.span.clone(),
                     }));
                 }
             }

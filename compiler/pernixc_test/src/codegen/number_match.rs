@@ -1,24 +1,22 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public function main() {
-    let mutable input = 0i32;
-    scanf(&"%d\0"->[0], &input);
 
-    match (input) {
-        0: printf(&"this is zero\0"->[0]),
-        1: printf(&"this is one\0"->[0]),
-        2: printf(&"this is two\0"->[0]),
-        3: printf(&"this is three\0"->[0]),
-        -1: printf(&"this is negative one\0"->[0]),
-        a: printf(&"%d is something else\0"->[0], a),
-    }
-}
+public function main():
+    let mut input = 0i32
+    scanf(&"%d\0"->[0], &input)
+
+    match input:
+        0: printf(&"this is zero\0"->[0])
+        1: printf(&"this is one\0"->[0])
+        2: printf(&"this is two\0"->[0])
+        3: printf(&"this is three\0"->[0])
+        -1: printf(&"this is negative one\0"->[0])
+        a: printf(&"%d is something else\0"->[0], a)    
 "#;
 
 #[test]

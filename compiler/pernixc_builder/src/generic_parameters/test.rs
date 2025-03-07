@@ -15,9 +15,9 @@ use crate::{
 };
 
 const GENERIC_PARAMETERS: &str = r"
-public type Test['a, 'b, T, U, const N: usize, const X: T] = T
-where
-    const T;
+public type Test['a, 'b, T, U, const N: usize, const X: T] = T:
+    where:
+        T: const
 ";
 
 #[test]
@@ -57,7 +57,7 @@ fn generic_parameters() {
 }
 
 const MIS_ORDERED_GENERIC_PARAMETER: &str = r"
-public type Test['a, const U: usize, T, 'b] = usize;
+public type Test['a, const U: usize, T, 'b] = usize
 ";
 
 #[test]
@@ -86,7 +86,7 @@ fn mis_ordered_generic_parameter() {
 }
 
 const DEFAULT_GENERIC_PARAMETER_MUST_BE_TRAILING: &str = r"
-public type Test[T = usize, U] = usize;
+public type Test[T = usize, U] = usize
 ";
 
 #[test]
@@ -104,7 +104,7 @@ fn default_generic_parameter_must_be_trailing() {
 }
 
 const DUPLICATED_GENERIC_PARAMETER: &str = r"
-public type Test['a, 'a, T, T, const N: usize, const N: usize] = usize;
+public type Test['a, 'a, T, T, const N: usize, const N: usize] = usize
 ";
 
 #[test]

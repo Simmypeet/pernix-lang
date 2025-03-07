@@ -37,23 +37,14 @@ impl Binder<'_> {
 
                 Ok(())
             }
-            syntax_tree::statement::Statement::Expressive(expressive) => {
+            syntax_tree::statement::Statement::Expression(expressive) => {
                 let scope_id = self.push_scope();
 
-                let result = match expressive {
-                    syntax_tree::statement::Expressive::Semi(semi) => self
-                        .bind(
-                            semi.expression(),
-                            Config { target: Target::Statement },
-                            handler,
-                        ),
-                    syntax_tree::statement::Expressive::Brace(brace) => self
-                        .bind(
-                            brace,
-                            Config { target: Target::Statement },
-                            handler,
-                        ),
-                };
+                let result = self.bind(
+                    expressive,
+                    Config { target: Target::Statement },
+                    handler,
+                );
 
                 let result = match result {
                     Ok(Expression::RValue(Value::Register(register_id))) => {
@@ -103,7 +94,7 @@ impl Binder<'_> {
         assert_ne!(variable_scope_id, scope_id);
 
         let binding_result = self.bind(
-            syntax_tree.expression(),
+            &syntax_tree.expression,
             Config { target: Target::LValue },
             handler,
         );
@@ -119,7 +110,7 @@ impl Binder<'_> {
                         self.create_alloca_with_value(
                             value,
                             variable_scope_id,
-                            Some(syntax_tree.irrefutable_pattern().span()),
+                            Some(syntax_tree.irrefutable_pattern.span()),
                             syntax_tree.span(),
                             handler,
                         )?,
@@ -144,7 +135,7 @@ impl Binder<'_> {
                                     },
                                 )),
                                 variable_scope_id,
-                                Some(syntax_tree.irrefutable_pattern().span()),
+                                Some(syntax_tree.irrefutable_pattern.span()),
                                 syntax_tree.span(),
                                 handler,
                             )?
@@ -161,14 +152,14 @@ impl Binder<'_> {
 
         let type_of_address = self.type_of_address(&address, handler)?;
 
-        if let Some(type_annotation) = syntax_tree.type_annotation() {
+        if let Some(type_annotation) = &syntax_tree.type_annotation {
             let type_annotation = self
-                .resolve_type_with_inference(type_annotation.r#type(), handler);
+                .resolve_type_with_inference(&type_annotation.r#type, handler);
 
             let _ = self.type_check(
                 &type_of_address,
                 infer::Expected::Known(type_annotation),
-                syntax_tree.expression().span(),
+                syntax_tree.expression.span(),
                 handler,
             )?;
         };
@@ -179,7 +170,7 @@ impl Binder<'_> {
             .map_err(|x| {
                 x.report_overflow(|x| {
                     x.report_as_type_calculating_overflow(
-                        syntax_tree.expression().span(),
+                        syntax_tree.expression.span(),
                         handler,
                     )
                 })
@@ -188,12 +179,11 @@ impl Binder<'_> {
         let pattern = self
             .bind_pattern(
                 &type_of_address.result,
-                syntax_tree.irrefutable_pattern(),
+                &syntax_tree.irrefutable_pattern,
                 handler,
             )?
             .unwrap_or_else(|| {
-                Wildcard { span: syntax_tree.irrefutable_pattern().span() }
-                    .into()
+                Wildcard { span: syntax_tree.irrefutable_pattern.span() }.into()
             });
 
         let mut name_binding_point = NameBindingPoint::default();
@@ -202,7 +192,7 @@ impl Binder<'_> {
             &pattern,
             &type_of_address.result,
             address.clone(),
-            Some(syntax_tree.expression().span()),
+            Some(syntax_tree.expression.span()),
             qualifier,
             from_lvalue,
             variable_scope_id,

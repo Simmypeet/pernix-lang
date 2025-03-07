@@ -18,7 +18,9 @@ fn zero_element_array() {
     let mut binder = template.create_binder();
 
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Array>("[]"))
+        .bind_as_rvalue_success(&parse::<syntax_tree::expression::unit::Array>(
+            "[]",
+        ))
         .into_register()
         .unwrap();
 
@@ -60,7 +62,7 @@ fn array() {
     let mut binder = template.create_binder();
 
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Array>(
+        .bind_as_rvalue_success(&parse::<syntax_tree::expression::unit::Array>(
             "[1, 2, 4us]",
         ))
         .into_register()
@@ -119,7 +121,7 @@ fn array_type_mismatched_error() {
     let mut binder = template.create_binder();
 
     let (value, errors) = binder.bind_as_rvalue_error(&parse::<
-        syntax_tree::expression::Array,
+        syntax_tree::expression::unit::Array,
     >("[1i32, true]"));
 
     let register_id = value.into_register().unwrap();

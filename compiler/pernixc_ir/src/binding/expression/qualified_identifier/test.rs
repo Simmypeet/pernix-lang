@@ -9,7 +9,7 @@ use crate::binding::{
 
 #[test]
 fn named_load() {
-    const VARIABLE_DECLARATION: &str = "let mutable x: int32 = 32;";
+    const VARIABLE_DECLARATION: &str = "let mut x: int32 = 32";
     const VARIABLE_LOAD: &str = "x";
 
     let test_template = Template::new();
@@ -52,12 +52,13 @@ fn named_load() {
 }
 
 const ENUM_DECLARATION: &str = r"
-public enum Sample {
-    First(int32),
-    Second,   
-}
+public enum Sample:
+    First(int32)
+    Second
 
-public function test() { panic; }
+
+public function test():
+    panic
 ";
 
 #[test]

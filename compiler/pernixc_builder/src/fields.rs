@@ -12,7 +12,6 @@ use pernixc_component::fields::{Field, Fields};
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::ConnectedList;
 use pernixc_table::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
@@ -59,15 +58,10 @@ impl query::Builder<Fields> for Builder {
             normalizer::NO_OP,
         );
 
-        for field_syn in syntax_tree
-            .fields
-            .connected_list()
-            .as_ref()
-            .into_iter()
-            .flat_map(ConnectedList::elements)
+        for field_syn in syntax_tree.fields.iter().filter_map(|x| x.as_option())
         {
             let ty = table.resolve_type(
-                field_syn.r#type(),
+                &field_syn.r#type,
                 global_id,
                 Config {
                     elided_lifetime_provider: None,
@@ -79,31 +73,31 @@ impl query::Builder<Fields> for Builder {
                 handler,
             );
             let field_accessibility = table
-                .create_accessibility(global_id, field_syn.access_modifier())
+                .create_accessibility(global_id, &field_syn.access_modifier)
                 .unwrap();
 
             let field = Field {
                 accessibility: field_accessibility,
-                name: field_syn.identifier().span.str().to_owned(),
+                name: field_syn.identifier.span.str().to_owned(),
                 r#type: env.simplify_and_check_lifetime_constraints(
                     &ty,
-                    &field_syn.r#type().span(),
+                    &field_syn.r#type.span(),
                     handler,
                 ),
-                span: Some(field_syn.identifier().span.clone()),
+                span: Some(field_syn.identifier.span.clone()),
             };
 
             let field_id = fields.fields.insert(field);
 
             match fields
                 .field_ids_by_name
-                .entry(field_syn.identifier().span.str().to_owned())
+                .entry(field_syn.identifier.span.str().to_owned())
             {
                 Entry::Occupied(id) => {
                     handler.receive(Box::new(FieldDuplication {
                         struct_id: global_id,
                         field_id: *id.get(),
-                        redeclaration_span: field_syn.identifier().span.clone(),
+                        redeclaration_span: field_syn.identifier.span.clone(),
                     }));
                 }
 

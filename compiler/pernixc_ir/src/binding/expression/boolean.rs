@@ -12,16 +12,16 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Boolean> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Boolean> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Boolean,
+        syntax_tree: &syntax_tree::expression::unit::Boolean,
         _: Config,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let value = match syntax_tree {
-            syntax_tree::expression::Boolean::True(_) => true,
-            syntax_tree::expression::Boolean::False(_) => false,
+            syntax_tree::expression::unit::Boolean::True(_) => true,
+            syntax_tree::expression::unit::Boolean::False(_) => false,
         };
 
         Ok(Expression::RValue(Value::Literal(Literal::Boolean(Boolean {

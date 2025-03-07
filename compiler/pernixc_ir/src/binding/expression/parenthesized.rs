@@ -17,37 +17,35 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Parenthesized> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Parenthesized,
+        syntax_tree: &syntax_tree::expression::unit::Parenthesized,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let bind_as_tuple =
-            syntax_tree.connected_list().as_ref().is_none_or(|x| {
-                !x.rest().is_empty()
-                    || x.trailing_separator().is_some()
-                    || x.first().ellipsis().is_some()
+            syntax_tree.connected_list.as_ref().is_none_or(|x| {
+                !x.rest.is_empty()
+                    || x.trailing_separator.is_some()
+                    || x.first.ellipsis.is_some()
             });
 
         if bind_as_tuple {
             let mut elements = Vec::new();
 
             for element_syn in syntax_tree
-                .connected_list()
+                .connected_list
                 .as_ref()
                 .into_iter()
                 .flat_map(ConnectedList::elements)
             {
-                let element = self.bind_value_or_error(
-                    &**element_syn.expression(),
-                    handler,
-                )?;
+                let element = self
+                    .bind_value_or_error(&*element_syn.expression, handler)?;
 
                 elements.push(register::TupleElement {
                     value: element,
-                    is_unpacked: element_syn.ellipsis().is_some(),
+                    is_unpacked: element_syn.ellipsis.is_some(),
                 });
             }
 
@@ -121,12 +119,7 @@ impl Bind<&syntax_tree::expression::Parenthesized> for Binder<'_> {
         } else {
             // propagate the target
             self.bind(
-                &**syntax_tree
-                    .connected_list()
-                    .as_ref()
-                    .unwrap()
-                    .first()
-                    .expression(),
+                &*syntax_tree.connected_list.as_ref().unwrap().first.expression,
                 config,
                 handler,
             )

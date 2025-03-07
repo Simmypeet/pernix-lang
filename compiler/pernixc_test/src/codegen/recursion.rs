@@ -3,28 +3,26 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public function fib(n: int32): int32 {
-    if (n <= 1) { 
-        return n;
-    }
 
-    return fib(n - 1) + fib(n - 2);
-}
+public function fib(n: int32) -> int32:
+    if n <= 1:
+        return n
 
-public function main() {
-    let mutable input: int32 = 0;
+    return fib(n - 1) + fib(n - 2)
 
-    scanf(&"%d\0"->[0], &mutable input);
 
-    let result = fib(input);
+public function main():
+    let mut input: int32 = 0
 
-    printf(&"fib(%d) = %d\0"->[0], input, result);
-}
+    scanf(&"%d\0"->[0], &mut input)
+
+    let result = fib(input)
+
+    printf(&"fib(%d) = %d\0"->[0], input, result)
 "#;
 
 #[test]

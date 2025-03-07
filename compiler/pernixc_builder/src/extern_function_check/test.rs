@@ -4,13 +4,13 @@ use crate::{
 };
 
 const LIFETIME_PARAMETERS_ARE_ALLOWED: &str = r#"
-extern "C" {
+extern "C":
     public function write['a](
         fildes: int32,
         buf: *uint8,
         bytes: usize,
-    ): isize;
-}
+    ) -> isize
+
 "#;
 
 #[test]
@@ -19,9 +19,9 @@ fn lifetime_parameters_are_allowed() {
 }
 
 const GENERIC_PARAMETERS_ARE_NOT_ALLOWED: &str = r#"
-extern "C" {
-    public function ident[T](x: T): T;
-}
+extern "C":
+    public function ident[T](x: T) -> T
+
 "#;
 
 #[test]

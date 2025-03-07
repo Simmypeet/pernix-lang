@@ -2,7 +2,7 @@ use std::collections::hash_map::Entry;
 
 use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::{self, Label};
+use pernixc_syntax::syntax_tree;
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::r#type::Type;
 
@@ -22,23 +22,23 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Break> for Binder<'_> {
+impl Bind<&syntax_tree::expression::terminator::Break> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Break,
+        syntax_tree: &syntax_tree::expression::terminator::Break,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let value = syntax_tree
-            .binary()
+            .binary
             .as_ref()
             .map(|x| self.bind_value_or_error(x, handler))
             .transpose()?;
 
         let loop_scope_id = self.find_loop_scope_id(
             LoopControlFlow::Break,
-            syntax_tree.label().as_ref().map(Label::identifier),
+            syntax_tree.label.as_ref().map(|x| &x.identifier),
             syntax_tree.span(),
             handler,
         )?;
@@ -56,7 +56,7 @@ impl Bind<&syntax_tree::expression::Break> for Binder<'_> {
                     Expected::Known(Type::Tuple(pernixc_term::Tuple {
                         elements: Vec::new(),
                     })),
-                    syntax_tree.binary().as_ref().map_or_else(
+                    syntax_tree.binary.as_ref().map_or_else(
                         || syntax_tree.span(),
                         SourceElement::span,
                     ),

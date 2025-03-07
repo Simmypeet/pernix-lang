@@ -16,12 +16,13 @@ use crate::{
 };
 
 const OPTION_DECLARATION: &str = r"
-public enum Option[T] {
-    Some(T),
-    None,
-}
+public enum Option[T]:
+    Some(T)
+    None
 
-public function test() {}
+
+public function test():
+    pass
 ";
 
 #[test]
@@ -60,9 +61,12 @@ fn none_option() {
 }
 
 const FUNCTION_DECLARATION: &str = r"
-public function foo[T, U](t: T) {}
+public function foo[T, U](t: T):
+    pass
 
-public function test() {}
+
+public function test():
+    pass
 ";
 
 #[test]
@@ -102,9 +106,12 @@ fn function_with_no_generic_parameter() {
 }
 
 const FUNCTION_DECLARATION_WITH_LIFETIME: &str = r"
-public function foo['a, T](t: & 'a T) {}
+public function foo['a, T](t: & 'a T):
+    pass
 
-public function test() {}
+
+public function test():
+    pass
 ";
 
 #[test]

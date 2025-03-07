@@ -7,11 +7,7 @@ use pernixc_component::{
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier;
 use pernixc_source_file::{SourceElement, Span};
-use pernixc_syntax::syntax_tree::{
-    self,
-    expression::{AccessKind, PostfixOperator},
-    ConnectedList,
-};
+use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
 use pernixc_table::{
     component::{
         Extern, ExternC, Implemented, Implements, Import, Member, Parent,
@@ -65,23 +61,25 @@ use crate::{
 
 // FIXME: the algorithm for searching methods are such a mess
 
-impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
+impl Bind<&syntax_tree::expression::postfix::Postfix> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Postfix,
+        syntax_tree: &syntax_tree::expression::postfix::Postfix,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        match syntax_tree.operator() {
-            syntax_tree::expression::PostfixOperator::Call(call) => {
+        match &syntax_tree.operator {
+            syntax_tree::expression::postfix::PostfixOperator::Call(call) => {
                 self.handle_call(call, syntax_tree, handler)
             }
 
-            syntax_tree::expression::PostfixOperator::Cast(cast_syn) => {
+            syntax_tree::expression::postfix::PostfixOperator::Cast(
+                cast_syn,
+            ) => {
                 // resolve the type
-                let cast_type = self
-                    .resolve_type_with_inference(cast_syn.r#type(), handler);
+                let cast_type =
+                    self.resolve_type_with_inference(&cast_syn.r#type, handler);
 
                 let cast_type = self
                     .create_environment()
@@ -89,7 +87,7 @@ impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
                     .map_err(|x| {
                     x.report_overflow(|x| {
                         x.report_as_type_calculating_overflow(
-                            cast_syn.r#type().span(),
+                            cast_syn.r#type.span(),
                             handler,
                         )
                     })
@@ -118,30 +116,28 @@ impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
                             .inference_context
                             .transform_type_into_constraint_model(
                                 cast_type.result.clone(),
-                                cast_syn.r#type().span(),
+                                cast_syn.r#type.span(),
                                 self.table,
                                 handler,
                             )?,
-                        span: cast_syn.r#type().span(),
+                        span: cast_syn.r#type.span(),
                     }));
 
                     return Err(Error::Binding(BindingError(
-                        cast_syn.r#type().span(),
+                        cast_syn.r#type.span(),
                     )));
                 }
 
                 // the value to be casted
-                let value = self.bind_value_or_error(
-                    &**syntax_tree.postfixable(),
-                    handler,
-                )?;
+                let value = self
+                    .bind_value_or_error(&*syntax_tree.postfixable, handler)?;
 
                 // type check the value
                 let type_of_value = self.type_of_value(&value, handler)?;
                 let _ = self.type_check(
                     &type_of_value,
                     Expected::Constraint(Constraint::Number),
-                    syntax_tree.postfixable().span(),
+                    syntax_tree.postfixable.span(),
                     handler,
                 )?;
 
@@ -156,9 +152,9 @@ impl Bind<&syntax_tree::expression::Postfix> for Binder<'_> {
                 )))
             }
 
-            syntax_tree::expression::PostfixOperator::Access(access_syn) => {
-                self.handle_access(access_syn, syntax_tree, config, handler)
-            }
+            syntax_tree::expression::postfix::PostfixOperator::Access(
+                access_syn,
+            ) => self.handle_access(access_syn, syntax_tree, config, handler),
         }
     }
 }
@@ -245,7 +241,7 @@ impl Binder<'_> {
             let Some(trait_function_id) = self
                 .table
                 .get::<Member>(trait_id)
-                .get(method_ident.identifier().span.str())
+                .get(method_ident.identifier.span.str())
                 .copied()
                 .map(|x| GlobalID::new(trait_id.target_id, x))
             else {
@@ -599,17 +595,16 @@ impl Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind_method_call(
         &mut self,
-        postfix: &syntax_tree::expression::Postfix,
+        postfix: &syntax_tree::expression::postfix::Postfix,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Value<infer::Model>, Error> {
         let struct_expression_wth_access =
-            postfix.postfixable().as_postfix().unwrap();
-        let call = postfix.operator().as_call().unwrap();
-        let struct_expression = struct_expression_wth_access.postfixable();
-        let access =
-            struct_expression_wth_access.operator().as_access().unwrap();
-        let method_ident = access.kind().as_generic_identifier().unwrap();
-        let is_arrow = access.operator().is_arrow();
+            postfix.postfixable.as_postfix().unwrap();
+        let call = postfix.operator.as_call().unwrap();
+        let struct_expression = &struct_expression_wth_access.postfixable;
+        let access = struct_expression_wth_access.operator.as_access().unwrap();
+        let method_ident = access.kind.as_generic_identifier().unwrap();
+        let is_arrow = access.operator.is_arrow();
 
         let (reciever_expression, access_type) = if is_arrow
         // expect the lvalue address
@@ -647,8 +642,8 @@ impl Binder<'_> {
         };
 
         let mut arguments = call
-            .arguments()
-            .connected_list()
+            .arguments
+            .connected_list
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)
@@ -659,7 +654,7 @@ impl Binder<'_> {
             .collect::<Result<Vec<_>, _>>()?;
 
         let generic_arguments = method_ident
-            .generic_arguments()
+            .generic_arguments
             .as_ref()
             .map_or_else(GenericArguments::default, |x| {
                 self.resolve_generic_arguments_with_inference(x, handler)
@@ -701,7 +696,7 @@ impl Binder<'_> {
                 |x| {
                     self.table
                         .get::<Member>(x)
-                        .get(method_ident.identifier().span.str())
+                        .get(method_ident.identifier.span.str())
                         .copied()
                         .map(|y| GlobalID::new(x.target_id, y))
                         .filter(|x| {
@@ -833,7 +828,7 @@ impl Binder<'_> {
                     adt_generic_arguments
                 },
             })),
-            struct_expression_wth_access.postfixable().span(),
+            struct_expression_wth_access.postfixable.span(),
             handler,
         )?;
 
@@ -966,16 +961,16 @@ impl Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn handle_access(
         &mut self,
-        access: &syntax_tree::expression::Access,
-        syntax_tree: &syntax_tree::expression::Postfix,
+        access: &syntax_tree::expression::postfix::Access,
+        syntax_tree: &syntax_tree::expression::postfix::Postfix,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        let (lvalue, ty) = match access.operator() {
+        let (lvalue, ty) = match &access.operator {
             // expect the lvalue address
-            syntax_tree::expression::AccessOperator::Dot(_) => {
+            syntax_tree::expression::postfix::AccessOperator::Dot(_) => {
                 let lvalue = self.bind_as_lvalue(
-                    &**syntax_tree.postfixable(),
+                    &*syntax_tree.postfixable,
                     true,
                     handler,
                 )?;
@@ -986,10 +981,10 @@ impl Binder<'_> {
             }
 
             // expect the rvalue reference value
-            syntax_tree::expression::AccessOperator::Arrow(_, _) => {
+            syntax_tree::expression::postfix::AccessOperator::Arrow(_, _) => {
                 let lvalue = self
                     .bind_dereference(
-                        &**syntax_tree.postfixable(),
+                        &*syntax_tree.postfixable,
                         Config { target: Target::LValue },
                         syntax_tree.span(),
                         handler,
@@ -1003,9 +998,9 @@ impl Binder<'_> {
             }
         };
 
-        let address = match access.kind() {
+        let address = match &access.kind {
             // struct field access
-            syntax_tree::expression::AccessKind::GenericIdentifier(
+            syntax_tree::expression::postfix::AccessKind::GenericIdentifier(
                 generic_ident,
             ) => {
                 let struct_id = match ty {
@@ -1022,25 +1017,25 @@ impl Binder<'_> {
 
                     found_type => {
                         handler.receive(Box::new(ExpectedStructType {
-                            span: syntax_tree.postfixable().span(),
+                            span: syntax_tree.postfixable.span(),
                             r#type: self
                                 .inference_context
                                 .transform_type_into_constraint_model(
                                     found_type,
-                                    syntax_tree.postfixable().span(),
+                                    syntax_tree.postfixable.span(),
                                     self.table,
                                     handler,
                                 )?,
                         }));
 
                         return Err(Error::Binding(BindingError(
-                            syntax_tree.postfixable().span(),
+                            syntax_tree.postfixable.span(),
                         )));
                     }
                 };
 
                 // soft error, keep going
-                if generic_ident.generic_arguments().is_some() {
+                if generic_ident.generic_arguments.is_some() {
                     handler.receive(Box::new(
                         UnexpectedGenericArgumentsInField {
                             field_access_span: syntax_tree.span(),
@@ -1055,19 +1050,16 @@ impl Binder<'_> {
 
                 let Some(field_id) = fields
                     .field_ids_by_name
-                    .get(generic_ident.identifier().span.str())
+                    .get(generic_ident.identifier.span.str())
                     .copied()
                 else {
                     handler.receive(Box::new(FieldNotFound {
                         struct_id,
-                        identifier_span: generic_ident
-                            .identifier()
-                            .span
-                            .clone(),
+                        identifier_span: generic_ident.identifier.span.clone(),
                     }));
 
                     return Err(Error::Binding(BindingError(
-                        generic_ident.identifier().span.clone(),
+                        generic_ident.identifier.span.clone(),
                     )));
                 };
 
@@ -1083,7 +1075,7 @@ impl Binder<'_> {
                         struct_id,
                         referring_site: self.current_site,
                         referring_identifier_span: generic_ident
-                            .identifier()
+                            .identifier
                             .span
                             .clone(),
                     }));
@@ -1095,24 +1087,24 @@ impl Binder<'_> {
                 })
             }
 
-            syntax_tree::expression::AccessKind::Tuple(syn) => {
+            syntax_tree::expression::postfix::AccessKind::Tuple(syn) => {
                 let tuple_ty = match ty {
                     Type::Tuple(tuple_ty) => tuple_ty,
                     found_type => {
                         handler.receive(Box::new(ExpectedTuple {
-                            span: syntax_tree.postfixable().span(),
+                            span: syntax_tree.postfixable.span(),
                             r#type: self
                                 .inference_context
                                 .transform_type_into_constraint_model(
                                     found_type,
-                                    syntax_tree.postfixable().span(),
+                                    syntax_tree.postfixable.span(),
                                     self.table,
                                     handler,
                                 )?,
                         }));
 
                         return Err(Error::Binding(BindingError(
-                            syntax_tree.postfixable().span(),
+                            syntax_tree.postfixable.span(),
                         )));
                     }
                 };
@@ -1130,7 +1122,7 @@ impl Binder<'_> {
                 let unpacked_index =
                     tuple_ty.elements.iter().position(|x| x.is_unpacked);
 
-                let index = match syn.index().span.str().parse::<usize>() {
+                let index = match syn.index.span.str().parse::<usize>() {
                     Ok(number) => number,
                     Err(err) => match err.kind() {
                         std::num::IntErrorKind::NegOverflow
@@ -1140,7 +1132,7 @@ impl Binder<'_> {
                             }));
 
                             return Err(Error::Binding(BindingError(
-                                syn.index().span.clone(),
+                                syn.index.span.clone(),
                             )));
                         }
 
@@ -1157,7 +1149,7 @@ impl Binder<'_> {
                             .inference_context
                             .transform_type_into_constraint_model(
                                 Type::Tuple(tuple_ty),
-                                syntax_tree.postfixable().span(),
+                                syntax_tree.postfixable.span(),
                                 self.table,
                                 handler,
                             )?
@@ -1166,13 +1158,13 @@ impl Binder<'_> {
                     }));
 
                     return Err(Error::Binding(BindingError(
-                        syn.index().span.clone(),
+                        syn.index.span.clone(),
                     )));
                 }
 
                 if let Some(unpacked_index) = unpacked_index {
                     // can't access past the unpacked index
-                    let pass_unpacked = if syn.minus().is_some() {
+                    let pass_unpacked = if syn.minus.is_some() {
                         index >= (tuple_ty.elements.len() - unpacked_index - 1)
                     } else {
                         index >= unpacked_index
@@ -1187,7 +1179,7 @@ impl Binder<'_> {
                                     .inference_context
                                     .transform_type_into_constraint_model(
                                         Type::Tuple(tuple_ty),
-                                        syntax_tree.postfixable().span(),
+                                        syntax_tree.postfixable.span(),
                                         self.table,
                                         handler,
                                     )?
@@ -1197,14 +1189,14 @@ impl Binder<'_> {
                         ));
 
                         return Err(Error::Binding(BindingError(
-                            syn.index().span.clone(),
+                            syn.index.span.clone(),
                         )));
                     }
                 }
 
                 Address::Tuple(address::Tuple {
                     tuple_address: Box::new(lvalue.address),
-                    offset: if syn.minus().is_some() {
+                    offset: if syn.minus.is_some() {
                         address::Offset::FromEnd(index)
                     } else {
                         address::Offset::FromStart(index)
@@ -1212,27 +1204,25 @@ impl Binder<'_> {
                 })
             }
 
-            syntax_tree::expression::AccessKind::Index(index) => {
-                let value = self.bind_value_or_error(
-                    &**index.expression().tree(),
-                    handler,
-                )?;
+            syntax_tree::expression::postfix::AccessKind::Index(index) => {
+                let value =
+                    self.bind_value_or_error(&*index.expression.tree, handler)?;
 
                 if !matches!(ty, Type::Array(_)) {
                     handler.receive(Box::new(ExpectArray {
-                        span: syntax_tree.postfixable().span(),
+                        span: syntax_tree.postfixable.span(),
                         r#type: self
                             .inference_context
                             .transform_type_into_constraint_model(
                                 ty,
-                                syntax_tree.postfixable().span(),
+                                syntax_tree.postfixable.span(),
                                 self.table,
                                 handler,
                             )?,
                     }));
 
                     return Err(Error::Binding(BindingError(
-                        syntax_tree.postfixable().span(),
+                        syntax_tree.postfixable.span(),
                     )));
                 }
 
@@ -1241,7 +1231,7 @@ impl Binder<'_> {
                 let _ = self.type_check(
                     &index_ty,
                     Expected::Known(Type::Primitive(Primitive::Usize)),
-                    index.expression().span(),
+                    index.expression.span(),
                     handler,
                 )?;
 
@@ -1276,21 +1266,22 @@ impl Binder<'_> {
 
     fn handle_call(
         &mut self,
-        call: &syntax_tree::expression::Call,
-        syntax_tree: &syntax_tree::expression::Postfix,
+        call: &syntax_tree::expression::postfix::Call,
+        syntax_tree: &syntax_tree::expression::postfix::Postfix,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        match &**syntax_tree.postfixable() {
+        match &*syntax_tree.postfixable {
             // possibly method call
-            syntax_tree::expression::Postfixable::Postfix(postfix)
+            syntax_tree::expression::postfix::Postfixable::Postfix(postfix)
                 // is an access to a field
                 if matches!(
-                    postfix.operator(),
-                    PostfixOperator::Access(
+                    &postfix.operator,
+                    syntax_tree::expression::postfix::PostfixOperator::Access(
                         access
                     )
-                    if matches!(access.kind(),
-                        AccessKind::GenericIdentifier(_)
+                    if matches!(&access.kind,
+                    syntax_tree::expression::postfix::AccessKind::GenericIdentifier(_)
+
                     )
                 ) =>
             {
@@ -1301,14 +1292,14 @@ impl Binder<'_> {
             }
 
             // function call
-            syntax_tree::expression::Postfixable::Unit(
-                syntax_tree::expression::Unit::QualifiedIdentifier(
+            syntax_tree::expression::postfix::Postfixable::Unit(
+                syntax_tree::expression::unit::Unit::QualifiedIdentifier(
                     qualified_identifier,
                 ),
             ) => {
                 let arguments = call
-                    .arguments()
-                    .connected_list()
+                    .arguments
+                    .connected_list
                     .iter()
                     .flat_map(ConnectedList::elements)
                     .map(|arg| {

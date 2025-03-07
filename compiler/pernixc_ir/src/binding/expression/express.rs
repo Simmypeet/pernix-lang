@@ -22,21 +22,21 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Express> for Binder<'_> {
+impl Bind<&syntax_tree::expression::terminator::Express> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Express,
+        syntax_tree: &syntax_tree::expression::terminator::Express,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
-            .label()
+            .label
             .as_ref()
-            .map(|x| x.identifier().span.str().to_owned());
+            .map(|x| x.identifier.span.str().to_owned());
 
         let value = syntax_tree
-            .binary()
+            .binary
             .as_ref()
             .map(|x| self.bind_value_or_error(x, handler))
             .transpose()?;
@@ -66,9 +66,9 @@ impl Bind<&syntax_tree::expression::Express> for Binder<'_> {
             if label.is_some() {
                 handler.receive(Box::new(BlockWithGivenLableNameNotFound {
                     span: syntax_tree
-                        .label()
+                        .label
                         .as_ref()
-                        .map(|x| x.identifier().span.clone())
+                        .map(|x| x.identifier.span.clone())
                         .unwrap(),
                 }));
             } else {

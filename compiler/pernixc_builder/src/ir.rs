@@ -6,8 +6,7 @@ use pernixc_abort::Abort;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{binding::Binder, IR};
 use pernixc_syntax::syntax_tree::{
-    item::{Parameter, ParameterKind},
-    ConnectedList,
+    item::function::ParameterKind, ConnectedList,
 };
 use pernixc_table::{
     component::{self, Derived, SymbolKind},
@@ -49,15 +48,17 @@ impl Builder<IR> for builder::Builder {
             global_id,
             signature
                 .parameters
-                .connected_list()
+                .connected_list
                 .iter()
                 .flat_map(ConnectedList::elements)
                 .filter_map(ParameterKind::as_regular)
-                .map(Parameter::irrefutable_pattern),
+                .map(|x| &x.irrefutable_pattern),
             &storage,
         )
         .and_then(|mut binder| {
-            for statement in body.statements.tree() {
+            for statement in
+                body.statements.iter().filter_map(|x| x.as_option())
+            {
                 binder.bind_statement(statement, &storage)?;
             }
 

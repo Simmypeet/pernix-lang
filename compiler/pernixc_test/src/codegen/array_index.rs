@@ -3,24 +3,23 @@
 use crate::compile_file;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
 
-public function main() {
-    let arr = [1, 2, 3, 4, 5];
-    let count = 5;
 
-    let mutable sum = 0;
-    let mutable i = 0;
+public function main():
+    let arr = [1, 2, 3, 4, 5]
+    let count = 5
 
-    while (i < count)  {
-        sum += arr.[i];
-        i = i + 1;
-    }
+    let mut sum = 0
+    let mut i = 0
 
-    printf(&"%d\0"->[0], sum);
-}
+    while i < count:
+        sum += arr.[i]
+        i = i + 1
+    
+
+    printf(&"%d\0"->[0], sum)
 "#;
 
 #[test]

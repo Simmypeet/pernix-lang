@@ -4,10 +4,9 @@ use pernixc_term::{generic_parameter::GenericParameters, variance::Variance};
 use crate::utility::build_table;
 
 const BASIC_VARIANCES: &str = r"
-public struct Test[Co, In] {
-    public covariant: (Co,),
-    public invariant: &'static mutable In
-}
+public struct Test[Co, In]:
+    public covariant: (Co,)
+    public invariant: &'static mut In
 ";
 
 #[test]
@@ -28,20 +27,12 @@ fn basic_variances() {
 }
 
 const RECURSIVE_INVARIANT: &str = r"
-public enum A['a, T] 
-where
-    T: 'a
-{
-    Invariant(&'a mutable T),
-    Covariant(B['a, T]),
-}
+public enum A['a, T: 'a]: 
+    Invariant(&'a mut T)
+    Covariant(B['a, T])
 
-public struct B['a, T]
-where
-    T: 'a
-{
-    public a: A['a, T],
-}
+public struct B['a, T: 'a]:
+    public a: A['a, T]
 ";
 
 #[test]
@@ -83,13 +74,12 @@ fn recurisve_invariant() {
 }
 
 const LIFETIME_INVARIANT: &str = r"
-public struct Ref['a, T] {
-    public value: &'a T,
-}
+public struct Ref['a, T: 'a]:
+    public value: &'a T
 
-public struct Test['a, 'b, T] {
-    public test: &'a mutable Ref['b, T]
-}
+
+public struct Test['a, 'b, T: 'a]:
+    public test: &'a mut Ref['b, T]
 ";
 
 #[test]

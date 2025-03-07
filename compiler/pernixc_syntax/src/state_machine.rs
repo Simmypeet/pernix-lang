@@ -86,7 +86,10 @@ impl<'a> StateMachine<'a> {
             match token {
                 TokenKind::Token(token_unit)
                     if token_unit.is_significant()
-                        || (token_unit.is_new_line()
+                        || ((token_unit.is_new_line()
+                            || token_unit
+                                .as_comment()
+                                .is_some_and(|x| x.kind.is_line()))
                             && self.new_line_significant) =>
                 {
                     return Some((token, current_tok_index));

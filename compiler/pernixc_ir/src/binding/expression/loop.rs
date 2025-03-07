@@ -20,19 +20,19 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Loop> for Binder<'_> {
+impl Bind<&syntax_tree::expression::block::Loop> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Loop,
+        syntax_tree: &syntax_tree::expression::block::Loop,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
-            .block()
-            .label_specifier()
+            .group
+            .label
             .as_ref()
-            .map(|x| x.label().identifier().span.str().to_owned());
+            .map(|x| x.identifier.span.str().to_owned());
 
         let loop_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
@@ -74,11 +74,16 @@ impl Bind<&syntax_tree::expression::Loop> for Binder<'_> {
             },
             loop_block_id,
             exit_block_id,
-            span: syntax_tree.span(),
         });
 
         // bind the loop block
-        for statement in syntax_tree.block().statements().tree() {
+        for statement in syntax_tree
+            .group
+            .statements
+            .statements
+            .iter()
+            .filter_map(|x| x.as_option())
+        {
             self.bind_statement(statement, handler)?;
         }
 

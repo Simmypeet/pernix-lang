@@ -15,7 +15,8 @@ use pernixc_term::{
 use crate::utility::build_table;
 
 const IMPLIED_PREDICATES_AND_ELIDED_LIFETIMES: &str = r"
-public function test[T](x: &T, y: T): &T { panic; }
+public function test[T](x: &T, y: T) -> &T:
+    panic
 ";
 
 #[test]
@@ -77,14 +78,15 @@ fn implied_predicates_and_elided_lifetimes() {
 }
 
 const ELIDED_LIFETIME_NOT_ALLOWED_IN_RETURN_TYPE: &str = r"
-public function test(first: &int32, second: &int32): &int32 { panic; }
+public function test(first: &int32, second: &int32) -> &int32:
+    panic
 ";
 
 #[test]
 fn elided_lifetime_not_allowed_in_return_type() {
     let (_, errors) = build_table(ELIDED_LIFETIME_NOT_ALLOWED_IN_RETURN_TYPE);
 
-    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.len(), 1, "{errors:?}");
 
     let error = errors
         .first()
@@ -98,15 +100,20 @@ fn elided_lifetime_not_allowed_in_return_type() {
 }
 
 const LATE_BOUND_LIFETIMES: &str = r"
-public trait Trait['a, T] {}
+public trait Trait['a, T]:
+    pass
 
-public function test['a, 'b, 'c, T](x: &'a int32, y: &'b T, z: &'a T): &'c int32 
-where
-    trait Trait['b, T],
-    'c: 'c 
-{
-    panic;
-}
+public function test['a, 'b, 'c, T](
+    x: &'a int32, 
+    y: &'b T, 
+    z: &'a T
+) -> &'c int32:
+    where:
+        trait Trait['b, T]
+        'c: 'c 
+
+    panic
+
 ";
 
 #[test]

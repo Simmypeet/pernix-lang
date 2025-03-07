@@ -133,17 +133,11 @@ impl SyntaxTree for EnumAssociation {
     }
 }
 
-/// Syntax Synopsis:
-/// ``` txt
-/// Enum:
-///     'case' Identifier EnumAssociation?
-///     ;
-/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Enum {
-    case_keyword: Keyword,
-    identifier: Identifier,
-    association: Option<EnumAssociation>,
+    pub case_keyword: Keyword,
+    pub identifier: Identifier,
+    pub association: Option<EnumAssociation>,
 }
 
 impl SyntaxTree for Enum {

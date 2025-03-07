@@ -16,7 +16,10 @@ use pernixc_lexical::{
 use pernixc_source_file::{SourceElement, SourceFile, Span};
 use pernixc_syntax::{
     state_machine::parse::Parse,
-    syntax_tree::{json, ConnectedList, SyntaxTree},
+    syntax_tree::{
+        json::{self, Pair},
+        ConnectedList, SyntaxTree,
+    },
 };
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
 
@@ -414,12 +417,11 @@ impl Workspace {
         let mut root_file: Option<PathBuf> = None;
 
         for pair in configuration_map
-            .dissolve()
-            .1
+            .connected_list
             .into_iter()
             .flat_map(ConnectedList::into_elements)
         {
-            let (key, _, value) = pair.dissolve();
+            let Pair { key, value, .. } = pair;
 
             match key.value.as_deref() {
                 Some("targetName") => {

@@ -17,14 +17,14 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Array> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Array> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Array,
+        syntax_tree: &syntax_tree::expression::unit::Array,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        let Some(arguments) = syntax_tree.arguments().connected_list() else {
+        let Some(arguments) = &syntax_tree.arguments.connected_list else {
             let inference = InferenceVariable::new();
 
             assert!(self

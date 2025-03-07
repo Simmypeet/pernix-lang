@@ -9,39 +9,38 @@ use crate::binding::{
 #[allow(clippy::too_many_lines)]
 fn unreachable_match_arm() {
     const BOOLEAN_UNREACHABLE_MATCH_ARM: &str = r"
-        match (true) {
-            true: 1,
-            true: 3,
-            false: 2,
-        }
+match true:
+    true: 1
+    true: 3
+    false: 2
+
     ";
 
     const ENUM_UNREACHABLE_MATCH_ARM: &str = r"
-        match (Order::First) {
-            case First: 1,
-            case Second: 2,
-            case First: 3,
-            case Third: 4,
-        }
+match Order::First:
+    case First: 1
+    case Second: 2
+    case First: 3
+    case Third: 4
+
     ";
 
     const ENUM_UNREACHABLE_MATCH_ARM_BY_IRREFUTABLE_PATTERN: &str = r"
-        match (Order::First) {
-            case First: 1,
-            irrefutable:  2,
-            case Third: 3,
-        }
+match Order::First:
+    case First: 1
+    irrefutable:  2
+    case Third: 3
     ";
 
     const ORDER_ENUM: &str = r"
-        public enum Order {
-            First,
-            Second,
-            Third,
-        }
+public enum Order:
+    First
+    Second
+    Third
 
-        public function test() {}
 
+public function test():
+    pass
     ";
     let table = build_table(ORDER_ENUM);
     let mut binder = table.create_binder_at(["test", "test"]);
@@ -49,7 +48,7 @@ fn unreachable_match_arm() {
     // boolean with unreachable match arm
     {
         let (value, errors) = binder.bind_as_rvalue_error(&parse::<
-            syntax_tree::expression::Match,
+            syntax_tree::expression::block::Match,
         >(
             BOOLEAN_UNREACHABLE_MATCH_ARM,
         ));
@@ -90,13 +89,13 @@ fn unreachable_match_arm() {
         let error =
             errors[0].as_any().downcast_ref::<UnreachableMatchArm>().unwrap();
 
-        assert!(error.match_arm_span.str() == "3");
+        assert_eq!(error.match_arm_span.str(), ": 3");
     }
 
     // enum unerachable match arm
     {
         let (value, errors) = binder.bind_as_rvalue_error(&parse::<
-            syntax_tree::expression::Match,
+            syntax_tree::expression::block::Match,
         >(
             ENUM_UNREACHABLE_MATCH_ARM,
         ));
@@ -148,13 +147,13 @@ fn unreachable_match_arm() {
         let error =
             errors[0].as_any().downcast_ref::<UnreachableMatchArm>().unwrap();
 
-        assert_eq!(error.match_arm_span.str(), "3");
+        assert_eq!(error.match_arm_span.str(), ": 3");
     }
 
     // enum unreachable match arm by irrefutable pattern
     {
         let (value, errors) = binder.bind_as_rvalue_error(&parse::<
-            syntax_tree::expression::Match,
+            syntax_tree::expression::block::Match,
         >(
             ENUM_UNREACHABLE_MATCH_ARM_BY_IRREFUTABLE_PATTERN,
         ));
@@ -195,25 +194,24 @@ fn unreachable_match_arm() {
         let error =
             errors[0].as_any().downcast_ref::<UnreachableMatchArm>().unwrap();
 
-        assert_eq!(error.match_arm_span.str(), "3");
+        assert_eq!(error.match_arm_span.str(), ": 3");
     }
 }
 
 #[test]
 fn exhaustive_match_arm() {
     const BOOLEAN_WITH_WILDCARD: &str = r"
-        match (true, false) {
-            (true, false): 1,
-            (false, false): 2,
-            (.., true): 3,
-        }
+match (true, false):
+    (true, false): 1
+    (false, false): 2
+    (.., true): 3
     ";
 
     let tempalte = Template::new();
     let mut binder = tempalte.create_binder();
 
     let value = binder.bind_as_rvalue_success(&parse::<
-        syntax_tree::expression::Match,
+        syntax_tree::expression::block::Match,
     >(BOOLEAN_WITH_WILDCARD));
 
     let phi_node = binder

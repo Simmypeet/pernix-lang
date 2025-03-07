@@ -134,7 +134,7 @@ impl Binder<'_> {
 
 #[test]
 fn value_bound_named() {
-    const VALUE_BOUND_NAMED: &str = "mutable helloWorld";
+    const VALUE_BOUND_NAMED: &str = "mut helloWorld";
 
     let template = Template::new();
     let mut binder = template.create_binder();
@@ -168,7 +168,7 @@ fn value_bound_named() {
 
 #[test]
 fn reference_bound_named() {
-    const SIMPLE_NAMED_REFERENCE_BOUND: &str = "&mutable helloWorld";
+    const SIMPLE_NAMED_REFERENCE_BOUND: &str = "&mut helloWorld";
 
     let template = Template::new();
     let mut binder = template.create_binder();
@@ -201,18 +201,19 @@ fn reference_bound_named() {
 }
 
 const STRUCT_DECLARATION: &str = r"
-    public struct Test { 
-        public a: int32, 
-        public b: float32,
-    }
+public struct Test:
+    public a: int32
+    public b: float32
 
-    public function test() {}
+
+public function test():
+    pass
 ";
 
 #[test]
 #[allow(clippy::too_many_lines)]
 fn value_bound_struct() {
-    const VALUE_BOUND_STRUCT: &str = "{ &mutable a, mutable b }";
+    const VALUE_BOUND_STRUCT: &str = "{ &mut a, mut b }";
 
     let table = build_table(STRUCT_DECLARATION);
 
@@ -293,7 +294,7 @@ fn value_bound_struct() {
 #[allow(clippy::too_many_lines)]
 fn reference_bound_struct() {
     // both a and b are bound by reference
-    const REFERENCE_BOUND_STRUCT: &str = "{ &a, mutable b }";
+    const REFERENCE_BOUND_STRUCT: &str = "{ &a, mut b }";
 
     let table = build_table(STRUCT_DECLARATION);
 
@@ -384,7 +385,7 @@ fn reference_bound_struct() {
 #[test]
 #[allow(missing_docs)]
 fn value_bound_tuple() {
-    const VALUE_BOUND_TUPLE: &str = "(&a, mutable b)";
+    const VALUE_BOUND_TUPLE: &str = "(&a, mut b)";
 
     let template = Template::new();
     let mut binder = template.create_binder();
@@ -472,7 +473,7 @@ fn value_bound_tuple() {
 
 #[test]
 fn reference_bound_tuple() {
-    const REFERENCE_BOUND_TUPLE: &str = "(&a, mutable b)";
+    const REFERENCE_BOUND_TUPLE: &str = "(&a, mut b)";
 
     let template = Template::new();
     let mut binder = template.create_binder();
@@ -564,7 +565,8 @@ fn reference_bound_tuple() {
 }
 
 const WITH_UNPACKED_TYPE_PARAMETER: &str = r"
-public function test[T]() where tuple T {}
+public function test[T: tuple]():
+    pass
 ";
 
 #[test]

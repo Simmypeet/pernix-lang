@@ -81,8 +81,8 @@ impl SourceElement for MatchArm {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MatchBody {
-    colon: Punctuation,
-    arms: Vec<Passable<MatchArm>>,
+    pub colon: Punctuation,
+    pub arms: Vec<Passable<MatchArm>>,
 }
 
 impl SyntaxTree for MatchBody {
@@ -245,7 +245,7 @@ impl SourceElement for InlineExpression {
     fn span(&self) -> Span { self.colon.span().join(&self.expression.span()) }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Group {
     Indented(IndentedGroup),
     Inline(InlineExpression),
@@ -371,7 +371,7 @@ impl SourceElement for IfElse {
 pub struct While {
     pub while_keyword: Keyword,
     pub binary: Box<Binary>,
-    pub group: Group,
+    pub group: IndentedGroup,
 }
 
 impl SyntaxTree for While {
@@ -382,7 +382,7 @@ impl SyntaxTree for While {
         (
             KeywordKind::While.to_owned(),
             Binary::parse.map(Box::new),
-            Group::parse,
+            IndentedGroup::parse,
         )
             .map(|(while_keyword, binary, group)| Self {
                 while_keyword,
@@ -403,7 +403,7 @@ impl SourceElement for While {
 #[allow(missing_docs)]
 pub struct Loop {
     pub loop_keyword: Keyword,
-    pub group: Group,
+    pub group: IndentedGroup,
 }
 
 impl SyntaxTree for Loop {
@@ -411,7 +411,7 @@ impl SyntaxTree for Loop {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::Loop.to_owned(), Group::parse)
+        (KeywordKind::Loop.to_owned(), IndentedGroup::parse)
             .map(|(loop_keyword, group)| Self { loop_keyword, group })
             .parse(state_machine, handler)
     }

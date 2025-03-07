@@ -38,11 +38,11 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        let is_simple_identifier = syntax_tree.rest().is_empty()
+        let is_simple_identifier = syntax_tree.rest.is_empty()
             && syntax_tree
-                .root()
+                .root
                 .as_generic_identifier()
-                .is_some_and(|x| x.generic_arguments().is_none());
+                .is_some_and(|x| x.generic_arguments.is_none());
 
         // search for the variable/parameter in the stack
         #[allow(clippy::unnecessary_operation)]
@@ -50,10 +50,10 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
             if is_simple_identifier {
                 let Some(name) = self.stack.search(
                     syntax_tree
-                        .root()
+                        .root
                         .as_generic_identifier()
                         .unwrap()
-                        .identifier()
+                        .identifier
                         .span
                         .str(),
                 ) else {

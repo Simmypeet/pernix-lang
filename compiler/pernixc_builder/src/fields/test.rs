@@ -8,10 +8,9 @@ use pernixc_term::{
 use crate::{fields::diagnostic::FieldDuplication, utility::build_table};
 
 const FIELDS: &str = r"
-public struct Pair[T, U] {
-    public first: T,
-    private second: U,
-}
+public struct Pair[T, U]:
+    public first: T
+    private second: U
 ";
 
 #[test]
@@ -57,10 +56,10 @@ fn fields() {
 }
 
 const FIELD_DUPLICATION: &str = r"
-public struct Pair[T, U] {
-    public first: T,
-    public first: U,
-}
+public struct Pair[T, U]:
+    public first: T
+    public first: U
+
 ";
 
 #[test]

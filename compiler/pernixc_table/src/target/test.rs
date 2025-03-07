@@ -7,7 +7,8 @@ use serde::de::DeserializeSeed;
 use crate::{
     component::{Accessibility, Import, Member, Name, Parent},
     diagnostic::{
-        ConflictingUsing, Diagnostic, ItemRedifinition,
+        AccessModifierIsNotAllowedInTraitImplementation, ConflictingUsing,
+        Diagnostic, ItemRedifinition,
         MismatchedTraitMemberAndImplementationMember,
         SymbolIsMoreAccessibleThanParent, TraitMemberKind,
         UnknownTraitImplementationMember,
@@ -17,10 +18,13 @@ use crate::{
 };
 
 const SUBMODULE: &str = r"
-public module first {}
-private module second {
-    private module third {}
-}
+public module first:
+    pass
+
+
+private module second:
+    private module third:
+        pass
 ";
 
 #[test]
@@ -108,11 +112,10 @@ fn submodule() {
 }
 
 const TRAIT_WITH_ERRORS: &str = r"
-internal trait Test {
-    public function first(); // <- too accessible
-    private function second();
-    private type second;
-}
+internal trait Test:
+    public function first() // <- too accessible
+    private function second()
+    private type second
 ";
 
 #[test]
@@ -166,24 +169,35 @@ fn trait_with_errors() {
 }
 
 const SERIALIZATION: &str = r#"
-public module submodule {}
-public trait Trait {
-    public function first();
-    private function second();
-}
-public type TypeAlias = int32;
-public struct Struct {
-    public field: int32,
-}
-public enum Option[T] {
-    Some(T),
-    None,
-}
-public const VALUE: int32 = 42;
-public marker Marker[T];
-extern "C" {
-    public function externalFunction();
-}
+public module submodule:
+    pass
+
+
+public trait Trait:
+    public function first()
+    private function second()
+
+
+public type TypeAlias = int32
+
+
+public struct Struct:
+    public field: int32
+
+
+public enum Option[T]:
+    Some(T)
+    None
+
+
+public const VALUE: int32 = 42
+
+
+public marker Marker[T]
+
+
+extern "C":
+    public function externalFunction()
 "#;
 
 #[test]
@@ -249,27 +263,28 @@ fn serialization() {
 }
 
 const USINGS: &str = r"
-using {
+from test::inner import (
     AnotherSymbol,
     Inaccessible,
     Symbol as Existing // collision
-} from test::inner;
+)
 
-using test::anotherInner as something;
-using test::notFound; // not found
+import test::anotherInner as something
+import test::notFound // not found
 
 
-public module inner {
-    public type Symbol = int32;
-    public type AnotherSymbol = int32;
+public module inner:
+    public type Symbol = int32
+    public type AnotherSymbol = int32
+    private type Inaccessible = int32 // inaccessible
 
-    // inaccessible
-    private type Inaccessible = int32;
-}
 
-public module anotherInner {}
+public module anotherInner:
+    pass
 
-public struct Existing {}
+
+public struct Existing:
+    pass
 ";
 
 #[test]
@@ -332,19 +347,19 @@ fn usings() {
 }
 
 const TRAIT_IMPLEMENTATIONS: &str = r"
-public trait Trait[T] {
-    public function someFunction();
-    public type SomeType;
-    public const SOME_VALUE: int32;
-}
+public trait Trait[T]:
+    public function someFunction()
+    public type SomeType
+    public const SOME_VALUE: int32
 
-final implements const Trait[int32] {
-    public type someFunction = bool; // <- not a function
-    public type SomeType = int32;
-    public const SOME_VALUE: int32 = 42;
 
-    public function unknownFunction() {} // <- extraneous
-}
+final const implements Trait[int32]:
+    type someFunction = bool // <- not a function
+    type SomeType = int32
+    internal const SOME_VALUE: int32 = 42
+    function unknownFunction():  // <- extraneous
+        pass
+
 ";
 
 #[test]
@@ -368,7 +383,7 @@ fn trait_implementations() {
 
     let errors = storage.as_vec();
 
-    assert_eq!(errors.len(), 2);
+    assert_eq!(errors.len(), 3);
 
     let trait_id = table.get_by_qualified_name(["test", "Trait"]).unwrap();
 
@@ -387,18 +402,26 @@ fn trait_implementations() {
             x.trait_id == trait_id
                 && x.identifier_span.str() == "unknownFunction"
         })));
+    assert!(errors.iter().any(|x| {
+        x.as_any()
+            .downcast_ref::<AccessModifierIsNotAllowedInTraitImplementation>()
+            .is_some_and(|x| x.access_modifier_span.str() == "internal")
+    }));
 }
 
 const ADT_IMPLEMENTATION: &str = r"
-public struct Test {}
+public struct Test:
+    pass
 
-implements Test {
-    public function first() {}
-}
 
-implements Test {
-    public function first() {}
-}
+implements Test:
+    public function first():
+        pass
+
+
+implements Test:
+    public function first():
+        pass
 ";
 
 #[test]

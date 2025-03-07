@@ -14,7 +14,9 @@ use pernixc_resolution::{
     Config, ElidedTermProvider, Ext, GetGenericParameterNamespaceExt as _,
 };
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::{item::ParameterKind, ConnectedList};
+use pernixc_syntax::syntax_tree::{
+    item::function::ParameterKind, ConnectedList,
+};
 use pernixc_table::{
     component::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
@@ -221,14 +223,14 @@ impl query::Builder<Intermediate> for Builder {
 
         let parameters = syntax_tree
             .parameters
-            .connected_list()
+            .connected_list
             .iter()
             .flat_map(ConnectedList::elements)
             .filter_map(ParameterKind::as_regular)
             .map(|syn| {
                 (
                     table.resolve_type(
-                        syn.r#type(),
+                        &syn.r#type,
                         global_id,
                         Config {
                             elided_lifetime_provider: Some(
@@ -260,7 +262,7 @@ impl query::Builder<Intermediate> for Builder {
         let return_type = syntax_tree.return_type.as_ref().map(|x| {
             (
                 table.resolve_type(
-                    x.r#type(),
+                    &x.r#type,
                     global_id,
                     Config {
                         elided_lifetime_provider:

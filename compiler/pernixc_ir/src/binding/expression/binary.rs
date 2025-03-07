@@ -27,10 +27,10 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Binary> for Binder<'_> {
+impl Bind<&syntax_tree::expression::binary::Binary> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Binary,
+        syntax_tree: &syntax_tree::expression::binary::Binary,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
@@ -43,7 +43,7 @@ impl Bind<&syntax_tree::expression::Binary> for Binder<'_> {
 
 enum BinaryNode<'a> {
     Binary(Box<BinaryTree<'a>>),
-    Expression(&'a syntax_tree::expression::BinaryNode),
+    Expression(&'a syntax_tree::expression::binary::BinaryNode),
 }
 
 impl SourceElement for BinaryNode<'_> {
@@ -58,7 +58,7 @@ impl SourceElement for BinaryNode<'_> {
 struct BinaryTree<'a> {
     left: BinaryNode<'a>,
     right: BinaryNode<'a>,
-    operator: &'a syntax_tree::expression::BinaryOperator,
+    operator: &'a syntax_tree::expression::binary::BinaryOperator,
 }
 
 impl SourceElement for BinaryTree<'_> {
@@ -66,9 +66,9 @@ impl SourceElement for BinaryTree<'_> {
 }
 
 const fn operator_precedence(
-    operator: &syntax_tree::expression::BinaryOperator,
+    operator: &syntax_tree::expression::binary::BinaryOperator,
 ) -> u32 {
-    use syntax_tree::expression::BinaryOperator;
+    use syntax_tree::expression::binary::BinaryOperator;
     match operator {
         BinaryOperator::Multiply(_)
         | BinaryOperator::Divide(_)
@@ -110,10 +110,12 @@ const fn operator_precedence(
     }
 }
 
-fn to_binary_tree(syntax_tree: &syntax_tree::expression::Binary) -> BinaryNode {
-    let mut first = BinaryNode::Expression(syntax_tree.first());
+fn to_binary_tree(
+    syntax_tree: &syntax_tree::expression::binary::Binary,
+) -> BinaryNode {
+    let mut first = BinaryNode::Expression(&syntax_tree.first);
     let mut expressions = syntax_tree
-        .chain()
+        .chain
         .iter()
         .map(|(op, exp)| (op, Some(BinaryNode::Expression(exp))))
         .collect::<Vec<_>>();
@@ -166,9 +168,12 @@ fn to_binary_tree(syntax_tree: &syntax_tree::expression::Binary) -> BinaryNode {
 }
 
 const fn into_binary_operator(
-    syntax_tree: &syntax_tree::expression::BinaryOperator,
-) -> Result<(BinaryOperator, bool), &syntax_tree::expression::BinaryOperator> {
-    use syntax_tree::expression::BinaryOperator as BinOpSyn;
+    syntax_tree: &syntax_tree::expression::binary::BinaryOperator,
+) -> Result<
+    (BinaryOperator, bool),
+    &syntax_tree::expression::binary::BinaryOperator,
+> {
+    use syntax_tree::expression::binary::BinaryOperator as BinOpSyn;
 
     use crate::value::register::{
         ArithmeticOperator as ArithOp, BinaryOperator as BinOp,
@@ -556,7 +561,7 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree.operator {
-            syntax_tree::expression::BinaryOperator::Assign(_) => {
+            syntax_tree::expression::binary::BinaryOperator::Assign(_) => {
                 let rhs =
                     self.bind_value_or_error(&syntax_tree.right, handler)?;
                 let lhs =
@@ -565,8 +570,8 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
                 self.bind_assignment(syntax_tree, config, lhs, rhs, handler)
             }
 
-            syntax_tree::expression::BinaryOperator::LogicalAnd(_)
-            | syntax_tree::expression::BinaryOperator::LogicalOr(_) => {
+            syntax_tree::expression::binary::BinaryOperator::LogicalAnd(_)
+            | syntax_tree::expression::binary::BinaryOperator::LogicalOr(_) => {
                 let successor_block_id = self
                     .intermediate_representation
                     .control_flow_graph
@@ -630,7 +635,7 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
 
                     let value = if matches!(
                         syntax_tree.operator,
-                        syntax_tree::expression::BinaryOperator::LogicalOr(_)
+                        syntax_tree::expression::binary::BinaryOperator::LogicalOr(_)
                     ) {
                         Value::Literal(Literal::Boolean(Boolean {
                             value: true,
@@ -688,7 +693,7 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
 
                     let value = if matches!(
                         syntax_tree.operator,
-                        syntax_tree::expression::BinaryOperator::LogicalAnd(_)
+                        syntax_tree::expression::binary::BinaryOperator::LogicalAnd(_)
                     ) {
                         Value::Literal(Literal::Boolean(Boolean {
                             value: false,

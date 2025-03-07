@@ -482,7 +482,7 @@ impl IndentDisplay for Else {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Loop {
-    pub group: Group,
+    pub group: IndentedGroup,
 }
 
 impl Input<&super::Loop> for &Loop {
@@ -501,7 +501,9 @@ impl Arbitrary for Loop {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        Group::arbitrary_with(args).prop_map(|group| Self { group }).boxed()
+        IndentedGroup::arbitrary_with(args)
+            .prop_map(|group| Self { group })
+            .boxed()
     }
 }
 
@@ -519,7 +521,7 @@ impl IndentDisplay for Loop {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct While {
     pub binary: Box<Binary>,
-    pub group: Group,
+    pub group: IndentedGroup,
 }
 
 impl Input<&super::While> for &While {
@@ -559,7 +561,7 @@ impl Arbitrary for While {
                 })
             });
 
-        (binary.prop_map(Box::new), Group::arbitrary_with(args))
+        (binary.prop_map(Box::new), IndentedGroup::arbitrary_with(args))
             .prop_map(|(binary, group)| Self { binary, group })
             .boxed()
     }

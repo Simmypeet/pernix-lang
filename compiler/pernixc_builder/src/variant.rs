@@ -50,7 +50,7 @@ impl query::Builder<Variant> for Builder {
         );
 
         let associated_type = table.resolve_type(
-            syntax_tree.tree(),
+            &syntax_tree.tree,
             global_id,
             Config {
                 elided_lifetime_provider: None,
@@ -65,7 +65,7 @@ impl query::Builder<Variant> for Builder {
         Some(Arc::new(Variant {
             associated_type: Some(env.simplify_and_check_lifetime_constraints(
                 &associated_type,
-                &syntax_tree.tree().span(),
+                &syntax_tree.tree.span(),
                 handler,
             )),
         }))

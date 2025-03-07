@@ -35,9 +35,9 @@ fn cast() {
     let mut binder = template.create_binder();
 
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Postfixable>(
-            "32i32 as float64",
-        ))
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::postfix::Postfixable,
+        >("32i32 as float64"))
         .into_register()
         .unwrap();
 
@@ -65,7 +65,7 @@ fn invalid_cast_type() {
     let mut binder = template.create_binder();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Postfixable,
+        syntax_tree::expression::postfix::Postfixable,
     >("32i32 as ()"));
 
     assert_eq!(errors.len(), 1);
@@ -89,7 +89,7 @@ fn expression_is_not_callable_error() {
     let mut binder = template.create_binder();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Postfixable,
+        syntax_tree::expression::postfix::Postfixable,
     >("32()"));
 
     assert_eq!(errors.len(), 1);
@@ -103,9 +103,11 @@ fn expression_is_not_callable_error() {
 }
 
 const FUNCTION_DECLARATION: &str = r"
-public function fizz[T](a: T, b: T, c: int32) {}
+public function fizz[T](a: T, b: T, c: int32):
+    pass
 
-public function test() {}
+public function test():
+    pass
 ";
 
 #[test]
@@ -115,9 +117,9 @@ fn function_call() {
 
     // no check
     let call_register = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Postfixable>(
-            "fizz(true, false, 32)",
-        ))
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::postfix::Postfixable,
+        >("fizz(true, false, 32)"))
         .into_register()
         .unwrap();
 
@@ -222,7 +224,7 @@ fn function_call_mismatched_argument_count_error() {
     // too many arguments
     {
         let (value, errors) = binder.bind_as_rvalue_error(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >(
             "fizz(true, false, 32, 32)",
         ));
@@ -259,7 +261,7 @@ fn function_call_mismatched_argument_count_error() {
     {
         let (value, errors) =
             binder.bind_as_rvalue_error(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("fizz(true, false)"));
 
         let register_id = value.into_register().unwrap();
@@ -292,16 +294,16 @@ fn function_call_mismatched_argument_count_error() {
 }
 
 const STRUCT_DECLARATION: &str = r"
-public module math {
-    public struct Vector2 {
-        public x: float32,
-        public y: float32,
+public module math:
+    public struct Vector2:
+        public x: float32
+        public y: float32
 
-        private secret: float32,
-    }
-}
+        private secret: float32
 
-public function test() {}
+
+public function test():
+    pass
 ";
 
 #[test]
@@ -314,8 +316,8 @@ fn struct_field_access() {
         let (address, _) = binder
             .bind_variable_declaration(
                 &parse(
-                    "let mutable vector = math::Vector2 { x: 32, y: 64, \
-                     secret: 128 };",
+                    "let mut vector = math::Vector2 { x: 32, y: 64, secret: \
+                     128 }",
                 ),
                 &storage,
             )
@@ -334,7 +336,7 @@ fn struct_field_access() {
     {
         let register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("vector.x"))
             .into_register()
             .unwrap();
@@ -361,7 +363,7 @@ fn struct_field_access() {
     // y field
     {
         let lvalue = binder.bind_as_lvalue_success(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("vector.y"));
 
         assert_eq!(
@@ -380,7 +382,7 @@ fn struct_field_access() {
     {
         let (_, errors) =
             binder.bind_as_rvalue_error(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("vector.secret"));
 
         assert_eq!(errors.len(), 1);
@@ -399,7 +401,7 @@ fn struct_field_access() {
     {
         let (_, errors) =
             binder.bind_as_rvalue_error(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("vector.x[int32]"));
 
         assert_eq!(errors.len(), 1);
@@ -415,7 +417,7 @@ fn struct_field_access() {
     // field not found
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("vector.z"));
 
         assert_eq!(errors.len(), 1);
@@ -438,7 +440,7 @@ fn struct_field_access_on_non_struct() {
     let mut binder = template.create_binder();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Postfixable,
+        syntax_tree::expression::postfix::Postfixable,
     >("true.x"));
 
     assert_eq!(errors.len(), 1);
@@ -454,7 +456,8 @@ fn struct_field_access_on_non_struct() {
 }
 
 const TUPLE_FUNCTION_DECLARATION: &str = r"
-public function test[T](t: T) where tuple T {}
+public function test[T: tuple](t: T):
+    pass
 ";
 
 #[test]
@@ -467,9 +470,7 @@ fn tuple_access() {
         let storage = Storage::<Box<dyn Diagnostic>>::new();
         let (address, _) = binder
             .bind_variable_declaration(
-                &parse(
-                    "let mutable myTuple = (32i64, true, ...t, false, 64i32);",
-                ),
+                &parse("let mut myTuple = (32i64, true, ...t, false, 64i32);"),
                 &storage,
             )
             .unwrap();
@@ -482,7 +483,7 @@ fn tuple_access() {
     // from start 0
     {
         let lvalue = binder.bind_as_lvalue_success(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTuple.0"));
 
         assert_eq!(lvalue.qualifier, Qualifier::Mutable);
@@ -498,7 +499,7 @@ fn tuple_access() {
     // from end 0
     {
         let lvalue = binder.bind_as_lvalue_success(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTuple.-0"));
 
         let tuple_address = Address::Tuple(address::Tuple {
@@ -518,7 +519,7 @@ fn tuple_access() {
     // index past unpacked from start
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTuple.3"));
 
         assert_eq!(errors.len(), 1);
@@ -534,7 +535,7 @@ fn tuple_access() {
     // index past unpacked from end
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTuple.-3"));
 
         assert_eq!(errors.len(), 1);
@@ -550,7 +551,7 @@ fn tuple_access() {
     // index past unpacked from start
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTuple.3"));
 
         assert_eq!(errors.len(), 1);
@@ -566,7 +567,7 @@ fn tuple_access() {
     // index too large
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >(
             "myTuple.10000000000000000000000000000000000000000",
         ));
@@ -584,7 +585,7 @@ fn tuple_access() {
     // index to unpack
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTuple.2"));
 
         assert_eq!(errors.len(), 1);
@@ -606,7 +607,7 @@ fn tuple_index_out_of_bounds() {
     let storage = Storage::<Box<dyn Diagnostic>>::new();
     let _ = binder
         .bind_variable_declaration(
-            &parse("let mutable myTuple = (32i64, true, false, 64i32);"),
+            &parse("let mut myTuple = (32i64, true, false, 64i32);"),
             &storage,
         )
         .unwrap();
@@ -616,7 +617,7 @@ fn tuple_index_out_of_bounds() {
     // index out of bounds
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTuple.5"));
 
         assert_eq!(errors.len(), 1);
@@ -636,7 +637,7 @@ fn tuple_index_on_non_tuple() {
     let mut binder = template.create_binder();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Postfixable,
+        syntax_tree::expression::postfix::Postfixable,
     >("true.0"));
 
     assert_eq!(errors.len(), 1);
@@ -657,7 +658,7 @@ fn array_access() {
     let storage = Storage::<Box<dyn Diagnostic>>::new();
     let (address, _) = binder
         .bind_variable_declaration(
-            &parse("let mutable array = [32, 64, 128];"),
+            &parse("let mut array = [32, 64, 128]"),
             &storage,
         )
         .unwrap();
@@ -667,7 +668,7 @@ fn array_access() {
     // from start 0
     {
         let lvalue = binder.bind_as_lvalue_success(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("array.[0]"));
 
         assert_eq!(lvalue.qualifier, Qualifier::Mutable);
@@ -698,7 +699,7 @@ fn array_access() {
     // usize expected
     {
         let error = binder.bind_as_rvalue_error(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("array.[1.0]"));
 
         assert_eq!(error.1.len(), 1);
@@ -717,20 +718,24 @@ fn array_access() {
 }
 
 const STRUCT_WITH_ADT_METHODS_DECLARATION: &str = r"
-public struct Vector2[T] {
-    public x: T,
-    public y: T,
-}
+public struct Vector2[T]:
+    public x: T
+    public y: T
 
-implements[T] Vector2[T] {
-    public function getX(self: this): T {panic;}
 
-    public function getRefX(self: &this): &T {panic;}
+implements[T] Vector2[T]:
+    public function getX(self: this) -> T:
+        panic
 
-    public function setX(self: &mutable this, x: T) {panic;}
-}
+    public function getRefX(self: &this) -> &T:
+        panic
 
-public function test() {}
+    public function setX(self: &mut this, x: T):
+        panic
+
+
+public function test():
+    panic
 ";
 
 #[test]
@@ -748,7 +753,7 @@ fn adt_method() {
 
     let (mutable_vector_address, _) = binder
         .bind_variable_declaration(
-            &parse("let mutable mutableVector = Vector2 { x: 32i32, y: 64 };"),
+            &parse("let mut mutableVector = Vector2 { x: 32i32, y: 64 };"),
             &Storage::<Box<dyn Diagnostic>>::new(),
         )
         .unwrap();
@@ -770,7 +775,7 @@ fn adt_method() {
     {
         let call_register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("vector.getX()"))
             .into_register()
             .unwrap();
@@ -819,7 +824,7 @@ fn adt_method() {
     {
         let call_register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("vector.getRefX()"))
             .into_register()
             .unwrap();
@@ -874,7 +879,7 @@ fn adt_method() {
     {
         let call_register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("mutableVector.setX(0)"))
             .into_register()
             .unwrap();
@@ -924,38 +929,41 @@ fn adt_method() {
 }
 
 const TRAIT_METHOD_DECLARATION: &str = r"
-public struct MyStruct {}
+public struct MyStruct:
+    pass
 
-public trait NoMethod {
-    public function method(self: MyStruct, myBoolean: bool);
-}
 
-public trait MethodWithBoolean[T] {
-    public function method(self: T, myBoolean: bool);
-}
+public trait NoMethod:
+    public function method(self: MyStruct, myBoolean: bool)
 
-public trait MethodWithInt32[T] {
-    public function method(self: T, myInt32: int32);
-}
 
-public trait FirstAmbiguousMethod[T] {
-    public function ambiguous(self: T, first: int32);
-}
+public trait MethodWithBoolean[T]:
+    public function method(self: T, myBoolean: bool)
 
-public trait SecondAmbiguousMethod[T] {
-    public function ambiguous(self: T, second: int64);
-}
 
-public function main() {
+public trait MethodWithInt32[T]:
+    public function method(self: T, myInt32: int32)
+
+
+public trait FirstAmbiguousMethod[T] :
+    public function ambiguous(self: T, first: int32)
+
+
+public trait SecondAmbiguousMethod[T]:
+    public function ambiguous(self: T, second: int64)
+
+
+public function main():
     /*
-    let mutable myStruct = MyStruct {};
+    let mut myStruct = MyStruct {}
 
-    myStruct.method(true); // MethodWithBoolean[int32]::method
-    myStruct.method(0i32); // MethodWithInt32[int32]::method
+    myStruct.method(true) // MethodWithBoolean[int32]::method
+    myStruct.method(0i32) // MethodWithInt32[int32]::method
 
-    myStruct.ambiguous(32); // ??? (ambiguous)
+    myStruct.ambiguous(32) // ??? (ambiguous)
     */
-}
+    pass
+
 ";
 
 #[test]
@@ -980,7 +988,7 @@ fn trait_method() {
     let my_struct_address = {
         let (address, _) = binder
             .bind_variable_declaration(
-                &parse("let mutable myStruct = MyStruct {};"),
+                &parse("let mut myStruct = MyStruct {};"),
                 &Panic,
             )
             .unwrap();
@@ -992,7 +1000,7 @@ fn trait_method() {
     {
         let call_register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("myStruct.method(true)"))
             .into_register()
             .unwrap();
@@ -1038,7 +1046,7 @@ fn trait_method() {
     {
         let call_register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("myStruct.method(0i32)"))
             .into_register()
             .unwrap();
@@ -1084,7 +1092,7 @@ fn trait_method() {
     // ambiguous
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >(
             "myStruct.ambiguous(32)",
         ));
@@ -1113,7 +1121,7 @@ fn arrow_access() {
 
     let _ = binder
         .bind_variable_declaration(
-            &parse("let mutable myTuple = (0i8, 1i16, 2i32, 3i64);"),
+            &parse("let mut myTuple = (0i8, 1i16, 2i32, 3i64);"),
             &Panic,
         )
         .unwrap();
@@ -1121,7 +1129,7 @@ fn arrow_access() {
     let my_tuple_mut_ref_address = {
         let (address, _) = binder
             .bind_variable_declaration(
-                &parse("let myTupleMutRef = &mutable myTuple;"),
+                &parse("let myTupleMutRef = &mut myTuple;"),
                 &Panic,
             )
             .unwrap();
@@ -1143,7 +1151,7 @@ fn arrow_access() {
     // myTupleRef
     {
         let lvalue = binder.bind_as_lvalue_success(&parse::<
-            syntax_tree::expression::Postfixable,
+            syntax_tree::expression::postfix::Postfixable,
         >("myTupleRef->1"));
 
         assert_eq!(
@@ -1165,7 +1173,7 @@ fn arrow_access() {
     {
         let lvalue =
             binder.bind_as_lvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("myTupleMutRef->2"));
 
         assert_eq!(
@@ -1185,14 +1193,15 @@ fn arrow_access() {
 }
 
 const ENUM_DECLARATION: &str = r"
-public enum Sample[F, S] {
-    First(F),
-    Second(S),
-    Third(bool),
+public enum Sample[F, S]:
+    First(F)
+    Second(S)
+    Third(bool)
     Fourth
-}
 
-public function test() {}
+
+public function test():
+    pass
 ";
 
 #[test]
@@ -1209,7 +1218,7 @@ fn variant_call() {
     {
         let call_register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("Sample::First(32)"))
             .into_register()
             .unwrap();
@@ -1243,7 +1252,7 @@ fn variant_call() {
     {
         let call_register_id = binder
             .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("Sample::Fourth()"))
             .into_register()
             .unwrap();
@@ -1272,7 +1281,7 @@ fn variant_call_mismatched_argument_count_error() {
     {
         let (_, errors) =
             binder.bind_as_rvalue_error(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("Sample::First(32, 64)"));
 
         assert_eq!(errors.len(), 1);
@@ -1292,7 +1301,7 @@ fn variant_call_mismatched_argument_count_error() {
     {
         let (_, errors) =
             binder.bind_as_rvalue_error(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("Sample::Second()"));
 
         assert_eq!(errors.len(), 1);
@@ -1312,7 +1321,7 @@ fn variant_call_mismatched_argument_count_error() {
     {
         let (_, errors) =
             binder.bind_as_rvalue_error(&parse::<
-                syntax_tree::expression::Postfixable,
+                syntax_tree::expression::postfix::Postfixable,
             >("Sample::Fourth(32)"));
 
         assert_eq!(errors.len(), 1);
@@ -1330,11 +1339,12 @@ fn variant_call_mismatched_argument_count_error() {
 }
 
 const VAR_ARGS: &str = r#"
-extern "C" {
-    public function fizz(a: int32, ...);
-}
+extern "C":
+    public function fizz(a: int32, ...)
 
-public function test() {}
+
+public function test():
+    pass
 "#;
 
 fn test_integer(value: &Value<impl Model>, int: &str) {
@@ -1352,9 +1362,9 @@ fn var_args_eqals() {
     let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
 
     let call_register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Postfixable>(
-            "fizz(0)",
-        ))
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::postfix::Postfixable,
+        >("fizz(0)"))
         .into_register()
         .unwrap();
 
@@ -1378,8 +1388,10 @@ fn var_args_greater() {
     let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
 
     let call_register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Postfixable>(
-            "fizz(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)",
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::postfix::Postfixable,
+        >(
+            "fizz(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)"
         ))
         .into_register()
         .unwrap();
@@ -1406,7 +1418,7 @@ fn var_args_lesser() {
     let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
 
     let (value, error) = binder.bind_as_rvalue_error(&parse::<
-        syntax_tree::expression::Postfixable,
+        syntax_tree::expression::postfix::Postfixable,
     >("fizz()"));
 
     let call = binder

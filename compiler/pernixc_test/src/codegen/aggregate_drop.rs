@@ -4,79 +4,74 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-using {Drop, Copy} from core;
+from core import Drop, Copy
 
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public struct LoudDrop {
-    private value: int32,
-}
 
-final implements Drop[LoudDrop] {
-    public function drop(self: &mutable LoudDrop) {
-        printf(&"Dropping %d\n\0"->[0], self->value);
-    }
-}
+public struct LoudDrop:
+    private value: int32
 
-final implements Copy[LoudDrop] delete;
 
-public struct Pair[T, U] {
-    private first: T,
-    private second: U,
-}
+final implements Drop[LoudDrop]:
+    function drop(self: &mut LoudDrop):
+        printf(&"Dropping %d\n\0"->[0], self->value)
+    
 
-public enum Option[T] {
-    Some(T),
-    None,
-}
+final implements Copy[LoudDrop] delete
 
-implements[T] Option[T] {
-    public function unwrap(self: this): T {
-        match (self) {
-            case Some(value): return value,
-            case None: panic,
-        }
-    }
 
-    public function asRef(self: &this): Option[&T] {
-        match (self) {
-            case Some(value): return Option::Some(value),
-            case None: return Option::None,
-        }
-    }
+public struct Pair[T, U]:
+    private first: T
+    private second: U
 
-    public function asMutable(self: &mutable this): Option[&mutable T] {
-        match (self) {
-            case Some(value): return Option::Some(value),
-            case None: return Option::None,
-        }
-    }
-}
 
-public function main() {
-    let mutable inTuple = (LoudDrop { value: 0 }, LoudDrop { value: 0 });
-    let mutable inArray = [LoudDrop { value: 0 }, LoudDrop { value: 0 }];
-    let mutable inStruct = Pair {
+public enum Option[T]:
+    Some(T)
+    None
+
+
+implements[T] Option[T]:
+    public function unwrap(self: this) -> T:
+        match self:
+            case Some(value): return value
+            case None: panic
+    
+
+    public function asRef(self: &this) -> Option[&T]:
+        match self:
+            case Some(value): return Option::Some(value)
+            case None: return Option::None
+
+
+    public function asMutable(self: &mut this) -> Option[&mut T]:
+        match self:
+            case Some(value): return Option::Some(value)
+            case None: return Option::None
+
+
+public function main():
+    let mut inTuple = (LoudDrop { value: 0 }, LoudDrop { value: 0 })
+    let mut inArray = [LoudDrop { value: 0 }, LoudDrop { value: 0 }]
+    let mut inStruct = Pair {
         first: LoudDrop { value: 0 },
         second: LoudDrop { value: 0 },
-    };
+    }
 
-    let mutable inSome = Option::Some(LoudDrop { value: 0 });
-    let mutable inNone = Option[LoudDrop]::None;
+    let mut inSome = Option::Some(LoudDrop { value: 0 })
+    let mut inNone = Option[LoudDrop]::None
 
     scanf(&"%d %d %d %d %d %d %d\0"->[0],
-        &mutable inTuple.0.value,
-        &mutable inTuple.1.value,
-        &mutable inArray.[0].value,
-        &mutable inArray.[1].value,
-        &mutable inStruct.first.value,
-        &mutable inStruct.second.value,
-        &mutable inSome.asMutable().unwrap()->value, 
-    );
-}
+        &mut inTuple.0.value,
+        &mut inTuple.1.value,
+        &mut inArray.[0].value,
+        &mut inArray.[1].value,
+        &mut inStruct.first.value,
+        &mut inStruct.second.value,
+        &mut inSome.asMutable().unwrap()->value, 
+    )
 "#;
 
 #[test]

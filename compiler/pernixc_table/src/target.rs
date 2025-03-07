@@ -7,18 +7,17 @@ use std::{
 use pernixc_handler::Handler;
 use pernixc_lexical::token::Identifier;
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::{
-    self,
-    item::{
-        ImplementationKind, ImplementationMember, ParameterKind, UsingKind,
+use pernixc_syntax::{
+    state_machine::parse::Passable,
+    syntax_tree::{
+        self, item::function::ParameterKind, target::ModuleTree, ConnectedList,
+        QualifiedIdentifierRoot,
     },
-    ConnectedList, QualifiedIdentifierRoot,
 };
 
 use super::{
     diagnostic::{
-        FoundEmptyImplementationOnTrait, FoundImplementationWithBodyOnMarker,
-        InvalidSymbolInImplementation,
+        FoundImplementationMemberOnMarker, InvalidSymbolInImplementation,
         MismatchedTraitMemberAndImplementationMember,
         SymbolIsMoreAccessibleThanParent, TraitMemberKind,
         UnexpectedAdtImplementationMember, UnimplementedTraitMembers,
@@ -35,11 +34,13 @@ use crate::{
         Using, VariantDeclarationOrder,
     },
     diagnostic::{
-        ConflictingUsing, Diagnostic, ExpectModule,
+        AccessModifierIsNotAllowedInTraitImplementation, ConflictingUsing,
+        Diagnostic, ExpectAccessModifier, ExpectModule,
         ExpectedImplementationWithBodyForAdt, InvalidConstImplementation,
         InvalidFinalImplementation, ItemRedifinition,
-        NonFinalMarkerImplementation, UnknownExternCallingConvention,
-        VariadicArgumentsAreNotAllowed, VariadicArgumentsMustBeTrailing,
+        NonFinalMarkerImplementation, TargetRootInImportIsNotAllowedwithFrom,
+        UnknownExternCallingConvention, VariadicArgumentsAreNotAllowed,
+        VariadicArgumentsMustBeTrailing,
     },
     resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
     Target,
@@ -137,7 +138,7 @@ impl Representation {
         self.create_module(
             target_id,
             name,
-            target_syntax.dissolve().0,
+            target_syntax.module_tree,
             None,
             &mut usings_by_module_id,
             &mut implementations_by_module_id,
@@ -148,7 +149,7 @@ impl Representation {
             .into_iter()
             .flat_map(|x| x.1.into_iter().map(move |y| (x.0, y)))
         {
-            self.insert_usings(defined_in_module_id, &using, handler);
+            self.insert_imports(defined_in_module_id, &using, handler);
         }
 
         for (defined_in_module_id, implementation) in
@@ -172,7 +173,8 @@ impl Representation {
         implemented_id: GlobalID,
         defined_in_module_id: GlobalID,
         symbol_kind: SymbolKind,
-        implementation_signature: syntax_tree::item::ImplementationSignature,
+        implementation_signature: syntax_tree::item::implements::Signature,
+        where_clause_syn: Option<syntax_tree::item::where_clause::WhereClause>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
         let new_symbol_id = GlobalID::new(
@@ -184,7 +186,7 @@ impl Representation {
         );
 
         assert!(self.storage.add_component(new_symbol_id, LocationSpan {
-            span: Some(implementation_signature.qualified_identifier().span())
+            span: Some(implementation_signature.qualified_identifier.span())
         }));
 
         let name = self.storage.get::<Name>(implemented_id).unwrap().0.clone();
@@ -208,22 +210,15 @@ impl Representation {
             .0
             .insert(new_symbol_id));
 
-        let (
-            final_keword,
-            _,
-            generic_parameters,
-            const_keyword,
-            qualified_identifier,
-            where_clause,
-        ) = implementation_signature.dissolve();
-
         assert!(self.storage.add_component(
             new_symbol_id,
-            syntax_tree_component::GenericParameters(generic_parameters)
+            syntax_tree_component::GenericParameters(
+                implementation_signature.generic_parameters
+            )
         ));
         assert!(self.storage.add_component(
             new_symbol_id,
-            syntax_tree_component::WhereClause(where_clause)
+            syntax_tree_component::WhereClause(where_clause_syn)
         ));
 
         match symbol_kind {
@@ -231,55 +226,73 @@ impl Representation {
                 assert!(self.storage.add_component(
                     new_symbol_id,
                     PositiveTraitImplementation {
-                        is_const: const_keyword.is_some(),
+                        is_const: implementation_signature
+                            .const_keyword
+                            .is_some(),
                     },
                 ));
-                assert!(self
-                    .storage
-                    .add_component(new_symbol_id, TraitImplementation {
-                        is_final: final_keword.is_some()
-                    }));
+                assert!(self.storage.add_component(
+                    new_symbol_id,
+                    TraitImplementation {
+                        is_final: implementation_signature
+                            .final_keyword
+                            .is_some()
+                    }
+                ));
             }
 
             SymbolKind::NegativeTraitImplementation => {
-                assert!(self
-                    .storage
-                    .add_component(new_symbol_id, TraitImplementation {
-                        is_final: final_keword.is_some()
-                    }));
+                assert!(self.storage.add_component(
+                    new_symbol_id,
+                    TraitImplementation {
+                        is_final: implementation_signature
+                            .final_keyword
+                            .is_some(),
+                    }
+                ));
 
-                if let Some(const_keyword) = const_keyword {
+                if let Some(const_keyword) =
+                    &implementation_signature.const_keyword
+                {
                     handler.receive(Box::new(InvalidConstImplementation {
-                        span: const_keyword.span,
+                        span: const_keyword.span.clone(),
                     }));
                 }
             }
 
             SymbolKind::AdtImplementation => {
-                if let Some(final_keyword) = final_keword {
+                if let Some(final_keyword) =
+                    &implementation_signature.final_keyword
+                {
                     handler.receive(Box::new(InvalidFinalImplementation {
-                        span: final_keyword.span,
+                        span: final_keyword.span.clone(),
                     }));
                 }
 
-                if let Some(const_keyword) = const_keyword {
+                if let Some(const_keyword) =
+                    &implementation_signature.const_keyword
+                {
                     handler.receive(Box::new(InvalidConstImplementation {
-                        span: const_keyword.span,
+                        span: const_keyword.span.clone(),
                     }));
                 }
             }
 
             SymbolKind::NegativeMarkerImplementation
             | SymbolKind::PositiveMarkerImplementation => {
-                if final_keword.is_none() {
+                if implementation_signature.final_keyword.is_none() {
                     handler.receive(Box::new(NonFinalMarkerImplementation {
-                        span: qualified_identifier.span(),
+                        span: implementation_signature
+                            .qualified_identifier
+                            .span(),
                     }));
                 }
 
-                if let Some(const_keyword) = const_keyword {
+                if let Some(const_keyword) =
+                    &implementation_signature.const_keyword
+                {
                     handler.receive(Box::new(InvalidConstImplementation {
-                        span: const_keyword.span,
+                        span: const_keyword.span.clone(),
                     }));
                 }
             }
@@ -291,7 +304,7 @@ impl Representation {
         assert!(self.storage.add_component(
             new_symbol_id,
             syntax_tree_component::ImplementationQualifiedIdentifier(
-                qualified_identifier
+                implementation_signature.qualified_identifier
             )
         ));
 
@@ -301,82 +314,92 @@ impl Representation {
     #[allow(clippy::too_many_lines)]
     fn create_adt_implementation(
         &mut self,
-        implementation: syntax_tree::item::Implementation,
+        implementation: syntax_tree::item::implements::Implements,
         declared_in: GlobalID,
         adt_id: GlobalID,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let (signature, kind) = implementation.dissolve();
-        let implementation_body = match kind {
-            ImplementationKind::Empty(_) | ImplementationKind::Negative(_) => {
+        let implementation_body = match implementation.body {
+            syntax_tree::item::implements::Body::Negative(_) => {
                 handler.receive(Box::new(
                     ExpectedImplementationWithBodyForAdt {
-                        invalid_implementation_span: signature.span(),
+                        invalid_implementation_span: implementation
+                            .signature
+                            .span(),
                     },
                 ));
 
                 return;
             }
-            ImplementationKind::Positive(body) => body,
+            syntax_tree::item::implements::Body::Positive(body) => body,
         };
-        let (_, members, _) = implementation_body.dissolve();
 
         // the implementation id
         let adt_implementation_id = self.insert_implementation(
             adt_id,
             declared_in,
             SymbolKind::AdtImplementation,
-            signature,
+            implementation.signature,
+            implementation_body.where_clause,
             handler,
         );
 
-        for member in members {
+        for member in implementation_body
+            .members
+            .into_iter()
+            .filter_map(Passable::into_option)
+        {
             match member {
-                ImplementationMember::Constant(syn) => {
+                syntax_tree::item::implements::Member::Constant(syn) => {
                     handler.receive(Box::new(
                         UnexpectedAdtImplementationMember {
-                            unexpected_member_span: syn.signature().span(),
+                            unexpected_member_span: syn.signature.span(),
                         },
                     ));
                 }
-                ImplementationMember::Type(syn) => {
+                syntax_tree::item::implements::Member::Type(syn) => {
                     handler.receive(Box::new(
                         UnexpectedAdtImplementationMember {
-                            unexpected_member_span: syn.signature().span(),
+                            unexpected_member_span: syn.signature.span(),
                         },
                     ));
                 }
-                ImplementationMember::Function(syn) => {
-                    let (access_modifier, _, signature, body) = syn.dissolve();
-                    let (
-                        _,
-                        ident,
-                        generic_parameters,
-                        parameters,
-                        return_type,
-                        where_clause,
-                    ) = signature.dissolve();
-
-                    let function_id = if let Some(existing_id) =
-                        self.get_member_of(adt_id, ident.span.str())
-                    {
+                syntax_tree::item::implements::Member::Function(syn) => {
+                    let function_id = if let Some(existing_id) = self
+                        .get_member_of(
+                            adt_id,
+                            syn.signature.signature.identifier.span.str(),
+                        ) {
                         let in_implementation = self
                             .get::<Member>(adt_implementation_id)
-                            .contains_key(ident.span.str());
+                            .contains_key(
+                                syn.signature.signature.identifier.span.str(),
+                            );
 
                         let new_id = self.insert_member(
                             adt_implementation_id,
-                            &ident,
+                            &syn.signature.signature.identifier,
                             SymbolKind::AdtImplementationFunction,
-                            Some(
-                                self.create_accessibility(
-                                    adt_implementation_id,
-                                    &access_modifier,
-                                )
-                                .unwrap(),
-                            ),
-                            generic_parameters,
-                            where_clause,
+                            Some(syn.access_modifier.as_ref().map_or_else(
+                                || {
+                                    handler.receive(Box::new(
+                                        ExpectAccessModifier {
+                                            span: syn.signature.span(),
+                                        },
+                                    ));
+
+                                    Accessibility::Public
+                                },
+                                |acc| {
+                                    self.create_accessibility(
+                                        adt_implementation_id,
+                                        acc,
+                                    )
+                                    .unwrap()
+                                },
+                            )),
+                            syn.signature.signature.generic_parameters,
+                            syn.body.where_clause,
                             handler,
                         );
 
@@ -392,32 +415,43 @@ impl Representation {
                     } else {
                         self.insert_member(
                             adt_implementation_id,
-                            &ident,
+                            &syn.signature.signature.identifier,
                             SymbolKind::AdtImplementationFunction,
-                            Some(
-                                self.create_accessibility(
-                                    adt_implementation_id,
-                                    &access_modifier,
-                                )
-                                .unwrap(),
-                            ),
-                            generic_parameters,
-                            where_clause,
+                            Some(syn.access_modifier.as_ref().map_or_else(
+                                || {
+                                    handler.receive(Box::new(
+                                        ExpectAccessModifier {
+                                            span: syn.signature.span(),
+                                        },
+                                    ));
+
+                                    Accessibility::Public
+                                },
+                                |acc| {
+                                    self.create_accessibility(
+                                        adt_implementation_id,
+                                        acc,
+                                    )
+                                    .unwrap()
+                                },
+                            )),
+                            syn.signature.signature.generic_parameters,
+                            syn.body.where_clause,
                             handler,
                         )
                     };
 
                     // add the parameters
                     Self::validate_parameters_syntax(
-                        &parameters,
+                        &syn.signature.signature.parameters,
                         false,
                         handler,
                     );
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionSignature {
-                            parameters,
-                            return_type
+                            parameters: syn.signature.signature.parameters,
+                            return_type: syn.signature.signature.return_type
                         }
                     ));
 
@@ -425,7 +459,7 @@ impl Representation {
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionBody {
-                            statements: body
+                            statements: syn.body.members
                         }
                     ));
                 }
@@ -435,31 +469,40 @@ impl Representation {
 
     fn create_marker_implementation(
         &mut self,
-        implementation: syntax_tree::item::Implementation,
+        implementation: syntax_tree::item::implements::Implements,
         declared_in: GlobalID,
         marker_id: GlobalID,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let (signature, kind) = implementation.dissolve();
+        let (symbol_kind, where_clause) = match implementation.body {
+            syntax_tree::item::implements::Body::Negative(negative) => (
+                SymbolKind::NegativeMarkerImplementation,
+                negative.trailing_where_clause.map(|x| x.where_clause),
+            ),
 
-        let symbol_kind = match &kind {
-            ImplementationKind::Negative(..) => {
-                SymbolKind::NegativeMarkerImplementation
-            }
-            ImplementationKind::Positive(_) => {
-                handler.receive(Box::new(
-                    FoundImplementationWithBodyOnMarker {
-                        implementation_span: signature
-                            .qualified_identifier()
-                            .span(),
-                    },
-                ));
+            syntax_tree::item::implements::Body::Positive(body) => {
+                for x in body.members.iter().filter_map(|x| x.as_option()) {
+                    handler
+                        .receive(Box::new(FoundImplementationMemberOnMarker {
+                        implementation_member_span: match x {
+                            syntax_tree::item::implements::Member::Constant(
+                                member_template,
+                            ) => member_template.signature.identifier.span(),
+                            syntax_tree::item::implements::Member::Function(
+                                member_template,
+                            ) => member_template
+                                .signature
+                                .signature
+                                .identifier
+                                .span(),
+                            syntax_tree::item::implements::Member::Type(
+                                member_template,
+                            ) => member_template.signature.identifier.span(),
+                        },
+                    }));
+                }
 
-                return;
-            }
-
-            ImplementationKind::Empty(_) => {
-                SymbolKind::PositiveMarkerImplementation
+                (SymbolKind::PositiveMarkerImplementation, body.where_clause)
             }
         };
 
@@ -467,49 +510,46 @@ impl Representation {
             marker_id,
             declared_in,
             symbol_kind,
-            signature,
+            implementation.signature,
+            where_clause,
             handler,
         );
     }
 
     fn create_trait_implementation(
         &mut self,
-        implementation: syntax_tree::item::Implementation,
+        implementation: syntax_tree::item::implements::Implements,
         declared_in: GlobalID,
         trait_id: GlobalID,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let (signature, kind) = implementation.dissolve();
-
-        let symbol_kind = match &kind {
-            ImplementationKind::Negative(..) => {
-                SymbolKind::NegativeTraitImplementation
-            }
-            ImplementationKind::Positive(_) => {
-                SymbolKind::PositiveTraitImplementation
-            }
-
-            ImplementationKind::Empty(_) => {
-                handler.receive(Box::new(FoundEmptyImplementationOnTrait {
-                    empty_implementation_signature_span: signature.span(),
-                }));
-                return;
-            }
+        let (symbol_kind, body, where_clause) = match implementation.body {
+            syntax_tree::item::implements::Body::Negative(body) => (
+                SymbolKind::NegativeTraitImplementation,
+                None,
+                body.trailing_where_clause.map(|x| x.where_clause),
+            ),
+            syntax_tree::item::implements::Body::Positive(body) => (
+                SymbolKind::PositiveTraitImplementation,
+                Some(body.members),
+                body.where_clause,
+            ),
         };
 
         let implementation_id = self.insert_implementation(
             trait_id,
             declared_in,
             symbol_kind,
-            signature,
+            implementation.signature,
+            where_clause,
             handler,
         );
 
-        if let ImplementationKind::Positive(body) = kind {
+        if let Some(body) = body {
             self.insert_positive_trait_implementation_members(
                 implementation_id,
                 trait_id,
-                body.dissolve().1,
+                body,
                 handler,
             );
         }
@@ -520,65 +560,72 @@ impl Representation {
         &mut self,
         implementation_id: GlobalID,
         trait_id: GlobalID,
-        members: Vec<syntax_tree::item::ImplementationMember>,
+        members: Vec<Passable<syntax_tree::item::implements::Member>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        for member in members {
-            let trait_implementation_member_id = match member {
-                ImplementationMember::Type(syn) => {
-                    let (_, signature, definition, _) = syn.dissolve();
-                    let (_, ident, generic_parameters) = signature.dissolve();
-                    let (_, ty, where_clause) = definition.dissolve();
+        for member in members.into_iter().filter_map(Passable::into_option) {
+            let access_modifier = match &member {
+                syntax_tree::item::implements::Member::Constant(
+                    member_template,
+                ) => member_template.access_modifier.as_ref(),
+                syntax_tree::item::implements::Member::Function(
+                    member_template,
+                ) => member_template.access_modifier.as_ref(),
+                syntax_tree::item::implements::Member::Type(
+                    member_template,
+                ) => member_template.access_modifier.as_ref(),
+            };
 
+            if let Some(access_modifier) = access_modifier {
+                handler.receive(Box::new(
+                    AccessModifierIsNotAllowedInTraitImplementation {
+                        access_modifier_span: access_modifier.span(),
+                    },
+                ));
+            }
+
+            let trait_implementation_member_id = match member {
+                syntax_tree::item::implements::Member::Type(syn) => {
                     let ty_id = self.insert_member(
                         implementation_id,
-                        &ident,
+                        &syn.signature.identifier,
                         SymbolKind::TraitImplementationType,
                         None,
-                        generic_parameters,
-                        where_clause,
+                        syn.signature.generic_parameters,
+                        syn.body.trailing_where_clause.map(|x| x.where_clause),
                         handler,
                     );
 
                     assert!(self.storage.add_component(
                         ty_id,
-                        syntax_tree_component::TypeAlias(ty)
+                        syntax_tree_component::TypeAlias(syn.body.r#type)
                     ));
 
                     ty_id
                 }
-                ImplementationMember::Function(syn) => {
-                    let (_, _, signature, body) = syn.dissolve();
-                    let (
-                        _,
-                        ident,
-                        generic_parameters,
-                        parameters,
-                        return_type,
-                        where_clause,
-                    ) = signature.dissolve();
 
+                syntax_tree::item::implements::Member::Function(syn) => {
                     let function_id = self.insert_member(
                         implementation_id,
-                        &ident,
+                        &syn.signature.signature.identifier,
                         SymbolKind::TraitImplementationFunction,
                         None,
-                        generic_parameters,
-                        where_clause,
+                        syn.signature.signature.generic_parameters,
+                        syn.body.where_clause,
                         handler,
                     );
 
                     // add the parameters
                     Self::validate_parameters_syntax(
-                        &parameters,
+                        &syn.signature.signature.parameters,
                         false,
                         handler,
                     );
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionSignature {
-                            parameters,
-                            return_type
+                            parameters: syn.signature.signature.parameters,
+                            return_type: syn.signature.signature.return_type
                         }
                     ));
 
@@ -586,33 +633,30 @@ impl Representation {
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionBody {
-                            statements: body
+                            statements: syn.body.members
                         }
                     ));
 
                     function_id
                 }
-                ImplementationMember::Constant(syn) => {
-                    let (_, signature, definition) = syn.dissolve();
-                    let (_, ident, generic_parameters, _, ty) =
-                        signature.dissolve();
-                    let (_, expression, where_caluse, _) =
-                        definition.dissolve();
 
+                syntax_tree::item::implements::Member::Constant(syn) => {
                     let constant_id = self.insert_member(
                         implementation_id,
-                        &ident,
+                        &syn.signature.identifier,
                         SymbolKind::TraitImplementationConstant,
                         None,
-                        generic_parameters,
-                        where_caluse,
+                        syn.signature.generic_parameters,
+                        syn.body.trailing_where_clause.map(|x| x.where_clause),
                         handler,
                     );
 
-                    assert!(self.storage.add_component(constant_id, ty));
                     assert!(self
                         .storage
-                        .add_component(constant_id, expression));
+                        .add_component(constant_id, syn.signature.r#type));
+                    assert!(self
+                        .storage
+                        .add_component(constant_id, syn.body.expression));
 
                     constant_id
                 }
@@ -717,13 +761,13 @@ impl Representation {
     fn insert_implements(
         &mut self,
         defined_in_module_id: GlobalID,
-        implementation: pernixc_syntax::syntax_tree::item::Implementation,
+        imple: pernixc_syntax::syntax_tree::item::implements::Implements,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let mut current_id: GlobalID = match implementation
-            .signature()
-            .qualified_identifier()
-            .root()
+        let mut current_id: GlobalID = match &imple
+            .signature
+            .qualified_identifier
+            .root
         {
             QualifiedIdentifierRoot::Target(_) => {
                 GlobalID::new(defined_in_module_id.target_id, ID::ROOT_MODULE)
@@ -737,20 +781,20 @@ impl Representation {
                 let Some(id) = self
                     .get_member_of(
                         defined_in_module_id,
-                        generic_identifier.identifier().span.str(),
+                        generic_identifier.identifier.span.str(),
                     )
                     .or_else(|| {
                         self.storage
                             .get::<Import>(defined_in_module_id)
                             .unwrap()
-                            .get(generic_identifier.identifier().span.str())
+                            .get(generic_identifier.identifier.span.str())
                             .map(|x| x.id)
                     })
                 else {
                     handler.receive(Box::new(SymbolNotFound {
                         searched_item_id: Some(defined_in_module_id),
                         resolution_span: generic_identifier
-                            .identifier()
+                            .identifier
                             .span
                             .clone(),
                     }));
@@ -761,28 +805,27 @@ impl Representation {
             }
         };
 
-        if !implementation.signature().qualified_identifier().rest().is_empty()
-        {
+        if !imple.signature.qualified_identifier.rest.is_empty() {
             if *self.storage.get::<SymbolKind>(current_id).unwrap()
                 != SymbolKind::Module
             {
                 handler.receive(Box::new(ExpectModule {
-                    module_path: implementation
-                        .signature()
-                        .qualified_identifier()
-                        .root()
+                    module_path: imple
+                        .signature
+                        .qualified_identifier
+                        .root
                         .span(),
                     found_id: current_id,
                 }));
                 return;
             }
 
-            if let Some(gen_args) = implementation
-                .signature()
-                .qualified_identifier()
-                .root()
+            if let Some(gen_args) = imple
+                .signature
+                .qualified_identifier
+                .root
                 .as_generic_identifier()
-                .and_then(|x| x.generic_arguments().as_ref())
+                .and_then(|x| x.generic_arguments.as_ref())
             {
                 handler.receive(Box::new(NoGenericArgumentsRequired {
                     global_id: current_id,
@@ -791,23 +834,16 @@ impl Representation {
             }
         }
 
-        for (index, (_, generic_identifier)) in implementation
-            .signature()
-            .qualified_identifier()
-            .rest()
-            .iter()
-            .enumerate()
+        for (index, (_, generic_identifier)) in
+            imple.signature.qualified_identifier.rest.iter().enumerate()
         {
             let Some(next_id) = self.get_member_of(
                 current_id,
-                generic_identifier.identifier().span.str(),
+                generic_identifier.identifier.span.str(),
             ) else {
                 handler.receive(Box::new(SymbolNotFound {
                     searched_item_id: Some(current_id),
-                    resolution_span: generic_identifier
-                        .identifier()
-                        .span
-                        .clone(),
+                    resolution_span: generic_identifier.identifier.span.clone(),
                 }));
                 return;
             };
@@ -817,35 +853,25 @@ impl Representation {
                 handler.receive(Box::new(SymbolIsNotAccessible {
                     referring_site: defined_in_module_id,
                     referred: next_id,
-                    referred_span: generic_identifier.identifier().span.clone(),
+                    referred_span: generic_identifier.identifier.span.clone(),
                 }));
             }
 
-            if index
-                == implementation
-                    .signature()
-                    .qualified_identifier()
-                    .rest()
-                    .len()
-                    - 1
-            {
+            if index == imple.signature.qualified_identifier.rest.len() - 1 {
                 current_id = next_id;
             } else {
                 if *self.storage.get::<SymbolKind>(next_id).unwrap()
                     != SymbolKind::Module
                 {
                     handler.receive(Box::new(ExpectModule {
-                        module_path: generic_identifier
-                            .identifier()
-                            .span
-                            .clone(),
+                        module_path: generic_identifier.identifier.span.clone(),
                         found_id: next_id,
                     }));
                     return;
                 }
 
                 if let Some(gen_args) =
-                    generic_identifier.generic_arguments().as_ref()
+                    generic_identifier.generic_arguments.as_ref()
                 {
                     handler.receive(Box::new(NoGenericArgumentsRequired {
                         global_id: next_id,
@@ -860,7 +886,7 @@ impl Representation {
         match current_kind {
             SymbolKind::Trait => {
                 self.create_trait_implementation(
-                    implementation,
+                    imple,
                     defined_in_module_id,
                     current_id,
                     handler,
@@ -869,7 +895,7 @@ impl Representation {
 
             SymbolKind::Marker => {
                 self.create_marker_implementation(
-                    implementation,
+                    imple,
                     defined_in_module_id,
                     current_id,
                     handler,
@@ -878,7 +904,7 @@ impl Representation {
 
             SymbolKind::Enum | SymbolKind::Struct => {
                 self.create_adt_implementation(
-                    implementation,
+                    imple,
                     defined_in_module_id,
                     current_id,
                     handler,
@@ -888,9 +914,9 @@ impl Representation {
             _ => {
                 handler.receive(Box::new(InvalidSymbolInImplementation {
                     invalid_item_id: current_id,
-                    qualified_identifier_span: implementation
-                        .signature()
-                        .qualified_identifier()
+                    qualified_identifier_span: imple
+                        .signature
+                        .qualified_identifier
                         .span(),
                 }));
             }
@@ -898,10 +924,10 @@ impl Representation {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn insert_usings(
+    fn insert_imports(
         &self,
         defined_in_module_id: GlobalID,
-        using: &pernixc_syntax::syntax_tree::item::Using,
+        import: &pernixc_syntax::syntax_tree::item::module::Import,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
         assert_eq!(
@@ -909,198 +935,193 @@ impl Representation {
             SymbolKind::Module
         );
 
-        match using.kind() {
-            UsingKind::From(from) => {
-                let Some(from_id) = self.resolve_simple_path(
-                    from.from().simple_path(),
-                    defined_in_module_id,
-                    true,
-                    handler,
-                ) else {
-                    return;
-                };
+        let start_from = if let Some(from) = &import.from {
+            let Some(from_id) = self.resolve_simple_path(
+                &from.simple_path,
+                defined_in_module_id,
+                true,
+                handler,
+            ) else {
+                return;
+            };
 
-                // must be module
-                if *self.storage.get::<SymbolKind>(from_id).unwrap()
-                    != SymbolKind::Module
-                {
-                    handler.receive(Box::new(ExpectModule {
-                        module_path: from.from().simple_path().span(),
-                        found_id: from_id,
-                    }));
+            // must be module
+            if *self.storage.get::<SymbolKind>(from_id).unwrap()
+                != SymbolKind::Module
+            {
+                handler.receive(Box::new(ExpectModule {
+                    module_path: from.simple_path.span(),
+                    found_id: from_id,
+                }));
 
-                    return;
-                }
+                return;
+            }
 
-                for import in from
-                    .imports()
-                    .connected_list()
-                    .as_ref()
-                    .into_iter()
-                    .flat_map(ConnectedList::elements)
-                {
-                    let Some(imported_id) = self
+            Some(from_id)
+        } else {
+            None
+        };
+
+        'item: for import_item in
+            import.items.iter().flat_map(ConnectedList::elements)
+        {
+            // if start from , then all the import items can't have `target` as
+            // it root path
+            if import_item.simple_path.root.is_target() && import.from.is_some()
+            {
+                handler.receive(Box::new(
+                    TargetRootInImportIsNotAllowedwithFrom {
+                        target_root_span: import_item.simple_path.root.span(),
+                    },
+                ));
+                continue;
+            }
+
+            let mut start = match start_from {
+                Some(current) => {
+                    let Some(id) = self
                         .storage
-                        .get::<Member>(from_id)
+                        .get::<Member>(current)
                         .unwrap()
-                        .get(import.identifier().span.str())
+                        .get(
+                            import_item
+                                .simple_path
+                                .root
+                                .as_identifier()
+                                .unwrap()
+                                .span
+                                .str(),
+                        )
                         .copied()
                     else {
                         handler.receive(Box::new(SymbolNotFound {
-                            searched_item_id: Some(from_id),
-                            resolution_span: import.identifier().span.clone(),
+                            searched_item_id: Some(current),
+                            resolution_span: import_item
+                                .simple_path
+                                .root
+                                .span(),
                         }));
                         continue;
                     };
-                    let imported_global_id =
-                        GlobalID::new(from_id.target_id, imported_id);
 
-                    // check if the symbol is accessible
-                    if !self.symbol_accessible(
-                        defined_in_module_id,
-                        imported_global_id,
-                    ) {
+                    let result = GlobalID::new(current.target_id, id);
+                    if !self.symbol_accessible(defined_in_module_id, result) {
                         handler.receive(Box::new(SymbolIsNotAccessible {
                             referring_site: defined_in_module_id,
-                            referred: imported_global_id,
-                            referred_span: import.identifier().span.clone(),
+                            referred: GlobalID::new(current.target_id, id),
+                            referred_span: import_item.simple_path.root.span(),
                         }));
                     }
 
-                    let name = import.alias().as_ref().map_or_else(
-                        || {
-                            self.storage
-                                .get::<Name>(imported_global_id)
-                                .unwrap()
-                                .0
-                                .clone()
-                        },
-                        |x| x.identifier().span.str().to_owned(),
-                    );
-
-                    // check if there's existing symbol right now
-                    let existing = self
-                        .storage
-                        .get::<Member>(defined_in_module_id)
-                        .unwrap()
-                        .get(&name)
-                        .map(|x| {
-                            self.get::<LocationSpan>(GlobalID::new(
-                                defined_in_module_id.target_id,
-                                *x,
-                            ))
-                            .span
-                            .clone()
-                        })
-                        .or_else(|| {
-                            self.storage
-                                .get::<Import>(defined_in_module_id)
-                                .unwrap()
-                                .get(&name)
-                                .map(|x| Some(x.span.clone()))
-                        });
-
-                    if let Some(existing) = existing {
-                        handler.receive(Box::new(ConflictingUsing {
-                            using_span: import.alias().as_ref().map_or_else(
-                                || import.identifier().span(),
-                                SourceElement::span,
-                            ),
-                            name: name.clone(),
-                            module_id: defined_in_module_id,
-                            conflicting_span: existing,
-                        }));
-                    } else {
-                        self.storage
-                            .get_mut::<Import>(defined_in_module_id)
-                            .unwrap()
-                            .insert(name, Using {
-                                id: GlobalID::new(
-                                    from_id.target_id,
-                                    imported_id,
-                                ),
-                                span: import.alias().as_ref().map_or_else(
-                                    || import.identifier().span(),
-                                    SourceElement::span,
-                                ),
-                            });
-                    }
+                    result
                 }
-            }
+                None => match &import_item.simple_path.root {
+                    syntax_tree::SimplePathRoot::Target(_) => GlobalID::new(
+                        defined_in_module_id.target_id,
+                        ID::ROOT_MODULE,
+                    ),
+                    syntax_tree::SimplePathRoot::Identifier(identifier) => {
+                        let Some(id) = self
+                            .targets_by_name
+                            .get(identifier.span.str())
+                            .copied()
+                            .filter(|x| {
+                                self.targets_by_id
+                                    .get(&defined_in_module_id.target_id)
+                                    .is_some_and(|y| {
+                                        y.linked_targets.contains(x)
+                                    })
+                                    || x == &defined_in_module_id.target_id
+                            })
+                        else {
+                            handler.receive(Box::new(SymbolNotFound {
+                                searched_item_id: None,
+                                resolution_span: identifier.span.clone(),
+                            }));
+                            continue;
+                        };
 
-            UsingKind::One(one) => {
-                let Some(using_module_id) = self.resolve_simple_path(
-                    one.simple_path(),
-                    defined_in_module_id,
-                    true,
-                    handler,
-                ) else {
-                    return;
+                        GlobalID::new(id, ID::ROOT_MODULE)
+                    }
+                },
+            };
+
+            for rest in &import_item.simple_path.rest {
+                let Some(next) = self
+                    .storage
+                    .get::<Member>(start)
+                    .unwrap()
+                    .get(rest.1.span.str())
+                    .copied()
+                else {
+                    handler.receive(Box::new(SymbolNotFound {
+                        searched_item_id: Some(start),
+                        resolution_span: rest.1.span.clone(),
+                    }));
+                    continue 'item;
                 };
 
-                if *self.storage.get::<SymbolKind>(using_module_id).unwrap()
-                    != SymbolKind::Module
-                {
-                    handler.receive(Box::new(ExpectModule {
-                        module_path: one.simple_path().span(),
-                        found_id: using_module_id,
-                    }));
+                let next_id = GlobalID::new(start.target_id, next);
 
-                    return;
+                if !self.symbol_accessible(defined_in_module_id, next_id) {
+                    handler.receive(Box::new(SymbolIsNotAccessible {
+                        referring_site: defined_in_module_id,
+                        referred: next_id,
+                        referred_span: rest.1.span.clone(),
+                    }));
                 }
 
-                let name = one.alias().as_ref().map_or_else(
-                    || {
-                        self.storage
-                            .get::<Name>(using_module_id)
-                            .unwrap()
-                            .0
-                            .clone()
-                    },
-                    |x| x.identifier().span.str().to_owned(),
-                );
+                start = next_id;
+            }
 
-                let existing = self
-                    .storage
-                    .get::<Member>(defined_in_module_id)
+            let name = import_item.alias.as_ref().map_or_else(
+                || self.storage.get::<Name>(start).unwrap().0.clone(),
+                |x| x.identifier.span.str().to_owned(),
+            );
+
+            // check if there's existing symbol right now
+            let existing = self
+                .storage
+                .get::<Member>(defined_in_module_id)
+                .unwrap()
+                .get(&name)
+                .map(|x| {
+                    self.get::<LocationSpan>(GlobalID::new(
+                        defined_in_module_id.target_id,
+                        *x,
+                    ))
+                    .span
+                    .clone()
+                })
+                .or_else(|| {
+                    self.storage
+                        .get::<Import>(defined_in_module_id)
+                        .unwrap()
+                        .get(&name)
+                        .map(|x| Some(x.span.clone()))
+                });
+
+            if let Some(existing) = existing {
+                handler.receive(Box::new(ConflictingUsing {
+                    using_span: import_item.alias.as_ref().map_or_else(
+                        || import_item.simple_path.span(),
+                        SourceElement::span,
+                    ),
+                    name: name.clone(),
+                    module_id: defined_in_module_id,
+                    conflicting_span: existing,
+                }));
+            } else {
+                self.storage
+                    .get_mut::<Import>(defined_in_module_id)
                     .unwrap()
-                    .get(&name)
-                    .map(|x| {
-                        self.get::<LocationSpan>(GlobalID::new(
-                            defined_in_module_id.target_id,
-                            *x,
-                        ))
-                        .span
-                        .clone()
-                    })
-                    .or_else(|| {
-                        self.get::<Import>(defined_in_module_id)
-                            .get(&name)
-                            .map(|x| Some(x.span.clone()))
-                    });
-
-                if let Some(existing) = existing {
-                    handler.receive(Box::new(ConflictingUsing {
-                        using_span: one.alias().as_ref().map_or_else(
-                            || one.simple_path().span(),
+                    .insert(name, Using {
+                        id: start,
+                        span: import_item.alias.as_ref().map_or_else(
+                            || import_item.simple_path.span(),
                             SourceElement::span,
                         ),
-                        name,
-                        module_id: defined_in_module_id,
-                        conflicting_span: existing,
-                    }));
-                } else {
-                    self.storage
-                        .get_mut::<Import>(defined_in_module_id)
-                        .unwrap()
-                        .insert(name, Using {
-                            id: using_module_id,
-                            span: one.alias().as_ref().map_or_else(
-                                || one.simple_path().span(),
-                                SourceElement::span,
-                            ),
-                        });
-                }
+                    });
             }
         }
     }
@@ -1112,8 +1133,10 @@ impl Representation {
         name: &Identifier,
         symbol_kind: SymbolKind,
         accessibility: Option<Accessibility>,
-        generic_parameters_syn: Option<syntax_tree::item::GenericParameters>,
-        where_clause_syn: Option<syntax_tree::item::WhereClause>,
+        generic_parameters_syn: Option<
+            syntax_tree::item::generic_parameter::GenericParameters,
+        >,
+        where_clause_syn: Option<syntax_tree::item::where_clause::WhereClause>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
         let new_symbol_id = GlobalID::new(
@@ -1184,40 +1207,38 @@ impl Representation {
 
     fn create_enum(
         &mut self,
-        syntax_tree: syntax_tree::item::Enum,
+        syntax_tree: syntax_tree::item::r#enum::Enum,
         parent_module_id: GlobalID,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
-        let (access_modifier, signature, body) = syntax_tree.dissolve();
-        let (_, ident, generic_parameters, where_clause) = signature.dissolve();
-
         let enum_id = self.insert_member(
             parent_module_id,
-            &ident,
+            &syntax_tree.signature.identifier,
             SymbolKind::Enum,
             Some(
-                self.create_accessibility(parent_module_id, &access_modifier)
-                    .unwrap(),
+                self.create_accessibility(
+                    parent_module_id,
+                    &syntax_tree.access_modifier,
+                )
+                .unwrap(),
             ),
-            generic_parameters,
-            where_clause,
+            syntax_tree.signature.generic_parameters,
+            syntax_tree.body.where_clause,
             handler,
         );
 
         assert!(self.storage.add_component(enum_id, Implemented::default()));
 
-        for (index, variant) in body
-            .dissolve()
-            .1
+        for (index, variant) in syntax_tree
+            .body
+            .members
             .into_iter()
-            .flat_map(ConnectedList::into_elements)
+            .filter_map(Passable::into_option)
             .enumerate()
         {
-            let (ident, association) = variant.dissolve();
-
             let variant_id = self.insert_member(
                 enum_id,
-                &ident,
+                &variant.identifier,
                 SymbolKind::Variant,
                 None,
                 None,
@@ -1228,7 +1249,7 @@ impl Representation {
             assert!(self.storage.add_component(
                 variant_id,
                 syntax_tree_component::Variant {
-                    variant_association: association
+                    variant_association: variant.association
                 }
             ));
 
@@ -1245,120 +1266,117 @@ impl Representation {
     #[allow(clippy::too_many_lines)]
     fn create_trait(
         &mut self,
-        syntax_tree: syntax_tree::item::Trait,
+        syntax_tree: syntax_tree::item::r#trait::Trait,
         parent_module_id: GlobalID,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
-        let (access_modifier, signature, content) = syntax_tree.dissolve();
-        let (_, ident, generic_parameters, where_clause) = signature.dissolve();
-
         let trait_id = self.insert_member(
             parent_module_id,
-            &ident,
+            &syntax_tree.signature.identifier,
             SymbolKind::Trait,
             Some(
-                self.create_accessibility(parent_module_id, &access_modifier)
-                    .unwrap(),
+                self.create_accessibility(
+                    parent_module_id,
+                    &syntax_tree.access_modifier,
+                )
+                .unwrap(),
             ),
-            generic_parameters,
-            where_clause,
+            syntax_tree.signature.generic_parameters,
+            syntax_tree.body.where_clause,
             handler,
         );
 
         assert!(self.storage.add_component(trait_id, Implemented::default()));
 
-        for item in content.dissolve().1 {
+        for item in syntax_tree
+            .body
+            .members
+            .into_iter()
+            .filter_map(Passable::into_option)
+        {
             let member_id = match item {
-                syntax_tree::item::TraitMember::Function(trait_function) => {
-                    let (access_modifier, signature, _) =
-                        trait_function.dissolve();
-
-                    let (
-                        _,
-                        ident,
-                        generic_parameters_syn,
-                        parameters,
-                        return_type,
-                        where_clause_syn,
-                    ) = signature.dissolve();
-
+                syntax_tree::item::r#trait::Member::Function(
+                    trait_function,
+                ) => {
                     let trait_function_id = self.insert_member(
                         trait_id,
-                        &ident,
+                        &trait_function.signature.identifier,
                         SymbolKind::TraitFunction,
                         Some(
                             self.create_accessibility(
                                 trait_id,
-                                &access_modifier,
+                                &trait_function.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters_syn,
-                        where_clause_syn,
+                        trait_function.signature.generic_parameters,
+                        trait_function
+                            .trailing_where_clause
+                            .map(|x| x.where_clause),
                         handler,
                     );
 
                     // add the parameters
                     Self::validate_parameters_syntax(
-                        &parameters,
+                        &trait_function.signature.parameters,
                         false,
                         handler,
                     );
                     assert!(self.storage.add_component(
                         trait_function_id,
                         syntax_tree_component::FunctionSignature {
-                            parameters,
-                            return_type
+                            parameters: trait_function.signature.parameters,
+                            return_type: trait_function.signature.return_type
                         }
                     ));
 
                     trait_function_id
                 }
-                syntax_tree::item::TraitMember::Type(trait_type) => {
-                    let (access_modifier, signature, where_clause, _) =
-                        trait_type.dissolve();
 
-                    let (_, ident, generic_parameters) = signature.dissolve();
-
-                    self.insert_member(
+                syntax_tree::item::r#trait::Member::Type(trait_type) => self
+                    .insert_member(
                         trait_id,
-                        &ident,
+                        &trait_type.signature.identifier,
                         SymbolKind::TraitType,
                         Some(
                             self.create_accessibility(
                                 trait_id,
-                                &access_modifier,
+                                &trait_type.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters,
-                        where_clause,
+                        trait_type.signature.generic_parameters,
+                        trait_type
+                            .trailing_where_clause
+                            .map(|x| x.where_clause),
                         handler,
-                    )
-                }
-                syntax_tree::item::TraitMember::Constant(trait_constant) => {
-                    let (access_modifier, signature, where_clause, _) =
-                        trait_constant.dissolve();
-                    let (_, ident, generic_parameters, _, ty) =
-                        signature.dissolve();
+                    ),
 
+                syntax_tree::item::r#trait::Member::Constant(
+                    trait_constant,
+                ) => {
                     let trait_constant_id = self.insert_member(
                         trait_id,
-                        &ident,
+                        &trait_constant.signature.identifier,
                         SymbolKind::TraitConstant,
                         Some(
                             self.create_accessibility(
                                 trait_id,
-                                &access_modifier,
+                                &trait_constant.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters,
-                        where_clause,
+                        trait_constant.signature.generic_parameters,
+                        trait_constant
+                            .trailing_where_clause
+                            .map(|x| x.where_clause),
                         handler,
                     );
 
-                    assert!(self.storage.add_component(trait_constant_id, ty));
+                    assert!(self.storage.add_component(
+                        trait_constant_id,
+                        trait_constant.signature.r#type
+                    ));
 
                     trait_constant_id
                 }
@@ -1387,17 +1405,15 @@ impl Representation {
     }
 
     fn validate_parameters_syntax(
-        parameters: &syntax_tree::item::Parameters,
+        parameters: &syntax_tree::item::function::Parameters,
         can_have_var_ars: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
-        let count = parameters
-            .connected_list()
-            .as_ref()
-            .map_or(0, |x| x.rest().len() + 1);
+        let count =
+            parameters.connected_list.as_ref().map_or(0, |x| x.rest.len() + 1);
 
         for (index, param) in parameters
-            .connected_list()
+            .connected_list
             .iter()
             .flat_map(ConnectedList::elements)
             .enumerate()
@@ -1429,13 +1445,13 @@ impl Representation {
         name: String,
         syntax_tree: syntax_tree::target::ModuleTree,
         parent_module_id: Option<GlobalID>,
-        usings_by_module_id: &mut HashMap<
+        imports_by_module_id: &mut HashMap<
             GlobalID,
-            Vec<syntax_tree::item::Using>,
+            Vec<syntax_tree::item::module::Import>,
         >,
-        implementations_by_module_id: &mut HashMap<
+        implements_by_module_id: &mut HashMap<
             GlobalID,
-            Vec<syntax_tree::item::Implementation>,
+            Vec<syntax_tree::item::implements::Implements>,
         >,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> GlobalID {
@@ -1458,7 +1474,7 @@ impl Representation {
         if let Some(parent_module_id) = parent_module_id {
             assert!(self.storage.add_component(
                 module_id,
-                syntax_tree.signature().as_ref().map_or(
+                syntax_tree.signature.as_ref().map_or(
                     Accessibility::Public,
                     |x| {
                         self.create_accessibility(
@@ -1486,63 +1502,57 @@ impl Representation {
         assert!(self.storage.add_component(module_id, Member::default()));
         assert!(self.storage.add_component(module_id, Name(name)));
 
-        let (signature, content, submodule_by_name) = syntax_tree.dissolve();
-        assert!(self.storage.add_component(module_id, LocationSpan {
-            span: signature.map(|x| x.signature.identifier().span.clone()),
-        }));
-        let (usings, items) = content.dissolve();
+        let ModuleTree { signature, module_content, submodules_by_name } =
+            syntax_tree;
 
-        usings_by_module_id.entry(module_id).or_default().extend(usings);
+        assert!(self.storage.add_component(module_id, LocationSpan {
+            span: signature.map(|x| x.signature.identifier.span),
+        }));
 
         // recursively create the submodules, redifinitions are handled by the
         // target parsing logic already
-        for (name, submodule) in submodule_by_name {
+        for (name, submodule) in submodules_by_name {
             self.create_module(
                 target_id,
                 name.clone(),
                 submodule,
                 Some(module_id),
-                usings_by_module_id,
-                implementations_by_module_id,
+                imports_by_module_id,
+                implements_by_module_id,
                 handler,
             );
         }
 
-        for item in items {
-            match item {
-                syntax_tree::item::Item::Trait(syn) => {
+        for member in module_content.members {
+            let Passable::SyntaxTree(member) = member else {
+                continue;
+            };
+
+            match member {
+                syntax_tree::item::module::Member::Trait(syn) => {
                     self.create_trait(syn, module_id, handler);
                 }
-                syntax_tree::item::Item::Function(syn) => {
-                    let (access_modifier, _, signature, body) = syn.dissolve();
-                    let (
-                        _,
-                        ident,
-                        generic_parameters,
-                        parameters,
-                        return_type,
-                        where_clause,
-                    ) = signature.dissolve();
 
+                syntax_tree::item::module::Member::Function(syn) => {
                     let function_id = self.insert_member(
                         module_id,
-                        &ident,
+                        &syn.signature.identifier,
                         SymbolKind::Function,
                         Some(
                             self.create_accessibility(
                                 module_id,
-                                &access_modifier,
+                                &syn.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters,
-                        where_clause,
+                        syn.signature.generic_parameters,
+                        syn.body.where_clause,
                         handler,
                     );
 
                     // add the signature
                     Self::validate_parameters_syntax(
-                        &parameters,
+                        &syn.signature.parameters,
                         false,
                         handler,
                     );
@@ -1550,8 +1560,8 @@ impl Representation {
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionSignature {
-                            parameters,
-                            return_type
+                            parameters: syn.signature.parameters,
+                            return_type: syn.signature.return_type,
                         }
                     ));
 
@@ -1559,55 +1569,48 @@ impl Representation {
                     assert!(self.storage.add_component(
                         function_id,
                         syntax_tree_component::FunctionBody {
-                            statements: body,
+                            statements: syn.body.members,
                         }
                     ));
                 }
-                syntax_tree::item::Item::Type(syn) => {
-                    let (access_modifier, signature, definition, _) =
-                        syn.dissolve();
-                    let (_, ident, generic_parameters) = signature.dissolve();
-                    let (_, ty, where_clause) = definition.dissolve();
 
+                syntax_tree::item::module::Member::Type(syn) => {
                     let ty_id = self.insert_member(
                         module_id,
-                        &ident,
+                        &syn.signature.identifier,
                         SymbolKind::Type,
                         Some(
                             self.create_accessibility(
                                 module_id,
-                                &access_modifier,
+                                &syn.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters,
-                        where_clause,
+                        syn.signature.generic_parameters,
+                        syn.body.trailing_where_clause.map(|x| x.where_clause),
                         handler,
                     );
 
                     assert!(self.storage.add_component(
                         ty_id,
-                        syntax_tree_component::TypeAlias(ty)
+                        syntax_tree_component::TypeAlias(syn.body.r#type)
                     ));
                 }
-                syntax_tree::item::Item::Struct(syn) => {
-                    let (access_modifier, signature, body) = syn.dissolve();
-                    let (_, ident, generic_parameters, where_clause) =
-                        signature.dissolve();
 
+                syntax_tree::item::module::Member::Struct(syn) => {
                     let struct_id = self.insert_member(
                         module_id,
-                        &ident,
+                        &syn.signature.identifier,
                         SymbolKind::Struct,
                         Some(
                             self.create_accessibility(
                                 module_id,
-                                &access_modifier,
+                                &syn.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters,
-                        where_clause,
+                        syn.signature.generic_parameters,
+                        syn.body.where_clause,
                         handler,
                     );
 
@@ -1616,68 +1619,71 @@ impl Representation {
                         .add_component(struct_id, Implemented::default()));
                     assert!(self.storage.add_component(
                         struct_id,
-                        syntax_tree_component::Fields { fields: body }
+                        syntax_tree_component::Fields {
+                            fields: syn.body.members
+                        }
                     ));
                 }
-                syntax_tree::item::Item::Implementation(implementation) => {
-                    implementations_by_module_id
+
+                syntax_tree::item::module::Member::Implements(
+                    implementation,
+                ) => {
+                    implements_by_module_id
                         .entry(module_id)
                         .or_default()
                         .push(implementation);
                 }
-                syntax_tree::item::Item::Enum(syn) => {
+
+                syntax_tree::item::module::Member::Enum(syn) => {
                     self.create_enum(syn, module_id, handler);
                 }
-                syntax_tree::item::Item::Module(_) => {
+
+                syntax_tree::item::module::Member::Module(_) => {
                     unreachable!("should've been extracted out")
                 }
-                syntax_tree::item::Item::Constant(constant) => {
-                    let (access_modifier, signature, definition) =
-                        constant.dissolve();
-                    let (_, ident, generic_parameters, _, ty) =
-                        signature.dissolve();
-                    let (_, expression, where_caluse, _) =
-                        definition.dissolve();
 
+                syntax_tree::item::module::Member::Constant(constant) => {
                     let constant_id = self.insert_member(
                         module_id,
-                        &ident,
+                        &constant.signature.identifier,
                         SymbolKind::Constant,
                         Some(
                             self.create_accessibility(
                                 module_id,
-                                &access_modifier,
+                                &constant.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters,
-                        where_caluse,
+                        constant.signature.generic_parameters,
+                        constant
+                            .body
+                            .trailing_where_clause
+                            .map(|x| x.where_clause),
                         handler,
                     );
 
-                    assert!(self.storage.add_component(constant_id, ty));
                     assert!(self
                         .storage
-                        .add_component(constant_id, expression));
+                        .add_component(constant_id, constant.signature.r#type));
+                    assert!(self
+                        .storage
+                        .add_component(constant_id, constant.body.expression));
                 }
-                syntax_tree::item::Item::Marker(marker) => {
-                    let (access_modifier, signature, _) = marker.dissolve();
-                    let (_, ident, generic_parameters, where_clause) =
-                        signature.dissolve();
 
+                syntax_tree::item::module::Member::Marker(marker) => {
                     let marker_id = self.insert_member(
                         module_id,
-                        &ident,
+                        &marker.signature.identifier,
                         SymbolKind::Marker,
                         Some(
                             self.create_accessibility(
                                 module_id,
-                                &access_modifier,
+                                &marker.access_modifier,
                             )
                             .unwrap(),
                         ),
-                        generic_parameters,
-                        where_clause,
+                        marker.signature.generic_parameters,
+                        marker.trailing_where_clause.map(|x| x.where_clause),
                         handler,
                     );
 
@@ -1685,64 +1691,59 @@ impl Representation {
                         .storage
                         .add_component(marker_id, Implemented::default()));
                 }
-                syntax_tree::item::Item::Extern(syn) => {
-                    let (_, calling_convention, functions) = syn.dissolve();
 
+                syntax_tree::item::module::Member::Extern(syn) => {
                     // get the calling convention of this extern
-                    if calling_convention.value.as_deref() != Some("C") {
+                    if syn.convention.value.as_deref() != Some("C") {
                         handler.receive(Box::new(
                             UnknownExternCallingConvention {
-                                span: calling_convention.span.clone(),
+                                span: syn.convention.span.clone(),
                             },
                         ));
                     }
 
-                    for function in functions.dissolve().1 {
-                        let (access_modifier, signature, _) =
-                            function.dissolve();
-
-                        let (
-                            _,
-                            ident,
-                            generic_parameters,
-                            parameters,
-                            return_type,
-                            where_clause,
-                        ) = signature.dissolve();
-
-                        let calling_convention = match calling_convention
-                            .value
-                            .as_deref()
-                        {
-                            Some("C") => Extern::C(ExternC {
-                                var_args: parameters
-                                    .connected_list()
-                                    .iter()
-                                    .flat_map(ConnectedList::elements)
-                                    .last()
-                                    .is_some_and(ParameterKind::is_var_args),
-                            }),
-                            _ => Extern::Unknown,
-                        };
+                    for function in syn
+                        .functions
+                        .into_iter()
+                        .filter_map(Passable::into_option)
+                    {
+                        let calling_convention =
+                            match syn.convention.value.as_deref() {
+                                Some("C") => Extern::C(ExternC {
+                                    var_args: function
+                                        .signature
+                                        .parameters
+                                        .connected_list
+                                        .iter()
+                                        .flat_map(ConnectedList::elements)
+                                        .last()
+                                        .is_some_and(
+                                            ParameterKind::is_var_args,
+                                        ),
+                                }),
+                                _ => Extern::Unknown,
+                            };
 
                         let function_id = self.insert_member(
                             module_id,
-                            &ident,
+                            &function.signature.identifier,
                             SymbolKind::ExternFunction,
                             Some(
                                 self.create_accessibility(
                                     module_id,
-                                    &access_modifier,
+                                    &function.access_modifier,
                                 )
                                 .unwrap(),
                             ),
-                            generic_parameters,
-                            where_clause,
+                            function.signature.generic_parameters,
+                            function
+                                .trailing_where_clause
+                                .map(|x| x.where_clause),
                             handler,
                         );
 
                         Self::validate_parameters_syntax(
-                            &parameters,
+                            &function.signature.parameters,
                             matches!(calling_convention, Extern::C(..)),
                             handler,
                         );
@@ -1751,8 +1752,8 @@ impl Representation {
                         assert!(self.storage.add_component(
                             function_id,
                             syntax_tree_component::FunctionSignature {
-                                parameters,
-                                return_type
+                                parameters: function.signature.parameters,
+                                return_type: function.signature.return_type,
                             }
                         ));
 
@@ -1761,6 +1762,13 @@ impl Representation {
                             .storage
                             .add_component(function_id, calling_convention));
                     }
+                }
+
+                syntax_tree::item::module::Member::Import(using) => {
+                    imports_by_module_id
+                        .entry(module_id)
+                        .or_default()
+                        .push(using);
                 }
             }
         }

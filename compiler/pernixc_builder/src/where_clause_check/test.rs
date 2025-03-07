@@ -17,21 +17,21 @@ use crate::{
 };
 
 const CHECK_AMBIGUOUS_WITHOUT_EQUALITY: &str = r"
-public trait Test['a, T] {}
+public trait Test['a, T]:
+    pass
 
-public type Fizz['a, 'b, T, U] = int32
-where
-    trait const Test['a, &'b T] 
-        + Test['a, &'static T] 
-        + Test['static, &'static T],
+public type Fizz['a, 'b, T, U] = int32:
+    where:
+        trait const Test['a, &'b T] + Test['a, &'static T] 
+        trait Test['static, &'static T]
 
-    const &'a T + &'static T
-        + &'a U + &'static U,
+        &'a T: const
+        &'static T: const
+        &'a U: const
+        &'static U: const
 
-    tuple T + U,
-
-    T: 'static,
-    U: 'static;
+        T: tuple + 'static
+        U: tuple + 'static
 ";
 
 #[test]
@@ -140,15 +140,15 @@ fn check_ambiguous_without_equality() {
 }
 
 const CHECK_NON_AMBIGUOUS_EQUALITY: &str = r"
-public trait Test[T] {
-    public type Output;
-}
+public trait Test[T]:
+    public type Output
 
-public type Fizz[T, U] = int32
-where
-    trait Test[T] + Test[U],
-    Test[T]::Output = bool,
-    Test[U]::Output = bool; 
+
+public type Fizz[T, U] = int32:
+    where:
+        trait Test[T] + Test[U]
+        Test[T]::Output = bool
+        Test[U]::Output = bool 
 ";
 
 #[test]
@@ -159,25 +159,25 @@ fn check_non_ambiguous_equality() {
 }
 
 const CHECK_AMBIGUOUS_EQUALITY: &str = r"
-public trait A['a, T] {
-    public type Output;
-}
+public trait A['a, T]:
+    public type Output
 
-public trait B[T] {
-    public type Output;
-}
 
-public type Fizz['a, T, U] = int32
-where
-    'a: 'static,
+public trait B[T]:
+    public type Output
 
-    A['a, T]::Output = T,
 
-    // these two predicates are the same
-    B[A['static, T]::Output]::Output = U,
-    B[T]::Output = U,
+public type Fizz['a, T, U] = int32:
+    where:
+        'a: 'static
 
-    trait A['a, T] + B[T];
+        A['a, T]::Output = T
+
+        // these two predicates are the same
+        B[A['static, T]::Output]::Output = U
+        B[T]::Output = U
+
+        trait A['a, T] + B[T]
 ";
 
 #[test]
@@ -252,22 +252,22 @@ fn check_ambiguous_equality() {
 }
 
 const CHECK_RECURSIVE_EQUALITY: &str = r"
-public trait A['a, T] {
-    public type Output;
-}
+public trait A['a, T]:
+    public type Output
 
-public trait B[T, U] {
-    public type Output;
-}
 
-public type Fizz['a, T] = int32
-where
-    'a: 'static,
+public trait B[T, U]:
+    public type Output
 
-    A['a, T]::Output = bool,
-    B[bool, T]::Output = B[A['static, T]::Output, T]::Output,
 
-    trait A['a, T] + B[bool, T];
+public type Fizz['a, T] = int32:
+    where:
+        'a: 'static
+
+        A['a, T]::Output = bool
+        B[bool, T]::Output = B[A['static, T]::Output, T]::Output
+
+        trait A['a, T] + B[bool, T]
 ";
 
 #[test]

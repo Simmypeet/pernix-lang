@@ -268,23 +268,20 @@ pub(super) fn resolve_root<M: Model>(
 
             let id = table
                 .get::<Member>(current_module_id)
-                .get(generic_identifier.identifier().span.str())
+                .get(generic_identifier.identifier.span.str())
                 .copied()
                 .map(|x| GlobalID::new(current_module_id.target_id, x))
                 .or_else(|| {
                     table
                         .get::<Import>(current_module_id)
-                        .get(generic_identifier.identifier().span.str())
+                        .get(generic_identifier.identifier.span.str())
                         .map(|x| x.id)
                 });
 
             let Some(id) = id else {
                 handler.receive(Box::new(SymbolNotFound {
                     searched_item_id: Some(current_module_id),
-                    resolution_span: generic_identifier
-                        .identifier()
-                        .span
-                        .clone(),
+                    resolution_span: generic_identifier.identifier.span.clone(),
                 }));
 
                 return Err(Abort);
@@ -302,7 +299,7 @@ pub(super) fn resolve_root<M: Model>(
                 )?)
             } else {
                 if let Some(gen_args) =
-                    generic_identifier.generic_arguments().as_ref()
+                    generic_identifier.generic_arguments.as_ref()
                 {
                     handler.receive(Box::new(NoGenericArgumentsRequired {
                         global_id: id,
@@ -347,20 +344,20 @@ pub(super) fn resolve<M: Model>(
 ) -> Result<Resolution<M>, Abort> {
     // create the current root
     let mut latest_resolution = table.resolve_qualified_identifier_root(
-        qualified_identifier.root(),
+        &qualified_identifier.root,
         referring_site,
         config.reborrow(),
         handler,
     )?;
 
-    for (_, generic_identifier) in qualified_identifier.rest() {
+    for (_, generic_identifier) in &qualified_identifier.rest {
         let Some(resolved_id) = table.get_member_of(
             latest_resolution.global_id(),
-            generic_identifier.identifier().span.str(),
+            generic_identifier.identifier.span.str(),
         ) else {
             handler.receive(Box::new(SymbolNotFound {
                 searched_item_id: Some(latest_resolution.global_id()),
-                resolution_span: generic_identifier.identifier().span.clone(),
+                resolution_span: generic_identifier.identifier.span.clone(),
             }));
 
             return Err(Abort);
@@ -378,7 +375,7 @@ pub(super) fn resolve<M: Model>(
             )?)
         } else {
             if let Some(gen_args) =
-                generic_identifier.generic_arguments().as_ref()
+                generic_identifier.generic_arguments.as_ref()
             {
                 handler.receive(Box::new(NoGenericArgumentsRequired {
                     global_id: resolved_id,

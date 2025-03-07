@@ -5,13 +5,13 @@
 use crate::compile_file;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
 
-public function main() {
-    printf(&"Hello, World!\n\0"->[0]);
-}
+
+public function main():
+    printf(&"Hello, World!\n\0"->[0])
+
 "#;
 
 #[test]

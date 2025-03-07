@@ -72,7 +72,6 @@ struct LoopState {
     loop_block_id: ID<Block<infer::Model>>,
     kind: LoopKind,
     exit_block_id: ID<Block<infer::Model>>,
-    span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -638,6 +637,13 @@ impl Binder<'_> {
         Ok(resolution)
     }
 
+    fn push_scope_with(&mut self, scope_id: ID<scope::Scope>) {
+        self.stack.push_scope(scope_id);
+        let _ = self
+            .current_block_mut()
+            .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+    }
+
     /// Creates a new scope at the current instruction pointer and pushes it to
     /// the stack.
     fn push_scope(&mut self) -> ID<scope::Scope> {
@@ -650,10 +656,7 @@ impl Binder<'_> {
             )
             .unwrap()[0];
 
-        self.stack.push_scope(scope_id);
-        let _ = self
-            .current_block_mut()
-            .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+        self.push_scope_with(scope_id);
 
         scope_id
     }

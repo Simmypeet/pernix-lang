@@ -19,9 +19,9 @@ fn numeric_literal_suffix() {
     let mut binder = template.create_binder();
 
     let numeric_literal = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Numeric>(
-            SOURCE,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::unit::Numeric>(SOURCE),
+        )
         .into_literal()
         .unwrap()
         .into_numeric()
@@ -40,9 +40,9 @@ fn numberic_literal_float_infer() {
     let mut binder = template.create_binder();
 
     let numeric_literal = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Numeric>(
-            SOURCE,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::unit::Numeric>(SOURCE),
+        )
         .into_literal()
         .unwrap()
         .into_numeric()
@@ -77,9 +77,9 @@ fn numeric_literal_number_infer() {
     let mut binder = template.create_binder();
 
     let numeric_literal = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Numeric>(
-            SOURCE,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::unit::Numeric>(SOURCE),
+        )
         .into_literal()
         .unwrap()
         .into_numeric()
@@ -112,7 +112,7 @@ fn invalid_numeric_literal_suffix() {
     let mut binder = template.create_binder();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Numeric,
+        syntax_tree::expression::unit::Numeric,
     >(SOURCE));
 
     assert_eq!(errors.len(), 1);
@@ -130,7 +130,7 @@ fn floating_point_literal_has_integral_suffix() {
     let mut binder = template.create_binder();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Numeric,
+        syntax_tree::expression::unit::Numeric,
     >(SOURCE));
 
     assert_eq!(errors.len(), 1);

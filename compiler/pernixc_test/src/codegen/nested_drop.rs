@@ -4,85 +4,84 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-using {Drop, Copy} from core;
+from core import Drop, Copy
 
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public struct LoudDrop {
-    private value: int32,
-}
 
-final implements Drop[LoudDrop] {
-    public function drop(self: &mutable LoudDrop) {
-        printf(&"Dropping %d\n\0"->[0], self->value);
-    }
-}
+public struct LoudDrop:
+    private value: int32
 
-final implements Copy[LoudDrop] delete;
 
-public struct Pair[T, U] {
-    private first: T,
-    private second: U,
-}
+final implements Drop[LoudDrop]:
+    function drop(self: &mut LoudDrop):
+        printf(&"Dropping %d\n\0"->[0], self->value)
 
-implements[T, U] Drop[Pair[T, U]] {
-    public function drop(self: &mutable Pair[T, U]) {
-        printf(&"Dropping Pair\n\0"->[0]);
-    }
-}
 
-final implements[T, U] Copy[Pair[T, U]] delete;
+final implements Copy[LoudDrop] delete
 
-public enum LoudEnum {
-    GtZero(LoudDrop),
-    LtZero(LoudDrop),
-    Zero,
-}
 
-implements Drop[LoudEnum] {
-    public function drop(self: &mutable LoudEnum) {
-        match (self) {
-            case GtZero(..): { printf(&"Dropping GtZero\n\0"->[0]); },
-            case LtZero(..): { printf(&"Dropping LtZero\n\0"->[0]); },
-            case Zero: { printf(&"Dropping Zero\n\0"->[0]); },
-        }
-    }
-}
+public struct Pair[T, U]:
+    private first: T
+    private second: U
 
-final implements Copy[LoudEnum] delete;
 
-public function createLoudEnum(): LoudEnum {
-    let mutable value = 0;
-    scanf(&"%d\0"->[0], &mutable value);
+implements[T, U] Drop[Pair[T, U]]:
+    function drop(self: &mut Pair[T, U]):
+        printf(&"Dropping Pair\n\0"->[0])
 
-    if (value > 0) {
-        return LoudEnum::GtZero(LoudDrop { value: value });
-    } else if (value < 0) {
-        return LoudEnum::LtZero(LoudDrop { value: value });
-    } else {
-        return LoudEnum::Zero;
-    }
-}
 
-public function main() {
-    let mutable pair = Pair {
+final implements[T, U] Copy[Pair[T, U]] delete
+
+
+public enum LoudEnum:
+    GtZero(LoudDrop)
+    LtZero(LoudDrop)
+    Zero
+
+
+implements Drop[LoudEnum]:
+    function drop(self: &mut LoudEnum):
+        match (self):
+            case GtZero(..): printf(&"Dropping GtZero\n\0"->[0])
+            case LtZero(..): printf(&"Dropping LtZero\n\0"->[0])
+            case Zero:       printf(&"Dropping Zero\n\0"->[0])
+
+
+final implements Copy[LoudEnum] delete
+
+
+public function createLoudEnum() -> LoudEnum:
+    let mut value = 0
+    scanf(&"%d\0"->[0], &mut value)
+
+    if value > 0:
+        return LoudEnum::GtZero(LoudDrop { value: value })
+
+    else if value < 0:
+        return LoudEnum::LtZero(LoudDrop { value: value })
+
+    else:
+        return LoudEnum::Zero
+
+
+public function main():
+    let mut pair = Pair {
         first: LoudDrop { value: 0 },
         second: LoudDrop { value: 0 },
-    };
+    }
 
     scanf(
         &"%d %d\0"->[0], 
-        &mutable pair.first.value, 
-        &mutable pair.second.value
-    );
+        &mut pair.first.value, 
+        &mut pair.second.value
+    )
     
-    let first = createLoudEnum();
-    let second = createLoudEnum();
-    let third = createLoudEnum();
-}
+    let first = createLoudEnum()
+    let second = createLoudEnum()
+    let third = createLoudEnum()
 "#;
 
 #[test]

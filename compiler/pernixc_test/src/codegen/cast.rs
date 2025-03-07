@@ -1,49 +1,48 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...);
-    public function scanf(format: &uint8, ...);
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public function main() {
-    let mutable first = 0i32;
 
-    scanf(&"%d\0"->[0], &mutable first);
+public function main():
+    let mut first = 0i32
 
-    let negativeFirst = -first;
+    scanf(&"%d\0"->[0], &mut first)
+
+    let negativeFirst = -first
 
     // assuming int64 is long long
-    let sextNeg = negativeFirst as int64;
-    let sextPos = first as int64;
+    let sextNeg = negativeFirst as int64
+    let sextPos = first as int64
 
-    printf(&"%lld %lld\n\0"->[0], sextNeg, sextPos);
+    printf(&"%lld %lld\n\0"->[0], sextNeg, sextPos)
 
-    let mutable second = 0u32;
+    let mut second = 0u32
 
-    scanf(&"%u\0"->[0], &mutable second);
+    scanf(&"%u\0"->[0], &mut second)
 
     // assuming uint64 is unsigned long long
-    let zext = second as uint64;
+    let zext = second as uint64
 
-    printf(&"%llu\n\0"->[0], zext); 
+    printf(&"%llu\n\0"->[0], zext)
 
-    let mutable third = 0i32;
-    scanf(&"%d\0"->[0], &mutable third);
+    let mut third = 0i32
+    scanf(&"%d\0"->[0], &mut third)
 
-    let mutable unsigned = third as uint32;
-    third = -third;
+    let mut unsigned = third as uint32
+    third = -third
 
-    let sitofp = third as float32;
-    let uitofp = unsigned as float32;
+    let sitofp = third as float32
+    let uitofp = unsigned as float32
 
-    printf(&"%.2f %.2f\n\0"->[0], sitofp, uitofp);
+    printf(&"%.2f %.2f\n\0"->[0], sitofp, uitofp)
 
-    let fpext = sitofp as float64;
-    let fprtunc = uitofp as float32;
+    let fpext = sitofp as float64
+    let fprtunc = uitofp as float32
 
-    printf(&"%.2f %.2f\n\0"->[0], fpext, fprtunc);
-}
+    printf(&"%.2f %.2f\n\0"->[0], fpext, fprtunc)
 "#;
 
 #[test]

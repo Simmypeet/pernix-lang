@@ -19,7 +19,7 @@ use crate::{
 
 #[test]
 fn assignment() {
-    const DECLARATION: &str = "let mutable x = 32;";
+    const DECLARATION: &str = "let mut x = 32";
     const ASSIGNMENT: &str = "x = 64";
 
     let template = Template::new();
@@ -29,9 +29,9 @@ fn assignment() {
         binder.bind_variable_declaration(&parse(DECLARATION), &Panic).unwrap();
 
     let LValue { address, .. } =
-        binder.bind_as_lvalue_success(
-            &parse::<syntax_tree::expression::Binary>(ASSIGNMENT),
-        );
+        binder.bind_as_lvalue_success(&parse::<
+            syntax_tree::expression::binary::Binary,
+        >(ASSIGNMENT));
 
     assert_eq!(address, variable_address);
 
@@ -55,9 +55,9 @@ fn assignment() {
 
     // bind as value
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Binary>(
-            ASSIGNMENT,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::binary::Binary>(ASSIGNMENT),
+        )
         .into_register()
         .unwrap();
 
@@ -86,9 +86,9 @@ fn normal_operator() {
 
     let mut check = |source: &str, operator, lhs_str: &str, rhs_str: &str| {
         let register_id = binder
-            .bind_as_rvalue_success(&parse::<syntax_tree::expression::Binary>(
-                source,
-            ))
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::binary::Binary,
+            >(source))
             .into_register()
             .unwrap();
 
@@ -142,7 +142,7 @@ fn normal_operator() {
 
 #[test]
 fn compound_binary_operator() {
-    const DECLARATION: &str = "let mutable x = 32;";
+    const DECLARATION: &str = "let mut x = 32";
     const ASSIGNMENT: &str = "x += 64";
 
     let template = Template::new();
@@ -151,9 +151,10 @@ fn compound_binary_operator() {
     let (variable_address, _) =
         binder.bind_variable_declaration(&parse(DECLARATION), &Panic).unwrap();
 
-    let LValue { address: found_address, .. } = binder.bind_as_lvalue_success(
-        &parse::<syntax_tree::expression::Binary>(ASSIGNMENT),
-    );
+    let LValue { address: found_address, .. } =
+        binder.bind_as_lvalue_success(&parse::<
+            syntax_tree::expression::binary::Binary,
+        >(ASSIGNMENT));
 
     assert_eq!(found_address, variable_address);
 
@@ -219,7 +220,7 @@ fn expected_lvalue_error() {
     let mut binder = template.create_binder();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Binary,
+        syntax_tree::expression::binary::Binary,
     >("true = false"));
 
     assert_eq!(errors.len(), 1);
@@ -239,9 +240,9 @@ fn binary_operator_precedence() {
     let mut binder = template.create_binder();
 
     let add_op = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Binary>(
-            EXPRESSION,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::binary::Binary>(EXPRESSION),
+        )
         .into_register()
         .unwrap();
 

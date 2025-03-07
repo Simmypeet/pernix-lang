@@ -97,19 +97,19 @@ impl SyntaxTree for Alias {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImportItem {
-    pub identifier: Identifier,
+    pub simple_path: SimplePath,
     pub alias: Option<Alias>,
 }
 
 impl SourceElement for ImportItem {
     fn span(&self) -> Span {
-        let identifier = self.identifier.span();
+        let begin = self.simple_path.span();
 
-        identifier.join(
+        begin.join(
             &self
                 .alias
                 .as_ref()
-                .map_or_else(|| identifier.clone(), SourceElement::span),
+                .map_or_else(|| begin.clone(), SourceElement::span),
         )
     }
 }
@@ -119,8 +119,8 @@ impl SyntaxTree for ImportItem {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (expect::Identifier.to_owned(), Alias::parse.or_none())
-            .map(|(identifier, alias)| Self { identifier, alias })
+        (SimplePath::parse, Alias::parse.or_none())
+            .map(|(simple_path, alias)| Self { simple_path, alias })
             .parse(state_machine, handler)
     }
 }

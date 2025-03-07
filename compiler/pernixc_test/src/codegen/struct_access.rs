@@ -3,26 +3,26 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public struct Pair[T, U] {
-    public first: T,
-    public second: U,
-}
 
-public function main() {
-    let mutable pair = Pair {
+public struct Pair[T, U]:
+    public first: T
+    public second: U
+
+
+public function main():
+    let mut pair = Pair {
         first: 0,
         second: 0,
-    };
+    }
 
-    scanf(&"%d %d\0"->[0], &mutable pair.first, &mutable pair.second);
+    scanf(&"%d %d\0"->[0], &mut pair.first, &mut pair.second)
 
-    printf(&"first: %d, second: %d\0"->[0], pair.first, pair.second);
-}
+    printf(&"first: %d, second: %d\0"->[0], pair.first, pair.second)
+
 "#;
 
 #[test]

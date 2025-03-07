@@ -6,7 +6,7 @@ use std::{borrow, cmp::Ordering, fmt::Debug, vec::Drain};
 use paste::paste;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation},
+    token::{Comment, CommentKind, Keyword, KeywordKind, Punctuation, Token},
     token_stream::{DelimiterKind, FragmentKind, NodeKind, Tree},
 };
 use pernixc_source_file::SourceElement;
@@ -1018,7 +1018,10 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
 
         // it must end on a new line or just end of the token stream
         if let Some((token, mut index)) = current {
-            if token.as_token().is_none_or(|x| !x.is_new_line()) {
+            if token.as_token().is_none_or(|x| {
+                !x.is_new_line()
+                    && !x.as_comment().is_some_and(|x| x.kind.is_line())
+            }) {
                 if result.is_ok() {
                     handler.receive(error::Error::new(
                         state_machine.tree,
@@ -1034,14 +1037,20 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
                 // find the nearest line
                 while index < state_machine.current_node().token_stream().len()
                 {
-                    if state_machine
-                        .current_node()
-                        .token_stream()
-                        .get(index)
-                        .and_then(|x| x.as_token())
-                        .and_then(|x| x.as_new_line())
-                        .is_some()
-                    {
+                    if matches!(
+                        state_machine
+                            .current_node()
+                            .token_stream()
+                            .get(index)
+                            .and_then(|x| x.as_token()),
+                        Some(
+                            Token::NewLine(_)
+                                | Token::Comment(Comment {
+                                    kind: CommentKind::Line,
+                                    ..
+                                })
+                        )
+                    ) {
                         break;
                     }
                     index += 1;
@@ -1087,7 +1096,10 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
 
         // it must end on a new line or just end of the token stream
         if let Some((token, mut index)) = current {
-            if token.as_token().is_none_or(|x| !x.is_new_line()) {
+            if token.as_token().is_none_or(|x| {
+                !x.is_new_line()
+                    && !x.as_comment().is_some_and(|x| x.kind.is_line())
+            }) {
                 if result.is_ok() {
                     handler.receive(error::Error::new(
                         state_machine.tree,
@@ -1103,14 +1115,20 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
                 // find the nearest line
                 while index < state_machine.current_node().token_stream().len()
                 {
-                    if state_machine
-                        .current_node()
-                        .token_stream()
-                        .get(index)
-                        .and_then(|x| x.as_token())
-                        .and_then(|x| x.as_new_line())
-                        .is_some()
-                    {
+                    if matches!(
+                        state_machine
+                            .current_node()
+                            .token_stream()
+                            .get(index)
+                            .and_then(|x| x.as_token()),
+                        Some(
+                            Token::NewLine(_)
+                                | Token::Comment(Comment {
+                                    kind: CommentKind::Line,
+                                    ..
+                                })
+                        )
+                    ) {
                         break;
                     }
                     index += 1;

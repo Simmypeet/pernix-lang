@@ -3,7 +3,8 @@
 use crate::compile_file;
 
 const SOURCE: &str = r"
-public function main() {}
+public function main():
+    pass
 ";
 
 #[test]

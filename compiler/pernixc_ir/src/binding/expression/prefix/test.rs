@@ -21,7 +21,7 @@ use crate::{
 
 #[test]
 fn prefix_operator() {
-    const LOGICAL_NOT_SOURCE: &str = "!false";
+    const LOGICAL_NOT_SOURCE: &str = "not false";
     const NEGATE_SOURCE: &str = "-32";
     const BITWISE_NOT_SOURCE: &str = "~32";
 
@@ -30,13 +30,12 @@ fn prefix_operator() {
 
     // logical not
     {
-        let register_id =
-            binder
-                .bind_as_rvalue_success(&parse::<
-                    syntax_tree::expression::Prefixable,
-                >(LOGICAL_NOT_SOURCE))
-                .into_register()
-                .unwrap();
+        let register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::prefix::Prefixable,
+            >(LOGICAL_NOT_SOURCE))
+            .into_register()
+            .unwrap();
 
         let prefix = binder.intermediate_representation.values.registers
             [register_id]
@@ -53,9 +52,9 @@ fn prefix_operator() {
     // negate
     {
         let register_id = binder
-            .bind_as_rvalue_success(
-                &parse::<syntax_tree::expression::Prefixable>(NEGATE_SOURCE),
-            )
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::prefix::Prefixable,
+            >(NEGATE_SOURCE))
             .into_register()
             .unwrap();
 
@@ -88,13 +87,12 @@ fn prefix_operator() {
 
     // bitwise not
     {
-        let register_id =
-            binder
-                .bind_as_rvalue_success(&parse::<
-                    syntax_tree::expression::Prefixable,
-                >(BITWISE_NOT_SOURCE))
-                .into_register()
-                .unwrap();
+        let register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::prefix::Prefixable,
+            >(BITWISE_NOT_SOURCE))
+            .into_register()
+            .unwrap();
 
         let prefix = binder.intermediate_representation.values.registers
             [register_id]
@@ -126,7 +124,7 @@ fn prefix_operator() {
 
 #[test]
 fn prefix_type_mismatched_error() {
-    const LOGICAL_NOT_SOURCE: &str = "!64";
+    const LOGICAL_NOT_SOURCE: &str = "not 64";
     const NEGATE_SOURCE: &str = "-32u32";
     const BITWISE_NOT_SOURCE: &str = "~32.0";
 
@@ -136,7 +134,7 @@ fn prefix_type_mismatched_error() {
     // logical not
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Prefixable,
+            syntax_tree::expression::prefix::Prefixable,
         >(
             LOGICAL_NOT_SOURCE
         ));
@@ -156,7 +154,7 @@ fn prefix_type_mismatched_error() {
     {
         let errors =
             binder.bind_as_rvalue_error_fatal(&parse::<
-                syntax_tree::expression::Prefixable,
+                syntax_tree::expression::prefix::Prefixable,
             >(NEGATE_SOURCE));
 
         assert_eq!(errors.len(), 1);
@@ -173,7 +171,7 @@ fn prefix_type_mismatched_error() {
     // bitwise not
     {
         let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-            syntax_tree::expression::Prefixable,
+            syntax_tree::expression::prefix::Prefixable,
         >(
             BITWISE_NOT_SOURCE
         ));
@@ -192,9 +190,9 @@ fn prefix_type_mismatched_error() {
 
 #[test]
 fn reference_of() {
-    const VARIABLE_DECLARATION: &str = "let mutable x: int32 = 32;";
+    const VARIABLE_DECLARATION: &str = "let mut x: int32 = 32";
     const REFERENCE_OF_IMMUTABLE: &str = "&x";
-    const REFERENCE_OF_MUTABLE: &str = "&mutable x";
+    const REFERENCE_OF_MUTABLE: &str = "&mut x";
 
     let template = Template::new();
     let mut binder = template.create_binder();
@@ -210,11 +208,9 @@ fn reference_of() {
     // reference of immutable
     {
         let register_id = binder
-            .bind_as_rvalue_success(
-                &parse::<syntax_tree::expression::Prefixable>(
-                    REFERENCE_OF_IMMUTABLE,
-                ),
-            )
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::prefix::Prefixable,
+            >(REFERENCE_OF_IMMUTABLE))
             .into_register()
             .unwrap();
 
@@ -231,13 +227,12 @@ fn reference_of() {
 
     // reference of mutable
     {
-        let register_id =
-            binder
-                .bind_as_rvalue_success(&parse::<
-                    syntax_tree::expression::Prefixable,
-                >(REFERENCE_OF_MUTABLE))
-                .into_register()
-                .unwrap();
+        let register_id = binder
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::prefix::Prefixable,
+            >(REFERENCE_OF_MUTABLE))
+            .into_register()
+            .unwrap();
 
         let borrow = binder.intermediate_representation.values.registers
             [register_id]
@@ -253,8 +248,8 @@ fn reference_of() {
 
 #[test]
 fn reference_of_mutability_error() {
-    const VARIABLE_DECLARATION: &str = "let x = 6420i32;";
-    const REFERENCE_OF_MUTABLE: &str = "&mutable x";
+    const VARIABLE_DECLARATION: &str = "let x = 6420i32";
+    const REFERENCE_OF_MUTABLE: &str = "&mut x";
 
     let template = Template::new();
     let mut binder = template.create_binder();
@@ -269,7 +264,7 @@ fn reference_of_mutability_error() {
 
     let (value, errors) =
         binder.bind_as_rvalue_error(&parse::<
-            syntax_tree::expression::Prefixable,
+            syntax_tree::expression::prefix::Prefixable,
         >(REFERENCE_OF_MUTABLE));
 
     assert_eq!(errors.len(), 1);
@@ -295,8 +290,8 @@ fn reference_of_mutability_error() {
 
 #[test]
 fn dereference() {
-    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32;";
-    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &x;";
+    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32";
+    const REFERENCE_VARIABLE_DECLARATION: &str = "let y = &x";
     const DEREFERENCE: &str = "*y";
 
     let template = Template::new();
@@ -318,9 +313,9 @@ fn dereference() {
     };
 
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Prefixable>(
-            DEREFERENCE,
-        ))
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::prefix::Prefixable,
+        >(DEREFERENCE))
         .into_register()
         .unwrap();
 
@@ -341,7 +336,7 @@ fn dereference() {
 
 #[test]
 fn cannot_dereference_error() {
-    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32;";
+    const VALUE_VARIABLE_DECLARATION: &str = "let x = 6420i32";
     const DEREFERENCE: &str = "*x";
 
     let template = Template::new();
@@ -352,7 +347,7 @@ fn cannot_dereference_error() {
         .unwrap();
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Prefixable,
+        syntax_tree::expression::prefix::Prefixable,
     >(DEREFERENCE));
 
     assert_eq!(errors.len(), 1);
@@ -371,9 +366,9 @@ fn create_temporary_lvalue() {
     let mut binder = template.create_binder();
 
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Prefixable>(
-            "&32",
-        ))
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::prefix::Prefixable,
+        >("&32"))
         .into_register()
         .unwrap();
 

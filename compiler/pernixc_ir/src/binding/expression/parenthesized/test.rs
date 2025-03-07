@@ -14,9 +14,9 @@ fn parenthesized_propagate() {
     let mut binder = template.create_binder();
 
     let numeric = binder
-        .bind_as_rvalue_success(
-            &parse::<syntax_tree::expression::Parenthesized>("(32)"),
-        )
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::unit::Parenthesized,
+        >("(32)"))
         .into_literal()
         .unwrap()
         .into_numeric()
@@ -32,9 +32,9 @@ fn parenthesized_as_unit() {
     let mut binder = template.create_binder();
 
     let _ = binder
-        .bind_as_rvalue_success(
-            &parse::<syntax_tree::expression::Parenthesized>("()"),
-        )
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::unit::Parenthesized,
+        >("()"))
         .into_literal()
         .unwrap()
         .into_unit()
@@ -47,9 +47,9 @@ fn parenthesized_as_single_tuple() {
     let mut binder = template.create_binder();
 
     let tuple_register_id = binder
-        .bind_as_rvalue_success(
-            &parse::<syntax_tree::expression::Parenthesized>("(32,)"),
-        )
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::unit::Parenthesized,
+        >("(32,)"))
         .into_register()
         .unwrap();
 
@@ -80,13 +80,12 @@ fn parenthesized_as_tuple() {
     let template = Template::new();
     let mut binder = template.create_binder();
 
-    let tuple_register_id =
-        binder
-            .bind_as_rvalue_success(&parse::<
-                syntax_tree::expression::Parenthesized,
-            >("(32, ...(true,), 64)"))
-            .into_register()
-            .unwrap();
+    let tuple_register_id = binder
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::unit::Parenthesized,
+        >("(32, ...(true,), 64)"))
+        .into_register()
+        .unwrap();
 
     let tuple_assignment = binder
         .intermediate_representation
@@ -154,15 +153,18 @@ fn parenthesized_as_tuple() {
     }
 }
 
+const MORE_THAN_ONE_UNPACKED_ERROR: &str = r"
+public function test[T: tuple, U: tuple](t: T, u: U):
+    pass
+";
+
 #[test]
 fn more_than_one_unpacked_error() {
-    let table = build_table(
-        "public function test[T, U](t: T, u: U) where tuple T + U { panic; }",
-    );
+    let table = build_table(MORE_THAN_ONE_UNPACKED_ERROR);
     let mut binder = table.create_binder_at(["test", "test"]);
 
     let errors = binder.bind_as_rvalue_error_fatal(&parse::<
-        syntax_tree::expression::Parenthesized,
+        syntax_tree::expression::unit::Parenthesized,
     >("(...t, ...u)"));
 
     assert_eq!(errors.len(), 1);

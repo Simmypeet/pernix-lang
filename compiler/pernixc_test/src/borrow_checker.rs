@@ -20,18 +20,19 @@ use pernixc_type_system::diagnostic::{
 };
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH: &str = r"
-public function consume[T](x: T) {}
+public function consume[T](x: T):
+    pass
 
-public function test() {
-    let outer = 0;
-    let mutable ref = &outer;
-    {
-        let inner = 0;
-        ref = &inner;
-    }
+public function test():
+    let outer = 0
+    let mut ref = &outer
 
-    consume(*ref);
-}
+    scope:
+        let inner = 0
+        ref = &inner
+
+    consume(*ref)
+
 ";
 
 #[test]
@@ -51,15 +52,15 @@ fn variable_does_not_live_long_enough() {
 }
 
 const MOVED_OUT_WHILE_BORROWED: &str = r"
-public function consume[T](x: T) {}
+public function consume[T](x: T):
+    pass
 
-public function test[T](mutable x: (T, T)) {
-    let y = &x;
+public function test[T](mut x: (T, T)):
+    let y = &x
 
-    consume(x.0);
+    consume(x.0)
 
-    consume(y);
-}
+    consume(y)
 ";
 
 #[test]
@@ -78,15 +79,14 @@ fn moved_out_while_borrowed() {
 
 const REBORROW: &str = r"
 public function test['a, 'b, T](
-    mutable x: &'a T,
+    mut x: &'a T,
     y: &'b (T, T)
-)
-where
-    'b: 'a,
-    T: 'a + 'b,
-{
-    x = &y->0;
-}
+):
+    where:
+        'b: 'a
+        T: 'a + 'b
+
+    x = &y->0
 ";
 
 #[test]
@@ -95,29 +95,29 @@ fn reborrow() {
 }
 
 const INVARIANT_LIFETIME: &str = r"
-public function consume[T](x: T) {}
+public function consume[T](x: T):
+    pass
 
 public function assign['a, T] (
-    reference: &'a mutable T,
+    reference: &'a mut T,
     value: T
-)
-where
-    T: 'a
-{
-    *reference = value;
-}
+):
+    where:
+        T: 'a
 
-public function test() {
-    let outer =  32;
-    let mutable ref = &outer;
+    *reference = value
 
-    {
-        let inner = 0;
-        assign(&mutable ref, &inner);
-    }
 
-    consume(*ref);
-}
+public function test():
+    let outer =  32
+    let mut ref = &outer
+
+    scope:
+        let inner = 0
+        assign(&mut ref, &inner)
+
+    consume(*ref)
+
 ";
 
 #[test]
@@ -137,16 +137,17 @@ fn invariant_lifetime() {
 }
 
 const MUTABLY_ACCESS_WHILE_BORROWED: &str = r"
-public function consume[T](x: T) {}
+public function consume[T](x: T):
+    pass
 
-public function test() {
-    let mutable number = 1;
-    let numberRef = &number;
+public function test():
+    let mut number = 1
+    let numberRef = &number
 
-    number = 2;
+    number = 2
 
-    consume(*numberRef);
-}
+    consume(*numberRef)
+
 ";
 
 #[test]
@@ -169,17 +170,16 @@ fn mutably_access_while_borrowed() {
 }
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP: &str = r"
-public function test(cond: bool) {
-    let outer = 1;
-    let mutable numberRef = &outer;
+public function test(cond: bool):
+    let outer = 1
+    let mut numberRef = &outer
 
-   while (cond) {
-        let inner = 0;
-        numberRef = &inner;
-    }
+    while cond:
+        let inner = 0
+        numberRef = &inner
+    
 
-    let a = *numberRef;
-}
+    let a = *numberRef
 ";
 
 #[test]
@@ -199,22 +199,20 @@ fn variable_does_not_live_long_enough_in_loop() {
 }
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_INNER_LOOP: &str = r"
-public function test(cond: bool) {
-    let outer = 1;
-    let mutable numberRef = &outer;
+public function test(cond: bool):
+    let outer = 1
+    let mut numberRef = &outer
 
-    while (cond) {
-        let inner = 0;
-        numberRef = &inner;
+    while cond:
+        let inner = 0
+        numberRef = &inner
 
-        while (cond) {
-            let innerInner = 0;
-            numberRef = &innerInner;
-        }
-    }
+        while cond:
+            let innerInner = 0
+            numberRef = &innerInner
 
-    let a = *numberRef;
-}
+
+    let a = *numberRef
 ";
 
 #[test]
@@ -244,22 +242,19 @@ fn variable_does_not_live_long_enough_in_inner_loop() {
 }
 
 const RESET_BORROWED_REFERENCE_WHEN_BREAK: &str = r"
-public function test(cond: bool) {
-    let outer = 1;
-    let mutable numberRef = &outer;
+public function test(cond: bool):
+    let outer = 1
+    let mut numberRef = &outer
 
-    loop {
-        let inner = 2;
-        numberRef = &inner;
+    loop:
+        let inner = 2
+        numberRef = &inner
 
-        if (cond) {
-            numberRef = &outer;
-            break;
-        }
-    }
+        if cond:
+            numberRef = &outer
+            break
 
-    let a = *numberRef;
-}
+    let a = *numberRef
 ";
 
 #[test]
@@ -269,27 +264,25 @@ fn reset_borrowed_reference_when_break() {
 
 const MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION: &str = r"
 // fake vector
-public struct Vector[T] {
+public struct Vector[T]:
     private _marker: phantom T
-}
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main() {
-    let mutable number = 0;
-    let mutable vector = Vector::new();
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-    Vector::push(&mutable vector, &mutable number);
-    Vector::push(&mutable vector,  &mutable number);
-}
+
+public function main():
+    let mut number = 0
+    let mut vector = Vector::new()
+
+    Vector::push(&mut vector, &mut number)
+    Vector::push(&mut vector,  &mut number)
+
 ";
 
 #[test]
@@ -303,43 +296,40 @@ fn mutably_access_more_than_once_in_function() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable number")
+        Some("&mut number")
     );
-    assert_eq!(error.access_span.str(), "&mutable number");
+    assert_eq!(error.access_span.str(), "&mut number");
     assert_eq!(
         error.borrow_usage.as_local().map(Span::str),
-        Some("Vector::push(&mutable vector,  &mutable number)")
+        Some("Vector::push(&mut vector,  &mut number)")
     );
 }
 
 const MUTABLY_ACCESS_MORE_THAN_ONCE_IN_FUNCTION_WITH_VARIABLE: &str = r"
 // fake vector
-public struct Vector[T] {
+public struct Vector[T]:
     private _marker: phantom T
-}
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main() {
-    let mutable number = 0;
-    let mutable vector = Vector::new();
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-    let v = &mutable vector;
-    let n = &mutable number;
-    Vector::push(v, n);
+public function main():
+    let mut number = 0
+    let mut vector = Vector::new()
 
-    let v = &mutable vector;
-    let n = &mutable number;
-    Vector::push(v, n);
-}
+    let v = &mut vector
+    let n = &mut number
+    Vector::push(v, n)
+
+    let v = &mut vector
+    let n = &mut number
+    Vector::push(v, n)
+
 ";
 
 #[test]
@@ -354,37 +344,35 @@ fn mutably_access_more_than_once_in_function_with_variable() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable number")
+        Some("&mut number")
     );
-    assert_eq!(error.access_span.str(), "&mutable number");
+    assert_eq!(error.access_span.str(), "&mut number");
     assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("v"));
 }
 
 const AN_ALIASED_FORMULATION: &str = r"
 // fake vector
-public struct Vector[T] {
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function take[T](..: T) {}
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-public function main() {
-    let mutable x = 22;
-    let mutable v = Vector::new();
-    let r = &mutable v;
-    r->push(&x);        // 1. `&x` is stored into `v`, but throungh `r`
-    x += 1;             // 2. <-- Error! can't mutate `x` while borrowed
-    let c = v;          // 3. the reference to `x` is later used here
-}
+public function take[T](..: T):
+    pass
+
+public function main():
+    let mut x = 22
+    let mut v = Vector::new()
+    let r = &mut v
+    r->push(&x)        // 1. `&x` is stored into `v`, but throungh `r`
+    x += 1             // 2. <-- Error! can't mutate `x` while borrowed
+    let c = v          // 3. the reference to `x` is later used here
 ";
 
 #[test]
@@ -406,24 +394,24 @@ fn an_aliased_formulation() {
 // the test case is lifted from
 // https://smallcultfollowing.com/babysteps/blog/2023/09/22/polonius-part-1/
 const POLONIUS_ONE_EXAMPLE: &str = r"
-public function consume[T](x: T) {}
+public function consume[T](x: T):
+    pass
 
 // only (D) is an error
-public function main() {
-    let mutable x = 22;
-    let mutable y = 44;
-    let mutable p = &x; // Loan L0, borrowing `x`
-    y += 1;                  // (A) Mutate `y` -- is this ok?
-    let mutable q = &y; // Loan L1, borrowing `y`
-    if (true) {
-        p = q;               // `p` now points at `y`
-        x += 1;              // (B) Mutate `x` -- is this ok?
-    } else {
-        y += 1;              // (C) Mutate `y` -- is this ok?
-    }
-    y += 1;                  // (D) Mutate `y` -- is this ok?
-    consume(*p);           // use `p` again here
-}
+public function main():
+    let mut x = 22
+    let mut y = 44
+    let mut p = &x  // Loan L0, borrowing `x`
+    y += 1          // (A) Mutate `y` -- is this ok?
+    let mut q = &y  // Loan L1, borrowing `y`
+    if true:
+        p = q       // `p` now points at `y`
+        x += 1      // (B) Mutate `x` -- is this ok?
+    else:
+        y += 1      // (C) Mutate `y` -- is this ok?
+    
+    y += 1          // (D) Mutate `y` -- is this ok?
+    consume(*p)     // use `p` again here
 ";
 
 #[test]
@@ -443,28 +431,27 @@ fn polonius_one_example() {
 }
 
 const STRUCT_INFERENCE_NO_ERROR: &str = r"
-public struct MyPair[T, U] {
-    public first: T,
-    public second: U,
-}
+public struct MyPair[T, U]:
+    public first: T
+    public second: U
 
-public function print[T](value: T) {}
 
-public function main() {
-    let mutable outer = 32;
-    {
-        let mutable inner = 64;
+public function print[T](value: T):
+    pass
+
+public function main():
+    let mut outer = 32
+    scope: 
+        let mut inner = 64
 
         let pair = MyPair {
             first: &outer,
             second: &inner,
-        };
+        }
 
-        outer = 32;
+        outer = 32
 
-        print(*pair.second);
-    }
-}
+        print(*pair.second)
 ";
 
 #[test]
@@ -473,28 +460,29 @@ fn struct_inference_no_error() {
 }
 
 const STRUCT_INFERENCE_WITH_ERROR: &str = r"
-public struct MyPair[T, U] {
-    public first: T,
-    public second: U,
-}
+public struct MyPair[T, U]:
+    public first: T
+    public second: U
 
-public function print[T](value: T) {}
 
-public function main() {
-    let mutable outer = 32;
-    {
-        let mutable inner = 64;
+public function print[T](value: T):
+    pass
+
+
+public function main():
+    let mut outer = 32
+    
+    scope:
+        let mut inner = 64
 
         let pair = MyPair {
             first: &outer,
             second: &inner,
-        };
+        }
 
-        outer = 32;
+        outer = 32
 
-        print(*pair.first);
-    }
-}
+        print(*pair.first)
 ";
 
 #[test]
@@ -517,34 +505,35 @@ fn struct_inference_with_error() {
 }
 
 const STRUCT_INFERENCE_WITH_LIFETIME_FLOW: &str = r"
-public struct MyPair['a, 'b, T, U]
-where
-    T: 'a,
-    U: 'b,
-    'a: 'b, // 'a flows into 'b
-{
-    public first: &'a T,
-    public second: &'b U,
-}
+public struct MyPair['a, 'b, T, U]:
+    where:
+        T: 'a
+        U: 'b
+        'a: 'b // 'a flows into 'b
 
-public function print[T](value: T) {}
+    public first: &'a T
+    public second: &'b U
 
-public function main() {
-    let mutable outer = 32;
-    {
-        let mutable inner = 64;
+
+public function print[T](value: T):
+    pass
+
+
+public function main():
+    let mut outer = 32
+
+    scope:
+        let mut inner = 64
 
         let pair = MyPair {
             first: &outer,
             second: &inner,
-        };
+        }
 
-        outer = 32;
+        outer = 32
 
         // since 'first' flows into 'second', this will error
-        print(*pair.second);
-    }
-}
+        print(*pair.second)
 ";
 
 #[test]
@@ -567,15 +556,16 @@ fn struct_inference_with_lifetime_flow() {
 }
 
 const USE_MUTABLE_REF_TWICE: &str = r"
-public function print[T](value: T) {}
+public function print[T](value: T):
+    pass
 
-public function main() {
-    let mutable x = 1;
-    let ref = &mutable x;
 
-    *ref = 1;
-    *ref = 2;
-}
+public function main():
+    let mut x = 1
+    let ref = &mut x
+
+    *ref = 1
+    *ref = 2
 ";
 
 #[test]
@@ -584,10 +574,9 @@ fn use_mutable_ref_twice() {
 }
 
 const RETURN_LOCAL_REFERENCE: &str = r"
-public function test['a](param: &'a int32): &'a int32 {
-    let local = 0;
-    return &local;
-}
+public function test['a](param: &'a int32) -> &'a int32:
+    let local = 0
+    return &local
 ";
 
 #[test]
@@ -620,9 +609,8 @@ const RETURN_WRONG_LIFETIME: &str = r"
 public function test['a, 'b](
     first: &'a int32,
     second: &'b int32,
-): &'a int32 {
-    return &*second;
-}
+) -> &'a int32:
+    return &*second
 ";
 
 #[test]
@@ -656,16 +644,14 @@ fn return_wrong_lifetime() {
 const RETURN_CORRECT_LIFETIME: &str = r"
 public function test['a, 'b](
     test: &'a (int32, int32, int32),
-): &'b int32
-where
-    'a: 'b
-{
-    match (true, true) {
-        (true, false): return &test->0,
-        (false, false): return &test->1,
-        (.., true):    return &test->2,
-    }
-}
+) -> &'b int32:
+    where:
+        'a: 'b
+
+    match (true, true):
+        (true, false):  return &test->0
+        (false, false): return &test->1
+        (.., true):     return &test->2
 ";
 
 #[test]
@@ -675,35 +661,36 @@ fn return_correct_lifetime() {
 
 const INVALIDATED_UNIVERSAL_REGIONS: &str = r"
 // fake vector
-public struct Vector[T] {
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function clear['a](self: &'a mutable this)
-    where
-        T: 'a
-    {
-        panic;
-    }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
+
+    public function clear['a](self: &'a mut this):
+        where:
+            T: 'a
+
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+        panic
 
 public function test['a, 'b](
-    numbers: &'b mutable Vector[&'a mutable int32],
-    number: &'a mutable int32,
-)
-where
-    'a: 'b
-{
-    numbers->push(&mutable *number);
-    *number;
-}
+    numbers: &'b mut Vector[&'a mut int32],
+    number: &'a mut int32,
+):
+    where:
+        'a: 'b
+
+    numbers->push(&mut *number)
+    *number
+
 ";
 
 #[test]
@@ -724,7 +711,7 @@ fn invalidated_universal_regions() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable *number")
+        Some("&mut *number")
     );
     assert_eq!(error.access_span.str(), "*number");
 
@@ -746,40 +733,41 @@ fn invalidated_universal_regions() {
 }
 
 const VALID_USE_OF_UNIVERSAL_REGIONS: &str = r"
-
 // fake vector
-public struct Vector[T] {
-}
-
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function clear['a](self: &'a mutable this)
-    where
-        T: 'a
-    {
-        panic;
-    }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
 
-public function consume[T](..: T) {}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
+
+    public function clear['a](self: &'a mut this):
+        where:
+            T: 'a
+
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+        panic
+
+
+public function consume[T](..: T):
+    pass
+
 
 public function test['a, 'b](
-    numbers: &'b mutable Vector[&'a mutable int32],
-    number: &'a mutable int32,
-)
-where
-    'a: 'b
-{
-    numbers->push(&mutable *number);
-    numbers->clear();
-}
+    numbers: &'b mut Vector[&'a mut int32],
+    number: &'a mut int32,
+):
+    where:
+        'a: 'b
+
+    numbers->push(&mut *number)
+    numbers->clear()
 ";
 
 #[test]
@@ -788,21 +776,20 @@ fn valid_use_of_universal_regions() {
 }
 
 const STRUCT_REGION_INFERENCE: &str = r"
-public struct RefWrapper['a, T]
-where
-    T: 'a
-{
-    public ref: &'a T,
-}
+public struct RefWrapper['a, T]:
+    where:
+        T: 'a
+
+    public ref: &'a T
+
 
 public function test['a, 'b](
     ref: &'a int32
-): RefWrapper['b, int32] {
-    let test = 32;
-    let another = &test;
+) -> RefWrapper['b, int32]:
+    let test = 32
+    let another = &test
 
-    return RefWrapper { ref: ref };
-}
+    return RefWrapper { ref: ref }
 ";
 
 #[test]
@@ -842,10 +829,10 @@ fn struct_region_inference() {
 
 const REGISTER_USE_INVALIDATED_LIFETIMES: &str = r"
 public function test['a](
-    ref: &'a mutable int32
-) {
-    let a =  (&mutable *ref, &mutable *ref);
-}
+    ref: &'a mut int32
+): 
+    let a =  (&mut *ref, &mut *ref)
+
 ";
 
 #[test]
@@ -859,25 +846,24 @@ fn register_use_invalidated_lifetimes() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable *ref")
+        Some("&mut *ref")
     );
 
-    assert_eq!(error.access_span.str(), "&mutable *ref");
+    assert_eq!(error.access_span.str(), "&mut *ref");
 
     assert_eq!(
         error.borrow_usage.as_local().map(Span::str),
-        Some("(&mutable *ref, &mutable *ref)")
+        Some("(&mut *ref, &mut *ref)")
     );
 }
 
 const ARRAY_INFERENCE: &str = r"
-public function consume[T](..: T) {}
+public function consume[T](..: T):
+    pass
 
-public function test() {
-    let mutable x = 0;
-    let array = [&mutable x, &mutable x];
-
-}
+public function test():
+    let mut x = 0
+    let array = [&mut x, &mut x]
 ";
 
 #[test]
@@ -891,32 +877,30 @@ fn array_inference() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable x")
+        Some("&mut x")
     );
 
-    assert_eq!(error.access_span.str(), "&mutable x");
+    assert_eq!(error.access_span.str(), "&mut x");
     assert_eq!(
         error.borrow_usage.as_local().map(Span::str),
-        Some("[&mutable x, &mutable x]")
+        Some("[&mut x, &mut x]")
     );
 }
 
 const PHI_INFERENCE_VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH: &str = r"
-public function test(cond: bool) {
-    let outer = 1;
+public function test(cond: bool):
+    let outer = 1
 
-    let ref = 'result: {
-        let inner = 2;
-        if (true) {
-            express 'result &inner;
-        } else if (true) {
-            let anotherInner = 3;
-            express 'result &anotherInner;
-         }
+    let ref = scope 'result:
+        let inner = 2
 
-         express &outer;
-    };
-}
+        if true:
+            express 'result &inner
+        else if true:
+            let anotherInner = 3
+            express 'result &anotherInner
+         
+        express &outer
 ";
 
 #[test]
@@ -943,21 +927,18 @@ fn phi_inference_variable_does_not_live_long_enough() {
 }
 
 const PHI_INFERENCE_USE_INVALIDATED_REFERENCE: &str = r"
-public function test(cond: bool) {
-    let mutable first = 1;
-    let mutable second = 1;
+public function test(cond: bool):
+    let mut first = 1
+    let mut second = 1
 
-    let ref = 'result: {
-        if (cond) {
-            express 'result &first;
-        } else {
-            express 'result &second;
-        }
-    };
+    let ref = scope 'result:
+        if cond:
+            express 'result &first
+        else: 
+            express 'result &second
 
-    first = 2;       // <- Error: first is borrowed by ref
-    let copy = *ref; // <- Error: ref is invalidated
-}
+    first = 2        // <- Error: first is borrowed by ref
+    let copy = *ref  // <- Error: ref is invalidated
 ";
 
 #[test]
@@ -981,34 +962,32 @@ fn phi_inference_use_invalidated_reference() {
 
 const INVALIDATED_BORROWS_IN_LOOP: &str = r"
 // fake vector
-public struct Vector[T] {
+public struct Vector[T]:
     private _marker: phantom T
-}
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function clear['a](self: &'a mutable this)
-    where
-        T: 'a
-    {
-        panic;
-    }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
 
-public function main(cond: bool) {
-    let mutable vector = Vector::new();
-    let mutable number = 0;
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-    while (cond) {
-        vector.push(&mutable number);
-    }
-}
+    public function clear['a](self: &'a mut this):
+        where:
+            T: 'a
+
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+        panic
+
+public function main(cond: bool):
+    let mut vector = Vector::new()
+    let mut number = 0
+
+    while cond:
+        vector.push(&mut number)
 ";
 
 #[test]
@@ -1022,42 +1001,42 @@ fn invalidated_borrows_in_loop() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable number")
+        Some("&mut number")
     );
-    assert_eq!(error.access_span.str(), "&mutable number");
+    assert_eq!(error.access_span.str(), "&mut number");
     assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("vector"));
 }
 
 const INVALIDATED_BORROWS_IN_LOOP_WITH_BREAK: &str = r"
 // fake vector
-public struct Vector[T] {
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function clear['a](self: &'a mutable this)
-    where
-        T: 'a
-    {
-        panic;
-    }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
 
-public function main(cond: bool) {
-    let mutable vector = Vector::new();
-    let mutable number = 0;
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-    while (cond) {
-        vector.push(&mutable number);
-        break;
-    }
-}
+    public function clear['a](self: &'a mut this):
+        where:
+            T: 'a
+
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+        panic
+
+
+public function main(cond: bool):
+    let mut vector = Vector::new()
+    let mut number = 0
+
+    while cond:
+        vector.push(&mut number)
+        break
 ";
 
 #[test]
@@ -1066,28 +1045,24 @@ fn invalidated_borrows_in_loop_with_break() {
 }
 
 const MUTABLY_BORROW_IN_LOOP: &str = r"
-// fake Vector
-public struct Vector[T] {
-}
+// fake vector
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main(cond: bool) {
-    while (cond) {
-        let mutable vector = Vector::new();
-        let mutable number = 0;
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-        vector.push(&mutable number);
-    }
-}
+public function main(cond: bool):
+    while cond:
+        let mut vector = Vector::new()
+        let mut number = 0
+
+        vector.push(&mut number)
 ";
 
 #[test]
@@ -1097,26 +1072,23 @@ fn mutably_borrow_in_loop() {
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP_2: &str = r"
 // fake vector
-public struct Vector[T] {
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main(cond: bool) {
-    let mutable vector = Vector::new();
-    while (cond) {
-        let mutable number = 0;
-        vector.push(&number);
-    }
-}
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+public function main(cond: bool):
+    let mut vector = Vector::new()
+
+    while cond:
+        let mut number = 0
+        vector.push(&number)
 ";
 
 #[test]
@@ -1130,23 +1102,21 @@ fn variable_does_not_live_long_enough_in_loop_2() {
         .downcast_ref::<VariableDoesNotLiveLongEnough>()
         .unwrap();
 
-    assert_eq!(error.variable_span.str(), "mutable number");
+    assert_eq!(error.variable_span.str(), "mut number");
     assert_eq!(error.borrow_span.str(), "&number");
     assert_eq!(error.usage.as_local().map(Span::str), Some("vector"));
 }
 
 const BORROW_IN_LOOP: &str = r"
-public function main() {
-    let outer = 32;
-    let mutable test = &outer;
+public function main():
+    let outer = 32
+    let mut test = &outer
 
-    while (true) {
-        let inner = 32;
-        test = &inner;
+    while true:
+        let inner = 32
+        test = &inner
 
-        let copy = *test;
-    }
-}
+        let copy = *test
 ";
 
 #[test]
@@ -1155,18 +1125,16 @@ fn borrow_in_loop() {
 }
 
 const POSSIBLE_USE_OF_GOING_OUT_OF_SCOPE_REFERENCE: &str = r"
-public function test(cond: bool) {
-    let outer = 1;
-    let mutable ref = &outer;
+public function test(cond: bool):
+    let outer = 1
+    let mut ref = &outer
 
-    while (true) {
-        let inner = 2;
-        if (true) {
-            ref = &inner;
-        }
-        let copy = *ref;
-    }
-}
+    while (true):
+        let inner = 2
+        if true:
+            ref = &inner
+        
+        let copy = *ref
 ";
 
 #[test]
@@ -1186,16 +1154,15 @@ fn possible_use_of_going_out_of_scope_reference() {
 }
 
 const ASSIGN_MUTABLE_REFERENCE_DOES_NOT_INVALIDATE: &str = r"
-public function main() {
-    let mutable first = 32;
-    let mutable second = 64;
+public function main():
+    let mut first = 32
+    let mut second = 64
 
-    let mutable ref = &mutable first;
-	let anoher = &mutable *ref;
+    let mut ref = &mut first
+	let anoher = &mut *ref
 
-    ref = &mutable second;
-	let x = *anoher;
-}
+    ref = &mut second
+	let x = *anoher
 ";
 
 #[test]
@@ -1207,30 +1174,27 @@ fn mutable_reference_from_difference_places() {
 
 const PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_PLACES: &str = r"
 // fake vector
-public struct Vector[T] {
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main() {
-    let mutable first = 32;
-    let mutable second = 64;
-    let mutable vector = Vector::new();
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-    let mutable ref = &mutable first;
-    vector.push(&mutable *ref);
+public function main():
+    let mut first = 32
+    let mut second = 64
+    let mut vector = Vector::new()
 
-    ref = &mutable second;
-    vector.push(&mutable *ref);
-}
+    let mut ref = &mut first
+    vector.push(&mut *ref)
+
+    ref = &mut second
+    vector.push(&mut *ref)
 ";
 
 #[test]
@@ -1242,34 +1206,32 @@ fn push_two_mutable_references_from_different_places() {
 
 const PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_WITH_COND: &str = r"
 // fake vector
-public struct Vector[T] {
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main(cond: bool) {
-    let mutable first = 32;
-    let mutable second = 64;
-    let mutable vector = Vector::new();
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-    let mutable ref = &mutable first;
-    vector.push(&mutable *ref);
+public function main(cond: bool):
+    let mut first = 32
+    let mut second = 64
+    let mut vector = Vector::new()
 
-    if (cond) { 
-        ref = &mutable second;
-    } else {
-        return;
-    }
-    vector.push(&mutable *ref);
-}
+    let mut ref = &mut first
+    vector.push(&mut *ref)
+
+    if cond:
+        ref = &mut second
+    else:
+        return
+
+    vector.push(&mut *ref)
+
 ";
 
 #[test]
@@ -1281,35 +1243,33 @@ fn push_two_mutable_references_from_different_places_with_cond() {
 
 const PUSH_TWO_MUTABLE_REFERENCES_FROM_DIFFERENT_PLACES_ERROR: &str = r"
 // fake vector
-public struct Vector[T] {
+public struct Vector[T]:
     private _marker: phantom T
-}
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main(cond: bool) {
-    let mutable first = 32;
-    let mutable second = 64;
-    let mutable vector = Vector::new();
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-    let mutable ref = &mutable first;
-    vector.push(&mutable *ref);
+public function main(cond: bool):
+    let mut first = 32
+    let mut second = 64
+    let mut vector = Vector::new()
 
-    if (cond) { 
-        ref = &mutable second;
-    } else {
+    let mut ref = &mut first
+    vector.push(&mut *ref)
+
+    if cond:
+        ref = &mut second
+    else:
         // no reassignment, will error
-    }
-    vector.push(&mutable *ref);
-}
+        pass
+
+    
+    vector.push(&mut *ref)
 ";
 
 #[test]
@@ -1324,23 +1284,24 @@ fn push_two_mutable_references_from_different_places_error() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable *ref")
+        Some("&mut *ref")
     );
-    assert_eq!(error.access_span.str(), "&mutable *ref");
+    assert_eq!(error.access_span.str(), "&mut *ref");
     assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("vector"));
 }
 
 const REASSIGNED_REFERENCE: &str = r"
-public function print[T](value: T) {}
+public function print[T](value: T):
+    pass
+    
 
-public function main() {
-    let mutable x = 22;
-    let y = 44;
-    let mutable p = &x;
-    p = &y;
-    x += 1;
-    print(*p);
-}
+public function main():
+    let mut x = 22
+    let y = 44
+    let mut p = &x
+    p = &y
+    x += 1
+    print(*p)
 ";
 
 #[test]
@@ -1349,23 +1310,23 @@ fn reassign_reference() {
 }
 
 const INVALIDATED_IMMUTABLE_REFERENCE_USED_IN_LOOP: &str = r"
-public function consume[T](x: T) {}
+public function consume[T](x: T):
+    pass
 
-public function cond(): bool { panic; }
+public function cond() -> bool:
+    panic
 
-public function main() {
-    let mutable test = 32;
-    let r = &test;
+public function main():
+    let mut test = 32
+    let r = &test
 
-    while (cond()) {
+    while cond():
         // in first iteration, r is fine, no error
         // in second iteration, r is invalidated error should be raised
-        consume(*r); 
+        consume(*r)
 
         // r is invalidated here
-        test = 64;
-    }
-}
+        test = 64
 ";
 
 #[test]
@@ -1388,14 +1349,13 @@ fn invalidated_immutable_reference_used_in_loop() {
 }
 
 const MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED: &str = r"
-public function testa() {
-	let mutable test = 32;
-	let refm = &mutable test;
+public function testa():
+	let mut test = 32
+	let refm = &mut test
 
-	test = 64;
+	test = 64
 
-	*refm = 64;
-}
+	*refm = 64
 ";
 
 #[test]
@@ -1409,7 +1369,7 @@ fn mutably_access_while_mutably_borrowed() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable test")
+        Some("&mut test")
     );
 
     assert_eq!(error.access_span.str(), "test = 64");
@@ -1421,26 +1381,23 @@ fn mutably_access_while_mutably_borrowed() {
 
 const VECTOR_PUSH_TWO_TIMES: &str = r"
 // fake vector
-public struct Vector[T] {
-}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function main() {
-    let mutable vector = Vector::new();
-    let mutable number = 0;
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-    vector.push(number);
-    vector.push(number);
-}
+public function main():
+    let mut vector = Vector::new()
+    let mut number = 0
+
+    vector.push(number)
+    vector.push(number)
 ";
 
 #[test]
@@ -1450,33 +1407,32 @@ fn vector_push_two_times() {
 
 const POLONIUS_TWO_EXAMPLE: &str = r"
 // fake vector
-public struct Vector[T] {}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function consume[T](x: T) {}
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-public function main() {
-    let mutable v = Vector::new();
-    let p = &mutable v;
-    let mutable x = 1;
+public function consume[T](x: T):
+    pass
 
-    x = 2;
+public function main():
+    let mut v = Vector::new()
+    let p = &mut v
+    let mut x = 1
 
-    p->push(&x);
+    x = 2
 
-    x = 3;
+    p->push(&x)
 
-    consume(v);
-}
+    x = 3
+
+    consume(v)
 ";
 
 #[test]
@@ -1499,34 +1455,32 @@ fn polonius_two_example() {
 /// <https://github.com/rust-lang/polonius/blob/0a754a9e1916c0e7d9ba23668ea33249c7a7b59e/inputs/vec-push-ref/vec-push-ref.rs#L5>
 const VEC_PUSH_REF_ONE: &str = r"
 // fake vector
-public struct Vector[T] {}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function consume[T](x: T) {}
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-public function main(cond: bool) {
-    let mutable x = 1;
-    let mutable v = Vector::new();
-    let p = &x;
+public function consume[T](x: T):
+    pass
 
-    if (cond) {
-        v.push(p);
-        x = 2;
-    } else {
-        x = 3;
-    }
+public function main(cond: bool):
+    let mut x = 1
+    let mut v = Vector::new()
+    let p = &x
 
-    consume(v);
-}
+    if cond:
+        v.push(p)
+        x = 2
+    else:
+        x = 3
+    
+    consume(v)
 ";
 
 #[test]
@@ -1547,37 +1501,33 @@ fn vec_push_ref_one() {
 
 const VEC_PUSH_REF_TWO: &str = r"
 // fake vector
-public struct Vector[T] {
+public struct Vector[T]:
     private _marker: phantom T
-}
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function consume[T](x: T) {}
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-public function main(cond: bool) {
-    let mutable x = 1;
-    let mutable v = Vector::new();
-    let p = &x;
+public function consume[T](x: T):
+    pass
 
-    if (cond) {
-        v.push(p);
-    } else {
-        x = 2;
-    }
+public function main(cond: bool):
+    let mut x = 1
+    let mut v = Vector::new()
+    let p = &x
 
-    x = 3;
+    if cond:
+        v.push(p)
+    else:
+        x = 2
 
-    consume(v);
-}
+    x = 3
+
+    consume(v)
 ";
 
 #[test]
@@ -1598,34 +1548,31 @@ fn vec_push_ref_two() {
 
 const VEC_PUSH_REF_THREE: &str = r"
 // fake vector
-public struct Vector[T] {}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
 
-public function consume[T](x: T) {}
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
 
-public function main(cond: bool) {
-    let mutable x = 1;
-    let mutable v = Vector::new();
-    let p = &x;
+public function consume[T](x: T):
+    pass
 
-    if (cond) {
-        v.push(p);
-    } else {
-        x = 1;
-    }
+public function main(cond: bool):
+    let mut x = 1
+    let mut v = Vector::new()
+    let p = &x
 
+    if cond:
+        v.push(p)
+    else:
+        x = 1
 
-    consume(v);
-}
+    consume(v)
 ";
 
 #[test]
@@ -1634,11 +1581,13 @@ fn vec_push_ref_three() {
 }
 
 const RETURN_WRONG_LIFETIME_WITH_JUMP: &str = r"
-public function test['a, 'b](in: &'a int32): &'b int32 {
-	let result = in;
-	{} // <-  this creates a jump in cfg
-	return result;
-}
+public function test['a, 'b](in: &'a int32) -> &'b int32:
+	let result = in
+
+	scope: // <-  this creates a jump in cfg
+        pass
+
+	return result
 ";
 
 #[test]
@@ -1672,96 +1621,88 @@ fn return_wrong_lifetime_with_jump() {
 }
 
 const VEC_PUSH_LIST_REFS: &str = r"
-public enum Option[T] {
-	Some(T),
+public enum Option[T]:
+	Some(T)
 	None
-}
 
-implements[T] Option[T] {
-	public function isSome['a](self: &'a this) : bool
-	where
-		T: 'a
-	{
-		match (self) {
-			case Some(_): return true,
-			case None:    return false,
-		}
-	}
 
-	public function asRef['a](self: &'a this): Option[&'a T]
-	where
-		T: 'a
-	{
-		match (self) {
-			case Some(value): return Option::Some(value),
-			case None: return Option::None,
-		}
-	}
+implements[T] Option[T]:
+	public function isSome['a](self: &'a this ) -> bool:
+        where:
+            T: 'a
+	
+		match self:
+			case Some(_): return true
+			case None:    return false
+		
+	
 
-    public function asMutable['a](self: &'a mutable this): Option[&'a mutable T]
-    where
-        T: 'a
-    {
-        match (self) {
-            case Some(value): return Option::Some(value),
-            case None: return Option::None,
-        }
-    }
+	public function asRef['a](self: &'a this) -> Option[&'a T]:
+        where:
+            T: 'a
 
-    public function unwrap(self: this): T {
-        match (self) {
-            case Some(value): return value,
-            case None: panic,
-        }
-    }
-}
+		match self:
+			case Some(value): return Option::Some(value)
+			case None: return Option::None
 
-public struct Vector[T] {
-	private test: phantom T,
-}
 
-implements[T] Vector[T] {
-	public function new(): this {
-		return this {
-			test: phantom
-		};
-	}
+    public function asMutable['a](
+        self: &'a mut this
+    ) -> Option[&'a mut T]:
+        where:
+            T: 'a
 
-	public function push['a](self: &'a mutable this, value: T) 
-	where
-		T: 'a
-	{}
-}
+        match self:
+            case Some(value): return Option::Some(value)
+            case None: return Option::None
 
-public struct List[T] {
-	public value: T,
-	public next: Option[List[T]],
-}
 
-public function createList[T](): List[T] {
-	panic;
-}
+    public function unwrap(self: this) -> T:
+        match self:
+            case Some(value): return value
+            case None: panic
+
+
+// fake vector
+public struct Vector[T]:
+    private _marker: phantom T
+
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+public struct List[T]:
+	public value: T
+    
+    // NOTE: this will create infinite sized struct in the future
+	public next: Option[List[T]] 
+
+
+public function createList[T]() -> List[T]:
+	panic
+    
 
 public function getRefs['a, T](
-	mutable list: &'a mutable List[T]
-): Vector[&'a mutable T]
-where
-	T: 'a
-{
-	let mutable vector = Vector::new();
+	mut list: &'a mut List[T]
+) -> Vector[&'a mut T]:
+    where:
+        T: 'a
 
-	loop {
-		vector.push(&mutable list->value);
+	let mut vector = Vector::new()
 
-		match (&mutable list->next) {
-			case Some(next): {
-				list = next;
-			},
+	loop:
+		vector.push(&mut list->value)
 
-			case None: return vector,	
-		}
-	}
-}
+		match (&mut list->next):
+			case Some(next):
+				list = next
+
+			case None: return vector
+
 ";
 
 #[test]
@@ -1770,35 +1711,38 @@ fn vec_push_list_refs() {
 }
 
 const COMPLEX_LOOP: &str = r"
-public function consume[T](..: T) { panic; }
-public function create['a](): &'a mutable int32 { panic; }
+public function consume[T](..: T):
+    panic
 
-public function test(cond: bool) {
-	let mutable a = 32;
-	let mutable x = &mutable a;
-	let mutable q = create(); // create() No.1
+public function create['a]() -> &'a mut int32:
+    panic
 
-	loop {
+public function test(cond: bool):
+	let mut a = 32
+	let mut x = &mut a
+	let mut q = create()    // create() No.1
+
+	loop:
 		// first iteration -> p refers to the `a` variable
 		// second iteration -> p refers to the `create() No.2` function
-		let p = &mutable *x; 
+		let p = &mut *x
 
-		if (cond) { break; }
+		if cond:
+            break
 	
 		// before loop -> q refers to the `create() No.1` function
 		// first iteration -> q refers to the `a` variable
 		// second iteration -> q refers to the `create() No.2` function
-		q = p;
+		q = p
 
-		x = create(); // create() No.2
-	}
+		x = create() // create() No.2
 
-	consume(&mutable a);
+
+	consume(&mut a)
 
 	// q might refer to the `a` variable if the loop is executed twice 
 	// (full first iteration, and second iteration hits the break)
-	consume(q);	
-}
+	consume(q)
 ";
 
 #[test]
@@ -1812,130 +1756,119 @@ fn complex_loop() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable a")
+        Some("&mut a")
     );
 
-    assert_eq!(error.access_span.str(), "&mutable a");
+    assert_eq!(error.access_span.str(), "&mut a");
 
     assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("q"));
 }
 
 const CONDITIONAL_CONTROL_FLOW_ACCROSS_FUNCTIONS: &str = r"
-public enum Option[T] {
-	Some(T),
+public enum Option[T]:
+	Some(T)
 	None
-}
 
-implements[T] Option[T] {
-	public function isSome['a](self: &'a this) : bool
-	where
-		T: 'a
-	{
-		match (self) {
-			case Some(_): return true,
-			case None:    return false,
-		}
-	}
 
-	public function asRef['a](self: &'a this): Option[&'a T]
-	where
-		T: 'a
-	{
-		match (self) {
-			case Some(value): return Option::Some(value),
-			case None: return Option::None,
-		}
-	}
+implements[T] Option[T]:
+	public function isSome['a](self: &'a this ) -> bool:
+        where:
+            T: 'a
+	
+		match self:
+			case Some(_): return true
+			case None:    return false
+		
+	
 
-    public function asMutable['a](self: &'a mutable this): Option[&'a mutable T]
-    where
-        T: 'a
-    {
-        match (self) {
-            case Some(value): return Option::Some(value),
-            case None: return Option::None,
-        }
-    }
+	public function asRef['a](self: &'a this) -> Option[&'a T]:
+        where:
+            T: 'a
 
-    public function unwrap(self: this): T {
-        match (self) {
-            case Some(value): return value,
-            case None: panic,
-        }
-    }
-}
+		match self:
+			case Some(value): return Option::Some(value)
+			case None: return Option::None
 
-public struct Vector[T] {
-	private test: phantom T,
-}
 
-implements[T] Vector[T] {
-	public function new(): this {
+    public function asMutable['a](
+        self: &'a mut this
+    ) -> Option[&'a mut T]:
+        where:
+            T: 'a
+
+        match self:
+            case Some(value): return Option::Some(value)
+            case None: return Option::None
+
+
+    public function unwrap(self: this) -> T:
+        match self:
+            case Some(value): return value
+            case None: panic
+
+
+// fake vector
+public struct Vector[T]:
+    private _marker: phantom T
+
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+
+public struct HashMap[K, V]:
+	private test: phantom (K, V)
+
+
+implements[K, V] HashMap[K, V]:
+	public function new() -> this:
 		return this {
 			test: phantom
-		};
-	}
-
-	public function push['a](self: &'a mutable this, value: T) 
-	where
-		T: 'a
-	{}
-}
-
-public struct HashMap[K, V] {
-	private test: phantom (K, V),
-}
-
-implements[K, V] HashMap[K, V] {
-	public function new(): this {
-		return this {
-			test: phantom
-		};
-	}
+		}
 
 	public function insert['a](
-		self: &'a mutable this, 
+		self: &'a mut this, 
 		key: K, 
 		value: V
-	): Option[V]
-	where
-		K: 'a,
-		V: 'a 
-	{
-		panic;
-	}
+	) -> Option[V]:
+        where:
+            K: 'a
+            V: 'a 
+
+		panic
+
 
 	public function get['a, 'b](
 		self: &'a this, 
 		key: &'b K
-	): Option[&'a V]
-	where
-		K: 'a + 'b,
-		V: 'a
-	{
-		panic;
-	}
+	) -> Option[&'a V]:
+        where:
+            K: 'a + 'b
+            V: 'a
+
+		panic
+
 
 	public function getOrDefault['a](
-		self: &'a mutable this, 
+		self: &'a mut this, 
 		key: K,
 		default: V
-	): &'a V
-	where
-	 	K: 'a,
-		V: 'a
-	{
-		match (self->get(&key)) {
-			case Some(value): {
-				return value;
-			},
-			case None: {
-				self->insert(key, default);
-				return self->get(&key).unwrap();
-			},
-		}
-	}	
-}
+	) -> &'a V:
+        where:
+            K: 'a
+            V: 'a
+
+		match self->get(&key):
+			case Some(value):
+				return value
+
+			case None:
+				self->insert(key, default)
+				return self->get(&key).unwrap()
 ";
 
 #[test]
@@ -1947,31 +1880,30 @@ fn conditional_control_flow_accross_functions() {
 
 const RETURN_INVALIDATED_UNIVERSAL_REGIONS_2: &str = r"
 // fake vector
-public struct Vector[T] {}
+public struct Vector[T]:
+    private _marker: phantom T
 
-implements[T] Vector[T] {
-    public function new(): this { panic; }
-    public function push['a](self: &'a mutable this, value: T)
-    where
-        T: 'a
-    {
-        panic;
-    }
-}
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
 
 public function test['a, 'b](
-	vector: &'a mutable Vector[&'b mutable int32],
-	number: &'b mutable int32
-): &'b mutable int32 
-where
-	'b: 'a
-{
+	vector: &'a mut Vector[&'b mut int32],
+	number: &'b mut int32
+) -> &'b mut int32:
+    where:
+        'b: 'a
+
 	// mutable ref number has already been stored in vector
-	vector->push(&mutable *number); 
+	vector->push(&mut *number)
 
 	// the caller can use the extra mutable reference, which is invalid
-	return &mutable *number;        
-}
+	return &mut *number
 ";
 
 #[test]
@@ -1998,9 +1930,9 @@ fn return_invalidated_universal_regions_2() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable *number")
+        Some("&mut *number")
     );
-    assert_eq!(error.access_span.str(), "&mutable *number");
+    assert_eq!(error.access_span.str(), "&mut *number");
 
     let by_universal_region =
         error.borrow_usage.as_by_universal_regions().unwrap();
@@ -2016,22 +1948,21 @@ fn return_invalidated_universal_regions_2() {
 }
 
 const UNIVERSAL_REGIONS_THROUGH_TRAIT_PREDICATES: &str = r"
-public trait Fizz['a, T, U] {
-    public function doSomething['b](self: &'b T, t: &'a mutable U)
-    where
-        T: 'b,
-        U: 'a;
-}
+public trait Fizz['a, T, U]:
+    public function doSomething['b](self: &'b T, t: &'a mut U):
+        where:
+            T: 'b
+            U: 'a
 
-public function test['a, 'b, T, U](t: &'b T, u: &'a mutable U) 
-where
-    trait Fizz['a, T, U],
-	T: 'b,
-	U: 'a
-{
-    t->doSomething(&mutable *u);
-    t->doSomething(&mutable *u);
-}
+
+public function test['a, 'b, T, U](t: &'b T, u: &'a mut U):
+    where:
+        trait Fizz['a, T, U]
+        T: 'b
+        U: 'a
+
+    t->doSomething(&mut *u)
+    t->doSomething(&mut *u)
 
 ";
 
@@ -2054,10 +1985,10 @@ fn universal_regions_through_trait_predicates() {
 
     assert_eq!(
         error.mutable_borrow_span.as_ref().map(Span::str),
-        Some("&mutable *u")
+        Some("&mut *u")
     );
 
-    assert_eq!(error.access_span.str(), "&mutable *u");
+    assert_eq!(error.access_span.str(), "&mut *u");
 
     let by_universal_region =
         error.borrow_usage.as_by_universal_regions().unwrap();
@@ -2068,33 +1999,29 @@ fn universal_regions_through_trait_predicates() {
 }
 
 const BORROW_USAGE_IN_DROP: &str = r"
-using {Drop} from core;
+from core import Drop
 
-public struct DropWrapper[T] {
+
+public struct DropWrapper[T]:
     private value: T
-}
 
-implements[T] DropWrapper[T] {
-    public function new(value: T): this {
-        return this { value: value };
-    }
-}
 
-implements[T] Drop[DropWrapper[T]] {
-    public function drop['b](self: &'b mutable DropWrapper[T]) 
-    where 
-        DropWrapper[T]: 'b 
-    {
+implements[T] DropWrapper[T]:
+    public function new(value: T) -> this:
+        return this { value: value }
 
-    }
-}
 
-public function main() {
-    let mutable number = 32;
-    let wrapper = DropWrapper::new(&number);
+implements[T] Drop[DropWrapper[T]]:
+    function drop['b](self: &'b mut DropWrapper[T]):
+        where:
+            DropWrapper[T]: 'b 
 
-    number += 23;
-}
+
+public function main():
+    let mut number = 32
+    let wrapper = DropWrapper::new(&number)
+
+    number += 23
 ";
 
 #[test]
@@ -2119,20 +2046,20 @@ fn borrow_usage_in_drop() {
 }
 
 const UNIVERSAL_REGIONS_ALWAYS_FLOWS: &str = r"
-public struct Test['a] {
-	public first: &'a int32,
-}
+public struct Test['a]:
+	public first: &'a int32
 
-public function test['a, 'b](test: &'b mutable Test['a], cond: bool) 
-where
-	'a: 'b
-{
-	let inner = 32;
-	let copy = test->first;
 
-	test->first = &inner;
-	test->first = copy;
-}
+public function test['a, 'b](test: &'b mut Test['a], cond: bool):
+    where:
+        'a: 'b
+
+	let inner = 32
+	let copy = test->first
+
+	test->first = &inner
+	test->first = copy
+
 ";
 
 #[test]
@@ -2175,68 +2102,64 @@ fn universal_regions_always_flows() {
 }
 
 const IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH: &str = r"
-using {Drop, Copy} from core;
+from core import Copy, Drop
 
-public struct Vector[T] {
+public struct Vector[T]:
 	private x: phantom T
-}
 
-implements[T] Vector[T] {
-	public function new(): this {
-		return this { x: phantom };
-	}
 
-	public function push['a](self: &'a mutable this, value: T)
-	where
-		T: 'a
-	{
-		panic;
-	}
-}
+implements[T] Vector[T]:
+	public function new() -> this:
+		return this { x: phantom }
 
-public trait DoSomething['a, T] {
-	public type Output;
+
+	public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+
+public trait DoSomething['a, T]:
+	public type Output
 
 	public function doSomething['b](
-		self: &'b mutable T, 
-		object: &'a mutable int32
-	)
-	where
-		T: 'b;
-}
+		self: &'b mut T, 
+		object: &'a mut int32
+	):
+        where:
+            T: 'b
 
-implements['a, 'c] DoSomething['a, Vector[&'c mutable int32]]  
-where
-	'a: 'c
-{
-	public type Output = int32;
 
-	public function doSomething['b](
-		self: &'b mutable Vector[&'c mutable int32], 
-		object: &'a mutable int32
-	) 
-	where	
-		Vector[&'c mutable int32]: 'b {
-		self->push(&mutable *object);
-	}
-}
+implements['a, 'c] DoSomething['a, Vector[&'c mut int32]]:
+    where:
+        'a: 'c
 
-public function use['a, T](object: &'a mutable T)
-where
-	trait for['x] DoSomething['x, T],
-	T: 'a
-{
-	let mutable number = 32;
+	type Output = int32
+
+	function doSomething['b](
+		self: &'b mut Vector[&'c mut int32], 
+		object: &'a mut int32
+	):
+        where:
+            Vector[&'c mut int32]: 'b 
+
+        self->push(&mut *object)
+
+
+public function use['a, T](object: &'a mut T):
+    where:
+        trait for['x] DoSomething['x, T]
+        T: 'a
+
+	let mut number = 32
 	
-	object->doSomething(&mutable number);
-	object->doSomething(&mutable number);
-}
+	object->doSomething(&mut number)
+	object->doSomething(&mut number)
 
-public function main() {
-	let mutable vector = Vector[&mutable int32]::new();
 
-	use(&mutable vector);
-}
+public function main():
+	let mut vector = Vector[&mut int32]::new()
+
+	use(&mut vector)
 ";
 
 #[test]
@@ -2250,5 +2173,5 @@ fn implementation_is_not_general_enough() {
         .downcast_ref::<ImplementationIsNotGeneralEnough<IRModel>>()
         .unwrap();
 
-    assert_eq!(error.instantiation_span.str(), "use(&mutable vector)");
+    assert_eq!(error.instantiation_span.str(), "use(&mut vector)");
 }

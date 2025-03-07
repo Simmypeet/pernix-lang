@@ -3,25 +3,26 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public struct Zst {}
 
-public function main() {
-    let mutable test = (0i32, (), 0i32, Zst{}, 0i32, (), 0i32);
+public struct Zst:
+    pass
+
+
+public function main():
+    let mut test = (0i32, (), 0i32, Zst{}, 0i32, (), 0i32)
 
     scanf(&"%d %d %d %d"->[0],
-        &mutable test.0,
-        &mutable test.2,
-        &mutable test.-2,
-        &mutable test.-0
-    );
+        &mut test.0,
+        &mut test.2,
+        &mut test.-2,
+        &mut test.-0
+    )
 
-    printf(&"%d"->[0], test.0 + test.2 + test.-2 + test.-0);
-}
+    printf(&"%d"->[0], test.0 + test.2 + test.-2 + test.-0)
 "#;
 
 #[test]

@@ -1,32 +1,32 @@
+//! Target the borrow of the zst type; it should create a non-null, aligned
+//! pointer
+
 use crate::compile_file;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
 
-public enum Option[T] {
-    Some(T),
-    None,
-}
 
-public function main() {
-    let value = ();
-    let option = Option::Some(&value);
+public enum Option[T]:
+    Some(T)
+    None
 
-    match (option) {
-        case Some(value): {
-            printf(&"is some\n\0"->[0]);
-        },
-        case None: {
-            printf(&"is none\n\0"->[0]);
-        }
-    }
-}
+
+public function main():
+    let value = ()
+    let option = Option::Some(&value)
+
+    match option:
+        case Some(value):
+            printf(&"is some\n\0"->[0])
+
+        case None:
+            printf(&"is none\n\0"->[0])
 "#;
 
 #[test]
-fn drop() {
+fn zst_borrowing() {
     let output = compile_file(SOURCE);
 
     assert!(output.status.success());

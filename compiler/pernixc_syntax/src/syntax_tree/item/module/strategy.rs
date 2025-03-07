@@ -22,7 +22,7 @@ use crate::syntax_tree::{
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImportItem {
-    pub identifier: Identifier,
+    pub simple_path: SimplePath,
     pub alias: Option<Identifier>,
 }
 
@@ -31,8 +31,8 @@ impl Arbitrary for ImportItem {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Identifier::arbitrary(), proptest::option::of(Identifier::arbitrary()))
-            .prop_map(|(identifier, alias)| Self { identifier, alias })
+        (SimplePath::arbitrary(), proptest::option::of(Identifier::arbitrary()))
+            .prop_map(|(simple_path, alias)| Self { simple_path, alias })
             .boxed()
     }
 }
@@ -43,7 +43,7 @@ impl IndentDisplay for ImportItem {
         f: &mut std::fmt::Formatter<'_>,
         _indent: usize,
     ) -> std::fmt::Result {
-        write!(f, "{}", self.identifier)?;
+        write!(f, "{}", self.simple_path)?;
         if let Some(alias) = &self.alias {
             write!(f, " as {alias}")?;
         }
@@ -53,7 +53,7 @@ impl IndentDisplay for ImportItem {
 
 impl Input<&super::ImportItem> for &ImportItem {
     fn assert(self, output: &super::ImportItem) -> TestCaseResult {
-        self.identifier.assert(&output.identifier)?;
+        self.simple_path.assert(&output.simple_path)?;
         self.alias.as_ref().assert(output.alias.as_ref().map(|x| &x.identifier))
     }
 }

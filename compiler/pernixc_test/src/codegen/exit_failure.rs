@@ -3,13 +3,12 @@
 use crate::compile_file;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function exit(code: int32);
-}
+extern "C":
+    public function exit(code: int32)
 
-public function main() {
-    exit(1);
-}
+
+public function main():
+    exit(1)
 "#;
 
 #[test]

@@ -2,31 +2,30 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-using {Drop, Copy} from core;
+from core import Drop, Copy
 
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public struct LoudDrop {
-    private value: int32,
-}
 
-final implements Drop[LoudDrop] {
-    public function drop(self: &mutable LoudDrop) {
-        printf(&"Dropping %d\n\0"->[0], self->value);
-    }
-}
+public struct LoudDrop:
+    private value: int32
 
-final implements Copy[LoudDrop] delete;
 
-public function main() {
-    let mutable first = LoudDrop { value: 0 };
-    let mutable second = LoudDrop { value: 1 };
+final implements Drop[LoudDrop]:
+    function drop(self: &mut LoudDrop):
+        printf(&"Dropping %d\n\0"->[0], self->value)
 
-    scanf(&"%d %d\0"->[0], &mutable first.value, &mutable second.value);
-}
+
+final implements Copy[LoudDrop] delete
+
+
+public function main():
+    let mut first = LoudDrop { value: 0 }
+    let mut second = LoudDrop { value: 1 }
+
+    scanf(&"%d %d\0"->[0], &mut first.value, &mut second.value)
 "#;
 
 #[test]

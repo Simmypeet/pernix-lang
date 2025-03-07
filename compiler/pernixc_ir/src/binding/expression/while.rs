@@ -23,19 +23,19 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::While> for Binder<'_> {
+impl Bind<&syntax_tree::expression::block::While> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::While,
+        syntax_tree: &syntax_tree::expression::block::While,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let label = syntax_tree
-            .block()
-            .label_specifier()
+            .group
+            .label
             .as_ref()
-            .map(|x| x.label().identifier().span.str().to_owned());
+            .map(|x| x.identifier.span.str().to_owned());
 
         let loop_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
@@ -99,16 +99,15 @@ impl Bind<&syntax_tree::expression::While> for Binder<'_> {
             kind: LoopKind::While,
             loop_block_id,
             exit_block_id,
-            span: syntax_tree.span(),
         });
 
         // bind the conditional value
         let condition =
-            self.bind_value_or_error(syntax_tree.parenthesized(), handler)?;
+            self.bind_value_or_error(&*syntax_tree.binary, handler)?;
         self.type_check(
             &self.type_of_value(&condition, handler)?,
             Expected::Known(Type::Primitive(Primitive::Bool)),
-            syntax_tree.parenthesized().span(),
+            syntax_tree.binary.span(),
             handler,
         )?;
 
@@ -142,7 +141,13 @@ impl Bind<&syntax_tree::expression::While> for Binder<'_> {
         self.current_block_id = loop_body_block_id;
 
         // bind the loop block
-        for statement in syntax_tree.block().statements().tree() {
+        for statement in syntax_tree
+            .group
+            .statements
+            .statements
+            .iter()
+            .filter_map(|x| x.as_option())
+        {
             self.bind_statement(statement, handler)?;
         }
 

@@ -7,12 +7,17 @@ use crate::{
 
 #[test]
 fn unreachable_loop() {
+    const SOURCE: &str = r"
+loop:   
+    pass
+";
+
     let template = Template::new();
     let mut binder = template.create_binder();
 
     let value = binder.bind_as_rvalue_success(&parse::<
-        syntax_tree::expression::Loop,
-    >("loop {}"));
+        syntax_tree::expression::block::Loop,
+    >(SOURCE));
 
     assert!(value.into_literal().unwrap().is_unreachable());
     assert!(binder.current_block().is_unreachable_or_terminated());
@@ -22,12 +27,16 @@ fn unreachable_loop() {
 fn single_break_loop() {
     let template = Template::new();
     {
+        const SOURCE: &str = r"
+loop:
+    break 32
+";
         let mut binder = template.create_binder();
 
         let numeric_literal = binder
-            .bind_as_rvalue_success(&parse::<syntax_tree::expression::Loop>(
-                "loop { break 32; }",
-            ))
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::block::Loop,
+            >(SOURCE))
             .into_literal()
             .unwrap()
             .into_numeric()
@@ -40,12 +49,18 @@ fn single_break_loop() {
     }
 
     {
+        const SOURCE: &str = r"
+loop:
+    break 64
+    break 128
+";
+
         let mut binder = template.create_binder();
 
         let numeric_literal = binder
-            .bind_as_rvalue_success(&parse::<syntax_tree::expression::Loop>(
-                "loop { break 64; break 128; }",
-            ))
+            .bind_as_rvalue_success(&parse::<
+                syntax_tree::expression::block::Loop,
+            >(SOURCE))
             .into_literal()
             .unwrap()
             .into_numeric()
@@ -61,23 +76,23 @@ fn single_break_loop() {
 #[test]
 fn multiple_break_loop() {
     const BREAK_LOOP: &str = r"
-    loop {
-        if (true) {
-            break 32;
-        } else if (true) {
-            break 64;
-        } else {
-            break 128;
-        }
+loop:
+    if true:
+        break 32
+    else if true:
+        break 64
+    else:
+        break 128
+    
 
-        break 256; // unreachable
-    }";
+    break 256 // unreachable
+";
 
     let template = Template::new();
     let mut binder = template.create_binder();
 
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Loop>(
+        .bind_as_rvalue_success(&parse::<syntax_tree::expression::block::Loop>(
             BREAK_LOOP,
         ))
         .into_register()

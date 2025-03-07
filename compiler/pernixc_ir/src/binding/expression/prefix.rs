@@ -20,28 +20,28 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Prefix> for Binder<'_> {
+impl Bind<&syntax_tree::expression::prefix::Prefix> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Prefix,
+        syntax_tree: &syntax_tree::expression::prefix::Prefix,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        match syntax_tree.operator() {
-            syntax_tree::expression::PrefixOperator::LogicalNot(_)
-            | syntax_tree::expression::PrefixOperator::Negate(_)
-            | syntax_tree::expression::PrefixOperator::BitwiseNot(_) => {
-                let (expected_type, operator) = match syntax_tree.operator() {
-                    syntax_tree::expression::PrefixOperator::LogicalNot(_) => (
+        match &syntax_tree.operator {
+            syntax_tree::expression::prefix::PrefixOperator::LogicalNot(_)
+            | syntax_tree::expression::prefix::PrefixOperator::Negate(_)
+            | syntax_tree::expression::prefix::PrefixOperator::BitwiseNot(_) => {
+                let (expected_type, operator) = match &syntax_tree.operator {
+                    syntax_tree::expression::prefix::PrefixOperator::LogicalNot(_) => (
                         Some(Expected::Known(Type::Primitive(Primitive::Bool))),
                         PrefixOperator::LogicalNot,
                     ),
-                    syntax_tree::expression::PrefixOperator::Negate(_) => (
+                    syntax_tree::expression::prefix::PrefixOperator::Negate(_) => (
                         Some(Expected::Constraint(Constraint::Signed)),
                         PrefixOperator::Negate,
                     ),
-                    syntax_tree::expression::PrefixOperator::BitwiseNot(_) => (
+                    syntax_tree::expression::prefix::PrefixOperator::BitwiseNot(_) => (
                         Some(Expected::Constraint(Constraint::Integer)),
                         PrefixOperator::BitwiseNot,
                     ),
@@ -50,7 +50,7 @@ impl Bind<&syntax_tree::expression::Prefix> for Binder<'_> {
 
                 let operand = self
                     .bind(
-                        &**syntax_tree.prefixable(),
+                        &*syntax_tree.prefixable,
                         Config { target: Target::RValue },
                         handler,
                     )?
@@ -78,25 +78,26 @@ impl Bind<&syntax_tree::expression::Prefix> for Binder<'_> {
                 Ok(Expression::RValue(Value::Register(register_id)))
             }
 
-            syntax_tree::expression::PrefixOperator::Dereference(_) => self
-                .bind_dereference(
-                    &**syntax_tree.prefixable(),
+            syntax_tree::expression::prefix::PrefixOperator::Dereference(_) => {
+                self.bind_dereference(
+                    &*syntax_tree.prefixable,
                     config,
                     syntax_tree.span(),
                     handler,
-                ),
+                )
+            }
 
-            syntax_tree::expression::PrefixOperator::ReferenceOf(
+            syntax_tree::expression::prefix::PrefixOperator::ReferenceOf(
                 reference_of,
             ) => {
-                let qualifier = if reference_of.mutable_keyword().is_some() {
+                let qualifier = if reference_of.mutable_keyword.is_some() {
                     Qualifier::Mutable
                 } else {
                     Qualifier::Immutable
                 };
 
                 let lvalue = self.bind_as_lvalue(
-                    &**syntax_tree.prefixable(),
+                    &*syntax_tree.prefixable,
                     true,
                     handler,
                 )?;

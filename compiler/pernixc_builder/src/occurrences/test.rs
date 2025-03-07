@@ -20,26 +20,26 @@ use pernixc_type_system::diagnostic::{
 use crate::utility::build_table;
 
 const PREDICATE_REQUIREMENTS: &str = r"
-public trait Fizz['a, T] {}
+public trait Fizz['a, T]:
+    pass
 
-public trait Identity[T] {
-    public type Output;
-}
 
-implements[T] Identity[T] {
-    public type Output = int32;
-}
+public trait Identity[T]:
+    public type Output
 
-public type Qux['a, T] = &'a T
-where
-    trait Fizz['a, T] + Identity[T],
-    Identity[T]::Output = T,
-    const T,
-    tuple T,
-    T: 'a,
-    'a: 'static;
 
-public type Instantiate['a, 'b] = Qux['a, &'b float32];
+implements[T] Identity[T]:
+    type Output = int32
+
+
+public type Qux['a, T] = &'a T:
+    where:
+        trait Fizz['a, T] + Identity[T]
+        Identity[T]::Output = T
+        T: 'a + const + tuple
+        'a: 'static
+
+public type Instantiate['a, 'b] = Qux['a, &'b float32]
 ";
 
 #[test]
@@ -171,19 +171,17 @@ fn check_lifetime_matching_error(
 }
 
 const SIMPLIFY_AND_CHECK_LIFETIME_CONSTRAINTS: &str = r"
-    public trait Foo['a, T] {
-        public type Bar;
-    }
+public trait Foo['a, T]:
+    public type Bar
 
-    public struct Baz['a, 'b, T] 
-    where
-        trait for['x] Foo['x, T],
-        Foo['a, T]::Bar = int32,
-    {
-        public first: Foo['b, T]::Bar, // this is an error
-        public second: &'a int32,
-        public third: &'b int32,
-    }
+public struct Baz['a, 'b, T] :
+    where:
+        trait for['x] Foo['x, T]
+        Foo['a, T]::Bar = int32
+
+    public first: Foo['b, T]::Bar // this is an error
+    public second: &'a int32
+    public third: &'b int32
 ";
 
 #[test]
@@ -218,20 +216,20 @@ fn simplify_and_check_lifetime_constraints() {
 }
 
 const TRAIT_OCCURRENCES: &str = r"
-public trait Foo['a, T] {
-    public type Output;
-}
+public trait Foo['a, T]:
+    public type Output
 
-public struct Bar['a, T] {
+
+public struct Bar['a, T]:
     public first: Foo['a, T]::Output
-}
 
-public struct Qux['a, 'b, T] 
-where
-    trait Foo['a, T]
-{
+
+public struct Qux['a, 'b, T]:
+    where:
+        trait Foo['a, T]
+
     public first: Foo['b, T]::Output
-}
+
 ";
 
 #[test]
@@ -294,19 +292,19 @@ fn trait_occurrences() {
 }
 
 const TRAIT_IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH: &str = r"
-public trait Fizz['a, 'b, T] {
-    public type Buzz;
-}
+public trait Fizz['a, 'b, T]:
+    public type Buzz
 
-implements['a, T] Fizz['a, 'a, T] {
-    public type Buzz = T;
-}
 
-public type Qux[T] = T
-where
-    trait for['x, 'y] Fizz['x, 'y, T];
+implements['a, T] Fizz['a, 'a, T]:
+    type Buzz = T
 
-public type Instantiate = Qux[int32];
+
+public type Qux[T] = T:
+    where:
+        trait for['x, 'y] Fizz['x, 'y, T]
+
+public type Instantiate = Qux[int32]
 ";
 
 #[test]
@@ -335,9 +333,9 @@ fn trait_implementation_is_not_general_enough() {
 }
 
 const REFERENCE_TYPE_OCCURRENCE: &str = r"
-public struct ReferenceWrapper['a, T] {
-    private inner: &'a T,
-}
+public struct ReferenceWrapper['a, T]:
+    private inner: &'a T
+
 ";
 
 #[test]
@@ -378,9 +376,9 @@ fn reference_type_occurrence() {
 }
 
 const CHECK_UNPACKED_OCCURRENCE: &str = r"
-public struct SurroundedWithBools[T] {
-    public surrounded: (bool, ...T, bool),
-}
+public struct SurroundedWithBools[T]:
+    public surrounded: (bool, ...T, bool)
+
 ";
 
 #[test]
@@ -414,34 +412,34 @@ fn check_unpacked_occurrence() {
 }
 
 const TRAIT_IMPLEMENTATION_IS_NOT_GENERAL_ENOUGH_BY_CONSTRAINTS: &str = r"
-public trait Fizz['a, T] {}
+public trait Fizz['a, T]:
+    pass
 
-final implements['a, 'b, T] Fizz['a, &'b T] 
-where
-    T: 'b
-{
-}
 
-final implements['a, 'b, T] Fizz['a, &'b mutable T] 
-where
-    T: 'b,
-    'a: 'b // this constraint makes lifetime 'a be specific to 'b
-{
-}
+final implements['a, 'b, T: 'b] Fizz['a, &'b T]:
+    pass
 
-public type WithRequirement[T] = T
-where
-    trait for['x] Fizz['x, T];
+
+final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
+    where:
+        'a: 'b // this constraint makes lifetime 'a be specific to 'b
+
+
+public type WithRequirement[T] = T:
+    where:
+        trait for['x] Fizz['x, T]
+
 
 // this instantiation is valid
-public type First['a, T] = WithRequirement[&'a T]
-where
-    T: 'a;
+public type First['a, T] = WithRequirement[&'a T]:
+    where:
+        T: 'a
+
 
 // this instantiation is invalid (not general enough)
-public type Second['a, T] = WithRequirement[&'a mutable T]
-where
-    T: 'a;
+public type Second['a, T] = WithRequirement[&'a mut T]:
+    where:
+        T: 'a
 ";
 
 #[test]
@@ -484,36 +482,35 @@ fn trait_implementation_is_not_general_enough_by_constraints() {
 }
 
 const FOR_ALL_LIFETIME_AS_AN_OPERAND_IN_OUTLIVES: &str = r"
-public trait Fizz['a, T] 
-{
-}
+public trait Fizz['a, T]:
+    pass
 
-final implements['a, 'b, T] Fizz['a, &'b T] 
-where
-    T: 'b
-{
-}
 
-final implements['a, 'b, T] Fizz['a, &'b mutable T] 
-where
-    T: 'b,
-    'b: 'a
-{
-}
+final implements['a, 'b, T] Fizz['a, &'b T]:
+    where:
+        T: 'b
 
-public type WithRequirement[T] = T
-where
-    trait for['x] Fizz['x, T];
+
+final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
+    where:
+        'b: 'a
+
+
+public type WithRequirement[T] = T:
+    where:
+        trait for['x] Fizz['x, T]
+
 
 // this instantiation is valid
-public type First['a, T] = WithRequirement[&'a T]
-where
-    T: 'a;
+public type First['a, T] = WithRequirement[&'a T]:
+    where:
+        T: 'a
+
 
 // this instantiation is invalid ('a: 'static is not satisfied) 
-public type Second['a, T] = WithRequirement[&'a mutable T]
-where
-    T: 'a;
+public type Second['a, T] = WithRequirement[&'a mut T]:
+    where:
+        T: 'a
 ";
 
 #[test]
@@ -545,33 +542,44 @@ fn for_all_lifetime_as_an_operand_in_outlives() {
 }
 
 const MARKER_SATISFIED: &str = r"
-public marker Marker[T];
+public marker Marker[T]
 
-final implements Marker[int32];
-final implements Marker[bool];
 
-public struct MyStruct {
-    public a: int32,
-    public b: bool,
-}
+final implements Marker[int32]:
+    pass
 
-public struct EmptyStruct {}
 
-public enum MyEnum {
-    A(int32),
-    B(bool),
-}
+final implements Marker[bool]:
+    pass
 
-public enum EmptyEnum {}
 
-public type WithRequirement[T] = T
-where
-    marker Marker[T];
+public struct MyStruct:
+    public a: int32
+    public b: bool
 
-public type InstMyStruct    = WithRequirement[MyStruct];
-public type InstEmptyStruct = WithRequirement[EmptyStruct];
-public type InstMyEnum      = WithRequirement[MyEnum];
-public type InstEmptyEnum   = WithRequirement[EmptyEnum];
+
+public struct EmptyStruct:
+    pass
+
+
+public enum MyEnum:
+    A(int32)
+    B(bool)
+
+
+public enum EmptyEnum:
+    pass
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker Marker[T]
+
+
+public type InstMyStruct    = WithRequirement[MyStruct]
+public type InstEmptyStruct = WithRequirement[EmptyStruct]
+public type InstMyEnum      = WithRequirement[MyEnum]
+public type InstEmptyEnum   = WithRequirement[EmptyEnum]
 ";
 
 #[test]
@@ -582,20 +590,24 @@ pub fn marker_satisfied() {
 }
 
 const MARKER_NOT_SATISFIED: &str = r"
-public marker Marker[T];
+public marker Marker[T]
 
-final implements Marker[int32];
 
-public struct MyStruct {
-    public a: int32,
-    public b: bool,
-}
+final implements Marker[int32]:
+    pass
 
-public type WithRequirement[T] = T
-where
-    marker Marker[T];
 
-public type InstMyStruct = WithRequirement[MyStruct];
+public struct MyStruct:
+    public a: int32
+    public b: bool
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker Marker[T]
+
+
+public type InstMyStruct = WithRequirement[MyStruct]
 ";
 
 #[test]
@@ -630,25 +642,30 @@ pub fn marker_not_satisfied() {
 }
 
 const MARKER_WITH_CONSTRAINTS: &str = r"
-public marker Fizz[T];
-public marker Buzz[T];
+public marker Fizz[T]
+public marker Buzz[T]
 
-final implements Fizz[int32];
 
-final implements[T] Buzz[(T,)]
-where
-    marker Fizz[T];
+final implements Fizz[int32]:
+    pass
 
-public struct MyStruct {
-    public a: (int32,),
-    public b: (bool,),
-}
 
-public type WithRequirement[T] = T
-where
-    marker Buzz[T];
+final implements[T] Buzz[(T,)]:
+    where:
+        marker Fizz[T]
 
-public type InstMyStruct = WithRequirement[MyStruct];
+
+public struct MyStruct:
+    public a: (int32,)
+    public b: (bool,)
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker Buzz[T]
+
+
+public type InstMyStruct = WithRequirement[MyStruct]
 ";
 
 #[test]
@@ -678,20 +695,23 @@ fn marker_with_constraints() {
 }
 
 const NEGATIVE_MARKER_SATISFIED: &str = r"
-public marker Marker[T];
+public marker Marker[T]
 
-final implements Marker[int32];
 
-public struct MyStruct {
-    public a: int32,
-    public b: bool,
-}
+final implements Marker[int32]:
+    pass
 
-public type WithRequirement[T] = T
-where
-    marker !Marker[T];
 
-public type InstMyStruct = WithRequirement[MyStruct];
+public struct MyStruct:
+    public a: int32
+    public b: bool
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker not Marker[T]
+
+public type InstMyStruct = WithRequirement[MyStruct]
 ";
 
 #[test]
@@ -702,21 +722,28 @@ fn negative_marker_satisfied() {
 }
 
 const NEGATIVE_MARKER_NOT_SATISFIED: &str = r"
-public marker Marker[T];
+public marker Marker[T]
 
-final implements Marker[int32];
-final implements Marker[bool];
 
-public struct MyStruct {
-    public a: int32,
-    public b: bool,
-}
+final implements Marker[int32]:
+    pass
 
-public type WithRequirement[T] = T
-where
-    marker !Marker[T];
 
-public type InstMyStruct = WithRequirement[MyStruct];
+final implements Marker[bool]:
+    pass
+
+
+public struct MyStruct:
+    public a: int32
+    public b: bool
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker not Marker[T]
+
+
+public type InstMyStruct = WithRequirement[MyStruct]
 ";
 
 #[test]
@@ -751,19 +778,28 @@ fn negative_marker_not_satisfied() {
 }
 
 const EMPTY_STRUCT_NEGATIVE_MARKER_NOT_SATISFIED: &str = r"
-public marker Marker[T];
+public marker Marker[T]
 
-final implements Marker[int32];
 
-public struct EmptyStruct {}
-public enum EmptyEnum {}
+final implements Marker[int32]:
+    pass
 
-public type WithRequirement[T] = T
-where
-    marker !Marker[T];
 
-public type InstEmptyStruct = WithRequirement[EmptyStruct];
-public type InstEmptyEnum   = WithRequirement[EmptyEnum];
+public struct EmptyStruct:
+    pass
+    
+
+public enum EmptyEnum:
+    pass
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker not Marker[T]
+
+
+public type InstEmptyStruct = WithRequirement[EmptyStruct]
+public type InstEmptyEnum   = WithRequirement[EmptyEnum]
 ";
 
 #[test]

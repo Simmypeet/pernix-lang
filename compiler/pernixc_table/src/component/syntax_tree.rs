@@ -1,7 +1,7 @@
 //! Contains the definitions of various syntax tree components used for further
 //! construction of more derived components.
 use derive_more::{Deref, DerefMut};
-use pernixc_syntax::syntax_tree::{self, item::Parameters};
+use pernixc_syntax::{state_machine::parse::Passable, syntax_tree};
 
 use super::Input;
 
@@ -9,7 +9,9 @@ use super::Input;
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
 )]
-pub struct GenericParameters(pub Option<syntax_tree::item::GenericParameters>);
+pub struct GenericParameters(
+    pub Option<syntax_tree::item::generic_parameter::GenericParameters>,
+);
 
 impl Input for GenericParameters {}
 
@@ -17,7 +19,9 @@ impl Input for GenericParameters {}
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut,
 )]
-pub struct WhereClause(pub Option<syntax_tree::item::WhereClause>);
+pub struct WhereClause(
+    pub Option<syntax_tree::item::where_clause::WhereClause>,
+);
 
 impl Input for WhereClause {}
 
@@ -48,10 +52,10 @@ impl Input for TypeAlias {}
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionSignature {
     /// The syntax tree that represents the parameters of the function.
-    pub parameters: Parameters,
+    pub parameters: syntax_tree::item::function::Parameters,
 
     /// The return type of the function.
-    pub return_type: Option<syntax_tree::item::ReturnType>,
+    pub return_type: Option<syntax_tree::item::function::ReturnType>,
 }
 
 impl Input for FunctionSignature {}
@@ -61,7 +65,7 @@ impl Input for FunctionSignature {}
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Fields {
     /// The syntax tree that represents the fields of the struct.
-    pub fields: syntax_tree::item::StructBody,
+    pub fields: Vec<Passable<syntax_tree::item::r#struct::Field>>,
 }
 
 impl Input for Fields {}
@@ -71,7 +75,8 @@ impl Input for Fields {}
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Variant {
     /// The syntax tree that represents the variant association.
-    pub variant_association: Option<syntax_tree::item::VariantAssociation>,
+    pub variant_association:
+        Option<syntax_tree::item::r#enum::VariantAssociation>,
 }
 
 impl Input for Variant {}
@@ -81,7 +86,7 @@ impl Input for Variant {}
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionBody {
     /// The syntax tree that represents the function body statements.
-    pub statements: syntax_tree::statement::Statements,
+    pub statements: Vec<Passable<syntax_tree::statement::Statement>>,
 }
 
 impl Input for FunctionBody {}

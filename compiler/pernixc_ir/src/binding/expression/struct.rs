@@ -29,17 +29,17 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Struct> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Struct,
+        syntax_tree: &syntax_tree::expression::unit::Struct,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let resolution = self
             .resolve_qualified_identifier_with_inference(
-                syntax_tree.qualified_identifier(),
+                &syntax_tree.qualified_identifier,
                 handler,
             )
             .map_err(|_| Error::Binding(BindingError(syntax_tree.span())))?;
@@ -76,24 +76,24 @@ impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
             HashMap::<ID<Field>, (Value<infer::Model>, Span)>::new();
 
         for field_syn in syntax_tree
-            .field_initializers()
-            .connected_list()
+            .field_initializers
+            .connected_list
             .as_ref()
             .into_iter()
             .flat_map(ConnectedList::elements)
         {
             // get the field ID by name
             let value =
-                self.bind_value_or_error(&**field_syn.expression(), handler)?;
+                self.bind_value_or_error(&*field_syn.expression, handler)?;
 
             let (field_id, field_ty, field_accessibility) = {
                 let Some(field_id) = fields
                     .field_ids_by_name
-                    .get(field_syn.identifier().span.str())
+                    .get(field_syn.identifier.span.str())
                     .copied()
                 else {
                     handler.receive(Box::new(FieldNotFound {
-                        identifier_span: field_syn.identifier().span.clone(),
+                        identifier_span: field_syn.identifier.span.clone(),
                         struct_id,
                     }));
                     continue;
@@ -118,7 +118,7 @@ impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
                     struct_id,
                     referring_site: self.current_site,
                     referring_identifier_span: field_syn
-                        .identifier()
+                        .identifier
                         .span
                         .clone(),
                 }));
@@ -128,7 +128,7 @@ impl Bind<&syntax_tree::expression::Struct> for Binder<'_> {
             let _ = self.type_check(
                 &self.type_of_value(&value, handler)?,
                 Expected::Known(field_ty),
-                field_syn.expression().span(),
+                field_syn.expression.span(),
                 handler,
             )?;
 

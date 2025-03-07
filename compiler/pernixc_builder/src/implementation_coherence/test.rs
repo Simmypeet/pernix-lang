@@ -31,17 +31,18 @@ use crate::{
 };
 
 const UNUSED_GENERIC_PARAMETERS: &str = r"
-public trait Trait['a, 'b, T, U] {}
+public trait Trait['a, 'b, T, U]:
+    pass
 
-public trait Another['a, T] {
-    public type Output;
-}
+
+public trait Another['a, T]:
+    public type Output
+
 
 // 'c, U, V are unused
-implements['a, 'b, 'c, T, U, V] Trait['a, 'b, T, Another['c, U]::Output]
-where
-    trait Another['c, U]
-{}
+implements['a, 'b, 'c, T, U, V] Trait['a, 'b, T, Another['c, U]::Output]:
+    where:
+        trait Another['c, U]
 ";
 
 #[test]
@@ -83,12 +84,12 @@ fn unused_generic_parameters() {
 }
 
 const CHECK_INSTANTIATION_REQUIREMENTS_OF_IMPLEMENTED: &str = r"
-public trait Trait['a, T]
-where
-    T: 'a
-{}
+public trait Trait['a, T]:
+    where:
+        T: 'a
 
-implements['a, T] Trait['a, T] {}
+implements['a, T] Trait['a, T]:
+    pass
 ";
 
 #[test]
@@ -126,18 +127,21 @@ fn check_instantiation_requirements_of_implemented() {
 
     assert_eq!(
         error.predicate_declaration_span.as_ref().map(Span::str),
-        Some("T: 'a")
+        Some("'a")
     );
 }
 
 const FOREIGN_ADT: &str = r"
-public struct Foreign {}
+public struct Foreign:
+    pass
 ";
 
 const IMPLEMENTED_FOREIGN_ADT: &str = r"
-using {Foreign} from foreign;
+from foreign import Foreign
 
-implements Foreign {}
+
+implements Foreign:
+    pass
 ";
 
 #[test]
@@ -177,31 +181,36 @@ fn implemented_foreign_adt() {
 }
 
 const FOREGIN_TRAIT: &str = r"
-public trait ForeignTrait[T, U, V] {}
+public trait ForeignTrait[T, U, V]:
+    pass
 
-public struct ForeignStruct {}
+
+public struct ForeignStruct:
+    pass
 ";
 
 const IMPLEMENTED_FOREIGN_TRAIT: &str = r"
-using {ForeignTrait, ForeignStruct} from foreign;
+from foreign import (ForeignTrait, ForeignStruct)
 
-public trait CurrentTrait[T, U] {
-    public type Output;
-}
 
-public struct CurrentStruct {}
+public trait CurrentTrait[T, U]:
+    public type Output
+
+
+public struct CurrentStruct:
+    pass
 
 implements[T] ForeignTrait[
     T, 
     ForeignStruct, 
     CurrentTrait[T, CurrentStruct]::Output
-] 
-where
-    trait CurrentTrait[T, CurrentStruct]
-{}
+]:
+    where:
+        trait CurrentTrait[T, CurrentStruct]
 
 // this is fine
-implements[T] ForeignTrait[T, ForeignStruct, CurrentStruct] {}
+implements[T] ForeignTrait[T, ForeignStruct, CurrentStruct]:
+    pass
 ";
 
 #[test]
@@ -241,11 +250,14 @@ fn implemented_foreign_trait() {
 }
 
 const FINAL_IMPLEMENTATION_OVERRIDE: &str = r"
-public trait Trait[T, U] {}
+public trait Trait[T, U]:
+    pass
 
-final implements[T, U] Trait[T, U] {}
+final implements[T, U] Trait[T, U]:
+    pass
 
-implements[T] Trait[T, T] {}
+implements[T] Trait[T, T]:
+    pass
 ";
 
 #[test]
@@ -269,10 +281,17 @@ fn final_implementation_override() {
 }
 
 const AMBIGUOUS_IMPLEMENTATION: &str = r"
-public trait Trait[T, U] {}
+public trait Trait[T, U]:
+    pass
 
-implements[T] Trait[T, int32] {}
-implements[T] Trait[int32, T] {}
+
+implements[T] Trait[T, int32]:
+    pass
+
+
+implements[T] Trait[int32, T]:
+    pass
+
 ";
 
 #[test]
@@ -294,17 +313,18 @@ fn ambiguous_implementation() {
 }
 
 const GENERIC_PARAMETER_COUNT_MISMATCHED: &str = r"
-public trait Trait[V] {
-    public type Output['a, 'b, T, U, const X: T];
+public trait Trait[V]:
+    public type Output['a, 'b, T, U, const X: T]
 
-    public function foo['a, 'b, T, U, const X: T]();
-}
+    public function foo['a, 'b, T, U, const X: T]()
 
-implements Trait[int32] {
-    public type Output['a, T] = int32;
 
-    public function foo['a, T, U, const X: T]() {}
-}
+implements Trait[int32]:
+    type Output['a, T] = int32
+
+    function foo['a, T, U, const X: T]():
+        pass
+
 ";
 
 #[test]
@@ -348,7 +368,7 @@ fn generic_parameter_count_mismatched() {
 }
 
 const CONSTANT_PARAMETER_TYPE_MISMATCHED: &str = r"
-public trait Test[A, B] {
+public trait Test[A, B]:
     public type Output[
         T, 
         U, 
@@ -356,19 +376,18 @@ public trait Test[A, B] {
         const W: B, 
         const X: T, 
         const Y: U
-    ];
-}
+    ]
 
-implements Test[int32, bool] {
-    public type Output[
+
+implements Test[int32, bool]:
+    type Output[
         T, 
         U, 
         const V: int32,
         const W: (), // mismatched
         const X: T,
         const Y: T  // mismatched
-    ] = ();
-}
+    ] = ()
 ";
 
 #[test]
@@ -434,33 +453,35 @@ fn constant_parameter_type_mismatched() {
 }
 
 const IMPLEMENTED_PREDICATE_CHECK: &str = r"
-public trait Require[T] {}
+public trait Require[T]:
+    pass
 
-public trait Test['a, 'b, T, U] 
-where
-    T: 'a,
-    U: 'a
-{
-    public type Output['c, 'd, X, Y]
-    where
-        X: 'c,
-        Y: 'd,
-        trait Require[U];
-}
+public trait Test['a, 'b, T, U] :
+    where:
+        T: 'a
+        U: 'a
 
-implements['a, 'b, T] Test['a, 'b, T, int32] 
-where
-    T: 'a
-{
+
+    public type Output['c, 'd, X, Y]:
+        where:
+            X: 'c
+            Y: 'd
+            trait Require[U]
+
+
+implements['a, 'b, T] Test['a, 'b, T, int32]:
+    where:
+        T: 'a
+
     /*
     missing:
         - Y: 'd
         - trait Require[int32]
     */
-    public type Output['c, 'd, X, Y] = ()
-    where
-        X: 'c;
-}
+
+    type Output['c, 'd, X, Y] = ():
+        where:
+            X: 'c
 ";
 
 #[test]
@@ -519,36 +540,37 @@ fn implemented_predicate_check() {
         .as_any()
         .downcast_ref::<UnsatisfiedPredicate<Default>>()
         .is_some_and(|x| {
-            x.predicate_declaration_span.as_ref().map(Span::str)
-                == Some("Y: 'd")
+            x.predicate_declaration_span.as_ref().map(Span::str) == Some("'d")
                 && x.predicate == expected_outlives
         })));
 }
 
 const EXTRANEOUS_PREDICATE_CHECK: &str = r"
-public trait Require[T] {}
+public trait Require[T]:
+    pass
 
-public trait Test['a, 'b, T, U] {
-    public type Output['c, 'd, X, Y]
-    where
-        T: 'a,
-        X: 'c;
-}
 
-implements['a, 'b, T] Test['a, 'b, T, int32] 
-{
+public trait Test['a, 'b, T, U]:
+    public type Output['c, 'd, X, Y]:
+        where:
+            T: 'a
+            X: 'c
+
+
+implements['a, 'b, T] Test['a, 'b, T, int32]:
     /*
     extraneous:
         - Y: 'd
         - trait Require[Y]
     */
-    public type Output['c, 'd, X, Y] = ()
-    where
-        T: 'a,
-        X: 'c,
-        Y: 'd,
-        trait Require[Y];
-}
+
+    type Output['c, 'd, X, Y] = ():
+        where:
+            T: 'a
+            X: 'c
+            Y: 'd
+            trait Require[Y]
+
 ";
 
 #[test]
@@ -609,6 +631,6 @@ fn extraneous_predicate_check() {
         .is_some_and(|x| {
             x.trait_implementation_member_id == output_impl_id
                 && x.predicate == expected_outlives
-                && x.predicate_span.str() == "Y: 'd"
+                && x.predicate_span.str() == "'d"
         })));
 }

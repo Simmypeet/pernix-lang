@@ -13,7 +13,7 @@ use pernixc_lexical::token_stream::{TokenStream, Tree};
 use pernixc_source_file::{Location, SourceFile};
 use pernixc_syntax::{
     state_machine::parse::Parse,
-    syntax_tree::{item::ModuleContent, SyntaxTree},
+    syntax_tree::{self, SyntaxTree},
 };
 use tower_lsp::lsp_types::{self, Diagnostic, Url};
 
@@ -138,7 +138,7 @@ impl Syntax {
         let token_stream = TokenStream::tokenize(source_file, &collector);
         let tree = Tree::new(&token_stream);
 
-        ModuleContent::parse.parse_syntax(&tree, &collector);
+        syntax_tree::item::module::Body::parse.parse_syntax(&tree, &collector);
 
         Some(collector.into_diagnostic())
     }

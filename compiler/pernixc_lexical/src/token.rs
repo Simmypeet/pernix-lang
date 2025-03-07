@@ -482,7 +482,9 @@ impl SourceElement for Numeric {
 
 /// Is an enumeration representing the two kinds of comments in the Pernix
 /// programming language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
 pub enum CommentKind {
     /// A comment that starts with `//` and ends at the end of the line.
     Line,

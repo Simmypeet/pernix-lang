@@ -4,6 +4,11 @@ use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
 use pernixc_table::{component::SymbolKind, GlobalID, Table};
+use pernixc_term::{
+    forall_lifetime::{self, ForallLifetimeID},
+    r#type::Type,
+    Default,
+};
 
 /// The higher-ranked lifetime with the same name already exists in the given
 /// scope.
@@ -33,7 +38,6 @@ impl Report<&Table> for HigherRankedLifetimeRedefinition {
 pub enum PredicateKind {
     Trait,
     Marker,
-    TraitTypeEquality,
 }
 
 /// The unexpected symbol was found in the predicate.
@@ -62,10 +66,74 @@ impl Report<&Table> for UnexpectedSymbolInPredicate {
                 match self.predicate_kind {
                     PredicateKind::Trait => "trait",
                     PredicateKind::Marker => "marker",
-                    PredicateKind::TraitTypeEquality => "trait-type equality",
                 },
                 symbol_kind.kind_str(),
                 found_symbol_qualified_name
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The left-hand side of the type equality predicate must be a trait type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnexpectedTypeEqualityPredicate {
+    /// The span of the invalid left-hand side type.
+    pub invalid_lhs_type_span: Span,
+
+    /// The span of the type equality predicate.
+    pub found_type: Type<Default>,
+}
+
+impl Report<&Table> for UnexpectedTypeEqualityPredicate {
+    fn report(&self, _: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.invalid_lhs_type_span.clone(),
+            message: "the left-hand side of the type equality predicate must \
+                      be a trait associated type"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Forall lifetimes cannot appear in the outlives predicate.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ForallLifetimeIsNotAllowedInOutlivesPredicate {
+    /// The span of the term that contains the forall lifetime.
+    pub forall_lifetime_span: Span,
+
+    /// The list of forall lifetimes found in the term.
+    pub forall_lifetimes: Vec<ForallLifetimeID>,
+}
+
+impl Report<&Table> for ForallLifetimeIsNotAllowedInOutlivesPredicate {
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.forall_lifetime_span.clone(),
+            message: format!(
+                "forall lifetime(s) {} cannot appear in the outlives predicate",
+                self.forall_lifetimes
+                    .iter()
+                    .filter_map(|x| {
+                        let map = table
+                            .query::<forall_lifetime::Map>(x.parent)
+                            .unwrap();
+
+                        let string = map
+                            .get(x.id)
+                            .unwrap()
+                            .as_named()
+                            .map(|x| format!("`{}`", x.name));
+
+                        string
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             severity: Severity::Error,
             help_message: None,

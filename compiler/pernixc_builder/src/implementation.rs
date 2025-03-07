@@ -43,9 +43,9 @@ impl query::Builder<Implementation> for Builder {
         // QUALIFIED_IDENTIFIER`
         let syntax_tree = table.get::<SyntaxTree>(global_id);
 
-        let generic_identifier = syntax_tree.rest().last().map_or_else(
+        let generic_identifier = syntax_tree.rest.last().map_or_else(
             || {
-                syntax_tree.root().as_generic_identifier().expect(
+                syntax_tree.root.as_generic_identifier().expect(
                     "`this` or `target` can't possibly refer to a symbol that \
                      can be implemented",
                 )

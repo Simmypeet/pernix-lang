@@ -303,31 +303,39 @@ impl Arbitrary for Binary {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let prefixable = BinaryNode::arbitrary_with(args);
-        (
-            prefixable.clone(),
-            proptest::collection::vec(
-                (BinaryOperator::arbitrary(), prefixable),
-                0..=3,
-            ),
-        )
-            .prop_filter_map(
-                "block cannot appear in the middle of the bianry",
-                |(first, chain)| {
-                    if !chain.is_empty() {
-                        for i in std::iter::once(&first).chain(
-                            chain.iter().take(chain.len() - 1).map(|x| &x.1),
-                        ) {
-                            if matches!(i, BinaryNode::Block(_)) {
-                                return None;
-                            }
-                        }
+        let prefixable = Prefixable::arbitrary_with((
+            args.0.clone(),
+            args.1.clone(),
+            args.2.clone(),
+        ))
+        .prop_map(BinaryNode::Prefixable);
+
+        let trailing = Block::arbitrary_with(args).prop_map(BinaryNode::Block);
+
+        prop_oneof![
+            1 => trailing
+                .clone()
+                .prop_map(|x| Self { first: x, chain: Vec::new() }),
+
+            5 => (
+                prefixable.clone(),
+                proptest::collection::vec(
+                    (BinaryOperator::arbitrary(), prefixable),
+                    0..=3
+                ),
+                proptest::option::of((BinaryOperator::arbitrary(), trailing))
+            )
+                .prop_map(|(prefixable, chain, trailing)| {
+                    let mut result = Self { first: prefixable, chain };
+
+                    if let Some((op, trail)) = trailing {
+                        result.chain.push((op, trail));
                     }
 
-                    Some(Self { first, chain })
-                },
-            )
-            .boxed()
+                    result
+                })
+        ]
+        .boxed()
     }
 }
 

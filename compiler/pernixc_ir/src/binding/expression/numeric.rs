@@ -19,14 +19,14 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Numeric> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Numeric,
+        syntax_tree: &syntax_tree::expression::unit::Numeric,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
-        let numeric_ty = if let Some(suffix) = syntax_tree.suffix() {
+        let numeric_ty = if let Some(suffix) = &syntax_tree.suffix {
             // the literal type is specified, no need to infer
             let primitive_type = match suffix.span.str() {
                 "i8" => r#type::Primitive::Int8,
@@ -69,7 +69,7 @@ impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {
             // check if the type is integer but the numeric literal has
             // decimal point
 
-            if syntax_tree.decimal().is_some() && primitive_type_is_integral {
+            if syntax_tree.decimal.is_some() && primitive_type_is_integral {
                 handler.receive(Box::new(
                     FloatingPointLiteralHasIntegralSuffix {
                         numeric_literal_span: syntax_tree.span(),
@@ -81,7 +81,7 @@ impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {
             Type::Primitive(primitive_type)
         } else {
             // infer the type
-            let constraint = if syntax_tree.decimal().is_some() {
+            let constraint = if syntax_tree.decimal.is_some() {
                 Constraint::Floating
             } else {
                 Constraint::Number
@@ -91,11 +91,11 @@ impl Bind<&syntax_tree::expression::Numeric> for Binder<'_> {
         };
 
         Ok(Expression::RValue(Value::Literal(Literal::Numeric(Numeric {
-            integer_string: syntax_tree.numeric().span.str().to_string(),
+            integer_string: syntax_tree.numeric.span.str().to_string(),
             decimal_stirng: syntax_tree
-                .decimal()
+                .decimal
                 .as_ref()
-                .map(|x| x.numeric().span.str().to_owned()),
+                .map(|x| x.numeric.span.str().to_owned()),
             r#type: numeric_ty,
             span: Some(syntax_tree.span()),
         }))))

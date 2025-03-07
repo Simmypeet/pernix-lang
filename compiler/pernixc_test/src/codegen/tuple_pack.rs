@@ -1,75 +1,63 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32;
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
 
-public trait Add[T] {
-    public function add(a: T, b: T): T;
-}
 
-implements Add[int32] {
-    public function add(a: int32, b: int32): int32 {
-        return a + b;
-    }
-}
+public trait Add[T]:
+    public function add(a: T, b: T) -> T
 
-public trait SumTuple[T]
-where
-    tuple T
-{
-    public type Output;
 
-    public function sum(elements: T): this::Output;
-}
+implements Add[int32]:
+    function add(a: int32, b: int32) -> int32:
+        return a + b
 
-implements[T] SumTuple[(T,)]
-where
-    trait Add[T]
-{
-    public type Output = T;
 
-    public function sum(elements: (T,)): this::Output {
-        return elements.0;
-    }
-}
+public trait SumTuple[T: tuple]:
+    public type Output
 
-implements[T, Rest] SumTuple[(T, ...Rest)]
-where
-    trait Add[T] + SumTuple[Rest],
-    SumTuple[Rest]::Output = T,
-    tuple Rest
-{
-    public type Output = T;
+    public function sum(elements: T) -> this::Output
 
-    public function sum((first, ...rest): (T, ...Rest)): this::Output {
-        return first.add(rest.sum());
-    }
-}
 
-public function main() {
-    let mutable nums = (
+implements[T: Add] SumTuple[(T,)]:
+    type Output = T
+
+    function sum(elements: (T,)) -> this::Output:
+        return elements.0
+
+
+implements[T: Add, Rest: SumTuple + tuple] SumTuple[(T, ...Rest)]:
+    where:
+        SumTuple[Rest]::Output = T
+
+    type Output = T
+
+    function sum((first, ...rest): (T, ...Rest)) -> this::Output:
+        return first.add(rest.sum())
+
+
+public function main():
+    let mut nums = (
         0i32,
         0i32,
         0i32,
         0i32,
         0i32,
         0i32,
-    );
+    )
 
     scanf(&"%d %d %d %d %d %d\0"->[0], 
-        &mutable nums.0,
-        &mutable nums.1,
-        &mutable nums.2,
-        &mutable nums.3,
-        &mutable nums.4,
-        &mutable nums.5,
-    );
+        &mut nums.0,
+        &mut nums.1,
+        &mut nums.2,
+        &mut nums.3,
+        &mut nums.4,
+        &mut nums.5,
+    )
 
-    printf(&"%d\0"->[0], nums.sum());
-}
+    printf(&"%d\0"->[0], nums.sum())
 "#;
 
 #[test]

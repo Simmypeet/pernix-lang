@@ -11,19 +11,19 @@ use crate::binding::{
 };
 
 const STRUCT_DECLARATION: &str = r"
-public struct Vector2 { 
-    public x: int32, 
+public struct Vector2:
+    public x: int32
     public y: int32
-}
 
-private module inner {
-    public struct Vector2 { 
-        public x: int32, 
+
+private module inner:
+    public struct Vector2:
+        public x: int32 
         private y: int32
-    }
-}
 
-public function test() { panic; }
+
+public function test():
+    pass
 ";
 
 #[test]
@@ -41,9 +41,9 @@ fn struct_expression() {
     let y_field_id = fields.field_ids_by_name["y"];
 
     let register_id = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Struct>(
-            STRUCT_EXPRESSION,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::unit::Struct>(STRUCT_EXPRESSION),
+        )
         .into_register()
         .unwrap();
 
@@ -88,7 +88,7 @@ fn struct_uninitialized_field_error() {
     let y_field_id = fields.field_ids_by_name["y"];
 
     let (_, errors) = binder.bind_as_rvalue_error(&parse::<
-        syntax_tree::expression::Struct,
+        syntax_tree::expression::unit::Struct,
     >(STRUCT_EXPRESSION));
 
     assert_eq!(errors.len(), 1);
@@ -113,7 +113,7 @@ fn struct_duplicated_initialization_error() {
     let x_field_id = fields.field_ids_by_name["x"];
 
     let (_, errors) = binder.bind_as_rvalue_error(&parse::<
-        syntax_tree::expression::Struct,
+        syntax_tree::expression::unit::Struct,
     >(STRUCT_EXPRESSION));
 
     assert_eq!(errors.len(), 1);
@@ -138,7 +138,7 @@ fn struct_unknown_field_error() {
     let struct_id = table.get_by_qualified_name(["test", "Vector2"]).unwrap();
 
     let (_, errors) = binder.bind_as_rvalue_error(&parse::<
-        syntax_tree::expression::Struct,
+        syntax_tree::expression::unit::Struct,
     >(STRUCT_EXPRESSION));
 
     assert_eq!(errors.len(), 1);
@@ -163,7 +163,7 @@ fn struct_field_is_not_accessible_error() {
     let y_field_id = fields.field_ids_by_name["y"];
 
     let (_, errors) = binder.bind_as_rvalue_error(&parse::<
-        syntax_tree::expression::Struct,
+        syntax_tree::expression::unit::Struct,
     >(STRUCT_EXPRESSION));
 
     assert_eq!(errors.len(), 1);

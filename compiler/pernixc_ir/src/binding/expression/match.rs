@@ -7,7 +7,7 @@ use drain_filter_polyfill::VecExt;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_source_file::{SourceElement, Span};
-use pernixc_syntax::syntax_tree::{self, ConnectedList};
+use pernixc_syntax::syntax_tree::{self, expression::block::Group};
 use pernixc_table::{
     component::{Member, Parent, SymbolKind, VariantDeclarationOrder},
     diagnostic::Diagnostic,
@@ -36,7 +36,7 @@ use crate::{
     pattern::{NameBindingPoint, Refutable, Wildcard},
     scope,
     value::{
-        literal::{self, Literal, Numeric},
+        literal::{self, Literal, Numeric, Unit},
         register::{
             Assignment, Binary, BinaryOperator, Load, Phi, RelationalOperator,
             VariantNumber,
@@ -688,6 +688,7 @@ impl Binder<'_> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn bind_match_arm(
         &mut self,
         match_info: &MatchInfo,
@@ -744,7 +745,58 @@ impl Binder<'_> {
             .current_scope_mut()
             .add_named_binding_point(name_binding_point);
 
-        let value = self.bind_value_or_error(arm_info.expression, handler)?;
+        let value = match arm_info.expression {
+            Group::Indented(indented_group) => {
+                let new_scope = self
+                    .intermediate_representation
+                    .scope_tree
+                    .new_child_branch(
+                        self.stack.current_scope().scope_id(),
+                        NonZero::new(1).unwrap(),
+                    )
+                    .unwrap()[0];
+                let successor_block_id = self
+                    .intermediate_representation
+                    .control_flow_graph
+                    .new_block();
+
+                let block_state = self.bind_block(
+                    indented_group.label.as_ref(),
+                    indented_group
+                        .statements
+                        .statements
+                        .iter()
+                        .filter_map(|x| x.as_option()),
+                    indented_group.span(),
+                    new_scope,
+                    successor_block_id,
+                    handler,
+                )?;
+
+                Some(self.bind_value_or_error(block_state, handler)?)
+            }
+            Group::Inline(inline_expression) => {
+                if match_info.is_statement_level {
+                    match self.bind(
+                        &*inline_expression.expression,
+                        Config { target: Target::Statement },
+                        handler,
+                    ) {
+                        Ok(_) | Err(Error::Binding(_)) => {}
+                        Err(Error::Unrecoverable(abort)) => {
+                            return Err(abort.into())
+                        }
+                    };
+
+                    None
+                } else {
+                    Some(self.bind_value_or_error(
+                        &*inline_expression.expression,
+                        handler,
+                    )?)
+                }
+            }
+        };
 
         assert_eq!(
             self.stack.pop_scope().map(|x| x.scope_id()),
@@ -785,12 +837,12 @@ struct ArmState {
 pub struct ArmResult {
     entry_block_id: ID<Block<infer::Model>>,
     end_block_id: ID<Block<infer::Model>>,
-    value: Value<infer::Model>,
+    value: Option<Value<infer::Model>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ArmInfo<'a> {
-    expression: &'a syntax_tree::expression::Expression,
+    expression: &'a Group,
     scope_id: ID<scope::Scope>,
     binding_result: Option<ArmResult>,
     reftuable_pattern: Refutable,
@@ -806,6 +858,7 @@ struct MatchInfo<'a> {
     span: Span,
     exit_block_id: ID<Block<infer::Model>>,
     non_exhaustive_block_id: ID<Block<infer::Model>>,
+    is_statement_level: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -820,19 +873,24 @@ struct NonExhaustive {
     missing_value: MissingValue,
 }
 
-impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
+impl Bind<&syntax_tree::expression::block::Match> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Match,
-        _config: Config,
+        syntax_tree: &syntax_tree::expression::block::Match,
+        config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
+        let is_statement_level = match config.target {
+            Target::RValue | Target::LValue => false,
+            Target::Statement => true,
+        };
+
         let exit_block_id =
             self.intermediate_representation.control_flow_graph.new_block();
 
         let (address, qualifier, from_lvalue) = match self.bind(
-            syntax_tree.parenthesized(),
+            &*syntax_tree.binary,
             Config { target: Target::LValue },
             handler,
         ) {
@@ -847,7 +905,7 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
                             value,
                             self.stack.current_scope().scope_id(),
                             None,
-                            syntax_tree.parenthesized().span(),
+                            syntax_tree.binary.span(),
                             handler,
                         )?,
                     )),
@@ -871,7 +929,7 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
                                 )),
                                 self.stack.current_scope().scope_id(),
                                 None,
-                                syntax_tree.parenthesized().span(),
+                                syntax_tree.binary.span(),
                                 handler,
                             )?
                         })),
@@ -890,19 +948,15 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             .map_err(|x| {
                 x.report_overflow(|x| {
                     x.report_as_type_calculating_overflow(
-                        syntax_tree.parenthesized().span(),
+                        syntax_tree.binary.span(),
                         handler,
                     )
                 })
             })?;
 
-        let arm_count = syntax_tree
-            .arms()
-            .connected_list()
-            .as_ref()
-            .into_iter()
-            .flat_map(ConnectedList::elements)
-            .count();
+        let arm_count =
+            syntax_tree.body.arms.iter().filter_map(|x| x.as_option()).count();
+
         let scope_ids = if arm_count == 0 {
             Vec::new()
         } else {
@@ -919,23 +973,22 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             self.intermediate_representation.control_flow_graph.new_block();
 
         let mut arm_infos = syntax_tree
-            .arms()
-            .connected_list()
-            .as_ref()
-            .into_iter()
-            .flat_map(ConnectedList::elements)
+            .body
+            .arms
+            .iter()
+            .filter_map(|x| x.as_option())
             .zip(scope_ids)
             .map(|(x, scope_id)| {
                 let mut pat = self
-                    .bind_pattern(&ty.result, x.refutable_pattern(), handler)?
+                    .bind_pattern(&ty.result, &x.refutable_pattern, handler)?
                     .unwrap_or_else(|| {
-                        Wildcard { span: x.refutable_pattern().span() }.into()
+                        Wildcard { span: x.refutable_pattern.span() }.into()
                     });
 
                 Self::replace_refutable_in_tuple_pack(&mut pat, handler);
 
                 Ok(ArmInfo {
-                    expression: x.expression(),
+                    expression: &x.group,
                     scope_id,
                     binding_result: None,
                     reftuable_pattern: pat,
@@ -960,13 +1013,14 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
         self.handle_match_arms(
             &MatchInfo {
                 address,
-                address_span: syntax_tree.parenthesized().span(),
+                address_span: syntax_tree.binary.span(),
                 r#type: &ty.result,
                 qualifier,
                 from_lvalue,
                 span: syntax_tree.span(),
                 exit_block_id,
                 non_exhaustive_block_id,
+                is_statement_level,
             },
             &mut non_exhaustives,
             &mut arm_infos,
@@ -1012,9 +1066,9 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             if !is_inhabited {
                 handler.receive(Box::new(NonExhaustiveMatch {
                     match_expression_span: syntax_tree
-                        .match_keyword()
+                        .match_keyword
                         .span
-                        .join(&syntax_tree.parenthesized().span()),
+                        .join(&syntax_tree.binary.span()),
                 }));
             }
 
@@ -1025,9 +1079,9 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
             if !non_exhaustives.is_empty() {
                 handler.receive(Box::new(NonExhaustiveMatch {
                     match_expression_span: syntax_tree
-                        .match_keyword()
+                        .match_keyword
                         .span
-                        .join(&syntax_tree.parenthesized().span()),
+                        .join(&syntax_tree.binary.span()),
                 }));
             }
 
@@ -1045,50 +1099,68 @@ impl Bind<&syntax_tree::expression::Match> for Binder<'_> {
                     self.create_unreachable(syntax_tree.span()),
                 )));
             };
-            let match_ty = self.type_of_value(
-                &arm_infos[first_reachable_arm_index]
-                    .binding_result
-                    .as_ref()
-                    .unwrap()
-                    .value,
-                handler,
-            )?;
 
-            // do type check for each match arm
-            for arm in arm_infos.iter().skip(first_reachable_arm_index + 1) {
-                let ty = self.type_of_value(
-                    &arm.binding_result.as_ref().unwrap().value,
+            if is_statement_level {
+                Ok(Expression::RValue(Value::Literal(Literal::Unit(Unit {
+                    span: Some(syntax_tree.span()),
+                }))))
+            } else {
+                let match_ty = self.type_of_value(
+                    arm_infos[first_reachable_arm_index]
+                        .binding_result
+                        .as_ref()
+                        .unwrap()
+                        .value
+                        .as_ref()
+                        .unwrap(),
                     handler,
                 )?;
 
-                self.type_check(
-                    &ty,
-                    Expected::Known(match_ty.clone()),
-                    arm.expression.span(),
-                    handler,
-                )?;
+                // do type check for each match arm
+                for arm in arm_infos.iter().skip(first_reachable_arm_index + 1)
+                {
+                    let ty = self.type_of_value(
+                        arm.binding_result
+                            .as_ref()
+                            .unwrap()
+                            .value
+                            .as_ref()
+                            .unwrap(),
+                        handler,
+                    )?;
+
+                    self.type_check(
+                        &ty,
+                        Expected::Known(match_ty.clone()),
+                        arm.expression.span(),
+                        handler,
+                    )?;
+                }
+
+                let incoming_values = arm_infos
+                    .into_iter()
+                    .filter(|x| {
+                        self.current_block().predecessors().contains(
+                            &x.binding_result.as_ref().unwrap().end_block_id,
+                        )
+                    })
+                    .map(|x| {
+                        let result = x.binding_result.unwrap();
+
+                        (result.end_block_id, result.value.unwrap())
+                    })
+                    .collect::<HashMap<_, _>>();
+
+                Ok(Expression::RValue(Value::Register(
+                    self.create_register_assignmnet(
+                        Assignment::Phi(Phi {
+                            incoming_values,
+                            r#type: match_ty,
+                        }),
+                        syntax_tree.span(),
+                    ),
+                )))
             }
-
-            let incoming_values = arm_infos
-                .into_iter()
-                .filter(|x| {
-                    self.current_block().predecessors().contains(
-                        &x.binding_result.as_ref().unwrap().end_block_id,
-                    )
-                })
-                .map(|x| {
-                    let result = x.binding_result.unwrap();
-
-                    (result.end_block_id, result.value)
-                })
-                .collect::<HashMap<_, _>>();
-
-            Ok(Expression::RValue(Value::Register(
-                self.create_register_assignmnet(
-                    Assignment::Phi(Phi { incoming_values, r#type: match_ty }),
-                    syntax_tree.span(),
-                ),
-            )))
         }
     }
 }

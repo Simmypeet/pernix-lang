@@ -24,7 +24,8 @@ fn contains_not_all_flow_paths_return_a_value(
 }
 
 const FUNCTION_DECLARATION: &str = r"
-public function test(): bool {panic;}
+public function test() -> bool:
+    panic
 ";
 
 #[test]
@@ -45,9 +46,9 @@ fn empty_loop_can_dont_return() {
 
     let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
-    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Loop>(
-        "loop {}",
-    ));
+    binder.bind_as_rvalue_success(
+        &parse::<syntax_tree::expression::block::Loop>("loop:\n\tpass"),
+    );
     let _ = binder.finalize(&storage);
 
     assert!(storage.as_vec().is_empty());
@@ -60,13 +61,19 @@ fn loop_with_break_not_return() {
 
     let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
-    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Loop>(
-        "loop { break; }",
-    ));
+    binder.bind_as_rvalue_success(
+        &parse::<syntax_tree::expression::block::Loop>("loop:\n\tbreak"),
+    );
     let _ = binder.finalize(&storage);
 
     contains_not_all_flow_paths_return_a_value(&table, &storage);
 }
+
+const EXHAUSTIVE_MATCH_ALL_RETURN: &str = r"
+match true:
+    true:  return true
+    false: return false
+";
 
 #[test]
 fn exhaustive_match_all_return() {
@@ -75,32 +82,31 @@ fn exhaustive_match_all_return() {
 
     let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
-    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Match>(
-        "match (true) { true: return true, false: return false }",
-    ));
+    binder.bind_as_rvalue_success(&parse::<
+        syntax_tree::expression::block::Match,
+    >(EXHAUSTIVE_MATCH_ALL_RETURN));
     let _ = binder.finalize(&storage);
 
     assert!(storage.as_vec().is_empty());
 }
 
+const NOT_ALL_ARMS_RETURN: &str = r"
+match (true, false):
+    (true, false): return true
+    (false, false): return false
+    (a, true): ()
+";
+
 #[test]
 fn not_all_arms_return() {
-    const SOURCE: &str = r"
-        match (true, false) {
-            (true, false): return true,
-            (false, false): return false,
-            (a, true): (),
-        }
-    ";
-
     let table = build_table(FUNCTION_DECLARATION);
     let mut binder = table.create_binder_at(["test", "test"]);
 
     let storage: Storage<Box<dyn Diagnostic>> = Storage::new();
 
-    binder.bind_as_rvalue_success(&parse::<syntax_tree::expression::Match>(
-        SOURCE,
-    ));
+    binder.bind_as_rvalue_success(&parse::<
+        syntax_tree::expression::block::Match,
+    >(NOT_ALL_ARMS_RETURN));
     let _ = binder.finalize(&storage);
 
     contains_not_all_flow_paths_return_a_value(&table, &storage);

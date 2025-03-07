@@ -257,7 +257,7 @@ fn get_output_path(
             }
         };
 
-        output.push(target.name());
+        output.push(&target.name);
 
         if target_kind == TargetKind::Library {
             output.set_extension("plib");
@@ -339,7 +339,7 @@ fn semantic_analysis(
         link_libraries(&mut table, library_paths, &reflector)?;
 
     let target_id = match table.add_compilation_target(
-        target.name().clone(),
+        target.name.clone(),
         link_library_ids.into_iter().chain(std::iter::once(TargetID::CORE)),
         target,
         &*storage,

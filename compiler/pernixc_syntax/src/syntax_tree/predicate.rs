@@ -383,7 +383,7 @@ impl SourceElement for Marker {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeOutlives {
-    pub operand: Lifetime,
+    pub operand: LifetimeParameter,
     pub colon: Punctuation,
     pub bounds: UnionList<Lifetime>,
 }
@@ -393,7 +393,7 @@ impl SyntaxTree for LifetimeOutlives {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (Lifetime::parse, ':'.to_owned(), Lifetime::parse.union_list())
+        (LifetimeParameter::parse, ':'.to_owned(), Lifetime::parse.union_list())
             .map(|(operand, colon, bounds)| Self { operand, colon, bounds })
             .parse(state_machine, handler)
     }

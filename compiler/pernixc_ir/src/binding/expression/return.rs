@@ -21,10 +21,10 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Return> for Binder<'_> {
+impl Bind<&syntax_tree::expression::terminator::Return> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Return,
+        syntax_tree: &syntax_tree::expression::terminator::Return,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
@@ -43,7 +43,7 @@ impl Bind<&syntax_tree::expression::Return> for Binder<'_> {
             function_signature.return_type.clone(),
         );
 
-        let value = syntax_tree.binary().as_ref().map_or_else(
+        let value = syntax_tree.binary.as_ref().map_or_else(
             || {
                 Ok(Value::Literal(Literal::Unit(Unit {
                     span: Some(syntax_tree.span()),

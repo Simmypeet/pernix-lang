@@ -12,37 +12,42 @@ use pernixc_term::{
 use crate::{
     utility::build_table,
     where_clause::diagnostic::{
+        ForallLifetimeIsNotAllowedInOutlivesPredicate,
         HigherRankedLifetimeRedefinition, PredicateKind,
-        UnexpectedSymbolInPredicate,
+        UnexpectedSymbolInPredicate, UnexpectedTypeEqualityPredicate,
     },
 };
 
 const WHERE_CLAUSE: &str = r"
-public trait FirstTrait[T] {
-    public type Member[U];
-}
+public trait FirstTrait[T]:
+    public type Member[U]
 
-public trait SecondTrait[T] {
-    public type Member[U];
-}
 
-public trait ThirdTrait[T] {
-    public type Member[U];
-}
+public trait SecondTrait[T]:
+    public type Member[U]
 
-public marker FirstMarker[T];
 
-public marker SecondMarker[T];
+public trait ThirdTrait[T]:
+    public type Member[U]
 
-public type Test['a, 'b, 'c, T, U, V] = usize
-where
-    FirstTrait[T]::Member[U] = usize,
-    trait FirstTrait[T] + const SecondTrait[U] + !ThirdTrait[V],
-    marker FirstMarker[T] + !SecondMarker[U],
-    tuple T + U,
-    const V + U,
-    T: 'a + 'b,
-    'a: 'b + 'c; 
+
+public marker FirstMarker[T]
+
+
+public marker SecondMarker[T]
+
+
+public type Test['a, 'b, 'c, T, U, V] = usize:
+    where:
+        FirstTrait[T]::Member[U] = usize
+        trait FirstTrait[T] + const SecondTrait[U] + not ThirdTrait[V]
+        marker FirstMarker[T] + not SecondMarker[U]
+        T: tuple
+        U: tuple
+        V: const
+        U: const
+        T: 'a + 'b
+        'a: 'b + 'c
 ";
 
 #[test]
@@ -269,11 +274,12 @@ fn where_clause() {
 }
 
 const HIGHER_RANKED_LIFETIME_REDEFINITION: &str = r"
-public trait SomeTrait['a, T] {}
+public trait SomeTrait['a, T]:
+    pass
 
-public type Test[T] = T
-where
-    trait for['x, 'x] SomeTrait['x, T];
+public type Test[T] = T:
+    where:
+        trait for['x, 'x] SomeTrait['x, T]
 ";
 
 #[test]
@@ -291,13 +297,14 @@ fn higher_ranked_lifetime_redefinition() {
 }
 
 const UNEXPECTED_SYMBOL_IN_PREDICATE: &str = r"
-public struct Struct[T] { public x: T }
+public struct Struct[T]:
+    public x: T
 
-public type Test[T] = T
-where
-    trait Struct[(T,)],
-    marker Struct[(T, T)],
-    Struct[(T, T, T)] = usize;
+public type Test[T] = T:
+    where:
+        trait Struct[(T,)]
+        marker Struct[(T, T)]
+        Struct[(T, T, T)] = usize
 ";
 
 #[test]
@@ -327,12 +334,123 @@ fn unexpected_symbol_in_predicate() {
         )
     }));
     assert!(errors.iter().any(|x| {
-        x.as_any().downcast_ref::<UnexpectedSymbolInPredicate>().is_some_and(
-            |x| {
-                x.predicate_kind == PredicateKind::TraitTypeEquality
-                    && x.found_id == struct_id
-                    && x.qualified_identifier_span.str() == "Struct[(T, T, T)]"
-            },
-        )
+        x.as_any()
+            .downcast_ref::<UnexpectedTypeEqualityPredicate>()
+            .is_some_and(|x| {
+                x.invalid_lhs_type_span.str() == "Struct[(T, T, T)]"
+            })
+    }));
+}
+
+const INLINE_BOUNDS: &str = r"
+public trait Fizz[T]:
+    pass
+
+
+public trait Buzz['a, T, U]:
+    pass
+
+
+public struct Test['a, T: const + tuple + Fizz + 'a + for['x] Buzz['x, int32]]:
+    pass
+";
+
+#[test]
+fn inline_bounds() {
+    let (table, errors) = build_table(INLINE_BOUNDS);
+
+    assert!(errors.is_empty());
+
+    let fizz_id = table.get_by_qualified_name(["test", "Fizz"]).unwrap();
+    let buzz_id = table.get_by_qualified_name(["test", "Buzz"]).unwrap();
+
+    let test_id = table.get_by_qualified_name(["test", "Test"]).unwrap();
+
+    let generic_parameters = table.query::<GenericParameters>(test_id).unwrap();
+
+    let a_lt = generic_parameters.lifetime_parameter_ids_by_name()["a"];
+    let t_ty = generic_parameters.type_parameter_ids_by_name()["T"];
+
+    let where_clause = table.query::<WhereClause>(test_id).unwrap();
+
+    assert_eq!(where_clause.predicates.len(), 5);
+
+    let t_ty = Type::Parameter(TypeParameterID { parent: test_id, id: t_ty });
+    let a_lt =
+        Lifetime::Parameter(LifetimeParameterID { parent: test_id, id: a_lt });
+
+    assert!(where_clause
+        .predicates
+        .iter()
+        .filter_map(|x| x.predicate.as_constant_type())
+        .any(|x| x.0 == t_ty));
+
+    assert!(where_clause
+        .predicates
+        .iter()
+        .filter_map(|x| x.predicate.as_type_outlives())
+        .any(|x| x.operand == t_ty && x.bound == a_lt));
+
+    assert!(where_clause
+        .predicates
+        .iter()
+        .filter_map(|x| x.predicate.as_tuple_type())
+        .any(|x| x.0 == t_ty));
+
+    assert!(where_clause
+        .predicates
+        .iter()
+        .filter_map(|x| x.predicate.as_positive_trait())
+        .any(|x| x.trait_id == fizz_id
+            && !x.is_const
+            && x.generic_arguments.lifetimes.is_empty()
+            && x.generic_arguments.constants.is_empty()
+            && x.generic_arguments.types.len() == 1
+            && x.generic_arguments.types[0] == t_ty));
+
+    assert!(where_clause
+        .predicates
+        .iter()
+        .filter_map(|x| x.predicate.as_positive_trait())
+        .any(|x| x.trait_id == buzz_id
+            && !x.is_const
+            && x.generic_arguments.lifetimes.len() == 1
+            && x.generic_arguments.lifetimes[0].is_forall()
+            && x.generic_arguments.constants.is_empty()
+            && x.generic_arguments.types.len() == 2
+            && x.generic_arguments.types[0] == t_ty
+            && x.generic_arguments.types[1]
+                == Type::Primitive(Primitive::Int32)));
+}
+
+const FOR_ALL_LIFETIME_IN_OUTLIVES_IS_NOT_ALLOWED: &str = r"
+public struct Test[T: 'static, U]:
+    where:
+        for['x] &'x T: 'static
+        for['y] &'static T: 'y 
+";
+
+#[test]
+fn for_all_lifetime_in_outlives_is_not_allowed() {
+    let (_, errors) = build_table(FOR_ALL_LIFETIME_IN_OUTLIVES_IS_NOT_ALLOWED);
+
+    assert_eq!(errors.len(), 2);
+
+    assert!(errors.iter().any(|x| {
+        x.as_any()
+            .downcast_ref::<ForallLifetimeIsNotAllowedInOutlivesPredicate>()
+            .is_some_and(|x| {
+                x.forall_lifetime_span.str() == "&'x T"
+                    && x.forall_lifetimes.len() == 1
+            })
+    }));
+
+    assert!(errors.iter().any(|x| {
+        x.as_any()
+            .downcast_ref::<ForallLifetimeIsNotAllowedInOutlivesPredicate>()
+            .is_some_and(|x| {
+                x.forall_lifetime_span.str() == "'y"
+                    && x.forall_lifetimes.len() == 1
+            })
     }));
 }

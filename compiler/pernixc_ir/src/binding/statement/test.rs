@@ -5,7 +5,7 @@ use crate::binding::test::Template;
 
 #[test]
 fn variable_declaration_with_type_annotation() {
-    const SOURCE: &str = "let mutable x: int32 = 32;";
+    const SOURCE: &str = "let mut x: int32 = 32";
 
     let template = Template::new();
     let mut binder = template.create_binder();

@@ -45,7 +45,7 @@ pub(super) fn resolve_generic_arguments_for<M: Model>(
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Result<GenericArguments<M>, Abort> {
     let generic_arguments = generic_identifier
-        .generic_arguments()
+        .generic_arguments
         .as_ref()
         .map_or_else(GenericArguments::default, |generic_arguments| {
             table.resolve_generic_arguments(
@@ -84,13 +84,13 @@ pub(super) fn resolve_generic_arguments<M: Model>(
     // extracts the generic arguments from the syntax tree to the list of
     // syntax trees
     for generic_argument in generic_arguments
-        .connected_list()
+        .connected_list
         .iter()
         .flat_map(ConnectedList::elements)
     {
         let misordered = match generic_argument {
             syntax_tree::GenericArgument::Constant(arg) => {
-                constant_argument_syns.push(arg.tree());
+                constant_argument_syns.push(&arg.tree);
 
                 false
             }
@@ -345,7 +345,7 @@ pub(super) fn resolve_lifetime<M: Model>(
     config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Lifetime<M> {
-    let lifetime = match lifetime_argument.identifier() {
+    let lifetime = match &lifetime_argument.identifier {
         LifetimeIdentifier::Static(..) => Lifetime::Static,
         LifetimeIdentifier::Identifier(ident) => {
             resolve_lifetime_parameter(ident, referring_site, &config, handler)
@@ -474,18 +474,18 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
     config: Config<M>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Type<M> {
-    let is_simple_identifier = syntax_tree.rest().is_empty()
+    let is_simple_identifier = syntax_tree.rest.is_empty()
         && syntax_tree
-            .root()
+            .root
             .as_generic_identifier()
-            .is_some_and(|x| x.generic_arguments().is_none());
+            .is_some_and(|x| x.generic_arguments.is_none());
 
     // try to resolve the simple identifier in the extra namespace
     if let (true, Some(extra_type)) = (
         is_simple_identifier,
-        config.extra_namespace.and_then(|x| {
-            x.types.get(syntax_tree.root().span().str()).cloned()
-        }),
+        config
+            .extra_namespace
+            .and_then(|x| x.types.get(syntax_tree.root.span().str()).cloned()),
     ) {
         return extra_type;
     }
@@ -552,7 +552,7 @@ pub(super) fn resolve_type<M: Model>(
             handler,
         ),
         syntax_tree::r#type::Type::Reference(reference) => {
-            let lifetime = reference.lifetime().as_ref().map(|x| {
+            let lifetime = reference.lifetime.as_ref().map(|x| {
                 table.resolve_lifetime(
                     x,
                     referring_site,
@@ -569,20 +569,20 @@ pub(super) fn resolve_type<M: Model>(
                 provider.create()
             } else {
                 handler.receive(Box::new(UnexpectedInference {
-                    unexpected_span: reference.ampersand().span(),
+                    unexpected_span: reference.ampersand.span(),
                     generic_kind: GenericKind::Lifetime,
                 }));
                 Lifetime::Error(pernixc_term::Error)
             };
 
-            let qualifier = if reference.mutable_keyword().is_some() {
+            let qualifier = if reference.mutable_keyword.is_some() {
                 Qualifier::Mutable
             } else {
                 Qualifier::Immutable
             };
 
             let pointee = Box::new(table.resolve_type(
-                reference.operand(),
+                &reference.operand,
                 referring_site,
                 config.reborrow(),
                 handler,
@@ -592,14 +592,14 @@ pub(super) fn resolve_type<M: Model>(
         }
         syntax_tree::r#type::Type::Pointer(pointer_ty) => {
             let pointee = Box::new(table.resolve_type(
-                pointer_ty.operand(),
+                &pointer_ty.operand,
                 referring_site,
                 config.reborrow(),
                 handler,
             ));
 
             Type::Pointer(Pointer {
-                mutable: pointer_ty.mutable_keyword().is_some(),
+                mutable: pointer_ty.mutable_keyword.is_some(),
                 pointee,
             })
         }
@@ -607,18 +607,18 @@ pub(super) fn resolve_type<M: Model>(
             let mut elements = Vec::new();
 
             for element in syntax_tree
-                .connected_list()
+                .connected_list
                 .iter()
                 .flat_map(ConnectedList::elements)
             {
                 let ty = table.resolve_type(
-                    element.r#type(),
+                    &element.r#type,
                     referring_site,
                     config.reborrow(),
                     handler,
                 );
 
-                if element.ellipsis().is_some() {
+                if element.ellipsis.is_some() {
                     match ty {
                         Type::Tuple(tuple) => {
                             elements.extend(tuple.elements.into_iter());
@@ -629,7 +629,7 @@ pub(super) fn resolve_type<M: Model>(
                                     table,
                                     referring_site,
                                     &ty,
-                                    element.r#type(),
+                                    &element.r#type,
                                     handler,
                                 );
                             }
@@ -661,7 +661,7 @@ pub(super) fn resolve_type<M: Model>(
         syntax_tree::r#type::Type::Array(array) => Type::Array(Array {
             length: todo!("implements a constant eval"),
             r#type: Box::new(table.resolve_type(
-                array.operand(),
+                &array.operand,
                 referring_site,
                 config.reborrow(),
                 handler,
@@ -670,7 +670,7 @@ pub(super) fn resolve_type<M: Model>(
 
         syntax_tree::r#type::Type::Phantom(phantom) => {
             let ty = table.resolve_type(
-                phantom.r#type(),
+                &phantom.r#type,
                 referring_site,
                 config.reborrow(),
                 handler,

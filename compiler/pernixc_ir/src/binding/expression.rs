@@ -7,7 +7,7 @@ use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_lexical::token;
 use pernixc_source_file::{SourceElement, Span};
-use pernixc_syntax::syntax_tree;
+use pernixc_syntax::syntax_tree::{self, Label};
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Qualifier, Type};
 
@@ -21,6 +21,7 @@ use super::{
 };
 use crate::{
     address::{Address, Memory, Reference},
+    binding,
     binding::infer::InferenceVariable,
     control_flow_graph::Block,
     instruction::{
@@ -28,7 +29,6 @@ use crate::{
         UnconditionalJump,
     },
     model::Constraint,
-    scope,
     value::{
         literal::{self, Literal, Unit, Unreachable},
         register::{Assignment, Load, Phi},
@@ -105,7 +105,6 @@ pub trait Bind<T> {
 
 mod array;
 mod binary;
-mod block;
 mod boolean;
 mod r#break;
 mod character;
@@ -122,6 +121,7 @@ mod postfix;
 mod prefix;
 mod qualified_identifier;
 mod r#return;
+mod scope;
 mod string;
 mod r#struct;
 mod r#while;
@@ -181,18 +181,18 @@ impl Binder<'_> {
     }
 }
 
-impl Bind<&syntax_tree::expression::Prefixable> for Binder<'_> {
+impl Bind<&syntax_tree::expression::prefix::Prefixable> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Prefixable,
+        syntax_tree: &syntax_tree::expression::prefix::Prefixable,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Prefixable::Postfixable(syn) => {
+            syntax_tree::expression::prefix::Prefixable::Postfixable(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Prefixable::Prefix(syn) => {
+            syntax_tree::expression::prefix::Prefixable::Prefix(syn) => {
                 self.bind(syn, config, handler)
             }
         }
@@ -270,60 +270,60 @@ impl Binder<'_> {
     }
 }
 
-impl Bind<&syntax_tree::expression::Postfixable> for Binder<'_> {
+impl Bind<&syntax_tree::expression::postfix::Postfixable> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Postfixable,
+        syntax_tree: &syntax_tree::expression::postfix::Postfixable,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Postfixable::Unit(syn) => {
+            syntax_tree::expression::postfix::Postfixable::Unit(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Postfixable::Postfix(syn) => {
+            syntax_tree::expression::postfix::Postfixable::Postfix(syn) => {
                 self.bind(syn, config, handler)
             }
         }
     }
 }
 
-impl Bind<&syntax_tree::expression::Unit> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Unit> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Unit,
+        syntax_tree: &syntax_tree::expression::unit::Unit,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Unit::Boolean(syn) => {
+            syntax_tree::expression::unit::Unit::Boolean(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Numeric(syn) => {
+            syntax_tree::expression::unit::Unit::Numeric(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::QualifiedIdentifier(syn) => {
+            syntax_tree::expression::unit::Unit::QualifiedIdentifier(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Parenthesized(syn) => {
+            syntax_tree::expression::unit::Unit::Parenthesized(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Struct(syn) => {
+            syntax_tree::expression::unit::Unit::Struct(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Array(syn) => {
+            syntax_tree::expression::unit::Unit::Array(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Phantom(syn) => {
+            syntax_tree::expression::unit::Unit::Phantom(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::String(syn) => {
+            syntax_tree::expression::unit::Unit::String(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Character(syn) => {
+            syntax_tree::expression::unit::Unit::Character(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Unit::Panic(syn) => {
+            syntax_tree::expression::unit::Unit::Panic(syn) => {
                 self.bind(syn, config, handler)
             }
         }
@@ -339,7 +339,7 @@ impl Binder<'_> {
         label: Option<&token::Identifier>,
         syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<ID<scope::Scope>, Error> {
+    ) -> Result<ID<binding::scope::Scope>, Error> {
         let mut loop_scope_id = None;
 
         // find the loop state
@@ -380,51 +380,51 @@ impl Binder<'_> {
     }
 }
 
-impl Bind<&syntax_tree::expression::Terminator> for Binder<'_> {
+impl Bind<&syntax_tree::expression::terminator::Terminator> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Terminator,
+        syntax_tree: &syntax_tree::expression::terminator::Terminator,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Terminator::Return(syn) => {
+            syntax_tree::expression::terminator::Terminator::Return(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Terminator::Continue(syn) => {
+            syntax_tree::expression::terminator::Terminator::Continue(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Terminator::Express(syn) => {
+            syntax_tree::expression::terminator::Terminator::Express(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Terminator::Break(syn) => {
+            syntax_tree::expression::terminator::Terminator::Break(syn) => {
                 self.bind(syn, config, handler)
             }
         }
     }
 }
 
-impl Bind<&syntax_tree::expression::Brace> for Binder<'_> {
+impl Bind<&syntax_tree::expression::block::Block> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Brace,
+        syntax_tree: &syntax_tree::expression::block::Block,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::Brace::Block(syn) => {
+            syntax_tree::expression::block::Block::Scope(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::IfElse(syn) => {
+            syntax_tree::expression::block::Block::IfElse(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::Loop(syn) => {
+            syntax_tree::expression::block::Block::Loop(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::Match(syn) => {
+            syntax_tree::expression::block::Block::Match(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::Brace::While(syn) => {
+            syntax_tree::expression::block::Block::While(syn) => {
                 self.bind(syn, config, handler)
             }
         }
@@ -449,18 +449,18 @@ impl Bind<&syntax_tree::expression::Expression> for Binder<'_> {
     }
 }
 
-impl Bind<&syntax_tree::expression::BinaryNode> for Binder<'_> {
+impl Bind<&syntax_tree::expression::binary::BinaryNode> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::BinaryNode,
+        syntax_tree: &syntax_tree::expression::binary::BinaryNode,
         config: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            syntax_tree::expression::BinaryNode::Prefixable(syn) => {
+            syntax_tree::expression::binary::BinaryNode::Prefixable(syn) => {
                 self.bind(syn, config, handler)
             }
-            syntax_tree::expression::BinaryNode::Brace(syn) => {
+            syntax_tree::expression::binary::BinaryNode::Brace(syn) => {
                 self.bind(syn, config, handler)
             }
         }
@@ -577,10 +577,12 @@ impl Binder<'_> {
     ///
     /// The function returns the [`BlockState`] that can be bound as a value by
     /// calling the bind block state function.
-    fn bind_block(
+    fn bind_block<'a>(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Block,
-        scope_id: ID<scope::Scope>,
+        label: Option<&Label>,
+        statements: impl IntoIterator<Item = &'a syntax_tree::statement::Statement>,
+        span: Span,
+        scope_id: ID<binding::scope::Scope>,
         successor_block_id: ID<Block<infer::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<BlockState, Abort> {
@@ -590,21 +592,18 @@ impl Binder<'_> {
             .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
 
         self.block_states_by_scope_id.insert(scope_id, BlockState {
-            label: syntax_tree
-                .label_specifier()
-                .as_ref()
-                .map(|x| x.label().identifier().span().str().to_owned()),
+            label: label.map(|x| x.identifier.span.str().to_owned()),
             incoming_values: HashMap::new(),
             successor_block_id,
             express_type: None,
-            span: syntax_tree.span(),
+            span,
         });
 
         // push a new scope
         self.stack.push_scope(scope_id);
 
         // bind list of statements
-        for statement in syntax_tree.statements().tree() {
+        for statement in statements {
             self.bind_statement(statement, handler)?;
         }
 
@@ -638,7 +637,7 @@ impl Binder<'_> {
     ///
     /// # Errors
     ///
-    /// Returns [`InternalError`] that is returned by the [`Bind::bind()`]
+    /// Returns [`Abort`] that is returned by the [`Bind::bind()`]
     /// function.
     pub fn bind_value_or_error<T>(
         &mut self,

@@ -14,10 +14,10 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Phantom> for Binder<'_> {
+impl Bind<&syntax_tree::expression::unit::Phantom> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Phantom,
+        syntax_tree: &syntax_tree::expression::unit::Phantom,
         _: Config,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {

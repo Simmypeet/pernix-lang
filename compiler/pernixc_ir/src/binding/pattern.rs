@@ -530,11 +530,11 @@ impl Pattern for Irrefutable {
 
 fn bind_named_pattern(syntax_tree: &syntax_tree::pattern::Named) -> Named {
     Named {
-        name: syntax_tree.identifier().span.str().to_owned(),
-        span: syntax_tree.identifier().span.clone(),
-        is_mutable: syntax_tree.mutable_keyword().is_some(),
-        reference_binding: syntax_tree.reference_of().as_ref().map(|x| {
-            if x.mutable_keyword().is_some() {
+        name: syntax_tree.identifier.span.str().to_owned(),
+        span: syntax_tree.identifier.span.clone(),
+        is_mutable: syntax_tree.mutable_keyword.is_some(),
+        reference_binding: syntax_tree.reference_of.as_ref().map(|x| {
+            if x.mutable_keyword.is_some() {
                 Qualifier::Mutable
             } else {
                 Qualifier::Immutable
@@ -589,7 +589,7 @@ impl Binder<'_> {
         // normal tuple pattern, the number of pattern must exactly
         // match
         let tuple_element_patterns = syntax_tree
-            .connected_list()
+            .connected_list
             .iter()
             .flat_map(ConnectedList::elements)
             .collect::<Vec<_>>();
@@ -598,7 +598,7 @@ impl Binder<'_> {
         let packed_position_in_pattern = {
             let packed_count = tuple_element_patterns
                 .iter()
-                .filter(|x| x.ellipsis().is_some())
+                .filter(|x| x.ellipsis.is_some())
                 .count();
 
             match packed_count {
@@ -606,7 +606,7 @@ impl Binder<'_> {
                 1 => Some(
                     tuple_element_patterns
                         .iter()
-                        .position(|x| x.ellipsis().is_some())
+                        .position(|x| x.ellipsis.is_some())
                         .unwrap(),
                 ),
 
@@ -676,15 +676,10 @@ impl Binder<'_> {
                 assert!(!tuple_ty.is_unpacked);
 
                 elements.push(TupleElement::new_non_packed(
-                    T::bind(
-                        self,
-                        &tuple_ty.term,
-                        tuple_pat.pattern(),
-                        handler,
-                    )?
-                    .unwrap_or_else(|| {
-                        Wildcard { span: tuple_pat.pattern().span() }.into()
-                    }),
+                    T::bind(self, &tuple_ty.term, &tuple_pat.pattern, handler)?
+                        .unwrap_or_else(|| {
+                            Wildcard { span: tuple_pat.pattern.span() }.into()
+                        }),
                 ));
             }
 
@@ -695,15 +690,14 @@ impl Binder<'_> {
                 T::bind(
                     self,
                     &packed_type,
-                    tuple_element_patterns[packed_position_in_pattern]
-                        .pattern(),
+                    &tuple_element_patterns[packed_position_in_pattern].pattern,
                     handler,
                 )?
                 .unwrap_or_else(|| {
                     Wildcard {
                         span: tuple_element_patterns
                             [packed_position_in_pattern]
-                            .pattern()
+                            .pattern
                             .span(),
                     }
                     .into()
@@ -717,9 +711,9 @@ impl Binder<'_> {
                 assert!(!ty_elem.is_unpacked);
 
                 elements.push(TupleElement::new_non_packed(
-                    T::bind(self, &ty_elem.term, pat_elem.pattern(), handler)?
+                    T::bind(self, &ty_elem.term, &pat_elem.pattern, handler)?
                         .unwrap_or_else(|| {
-                            Wildcard { span: pat_elem.pattern().span() }.into()
+                            Wildcard { span: pat_elem.pattern.span() }.into()
                         }),
                 ));
             }
@@ -755,9 +749,9 @@ impl Binder<'_> {
                 .zip(tuple_element_patterns.iter().copied())
             {
                 elements.push(TupleElement::new_non_packed(
-                    T::bind(self, tuple_ty, tuple_pat.pattern(), handler)?
+                    T::bind(self, tuple_ty, &tuple_pat.pattern, handler)?
                         .unwrap_or_else(|| {
-                            Wildcard { span: tuple_pat.pattern().span() }.into()
+                            Wildcard { span: tuple_pat.pattern.span() }.into()
                         }),
                 ));
             }
@@ -768,7 +762,7 @@ impl Binder<'_> {
 
     fn bind_boolean(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Boolean,
+        syntax_tree: &syntax_tree::expression::unit::Boolean,
         mut ty: &Type<infer::Model>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Option<Boolean>, Abort> {
@@ -835,15 +829,14 @@ impl Binder<'_> {
         let mut patterns_by_field_id = HashMap::new();
 
         // iterate to each field
-        for field in
-            syntax_tree.fields().iter().flat_map(ConnectedList::elements)
+        for field in syntax_tree.fields.iter().flat_map(ConnectedList::elements)
         {
             let field_name = match field {
                 syntax_tree::pattern::Field::Association(association) => {
-                    association.identifier().span.str()
+                    association.identifier.span.str()
                 }
                 syntax_tree::pattern::Field::Named(named) => {
-                    named.identifier().span.str()
+                    named.identifier.span.str()
                 }
             };
 
@@ -858,10 +851,10 @@ impl Binder<'_> {
                 handler.receive(Box::new(FieldNotFound {
                     identifier_span: match field {
                         syntax_tree::pattern::Field::Association(pat) => {
-                            pat.identifier().span.clone()
+                            pat.identifier.span.clone()
                         }
                         syntax_tree::pattern::Field::Named(pat) => {
-                            pat.identifier().span.clone()
+                            pat.identifier.span.clone()
                         }
                     },
                     struct_id,
@@ -900,9 +893,9 @@ impl Binder<'_> {
             // the pattern for the field
             let pattern = match field {
                 syntax_tree::pattern::Field::Association(assoc) => {
-                    T::bind(self, &field_ty, assoc.pattern(), handler)?
+                    T::bind(self, &field_ty, &assoc.pattern, handler)?
                         .unwrap_or_else(|| {
-                            Wildcard { span: assoc.pattern().span() }.into()
+                            Wildcard { span: assoc.pattern.span() }.into()
                         })
                 }
                 syntax_tree::pattern::Field::Named(named) => {
@@ -921,10 +914,10 @@ impl Binder<'_> {
                     referring_site: self.current_site,
                     referring_identifier_span: match field {
                         syntax_tree::pattern::Field::Association(pat) => {
-                            pat.identifier().span.clone()
+                            pat.identifier.span.clone()
                         }
                         syntax_tree::pattern::Field::Named(pat) => {
-                            pat.identifier().span.clone()
+                            pat.identifier.span.clone()
                         }
                     },
                 }));
@@ -947,7 +940,7 @@ impl Binder<'_> {
         );
 
         // report the unbound fields
-        if !unbound_fields.is_empty() && syntax_tree.wildcard().is_none() {
+        if !unbound_fields.is_empty() && syntax_tree.wildcard.is_none() {
             handler.receive(Box::new(UnboundFields {
                 field_ids: unbound_fields,
                 struct_id,
@@ -995,13 +988,13 @@ impl Binder<'_> {
 
         // variant not found
         let Some(variant_id) = member
-            .get(syntax_tree.identifier().span.str())
+            .get(syntax_tree.identifier.span.str())
             .copied()
             .map(|x| GlobalID::new(enum_id.target_id, x))
         else {
             handler.receive(Box::new(SymbolNotFound {
                 searched_item_id: Some(enum_id),
-                resolution_span: syntax_tree.identifier().span.clone(),
+                resolution_span: syntax_tree.identifier.span.clone(),
             }));
 
             return Ok(None);
@@ -1018,7 +1011,7 @@ impl Binder<'_> {
             handler.receive(Box::new(SymbolIsNotAccessible {
                 referring_site: self.current_site,
                 referred: variant_id,
-                referred_span: syntax_tree.identifier().span.clone(),
+                referred_span: syntax_tree.identifier.span.clone(),
             }));
         }
 
@@ -1026,7 +1019,7 @@ impl Binder<'_> {
             .table
             .query::<pernixc_component::variant::Variant>(variant_id)?;
 
-        match (&variant_sym.associated_type, syntax_tree.association()) {
+        match (&variant_sym.associated_type, &syntax_tree.association) {
             (Some(ty), Some(pat)) => {
                 let instantiation = Instantiation::from_generic_arguments(
                     generic_arguments.clone(),
@@ -1054,7 +1047,7 @@ impl Binder<'_> {
                 let pattern = Refutable::bind(
                     self,
                     &simplification.result,
-                    pat.tree(),
+                    &pat.tree,
                     handler,
                 )?
                 .unwrap_or_else(|| {
@@ -1096,13 +1089,13 @@ impl Binder<'_> {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Option<Integer>, Abort> {
         ty = ty.reduce_reference();
-        let value = match syntax_tree.numeric().span.str().parse::<u64>() {
+        let value = match syntax_tree.numeric.span.str().parse::<u64>() {
             Ok(value) => value,
             Err(err) => match err.kind() {
                 std::num::IntErrorKind::NegOverflow
                 | std::num::IntErrorKind::PosOverflow => {
                     handler.receive(Box::new(TooLargeNumericLiteral {
-                        span: syntax_tree.numeric().span.clone(),
+                        span: syntax_tree.numeric.span.clone(),
                     }));
                     return Ok(None);
                 }
@@ -1111,7 +1104,7 @@ impl Binder<'_> {
             },
         };
 
-        let is_negative = syntax_tree.minus().is_some() && value != 0;
+        let is_negative = syntax_tree.minus.is_some() && value != 0;
 
         if self.type_check(
             ty,

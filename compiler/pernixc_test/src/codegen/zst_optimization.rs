@@ -3,12 +3,14 @@
 use crate::compile_file_with;
 
 const SOURCE: &str = r#"
-extern "C" {
-    public function printf(format: &uint8, ...): int32; 
-    public function scanf(format: &uint8, ...): int32;
-}
+extern "C":
+    public function printf(format: &uint8, ...) ->int32 
+    public function scanf(format: &uint8, ...) -> int32
 
-public struct Zst {}
+
+public struct Zst:
+    pass
+
 
 public function annoyingSum(
     a: int32,
@@ -16,21 +18,20 @@ public function annoyingSum(
     b: int32,
     emptyStruct: Zst,
     c: int32,
-): int32 {
-    return a + b + c;
-}
+) -> int32:
+    return a + b + c
 
-public function main() {
-    let mutable a = 0i32;
-    let mutable b = 0i32;
-    let mutable c = 0i32;
 
-    scanf(&"%d %d %d\0"->[0], &mutable a, &mutable b, &mutable c);
+public function main():
+    let mut a = 0i32
+    let mut b = 0i32
+    let mut c = 0i32
 
-    let sum = annoyingSum(a, (), b, Zst{}, c);
+    scanf(&"%d %d %d\0"->[0], &mut a, &mut b, &mut c)
 
-    printf(&"%d\0"->[0], sum);
-}
+    let sum = annoyingSum(a, (), b, Zst{}, c)
+
+    printf(&"%d\0"->[0], sum)
 "#;
 
 #[test]

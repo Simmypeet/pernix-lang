@@ -1,6 +1,6 @@
 use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::{self, Label};
+use pernixc_syntax::syntax_tree;
 use pernixc_table::diagnostic::Diagnostic;
 use pernixc_term::r#type::Type;
 
@@ -18,16 +18,16 @@ use crate::{
     },
 };
 
-impl Bind<&syntax_tree::expression::Continue> for Binder<'_> {
+impl Bind<&syntax_tree::expression::terminator::Continue> for Binder<'_> {
     fn bind(
         &mut self,
-        syntax_tree: &syntax_tree::expression::Continue,
+        syntax_tree: &syntax_tree::expression::terminator::Continue,
         _: Config,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         let loop_scope_id = self.find_loop_scope_id(
             LoopControlFlow::Continue,
-            syntax_tree.label().as_ref().map(Label::identifier),
+            syntax_tree.label.as_ref().map(|x| &x.identifier),
             syntax_tree.span(),
             handler,
         )?;

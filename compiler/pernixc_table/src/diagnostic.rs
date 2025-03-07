@@ -503,23 +503,26 @@ impl Report<&Table> for UnimplementedTraitMembers {
     }
 }
 
-/// Implementation with body found on a marker.
+/// Found an implementation member on a marker.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FoundImplementationWithBodyOnMarker {
+pub struct FoundImplementationMemberOnMarker {
     /// The span where the implementation was found.
-    pub implementation_span: Span,
+    pub implementation_member_span: Span,
 }
 
-impl Report<&Table> for FoundImplementationWithBodyOnMarker {
+impl Report<&Table> for FoundImplementationMemberOnMarker {
     fn report(&self, _: &Table) -> DiagnosticReport {
         DiagnosticReport {
-            span: self.implementation_span.clone(),
-            message: "implementation with body found on a marker; expected an \
-                      implementation with `delete` keyword or empty \
-                      (delimited with semicolon)"
+            span: self.implementation_member_span.clone(),
+            message: "implementation member found on a marker; expected an \
+                      implementation with body or `delete` keyword"
                 .to_string(),
             severity: Severity::Error,
-            help_message: None,
+            help_message: Some(
+                "if you want to mark this marker as implemented, use `pass` \
+                 keyword as the body of the implementation"
+                    .to_string(),
+            ),
             related: Vec::new(),
         }
     }
@@ -602,6 +605,69 @@ impl Report<&Table> for VariadicArgumentsAreNotAllowed {
             help_message: Some(
                 "variadic arguments can only be used in extern \"C\" functions"
                     .to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The import items that have a `from` clause cannot have the `target` as the
+/// root path.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TargetRootInImportIsNotAllowedwithFrom {
+    /// The span where the target root is found.
+    pub target_root_span: Span,
+}
+
+impl Report<&Table> for TargetRootInImportIsNotAllowedwithFrom {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
+            span: self.target_root_span.clone(),
+            message: "import items that have a `from` clause cannot have the \
+                      `target` as the root path"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The access modifier is not allowed in trait implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AccessModifierIsNotAllowedInTraitImplementation {
+    /// The span where the access modifier is found.
+    pub access_modifier_span: Span,
+}
+
+impl Report<&Table> for AccessModifierIsNotAllowedInTraitImplementation {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
+            span: self.access_modifier_span.clone(),
+            message: "access modifier is not allowed in trait implementation"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: Some("remove the keyword here".to_string()),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The access modifier is expected io the adt implementation
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExpectAccessModifier {
+    /// The span where the access modifier is expected.
+    pub span: Span,
+}
+
+impl Report<&Table> for ExpectAccessModifier {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        DiagnosticReport {
+            span: self.span.clone(),
+            message: "access modifier is expected here".to_string(),
+            severity: Severity::Error,
+            help_message: Some(
+                "add the access modifier here such as `private`".to_string(),
             ),
             related: Vec::new(),
         }

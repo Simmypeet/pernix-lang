@@ -547,7 +547,7 @@ impl IndentDisplay for TraitTypeEquality {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeOutlives {
-    pub operand: Lifetime,
+    pub operand: LifetimeParameter,
     pub bounds: BoundList<Lifetime>,
 }
 
@@ -564,7 +564,7 @@ impl Arbitrary for LifetimeOutlives {
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
         (
-            Lifetime::arbitrary(),
+            LifetimeParameter::arbitrary(),
             BoundList::arbitrary_with(Lifetime::arbitrary()),
         )
             .prop_map(|(operand, bounds)| Self { operand, bounds })

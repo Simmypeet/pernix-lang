@@ -11,17 +11,17 @@ fn bind_boolean_literal() {
     let mut binder = template.create_binder();
 
     let true_value = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Boolean>(
-            TRUE_SOURCE,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::unit::Boolean>(TRUE_SOURCE),
+        )
         .into_literal()
         .unwrap()
         .into_boolean()
         .unwrap();
     let false_value = binder
-        .bind_as_rvalue_success(&parse::<syntax_tree::expression::Boolean>(
-            FALSE_SOURCE,
-        ))
+        .bind_as_rvalue_success(
+            &parse::<syntax_tree::expression::unit::Boolean>(FALSE_SOURCE),
+        )
         .into_literal()
         .unwrap()
         .into_boolean()
