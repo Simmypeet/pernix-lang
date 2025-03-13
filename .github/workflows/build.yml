@@ -49,7 +49,7 @@ jobs:
               if: runner.os == 'Windows'
               run: |
                   choco install llvm --version=18.1.8 --force
-                  echo "LLVM_SYS_180_PREFIX=C:/Program Files/LLVM" >> $GITHUB_ENV
+                  echo "LLVM_SYS_180_PREFIX=C:/Program Files/LLVM" | Out-File -FilePath $env:GITHUB_ENV -Append 
 
             - name: Build Pernix Compiler
               run: cargo install --path compiler/pernixc --root .
