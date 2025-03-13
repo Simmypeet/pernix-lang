@@ -19,11 +19,15 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
+            - name: Install MSVC Development Environment
+              if: runner.os  == 'Windows'
+              uses: ilammy/msvc-dev-cmd@v1.4.1
+
             - name: Build LLVM from Source
               if: runner.os  == 'Windows'
               run: |
                   git clone --depth 1 --branch llvmorg-18.1.8 https://github.com/llvm/llvm-project.git
-                  cmake -S llvm-project/llvm -B llvm-project/build -G "Visual Studio 16 2019" -A x64 -DCMAKE_INSTALL_PREFIX=$HOME/llvm-18.1.8 -DCMAKE_BUILD_TYPE=Release
+                  cmake -S llvm-project/llvm -B llvm-project/build -DCMAKE_INSTALL_PREFIX=$HOME/llvm-18.1.8 -DCMAKE_BUILD_TYPE=Release
                   cmake --build llvm-project/build --config Release --target install 
                   echo "LLVM_SYS_180_PREFIX=$HOME/llvm-18.1.8" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
