@@ -1,0 +1,21 @@
+extern "C" {
+        public function printf(format: &uint8, ...): int32;
+        public function scanf(format: &uint8, ...): int32;
+}
+
+public function main() {
+        let mutable number = 0i32;
+        scanf(&"%d\0"->[0], &mutable number);
+
+        let mutable unsigned = number as uint32;
+
+        number = -number;
+
+        printf(&"recieved %d %d\n\0"->[0], number, unsigned);
+
+        let sitofp: float32 = number as float32;
+        let uitofp: float32 = unsigned as float32;
+
+        printf(&"%.2lf %.2lf\n\0"->[0], sitofp, uitofp);
+
+}
