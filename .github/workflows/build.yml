@@ -31,6 +31,8 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y llvm-18-tools llvm-18-dev libz-dev libpolly-18-dev libzstd-dev
                   echo "LLVM_SYS_180_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+                  echo $PATH
+                  echo $LLVM_SYS_180_PREFIX
 
             - name: Install LLVM 18 on macOS
               if: runner.os == 'macOS'
@@ -39,6 +41,8 @@ jobs:
                   echo "LLVM_SYS_180_PREFIX=$(brew --prefix)/opt/llvm@18" >> $GITHUB_ENV
                   brew install zstd
                   echo $(brew --prefix)/opt/zstd/lib >> $GITHUB_PATH
+                  echo $PATH
+                  ls $(brew --prefix)/opt/zstd/lib
 
             - name: Install LLVM 18 on Windows
               if: runner.os == 'Windows'
