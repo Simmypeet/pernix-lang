@@ -12,6 +12,7 @@ jobs:
         name: Build Pernix Compiler
         runs-on: ${{ matrix.os }}
         strategy:
+            fail-fast: false
             matrix:
                 os:
                     [
@@ -35,7 +36,7 @@ jobs:
               if: runner.os == 'Linux'
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y llvm-18 llvm-18-dev
+                  sudo apt-get install -y llvm-18-tools llvm-18-dev
                   echo "export LLVM_SYS_180_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
 
             - name: Install LLVM 18 on macOS
