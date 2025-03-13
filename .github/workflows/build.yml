@@ -19,20 +19,15 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
-            - name: Install Additional Windows Dependencies
+            - name: Build LLVM from Source
               if: runner.os  == 'Windows'
               run: |
-                  cd $HOME
-                  git clone https://github.com/microsoft/vcpkg.git
-                  cd vcpkg
-                  .\bootstrap-vcpkg.bat
-                  .\vcpkg install libxml2
-                  .\vcpkg integrate install
-                  Add-Content $env:GITHUB_PATH "$HOME\vcpkg"
-                  Add-Content $env:GITHUB_PATH "$HOME\vcpkg\packages\libxml2_x64-windows\lib"
-                  cd packages\libxml2_x64-windows\lib
-                  cp libxml2.lib libxml2s.lib
-                  ls
+                  wget https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/llvm-18.1.8.src.tar.xz
+                  tar -xf llvm-18.1.8.src.tar.xz
+                  mkdir llvm-18.1.8.src/build
+                  cd llvm-18.1.8.src/build
+                  cmake -G "Visual Studio 16 2019" -DCMAKE_INSTALL_PREFIX=$HOME/llvm-18.1.8 -DCMAKE_BUILD_TYPE=Release ..
+                  cmake --build . --config Release --target install
 
             - name: Install Additional Ubuntu Dependencies
               if: runner.os  == 'Linux'
@@ -47,7 +42,8 @@ jobs:
                   sudo mkdir -p /usr/local/lib
                   sudo cp $(brew --prefix)/opt/zstd/lib/libzstd.a /usr/local/lib/libzstd.a || true
 
-            - name: LLVM Install
+            - name: Install LLVM on Unix-like Systems
+              if: runner.os  != 'Windows'
               uses: ZhongRuoyu/setup-llvm@405ac952f13f3ee4d376adc2b7a96e5f48d1f73f
               with:
                   llvm-version: 18
