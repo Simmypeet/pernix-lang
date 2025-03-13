@@ -40,6 +40,8 @@ jobs:
                   brew install llvm@18
                   echo "LLVM_SYS_180_PREFIX=$(brew --prefix)/opt/llvm@18" >> $GITHUB_ENV
                   brew install zstd
+                  ls $(brew --prefix)/opt/zstd/lib/
+                  ls /usr/local/lib/
                   sudo cp $(brew --prefix)/opt/zstd/lib/libzstd.a /usr/local/lib/libzstd.a
 
             - name: Install LLVM 18 on Windows
