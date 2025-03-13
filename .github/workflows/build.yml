@@ -29,8 +29,9 @@ jobs:
                   .\vcpkg install libxml2
                   .\vcpkg integrate install
                   Add-Content $env:GITHUB_PATH "$HOME\vcpkg"
-                  Add-Content $env:GITHUB_PATH "$HOME\vcpkg\bin"
-                  cd bin
+                  Add-Content $env:GITHUB_PATH "$HOME\vcpkg\packages\libxml2_x64-windows\lib"
+                  cd packages\libxml2_x64-windows\lib
+                  cp libxml2.lib libxml2s.lib
                   ls
 
             - name: Install Additional Ubuntu Dependencies
