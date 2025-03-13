@@ -35,6 +35,7 @@ jobs:
             - name: Install Additional Windows Dependencies
               if: runner.os  == 'Windows'
               run: |
+                  choco sources add --name NuGet --source "https://go.microsoft.com/fwlink/?LinkID=230477"
                   choco install -y libxml2
                   choco install -y libxslt
                   choco install -y libiconv
