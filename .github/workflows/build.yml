@@ -40,7 +40,7 @@ jobs:
                   brew install llvm@18
                   echo "LLVM_SYS_180_PREFIX=$(brew --prefix)/opt/llvm@18" >> $GITHUB_ENV
                   brew install zstd
-                  echo $(brew --prefix)/opt/zstd/lib >> $GITHUB_PATH
+                  echo "$(brew --prefix)/opt/zstd/lib" >> "$GITHUB_PATH"
                   echo $PATH
                   ls $(brew --prefix)/opt/zstd/lib
 
@@ -50,8 +50,14 @@ jobs:
                   choco install llvm --version=18.1.8 --force
                   echo "LLVM_SYS_180_PREFIX=C:\Program Files\LLVM" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+            - name: View Path
+              if: runner.os != 'Windows'
+              run: |
+                  echo $PATH
+
             - name: Build Pernix Compiler
-              run: cargo install --path compiler/pernixc --root .
+              run: |
+                  cargo install --path compiler/pernixc --root .
 
             - name: Upload Artifact
               uses: actions/upload-artifact@v4
