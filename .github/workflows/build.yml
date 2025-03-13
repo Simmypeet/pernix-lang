@@ -16,21 +16,41 @@ jobs:
             matrix:
                 os: [windows-latest, macOS-latest, macOS-13, ubuntu-20.04]
         steps:
-            - name: 👀 Checkout Repository
+            - name: Checkout Repository
               uses: actions/checkout@v4
 
-            - name: 🖱️ LLVM Install
+            - name: LLVM Install
               uses: ZhongRuoyu/setup-llvm@405ac952f13f3ee4d376adc2b7a96e5f48d1f73f
               with:
                   llvm-version: 18
 
-            - name: 🦀 Rust Setup
+            - name: Rust Setup
               uses: dtolnay/rust-toolchain@5aa646dfb739dff33bfae50a6193d9673a68e344
 
-            - name: 🕐 Rust Cache
+            - name: Rust Cache
               uses: swatinem/rust-cache@e8e63cdbf2788df3801e6f9a81516b2ca8391886
               with:
                   workspaces: "./target"
+
+            - name: Install Additional Windows Dependencies
+              if: runner.os  == 'Windows'
+              run: |
+                  choco install -y libxml2
+                  choco install -y libxslt
+                  choco install -y libiconv
+
+            - name: Install Additional Ubuntu Dependencies
+              if: runner.os  == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y libz-dev libzstd-dev libpolly-18-dev
+
+            - name: Install Additional macOS Dependencies
+              if: runner.os  == 'macOS'
+              run: |
+                  brew install zstd
+                  sudo mkdir -p /usr/local/lib
+                  sudo cp $(brew --prefix)/opt/zstd/lib/libzstd.a /usr/local/lib/libzstd.a || true
 
             - name: Build Pernix Compiler
               run: |
