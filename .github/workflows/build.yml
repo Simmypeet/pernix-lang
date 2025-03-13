@@ -22,6 +22,7 @@ jobs:
             - name: Build LLVM from Source
               if: runner.os  == 'Windows'
               run: |
+                  choco install -y wget
                   wget https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/llvm-18.1.8.src.tar.xz
                   tar -xf llvm-18.1.8.src.tar.xz
                   mkdir llvm-18.1.8.src/build
