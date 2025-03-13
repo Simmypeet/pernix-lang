@@ -36,19 +36,19 @@ jobs:
               if: runner.os == 'Linux'
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y llvm-18-tools llvm-18-dev
+                  sudo apt-get install -y llvm-18-tools llvm-18-dev libz-dev libpolly-18-dev libzstd-dev
                   echo "export LLVM_SYS_180_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
 
             - name: Install LLVM 18 on macOS
               if: runner.os == 'macOS'
               run: |
                   brew install llvm@18
-                  echo "export LLVM_SYS_180_PREFIX=/usr/local/opt/llvm@18" >> $GITHUB_ENV
+                  echo "LLVM_SYS_180_PREFIX=/usr/local/opt/llvm@18" >> $GITHUB_ENV
 
             - name: Install LLVM 18 on Windows
               if: runner.os == 'Windows'
               run: |
-                  choco install llvm --version=18.0.0
+                  choco install llvm --version=18.1.8 --force
                   echo "export LLVM_SYS_180_PREFIX=C:/Program Files/LLVM" >> $GITHUB_ENV
 
             - name: Build Pernix Compiler
