@@ -14,14 +14,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                os:
-                    [
-                        windows-latest,
-                        macOS-latest,
-                        macOS-13,
-                        ubuntu-20.04,
-                        ubuntu-22.04-arm,
-                    ]
+                os: [windows-latest, macOS-latest, macOS-13, ubuntu-20.04]
         steps:
             - name: Checkout
               uses: actions/checkout@v2
@@ -45,12 +38,13 @@ jobs:
                   brew install llvm@18
                   echo "LLVM_SYS_180_PREFIX=$(brew --prefix)/opt/llvm@18" >> $GITHUB_ENV
                   brew install zstd
+                  echo "PATH=$(brew --prefix)/opt/zstd/lib:$PATH" >> $GITHUB_ENV
 
             - name: Install LLVM 18 on Windows
               if: runner.os == 'Windows'
               run: |
                   choco install llvm --version=18.1.8 --force
-                  echo "LLVM_SYS_180_PREFIX=$(llvm-config --prefix)" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  echo "LLVM_SYS_180_PREFIX=C:\\Program Files\\LLVM" >> $env:GITHUB_ENV
 
             - name: Build Pernix Compiler
               run: cargo install --path compiler/pernixc --root .
