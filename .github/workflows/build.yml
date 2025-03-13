@@ -21,10 +21,17 @@ jobs:
 
             - name: Install Additional Windows Dependencies
               if: runner.os  == 'Windows'
-              uses: MinoruSekine/setup-scoop@v4.0.1
-              with:
-                  buckets: extras
-                  apps: libxml2
+              run: |
+                  cd $HOME
+                  git clone https://github.com/microsoft/vcpkg.git
+                  cd vcpkg
+                  .\bootstrap-vcpkg.bat
+                  .\vcpkg install libxml2
+                  .\vcpkg integrate install
+                  Add-Content $env:GITHUB_PATH "$HOME\vcpkg"
+                  Add-Content $env:GITHUB_PATH "$HOME\vcpkg\bin"
+                  cd bin
+                  ls
 
             - name: Install Additional Ubuntu Dependencies
               if: runner.os  == 'Linux'
