@@ -6,7 +6,7 @@ on:
 permissions:
     contents: write
 
-name: Build
+name: Build Pernixc Compiler
 jobs:
     build:
         name: Build Pernix Compiler
