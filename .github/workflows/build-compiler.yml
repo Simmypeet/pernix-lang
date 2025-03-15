@@ -46,10 +46,8 @@ jobs:
                   ls $HOME/llvm18
                   echo "LLVM_SYS_180_PREFIX=$HOME/llvm18"
                   echo "LLVM_SYS_180_PREFIX=$HOME/llvm18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-                  $HOME/llvm18/bin/llvm-config --version
-                  $HOME/llvm18/bin/llvm-config --link-static --system-libs
-                  $LLVM_SYS_180_PREFIX/bin/llvm-config --version
-                  $LLVM_SYS_180_PREFIX/bin/llvm-config --link-static --system-libs
+                  & "$HOME/llvm18/bin/llvm-config" --version
+                  & "$HOME/llvm18/bin/llvm-config" --link-static --system-libs
 
             - name: Install LLVM on Unix-like
               if: runner.os != 'Windows'
