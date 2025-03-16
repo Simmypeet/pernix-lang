@@ -119,3 +119,8 @@ iter_on_single_items = "deny"
 
 [workspace.metadata.cargo-machete]
 ignored = ["strum"]
+
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1
