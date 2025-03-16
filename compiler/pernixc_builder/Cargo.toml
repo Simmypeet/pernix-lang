@@ -24,8 +24,6 @@ pernixc_memory_checker = { path = "../pernixc_memory_checker" }
 pernixc_ir = { path = "../pernixc_ir" }
 pernixc_abort = { path = "../pernixc_abort" }
 pernixc_borrow_checker = { path = "../pernixc_borrow_checker" }
-thiserror = { workspace = true }
-getset = { workspace = true }
 rayon = { workspace = true }
 derive-new = { workspace = true }
 typed-builder = { workspace = true }
