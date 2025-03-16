@@ -36,9 +36,12 @@ impl<T: Display> Display for Message<T> {
             Severity::Warning => Color::Yellow.with("[warning]:"),
         });
 
-        let message_part = Style::Bold.with(&self.display);
-
-        write!(f, "{log_header} {message_part}")
+        if self.severity == Severity::Error {
+            let message_part = Style::Bold.with(&self.display);
+            write!(f, "{log_header} {message_part}")
+        } else {
+            write!(f, "{log_header} {}", &self.display)
+        }
     }
 }
 
