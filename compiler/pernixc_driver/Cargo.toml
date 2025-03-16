@@ -20,6 +20,8 @@ pernixc_log = { path = "../pernixc_log" }
 pernixc_intrinsic = { path = "../pernixc_intrinsic" }
 pernixc_codegen = { path = "../pernixc_codegen" }
 pernixc_storage = { path = "../pernixc_storage" }
+pernixc_lexical = { path = "../pernixc_lexical" }
+derive_more = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }
 bincode = { workspace = true }

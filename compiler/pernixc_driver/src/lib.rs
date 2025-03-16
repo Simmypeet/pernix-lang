@@ -20,7 +20,7 @@ use inkwell::{
 use parking_lot::RwLock;
 use pernixc_builder::{reflector::ComponentTag, Compilation};
 use pernixc_diagnostic::Report;
-use pernixc_handler::{Handler, Storage};
+use pernixc_handler::Storage;
 use pernixc_intrinsic::IntrinsicExt;
 use pernixc_log::{
     formatting::{Color, Style},
@@ -120,28 +120,11 @@ pub struct Arguments {
     pub dump_ron: bool,
 }
 
-/// A struct that implements [`Handler`] but prints all the message to the
-/// standard error stream.
-#[derive(Debug)]
-struct Printer {
-    printed: RwLock<bool>,
-}
-
-impl Printer {
-    /// Creates a new [`Printer`].
-    const fn new() -> Self { Self { printed: RwLock::new(false) } }
-
-    fn has_printed(&self) -> bool { *self.printed.read() }
-}
-
-impl<E: Report<()>> Handler<E> for Printer {
-    fn receive(&self, error: E) {
-        let diagnostic = error.report(());
-
-        eprintln!("{diagnostic}\n");
-
-        *self.printed.write() = true;
-    }
+#[derive(Debug, derive_more::From)]
+enum SyntacticError {
+    Token(pernixc_lexical::error::Error),
+    Syntax(pernixc_syntax::error::Error),
+    Target(pernixc_syntax::syntax_tree::target::Error),
 }
 
 fn update_message(
@@ -207,8 +190,8 @@ fn create_root_source_file(argument: &Arguments) -> Option<Arc<SourceFile>> {
 fn parse_target(
     source_file: &Arc<SourceFile>,
     target_name_argument: Option<String>,
-) -> Option<Target> {
-    let printer = Printer::new();
+) -> (Target, Storage<SyntacticError>) {
+    let storage = Storage::<SyntacticError>::new();
 
     // syntactic analysis
     let target = Target::parse(
@@ -225,15 +208,10 @@ fn parse_target(
             },
             |name| name,
         ),
-        &printer,
+        &storage,
     );
 
-    // early exit
-    if printer.has_printed() {
-        return None;
-    }
-
-    Some(target)
+    (target, storage)
 }
 
 fn get_output_path(
@@ -475,16 +453,25 @@ fn dump_ron(
     }
 }
 
-fn check_semantic_error(
+fn check_compiation_errors(
     table: &Table,
-    storage: &Arc<Storage<Box<dyn Diagnostic>>>,
+    semantic_diag_storage: &[Box<dyn Diagnostic>],
+    syntax_diag_storage: &[SyntacticError],
 ) -> bool {
-    let vec = storage.as_vec();
-
-    if vec.is_empty() {
+    if semantic_diag_storage.is_empty() && syntax_diag_storage.is_empty() {
         true
     } else {
-        for error in vec.iter() {
+        for error in syntax_diag_storage {
+            let diag = match error {
+                SyntacticError::Token(error) => error.report(()),
+                SyntacticError::Syntax(error) => error.report(()),
+                SyntacticError::Target(error) => error.report(()),
+            };
+
+            eprintln!("{diag}\n");
+        }
+
+        for error in semantic_diag_storage {
             let diag = error.report(table);
 
             eprintln!("{diag}\n");
@@ -494,7 +481,10 @@ fn check_semantic_error(
             "{}",
             Message::new(
                 Severity::Error,
-                format!("compilation terminated due to {} error(s)", vec.len())
+                format!(
+                    "compilation terminated due to {} error(s)",
+                    syntax_diag_storage.len() + semantic_diag_storage.len()
+                )
             )
         );
 
@@ -711,9 +701,9 @@ pub fn run(argument: Arguments) -> ExitCode {
     let Some(source_file) = create_root_source_file(&argument) else {
         return ExitCode::FAILURE;
     };
-    let Some(target) = parse_target(&source_file, argument.target_name) else {
-        return ExitCode::FAILURE;
-    };
+
+    let (target, syntax_diags) =
+        parse_target(&source_file, argument.target_name);
 
     // retrieve the output path
     let Some(output_path) =
@@ -723,7 +713,7 @@ pub fn run(argument: Arguments) -> ExitCode {
     };
 
     // perform semantic analysis
-    let Some((table, target_id, storage, reflector)) = semantic_analysis(
+    let Some((table, target_id, semantic_diags, reflector)) = semantic_analysis(
         target,
         argument.show_progress,
         argument.library_paths,
@@ -738,8 +728,12 @@ pub fn run(argument: Arguments) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // check for semantic errors
-    if !check_semantic_error(&table, &storage) {
+    // if there's any kinds of error, stop the compilation
+    if !check_compiation_errors(
+        &table,
+        semantic_diags.as_vec().as_slice(),
+        syntax_diags.as_vec().as_slice(),
+    ) {
         return ExitCode::FAILURE;
     }
 
