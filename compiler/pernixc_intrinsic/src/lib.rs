@@ -15,7 +15,7 @@ use pernixc_table::{
 };
 use pernixc_term::{
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
-    forall_lifetime,
+    forall_lifetime::ForallLifetimes,
     generic_parameter::{
         GenericParameters, LifetimeParameter, LifetimeParameterID,
         TypeParameter, TypeParameterID,
@@ -122,9 +122,7 @@ fn initialize_copy_marker(
         generic_params
     }));
     assert!(table.add_component(copy_marker_id, WhereClause::default()));
-    assert!(
-        table.add_component(copy_marker_id, forall_lifetime::Map::default())
-    );
+    assert!(table.add_component(copy_marker_id, ForallLifetimes::default()));
     assert!(table.add_component(copy_marker_id, Accessibility::Public));
 
     // add to the core module
@@ -154,7 +152,7 @@ fn initialize_copy_marker(
 
             implementation
         }));
-        assert!(table.add_component(impl_id, forall_lifetime::Map::default()));
+        assert!(table.add_component(impl_id, ForallLifetimes::default()));
 
         implemented.insert(impl_id);
     }
@@ -189,7 +187,7 @@ fn initialize_copy_marker(
             .add_component(impl_id, SymbolKind::NegativeMarkerImplementation));
         assert!(table.add_component(impl_id, generic_parameters));
         assert!(table.add_component(impl_id, Implements(copy_marker_id)));
-        assert!(table.add_component(impl_id, forall_lifetime::Map::default()));
+        assert!(table.add_component(impl_id, ForallLifetimes::default()));
         assert!(table.add_component(impl_id, {
             let mut where_clause = WhereClause::default();
             where_clause.predicates.push(Predicate {
@@ -246,7 +244,7 @@ fn initialize_drop_trait(
 
     assert!(table.add_component(drop_trait_id, SymbolKind::Trait));
     assert!(table.add_component(drop_trait_id, Name("Drop".to_string())));
-    assert!(table.add_component(drop_trait_id, forall_lifetime::Map::default()));
+    assert!(table.add_component(drop_trait_id, ForallLifetimes::default()));
     assert!(table.add_component(drop_trait_id, Parent {
         parent: Some(pernixc_table::ID::ROOT_MODULE)
     }));
@@ -295,8 +293,9 @@ fn initialize_drop_trait(
         assert!(table.add_component(drop_function_id, elided_lifetimes));
         assert!(table.add_component(drop_function_id, implied_predicates));
         assert!(table.add_component(drop_function_id, Accessibility::Public));
-        assert!(table
-            .add_component(drop_function_id, forall_lifetime::Map::default()));
+        assert!(
+            table.add_component(drop_function_id, ForallLifetimes::default())
+        );
 
         let mut parameters = Arena::default();
         let param_id = parameters.insert(Parameter {

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     constant::Constant,
     elided_lifetimes::ElidedLifetimeID,
-    forall_lifetime::{self, ForallLifetimeID},
+    forall_lifetime::{ForallLifetimeID, ForallLifetimes},
     generic_parameter::{GenericParameters, LifetimeParameterID},
     matching::{self, Match, Matching},
     r#type::Type,
@@ -80,7 +80,7 @@ where
                     f,
                     "'∀{}",
                     table
-                        .query::<forall_lifetime::Map>(forall_lifetime.parent)?
+                        .query::<ForallLifetimes>(forall_lifetime.parent)?
                         .get(forall_lifetime.id)
                         .ok_or(fmt::Error)?
                         .as_named()

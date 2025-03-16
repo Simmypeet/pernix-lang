@@ -19,7 +19,7 @@ use pernixc_table::{
     GlobalID,
 };
 use pernixc_term::{
-    elided_lifetimes::ElidedLifetimes, forall_lifetime,
+    elided_lifetimes::ElidedLifetimes, forall_lifetime::ForallLifetimes,
     generic_parameter::GenericParameters, variance::Variances,
     where_clause::WhereClause,
 };
@@ -121,9 +121,8 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, ComponentTag, String> {
     assert!(reflector.register_type::<Fields>(ComponentTag::Fields));
     assert!(reflector.register_type::<Variant>(ComponentTag::Variant));
     assert!(reflector.register_type::<Variances>(ComponentTag::Variances));
-    assert!(reflector.register_type::<forall_lifetime::Map>(
-        ComponentTag::ForallLifetimeMap
-    ));
+    assert!(reflector
+        .register_type::<ForallLifetimes>(ComponentTag::ForallLifetimeMap));
     assert!(reflector.register_type::<LateBound>(ComponentTag::LateBound));
     assert!(reflector.register_type::<IR>(ComponentTag::IR));
 

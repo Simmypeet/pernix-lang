@@ -11,7 +11,7 @@ use pernixc_table::{
     GlobalID, Table, TargetID,
 };
 use pernixc_term::{
-    elided_lifetimes::ElidedLifetimes, forall_lifetime,
+    elided_lifetimes::ElidedLifetimes, forall_lifetime::ForallLifetimes,
     generic_parameter::GenericParameters, variance::Variances,
     where_clause::WhereClause,
 };
@@ -26,7 +26,7 @@ use crate::{
         check_implementation_member, check_implemented_instantiation,
         check_orphan_rule, check_overlapping, check_unused_generic_parameters,
     },
-    occurrences::{self, check_occurrences},
+    occurrences::{check_occurrences, Occurrences},
     variances, where_clause_check,
 };
 
@@ -185,8 +185,8 @@ pub fn build(
         .collect::<Vec<_>>();
 
     for x in symbols_to_build.iter().copied() {
-        assert!(table.add_component(x, occurrences::Occurrences::default()));
-        assert!(table.add_component(x, forall_lifetime::Map::default()));
+        assert!(table.add_component(x, Occurrences::default()));
+        assert!(table.add_component(x, ForallLifetimes::default()));
     }
 
     symbols_to_build.into_par_iter().panic_fuse().for_each(|x| {

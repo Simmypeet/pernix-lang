@@ -43,15 +43,15 @@ pub enum ForallLifetime {
 /// A **presistent-derived** component representing the storage of forall
 /// lifetime usjges in the compilation process.
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct Map(RwLock<Arena<ForallLifetime>>);
+pub struct ForallLifetimes(RwLock<Arena<ForallLifetime>>);
 
-impl PartialEq for Map {
+impl PartialEq for ForallLifetimes {
     fn eq(&self, other: &Self) -> bool { self.0.read().eq(&*other.0.read()) }
 }
 
-impl Eq for Map {}
+impl Eq for ForallLifetimes {}
 
-impl Map {
+impl ForallLifetimes {
     /// Gets the [`ForallLifetime`] with the given ID.
     pub fn get(
         &self,
@@ -70,7 +70,7 @@ impl Map {
     }
 }
 
-impl Derived for Map {
+impl Derived for ForallLifetimes {
     fn component_name() -> &'static str { "forall lifetimes" }
 }
 

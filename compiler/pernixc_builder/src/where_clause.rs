@@ -26,7 +26,9 @@ use pernixc_table::{
     query, GlobalID, Table,
 };
 use pernixc_term::{
-    forall_lifetime::{self, ForallLifetimeID},
+    forall_lifetime::{
+        self, ForallLifetime, ForallLifetimeID, ForallLifetimes,
+    },
     generic_arguments::GenericArguments,
     generic_parameter::{GenericParameters, TypeParameterID},
     lifetime::Lifetime,
@@ -63,14 +65,12 @@ fn create_forall_lifetimes(
         match namespace.entry(syn.identifier.span.str().to_owned()) {
             Entry::Vacant(entry) => {
                 let forall = table
-                    .query::<forall_lifetime::Map>(global_id)
+                    .query::<ForallLifetimes>(global_id)
                     .unwrap()
-                    .insert(forall_lifetime::ForallLifetime::Named(
-                        forall_lifetime::Named {
-                            name: syn.identifier.span.str().to_owned(),
-                            span: Some(syn.identifier.span.clone()),
-                        },
-                    ));
+                    .insert(ForallLifetime::Named(forall_lifetime::Named {
+                        name: syn.identifier.span.str().to_owned(),
+                        span: Some(syn.identifier.span.clone()),
+                    }));
 
                 entry.insert(Lifetime::Forall(ForallLifetimeID {
                     parent: global_id,

@@ -5,7 +5,7 @@ use pernixc_log::Severity;
 use pernixc_source_file::Span;
 use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::{
-    forall_lifetime::{self, ForallLifetimeID},
+    forall_lifetime::{ForallLifetimeID, ForallLifetimes},
     r#type::Type,
     Default,
 };
@@ -120,9 +120,8 @@ impl Report<&Table> for ForallLifetimeIsNotAllowedInOutlivesPredicate {
                 self.forall_lifetimes
                     .iter()
                     .filter_map(|x| {
-                        let map = table
-                            .query::<forall_lifetime::Map>(x.parent)
-                            .unwrap();
+                        let map =
+                            table.query::<ForallLifetimes>(x.parent).unwrap();
 
                         let string = map
                             .get(x.id)
