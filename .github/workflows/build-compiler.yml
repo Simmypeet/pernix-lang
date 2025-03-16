@@ -30,7 +30,7 @@ jobs:
               uses: actions/cache@v4
               id: cache-llvm-windows
               with:
-                  path: $HOME/llvm18
+                  path: ${{ env.HOME }}/llvm18
                   key: llvm-windows
 
             - name: Build LLVM from Source
@@ -67,8 +67,16 @@ jobs:
               run: |
                   cargo install --path compiler/pernixc --root .
 
-            - name: Upload Artifact
+            - name: Upload Artifact on Unix-like
+              if: runner.os != 'Windows'
               uses: actions/upload-artifact@v4
               with:
                   name: pernixc-${{ matrix.os }}
                   path: bin/pernixc
+
+            - name: Upload Artifact on Window
+              if: runner.os == 'Windows'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: pernixc-${{ matrix.os }}
+                  path: bin/pernixc.exe
