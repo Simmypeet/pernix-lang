@@ -1,4 +1,5 @@
-# Pernix Programming Language
+# Pernix Programming Language ![GitHub Release](https://img.shields.io/github/v/release/Simmypeet/pernix-lang?include_prereleases)
+
 
 **Pernix** is a system-level programming language designed to provide memory
 safety and a robust type system, similar to Rust.
