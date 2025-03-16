@@ -79,11 +79,7 @@ pub enum TargetKind {
 
 /// The arguments to the program.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, clap::Parser)]
-#[clap(
-    name = "pernixc",
-    about = "The Pernix programming language compiler",
-    author = "Simmypeet"
-)]
+#[clap(name = "pernixc", version, about, author)]
 pub struct Arguments {
     /// The input file to run the program on.
     pub file: PathBuf,
