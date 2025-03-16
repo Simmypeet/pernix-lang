@@ -1,6 +1,5 @@
 use std::{borrow::Cow, collections::HashSet, fmt::Debug, sync::Arc};
 
-use pernixc_component::variance_map::VarianceMap;
 use pernixc_table::{
     component::{Implemented, Parent, SymbolKind},
     GlobalID, Table,
@@ -12,7 +11,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
     r#type::{TraitMember, Type},
-    variance::Variance,
+    variance::{Variance, Variances},
     Default, MemberSymbol, Symbol,
 };
 use proptest::{
@@ -197,7 +196,7 @@ impl Property<Type<Default>> for LifetimeMatching {
 
         // create lifetime generic parmaeters and variances
         let mut generic_parameter = GenericParameters::default();
-        let mut variance_map = VarianceMap::default();
+        let mut variance_map = Variances::default();
         {
             for i in 0..self.lifetime_properties.len() {
                 let lifetime_param = generic_parameter

@@ -3,8 +3,7 @@
 use pernixc_component::{
     fields::Fields, function_signature::FunctionSignature,
     implementation::Implementation, implied_predicates::ImpliedPredicates,
-    late_bound::LateBound, type_alias::TypeAlias, variance_map::VarianceMap,
-    variant::Variant,
+    late_bound::LateBound, type_alias::TypeAlias, variant::Variant,
 };
 use pernixc_ir::IR;
 use pernixc_storage::{
@@ -21,7 +20,8 @@ use pernixc_table::{
 };
 use pernixc_term::{
     elided_lifetimes::ElidedLifetimes, forall_lifetime,
-    generic_parameter::GenericParameters, where_clause::WhereClause,
+    generic_parameter::GenericParameters, variance::Variances,
+    where_clause::WhereClause,
 };
 use serde::{Deserialize, Serialize};
 
@@ -62,7 +62,7 @@ pub enum ComponentTag {
     ElidedLifetimes,
     Fields,
     Variant,
-    VarianceMap,
+    Variances,
     ForallLifetimeMap,
     LateBound,
 
@@ -120,7 +120,7 @@ pub fn get() -> Reflector<GlobalID, ArcTrait, ComponentTag, String> {
         .register_type::<ElidedLifetimes>(ComponentTag::ElidedLifetimes));
     assert!(reflector.register_type::<Fields>(ComponentTag::Fields));
     assert!(reflector.register_type::<Variant>(ComponentTag::Variant));
-    assert!(reflector.register_type::<VarianceMap>(ComponentTag::VarianceMap));
+    assert!(reflector.register_type::<Variances>(ComponentTag::Variances));
     assert!(reflector.register_type::<forall_lifetime::Map>(
         ComponentTag::ForallLifetimeMap
     ));

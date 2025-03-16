@@ -1,5 +1,7 @@
-use pernixc_component::variance_map::VarianceMap;
-use pernixc_term::{generic_parameter::GenericParameters, variance::Variance};
+use pernixc_term::{
+    generic_parameter::GenericParameters,
+    variance::{Variance, Variances},
+};
 
 use crate::utility::build_table;
 
@@ -20,7 +22,7 @@ fn basic_variances() {
     let co_ty = generic_parameters.type_parameter_ids_by_name()["Co"];
     let in_ty = generic_parameters.type_parameter_ids_by_name()["In"];
 
-    let variance_map = table.query::<VarianceMap>(test_id).unwrap();
+    let variance_map = table.query::<Variances>(test_id).unwrap();
 
     assert_eq!(variance_map.variances_by_type_ids[&co_ty], Variance::Covariant);
     assert_eq!(variance_map.variances_by_type_ids[&in_ty], Variance::Invariant);
@@ -51,8 +53,8 @@ fn recurisve_invariant() {
     let a_a_lt = a_generic_parameters.lifetime_parameter_ids_by_name()["a"];
     let b_a_lt = b_generic_parameters.lifetime_parameter_ids_by_name()["a"];
 
-    let variance_map_a = table.query::<VarianceMap>(a_id).unwrap();
-    let variance_map_b = table.query::<VarianceMap>(b_id).unwrap();
+    let variance_map_a = table.query::<Variances>(a_id).unwrap();
+    let variance_map_b = table.query::<Variances>(b_id).unwrap();
 
     assert_eq!(
         variance_map_a.variances_by_type_ids[&a_a_ty],
@@ -95,7 +97,7 @@ fn lifetime_invariant() {
     let test_b_lt = generic_parameters.lifetime_parameter_ids_by_name()["b"];
     let test_t_ty = generic_parameters.type_parameter_ids_by_name()["T"];
 
-    let variance_map = table.query::<VarianceMap>(test_id).unwrap();
+    let variance_map = table.query::<Variances>(test_id).unwrap();
 
     assert_eq!(
         variance_map.variances_by_lifetime_ids[&test_a_lt],
@@ -118,7 +120,7 @@ fn lifetime_invariant() {
     let ref_a_lt = ref_generic_parameters.lifetime_parameter_ids_by_name()["a"];
     let ref_t_ty = ref_generic_parameters.type_parameter_ids_by_name()["T"];
 
-    let ref_variance_map = table.query::<VarianceMap>(ref_id).unwrap();
+    let ref_variance_map = table.query::<Variances>(ref_id).unwrap();
 
     assert_eq!(
         ref_variance_map.variances_by_lifetime_ids[&ref_a_lt],

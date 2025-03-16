@@ -1,6 +1,5 @@
 use std::{borrow::Cow, sync::Arc};
 
-use pernixc_component::variance_map::VarianceMap;
 use pernixc_table::{component::SymbolKind, GlobalID, Table, TargetID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -10,7 +9,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::Outlives,
     r#type::{Primitive, Qualifier, Reference, Type},
-    variance::Variance,
+    variance::{Variance, Variances},
     Default, Symbol,
 };
 use proptest::{arbitrary::Arbitrary, prop_assert, proptest};
@@ -170,7 +169,7 @@ fn compatible_with_adt() {
 
         assert!(table.add_component(adt_id, generic_parameter));
 
-        let mut variance_map = VarianceMap::default();
+        let mut variance_map = Variances::default();
         variance_map.variances_by_lifetime_ids.insert(lifetime_id, variance);
 
         assert!(table.add_component(adt_id, variance_map));

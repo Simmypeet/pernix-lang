@@ -3,8 +3,7 @@ use std::sync::Arc;
 use pernixc_component::{
     fields::Fields, function_signature::FunctionSignature,
     implementation::Implementation, implied_predicates::ImpliedPredicates,
-    late_bound::LateBound, type_alias::TypeAlias, variance_map::VarianceMap,
-    variant::Variant,
+    late_bound::LateBound, type_alias::TypeAlias, variant::Variant,
 };
 use pernixc_ir::IR;
 use pernixc_table::{
@@ -13,7 +12,8 @@ use pernixc_table::{
 };
 use pernixc_term::{
     elided_lifetimes::ElidedLifetimes, forall_lifetime,
-    generic_parameter::GenericParameters, where_clause::WhereClause,
+    generic_parameter::GenericParameters, variance::Variances,
+    where_clause::WhereClause,
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;
@@ -27,7 +27,7 @@ use crate::{
         check_orphan_rule, check_overlapping, check_unused_generic_parameters,
     },
     occurrences::{self, check_occurrences},
-    variance_map, where_clause_check,
+    variances, where_clause_check,
 };
 
 /// A struct for starting the building of a target.
@@ -173,7 +173,7 @@ pub fn build(
         on_start_building_component.clone(),
         on_finish_building_component.clone(),
     ));
-    table.set_builder_overwrite::<VarianceMap, _>(variance_map::Builder::new(
+    table.set_builder_overwrite::<Variances, _>(variances::Builder::new(
         Builder::new(on_start_building_component, on_finish_building_component),
     ));
 
@@ -226,7 +226,7 @@ pub fn build(
             build_component::<Fields>(table, x);
         }
         if symbol_kind.has_variance_map() {
-            build_component::<VarianceMap>(table, x);
+            build_component::<Variances>(table, x);
         }
 
         if symbol_kind.has_where_clause()

@@ -13,7 +13,7 @@ pub mod reflector;
 pub mod type_alias;
 pub mod type_system;
 pub mod utility;
-pub mod variance_map;
+pub mod variances;
 pub mod variant;
 pub mod where_clause;
 pub mod where_clause_check;

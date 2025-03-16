@@ -1,13 +1,12 @@
 //! Contains the function [`Environment::get_variance_of()`]
 
 use pernixc_abort::Abort;
-use pernixc_component::variance_map::VarianceMap;
 use pernixc_table::component::SymbolKind;
 use pernixc_term::{
     generic_parameter::GenericParameters,
     r#type::{self, Type},
     sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
-    variance::Variance,
+    variance::{Variance, Variances},
     Model,
 };
 
@@ -68,7 +67,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
 
                             Ok(parent_variance.xfrom(
                                 self.table()
-                                    .query::<VarianceMap>(symbol.id)?
+                                    .query::<Variances>(symbol.id)?
                                     .variances_by_lifetime_ids
                                     .get(&id)
                                     .copied()
@@ -129,7 +128,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
 
                             let next_variance = parent_variance.xfrom(
                                 self.table()
-                                    .query::<VarianceMap>(symbol.id)?
+                                    .query::<Variances>(symbol.id)?
                                     .variances_by_type_ids
                                     .get(&id)
                                     .copied()

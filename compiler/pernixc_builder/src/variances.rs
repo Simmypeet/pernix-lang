@@ -8,9 +8,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use parking_lot::RwLock;
 use pernixc_arena::ID;
-use pernixc_component::{
-    fields::Fields, variance_map::VarianceMap, variant::Variant,
-};
+use pernixc_component::{fields::Fields, variant::Variant};
 use pernixc_handler::Handler;
 use pernixc_table::{
     component::{Derived, Member, SymbolKind},
@@ -21,7 +19,7 @@ use pernixc_term::{
     generic_parameter::{GenericParameters, LifetimeParameter, TypeParameter},
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
-    variance::Variance,
+    variance::{Variance, Variances},
     Default,
 };
 
@@ -67,7 +65,7 @@ struct Context {
     lifetime_parameter_constraints:
         Vec<(ID<LifetimeParameter>, pernixc_table::ID, VarianceVariable)>,
 
-    variance_maps: HashMap<pernixc_table::ID, VarianceMap>,
+    variance_maps: HashMap<pernixc_table::ID, Variances>,
 }
 
 impl Context {
@@ -257,7 +255,7 @@ impl Context {
                 } else {
                     Some(
                         table
-                            .query::<VarianceMap>(symbol.id)
+                            .query::<Variances>(symbol.id)
                             .expect("should've been calculated"),
                     )
                 };
@@ -453,13 +451,13 @@ impl Builder {
     }
 }
 
-impl query::Builder<VarianceMap> for Builder {
+impl query::Builder<Variances> for Builder {
     fn build(
         &self,
         global_id: GlobalID,
         table: &Table,
         _: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Option<Arc<VarianceMap>> {
+    ) -> Option<Arc<Variances>> {
         let symbol_kind = *table.get::<SymbolKind>(global_id);
         if !symbol_kind.has_variance_map() {
             return None;
@@ -468,7 +466,7 @@ impl query::Builder<VarianceMap> for Builder {
         let _scope = self.regular_builder.start_building(
             table,
             global_id,
-            VarianceMap::component_name(),
+            Variances::component_name(),
         );
 
         let target_id = global_id.target_id;
@@ -548,10 +546,10 @@ impl query::Builder<VarianceMap> for Builder {
                 let Ok(generic_parameters) =
                     table.query::<GenericParameters>(global_id)
                 else {
-                    return VarianceMap::default();
+                    return Variances::default();
                 };
 
-                VarianceMap {
+                Variances {
                     variances_by_lifetime_ids: generic_parameters
                         .lifetime_order()
                         .iter()
