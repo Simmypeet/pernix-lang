@@ -93,7 +93,10 @@ impl Bind<&syntax_tree::expression::block::While> for Binder<'_> {
         let _ = self
             .current_block_mut()
             .add_instruction(Instruction::ScopePush(ScopePush(while_scope_id)));
-        self.stack.push_scope(while_scope_id);
+        self.stack.push_scope(
+            while_scope_id,
+            syntax_tree.group.unsafe_keyword.is_some(),
+        );
         self.loop_states_by_scope_id.insert(while_scope_id, LoopState {
             label,
             kind: LoopKind::While,

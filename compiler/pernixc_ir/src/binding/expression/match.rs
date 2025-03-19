@@ -721,7 +721,7 @@ impl Binder<'_> {
         self.current_block_id = new_block;
         let starting_block_id = self.current_block_id;
 
-        self.stack.push_scope(arm_info.scope_id);
+        self.stack.push_scope(arm_info.scope_id, false);
 
         let _ = self.current_block_mut().add_instruction(
             Instruction::ScopePush(ScopePush(arm_info.scope_id)),
@@ -770,6 +770,7 @@ impl Binder<'_> {
                     indented_group.span(),
                     new_scope,
                     successor_block_id,
+                    indented_group.unsafe_keyword.is_some(),
                     handler,
                 )?;
 

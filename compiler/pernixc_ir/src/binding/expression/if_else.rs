@@ -56,6 +56,7 @@ impl Binder<'_> {
                     indented_group.span(),
                     allocated_scope_id,
                     success_sub_block_id,
+                    indented_group.unsafe_keyword.is_some(),
                     handler,
                 )?;
 
@@ -65,7 +66,7 @@ impl Binder<'_> {
             }
 
             Group::Inline(inline_expression) => {
-                self.push_scope_with(allocated_scope_id);
+                self.push_scope_with(allocated_scope_id, false);
 
                 let value = if is_statement {
                     match self.bind(
@@ -182,7 +183,7 @@ impl Bind<&syntax_tree::expression::block::IfElse> for Binder<'_> {
                 handler,
             )?,
             Some(GroupOrIfElse::IfElse(if_else)) => {
-                self.push_scope_with(else_scope_id);
+                self.push_scope_with(else_scope_id, false);
 
                 let expression = if is_statement_level {
                     match self.bind(
@@ -205,7 +206,7 @@ impl Bind<&syntax_tree::expression::block::IfElse> for Binder<'_> {
                 (expression, self.current_block_id)
             }
             None => {
-                self.push_scope_with(else_scope_id);
+                self.push_scope_with(else_scope_id, false);
                 self.pop_scope(else_scope_id);
 
                 (

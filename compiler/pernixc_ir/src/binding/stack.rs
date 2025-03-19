@@ -28,6 +28,10 @@ pub struct Scope {
     /// List of alloca variable declarations created so far in this scope.
     #[get = "pub"]
     variable_declarations: Vec<ID<Alloca<infer::Model>>>,
+
+    /// Checks if the scope was declared with `unsafe` keyword.
+    #[get_copy = "pub"]
+    is_unsafe: bool,
 }
 
 impl Scope {
@@ -62,22 +66,27 @@ pub struct Stack {
 impl Stack {
     /// Creates a new stack of scopes starting with the root scope.
     #[must_use]
-    pub fn new(root_scope_id: ID<scope::Scope>) -> Self {
+    pub fn new(
+        root_scope_id: ID<scope::Scope>,
+        root_scope_is_unsafe: bool,
+    ) -> Self {
         Self {
             scopes: vec![Scope {
                 scope_id: root_scope_id,
                 named_binding_points: Vec::new(),
                 variable_declarations: Vec::new(),
+                is_unsafe: root_scope_is_unsafe,
             }],
         }
     }
 
     /// Pushes a new scope to the stack.
-    pub fn push_scope(&mut self, scope_id: ID<scope::Scope>) {
+    pub fn push_scope(&mut self, scope_id: ID<scope::Scope>, is_unsafe: bool) {
         self.scopes.push(Scope {
             scope_id,
             named_binding_points: Vec::new(),
             variable_declarations: Vec::new(),
+            is_unsafe,
         });
     }
 
@@ -123,4 +132,9 @@ impl Stack {
 
         None
     }
+
+    /// Checks if there's any scope in the stack that was declared with
+    /// `unsafe` keyword.
+    #[must_use]
+    pub fn is_unsafe(&self) -> bool { self.scopes.iter().any(|x| x.is_unsafe) }
 }

@@ -38,7 +38,7 @@ impl Binder<'_> {
                 Ok(())
             }
             syntax_tree::statement::Statement::Expression(expressive) => {
-                let scope_id = self.push_scope();
+                let scope_id = self.push_scope(false);
 
                 let result = self.bind(
                     expressive,
@@ -89,7 +89,7 @@ impl Binder<'_> {
         // a new temporary scope from now on
         let variable_scope_id = self.stack.current_scope().scope_id();
 
-        let scope_id = self.push_scope();
+        let scope_id = self.push_scope(false);
 
         assert_ne!(variable_scope_id, scope_id);
 

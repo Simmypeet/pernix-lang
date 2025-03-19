@@ -132,8 +132,10 @@ impl<'t> Binder<'t> {
         let current_block_id =
             intermediate_representation.control_flow_graph.entry_block_id();
 
-        let stack =
-            Stack::new(intermediate_representation.scope_tree.root_scope_id());
+        let stack = Stack::new(
+            intermediate_representation.scope_tree.root_scope_id(),
+            false,
+        );
 
         let mut binder = Self {
             table,
@@ -637,8 +639,8 @@ impl Binder<'_> {
         Ok(resolution)
     }
 
-    fn push_scope_with(&mut self, scope_id: ID<scope::Scope>) {
-        self.stack.push_scope(scope_id);
+    fn push_scope_with(&mut self, scope_id: ID<scope::Scope>, is_unsafe: bool) {
+        self.stack.push_scope(scope_id, is_unsafe);
         let _ = self
             .current_block_mut()
             .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
@@ -646,7 +648,7 @@ impl Binder<'_> {
 
     /// Creates a new scope at the current instruction pointer and pushes it to
     /// the stack.
-    fn push_scope(&mut self) -> ID<scope::Scope> {
+    fn push_scope(&mut self, is_unsafe: bool) -> ID<scope::Scope> {
         let scope_id = self
             .intermediate_representation
             .scope_tree
@@ -656,7 +658,7 @@ impl Binder<'_> {
             )
             .unwrap()[0];
 
-        self.push_scope_with(scope_id);
+        self.push_scope_with(scope_id, is_unsafe);
 
         scope_id
     }

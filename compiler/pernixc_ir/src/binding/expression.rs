@@ -577,6 +577,7 @@ impl Binder<'_> {
     ///
     /// The function returns the [`BlockState`] that can be bound as a value by
     /// calling the bind block state function.
+    #[allow(clippy::too_many_arguments)]
     fn bind_block<'a>(
         &mut self,
         label: Option<&Label>,
@@ -584,6 +585,7 @@ impl Binder<'_> {
         span: Span,
         scope_id: ID<binding::scope::Scope>,
         successor_block_id: ID<Block<infer::Model>>,
+        is_unsafe: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<BlockState, Abort> {
         // add the scope push instruction
@@ -600,7 +602,7 @@ impl Binder<'_> {
         });
 
         // push a new scope
-        self.stack.push_scope(scope_id);
+        self.stack.push_scope(scope_id, is_unsafe);
 
         // bind list of statements
         for statement in statements {

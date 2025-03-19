@@ -628,7 +628,7 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
                     self.current_block_id = true_block_id;
 
                     // push the scope
-                    self.stack.push_scope(true_branch);
+                    self.stack.push_scope(true_branch, false);
                     let _ = self.current_block_mut().add_instruction(
                         Instruction::ScopePush(ScopePush(true_branch)),
                     );
@@ -686,7 +686,7 @@ impl Bind<&BinaryTree<'_>> for Binder<'_> {
                     self.current_block_id = false_block_id;
 
                     // push the scope
-                    self.stack.push_scope(false_branch);
+                    self.stack.push_scope(false_branch, false);
                     let _ = self.current_block_mut().add_instruction(
                         Instruction::ScopePush(ScopePush(false_branch)),
                     );

@@ -37,6 +37,7 @@ impl Bind<&syntax_tree::expression::block::Scope> for Binder<'_> {
             syntax_tree.span(),
             scope_id,
             successor_block_id,
+            syntax_tree.unsafe_keyword.is_some(),
             handler,
         )?;
 
