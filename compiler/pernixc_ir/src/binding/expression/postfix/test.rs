@@ -102,6 +102,41 @@ fn expression_is_not_callable_error() {
         .unwrap();
 }
 
+#[test]
+fn numeric_to_pointer_cast() {
+    let template = Template::new();
+    let mut binder = template.create_binder();
+
+    let reg_id = binder
+        .bind_as_rvalue_success(&parse::<
+            syntax_tree::expression::postfix::Postfixable,
+        >("4 as *int32"))
+        .into_register()
+        .unwrap();
+
+    let cast = binder
+        .intermediate_representation
+        .values
+        .registers
+        .get(reg_id)
+        .unwrap()
+        .assignment
+        .as_cast()
+        .unwrap();
+
+    let numeric = cast.value.as_literal().unwrap().as_numeric().unwrap();
+    assert_eq!(numeric.integer_string, "4");
+
+    assert_eq!(
+        binder.type_of_value(&cast.value, &Panic).unwrap(),
+        Type::Primitive(Primitive::Usize)
+    );
+
+    let pointer = cast.r#type.as_pointer().unwrap();
+    assert_eq!(pointer.pointee, Box::new(Type::Primitive(Primitive::Int32)));
+    assert!(!pointer.mutable);
+}
+
 const FUNCTION_DECLARATION: &str = r"
 public function fizz[T](a: T, b: T, c: int32):
     pass
