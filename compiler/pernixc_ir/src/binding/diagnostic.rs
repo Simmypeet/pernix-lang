@@ -898,6 +898,47 @@ pub struct InvalidCastType<M: Model> {
     pub r#type: Type<M>,
 }
 
+/// Enumeration of all operations that required unsafe scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UnsafeOperation {
+    /// Casting another type to reference type.
+    ReferenceTypeCast,
+}
+
+/// The operation requires an unsafe scope.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UnsafeRequired {
+    /// The span of the expression where the unsafe operation is performed.
+    pub expression_span: Span,
+
+    /// The operation that requires an unsafe scope.
+    pub operation: UnsafeOperation,
+}
+
+impl Report<&Table> for UnsafeRequired {
+    fn report(&self, _: &Table) -> Diagnostic {
+        let operation_string = match self.operation {
+            UnsafeOperation::ReferenceTypeCast => {
+                "casting to reference type".to_string()
+            }
+        };
+
+        Diagnostic {
+            span: self.expression_span.clone(),
+            message: format!(
+                "the operation `{operation_string}` requires an unsafe scope"
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "put the operation inside an `unsafe` scope to perform the \
+                 operation"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
+
 impl<M: Model> Report<&Table> for InvalidCastType<M>
 where
     Type<M>: pernixc_table::Display,
@@ -906,11 +947,75 @@ where
         Diagnostic {
             span: self.span.clone(),
             message: format!(
-                "cannot castt an expression to type type `{}`",
+                "cannot cast an expression to type type `{}`",
                 DisplayObject { display: &self.r#type, table }
             ),
             severity: Severity::Error,
-            help_message: None,
+            help_message: Some(
+                "only casting between numeric, pointer, and reference type \
+                 are allowed"
+                    .to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The operand type of reference type casting is invalid.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidReferenceTypeCasting<M: Model> {
+    /// The span of the operand.
+    pub span: Span,
+
+    /// The type of the operand.
+    pub r#type: Type<M>,
+}
+
+impl<M: Model> Report<&Table> for InvalidReferenceTypeCasting<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the operand type of reference type casting is invalid: `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "should be a pointer, reference, or `usize` type".to_string(),
+            ),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// The operand type of pointer type casting is invalid.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct InvalidPointerTypeCasting<M: Model> {
+    /// The span of the operand.
+    pub span: Span,
+
+    /// The type of the operand.
+    pub r#type: Type<M>,
+}
+
+impl<M: Model> Report<&Table> for InvalidPointerTypeCasting<M>
+where
+    Type<M>: pernixc_table::Display,
+{
+    fn report(&self, table: &Table) -> Diagnostic {
+        Diagnostic {
+            span: self.span.clone(),
+            message: format!(
+                "the operand type of pointer type casting is invalid: `{}`",
+                DisplayObject { display: &self.r#type, table }
+            ),
+            severity: Severity::Error,
+            help_message: Some(
+                "should be a pointer, reference, or `usize` type".to_string(),
+            ),
             related: Vec::new(),
         }
     }

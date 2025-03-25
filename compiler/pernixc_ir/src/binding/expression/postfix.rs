@@ -39,10 +39,11 @@ use crate::{
             AdtImplementationFunctionCannotBeUsedAsMethod, AmbiguousMethodCall,
             CannotIndexPastUnpackedTuple, ExpectArray, ExpectedStructType,
             ExpectedTuple, ExpressionIsNotCallable, FieldIsNotAccessible,
-            FieldNotFound, InvalidCastType, MethodNotFound,
+            FieldNotFound, InvalidCastType, InvalidPointerTypeCasting,
+            InvalidReferenceTypeCasting, MethodNotFound,
             MismatchedArgumentCount, MismatchedQualifierForReferenceOf,
             SymbolIsNotCallable, TooLargeTupleIndex, TupleIndexOutOfBOunds,
-            UnexpectedGenericArgumentsInField,
+            UnexpectedGenericArgumentsInField, UnsafeOperation, UnsafeRequired,
         },
         expression::Target,
         infer::{self, Expected, InferenceVariable},
@@ -60,6 +61,55 @@ use crate::{
 };
 
 // FIXME: the algorithm for searching methods are such a mess
+
+impl Binder<'_> {
+    fn type_can_pointer_cast(&mut self, ty: &Type<infer::Model>) -> bool {
+        match ty {
+            Type::Reference(_)
+            | Type::Pointer(_)
+            | Type::Primitive(Primitive::Usize) => true,
+
+            Type::Inference(inference) => {
+                let inference =
+                    self.inference_context.get_inference(*inference).unwrap();
+
+                match inference {
+                    infer::Inference::Known(known) => {
+                        self.type_can_pointer_cast(&known.clone())
+                    }
+                    infer::Inference::Inferring(id) => {
+                        let constraint = self
+                            .inference_context
+                            .get_constraint::<Type<infer::Model>>(*id)
+                            .unwrap();
+
+                        match constraint {
+                            Constraint::All(_)
+                            | Constraint::Number
+                            | Constraint::Integer
+                            | Constraint::UnsignedInteger => {
+                                self.inference_context
+                                    .assign_infer_to_known(
+                                        *id,
+                                        Type::Primitive(Primitive::Usize),
+                                    )
+                                    .expect("should be fine");
+
+                                true
+                            }
+
+                            Constraint::SignedInteger
+                            | Constraint::Signed
+                            | Constraint::Floating => false,
+                        }
+                    }
+                }
+            }
+
+            _ => false,
+        }
+    }
+}
 
 impl Bind<&syntax_tree::expression::postfix::Postfix> for Binder<'_> {
     #[allow(clippy::too_many_lines)]
@@ -93,8 +143,14 @@ impl Bind<&syntax_tree::expression::postfix::Postfix> for Binder<'_> {
                     })
                 })?;
 
-                // can only cast between numeric types
-                if !matches!(
+                // the value to be casted
+                let value = self
+                    .bind_value_or_error(&*syntax_tree.postfixable, handler)?;
+
+                let type_of_value = self.type_of_value(&value, handler)?;
+
+                // cast between numeric types
+                if matches!(
                     &cast_type.result,
                     Type::Primitive(
                         Primitive::Float32
@@ -111,6 +167,66 @@ impl Bind<&syntax_tree::expression::postfix::Postfix> for Binder<'_> {
                             | Primitive::Isize
                     )
                 ) {
+                    let _ = self.type_check(
+                        &type_of_value,
+                        Expected::Constraint(Constraint::Number),
+                        syntax_tree.postfixable.span(),
+                        handler,
+                    )?;
+                }
+                // type cast to pointer
+                else if matches!(&cast_type.result, Type::Pointer(_)) {
+                    // only allowed type to be casted to pointer:
+                    // - any reference type of any qualifier/type
+                    // - usize type
+                    // - pointer type
+
+                    if !self.type_can_pointer_cast(&type_of_value) {
+                        handler.receive(Box::new(InvalidPointerTypeCasting {
+                            span: syntax_tree.postfixable.span(),
+                            r#type: self
+                                .inference_context
+                                .transform_type_into_constraint_model(
+                                    type_of_value,
+                                    syntax_tree.postfixable.span(),
+                                    self.table,
+                                    handler,
+                                )?,
+                        }));
+
+                        return Err(Error::Binding(BindingError(
+                            syntax_tree.postfixable.span(),
+                        )));
+                    }
+                } else if matches!(&cast_type.result, Type::Reference(_)) {
+                    if !self.type_can_pointer_cast(&type_of_value) {
+                        handler.receive(Box::new(
+                            InvalidReferenceTypeCasting {
+                                span: syntax_tree.postfixable.span(),
+                                r#type: self
+                                    .inference_context
+                                    .transform_type_into_constraint_model(
+                                        type_of_value,
+                                        syntax_tree.postfixable.span(),
+                                        self.table,
+                                        handler,
+                                    )?,
+                            },
+                        ));
+
+                        return Err(Error::Binding(BindingError(
+                            syntax_tree.postfixable.span(),
+                        )));
+                    }
+
+                    // require unsafe scope
+                    if !self.stack.is_unsafe() {
+                        handler.receive(Box::new(UnsafeRequired {
+                            expression_span: syntax_tree.span(),
+                            operation: UnsafeOperation::ReferenceTypeCast,
+                        }));
+                    }
+                } else {
                     handler.receive(Box::new(InvalidCastType {
                         r#type: self
                             .inference_context
@@ -127,19 +243,6 @@ impl Bind<&syntax_tree::expression::postfix::Postfix> for Binder<'_> {
                         cast_syn.r#type.span(),
                     )));
                 }
-
-                // the value to be casted
-                let value = self
-                    .bind_value_or_error(&*syntax_tree.postfixable, handler)?;
-
-                // type check the value
-                let type_of_value = self.type_of_value(&value, handler)?;
-                let _ = self.type_check(
-                    &type_of_value,
-                    Expected::Constraint(Constraint::Number),
-                    syntax_tree.postfixable.span(),
-                    handler,
-                )?;
 
                 Ok(Expression::RValue(Value::Register(
                     self.create_register_assignmnet(

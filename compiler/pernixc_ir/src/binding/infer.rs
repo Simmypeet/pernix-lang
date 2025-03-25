@@ -662,6 +662,20 @@ impl Context {
         T::get_context_mut(self)
             .unify_with_constraint(inference_variable, constraint)
     }
+
+    /// Assigns a known value to an inference variable.
+    ///
+    /// # Errors
+    ///
+    /// See [`AssignKnownValueError`] for more information.
+    #[allow(private_bounds)]
+    pub fn assign_infer_to_known<T: InferableSealed>(
+        &mut self,
+        constraint_id: ID<T::Constraint>,
+        known: T,
+    ) -> Result<(), AssignKnownValueError<T, T::Constraint>> {
+        T::get_context_mut(self).assign_infer_to_known(constraint_id, known)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
