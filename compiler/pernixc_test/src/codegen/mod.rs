@@ -10,6 +10,7 @@ use assert_cmd::Command;
 use pernixc_driver::{Arguments, OptimizationLevel, TargetKind};
 
 mod aggregate_drop;
+mod alignof;
 mod array_index;
 mod arrow_access;
 mod cast;
@@ -27,6 +28,7 @@ mod number_match;
 mod pointer_arithmetic;
 mod prefix;
 mod recursion;
+mod sizeof;
 mod struct_access;
 mod tuple;
 mod tuple_pack;

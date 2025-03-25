@@ -31,7 +31,7 @@ use pernixc_ir::{
 };
 use pernixc_table::{
     component::{Extern, Implements, Name, Parent, SymbolKind},
-    DisplayObject, GlobalID,
+    DisplayObject, GlobalID, TargetID,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
@@ -426,30 +426,76 @@ impl<'ctx> Context<'_, 'ctx> {
             .llvm_functions_by_key
             .insert(key.clone(), llvm_function_signatue.clone());
 
-        let pernix_ir = self.table().query::<IR>(key.callable_id).unwrap();
+        // build intrinsic function
+        if key.callable_id.target_id == TargetID::CORE {
+            let entry_block = self.context().append_basic_block(
+                llvm_function_signatue.llvm_function_value,
+                "entry",
+            );
+            let builder = self.context().create_builder();
+            builder.position_at_end(entry_block);
 
-        let mut builder = Builder::new(
-            self,
-            key.callable_id,
-            &key.instantiation,
-            &function_signature,
-            &pernix_ir,
-            llvm_function_signatue.clone(),
-        );
+            match self.table().get::<Name>(key.callable_id).0.as_str() {
+                "sizeof" => {
+                    let ty = key.instantiation.types.values().next().unwrap();
+                    let llvm_ty = self.get_type(ty.clone());
 
-        for block_id in pernix_ir.control_flow_graph.blocks().ids() {
-            builder.build_basic_block(block_id);
+                    let size = llvm_ty.map_or(0, |llvm_ty| {
+                        self.target_data().get_abi_size(&llvm_ty)
+                    });
+
+                    let size = self
+                        .context()
+                        .ptr_sized_int_type(self.target_data(), None)
+                        .const_int(size, false);
+
+                    builder.build_return(Some(&size)).unwrap();
+                }
+                "alignof" => {
+                    let ty = key.instantiation.types.values().next().unwrap();
+                    let llvm_ty = self.get_type(ty.clone());
+
+                    let align = llvm_ty.map_or(0, |llvm_ty| {
+                        u64::from(
+                            self.target_data().get_abi_alignment(&llvm_ty),
+                        )
+                    });
+
+                    let align = self
+                        .context()
+                        .ptr_sized_int_type(self.target_data(), None)
+                        .const_int(align, false);
+
+                    builder.build_return(Some(&align)).unwrap();
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            let pernix_ir = self.table().query::<IR>(key.callable_id).unwrap();
+
+            let mut builder = Builder::new(
+                self,
+                key.callable_id,
+                &key.instantiation,
+                &function_signature,
+                &pernix_ir,
+                llvm_function_signatue.clone(),
+            );
+
+            for block_id in pernix_ir.control_flow_graph.blocks().ids() {
+                builder.build_basic_block(block_id);
+            }
+
+            // connect alloca entry block to the first block
+            builder.inkwell_builder.position_at_end(builder.llvm_entry_block);
+            builder
+                .inkwell_builder
+                .build_unconditional_branch(
+                    builder.basic_block_map
+                        [&pernix_ir.control_flow_graph.entry_block_id()],
+                )
+                .unwrap();
         }
-
-        // connect alloca entry block to the first block
-        builder.inkwell_builder.position_at_end(builder.llvm_entry_block);
-        builder
-            .inkwell_builder
-            .build_unconditional_branch(
-                builder.basic_block_map
-                    [&pernix_ir.control_flow_graph.entry_block_id()],
-            )
-            .unwrap();
 
         llvm_function_signatue
     }

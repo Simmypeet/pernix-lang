@@ -41,35 +41,39 @@ pub trait IntrinsicExt {
 /*
 // Copy marker synopsis:
 
-public marker Copy[T];
+public marker Copy[T]
 
 // implements copy for all primitive types
-implements Copy[int8];
-implements Copy[int16];
-implements Copy[int32];
-implements Copy[int64];
-implements Copy[uint8];
-implements Copy[uint16];
-implements Copy[uint43];
-implements Copy[uint64];
-implements Copy[float32];
-implements Copy[float64];
-implements Copy[isize];
-implements Copy[usize];
+implements Copy[int8]
+implements Copy[int16]
+implements Copy[int32]
+implements Copy[int64]
+implements Copy[uint8]
+implements Copy[uint16]
+implements Copy[uint43]
+implements Copy[uint64]
+implements Copy[float32]
+implements Copy[float64]
+implements Copy[isize]
+implements Copy[usize]
 
 // mutable reference can't be copied
-implements['a, T] Copy[&'a mutable T]
-where
-    T: 'a
-delete;
+implements['a, T] Copy[&'a mutable T] delete
+    where:
+        T: 'a
 */
 
 /*
 // Drop trait synopsis:
-public trait Drop[T] {
-    public function drop(value: &mutable T);
-}
+public trait Drop[T]:
+    public function drop(value: &mutable T)
  */
+
+/*
+// size and alignof synopsis:
+public function sizeof[T]() -> usize
+public function alignof[T]() -> usize
+  */
 
 impl IntrinsicExt for Table {
     fn initialize_core(&self) {
@@ -91,9 +95,93 @@ impl IntrinsicExt for Table {
 
         initialize_copy_marker(self, &mut id_gen, &mut core_member);
         initialize_drop_trait(self, &mut id_gen, &mut core_member);
+        initialize_sizeof(self, &mut id_gen, &mut core_member);
+        initialize_alignof(self, &mut id_gen, &mut core_member);
 
         assert!(self.add_component(root_core_module_id, core_member));
     }
+}
+
+fn initialize_sizeof(
+    table: &Table,
+    id_gen: &mut impl Iterator<Item = usize>,
+    core_member: &mut Member,
+) {
+    let sizeof_id = GlobalID::new(
+        TargetID::CORE,
+        pernixc_table::ID(id_gen.next().unwrap()),
+    );
+
+    assert!(table.add_component(sizeof_id, SymbolKind::Function));
+    assert!(table.add_component(sizeof_id, Name("sizeof".to_string())));
+    assert!(table.add_component(sizeof_id, Parent {
+        parent: Some(pernixc_table::ID::ROOT_MODULE)
+    }));
+    assert!(table.add_component(sizeof_id, {
+        let mut generic_params = GenericParameters::default();
+        assert!(generic_params
+            .add_type_parameter(TypeParameter {
+                name: "T".to_string(),
+                span: None,
+            })
+            .is_ok());
+        generic_params
+    }));
+    assert!(table.add_component(sizeof_id, WhereClause::default()));
+    assert!(table.add_component(sizeof_id, ForallLifetimes::default()));
+    assert!(table.add_component(sizeof_id, Accessibility::Public));
+    assert!(table.add_component(sizeof_id, ElidedLifetimes::default()));
+    assert!(table.add_component(sizeof_id, ImpliedPredicates::default()));
+
+    // add to the core module
+    assert!(core_member.insert("sizeof".to_string(), sizeof_id.id).is_none());
+
+    assert!(table.add_component(sizeof_id, FunctionSignature {
+        parameters: Arena::default(),
+        parameter_order: Vec::new(),
+        return_type: Type::Primitive(Primitive::Usize)
+    }));
+}
+
+fn initialize_alignof(
+    table: &Table,
+    id_gen: &mut impl Iterator<Item = usize>,
+    core_member: &mut Member,
+) {
+    let alignof_id = GlobalID::new(
+        TargetID::CORE,
+        pernixc_table::ID(id_gen.next().unwrap()),
+    );
+
+    assert!(table.add_component(alignof_id, SymbolKind::Function));
+    assert!(table.add_component(alignof_id, Name("alignof".to_string())));
+    assert!(table.add_component(alignof_id, Parent {
+        parent: Some(pernixc_table::ID::ROOT_MODULE)
+    }));
+    assert!(table.add_component(alignof_id, {
+        let mut generic_params = GenericParameters::default();
+        assert!(generic_params
+            .add_type_parameter(TypeParameter {
+                name: "T".to_string(),
+                span: None,
+            })
+            .is_ok());
+        generic_params
+    }));
+    assert!(table.add_component(alignof_id, WhereClause::default()));
+    assert!(table.add_component(alignof_id, ForallLifetimes::default()));
+    assert!(table.add_component(alignof_id, Accessibility::Public));
+    assert!(table.add_component(alignof_id, ElidedLifetimes::default()));
+    assert!(table.add_component(alignof_id, ImpliedPredicates::default()));
+
+    // add to the core module
+    assert!(core_member.insert("alignof".to_string(), alignof_id.id).is_none());
+
+    assert!(table.add_component(alignof_id, FunctionSignature {
+        parameters: Arena::default(),
+        parameter_order: Vec::new(),
+        return_type: Type::Primitive(Primitive::Usize)
+    }));
 }
 
 #[allow(clippy::too_many_lines)]
