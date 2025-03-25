@@ -1,6 +1,6 @@
 //! Contains the definition of [`Binder`], the struct used for building the IR.
 
-use std::{borrow::Cow, collections::HashMap, num::NonZeroUsize};
+use std::{borrow::Cow, collections::HashMap, num::NonZeroUsize, ops::Deref};
 
 use diagnostic::{CyclicInference, MismatchedType};
 use enum_as_inner::EnumAsInner;
@@ -473,7 +473,20 @@ impl Binder<'_> {
             Value::Register(register_id) => {
                 self.type_of_register(*register_id, handler)
             }
-            Value::Literal(literal) => Ok(literal.r#type()),
+            Value::Literal(literal) => Ok(self
+                .create_environment()
+                .simplify(literal.r#type())
+                .map_err(|x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_calculating_overflow(
+                            literal.span().cloned().unwrap(),
+                            handler,
+                        )
+                    })
+                })?
+                .deref()
+                .result
+                .clone()),
         }
     }
 
