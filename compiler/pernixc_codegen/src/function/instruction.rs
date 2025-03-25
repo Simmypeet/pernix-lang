@@ -1458,6 +1458,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Signed,
             Unsigned,
             Float,
+            ReferenceOrPointer,
         }
 
         let operand = self
@@ -1466,32 +1467,49 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .into_scalar()
             .expect("cast only available on scalar values");
 
-        let operand_pnx_type =
-            self.type_of_value_pnx(&cast.value).into_primitive().unwrap();
-        let cast_to_pnx_type = cast.r#type.clone().into_primitive().unwrap();
+        let operand_pnx_type = self.type_of_value_pnx(&cast.value);
+        let cast_to_pnx_type = &cast.r#type;
 
-        let get_kind = |ty: Primitive| match ty {
-            Primitive::Isize
-            | Primitive::Int8
-            | Primitive::Int16
-            | Primitive::Int32
-            | Primitive::Int64 => PrimitiveKind::Signed,
+        let get_kind = |ty: &Type<Model>| match ty {
+            Type::Primitive(
+                Primitive::Isize
+                | Primitive::Int8
+                | Primitive::Int16
+                | Primitive::Int32
+                | Primitive::Int64,
+            ) => PrimitiveKind::Signed,
 
-            Primitive::Bool
-            | Primitive::Usize
-            | Primitive::Uint8
-            | Primitive::Uint16
-            | Primitive::Uint32
-            | Primitive::Uint64 => PrimitiveKind::Unsigned,
+            Type::Primitive(
+                Primitive::Bool
+                | Primitive::Usize
+                | Primitive::Uint8
+                | Primitive::Uint16
+                | Primitive::Uint32
+                | Primitive::Uint64,
+            ) => PrimitiveKind::Unsigned,
 
-            Primitive::Float32 | Primitive::Float64 => PrimitiveKind::Float,
+            Type::Primitive(Primitive::Float32 | Primitive::Float64) => {
+                PrimitiveKind::Float
+            }
+
+            Type::Reference(_) | Type::Pointer(_) => {
+                PrimitiveKind::ReferenceOrPointer
+            }
+
+            _ => unreachable!(),
         };
 
         let cast_to_kind = get_kind(cast_to_pnx_type);
-        let operand_kind = get_kind(operand_pnx_type);
+        let operand_kind = get_kind(&operand_pnx_type);
 
-        let operand_type = self.context.get_primitive_type(operand_pnx_type);
-        let cast_type = self.context.get_primitive_type(cast_to_pnx_type);
+        let operand_type = self
+            .context
+            .get_type(operand_pnx_type.clone())
+            .expect("should be no zst");
+        let cast_type = self
+            .context
+            .get_type(cast_to_pnx_type.clone())
+            .expect("should be no zst");
 
         let float_bit_width = |ty| match ty {
             Primitive::Float32 => 32,
@@ -1620,8 +1638,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
 
             (PrimitiveKind::Float, PrimitiveKind::Float) => {
-                let value_bit_width = float_bit_width(operand_pnx_type);
-                let cast_to_bit_width = float_bit_width(cast_to_pnx_type);
+                let value_bit_width =
+                    float_bit_width(*operand_pnx_type.as_primitive().unwrap());
+                let cast_to_bit_width =
+                    float_bit_width(*cast_to_pnx_type.as_primitive().unwrap());
 
                 match value_bit_width.cmp(&cast_to_bit_width) {
                     // smaller to bigger
@@ -1652,6 +1672,42 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Ordering::Equal => Ok(Some(LlvmValue::Scalar(operand))),
                 }
             }
+
+            // reference/pointer
+            (
+                PrimitiveKind::ReferenceOrPointer,
+                PrimitiveKind::ReferenceOrPointer,
+            ) => Ok(Some(LlvmValue::Scalar(operand))),
+
+            // reference/pointer -> usize
+            (PrimitiveKind::ReferenceOrPointer, PrimitiveKind::Unsigned) => {
+                Ok(Some(LlvmValue::Scalar(
+                    self.inkwell_builder
+                        .build_ptr_to_int(
+                            operand.into_pointer_value(),
+                            cast_type.into_int_type(),
+                            &format!("ptrtoint_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+                )))
+            }
+
+            // usize -> reference/pointer
+            (PrimitiveKind::Unsigned, PrimitiveKind::ReferenceOrPointer) => {
+                Ok(Some(LlvmValue::Scalar(
+                    self.inkwell_builder
+                        .build_int_to_ptr(
+                            operand.into_int_value(),
+                            cast_type.into_pointer_type(),
+                            &format!("inttoptr_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into(),
+                )))
+            }
+
+            _ => unreachable!(),
         }
     }
 
