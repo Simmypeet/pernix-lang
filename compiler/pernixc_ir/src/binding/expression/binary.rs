@@ -429,7 +429,8 @@ impl Binder<'_> {
                     })?;
 
                 let valid = match lhs_register_ty.result {
-                    Type::Primitive(_) => true,
+                    Type::Pointer(_) | Type::Primitive(_) => true,
+
                     Type::Inference(inference) => {
                         let constraint_id = *self
                             .inference_context

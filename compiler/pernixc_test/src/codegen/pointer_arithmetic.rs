@@ -17,24 +17,23 @@ public function main():
     scanf(&"%d\0"->[0], &inputCount)
 
     let mut nums = malloc(inputCount as usize * intSize) as *mut int32
+    let end = nums + inputCount as isize
     
     unsafe scope:
-        let mut i = 0
-        while i < inputCount as isize:
+        let mut begin = nums
+        while begin < end:
             let mut num = 0i32
             scanf(&"%d\0"->[0], &num)
 
-            *((nums + i) as &mut int32) = num
+            *(begin as &mut int32) = num
 
-            i += 1
+            begin += 1
 
     unsafe scope:
-        let mut i = 0
-        while i < inputCount as isize:
-            printf(&"%d \0"->[0], *((nums + i) as &int32))
-            i += 1
-
-        printf(&"\n\0"->[0])
+        let mut begin = nums
+        while begin < end:
+            printf(&"%d \0"->[0], *(begin as &int32))
+            begin += 1
 
     free(nums as *mut ())
 "#;
@@ -48,6 +47,6 @@ fn number_match() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap().as_str(),
-        "1 2 4 8 16 32 \n"
+        "1 2 4 8 16 32 "
     );
 }

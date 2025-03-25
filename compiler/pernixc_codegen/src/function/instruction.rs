@@ -556,7 +556,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         binary: &register::Binary<Model>,
         reg_id: ID<Register<Model>>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let lhs = self.get_value(&binary.lhs)?.unwrap().into_scalar().unwrap();
+        let mut lhs =
+            self.get_value(&binary.lhs)?.unwrap().into_scalar().unwrap();
         let mut rhs =
             self.get_value(&binary.rhs)?.unwrap().into_scalar().unwrap();
 
@@ -806,28 +807,64 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         self.callable_id,
                         &self.environment,
                     )
-                    .unwrap()
-                    .result
-                    .into_primitive()
                     .unwrap();
 
-                let kind = match pernix_lhs_ty {
-                    Primitive::Int8
-                    | Primitive::Int16
-                    | Primitive::Int32
-                    | Primitive::Int64
-                    | Primitive::Isize => Kind::Signed,
+                let kind = match &pernix_lhs_ty.result {
+                    Type::Primitive(
+                        Primitive::Int8
+                        | Primitive::Int16
+                        | Primitive::Int32
+                        | Primitive::Int64
+                        | Primitive::Isize,
+                    ) => Kind::Signed,
 
-                    Primitive::Uint8
-                    | Primitive::Uint16
-                    | Primitive::Uint32
-                    | Primitive::Uint64
-                    | Primitive::Usize => Kind::Unsigned,
+                    Type::Primitive(
+                        Primitive::Uint8
+                        | Primitive::Uint16
+                        | Primitive::Uint32
+                        | Primitive::Uint64
+                        | Primitive::Usize,
+                    )
+                    // pointer included here since it will be converted to
+                    // usize
+                    | Type::Pointer(_) => Kind::Unsigned,
 
-                    Primitive::Float32 | Primitive::Float64 => Kind::Float,
+                    Type::Primitive(
+                        Primitive::Float32 | Primitive::Float64,
+                    ) => Kind::Float,
 
-                    Primitive::Bool => Kind::Bool,
+                    Type::Primitive(Primitive::Bool) => Kind::Bool,
+
+                    _ => unreachable!(),
                 };
+
+                if pernix_lhs_ty.result.is_pointer() {
+                    lhs = self
+                        .inkwell_builder
+                        .build_ptr_to_int(
+                            lhs.into_pointer_value(),
+                            self.context.context().ptr_sized_int_type(
+                                self.context.target_data(),
+                                None,
+                            ),
+                            &format!("ptr_to_int_lhs_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into();
+
+                    rhs = self
+                        .inkwell_builder
+                        .build_ptr_to_int(
+                            rhs.into_pointer_value(),
+                            self.context.context().ptr_sized_int_type(
+                                self.context.target_data(),
+                                None,
+                            ),
+                            &format!("ptr_to_int_rhs_{reg_id:?}"),
+                        )
+                        .unwrap()
+                        .into();
+                }
 
                 match kind {
                     Kind::Bool | Kind::Signed | Kind::Unsigned => {
