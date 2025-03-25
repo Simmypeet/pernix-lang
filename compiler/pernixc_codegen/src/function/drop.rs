@@ -12,7 +12,7 @@ use pernixc_component::{
 use pernixc_ir::model::Erased;
 use pernixc_table::{
     component::{Implemented, Member, SymbolKind, VariantDeclarationOrder},
-    DisplayObject, GlobalID,
+    DisplayObject, GlobalID, TargetID,
 };
 use pernixc_term::{
     constant::Constant,
@@ -815,6 +815,17 @@ impl<'ctx> Context<'_, 'ctx> {
     }
 
     fn get_adt_drop_kind(&self, symbol: &Symbol<Model>) -> Option<AdtDropKind> {
+        // check if the symbol is a NoDrop struct
+        if symbol.id.target_id == TargetID::CORE
+            && symbol.id
+                == self
+                    .table()
+                    .get_by_qualified_name(["core", "NoDrop"])
+                    .unwrap()
+        {
+            return None;
+        }
+
         let current_symbol_id = symbol.id;
 
         // check for the explict drop implementation

@@ -2,6 +2,7 @@
 
 use pernixc_arena::Arena;
 use pernixc_component::{
+    fields::{Field, Fields},
     function_signature::{FunctionSignature, Parameter},
     implementation::Implementation,
     implied_predicates::{ImpliedPredicate, ImpliedPredicates},
@@ -97,9 +98,63 @@ impl IntrinsicExt for Table {
         initialize_drop_trait(self, &mut id_gen, &mut core_member);
         initialize_sizeof(self, &mut id_gen, &mut core_member);
         initialize_alignof(self, &mut id_gen, &mut core_member);
+        initialize_no_drop(self, &mut id_gen, &mut core_member);
 
         assert!(self.add_component(root_core_module_id, core_member));
     }
+}
+
+fn initialize_no_drop(
+    table: &Table,
+    id_gen: &mut impl Iterator<Item = usize>,
+    core_member: &mut Member,
+) {
+    let no_drop_id = GlobalID::new(
+        TargetID::CORE,
+        pernixc_table::ID(id_gen.next().unwrap()),
+    );
+
+    assert!(table.add_component(no_drop_id, SymbolKind::Struct));
+    assert!(table.add_component(no_drop_id, Name("NoDrop".to_string())));
+    assert!(table.add_component(no_drop_id, Parent {
+        parent: Some(pernixc_table::ID::ROOT_MODULE)
+    }));
+    assert!(table.add_component(no_drop_id, Accessibility::Public));
+    let t_id;
+    assert!(table.add_component(no_drop_id, {
+        let mut generic_params = GenericParameters::default();
+        t_id = generic_params
+            .add_type_parameter(TypeParameter {
+                name: "T".to_string(),
+                span: None,
+            })
+            .unwrap();
+        generic_params
+    }));
+
+    assert!(table.add_component(no_drop_id, WhereClause::default()));
+    assert!(table.add_component(no_drop_id, ForallLifetimes::default()));
+
+    let mut fields = Arena::default();
+    let value_field_id = fields.insert(Field {
+        accessibility: Accessibility::Public,
+        name: "value".to_string(),
+        r#type: Type::Parameter(TypeParameterID::new(no_drop_id, t_id)),
+        span: None,
+    });
+
+    assert!(table.add_component(no_drop_id, Fields {
+        fields,
+        field_ids_by_name: {
+            let mut map = std::collections::HashMap::new();
+            map.insert("value".to_string(), value_field_id);
+            map
+        },
+        field_declaration_order: vec![value_field_id],
+    }));
+
+    // add to the core module
+    assert!(core_member.insert("NoDrop".to_string(), no_drop_id.id).is_none());
 }
 
 fn initialize_sizeof(

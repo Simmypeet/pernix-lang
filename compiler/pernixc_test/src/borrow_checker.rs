@@ -2048,6 +2048,39 @@ fn borrow_usage_in_drop() {
     assert!(error.usage.is_drop());
 }
 
+const BORROW_USAGE_IN_DROP_BUT_NO_DROP: &str = r"
+from core import Drop, NoDrop
+
+
+public struct DropWrapper[T]:
+    private value: T
+
+
+implements[T] DropWrapper[T]:
+    public function new(value: T) -> this:
+        return this { value: value }
+
+
+implements[T] Drop[DropWrapper[T]]:
+    function drop['b](self: &'b mut DropWrapper[T]):
+        where:
+            DropWrapper[T]: 'b 
+
+
+public function main():
+    let mut number = 32
+    let wrapper = NoDrop {
+        value: DropWrapper::new(&number)
+    }
+     
+    number += 23
+";
+
+#[test]
+fn borrow_usage_in_drop_but_no_drop() {
+    assert!(build_table(BORROW_USAGE_IN_DROP_BUT_NO_DROP).1.is_empty());
+}
+
 const UNIVERSAL_REGIONS_ALWAYS_FLOWS: &str = r"
 public struct Test['a]:
 	public first: &'a int32

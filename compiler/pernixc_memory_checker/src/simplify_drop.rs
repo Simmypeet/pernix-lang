@@ -24,7 +24,7 @@ use pernixc_ir::{
 use pernixc_table::{
     component::{Member, SymbolKind},
     diagnostic::Diagnostic,
-    GlobalID,
+    GlobalID, TargetID,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,
@@ -102,6 +102,16 @@ pub(super) fn simplify_drop(
 
             match symbol_kind {
                 SymbolKind::Struct => {
+                    if symbol.id.target_id == TargetID::CORE
+                        && symbol.id
+                            == environment
+                                .table()
+                                .get_by_qualified_name(["core", "NoDrop"])
+                                .unwrap()
+                    {
+                        visited_types.remove(&ty);
+                        return Ok(Vec::new());
+                    }
                     let predicate = PositiveTrait::new(
                         drop_trait_id,
                         false, /* TODO: use correct boolean value */
@@ -124,10 +134,8 @@ pub(super) fn simplify_drop(
                                 )
                             })
                         })?
-                        .is_none()
+                        .is_some()
                     {
-                        // continue breaking down the drop instructions
-                    } else {
                         visited_types.remove(&ty);
                         return Ok(vec![Instruction::Drop(drop.clone())]);
                     }

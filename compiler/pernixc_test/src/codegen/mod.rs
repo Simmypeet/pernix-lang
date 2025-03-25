@@ -24,6 +24,7 @@ mod fibonacci_program;
 mod hello_world;
 mod max;
 mod nested_drop;
+mod no_drop;
 mod number_match;
 mod pointer_arithmetic;
 mod prefix;
