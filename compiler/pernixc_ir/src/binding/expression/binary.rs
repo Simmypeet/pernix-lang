@@ -21,7 +21,8 @@ use crate::{
     value::{
         literal::{self, Boolean, Literal},
         register::{
-            Assignment, Binary, BinaryOperator, BitwiseOperator, Load, Phi,
+            ArithmeticOperator, Assignment, Binary, BinaryOperator,
+            BitwiseOperator, Load, Phi,
         },
         Value,
     },
@@ -366,12 +367,18 @@ impl Binder<'_> {
 
         // left shift and right shift doesn't necessarily require the same type
         // for both operands
-        if !matches!(
+        if !(matches!(
             op,
             BinaryOperator::Bitwise(
                 BitwiseOperator::LeftShift | BitwiseOperator::RightShift
             )
-        ) {
+        ) || (matches!(
+            op,
+            BinaryOperator::Arithmetic(
+                ArithmeticOperator::Add | ArithmeticOperator::Subtract
+            )
+        )) && matches!(lhs_register_ty, Type::Pointer(_)))
+        {
             let rhs_register_ty = self.type_of_value(&rhs_value, handler)?;
 
             let _ = self.type_check(
@@ -383,13 +390,30 @@ impl Binder<'_> {
         }
 
         match op {
-            BinaryOperator::Arithmetic(_) => {
-                let _ = self.type_check(
-                    &lhs_register_ty,
-                    Expected::Constraint(Constraint::Number),
-                    syntax_tree.span(),
-                    handler,
-                )?;
+            BinaryOperator::Arithmetic(arith) => {
+                let rhs_register_ty =
+                    self.type_of_value(&rhs_value, handler)?;
+
+                if matches!(lhs_register_ty, Type::Pointer(_))
+                    && matches!(
+                        arith,
+                        ArithmeticOperator::Add | ArithmeticOperator::Subtract
+                    )
+                {
+                    let _ = self.type_check(
+                        &rhs_register_ty,
+                        Expected::Known(Type::Primitive(Primitive::Isize)),
+                        syntax_tree.right.span(),
+                        handler,
+                    );
+                } else {
+                    let _ = self.type_check(
+                        &lhs_register_ty,
+                        Expected::Constraint(Constraint::Number),
+                        syntax_tree.left.span(),
+                        handler,
+                    )?;
+                }
             }
             BinaryOperator::Relational(_) => {
                 let lhs_register_ty = self

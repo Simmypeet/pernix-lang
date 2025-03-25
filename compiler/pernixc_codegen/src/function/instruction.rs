@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, ops::Deref};
 
 use inkwell::{
     attributes::AttributeLoc,
@@ -556,13 +556,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         binary: &register::Binary<Model>,
         reg_id: ID<Register<Model>>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let lhs = self.get_value(&binary.lhs)?;
-        let rhs = self.get_value(&binary.rhs)?;
-
-        // currently, we don't support operator overloadings, thefore, only
-        // primitive types are allowed
-        let lhs = lhs.unwrap().into_scalar().unwrap();
-        let mut rhs = rhs.unwrap().into_scalar().unwrap();
+        let lhs = self.get_value(&binary.lhs)?.unwrap().into_scalar().unwrap();
+        let mut rhs =
+            self.get_value(&binary.rhs)?.unwrap().into_scalar().unwrap();
 
         match binary.operator {
             BinaryOperator::Arithmetic(arithmetic_operator) => {
@@ -570,6 +566,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Signed,
                     Unsigned,
                     Float,
+                    Pointer,
                 }
 
                 let pernix_lhs_ty = self
@@ -580,27 +577,32 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         self.callable_id,
                         &self.environment,
                     )
-                    .unwrap()
-                    .result
-                    .into_primitive()
                     .unwrap();
 
-                let kind = match pernix_lhs_ty {
-                    Primitive::Int8
-                    | Primitive::Int16
-                    | Primitive::Int32
-                    | Primitive::Int64
-                    | Primitive::Isize => Kind::Signed,
+                let kind = match &pernix_lhs_ty.result {
+                    Type::Primitive(
+                        Primitive::Int8
+                        | Primitive::Int16
+                        | Primitive::Int32
+                        | Primitive::Int64
+                        | Primitive::Isize,
+                    ) => Kind::Signed,
 
-                    Primitive::Uint8
-                    | Primitive::Uint16
-                    | Primitive::Uint32
-                    | Primitive::Uint64
-                    | Primitive::Usize => Kind::Unsigned,
+                    Type::Primitive(
+                        Primitive::Uint8
+                        | Primitive::Uint16
+                        | Primitive::Uint32
+                        | Primitive::Uint64
+                        | Primitive::Usize,
+                    ) => Kind::Unsigned,
 
-                    Primitive::Float32 | Primitive::Float64 => Kind::Float,
+                    Type::Primitive(
+                        Primitive::Float32 | Primitive::Float64,
+                    ) => Kind::Float,
 
-                    Primitive::Bool => unreachable!("bool is not arithmetic"),
+                    Type::Pointer(_) => Kind::Pointer,
+
+                    _ => unreachable!(),
                 };
 
                 let value: BasicValueEnum = match (kind, arithmetic_operator) {
@@ -737,6 +739,52 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         )
                         .unwrap()
                         .into(),
+
+                    (
+                        Kind::Pointer,
+                        register::ArithmeticOperator::Add
+                        | register::ArithmeticOperator::Subtract,
+                    ) => unsafe {
+                        let pointee_type = self.context.get_type(
+                            pernix_lhs_ty
+                                .result
+                                .as_pointer()
+                                .unwrap()
+                                .pointee
+                                .deref()
+                                .clone(),
+                        );
+
+                        let Ok(pointee_type) = pointee_type else {
+                            // pointer arithmetic on zst type is no-op
+                            return Ok(Some(LlvmValue::Scalar(lhs)));
+                        };
+
+                        if arithmetic_operator
+                            == register::ArithmeticOperator::Subtract
+                        {
+                            rhs = self
+                                .inkwell_builder
+                                .build_int_neg(
+                                    rhs.into_int_value(),
+                                    &format!("neg_ptr_arith_{reg_id:?}"),
+                                )
+                                .unwrap()
+                                .into();
+                        }
+
+                        self.inkwell_builder
+                            .build_gep(
+                                pointee_type,
+                                lhs.into_pointer_value(),
+                                &[rhs.into_int_value()],
+                                &format!("ptr_arith_{reg_id:?}"),
+                            )
+                            .unwrap()
+                            .into()
+                    },
+
+                    _ => unreachable!(),
                 };
 
                 Ok(Some(LlvmValue::Scalar(value)))
