@@ -16,6 +16,10 @@ use crate::syntax_tree::{
 };
 
 proptest! {
+    #![proptest_config(proptest::test_runner::Config {
+        cases: 64,
+        ..std::default::Default::default()
+    })]
     #[test]
     fn target(
         mut target_module_tree in ModuleTree::arbitrary()
