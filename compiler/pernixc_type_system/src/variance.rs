@@ -182,11 +182,7 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                         Type::Pointer(pointer),
                     ) => {
                         let current_variance =
-                            parent_variance.xfrom(if pointer.mutable {
-                                Variance::Invariant
-                            } else {
-                                Variance::Covariant
-                            });
+                            parent_variance.xfrom(Variance::Bivariant);
 
                         self.get_variance_of(
                             &pointer.pointee,

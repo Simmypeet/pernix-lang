@@ -323,12 +323,8 @@ impl Context {
             }
 
             Type::Pointer(pointer) => {
-                let new_variance = if pointer.mutable {
-                    current_variance
-                        .xform(VarianceVariable::Constant(Variance::Invariant))
-                } else {
-                    current_variance
-                };
+                let new_variance = current_variance
+                    .xform(VarianceVariable::Constant(Variance::Bivariant));
 
                 self.collect_constraints_from_type(
                     target_id,
