@@ -570,17 +570,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Pointer,
                 }
 
-                let pernix_lhs_ty = self
-                    .function_ir
-                    .values
-                    .type_of_value(
-                        &binary.lhs,
-                        self.callable_id,
-                        &self.environment,
-                    )
-                    .unwrap();
+                let pernix_lhs_ty = self.type_of_value_pnx(&binary.lhs);
 
-                let kind = match &pernix_lhs_ty.result {
+                let kind = match &pernix_lhs_ty {
                     Type::Primitive(
                         Primitive::Int8
                         | Primitive::Int16
@@ -748,7 +740,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     ) => unsafe {
                         let pointee_type = self.context.get_type(
                             pernix_lhs_ty
-                                .result
                                 .as_pointer()
                                 .unwrap()
                                 .pointee
@@ -799,17 +790,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Bool,
                 }
 
-                let pernix_lhs_ty = self
-                    .function_ir
-                    .values
-                    .type_of_value(
-                        &binary.lhs,
-                        self.callable_id,
-                        &self.environment,
-                    )
-                    .unwrap();
+                let pernix_lhs_ty = self.type_of_value_pnx(&binary.lhs);
 
-                let kind = match &pernix_lhs_ty.result {
+                let kind = match &pernix_lhs_ty {
                     Type::Primitive(
                         Primitive::Int8
                         | Primitive::Int16
@@ -838,7 +821,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     _ => unreachable!(),
                 };
 
-                if pernix_lhs_ty.result.is_pointer() {
+                if pernix_lhs_ty.is_pointer() {
                     lhs = self
                         .inkwell_builder
                         .build_ptr_to_int(
@@ -956,15 +939,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
             BinaryOperator::Bitwise(bitwise_operator) => {
                 let pernix_lhs_ty = self
-                    .function_ir
-                    .values
-                    .type_of_value(
-                        &binary.lhs,
-                        self.callable_id,
-                        &self.environment,
-                    )
-                    .unwrap()
-                    .result
+                    .type_of_value_pnx(&binary.lhs)
                     .into_primitive()
                     .unwrap();
 
