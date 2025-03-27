@@ -16,7 +16,7 @@ use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     model,
-    value::register::{Assignment, Load},
+    value::register::{Assignment, Borrow, Load},
     Representation, Values,
 };
 use pernixc_source_file::Span;
@@ -72,6 +72,32 @@ fn handle_store(
     Ok(state
         .get_drop_instructions(&target_address, ty_environment.table())
         .unwrap())
+}
+
+fn handle_borrow(
+    borrow: &Borrow<model::Model>,
+    register_span: Span,
+    stack: &mut Stack,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    let state = stack.get_state(&borrow.address).unwrap();
+
+    match state.get_state_summary() {
+        Summary::Initialized => {}
+
+        Summary::Uninitialized => {
+            handler.receive(Box::new(UseBeforeInitialization {
+                use_span: register_span,
+            }));
+        }
+
+        Summary::Moved(span) => {
+            handler.receive(Box::new(UseAfterMove {
+                use_span: register_span,
+                move_span: span,
+            }));
+        }
+    }
 }
 
 fn handle_load(
@@ -293,8 +319,18 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                             1
                         }
 
-                        Assignment::Borrow(_)
-                        | Assignment::FunctionCall(_)
+                        Assignment::Borrow(borrow) => {
+                            handle_borrow(
+                                borrow,
+                                register.span.clone().unwrap(),
+                                stack,
+                                handler,
+                            );
+
+                            1
+                        }
+
+                        Assignment::FunctionCall(_)
                         | Assignment::Struct(_)
                         | Assignment::Variant(_)
                         | Assignment::Array(_)

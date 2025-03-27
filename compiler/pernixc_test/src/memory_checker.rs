@@ -318,3 +318,25 @@ public function test[T]() -> T:
 fn return_non_copyable() {
     assert!(build_table(RETURN_NON_COPYABLE).1.is_empty());
 }
+
+const BORROW_AFTER_MOVED: &str = r"
+public function consume[T](..: T):
+    pass
+
+
+public function test[T](x: T):
+    consume(x)
+    let ref = &x
+";
+
+#[test]
+fn borrow_after_moved() {
+    let (_, errs) = build_table(BORROW_AFTER_MOVED);
+
+    assert_eq!(errs.len(), 1);
+
+    let error = errs[0].as_any().downcast_ref::<UseAfterMove>().unwrap();
+
+    assert_eq!(error.use_span.str(), "&x");
+    assert_eq!(error.move_span.str(), "x");
+}
