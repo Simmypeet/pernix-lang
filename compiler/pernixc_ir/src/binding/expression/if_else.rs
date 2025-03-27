@@ -67,7 +67,7 @@ impl Binder<'_> {
             Group::Inline(inline_expression) => {
                 self.push_scope_with(allocated_scope_id);
 
-                if is_statement {
+                let value = if is_statement {
                     match self.bind(
                         &*inline_expression.expression,
                         Config { target: Target::Statement },
@@ -87,7 +87,7 @@ impl Binder<'_> {
 
                 self.pop_scope(allocated_scope_id);
 
-                (None, self.current_block_id)
+                (value, self.current_block_id)
             }
         };
 
