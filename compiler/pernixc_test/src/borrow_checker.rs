@@ -1765,6 +1765,9 @@ fn complex_loop() {
 }
 
 const CONDITIONAL_CONTROL_FLOW_ACCROSS_FUNCTIONS: &str = r"
+from core import Copy
+
+
 public enum Option[T]:
 	Some(T)
 	None
@@ -1778,8 +1781,7 @@ implements[T] Option[T]:
 		match self:
 			case Some(_): return true
 			case None:    return false
-		
-	
+			
 
 	public function asRef['a](self: &'a this) -> Option[&'a T]:
         where:
@@ -1810,6 +1812,7 @@ implements[T] Option[T]:
 // fake vector
 public struct Vector[T]:
     private _marker: phantom T
+
 
 implements[T] Vector[T]:
     public function new() -> this:
@@ -1859,7 +1862,7 @@ implements[K, V] HashMap[K, V]:
 		default: V
 	) -> &'a V:
         where:
-            K: 'a
+            K: Copy + 'a
             V: 'a
 
 		match self->get(&key):
