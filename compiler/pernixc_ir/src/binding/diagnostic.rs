@@ -903,6 +903,9 @@ pub struct InvalidCastType<M: Model> {
 pub enum UnsafeOperation {
     /// Casting another type to reference type.
     ReferenceTypeCast,
+
+    /// Calling an extern function
+    ExternFunctionCall,
 }
 
 /// The operation requires an unsafe scope.
@@ -921,13 +924,15 @@ impl Report<&Table> for UnsafeRequired {
             UnsafeOperation::ReferenceTypeCast => {
                 "casting to reference type".to_string()
             }
+
+            UnsafeOperation::ExternFunctionCall => {
+                "calling an `extern` function".to_string()
+            }
         };
 
         Diagnostic {
             span: self.expression_span.clone(),
-            message: format!(
-                "the operation `{operation_string}` requires an unsafe scope"
-            ),
+            message: format!("{operation_string} requires an unsafe scope"),
             severity: Severity::Error,
             help_message: Some(
                 "put the operation inside an `unsafe` scope to perform the \

@@ -1656,6 +1656,16 @@ impl Binder<'_> {
 
         instantiation::instantiate(&mut return_type, &instantiation);
 
+        // check if calling to extern function
+        if callable_kind == SymbolKind::ExternFunction
+            && !self.stack.is_unsafe()
+        {
+            handler.receive(Box::new(UnsafeRequired {
+                expression_span: syntax_tree_span.clone(),
+                operation: UnsafeOperation::ExternFunctionCall,
+            }));
+        }
+
         Ok(self.create_register_assignmnet(
             Assignment::FunctionCall(FunctionCall {
                 callable_id,
