@@ -29,18 +29,13 @@ use super::{
 use crate::{
     component::{
         self, syntax_tree as syntax_tree_component, Accessibility, Extern,
-        ExternC, Implemented, Implements, Import, LocationSpan, Member, Name,
-        Parent, PositiveTraitImplementation, SymbolKind, TraitImplementation,
-        Using, VariantDeclarationOrder,
+        ExternC, FunctionConstness, FunctionUnsafeness, Implemented,
+        Implements, Import, LocationSpan, Member, Name, Parent,
+        PositiveTraitImplementation, SymbolKind, TraitImplementation, Using,
+        VariantDeclarationOrder,
     },
     diagnostic::{
-        AccessModifierIsNotAllowedInTraitImplementation, ConflictingUsing,
-        Diagnostic, ExpectAccessModifier, ExpectModule,
-        ExpectedImplementationWithBodyForAdt, InvalidConstImplementation,
-        InvalidFinalImplementation, ItemRedifinition,
-        NonFinalMarkerImplementation, TargetRootInImportIsNotAllowedwithFrom,
-        UnknownExternCallingConvention, VariadicArgumentsAreNotAllowed,
-        VariadicArgumentsMustBeTrailing,
+        AccessModifierIsNotAllowedInTraitImplementation, ConflictingUsing, Diagnostic, ExpectAccessModifier, ExpectModule, ExpectedImplementationWithBodyForAdt, FunctionAttribute, FunctionAttributeIsNotAllowedInTraitImplementation, InvalidConstImplementation, InvalidFinalImplementation, ItemRedifinition, NonFinalMarkerImplementation, TargetRootInImportIsNotAllowedwithFrom, UnknownExternCallingConvention, VariadicArgumentsAreNotAllowed, VariadicArgumentsMustBeTrailing
     },
     resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
     Target,
@@ -462,6 +457,21 @@ impl Representation {
                             statements: syn.body.members
                         }
                     ));
+
+                    // add the unsafeness
+                    assert!(self.storage.add_component(
+                        function_id,
+                        FunctionUnsafeness(
+                            syn.signature.unsafe_keyword.is_some()
+                        )
+                    ));
+                    // add the constness
+                    assert!(self.storage.add_component(
+                        function_id,
+                        FunctionConstness(
+                            syn.signature.const_keyword.is_some()
+                        )
+                    ));
                 }
             };
         }
@@ -636,6 +646,24 @@ impl Representation {
                             statements: syn.body.members
                         }
                     ));
+
+                    if let Some(kw) = &syn.signature.const_keyword {
+                        handler.receive(Box::new(
+                            FunctionAttributeIsNotAllowedInTraitImplementation { 
+                                attribute: FunctionAttribute::Const ,
+                                keyword_span: kw.span(), 
+                            }
+                        ));
+                    }
+
+                    if let Some(kw) = &syn.signature.unsafe_keyword {
+                        handler.receive(Box::new(
+                            FunctionAttributeIsNotAllowedInTraitImplementation { 
+                                attribute: FunctionAttribute::Unsafe ,
+                                keyword_span: kw.span(), 
+                            }
+                        ));
+                    }
 
                     function_id
                 }
@@ -1571,6 +1599,16 @@ impl Representation {
                         syntax_tree_component::FunctionBody {
                             statements: syn.body.members,
                         }
+                    ));
+
+                    // add the unsafeness
+                    assert!(self.storage.add_component(
+                        function_id,
+                        FunctionUnsafeness(syn.unsafe_keyword.is_some())
+                    ));
+                    assert!(self.storage.add_component(
+                        function_id,
+                        FunctionConstness(syn.const_keyword.is_some())
                     ));
                 }
 

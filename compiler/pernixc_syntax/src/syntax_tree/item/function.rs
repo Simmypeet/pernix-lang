@@ -211,6 +211,7 @@ impl SourceElement for Signature {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function {
     pub access_modifier: AccessModifier,
+    pub unsafe_keyword: Option<Keyword>,
     pub const_keyword: Option<Keyword>,
     pub signature: Signature,
     pub body: Body<Statement>,
@@ -223,16 +224,26 @@ impl SyntaxTree for Function {
     ) -> parse::Result<Self> {
         (
             AccessModifier::parse,
+            KeywordKind::Unsafe.to_owned().or_none(),
             KeywordKind::Const.to_owned().or_none(),
             Signature::parse,
             Body::parse,
         )
-            .map(|(access_modifier, const_keyword, signature, body)| Self {
-                access_modifier,
-                const_keyword,
-                signature,
-                body,
-            })
+            .map(
+                |(
+                    access_modifier,
+                    unsafe_keyword,
+                    const_keyword,
+                    signature,
+                    body,
+                )| Self {
+                    access_modifier,
+                    unsafe_keyword,
+                    const_keyword,
+                    signature,
+                    body,
+                },
+            )
             .parse(state_machine, handler)
     }
 }

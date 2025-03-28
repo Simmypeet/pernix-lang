@@ -140,6 +140,7 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionSignature {
+    pub is_unsafe: bool,
     pub is_const: bool,
     pub signature: function::strategy::Signature,
 }
@@ -149,14 +150,23 @@ impl Arbitrary for FunctionSignature {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (bool::arbitrary(), function::strategy::Signature::arbitrary())
-            .prop_map(|(is_const, signature)| Self { is_const, signature })
+        (
+            bool::arbitrary(),
+            bool::arbitrary(),
+            function::strategy::Signature::arbitrary(),
+        )
+            .prop_map(|(is_unsafe, is_const, signature)| Self {
+                is_unsafe,
+                is_const,
+                signature,
+            })
             .boxed()
     }
 }
 
 impl Input<&super::FunctionSignature> for &FunctionSignature {
     fn assert(self, output: &super::FunctionSignature) -> TestCaseResult {
+        assert_eq!(self.is_unsafe, output.unsafe_keyword.is_some());
         assert_eq!(self.is_const, output.const_keyword.is_some());
         self.signature.assert(&output.signature)
     }
@@ -168,6 +178,10 @@ impl IndentDisplay for FunctionSignature {
         f: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
+        if self.is_unsafe {
+            write!(f, "unsafe ")?;
+        }
+
         if self.is_const {
             write!(f, "const ")?;
         }

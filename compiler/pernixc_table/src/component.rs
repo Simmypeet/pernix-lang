@@ -600,3 +600,45 @@ pub struct VariantDeclarationOrder {
 }
 
 impl Input for VariantDeclarationOrder {}
+
+/// The **presistent-input** component for determining whether the function is
+/// defined with `const` or not.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    Deref,
+    DerefMut,
+)]
+pub struct FunctionConstness(pub bool);
+
+impl Input for FunctionConstness {}
+
+/// The **presistent-input** component for determining whether the function is
+/// defined with `unsafe` or not
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    Deref,
+    DerefMut,
+)]
+pub struct FunctionUnsafeness(pub bool);
+
+impl Input for FunctionUnsafeness {}

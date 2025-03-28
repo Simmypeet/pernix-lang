@@ -633,6 +633,47 @@ impl Report<&Table> for TargetRootInImportIsNotAllowedwithFrom {
     }
 }
 
+/// Enumeration of attributes that can be added to the function
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum FunctionAttribute {
+    /// `unsafe` function attribute
+    Unsafe,
+
+    /// `const` function attribute
+    Const,
+}
+
+/// The extra function attribute cannot be added to the functions defined in the
+/// trait implementation.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FunctionAttributeIsNotAllowedInTraitImplementation {
+    /// The function attribute added
+    pub attribute: FunctionAttribute,
+
+    /// The span to the keyword that added the attribute
+    pub keyword_span: Span,
+}
+
+impl Report<&Table> for FunctionAttributeIsNotAllowedInTraitImplementation {
+    fn report(&self, _: &Table) -> DiagnosticReport {
+        let attribute = match self.attribute {
+            FunctionAttribute::Unsafe => "`unsafe`".to_string(),
+            FunctionAttribute::Const => "`const`".to_string(),
+        };
+
+        DiagnosticReport {
+            span: self.keyword_span.clone(),
+            message: format!(
+                "the function attribute `{attribute}` is not allowed in trait \
+                 implementation"
+            ),
+            severity: Severity::Error,
+            help_message: None,
+            related: Vec::new(),
+        }
+    }
+}
+
 /// The access modifier is not allowed in trait implementation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AccessModifierIsNotAllowedInTraitImplementation {

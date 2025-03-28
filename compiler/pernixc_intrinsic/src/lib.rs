@@ -9,8 +9,8 @@ use pernixc_component::{
 };
 use pernixc_table::{
     component::{
-        Accessibility, Implemented, Implements, Import, Member, Name, Parent,
-        SymbolKind,
+        Accessibility, FunctionConstness, FunctionUnsafeness, Implemented,
+        Implements, Import, Member, Name, Parent, SymbolKind,
     },
     GlobalID, Table, TargetID,
 };
@@ -25,7 +25,7 @@ use pernixc_term::{
     predicate::{self, Outlives},
     r#type::{Pointer, Primitive, Qualifier, Reference, Type},
     where_clause::{Predicate, WhereClause},
-    Default, Tuple, 
+    Default, Tuple,
 };
 use strum::IntoEnumIterator;
 
@@ -196,6 +196,8 @@ fn initialize_drop_at(
     assert!(table.add_component(drop_at_id, Accessibility::Public));
     assert!(table.add_component(drop_at_id, ElidedLifetimes::default()));
     assert!(table.add_component(drop_at_id, ImpliedPredicates::default()));
+    assert!(table.add_component(drop_at_id, FunctionConstness(true)));
+    assert!(table.add_component(drop_at_id, FunctionUnsafeness(true)));
 
     // add to the core module
     assert!(core_member.insert("dropAt".to_string(), drop_at_id.id).is_none());
@@ -250,6 +252,8 @@ fn initialize_sizeof(
     assert!(table.add_component(sizeof_id, Accessibility::Public));
     assert!(table.add_component(sizeof_id, ElidedLifetimes::default()));
     assert!(table.add_component(sizeof_id, ImpliedPredicates::default()));
+    assert!(table.add_component(sizeof_id, FunctionConstness(true)));
+    assert!(table.add_component(sizeof_id, FunctionUnsafeness(false)));
 
     // add to the core module
     assert!(core_member.insert("sizeof".to_string(), sizeof_id.id).is_none());
@@ -291,6 +295,8 @@ fn initialize_alignof(
     assert!(table.add_component(alignof_id, Accessibility::Public));
     assert!(table.add_component(alignof_id, ElidedLifetimes::default()));
     assert!(table.add_component(alignof_id, ImpliedPredicates::default()));
+    assert!(table.add_component(alignof_id, FunctionConstness(true)));
+    assert!(table.add_component(alignof_id, FunctionUnsafeness(false)));
 
     // add to the core module
     assert!(core_member.insert("alignof".to_string(), alignof_id.id).is_none());

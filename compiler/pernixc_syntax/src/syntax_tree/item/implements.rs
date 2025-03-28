@@ -115,16 +115,22 @@ impl<S: SyntaxTree, B: SyntaxTree> SyntaxTree for MemberTemplate<S, B> {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FunctionSignature {
+    pub unsafe_keyword: Option<Keyword>,
     pub const_keyword: Option<Keyword>,
     pub signature: function::Signature,
 }
 
 impl SourceElement for FunctionSignature {
     fn span(&self) -> Span {
-        let begin = self
-            .const_keyword
-            .as_ref()
-            .map_or_else(|| self.signature.span(), SourceElement::span);
+        let begin = self.const_keyword.as_ref().map_or_else(
+            || {
+                self.unsafe_keyword.as_ref().map_or_else(
+                    || self.signature.function_keyword.span(),
+                    |x| x.span.clone(),
+                )
+            },
+            |x| x.span.clone(),
+        );
 
         begin.join(&self.signature.span())
     }
@@ -135,8 +141,16 @@ impl SyntaxTree for FunctionSignature {
         state_machine: &mut StateMachine,
         handler: &dyn Handler<error::Error>,
     ) -> parse::Result<Self> {
-        (KeywordKind::Const.to_owned().or_none(), function::Signature::parse)
-            .map(|(const_keyword, signature)| Self { const_keyword, signature })
+        (
+            KeywordKind::Unsafe.to_owned().or_none(),
+            KeywordKind::Const.to_owned().or_none(),
+            function::Signature::parse,
+        )
+            .map(|(unsafe_keyword, const_keyword, signature)| Self {
+                unsafe_keyword,
+                const_keyword,
+                signature,
+            })
             .parse(state_machine, handler)
     }
 }

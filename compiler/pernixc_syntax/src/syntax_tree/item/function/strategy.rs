@@ -87,6 +87,7 @@ impl IndentDisplay for Signature {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Function {
     pub access_modifier: AccessModifier,
+    pub is_unsafe: bool,
     pub is_const: bool,
     pub signature: Signature,
     pub body: Body<Statement>,
@@ -95,6 +96,7 @@ pub struct Function {
 impl Input<&super::Function> for &Function {
     fn assert(self, output: &super::Function) -> TestCaseResult {
         self.access_modifier.assert(&output.access_modifier)?;
+        prop_assert_eq!(self.is_unsafe, output.unsafe_keyword.is_some());
         prop_assert_eq!(self.is_const, output.const_keyword.is_some());
         self.signature.assert(&output.signature)?;
         self.body.assert(&output.body)
@@ -109,15 +111,21 @@ impl Arbitrary for Function {
         (
             AccessModifier::arbitrary(),
             proptest::bool::ANY,
+            proptest::bool::ANY,
             Signature::arbitrary(),
             Body::arbitrary(),
         )
-            .prop_map(|(access_modifier, is_const, signature, body)| Self {
-                access_modifier,
-                is_const,
-                signature,
-                body,
-            })
+            .prop_map(
+                |(access_modifier, is_unsafe, is_const, signature, body)| {
+                    Self {
+                        access_modifier,
+                        is_unsafe,
+                        is_const,
+                        signature,
+                        body,
+                    }
+                },
+            )
             .boxed()
     }
 }
@@ -129,6 +137,10 @@ impl IndentDisplay for Function {
         indent: usize,
     ) -> std::fmt::Result {
         write!(formatter, "{} ", self.access_modifier)?;
+
+        if self.is_unsafe {
+            write!(formatter, "unsafe ")?;
+        }
 
         if self.is_const {
             write!(formatter, "const ")?;
