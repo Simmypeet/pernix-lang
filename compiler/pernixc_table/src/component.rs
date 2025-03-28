@@ -464,6 +464,18 @@ impl SymbolKind {
                 | Self::AdtImplementationFunction
         )
     }
+
+    /// Checks if the symbol has a `unsafe`ness attribute.
+    #[must_use]
+    pub const fn has_function_unsafeness(&self) -> bool {
+        matches!(self, Self::Function | Self::AdtImplementationFunction)
+    }
+
+    /// Checks if the symbol has a `const`ness attribute.
+    #[must_use]
+    pub const fn has_function_constness(&self) -> bool {
+        matches!(self, Self::Function | Self::AdtImplementationFunction)
+    }
 }
 
 /// Information about the extern `C` function.

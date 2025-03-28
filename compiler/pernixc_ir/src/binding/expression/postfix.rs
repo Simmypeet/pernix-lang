@@ -10,8 +10,8 @@ use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
 use pernixc_table::{
     component::{
-        Extern, ExternC, Implemented, Implements, Import, Member, Parent,
-        SymbolKind,
+        Extern, ExternC, FunctionUnsafeness, Implemented, Implements, Import,
+        Member, Parent, SymbolKind,
     },
     diagnostic::Diagnostic,
     resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
@@ -1544,6 +1544,7 @@ impl Binder<'_> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn bind_function_call(
         &mut self,
         arguments: &[(Span, Value<infer::Model>)],
@@ -1663,6 +1664,16 @@ impl Binder<'_> {
             handler.receive(Box::new(UnsafeRequired {
                 expression_span: syntax_tree_span.clone(),
                 operation: UnsafeOperation::ExternFunctionCall,
+            }));
+        }
+
+        if callable_kind.has_function_unsafeness()
+            && **self.table.get::<FunctionUnsafeness>(callable_id)
+            && !self.stack.is_unsafe()
+        {
+            handler.receive(Box::new(UnsafeRequired {
+                expression_span: syntax_tree_span.clone(),
+                operation: UnsafeOperation::UnsafeFunctionCall,
             }));
         }
 

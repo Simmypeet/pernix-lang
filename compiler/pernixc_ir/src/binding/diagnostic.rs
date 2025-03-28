@@ -906,6 +906,9 @@ pub enum UnsafeOperation {
 
     /// Calling an extern function
     ExternFunctionCall,
+
+    /// Calling an unsafe function.
+    UnsafeFunctionCall,
 }
 
 /// The operation requires an unsafe scope.
@@ -927,6 +930,10 @@ impl Report<&Table> for UnsafeRequired {
 
             UnsafeOperation::ExternFunctionCall => {
                 "calling an `extern` function".to_string()
+            }
+
+            UnsafeOperation::UnsafeFunctionCall => {
+                "calling an `unsafe` function".to_string()
             }
         };
 
