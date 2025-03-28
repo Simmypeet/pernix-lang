@@ -19,9 +19,10 @@ public function main():
         second: 0,
     }
 
-    scanf(&"%d %d\0"->[0], &mut pair.first, &mut pair.second)
+    unsafe scope:
+        scanf(&"%d %d\0"->[0], &mut pair.first, &mut pair.second)
 
-    printf(&"first: %d, second: %d\0"->[0], pair.first, pair.second)
+        printf(&"first: %d, second: %d\0"->[0], pair.first, pair.second)
 
 "#;
 

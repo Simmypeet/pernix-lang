@@ -25,22 +25,24 @@ final implements[T] Copy[Box[T]] delete
 
 implements[T] Drop[Box[T]]:
     function drop(self: &mut Box[T]):
-        dropAt(self->pointer)
-        free(self->pointer as *mut ())
+        unsafe scope:
+            dropAt(self->pointer)
+            free(self->pointer as *mut ())
 
 
 implements[T] Box[T]:
     public function new(value: T) -> this:
-        let newPointer = malloc(sizeof[T]())
-        memcpy(newPointer, (&value) as *(), sizeof[T]())
-        
-        // don't invoke drop, it has been moved to the heap memory
-        let .. = NoDrop { value: value }
+        unsafe scope:
+            let newPointer = malloc(sizeof[T]())
+            memcpy(newPointer, (&value) as *(), sizeof[T]())
+            
+            // don't invoke drop, it has been moved to the heap memory
+            let .. = NoDrop { value: value }
 
-        return Box {
-            pointer: newPointer as *mut T,
-            _marker: phantom
-        }
+            return Box {
+                pointer: newPointer as *mut T,
+                _marker: phantom
+            }
 
 
 public struct LoudDrop:
@@ -49,7 +51,8 @@ public struct LoudDrop:
 
 final implements Drop[LoudDrop]:
     function drop(self: &mut LoudDrop):
-        printf(&"Dropping %d\n\0"->[0], self->value)
+        unsafe scope:
+            printf(&"Dropping %d\n\0"->[0], self->value)
 
 
 final implements Copy[LoudDrop] delete
@@ -70,7 +73,8 @@ public function main():
     let mut second = 0i32
     let mut third = 0i32
 
-    scanf(&"%d %d %d\0"->[0], &mut first, &mut second, &mut third)
+    unsafe scope:
+        scanf(&"%d %d %d\0"->[0], &mut first, &mut second, &mut third)
 
     let consList = List::Cons(Cons {
         value: LoudDrop { value: first },

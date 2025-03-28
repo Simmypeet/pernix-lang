@@ -14,7 +14,8 @@ public struct LoudDrop:
 
 final implements Drop[LoudDrop]:
     function drop(self: &mut LoudDrop):
-        printf(&"Dropping %d\n\0"->[0], self->value)
+        unsafe scope:
+            printf(&"Dropping %d\n\0"->[0], self->value)
 
 
 final implements Copy[LoudDrop] delete
@@ -26,7 +27,8 @@ public struct ZstLoudDrop:
 
 final implements Drop[ZstLoudDrop]:
     function drop(self: &mut ZstLoudDrop):
-        printf(&"Dropping ZST\n\0"->[0])
+        unsafe scope:
+            printf(&"Dropping ZST\n\0"->[0])
 
 
 final implements Copy[ZstLoudDrop] delete
@@ -43,15 +45,16 @@ public function createZstLoudDrop() -> ZstLoudDrop:
 
 
 public function main():
-    let mut value = 0i32
-    scanf(&"%d\0"->[0], &mut value)
-    LoudDrop { value: value }
+    unsafe scope:
+        let mut value = 0i32
+        scanf(&"%d\0"->[0], &mut value)
+        LoudDrop { value: value }
 
-    scanf(&"%d\0"->[0], &mut value)
-    createLoudDrop(value)
+        scanf(&"%d\0"->[0], &mut value)
+        createLoudDrop(value)
 
-    ZstLoudDrop {}
-    createZstLoudDrop()
+        ZstLoudDrop {}
+        createZstLoudDrop()
 
 "#;
 

@@ -53,73 +53,75 @@ implements Fizz:
                     + quad->fourth
                 )
 
-        printf(&"%d\0"->[0], sum)
+        unsafe scope:
+            printf(&"%d\0"->[0], sum)
 
 
 public function main():
-    let mut mode: int32 = 0
-    let format = &"%d\0"->[0]
+    unsafe scope:
+        let mut mode: int32 = 0
+        let format = &"%d\0"->[0]
 
-    scanf(format, &mut mode)
+        scanf(format, &mut mode)
 
-    let fizz =  match mode:
-        1: 
-            let mut first: int32 = 0
+        let fizz =  match mode:
+            1: 
+                let mut first: int32 = 0
 
-            scanf(format, &mut first)
+                scanf(format, &mut first)
 
-            express Fizz::Single(first)
+                express Fizz::Single(first)
 
-        2:
-            let mut first: int32 = 0
-            let mut second: int32 = 0
+            2:
+                let mut first: int32 = 0
+                let mut second: int32 = 0
 
-            scanf(format, &mut first)
-            scanf(format, &mut second)
+                scanf(format, &mut first)
+                scanf(format, &mut second)
 
-            express Fizz::Pair(Pair {
-                first: first,
-                second: second
-            })
+                express Fizz::Pair(Pair {
+                    first: first,
+                    second: second
+                })
 
-        3: 
-            let mut first: int32 = 0
-            let mut second: int32 = 0
-            let mut third: int32 = 0
+            3: 
+                let mut first: int32 = 0
+                let mut second: int32 = 0
+                let mut third: int32 = 0
 
-            scanf(format, &mut first)
-            scanf(format, &mut second)
-            scanf(format, &mut third)
+                scanf(format, &mut first)
+                scanf(format, &mut second)
+                scanf(format, &mut third)
 
-            express Fizz::Triplet(Triplet {
-                first: first,
-                second: second,
-                third: third
-            })
+                express Fizz::Triplet(Triplet {
+                    first: first,
+                    second: second,
+                    third: third
+                })
 
-        4: 
-            let mut first: int32 = 0
-            let mut second: int32 = 0
-            let mut third: int32 = 0
-            let mut fourth: int32 = 0
+            4: 
+                let mut first: int32 = 0
+                let mut second: int32 = 0
+                let mut third: int32 = 0
+                let mut fourth: int32 = 0
 
-            scanf(format, &mut first)
-            scanf(format, &mut second)
-            scanf(format, &mut third)
-            scanf(format, &mut fourth)
+                scanf(format, &mut first)
+                scanf(format, &mut second)
+                scanf(format, &mut third)
+                scanf(format, &mut fourth)
 
-            express Fizz::Quaduplet(Quaduplet {
-                first: first,
-                second: second,
-                third: third ,
-                fourth: fourth
-            })
+                express Fizz::Quaduplet(Quaduplet {
+                    first: first,
+                    second: second,
+                    third: third ,
+                    fourth: fourth
+                })
 
-        other:
-            printf(&"Invalid mode\0"->[0])
-            return
-        
-    fizz.printSum()
+            other:
+                printf(&"Invalid mode\0"->[0])
+                return
+            
+        fizz.printSum()
 "#;
 
 #[test]

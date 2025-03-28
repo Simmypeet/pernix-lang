@@ -14,7 +14,8 @@ public struct LoudDrop:
 
 final implements Drop[LoudDrop]:
     function drop(self: &mut LoudDrop):
-        printf(&"Dropping %d\n\0"->[0], self->value)
+        unsafe scope:
+            printf(&"Dropping %d\n\0"->[0], self->value)
 
 
 final implements Copy[LoudDrop] delete
@@ -33,13 +34,14 @@ public function main():
         LoudDrop { value: 0 },
     )
 
-    scanf(&"%d %d %d %d %d\0"->[0], 
-        &mut nums.0.value, 
-        &mut nums.1.value, 
-        &mut nums.2.value, 
-        &mut nums.3.value, 
-        &mut nums.4.value
-    )
+    unsafe scope:
+        scanf(&"%d %d %d %d %d\0"->[0], 
+            &mut nums.0.value, 
+            &mut nums.1.value, 
+            &mut nums.2.value, 
+            &mut nums.3.value, 
+            &mut nums.4.value
+        )
 
     takeTuple[.., .., LoudDrop](nums)
 "#;

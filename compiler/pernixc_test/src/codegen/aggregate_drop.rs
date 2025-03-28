@@ -17,7 +17,8 @@ public struct LoudDrop:
 
 final implements Drop[LoudDrop]:
     function drop(self: &mut LoudDrop):
-        printf(&"Dropping %d\n\0"->[0], self->value)
+        unsafe scope:
+            printf(&"Dropping %d\n\0"->[0], self->value)
     
 
 final implements Copy[LoudDrop] delete
@@ -63,15 +64,16 @@ public function main():
     let mut inSome = Option::Some(LoudDrop { value: 0 })
     let mut inNone = Option[LoudDrop]::None
 
-    scanf(&"%d %d %d %d %d %d %d\0"->[0],
-        &mut inTuple.0.value,
-        &mut inTuple.1.value,
-        &mut inArray.[0].value,
-        &mut inArray.[1].value,
-        &mut inStruct.first.value,
-        &mut inStruct.second.value,
-        &mut inSome.asMutable().unwrap()->value, 
-    )
+    unsafe scope:
+        scanf(&"%d %d %d %d %d %d %d\0"->[0],
+            &mut inTuple.0.value,
+            &mut inTuple.1.value,
+            &mut inArray.[0].value,
+            &mut inArray.[1].value,
+            &mut inStruct.first.value,
+            &mut inStruct.second.value,
+            &mut inSome.asMutable().unwrap()->value, 
+        )
 "#;
 
 #[test]

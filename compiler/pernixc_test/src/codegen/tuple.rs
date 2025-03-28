@@ -13,16 +13,17 @@ public struct Zst:
 
 
 public function main():
-    let mut test = (0i32, (), 0i32, Zst{}, 0i32, (), 0i32)
+    unsafe scope:
+        let mut test = (0i32, (), 0i32, Zst{}, 0i32, (), 0i32)
 
-    scanf(&"%d %d %d %d"->[0],
-        &mut test.0,
-        &mut test.2,
-        &mut test.-2,
-        &mut test.-0
-    )
+        scanf(&"%d %d %d %d"->[0],
+            &mut test.0,
+            &mut test.2,
+            &mut test.-2,
+            &mut test.-0
+        )
 
-    printf(&"%d"->[0], test.0 + test.2 + test.-2 + test.-0)
+        printf(&"%d"->[0], test.0 + test.2 + test.-2 + test.-0)
 "#;
 
 #[test]

@@ -9,33 +9,34 @@ extern "C":
 
 
 public function main():
-    // for int32
-    // at the time of writing the test, we've not implemented `sizeof` intrinsic
-    let intSize = 4
-
-    let mut inputCount = 0i32
-    scanf(&"%d\0"->[0], &inputCount)
-
-    let mut nums = malloc(inputCount as usize * intSize) as *mut int32
-    let end = nums + inputCount as isize
-    
     unsafe scope:
-        let mut begin = nums
-        while begin < end:
-            let mut num = 0i32
-            scanf(&"%d\0"->[0], &num)
+        // for int32
+        // at the time of writing the test, we've not implemented `sizeof` intrinsic
+        let intSize = 4
 
-            *(begin as &mut int32) = num
+        let mut inputCount = 0i32
+        scanf(&"%d\0"->[0], &inputCount)
 
-            begin += 1
+        let mut nums = malloc(inputCount as usize * intSize) as *mut int32
+        let end = nums + inputCount as isize
+        
+        scope:
+            let mut begin = nums
+            while begin < end:
+                let mut num = 0i32
+                scanf(&"%d\0"->[0], &num)
 
-    unsafe scope:
-        let mut begin = nums
-        while begin < end:
-            printf(&"%d \0"->[0], *(begin as &int32))
-            begin += 1
+                *(begin as &mut int32) = num
 
-    free(nums as *mut ())
+                begin += 1
+
+        scope:
+            let mut begin = nums
+            while begin < end:
+                printf(&"%d \0"->[0], *(begin as &int32))
+                begin += 1
+
+        free(nums as *mut ())
 "#;
 
 #[test]

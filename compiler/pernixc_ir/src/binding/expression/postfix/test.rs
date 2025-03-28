@@ -22,6 +22,7 @@ use crate::{
             FieldIsNotAccessible, FieldNotFound, InvalidCastType,
             MismatchedArgumentCount, MismatchedType, TooLargeTupleIndex,
             TupleIndexOutOfBOunds, UnexpectedGenericArgumentsInField,
+            UnsafeOperation, UnsafeRequired,
         },
         test::{build_table, BindExt, CreateBinderAtExt, Template},
     },
@@ -1390,18 +1391,22 @@ fn test_integer(value: &Value<impl Model>, int: &str) {
 }
 
 #[test]
-fn var_args_eqals() {
+fn var_args_equals() {
     let table = build_table(VAR_ARGS);
     let mut binder = table.create_binder_at(["test", "test"]);
 
     let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
 
-    let call_register_id = binder
-        .bind_as_rvalue_success(&parse::<
-            syntax_tree::expression::postfix::Postfixable,
-        >("fizz(0)"))
-        .into_register()
-        .unwrap();
+    let (call_value, error) = binder.bind_as_rvalue_error(&parse::<
+        syntax_tree::expression::postfix::Postfixable,
+    >("fizz(0)"));
+
+    let call_register_id = call_value.into_register().unwrap();
+    assert_eq!(error.len(), 1);
+    assert_eq!(
+        error[0].as_any().downcast_ref::<UnsafeRequired>().unwrap().operation,
+        UnsafeOperation::ExternFunctionCall
+    );
 
     let call = binder.intermediate_representation.values.registers
         [call_register_id]
@@ -1422,14 +1427,18 @@ fn var_args_greater() {
 
     let fizz_id = table.get_by_qualified_name(["test", "fizz"]).unwrap();
 
-    let call_register_id = binder
-        .bind_as_rvalue_success(&parse::<
-            syntax_tree::expression::postfix::Postfixable,
-        >(
-            "fizz(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)"
-        ))
-        .into_register()
-        .unwrap();
+    let (call_value, error) = binder.bind_as_rvalue_error(&parse::<
+        syntax_tree::expression::postfix::Postfixable,
+    >(
+        "fizz(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)",
+    ));
+
+    let call_register_id = call_value.into_register().unwrap();
+    assert_eq!(error.len(), 1);
+    assert_eq!(
+        error[0].as_any().downcast_ref::<UnsafeRequired>().unwrap().operation,
+        UnsafeOperation::ExternFunctionCall
+    );
 
     let call = binder.intermediate_representation.values.registers
         [call_register_id]
@@ -1468,12 +1477,19 @@ fn var_args_lesser() {
 
     assert_eq!(call.callable_id, fizz_id);
 
-    assert_eq!(error.len(), 1);
+    assert_eq!(error.len(), 2);
+    assert!(error.iter().any(|x| x
+        .as_any()
+        .downcast_ref::<MismatchedArgumentCount>()
+        .is_some_and(|x| {
+            x.expected_count == 1
+                && x.found_count == 0
+                && x.called_id == fizz_id
+        })));
 
-    let err =
-        error[0].as_any().downcast_ref::<MismatchedArgumentCount>().unwrap();
-
-    assert_eq!(err.expected_count, 1);
-    assert_eq!(err.found_count, 0);
-    assert_eq!(err.called_id, fizz_id);
+    assert!(error
+        .iter()
+        .any(|x| x.as_any().downcast_ref::<UnsafeRequired>().is_some_and(
+            |x| x.operation == UnsafeOperation::ExternFunctionCall
+        )));
 }

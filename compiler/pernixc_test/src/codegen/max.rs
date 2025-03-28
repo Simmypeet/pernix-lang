@@ -16,14 +16,15 @@ public function max['a](a: &'a int32, b: &'a int32) -> &'a int32:
 
 
 public function main():
-    let mut a: int32 = 0
-    let mut b: int32 = 0
+    unsafe scope:
+        let mut a: int32 = 0
+        let mut b: int32 = 0
 
-    scanf(&"%d %d\0"->[0], &mut a, &mut b)
+        scanf(&"%d %d\0"->[0], &mut a, &mut b)
 
-    let maxRef = max(&a, &b)
+        let maxRef = max(&a, &b)
 
-    printf(&"the max is %d\0"->[0], *maxRef)
+        printf(&"the max is %d\0"->[0], *maxRef)
 
 "#;
 

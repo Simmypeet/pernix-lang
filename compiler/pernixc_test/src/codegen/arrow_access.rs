@@ -20,7 +20,8 @@ public function main():
 
     let pairRef = &pair
 
-    printf(&"%d\0"->[0], pairRef->first + pairRef->second)
+    unsafe scope:
+        printf(&"%d\0"->[0], pairRef->first + pairRef->second)
 "#;
 
 #[test]

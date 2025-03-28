@@ -32,13 +32,14 @@ public function fibonacci(n: int32) -> int32:
 
 
 public function main():
-    printf(&"Enter the number: \0"->[0])
+    unsafe scope:
+        printf(&"Enter the number: \0"->[0])
 
-    let mut number = 0
-    scanf(&"%d\0"->[0], &mut number)
+        let mut number = 0
+        scanf(&"%d\0"->[0], &mut number)
 
-    let result = fibonacci(number)
-    printf(&"fibonacci(%d) = %d\n\0"->[0], number, result)
+        let result = fibonacci(number)
+        printf(&"fibonacci(%d) = %d\n\0"->[0], number, result)
 
 "#;
 

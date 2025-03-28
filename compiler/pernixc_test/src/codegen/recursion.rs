@@ -16,13 +16,14 @@ public function fib(n: int32) -> int32:
 
 
 public function main():
-    let mut input: int32 = 0
+    unsafe scope:
+        let mut input: int32 = 0
 
-    scanf(&"%d\0"->[0], &mut input)
+        scanf(&"%d\0"->[0], &mut input)
 
-    let result = fib(input)
+        let result = fib(input)
 
-    printf(&"fib(%d) = %d\0"->[0], input, result)
+        printf(&"fib(%d) = %d\0"->[0], input, result)
 "#;
 
 #[test]

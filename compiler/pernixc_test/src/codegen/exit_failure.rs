@@ -8,7 +8,8 @@ extern "C":
 
 
 public function main():
-    exit(1)
+    unsafe scope:
+        exit(1)
 "#;
 
 #[test]

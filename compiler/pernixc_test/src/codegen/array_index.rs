@@ -19,7 +19,8 @@ public function main():
         i = i + 1
     
 
-    printf(&"%d\0"->[0], sum)
+    unsafe scope:
+        printf(&"%d\0"->[0], sum)
 "#;
 
 #[test]

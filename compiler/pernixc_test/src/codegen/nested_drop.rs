@@ -17,7 +17,8 @@ public struct LoudDrop:
 
 final implements Drop[LoudDrop]:
     function drop(self: &mut LoudDrop):
-        printf(&"Dropping %d\n\0"->[0], self->value)
+        unsafe scope:
+            printf(&"Dropping %d\n\0"->[0], self->value)
 
 
 final implements Copy[LoudDrop] delete
@@ -30,7 +31,8 @@ public struct Pair[T, U]:
 
 implements[T, U] Drop[Pair[T, U]]:
     function drop(self: &mut Pair[T, U]):
-        printf(&"Dropping Pair\n\0"->[0])
+        unsafe scope:
+            printf(&"Dropping Pair\n\0"->[0])
 
 
 final implements[T, U] Copy[Pair[T, U]] delete
@@ -44,10 +46,11 @@ public enum LoudEnum:
 
 implements Drop[LoudEnum]:
     function drop(self: &mut LoudEnum):
-        match (self):
-            case GtZero(..): printf(&"Dropping GtZero\n\0"->[0])
-            case LtZero(..): printf(&"Dropping LtZero\n\0"->[0])
-            case Zero:       printf(&"Dropping Zero\n\0"->[0])
+        unsafe scope:
+            match (self):
+                case GtZero(..): printf(&"Dropping GtZero\n\0"->[0])
+                case LtZero(..): printf(&"Dropping LtZero\n\0"->[0])
+                case Zero:       printf(&"Dropping Zero\n\0"->[0])
 
 
 final implements Copy[LoudEnum] delete
@@ -55,7 +58,9 @@ final implements Copy[LoudEnum] delete
 
 public function createLoudEnum() -> LoudEnum:
     let mut value = 0
-    scanf(&"%d\0"->[0], &mut value)
+
+    unsafe scope:
+        scanf(&"%d\0"->[0], &mut value)
 
     if value > 0:
         return LoudEnum::GtZero(LoudDrop { value: value })
@@ -73,11 +78,12 @@ public function main():
         second: LoudDrop { value: 0 },
     }
 
-    scanf(
-        &"%d %d\0"->[0], 
-        &mut pair.first.value, 
-        &mut pair.second.value
-    )
+    unsafe scope:
+        scanf(
+            &"%d %d\0"->[0], 
+            &mut pair.first.value, 
+            &mut pair.second.value
+        )
     
     let first = createLoudEnum()
     let second = createLoudEnum()

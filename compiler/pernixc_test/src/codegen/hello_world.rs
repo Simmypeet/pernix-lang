@@ -10,7 +10,8 @@ extern "C":
 
 
 public function main():
-    printf(&"Hello, World!\n\0"->[0])
+    unsafe scope:
+        printf(&"Hello, World!\n\0"->[0])
 
 "#;
 

@@ -14,15 +14,16 @@ public enum Option[T]:
 
 
 public function main():
-    let value = ()
-    let option = Option::Some(&value)
+    unsafe scope:
+        let value = ()
+        let option = Option::Some(&value)
 
-    match option:
-        case Some(value):
-            printf(&"is some\n\0"->[0])
+        match option:
+            case Some(value):
+                printf(&"is some\n\0"->[0])
 
-        case None:
-            printf(&"is none\n\0"->[0])
+            case None:
+                printf(&"is none\n\0"->[0])
 "#;
 
 #[test]

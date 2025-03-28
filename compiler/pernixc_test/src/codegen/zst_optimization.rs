@@ -23,15 +23,16 @@ public function annoyingSum(
 
 
 public function main():
-    let mut a = 0i32
-    let mut b = 0i32
-    let mut c = 0i32
+    unsafe scope:
+        let mut a = 0i32
+        let mut b = 0i32
+        let mut c = 0i32
 
-    scanf(&"%d %d %d\0"->[0], &mut a, &mut b, &mut c)
+        scanf(&"%d %d %d\0"->[0], &mut a, &mut b, &mut c)
 
-    let sum = annoyingSum(a, (), b, Zst{}, c)
+        let sum = annoyingSum(a, (), b, Zst{}, c)
 
-    printf(&"%d\0"->[0], sum)
+        printf(&"%d\0"->[0], sum)
 "#;
 
 #[test]

@@ -11,26 +11,27 @@ public function add[T: tuple](a: T) -> (int32, ...T, int32):
 
 
 public function main():
-    let mut nums = (0i32, 0i32, 0i32)
+    unsafe scope:
+        let mut nums = (0i32, 0i32, 0i32)
 
-    scanf(&"%d %d %d\0"->[0], 
-        &mut nums.0, 
-        &mut nums.1, 
-        &mut nums.2
-    )
+        scanf(&"%d %d %d\0"->[0], 
+            &mut nums.0, 
+            &mut nums.1, 
+            &mut nums.2
+        )
 
-    let test = add(nums)
+        let test = add(nums)
 
-    if (test.0 == 1 
-        and test.1 == nums.0 
-        and test.2 == nums.1 
-        and test.3 == nums.2 
-        and test.4 == 5
-    ):
-        exit(0)
+        if (test.0 == 1 
+            and test.1 == nums.0 
+            and test.2 == nums.1 
+            and test.3 == nums.2 
+            and test.4 == 5
+        ):
+            exit(0)
 
-    else:
-        exit(1)
+        else:
+            exit(1)
 "#;
 
 #[test]

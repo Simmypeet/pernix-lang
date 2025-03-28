@@ -48,16 +48,17 @@ public function main():
         0i32,
     )
 
-    scanf(&"%d %d %d %d %d %d\0"->[0], 
-        &mut nums.0,
-        &mut nums.1,
-        &mut nums.2,
-        &mut nums.3,
-        &mut nums.4,
-        &mut nums.5,
-    )
+    unsafe scope:
+        scanf(&"%d %d %d %d %d %d\0"->[0], 
+            &mut nums.0,
+            &mut nums.1,
+            &mut nums.2,
+            &mut nums.3,
+            &mut nums.4,
+            &mut nums.5,
+        )
 
-    printf(&"%d\0"->[0], nums.sum())
+        printf(&"%d\0"->[0], nums.sum())
 "#;
 
 #[test]

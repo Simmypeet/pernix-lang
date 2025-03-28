@@ -15,7 +15,8 @@ public struct LoudDrop:
 
 final implements Drop[LoudDrop]:
     function drop(self: &mut LoudDrop):
-        printf(&"Dropping %d\n\0"->[0], self->value)
+        unsafe scope:
+            printf(&"Dropping %d\n\0"->[0], self->value)
 
 
 final implements Copy[LoudDrop] delete
@@ -25,7 +26,8 @@ public function main():
     let mut first = LoudDrop { value: 0 }
     let mut second = LoudDrop { value: 1 }
 
-    scanf(&"%d %d\0"->[0], &mut first.value, &mut second.value)
+    unsafe scope:
+        scanf(&"%d %d\0"->[0], &mut first.value, &mut second.value)
 "#;
 
 #[test]

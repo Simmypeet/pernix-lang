@@ -7,16 +7,18 @@ extern "C":
 
 
 public function main():
-    let mut input = 0i32
-    scanf(&"%d\0"->[0], &input)
+    unsafe scope:
+        let mut input = 0i32
 
-    match input:
-        0: printf(&"this is zero\0"->[0])
-        1: printf(&"this is one\0"->[0])
-        2: printf(&"this is two\0"->[0])
-        3: printf(&"this is three\0"->[0])
-        -1: printf(&"this is negative one\0"->[0])
-        a: printf(&"%d is something else\0"->[0], a)    
+        scanf(&"%d\0"->[0], &input)
+
+        match input:
+            0: printf(&"this is zero\0"->[0])
+            1: printf(&"this is one\0"->[0])
+            2: printf(&"this is two\0"->[0])
+            3: printf(&"this is three\0"->[0])
+            -1: printf(&"this is negative one\0"->[0])
+            a: printf(&"%d is something else\0"->[0], a)    
 "#;
 
 #[test]
