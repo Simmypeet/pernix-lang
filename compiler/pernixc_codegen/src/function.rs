@@ -228,6 +228,74 @@ impl<'ctx> Context<'_, 'ctx> {
         }
     }
 
+    fn create_intrinsic_function(
+        &mut self,
+        llvm_function_signature: &Rc<LlvmFunctionSignature<'ctx>>,
+        key: &Call,
+    ) {
+        let entry_block = self.context().append_basic_block(
+            llvm_function_signature.llvm_function_value,
+            "entry",
+        );
+        let builder = self.context().create_builder();
+        builder.position_at_end(entry_block);
+
+        match self.table().get::<Name>(key.callable_id).0.as_str() {
+            "sizeof" => {
+                let ty = key.instantiation.types.values().next().unwrap();
+                let llvm_ty = self.get_type(ty.clone());
+
+                let size = llvm_ty.map_or(0, |llvm_ty| {
+                    self.target_data().get_abi_size(&llvm_ty)
+                });
+
+                let size = self
+                    .context()
+                    .ptr_sized_int_type(self.target_data(), None)
+                    .const_int(size, false);
+
+                builder.build_return(Some(&size)).unwrap();
+            }
+
+            "alignof" => {
+                let ty = key.instantiation.types.values().next().unwrap();
+                let llvm_ty = self.get_type(ty.clone());
+
+                let align = llvm_ty.map_or(0, |llvm_ty| {
+                    u64::from(self.target_data().get_abi_alignment(&llvm_ty))
+                });
+
+                let align = self
+                    .context()
+                    .ptr_sized_int_type(self.target_data(), None)
+                    .const_int(align, false);
+
+                builder.build_return(Some(&align)).unwrap();
+            }
+
+            "dropAt" => {
+                let ty = key.instantiation.types.values().next().unwrap();
+
+                let drop = self.get_drop(ty.clone());
+
+                if let Some(drop) = drop {
+                    let param_value = llvm_function_signature
+                        .llvm_function_value
+                        .get_nth_param(0)
+                        .unwrap();
+
+                    builder
+                        .build_call(drop, &[param_value.into()], "call_drop")
+                        .unwrap();
+                }
+
+                builder.build_return(None).unwrap();
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
     #[allow(clippy::too_many_lines)]
     fn create_function_value(
         &mut self,
@@ -428,48 +496,7 @@ impl<'ctx> Context<'_, 'ctx> {
 
         // build intrinsic function
         if key.callable_id.target_id == TargetID::CORE {
-            let entry_block = self.context().append_basic_block(
-                llvm_function_signatue.llvm_function_value,
-                "entry",
-            );
-            let builder = self.context().create_builder();
-            builder.position_at_end(entry_block);
-
-            match self.table().get::<Name>(key.callable_id).0.as_str() {
-                "sizeof" => {
-                    let ty = key.instantiation.types.values().next().unwrap();
-                    let llvm_ty = self.get_type(ty.clone());
-
-                    let size = llvm_ty.map_or(0, |llvm_ty| {
-                        self.target_data().get_abi_size(&llvm_ty)
-                    });
-
-                    let size = self
-                        .context()
-                        .ptr_sized_int_type(self.target_data(), None)
-                        .const_int(size, false);
-
-                    builder.build_return(Some(&size)).unwrap();
-                }
-                "alignof" => {
-                    let ty = key.instantiation.types.values().next().unwrap();
-                    let llvm_ty = self.get_type(ty.clone());
-
-                    let align = llvm_ty.map_or(0, |llvm_ty| {
-                        u64::from(
-                            self.target_data().get_abi_alignment(&llvm_ty),
-                        )
-                    });
-
-                    let align = self
-                        .context()
-                        .ptr_sized_int_type(self.target_data(), None)
-                        .const_int(align, false);
-
-                    builder.build_return(Some(&align)).unwrap();
-                }
-                _ => unreachable!(),
-            }
+            self.create_intrinsic_function(&llvm_function_signatue, key);
         } else {
             let pernix_ir = self.table().query::<IR>(key.callable_id).unwrap();
 

@@ -29,6 +29,7 @@ mod number_match;
 mod pointer_arithmetic;
 mod prefix;
 mod recursion;
+mod recursive_drop;
 mod sizeof;
 mod struct_access;
 mod tuple;

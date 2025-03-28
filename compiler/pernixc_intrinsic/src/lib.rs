@@ -25,7 +25,7 @@ use pernixc_term::{
     predicate::{self, Outlives},
     r#type::{Pointer, Primitive, Qualifier, Reference, Type},
     where_clause::{Predicate, WhereClause},
-    Default,
+    Default, Tuple, 
 };
 use strum::IntoEnumIterator;
 
@@ -84,6 +84,8 @@ public trait Drop[T]:
 // size and alignof synopsis:
 public function sizeof[T]() -> usize
 public function alignof[T]() -> usize
+
+public function dropAt[T](pointer: *mut T)
   */
 
 impl IntrinsicExt for Table {
@@ -109,6 +111,7 @@ impl IntrinsicExt for Table {
         initialize_sizeof(self, &mut id_gen, &mut core_member);
         initialize_alignof(self, &mut id_gen, &mut core_member);
         initialize_no_drop(self, &mut id_gen, &mut core_member);
+        initialize_drop_at(self, &mut id_gen, &mut core_member);
 
         assert!(self.add_component(root_core_module_id, core_member));
     }
@@ -165,6 +168,56 @@ fn initialize_no_drop(
 
     // add to the core module
     assert!(core_member.insert("NoDrop".to_string(), no_drop_id.id).is_none());
+}
+
+fn initialize_drop_at(
+    table: &Table,
+    id_gen: &mut impl Iterator<Item = usize>,
+    core_member: &mut Member,
+) {
+    let drop_at_id = GlobalID::new(
+        TargetID::CORE,
+        pernixc_table::ID(id_gen.next().unwrap()),
+    );
+
+    assert!(table.add_component(drop_at_id, SymbolKind::Function));
+    assert!(table.add_component(drop_at_id, Name("dropAt".to_string())));
+    assert!(table.add_component(drop_at_id, Parent {
+        parent: Some(pernixc_table::ID::ROOT_MODULE)
+    }));
+    let mut generic_params = GenericParameters::default();
+    let t_id = generic_params
+        .add_type_parameter(TypeParameter { name: "T".to_string(), span: None })
+        .unwrap();
+
+    assert!(table.add_component(drop_at_id, generic_params));
+    assert!(table.add_component(drop_at_id, WhereClause::default()));
+    assert!(table.add_component(drop_at_id, ForallLifetimes::default()));
+    assert!(table.add_component(drop_at_id, Accessibility::Public));
+    assert!(table.add_component(drop_at_id, ElidedLifetimes::default()));
+    assert!(table.add_component(drop_at_id, ImpliedPredicates::default()));
+
+    // add to the core module
+    assert!(core_member.insert("dropAt".to_string(), drop_at_id.id).is_none());
+
+    let mut parameters = Arena::default();
+
+    let param_id = parameters.insert(Parameter {
+        r#type: Type::Pointer(Pointer {
+            mutable: true,
+            pointee: Box::new(Type::Parameter(TypeParameterID {
+                parent: drop_at_id,
+                id: t_id,
+            })),
+        }),
+        span: None,
+    });
+
+    assert!(table.add_component(drop_at_id, FunctionSignature {
+        parameters,
+        parameter_order: vec![param_id],
+        return_type: Type::Tuple(Tuple { elements: Vec::new() })
+    }));
 }
 
 fn initialize_sizeof(
