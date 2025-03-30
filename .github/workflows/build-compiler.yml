@@ -23,6 +23,7 @@ jobs:
                   llvm-version: 18.1.8
                   install-prefix: ${{ github.workspace }}/__llvm-18.1.8
                   generator: "Ninja"
+                  shell: "bash"
 
             - name: Build LLVM on Windows
               if: runner.os  == 'Windows'
@@ -31,6 +32,7 @@ jobs:
                   llvm-version: 18.1.8
                   install-prefix: ${{ github.workspace }}/llvm18
                   generator: "Visual Studio 17 2022"
+                  shell: "pwsh"
 
             - name: Set LLVM prefix on Unix-like
               if: runner.os != 'Windows'

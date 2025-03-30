@@ -12,8 +12,11 @@ inputs:
 
     generator:
         description: "The CMake generator to use."
-        required: false
-        default: "Ninja"
+        required: true
+
+    shell:
+        description: "The shell to use for running the action."
+        required: true
 
 runs:
     using: composite
@@ -24,7 +27,8 @@ runs:
               path: ${{ inputs.install-prefix }}
               key: llvm-${{ runner.os }}-${{ runner.arch }}-${{ inputs.llvm-version }}
 
-        - if: steps.cache-llvm.outputs.cache-hit != 'true'
+        - shell: ${{ inputs.shell }}
+          if: steps.cache-llvm.outputs.cache-hit != 'true'
           run: |
               cd ${{ runner.temp }}
               git clone --depth 1 --branch llvmorg-${{ inputs.llvm-version }} https://github.com/llvm/llvm-project.git
