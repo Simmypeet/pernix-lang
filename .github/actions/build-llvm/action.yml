@@ -1,0 +1,32 @@
+name: Build LLVM from source
+description: |
+    Download the LLVM source code and build it from source on the current runner.
+inputs:
+    llvm-version:
+        description: "The version of LLVM to build (e.g. 18.1.8)."
+        required: true
+
+    install-prefix:
+        description: "The directory to install LLVM to."
+        required: true
+
+    generator:
+        description: "The CMake generator to use."
+        required: false
+        default: "Ninja"
+
+runs:
+    using: composite
+    steps:
+        - uses: actions/cache@v4
+          id: cache-llvm
+          with:
+              path: ${{ inputs.install-prefix }}
+              key: llvm-${{ runner.os }}-${{ runner.arch }}-${{ inputs.llvm-version }}
+
+        - if: steps.cache-llvm.outputs.cache-hit != 'true'
+          run: |
+              cd ${{ runner.temp }}
+              git clone --depth 1 --branch llvmorg-${{ inputs.llvm-version }} https://github.com/llvm/llvm-project.git
+              cmake -S llvm-project/llvm -B llvm-project/build -G "${{ inputs.generator }}" -DCMAKE_INSTALL_PREFIX="${{ inputs.install-prefix }}" -DCMAKE_BUILD_TYPE=Release
+              cmake --build llvm-project/build --config Release --target install --parallel 8
