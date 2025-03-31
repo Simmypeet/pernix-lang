@@ -667,11 +667,7 @@ fn linker_command(obj: &Path, out: &Path) -> Option<std::process::Command> {
         // NOTE: not really sure about the flags; need further testing.
 
         let mut cmd = std::process::Command::new("link");
-        cmd.arg(format!("/out:{}", out.display()))
-            .arg(obj)
-            .arg("kernel32.lib")
-            .arg("ucrt.lib")
-            .arg("msvcrt.lib");
+        cmd.arg(obj).arg(format!("/OUT:{}", out.display()));
 
         Some(cmd)
     } else {
