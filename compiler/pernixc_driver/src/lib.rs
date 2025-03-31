@@ -665,9 +665,13 @@ fn linker_command(obj: &Path, out: &Path) -> Option<std::process::Command> {
         Some(cmd)
     } else if cfg!(target_os = "windows") {
         // NOTE: not really sure about the flags; need further testing.
+        // maybe we just use `clang -o exe obj -fuse-ld=link` instead?
 
         let mut cmd = std::process::Command::new("link");
-        cmd.arg(obj).arg(format!("/OUT:{}", out.display()));
+        cmd.arg("/NOLOGO")
+            .arg(format!("/OUT:{}", out.display()))
+            .arg(obj)
+            .arg("/ENTRY:main");
 
         Some(cmd)
     } else {
