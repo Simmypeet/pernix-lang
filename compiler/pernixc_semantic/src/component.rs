@@ -20,6 +20,7 @@ use std::any::Any;
 
 pub mod derived;
 pub mod input;
+pub mod reflector;
 
 /// Represents a component that can be later added to the table by being built
 /// by the [`crate::table::query::Builder`] trait.

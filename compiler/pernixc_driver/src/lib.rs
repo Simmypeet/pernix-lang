@@ -21,7 +21,7 @@ use inkwell::{
     },
 };
 use parking_lot::RwLock;
-use pernixc_builder::{reflector::ComponentTag, Compilation};
+use pernixc_builder::Compilation;
 use pernixc_diagnostic::Report;
 use pernixc_handler::Storage;
 use pernixc_log::{
@@ -29,7 +29,7 @@ use pernixc_log::{
     Message, Severity,
 };
 use pernixc_semantic::{
-    component::input::Member,
+    component::{input::Member, reflector::ComponentTag},
     diagnostic::Diagnostic,
     table::{
         self, input::AddTargetError, CompilationMetaData, GlobalID, Table,
@@ -442,7 +442,7 @@ fn semantic_analysis(
         Box<dyn pernixc_semantic::diagnostic::Diagnostic>,
     >::new());
 
-    let reflector = pernixc_builder::reflector::get();
+    let reflector = Table::reflector();
 
     let mut table = Table::new(storage.clone());
 

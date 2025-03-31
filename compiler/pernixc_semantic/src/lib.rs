@@ -3,6 +3,5 @@
 
 pub mod component;
 pub mod diagnostic;
-pub mod reflector;
 pub mod table;
 pub mod term;

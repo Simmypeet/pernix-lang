@@ -9,7 +9,6 @@ pub mod implementation;
 pub mod implementation_coherence;
 pub mod ir;
 pub mod occurrences;
-pub mod reflector;
 pub mod type_alias;
 pub mod type_system;
 pub mod utility;
