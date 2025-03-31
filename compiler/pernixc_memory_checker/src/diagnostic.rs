@@ -2,7 +2,7 @@
 
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
-use pernixc_semantic::Table;
+use pernixc_semantic::table::Table;
 use pernixc_source_file::Span;
 
 /// The value behind the mutable reference has been moved out and needs to be

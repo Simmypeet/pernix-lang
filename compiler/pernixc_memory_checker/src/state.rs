@@ -11,15 +11,20 @@ use pernixc_ir::{
     model, scope,
 };
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::{
+        derived::{fields, generic_parameters::GenericParameters, variant},
+        input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    table::{GlobalID, Table},
+    term::{
+        self,
+        instantiation::{self, Instantiation},
+        r#type::{self, Qualifier, Type},
+        Model, Symbol,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    r#type::{self, Qualifier, Type},
-    Model, Symbol,
-};
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 /// Contains the state of each field in the struct.
@@ -27,7 +32,7 @@ use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 pub struct Struct {
     /// The state of each field in the struct.
     #[get = "pub"]
-    states_by_field_id: HashMap<ID<pernixc_component::fields::Field>, State>,
+    states_by_field_id: HashMap<ID<fields::Field>, State>,
 
     #[get_copy = "pub"]
     struct_id: GlobalID,
@@ -454,9 +459,7 @@ impl State {
                     other.states_by_field_id.len()
                 );
 
-                let fields = table.query::<pernixc_component::fields::Fields>(
-                    this.struct_id,
-                )?;
+                let fields = table.query::<fields::Fields>(this.struct_id)?;
 
                 assert_eq!(this.states_by_field_id.len(), fields.fields.len());
 
@@ -568,8 +571,7 @@ impl State {
 
             Self::Projection(Projection::Struct(st)) => {
                 let mut instructions = Vec::new();
-                let fields = table
-                    .query::<pernixc_component::fields::Fields>(st.struct_id)?;
+                let fields = table.query::<fields::Fields>(st.struct_id)?;
 
                 for field_id in fields.field_declaration_order.iter().copied() {
                     let field_state = &st.states_by_field_id[&field_id];
@@ -909,7 +911,7 @@ impl Default for Memory {
     fn default() -> Self {
         Self {
             state: State::Total(Initialized::True),
-            r#type: Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+            r#type: Type::Tuple(term::Tuple { elements: Vec::new() }),
             version: 0,
         }
     }
@@ -1227,11 +1229,8 @@ impl Scope {
                     SymbolKind::Struct
                 );
 
-                let fields = environment
-                    .table()
-                    .query::<pernixc_component::fields::Fields>(
-                    struct_id,
-                )?;
+                let fields =
+                    environment.table().query::<fields::Fields>(struct_id)?;
                 let struct_generic_params =
                     environment
                         .table()
@@ -1312,7 +1311,7 @@ impl Scope {
                     rest => return Ok(rest),
                 };
 
-                let Type::Tuple(pernixc_term::Tuple { elements }) = ty else {
+                let Type::Tuple(term::Tuple { elements }) = ty else {
                     panic!("expected tuple type");
                 };
 
@@ -1415,7 +1414,7 @@ impl Scope {
 
                 let assocated_type = environment
                     .table()
-                    .query::<pernixc_component::variant::Variant>(variant.id)?
+                    .query::<variant::Variant>(variant.id)?
                     .associated_type
                     .clone()
                     .unwrap();

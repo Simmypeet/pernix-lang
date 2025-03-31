@@ -9,7 +9,6 @@
 use std::{collections::HashSet, sync::Arc};
 
 use pernixc_abort::Abort;
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{self, Address, Field, Index, Memory, Variant},
@@ -22,14 +21,17 @@ use pernixc_ir::{
     Values,
 };
 use pernixc_semantic::{
-    component::{Member, SymbolKind},
+    component::{
+        derived::{fields, function_signature::FunctionSignature, variant},
+        input::{Member, SymbolKind},
+    },
     diagnostic::Diagnostic,
-    GlobalID, TargetID,
-};
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    predicate::{PositiveTrait, Predicate},
-    r#type::{Primitive, Type},
+    table::{GlobalID, TargetID},
+    term::{
+        generic_arguments::GenericArguments,
+        predicate::{PositiveTrait, Predicate},
+        r#type::{Primitive, Type},
+    },
 };
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
@@ -142,9 +144,7 @@ pub(super) fn simplify_drop(
 
                     let fields = environment
                         .table()
-                        .query::<pernixc_component::fields::Fields>(
-                        symbol.id,
-                    )?;
+                        .query::<fields::Fields>(symbol.id)?;
                     let mut instructions = Vec::new();
 
                     for field in fields.field_declaration_order.iter().copied()
@@ -214,11 +214,10 @@ pub(super) fn simplify_drop(
                         .map(|x| GlobalID::new(symbol.id.target_id, x))
                     {
                         // recursively simplify the drop instructions
-                        let variant_sym = environment
-                            .table()
-                            .query::<pernixc_component::variant::Variant>(
-                            variant_id,
-                        )?;
+                        let variant_sym =
+                            environment
+                                .table()
+                                .query::<variant::Variant>(variant_id)?;
 
                         if variant_sym.associated_type.is_none() {
                             continue;

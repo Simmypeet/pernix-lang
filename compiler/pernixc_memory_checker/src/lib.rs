@@ -8,7 +8,6 @@ use diagnostic::{
 };
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{self, Address, Memory},
@@ -20,15 +19,19 @@ use pernixc_ir::{
     Representation, Values,
 };
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::{
+        derived::function_signature::FunctionSignature, input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    table::{GlobalID, Table},
+    term::{
+        generic_arguments::GenericArguments,
+        predicate::{PositiveMarker, Predicate},
+        r#type::Qualifier,
+        Model,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    predicate::{PositiveMarker, Predicate},
-    r#type::Qualifier,
-    Model,
-};
 use pernixc_type_system::{
     environment::{Environment as TyEnvironment, GetActivePremiseExt},
     normalizer::{self, Normalizer},
