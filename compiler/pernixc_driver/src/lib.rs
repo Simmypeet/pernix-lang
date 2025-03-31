@@ -700,12 +700,8 @@ fn linker_command(obj: &Path, out: &Path) -> std::process::Command {
     cmd.arg(obj).arg("-o").arg(out);
 
     if cfg!(target_os = "windows") {
-        cmd.arg("-lmsvcrt")
-            .arg("-lkernel32")
-            .arg("-luser32")
-            .arg("-ladvapi32")
-            .arg("/NODEFAULTLIB:libcmt")
-            .arg("/DEFAULTLIB:msvcrt");
+        // link to `legacy_stdio_definitions`
+        cmd.arg("-llegacy_stdio_definitions");
     }
 
     cmd
