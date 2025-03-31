@@ -136,7 +136,7 @@ impl LanguageServer for Server {
         &self,
         params: DidChangeWatchedFilesParams,
     ) {
-        info!("Did change watched files: {:?}", params);
+        info!("Did change watched files: {params:?}");
 
         let Some((workspace_uri, expected_file_uri)) =
             self.get_workspace_and_configuration_uri().await
@@ -171,7 +171,7 @@ impl LanguageServer for Server {
                 }
 
                 unknown => {
-                    error!("unknown file change type: {:?}", unknown);
+                    error!("unknown file change type: {unknown:?}");
                 }
             }
         }
@@ -257,7 +257,7 @@ impl Server {
                 }
 
                 error => {
-                    error!("failed to create workspace: {}", error);
+                    error!("failed to create workspace: {error}");
                     false
                 }
             },
