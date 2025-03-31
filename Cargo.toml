@@ -83,7 +83,7 @@ toml = { version = "0.8.8", features = ["display"] }
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }
 
 [workspace.package]
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 authors = ["Simmypeet"]
 description = "The Pernix Programming Language Compiler"
 edition = "2021"
