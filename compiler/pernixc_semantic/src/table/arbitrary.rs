@@ -5,7 +5,7 @@ use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy},
 };
 
-use crate::{GlobalID, MemberID, TargetID, ID};
+use super::{GlobalID, MemberID, TargetID, ID};
 
 impl Arbitrary for ID {
     type Strategy = BoxedStrategy<Self>;

@@ -420,7 +420,9 @@ impl<T: ModelOf> Tuple<T> {
     }
 }
 
-impl<T: pernixc_semantic::Display + Clone> pernixc_semantic::Display for Tuple<T> {
+impl<T: pernixc_semantic::Display + Clone> pernixc_semantic::Display
+    for Tuple<T>
+{
     fn fmt(
         &self,
         table: &Table,

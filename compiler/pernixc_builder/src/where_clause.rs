@@ -16,14 +16,14 @@ use pernixc_resolution::{
     qualified_identifier::{Generic, Resolution},
     Config, Ext, ExtraNamespace, GetGenericParameterNamespaceExt as _,
 };
-use pernixc_source_file::{SourceElement, Span};
-use pernixc_syntax::syntax_tree::{
-    self, ConnectedList, QualifiedIdentifierRoot,
-};
 use pernixc_semantic::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table,
+};
+use pernixc_source_file::{SourceElement, Span};
+use pernixc_syntax::syntax_tree::{
+    self, ConnectedList, QualifiedIdentifierRoot,
 };
 use pernixc_term::{
     forall_lifetime::{

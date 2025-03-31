@@ -4,9 +4,9 @@ use pernixc_arena::ID;
 use pernixc_component::fields::Field;
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::{Generic, Resolution};
+use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic};
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
-use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic};
 use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},

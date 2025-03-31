@@ -1,6 +1,6 @@
 use pernixc_handler::Storage;
-use pernixc_syntax::{syntax_tree, utility::parse};
 use pernixc_semantic::{diagnostic::Diagnostic, Table};
+use pernixc_syntax::{syntax_tree, utility::parse};
 
 use crate::binding::{
     diagnostic::NotAllFlowPathsReturnAValue,

@@ -13,8 +13,7 @@ use serde::{
     Deserialize,
 };
 
-use super::{CompilationMetaData, GlobalID, Target, TargetID};
-use crate::Table;
+use super::{CompilationMetaData, GlobalID, Table, Target, TargetID};
 
 /// A struct used for incrementally deserialize the table and merge them
 /// together.

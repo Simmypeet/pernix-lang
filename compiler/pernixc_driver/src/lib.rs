@@ -29,13 +29,13 @@ use pernixc_log::{
     formatting::{Color, Style},
     Message, Severity,
 };
-use pernixc_source_file::SourceFile;
-use pernixc_storage::{serde::Reflector, ArcTrait};
-use pernixc_syntax::syntax_tree::target::Target;
 use pernixc_semantic::{
     component::Member, diagnostic::Diagnostic, AddTargetError,
     CompilationMetaData, GlobalID, Table, TargetID,
 };
+use pernixc_source_file::SourceFile;
+use pernixc_storage::{serde::Reflector, ArcTrait};
+use pernixc_syntax::syntax_tree::target::Target;
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
 
@@ -447,7 +447,7 @@ fn semantic_analysis(
     let link_library_ids =
         link_libraries(&mut table, library_paths, &reflector)?;
 
-    let target_id = match table.add_compilation_target(
+    let target_id = match table.add_compilation_target_input(
         target.name.clone(),
         link_library_ids.into_iter().chain(std::iter::once(TargetID::CORE)),
         target,
@@ -834,7 +834,10 @@ fn emit_as_machine_code(
     let inkwell_context = inkwell::context::Context::create();
 
     let result = if let Some(main_function_id) = table
-        .get::<Member>(GlobalID::new(target_id, pernixc_semantic::ID::ROOT_MODULE))
+        .get::<Member>(GlobalID::new(
+            target_id,
+            pernixc_semantic::ID::ROOT_MODULE,
+        ))
         .get("main")
         .copied()
     {

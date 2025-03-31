@@ -5,8 +5,8 @@ use std::collections::{hash_map::Entry, HashMap};
 use getset::Getters;
 use paste::paste;
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::Span;
 use pernixc_semantic::{component::Derived, GlobalID, MemberID};
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 use crate::{

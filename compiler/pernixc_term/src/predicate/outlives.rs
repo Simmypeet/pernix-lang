@@ -28,7 +28,8 @@ impl<T: ModelOf> Outlives<T> {
     }
 }
 
-impl<T: pernixc_semantic::Display + ModelOf> pernixc_semantic::Display for Outlives<T>
+impl<T: pernixc_semantic::Display + ModelOf> pernixc_semantic::Display
+    for Outlives<T>
 where
     Lifetime<T::Model>: pernixc_semantic::Display,
 {

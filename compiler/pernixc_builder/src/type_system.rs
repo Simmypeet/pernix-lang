@@ -3,8 +3,8 @@
 
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_source_file::Span;
 use pernixc_semantic::diagnostic::Diagnostic;
+use pernixc_source_file::Span;
 use pernixc_term::{predicate::Predicate, r#type::Type, Model};
 use pernixc_type_system::{
     diagnostic::UnsatisfiedPredicate, environment::Environment,

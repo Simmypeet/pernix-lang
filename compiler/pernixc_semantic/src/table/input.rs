@@ -1,9 +1,24 @@
+//! Contains the code that sets up the table input components.
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     hash::{Hash, Hasher},
     time::SystemTime,
 };
 
+use diagnostic::{
+    AccessModifierIsNotAllowedInTraitImplementation, ConflictingUsing,
+    ExpectAccessModifier, ExpectModule, ExpectedImplementationWithBodyForAdt,
+    FoundImplementationMemberOnMarker, FunctionAttribute,
+    FunctionAttributeIsNotAllowedInTraitImplementation,
+    InvalidConstImplementation, InvalidFinalImplementation,
+    InvalidSymbolInImplementation, ItemRedifinition,
+    MismatchedTraitMemberAndImplementationMember, NonFinalMarkerImplementation,
+    SymbolIsMoreAccessibleThanParent, TargetRootInImportIsNotAllowedwithFrom,
+    TraitMemberKind, UnexpectedAdtImplementationMember,
+    UnimplementedTraitMembers, UnknownExternCallingConvention,
+    UnknownTraitImplementationMember, VariadicArgumentsAreNotAllowed,
+    VariadicArgumentsMustBeTrailing,
+};
 use pernixc_handler::Handler;
 use pernixc_lexical::token::Identifier;
 use pernixc_source_file::SourceElement;
@@ -16,14 +31,10 @@ use pernixc_syntax::{
 };
 
 use super::{
-    diagnostic::{
-        FoundImplementationMemberOnMarker, InvalidSymbolInImplementation,
-        MismatchedTraitMemberAndImplementationMember,
-        SymbolIsMoreAccessibleThanParent, TraitMemberKind,
-        UnexpectedAdtImplementationMember, UnimplementedTraitMembers,
-        UnknownTraitImplementationMember,
+    resolution::diagnostic::{
+        NoGenericArgumentsRequired, SymbolIsNotAccessible, SymbolNotFound,
+        ThisNotFound,
     },
-    resolution::diagnostic::{NoGenericArgumentsRequired, ThisNotFound},
     GlobalID, Representation, TargetID, ID,
 };
 use crate::{
@@ -34,12 +45,11 @@ use crate::{
         PositiveTraitImplementation, SymbolKind, TraitImplementation, Using,
         VariantDeclarationOrder,
     },
-    diagnostic::{
-        AccessModifierIsNotAllowedInTraitImplementation, ConflictingUsing, Diagnostic, ExpectAccessModifier, ExpectModule, ExpectedImplementationWithBodyForAdt, FunctionAttribute, FunctionAttributeIsNotAllowedInTraitImplementation, InvalidConstImplementation, InvalidFinalImplementation, ItemRedifinition, NonFinalMarkerImplementation, TargetRootInImportIsNotAllowedwithFrom, UnknownExternCallingConvention, VariadicArgumentsAreNotAllowed, VariadicArgumentsMustBeTrailing
-    },
-    resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
-    Target,
+    diagnostic::Diagnostic,
+    table::Target,
 };
+
+pub mod diagnostic;
 
 /// Errors that can occur when adding a target to the representation.
 #[derive(
@@ -70,7 +80,7 @@ impl Representation {
     /// # Errors
     ///
     /// See [`AddTargetError`] for possible errors.
-    pub fn add_compilation_target(
+    pub fn add_compilation_target_input(
         &mut self,
         name: String,
         linked_targets: impl IntoIterator<Item = TargetID>,
@@ -649,18 +659,18 @@ impl Representation {
 
                     if let Some(kw) = &syn.signature.const_keyword {
                         handler.receive(Box::new(
-                            FunctionAttributeIsNotAllowedInTraitImplementation { 
+                            FunctionAttributeIsNotAllowedInTraitImplementation {
                                 attribute: FunctionAttribute::Const ,
-                                keyword_span: kw.span(), 
+                                keyword_span: kw.span(),
                             }
                         ));
                     }
 
                     if let Some(kw) = &syn.signature.unsafe_keyword {
                         handler.receive(Box::new(
-                            FunctionAttributeIsNotAllowedInTraitImplementation { 
+                            FunctionAttributeIsNotAllowedInTraitImplementation {
                                 attribute: FunctionAttribute::Unsafe ,
-                                keyword_span: kw.span(), 
+                                keyword_span: kw.span(),
                             }
                         ));
                     }

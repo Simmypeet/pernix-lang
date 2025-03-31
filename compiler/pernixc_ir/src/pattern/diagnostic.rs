@@ -2,8 +2,8 @@
 
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
 use pernixc_semantic::Table;
+use pernixc_source_file::Span;
 
 /// A particular name has already been bound in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

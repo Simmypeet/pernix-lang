@@ -10,10 +10,10 @@ use pernixc_ir::{
     instruction::{Drop, DropUnpackTuple, Instruction},
     model, scope,
 };
-use pernixc_source_file::Span;
 use pernixc_semantic::{
     component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},

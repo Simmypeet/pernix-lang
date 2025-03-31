@@ -6,13 +6,13 @@ use pernixc_component::{
     implied_predicates::ImpliedPredicates,
 };
 use pernixc_handler::{Panic, Storage};
-use pernixc_syntax::syntax_tree::{
-    item::function::ParameterKind, ConnectedList,
-};
 use pernixc_semantic::{
     component::{Member, Name, Parent, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID, Table, TargetID,
+};
+use pernixc_syntax::syntax_tree::{
+    item::function::ParameterKind, ConnectedList,
 };
 use pernixc_term::{
     elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,

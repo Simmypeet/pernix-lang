@@ -4,11 +4,11 @@ use pernixc_arena::ID;
 use pernixc_component::implementation::Implementation;
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
 use pernixc_semantic::{
     component::{Implements, LocationSpan, SymbolKind},
     DisplayObject, GlobalID, MemberID, Table,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     generic_parameter::{
         ConstantParameterID, GenericKind, GenericParameter, GenericParameters,

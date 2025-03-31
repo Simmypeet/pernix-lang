@@ -3,8 +3,10 @@
 use derive_new::new;
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
+use pernixc_semantic::{
+    component::LocationSpan, DisplayObject, GlobalID, Table,
+};
 use pernixc_source_file::Span;
-use pernixc_semantic::{component::LocationSpan, DisplayObject, GlobalID, Table};
 use pernixc_term::{
     generic_arguments::GenericArguments, predicate::Predicate, Model,
 };

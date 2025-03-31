@@ -316,7 +316,8 @@ fn initialize_copy_marker(
 ) {
     let id = id_gen.next().unwrap();
 
-    let copy_marker_id = GlobalID::new(TargetID::CORE, pernixc_semantic::ID(id));
+    let copy_marker_id =
+        GlobalID::new(TargetID::CORE, pernixc_semantic::ID(id));
 
     assert!(table.add_component(copy_marker_id, SymbolKind::Marker));
     assert!(table.add_component(copy_marker_id, Name("Copy".to_string())));

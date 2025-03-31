@@ -16,9 +16,9 @@ use pernixc_resolution::{
     qualified_identifier::Resolution, ElidedTermProvider, Ext, ExtraNamespace,
     GetGenericParameterNamespaceExt,
 };
+use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
-use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,

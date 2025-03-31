@@ -26,7 +26,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
-use crate::{GlobalAccessibility, GlobalID, TargetID, ID};
+use crate::table::{GlobalAccessibility, GlobalID, TargetID, ID};
 
 pub mod syntax_tree;
 

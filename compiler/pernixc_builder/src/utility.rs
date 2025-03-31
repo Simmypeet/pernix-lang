@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use pernixc_handler::Panic;
 use pernixc_intrinsic::IntrinsicExt;
-use pernixc_source_file::SourceFile;
 use pernixc_semantic::{diagnostic::Diagnostic, Table, TargetID};
+use pernixc_source_file::SourceFile;
 
 use crate::Compilation;
 
@@ -49,7 +49,7 @@ pub fn add_target(
     table.set_handler(storage.clone());
 
     let target_id = table
-        .add_compilation_target(
+        .add_compilation_target_input(
             target_name,
             linked_targets,
             target,

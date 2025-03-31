@@ -5,14 +5,14 @@ use std::{borrow::Cow, sync::Arc};
 use pernixc_abort::Abort;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{binding::Binder, IR};
-use pernixc_syntax::syntax_tree::{
-    item::function::ParameterKind, ConnectedList,
-};
 use pernixc_semantic::{
     component::{self, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query::Builder,
     GlobalID, Table,
+};
+use pernixc_syntax::syntax_tree::{
+    item::function::ParameterKind, ConnectedList,
 };
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt},

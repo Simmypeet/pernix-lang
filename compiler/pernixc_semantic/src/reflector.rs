@@ -5,10 +5,13 @@ use pernixc_storage::{
     ArcTrait,
 };
 
-use super::{GlobalID, Table};
-use crate::component::{
-    Accessibility, Extern, Implemented, Implements, LocationSpan, Member, Name,
-    Parent, PositiveTraitImplementation, SymbolKind, TraitImplementation,
+use crate::{
+    component::{
+        Accessibility, Extern, Implemented, Implements, LocationSpan, Member,
+        Name, Parent, PositiveTraitImplementation, SymbolKind,
+        TraitImplementation,
+    },
+    table::{GlobalID, Table},
 };
 
 impl Table {

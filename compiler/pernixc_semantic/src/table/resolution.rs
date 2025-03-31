@@ -1,4 +1,7 @@
-//! Contains the resolution logic for the table.
+//! Contains the basic resolution logic for the table.
+//!
+//! The resolution logic is not fully-featured, the fully-featured resolution
+//! logic is implemented in the [`pernixc_resolution`] crate.
 
 use diagnostic::{
     NoGenericArgumentsRequired, SymbolIsNotAccessible, SymbolNotFound,
@@ -11,10 +14,10 @@ use pernixc_syntax::syntax_tree::{
     QualifiedIdentifier, QualifiedIdentifierRoot, SimplePath, SimplePathRoot,
 };
 
-use super::{GlobalID, Representation, ID};
+use super::{input::diagnostic::ExpectModule, GlobalID, Representation, ID};
 use crate::{
     component::{Import, Member, SymbolKind},
-    diagnostic::{Diagnostic, ExpectModule},
+    diagnostic::Diagnostic,
 };
 
 pub mod diagnostic;

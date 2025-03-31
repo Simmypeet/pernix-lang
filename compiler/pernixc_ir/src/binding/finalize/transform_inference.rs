@@ -2,8 +2,8 @@ use std::{collections::HashSet, convert::Infallible, option::Option};
 
 use pernixc_arena::{Key, ID};
 use pernixc_handler::Handler;
-use pernixc_source_file::Span;
 use pernixc_semantic::{diagnostic::Diagnostic, Table};
+use pernixc_source_file::Span;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,

@@ -12,8 +12,8 @@ use pernixc_ir::{
     value::register::Register,
     Representation,
 };
-use pernixc_source_file::Span;
 use pernixc_semantic::{diagnostic::Diagnostic, GlobalID};
+use pernixc_source_file::Span;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,

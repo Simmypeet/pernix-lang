@@ -15,11 +15,11 @@ use pernixc_component::{
     fields::Field, function_signature::FunctionSignature,
     implementation::Implementation,
 };
-use pernixc_source_file::Span;
 use pernixc_semantic::{
     component::{Member, Parent, SymbolKind},
     GlobalID, Table,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,

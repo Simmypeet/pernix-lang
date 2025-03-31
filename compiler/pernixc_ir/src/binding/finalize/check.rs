@@ -1,12 +1,12 @@
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_source_file::Span;
 use pernixc_semantic::{
     component::{Parent, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameter::GenericParameters,

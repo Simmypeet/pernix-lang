@@ -1,8 +1,8 @@
 //! Contains the definition of model used by the IR.
 
 use pernixc_abort::Abort;
-use pernixc_source_file::Span;
 use pernixc_semantic::Table;
+use pernixc_source_file::Span;
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, Default, ModelOf,
     Never,

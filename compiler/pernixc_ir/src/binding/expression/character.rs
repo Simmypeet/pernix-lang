@@ -1,7 +1,7 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::token;
-use pernixc_source_file::SourceElement;
 use pernixc_semantic::diagnostic::Diagnostic;
+use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::Type;
 
 use super::{Bind, Config, Expression};

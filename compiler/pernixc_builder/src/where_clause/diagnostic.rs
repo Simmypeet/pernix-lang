@@ -2,8 +2,8 @@
 
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
 use pernixc_semantic::{component::SymbolKind, GlobalID, Table};
+use pernixc_source_file::Span;
 use pernixc_term::{
     forall_lifetime::{ForallLifetimeID, ForallLifetimes},
     r#type::Type,

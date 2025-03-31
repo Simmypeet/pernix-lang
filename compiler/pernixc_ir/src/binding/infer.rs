@@ -11,8 +11,8 @@ use getset::{Getters, MutGetters};
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
-use pernixc_source_file::Span;
 use pernixc_semantic::{diagnostic::Diagnostic, Table};
+use pernixc_source_file::Span;
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type,
     visitor::RecursiveIterator, ModelOf as _, Never,

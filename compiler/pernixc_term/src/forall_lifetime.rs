@@ -3,8 +3,8 @@
 use enum_as_inner::EnumAsInner;
 use parking_lot::{lock_api::MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::Span;
 use pernixc_semantic::{component::Derived, MemberID};
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 /// Represents a forall lifetime declared with `for['a]` syntax.

@@ -5,12 +5,12 @@ use std::sync::Arc;
 use pernixc_component::variant::Variant;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
-use pernixc_source_file::SourceElement;
 use pernixc_semantic::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
+use pernixc_source_file::SourceElement;
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt},
     normalizer,

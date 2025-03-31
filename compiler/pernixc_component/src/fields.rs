@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::Span;
 use pernixc_semantic::component::{Accessibility, Derived};
+use pernixc_source_file::Span;
 use pernixc_term::{r#type::Type, Default};
 use serde::{Deserialize, Serialize};
 

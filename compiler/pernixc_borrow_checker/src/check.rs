@@ -8,8 +8,10 @@ use pernixc_ir::{
     value::register::{Assignment, Load},
     Representation,
 };
+use pernixc_semantic::{
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID,
+};
 use pernixc_source_file::Span;
-use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic, GlobalID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     lifetime::Lifetime,

@@ -6,11 +6,11 @@ use pernixc_arena::ID;
 use pernixc_component::fields::{Field, Fields};
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
 use pernixc_semantic::{
     component::{LocationSpan, Name},
     DisplayObject, GlobalID, Table,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     r#type::{self, Qualifier, Type},
     Model,

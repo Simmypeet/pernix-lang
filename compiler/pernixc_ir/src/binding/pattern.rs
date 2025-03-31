@@ -7,14 +7,14 @@ use std::{
 
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_source_file::{SourceElement, Span};
-use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_semantic::{
     component::Member,
     diagnostic::Diagnostic,
     resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
     GlobalID,
 };
+use pernixc_source_file::{SourceElement, Span};
+use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},

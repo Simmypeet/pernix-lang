@@ -3,12 +3,12 @@ use std::{collections::HashMap, num::NonZeroUsize};
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{
     self,
     expression::block::{Group, GroupOrIfElse},
 };
-use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Primitive, Type};
 
 use super::{Bind, Config, Expression, Target};

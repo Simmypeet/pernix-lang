@@ -1,10 +1,10 @@
 use pernixc_handler::{Panic, Storage};
-use pernixc_syntax::{syntax_tree, utility::parse};
 use pernixc_semantic::{
     component::{Implemented, Member},
     diagnostic::Diagnostic,
     GlobalID,
 };
+use pernixc_syntax::{syntax_tree, utility::parse};
 use pernixc_term::{
     generic_parameter::{GenericParameters, TypeParameterID},
     lifetime::Lifetime,

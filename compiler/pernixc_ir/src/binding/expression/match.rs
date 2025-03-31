@@ -6,13 +6,13 @@ use std::{
 use drain_filter_polyfill::VecExt;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_source_file::{SourceElement, Span};
-use pernixc_syntax::syntax_tree::{self, expression::block::Group};
 use pernixc_semantic::{
     component::{Member, Parent, SymbolKind, VariantDeclarationOrder},
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
+use pernixc_source_file::{SourceElement, Span};
+use pernixc_syntax::syntax_tree::{self, expression::block::Group};
 use pernixc_term::{
     r#type::{Primitive, Qualifier, Type},
     Symbol,

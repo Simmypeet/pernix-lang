@@ -4,8 +4,8 @@
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
 use pernixc_semantic::{MemberID, Table};
+use pernixc_source_file::Span;
 use pernixc_term::generic_parameter::{
     GenericKind, GenericParameter, GenericParameters,
 };

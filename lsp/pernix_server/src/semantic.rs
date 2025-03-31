@@ -14,9 +14,9 @@ use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
 use pernixc_intrinsic::IntrinsicExt;
 use pernixc_lexical::token::Identifier;
+use pernixc_semantic::{Table, TargetID};
 use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_semantic::{Table, TargetID};
 use tower_lsp::lsp_types::Url;
 
 use crate::{extension::DaignosticExt, workspace};
@@ -123,7 +123,7 @@ impl Semantic {
         table.initialize_core();
 
         let target_id = table
-            .add_compilation_target(
+            .add_compilation_target_input(
                 target_name,
                 std::iter::once(TargetID::CORE),
                 target,

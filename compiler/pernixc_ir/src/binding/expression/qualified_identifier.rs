@@ -1,12 +1,12 @@
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::Resolution;
-use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree;
 use pernixc_semantic::{
     component::{Parent, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID,
 };
+use pernixc_source_file::SourceElement;
+use pernixc_syntax::syntax_tree;
 use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},

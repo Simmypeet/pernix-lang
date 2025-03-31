@@ -6,10 +6,6 @@ use pernixc_component::{
     late_bound::LateBound, type_alias::TypeAlias, variant::Variant,
 };
 use pernixc_ir::IR;
-use pernixc_storage::{
-    serde::{MergerFn, Reflector},
-    ArcTrait,
-};
 use pernixc_semantic::{
     component::{
         Accessibility, Extern, Implemented, Implements, LocationSpan, Member,
@@ -17,6 +13,10 @@ use pernixc_semantic::{
         TraitImplementation, VariantDeclarationOrder,
     },
     GlobalID,
+};
+use pernixc_storage::{
+    serde::{MergerFn, Reflector},
+    ArcTrait,
 };
 use pernixc_term::{
     elided_lifetimes::ElidedLifetimes, forall_lifetime::ForallLifetimes,

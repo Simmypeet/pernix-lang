@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use pernixc_handler::Panic;
-use pernixc_source_file::Span;
 use pernixc_semantic::{
     component::{Implemented, Implements, Member, Parent},
     GlobalID, Table,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameter::{

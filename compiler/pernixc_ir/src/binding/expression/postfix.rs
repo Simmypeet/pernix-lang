@@ -6,8 +6,6 @@ use pernixc_component::{
 };
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier;
-use pernixc_source_file::{SourceElement, Span};
-use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
 use pernixc_semantic::{
     component::{
         Extern, ExternC, FunctionUnsafeness, Implemented, Implements, Import,
@@ -17,6 +15,8 @@ use pernixc_semantic::{
     resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
     GlobalID,
 };
+use pernixc_source_file::{SourceElement, Span};
+use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
 use pernixc_term::{
     constant::Constant,
     elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},

@@ -2,11 +2,11 @@
 
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
 use pernixc_semantic::{
     component::{Implements, LocationSpan},
     DisplayObject, GlobalID, Table,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments, r#type::Type,
     Model,
