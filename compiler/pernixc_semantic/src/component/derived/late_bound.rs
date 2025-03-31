@@ -3,9 +3,11 @@
 use std::collections::HashSet;
 
 use pernixc_arena::ID;
-use pernixc_semantic::component::Derived;
-use pernixc_term::generic_parameter::LifetimeParameter;
 use serde::{Deserialize, Serialize};
+
+use crate::component::{
+    derived::generic_parameters::LifetimeParameter, Derived,
+};
 
 /// A **presistent-derived** component storing the late bound lifetimes.
 /// This component only exists in the function symbols.

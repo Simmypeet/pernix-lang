@@ -1,10 +1,13 @@
 //! Contains the definition of function signature
 
 use pernixc_arena::{Arena, ID};
-use pernixc_semantic::component::Derived;
 use pernixc_source_file::Span;
-use pernixc_term::{r#type::Type, Default};
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    component::Derived,
+    term::{r#type::Type, Default},
+};
 
 /// Represents a parameter in a function signature. `PATTERN: TYPE`
 #[derive(

@@ -1,9 +1,12 @@
 //! Contains the definition of [`TypeAlias`].
 
 use derive_more::{Deref, DerefMut};
-use pernixc_semantic::component::Derived;
-use pernixc_term::{r#type::Type, Default};
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    component::Derived,
+    term::{r#type::Type, Default},
+};
 
 /// A **presistent-derived** component representing the type alias values for
 /// various `type IDENT = TYPE` symbols.

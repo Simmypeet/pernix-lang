@@ -1,9 +1,12 @@
 //! Contains the definition of [`Variant`]
 
 use derive_more::{Deref, DerefMut};
-use pernixc_semantic::component::Derived;
-use pernixc_term::{r#type::Type, Default};
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    component::Derived,
+    term::{r#type::Type, Default},
+};
 
 /// A **presistent-derived** component attached to all the enum-variants
 /// symbols.

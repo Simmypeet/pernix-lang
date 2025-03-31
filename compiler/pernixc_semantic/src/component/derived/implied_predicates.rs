@@ -2,14 +2,17 @@
 
 use std::collections::HashSet;
 
-use pernixc_semantic::component::Derived;
-use pernixc_term::{
-    lifetime::Lifetime,
-    predicate::{Outlives, Predicate},
-    r#type::Type,
-    Default,
-};
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    component::Derived,
+    term::{
+        lifetime::Lifetime,
+        predicate::{Outlives, Predicate},
+        r#type::Type,
+        Default,
+    },
+};
 
 /// The enumeration of all predicates that can be implied by the compiler.
 #[derive(

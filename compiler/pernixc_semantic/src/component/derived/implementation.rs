@@ -1,8 +1,11 @@
 //! Contains the definition of [`Implementation`] cmoponent.
 
-use pernixc_semantic::component::Derived;
-use pernixc_term::{generic_arguments::GenericArguments, Default};
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    component::Derived,
+    term::{generic_arguments::GenericArguments, Default},
+};
 
 /// A **presistent-derived** component representing the implementation signature
 #[derive(

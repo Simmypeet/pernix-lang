@@ -8,7 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_type_system = { path = "../pernixc_type_system" }
-pernixc_component = { path = "../pernixc_component" }
 pernixc_arena = { path = "../pernixc_arena" }
 pernixc_semantic = { path = "../pernixc_semantic" }
 pernixc_ir = { path = "../pernixc_ir" }

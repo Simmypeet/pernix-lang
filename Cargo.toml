@@ -12,7 +12,6 @@ members = [
     "compiler/pernixc_source_file",
     "compiler/pernixc_diagnostic",
     "compiler/pernixc_log",
-    "compiler/pernixc_component",
     "compiler/pernixc_resolution",
     "compiler/pernixc_builder",
     "compiler/pernixc_driver",
