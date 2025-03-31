@@ -54,7 +54,7 @@ fn drop_packed_tuple() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
+        super::get_output_string(output.stdout),
         "Dropping 1\nDropping 2\nDropping 3\nDropping 4\nDropping 5\n"
     );
 }

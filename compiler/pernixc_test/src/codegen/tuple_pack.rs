@@ -68,5 +68,5 @@ fn tuple_pack() {
     });
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap().as_str(), "21");
+    assert_eq!(super::get_output_string(output.stdout).as_str(), "21");
 }

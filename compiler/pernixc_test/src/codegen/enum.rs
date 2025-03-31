@@ -132,7 +132,7 @@ fn r#enum() {
         });
 
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "1");
+        assert_eq!(super::get_output_string(output.stdout), "1");
     }
 
     {
@@ -141,7 +141,7 @@ fn r#enum() {
         });
 
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "3");
+        assert_eq!(super::get_output_string(output.stdout), "3");
     }
 
     {
@@ -150,7 +150,7 @@ fn r#enum() {
         });
 
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "6");
+        assert_eq!(super::get_output_string(output.stdout), "6");
     }
 
     {
@@ -159,7 +159,7 @@ fn r#enum() {
         });
 
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "10");
+        assert_eq!(super::get_output_string(output.stdout), "10");
     }
 
     {
@@ -168,6 +168,6 @@ fn r#enum() {
         });
 
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "Invalid mode");
+        assert_eq!(super::get_output_string(output.stdout), "Invalid mode");
     }
 }

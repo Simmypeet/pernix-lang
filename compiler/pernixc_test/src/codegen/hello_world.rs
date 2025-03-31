@@ -21,6 +21,6 @@ fn hello_world() {
 
     assert!(output.status.success());
 
-    let out = String::from_utf8(output.stdout).unwrap();
+    let out = super::get_output_string(output.stdout);
     assert_eq!(out, "Hello, World!\n");
 }

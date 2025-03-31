@@ -29,7 +29,7 @@ fn number_match() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap().as_str(),
+        super::get_output_string(output.stdout).as_str(),
         "this is zero"
     );
 
@@ -38,20 +38,14 @@ fn number_match() {
     });
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap().as_str(),
-        "this is one"
-    );
+    assert_eq!(super::get_output_string(output.stdout).as_str(), "this is one");
 
     let output = compile_file_with(SOURCE, |x| {
         x.write_stdin("2\n");
     });
 
     assert!(output.status.success());
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap().as_str(),
-        "this is two"
-    );
+    assert_eq!(super::get_output_string(output.stdout).as_str(), "this is two");
 
     let output = compile_file_with(SOURCE, |x| {
         x.write_stdin("3\n");
@@ -59,7 +53,7 @@ fn number_match() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap().as_str(),
+        super::get_output_string(output.stdout).as_str(),
         "this is three"
     );
 
@@ -69,7 +63,7 @@ fn number_match() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap().as_str(),
+        super::get_output_string(output.stdout).as_str(),
         "this is negative one"
     );
 
@@ -79,7 +73,7 @@ fn number_match() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap().as_str(),
+        super::get_output_string(output.stdout).as_str(),
         "123456 is something else"
     );
 }

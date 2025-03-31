@@ -80,3 +80,15 @@ fn compile_file_with(
 
     command.output().unwrap()
 }
+
+#[must_use]
+fn get_output_string(output: Vec<u8>) -> String {
+    // on windows, replace \r\n with \n
+    let output = String::from_utf8(output).unwrap();
+
+    if cfg!(target_os = "windows") {
+        output.replace("\r\n", "\n")
+    } else {
+        output
+    }
+}

@@ -51,7 +51,7 @@ fn fibonacci_program() {
 
     assert!(output.status.success());
 
-    let out = String::from_utf8(output.stdout).unwrap();
+    let out = super::get_output_string(output.stdout);
 
     assert_eq!(out, "Enter the number: fibonacci(6) = 8\n");
 }

@@ -28,5 +28,5 @@ fn array_index() {
     let output = compile_file(SOURCE);
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "15");
+    assert_eq!(super::get_output_string(output.stdout), "15");
 }

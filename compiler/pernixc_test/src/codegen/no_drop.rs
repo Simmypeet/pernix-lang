@@ -43,6 +43,6 @@ fn drop() {
 
     assert!(output.status.success());
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = super::get_output_string(output.stdout);
     assert!(stdout.is_empty());
 }

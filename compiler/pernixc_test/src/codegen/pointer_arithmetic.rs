@@ -47,7 +47,7 @@ fn number_match() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap().as_str(),
+        super::get_output_string(output.stdout).as_str(),
         "1 2 4 8 16 32 "
     );
 }

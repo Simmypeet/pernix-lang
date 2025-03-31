@@ -45,7 +45,7 @@ fn prefix() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
+        super::get_output_string(output.stdout),
         "-1 2\nThird number is positive\nFourth number is negative\n"
     );
 }

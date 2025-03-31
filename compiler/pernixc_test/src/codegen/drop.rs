@@ -38,6 +38,6 @@ fn drop() {
 
     assert!(output.status.success());
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stdout = super::get_output_string(output.stdout);
     assert_eq!(stdout, "Dropping 34\nDropping 12\n");
 }

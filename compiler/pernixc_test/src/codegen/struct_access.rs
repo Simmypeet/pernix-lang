@@ -34,7 +34,7 @@ fn struct_access() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
+        super::get_output_string(output.stdout),
         "first: 10, second: 20"
     );
 }

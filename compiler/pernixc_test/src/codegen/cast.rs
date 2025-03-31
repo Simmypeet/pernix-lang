@@ -55,7 +55,7 @@ fn cast() {
 
     assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
+        super::get_output_string(output.stdout),
         "-1 1\n2\n-3.00 3.00\n3.00 -3.00\n"
     );
 }

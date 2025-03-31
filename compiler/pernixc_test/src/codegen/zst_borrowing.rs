@@ -31,5 +31,5 @@ fn zst_borrowing() {
     let output = compile_file(SOURCE);
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "is some\n");
+    assert_eq!(super::get_output_string(output.stdout), "is some\n");
 }

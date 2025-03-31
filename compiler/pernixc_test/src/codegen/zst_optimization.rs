@@ -42,5 +42,5 @@ fn zst_optimization() {
     });
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "6");
+    assert_eq!(super::get_output_string(output.stdout), "6");
 }

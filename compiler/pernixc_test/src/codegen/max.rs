@@ -35,5 +35,5 @@ fn max() {
     });
 
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "the max is 10");
+    assert_eq!(super::get_output_string(output.stdout), "the max is 10");
 }
