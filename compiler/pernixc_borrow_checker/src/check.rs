@@ -1,5 +1,4 @@
 use pernixc_abort::Abort;
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory, Offset, Tuple},
@@ -9,15 +8,19 @@ use pernixc_ir::{
     Representation,
 };
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID,
+    component::{
+        derived::function_signature::FunctionSignature, input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    table::GlobalID,
+    term::{
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{Outlives, PositiveMarker, Predicate},
+        r#type::Qualifier,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    lifetime::Lifetime,
-    predicate::{Outlives, PositiveMarker, Predicate},
-    r#type::Qualifier,
-};
 use pernixc_type_system::{
     diagnostic::{UndecidablePredicate, UnsatisfiedPredicate},
     environment::Environment,

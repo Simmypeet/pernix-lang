@@ -2,16 +2,18 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     control_flow_graph::Point, value::register::Register, Representation,
 };
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID,
-};
-use pernixc_semantic::term::{
-    r#type::Type, variance::Variance, visitor::RecursiveIterator, Model,
+    component::{
+        derived::{function_signature::FunctionSignature, variances::Variance},
+        input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    table::GlobalID,
+    term::{r#type::Type, visitor::RecursiveIterator, Model},
 };
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 

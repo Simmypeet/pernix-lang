@@ -3,10 +3,6 @@ use std::collections::{HashMap, HashSet};
 use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
-use pernixc_component::{
-    fields::{Field, Fields},
-    function_signature::FunctionSignature,
-};
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{self, Address, Memory},
@@ -16,15 +12,25 @@ use pernixc_ir::{
     Representation,
 };
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID,
+    component::{
+        derived::{
+            fields::{Field, Fields},
+            function_signature::FunctionSignature,
+            generic_parameters::GenericParameters,
+            variant,
+        },
+        input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    table::GlobalID,
+    term::{
+        self,
+        instantiation::{self, Instantiation},
+        r#type::Type,
+        Model as _, Symbol,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    r#type::Type,
-    Model as _, Symbol,
-};
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::{
@@ -97,10 +103,7 @@ impl Assigned {
     }
 
     /// Returns assignment state for the given address.
-    pub fn at_address(
-        &self,
-        address: &Address<impl pernixc_term::Model>,
-    ) -> &Self {
+    pub fn at_address(&self, address: &Address<impl term::Model>) -> &Self {
         match address {
             Address::Memory(_) => self,
 
@@ -188,7 +191,7 @@ impl Assigned {
 }
 
 #[derive(Debug, EnumAsInner)]
-enum SetAssignedResultInternal<'a, M: pernixc_term::Model> {
+enum SetAssignedResultInternal<'a, M: term::Model> {
     Done(bool),
     Continue { projection: &'a mut Assigned, ty: Type<M> },
 }
@@ -196,7 +199,7 @@ enum SetAssignedResultInternal<'a, M: pernixc_term::Model> {
 impl Assigned {
     /// Remembers that the given `address` has been accessed. Returns `true`
     /// if the address is accessed for the first time.
-    pub fn set_assigned<M: pernixc_term::Model>(
+    pub fn set_assigned<M: term::Model>(
         &mut self,
         address: &Address<M>,
         root_ty: Type<M>,
@@ -218,7 +221,7 @@ impl Assigned {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn set_accessed_internal<M: pernixc_term::Model>(
+    fn set_accessed_internal<M: term::Model>(
         &mut self,
         address: &Address<M>,
         root_ty: Type<M>,
@@ -463,9 +466,7 @@ impl Assigned {
 
                 let variant_comp = environment
                     .table()
-                    .query::<pernixc_component::variant::Variant>(
-                    variant.id,
-                )?;
+                    .query::<variant::Variant>(variant.id)?;
 
                 (proj.as_variant_mut().unwrap().variant_projection.as_mut(), {
                     let mut variant_ty = M::from_default_type(
@@ -549,7 +550,7 @@ pub enum ControlFlow<T> {
 /// # Note
 ///
 /// Cloning is used when encountering a branch in the control flow graph.
-trait Traverser<M: pernixc_term::Model>: Clone {
+trait Traverser<M: term::Model>: Clone {
     type Error;
     type Result: Default;
 
@@ -571,7 +572,7 @@ trait Traverser<M: pernixc_term::Model>: Clone {
     ) -> (Self::Result, bool);
 }
 
-fn traverse_block<M: pernixc_term::Model, T: Traverser<M>>(
+fn traverse_block<M: term::Model, T: Traverser<M>>(
     traverser_state: &mut T,
     control_flow_graph: &ControlFlowGraph<M>,
     point: Point<M>,
@@ -588,7 +589,7 @@ fn traverse_block<M: pernixc_term::Model, T: Traverser<M>>(
 }
 
 #[allow(clippy::too_many_lines)]
-fn traverse_block_internal<M: pernixc_term::Model, T: Traverser<M>>(
+fn traverse_block_internal<M: term::Model, T: Traverser<M>>(
     traverser_state: &mut T,
     control_flow_graph: &ControlFlowGraph<M>,
     block_id: ID<Block<M>>,

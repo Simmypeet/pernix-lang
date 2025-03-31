@@ -8,16 +8,18 @@ use pernixc_ir::{
     value::register::Assignment,
     Representation,
 };
-use pernixc_semantic::Table;
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant,
-    lifetime::Lifetime,
-    r#type::Type,
-    sub_term::TermLocation,
-    visitor::{self, MutableRecursive},
-    ModelOf,
+use pernixc_semantic::{
+    table::Table,
+    term::{
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::Type,
+        sub_term::TermLocation,
+        visitor::{self, MutableRecursive},
+        ModelOf,
+    },
 };
+use pernixc_source_file::Span;
 
 use crate::{
     local_region_generator::LocalRegionGenerator, LocalRegionID,

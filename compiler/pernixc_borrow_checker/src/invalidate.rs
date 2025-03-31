@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use getset::{CopyGetters, Getters};
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
@@ -12,16 +11,20 @@ use pernixc_ir::{
     value::register::Register,
     Representation,
 };
-use pernixc_semantic::{diagnostic::Diagnostic, GlobalID};
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant,
-    lifetime::Lifetime,
-    r#type::{Qualifier, Type},
-    sub_term::TermLocation,
-    visitor::{self, Recursive},
-    Model,
+use pernixc_semantic::{
+    component::derived::function_signature::FunctionSignature,
+    diagnostic::Diagnostic,
+    table::GlobalID,
+    term::{
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::{Qualifier, Type},
+        sub_term::TermLocation,
+        visitor::{self, Recursive},
+        Model,
+    },
 };
+use pernixc_source_file::Span;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::{

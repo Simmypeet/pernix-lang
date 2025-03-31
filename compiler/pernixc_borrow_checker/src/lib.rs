@@ -215,17 +215,23 @@ use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
 use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, Representation, Values};
-use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant,
-    elided_lifetimes::ElidedLifetimeID,
-    generic_parameter::{GenericParameters, LifetimeParameterID},
-    lifetime::Lifetime,
-    r#type::{Qualifier, Type},
-    visitor::RecursiveIterator,
-    ModelOf, Never,
+use pernixc_semantic::{
+    component::derived::{
+        elided_lifetimes::ElidedLifetimeID,
+        generic_parameters::{GenericParameters, LifetimeParameterID},
+    },
+    diagnostic::Diagnostic,
+    table::{self, GlobalID, Table},
+    term::{
+        self,
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::{Qualifier, Type},
+        visitor::RecursiveIterator,
+        ModelOf, Never,
+    },
 };
+use pernixc_source_file::Span;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 use serde::{Deserialize, Serialize};
 
@@ -284,7 +290,7 @@ pub enum UniversalRegion {
     NonStatic(NonStaticUniversalRegion),
 }
 
-impl<M: pernixc_term::Model> TryFrom<Lifetime<M>> for UniversalRegion {
+impl<M: term::Model> TryFrom<Lifetime<M>> for UniversalRegion {
     type Error = Lifetime<M>;
 
     fn try_from(value: Lifetime<M>) -> Result<Self, Self::Error> {
@@ -301,7 +307,7 @@ impl<M: pernixc_term::Model> TryFrom<Lifetime<M>> for UniversalRegion {
     }
 }
 
-impl<M: pernixc_term::Model> From<UniversalRegion> for Lifetime<M> {
+impl<M: term::Model> From<UniversalRegion> for Lifetime<M> {
     fn from(value: UniversalRegion) -> Self {
         match value {
             UniversalRegion::Static => Self::Static,
@@ -317,7 +323,7 @@ impl<M: pernixc_term::Model> From<UniversalRegion> for Lifetime<M> {
     }
 }
 
-impl pernixc_semantic::Display for UniversalRegion {
+impl table::Display for UniversalRegion {
     fn fmt(
         &self,
         table: &Table,
@@ -412,23 +418,23 @@ impl TryFrom<Lifetime<Model>> for Region {
 )]
 pub struct Model;
 
-impl pernixc_term::Model for Model {
+impl term::Model for Model {
     type LifetimeInference = LocalRegionID;
     type TypeInference = Never;
     type ConstantInference = Never;
 
-    fn from_default_type(ty: Type<pernixc_term::Default>) -> Type<Self> {
+    fn from_default_type(ty: Type<term::Default>) -> Type<Self> {
         Type::from_other_model(ty)
     }
 
     fn from_default_lifetime(
-        lifetime: Lifetime<pernixc_term::Default>,
+        lifetime: Lifetime<term::Default>,
     ) -> Lifetime<Self> {
         Lifetime::from_other_model(lifetime)
     }
 
     fn from_default_constant(
-        constant: Constant<pernixc_term::Default>,
+        constant: Constant<term::Default>,
     ) -> Constant<Self> {
         Constant::from_other_model(constant)
     }

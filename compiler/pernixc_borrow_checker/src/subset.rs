@@ -4,9 +4,6 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
-use pernixc_component::{
-    fields::Fields, function_signature::FunctionSignature,
-};
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::Address,
@@ -22,21 +19,28 @@ use pernixc_ir::{
     Representation, Values,
 };
 use pernixc_semantic::{
-    component::{Parent, SymbolKind},
+    component::{
+        derived::{
+            elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
+            fields::Fields,
+            function_signature::FunctionSignature,
+            generic_parameters::{GenericParameters, LifetimeParameterID},
+            variances::Variance,
+            variant,
+        },
+        input::{Parent, SymbolKind},
+    },
     diagnostic::Diagnostic,
-    GlobalID,
+    table::GlobalID,
+    term::{
+        instantiation::{self, Instantiation},
+        predicate::{self, PositiveTrait, Predicate},
+        r#type::Type,
+        visitor::RecursiveIterator,
+        Model, ModelOf,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-    generic_parameter::{GenericParameters, LifetimeParameterID},
-    instantiation::{self, Instantiation},
-    predicate::{self, PositiveTrait, Predicate},
-    r#type::Type,
-    variance::Variance,
-    visitor::RecursiveIterator,
-    Model, ModelOf,
-};
 use pernixc_transitive_closure::TransitiveClosure;
 use pernixc_type_system::{
     compatible::Compatibility,
@@ -560,15 +564,14 @@ pub(super) fn get_changes_of_variant(
 ) -> Result<Changes, Abort> {
     let enum_id = GlobalID::new(
         variant.variant_id.target_id,
-        environment.table().get::<Parent>(variant.variant_id).parent.unwrap(),
+        environment.table().get::<Parent>(variant.variant_id).unwrap(),
     );
 
     let enum_generic_parameters =
         environment.table().query::<GenericParameters>(enum_id)?;
 
-    let variant_sym = environment
-        .table()
-        .query::<pernixc_component::variant::Variant>(variant.variant_id)?;
+    let variant_sym =
+        environment.table().query::<variant::Variant>(variant.variant_id)?;
 
     let instantiation = Instantiation::from_generic_arguments(
         variant.generic_arguments.clone(),
@@ -804,7 +807,6 @@ pub(super) fn get_changes_of_function_call(
                 environment
                     .table()
                     .get::<Parent>(function_call.callable_id)
-                    .parent
                     .unwrap(),
             );
 
@@ -844,7 +846,6 @@ pub(super) fn get_changes_of_function_call(
                 environment
                     .table()
                     .get::<Parent>(function_call.callable_id)
-                    .parent
                     .unwrap(),
             );
 
