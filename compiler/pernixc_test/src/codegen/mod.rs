@@ -4,10 +4,12 @@
 //! code execute to the expected result. Each test will target a specific
 //! language feature such as variable declaration, function declaration, etc.
 
-use std::{path::Path, process::ExitCode};
+use std::process::ExitCode;
 
 use assert_cmd::Command;
-use pernixc_driver::{Arguments, Input, OptimizationLevel, Output, Run};
+use pernixc_driver::{
+    Arguments, Build, Input, OptimizationLevel, Output, TargetKind,
+};
 
 mod aggregate_drop;
 mod alignof;
@@ -38,42 +40,6 @@ mod tuple_unpack;
 mod zst_borrowing;
 mod zst_optimization;
 
-fn invoke_linker_command(obj: &Path, out: &Path) {
-    if cfg!(target_os = "macos") {
-        Command::new("cc")
-            .arg("-o")
-            .arg(out)
-            .arg(obj)
-            .arg("-Wl")
-            .arg("-dead_strip")
-            .assert()
-            .success();
-    } else if cfg!(target_os = "linux") {
-        Command::new("cc")
-            .arg("-o")
-            .arg(out)
-            .arg(obj)
-            .arg("-no-pie")
-            .arg("-W")
-            .arg("--data-sections")
-            .assert()
-            .success();
-    } else if cfg!(target_os = "windows") {
-        // NOTE: not really sure about the flags; need further testing.
-        Command::new("link")
-            .arg("/out:")
-            .arg(out)
-            .arg(obj)
-            .arg("kernel32.lib")
-            .arg("ucrt.lib")
-            .arg("msvcrt.lib")
-            .assert()
-            .success();
-    } else {
-        panic!("Unsupported target OS");
-    }
-}
-
 fn compile_file(content: &str) -> std::process::Output {
     compile_file_with(content, |_| ())
 }
@@ -85,7 +51,6 @@ fn compile_file_with(
     let temp_dir = tempfile::tempdir().unwrap();
 
     let source_file = temp_dir.path().join("source.pnx");
-    let object_file = temp_dir.path().join("object.o");
     let executable_file = temp_dir.path().join("executable");
 
     std::fs::write(&source_file, content.as_bytes()).unwrap();
@@ -93,22 +58,20 @@ fn compile_file_with(
     // invoke the compiler and create the object file
     assert_eq!(
         pernixc_driver::run(&Arguments {
-            command: pernixc_driver::Command::Run(Run {
+            command: pernixc_driver::Command::Build(Build {
                 input: Input {
                     file: source_file,
                     target_name: Some("test".to_string()),
                     library_paths: Vec::new(),
                     show_progress: false,
                 },
-                output: Output { output: Some(object_file.clone()) },
+                output: Output { output: Some(executable_file.clone()) },
                 opt_level: OptimizationLevel::O3,
+                kind: TargetKind::Executable,
             }),
         }),
         ExitCode::SUCCESS
     );
-
-    // invoke the linker
-    invoke_linker_command(&object_file, &executable_file);
 
     // execute the executable
     let mut command = Command::new(&executable_file);
