@@ -5,22 +5,23 @@ use std::collections::{hash_map::Entry, HashMap};
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::{
+        derived::generic_parameters::{
+            ConstantParameterID, GenericParameters, LifetimeParameterID,
+            TypeParameterID,
+        },
+        input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    table::{GlobalID, Table},
+    term::{
+        constant::Constant, generic_arguments::GenericArguments,
+        lifetime::Lifetime, r#type::Type, Model,
+    },
 };
 use pernixc_source_file::Span;
 use pernixc_syntax::syntax_tree::{
     self, GenericIdentifier, QualifiedIdentifier, QualifiedIdentifierRoot,
-};
-use pernixc_semantic::term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        ConstantParameterID, GenericParameters, LifetimeParameterID,
-        TypeParameterID,
-    },
-    lifetime::Lifetime,
-    r#type::Type,
-    Model,
 };
 use qualified_identifier::Resolution;
 

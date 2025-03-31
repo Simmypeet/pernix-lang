@@ -2,9 +2,11 @@
 
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
-use pernixc_semantic::{component::SymbolKind, GlobalID, Table};
+use pernixc_semantic::{
+    component::{derived::generic_parameters::GenericKind, input::SymbolKind},
+    table::{GlobalID, Table},
+};
 use pernixc_source_file::Span;
-use pernixc_semantic::term::generic_parameter::GenericKind;
 
 /// The lifetime parameter was not found in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

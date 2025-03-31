@@ -4,26 +4,33 @@
 use std::fmt::Debug;
 
 use pernixc_abort::Abort;
-use pernixc_component::type_alias::TypeAlias;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::Identifier;
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::{
+        derived::{
+            generic_parameters::{GenericKind, GenericParameters},
+            type_alias::TypeAlias,
+        },
+        input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    table::{GlobalID, Table},
+    term::{
+        self,
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        r#type::{
+            Array, Phantom, Pointer, Primitive, Qualifier, Reference,
+            TraitMember, Type,
+        },
+        Default, MemberSymbol, Model, ModelOf, Symbol, Tuple, TupleElement,
+    },
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
-};
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::{GenericKind, GenericParameters},
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    r#type::{
-        Array, Phantom, Pointer, Primitive, Qualifier, Reference, TraitMember,
-        Type,
-    },
-    Default, MemberSymbol, Model, ModelOf, Symbol, Tuple, TupleElement,
 };
 
 use crate::{
@@ -156,7 +163,7 @@ pub(super) fn resolve_generic_arguments<M: Model>(
 #[allow(clippy::too_many_arguments)]
 fn resolve_generic_arguments_kinds<
     'a,
-    T: ModelOf + From<pernixc_term::Error> + Clone + Debug,
+    T: ModelOf + From<term::Error> + Clone + Debug,
     P: 'a + Debug,
 >(
     generic_arguments: impl ExactSizeIterator<Item = T>,
@@ -188,7 +195,7 @@ where
             }));
 
             // return the error terms
-            return parameters.map(|_| pernixc_term::Error.into()).collect();
+            return parameters.map(|_| term::Error.into()).collect();
         };
 
         parameters.map(|_| provider.create()).collect()
@@ -234,8 +241,7 @@ where
             let extra_term_count = parameters.len() - arguments.len();
 
             arguments.extend(
-                std::iter::repeat(pernixc_term::Error.into())
-                    .take(extra_term_count),
+                std::iter::repeat(term::Error.into()).take(extra_term_count),
             );
         }
 
@@ -357,7 +363,7 @@ pub(super) fn resolve_lifetime<M: Model>(
                         unexpected_span: elided.span(),
                         generic_kind: GenericKind::Lifetime,
                     }));
-                    Lifetime::Error(pernixc_term::Error)
+                    Lifetime::Error(term::Error)
                 },
                 ElidedTermProvider::create,
             )
@@ -395,7 +401,7 @@ pub(super) fn resolve_lifetime_parameter<M: Model>(
         referred_span: identifier.span(),
         referring_site,
     }));
-    Lifetime::Error(pernixc_term::Error)
+    Lifetime::Error(term::Error)
 }
 
 #[allow(clippy::result_large_err)]
@@ -419,7 +425,7 @@ fn resolution_to_type<M: Model>(
                     let Ok(generic_parameters) =
                         table.query::<GenericParameters>(symbol.id)
                     else {
-                        return Ok(Type::Error(pernixc_term::Error));
+                        return Ok(Type::Error(term::Error));
                     };
 
                     let instantiation = Instantiation::from_generic_arguments(
@@ -433,7 +439,7 @@ fn resolution_to_type<M: Model>(
                         .query::<TypeAlias>(symbol.id)
                         .map(|x| M::from_default_type(x.0.clone()))
                     else {
-                        return Ok(Type::Error(pernixc_term::Error));
+                        return Ok(Type::Error(term::Error));
                     };
 
                     instantiation::instantiate(&mut result_ty, &instantiation);
@@ -496,7 +502,7 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
         config,
         handler,
     ) else {
-        return Type::Error(pernixc_term::Error);
+        return Type::Error(term::Error);
     };
 
     match resolution_to_type(table, resolution) {
@@ -507,7 +513,7 @@ pub(super) fn resolve_qualified_identifier_type<M: Model>(
                 resolved_global_id: resolution.global_id(),
             }));
 
-            Type::Error(pernixc_term::Error)
+            Type::Error(term::Error)
         }
     }
 }
@@ -572,7 +578,7 @@ pub(super) fn resolve_type<M: Model>(
                     unexpected_span: reference.ampersand.span(),
                     generic_kind: GenericKind::Lifetime,
                 }));
-                Lifetime::Error(pernixc_term::Error)
+                Lifetime::Error(term::Error)
             };
 
             let qualifier = if reference.mutable_keyword.is_some() {
@@ -651,7 +657,7 @@ pub(super) fn resolve_type<M: Model>(
                 handler.receive(Box::new(MoreThanOneUnpackedInTupleType {
                     illegal_tuple_type_span: syntax_tree.span(),
                 }));
-                return Type::Error(pernixc_term::Error);
+                return Type::Error(term::Error);
             }
 
             Type::Tuple(Tuple { elements })
@@ -685,7 +691,7 @@ pub(super) fn resolve_type<M: Model>(
                         unexpected_span: elided.span(),
                         generic_kind: GenericKind::Type,
                     }));
-                    Type::Error(pernixc_term::Error)
+                    Type::Error(term::Error)
                 },
                 |provider| provider.create(),
             )
