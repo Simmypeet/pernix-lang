@@ -9,7 +9,6 @@ rust-version.workspace = true
 [dependencies]
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_semantic = { path = "../pernixc_semantic" }
-pernixc_term = { path = "../pernixc_term" }
 pernixc_arena = { path = "../pernixc_arena" }
 derive_more = { workspace = true }
 serde = { workspace = true }
