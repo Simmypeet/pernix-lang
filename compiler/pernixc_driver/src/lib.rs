@@ -24,7 +24,6 @@ use parking_lot::RwLock;
 use pernixc_builder::{reflector::ComponentTag, Compilation};
 use pernixc_diagnostic::Report;
 use pernixc_handler::Storage;
-use pernixc_intrinsic::IntrinsicExt;
 use pernixc_log::{
     formatting::{Color, Style},
     Message, Severity,
@@ -446,7 +445,6 @@ fn semantic_analysis(
     let reflector = pernixc_builder::reflector::get();
 
     let mut table = Table::new(storage.clone());
-    table.initialize_core();
 
     let link_library_ids =
         link_libraries(&mut table, library_paths, &reflector)?;

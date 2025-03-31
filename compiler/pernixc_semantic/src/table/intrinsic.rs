@@ -1,7 +1,9 @@
 //! The crate initializes the `core` target for the [`Table`].
 
 use pernixc_arena::Arena;
-use pernixc_semantic::{
+use strum::IntoEnumIterator;
+
+use crate::{
     component::{
         derived::{
             elided_lifetimes::{
@@ -32,17 +34,6 @@ use pernixc_semantic::{
         Default, Tuple,
     },
 };
-use strum::IntoEnumIterator;
-
-/// An extension trait on the [`Table`] to initialize the `core` target.
-pub trait IntrinsicExt {
-    /// Initializes the `core` target for the [`Table`].
-    ///
-    /// # Panics
-    ///
-    /// This assumes that the `core` target has not been initialized yet.
-    fn initialize_core(&self);
-}
 
 /*
 // Copy marker synopsis:
@@ -93,8 +84,9 @@ public function alignof[T]() -> usize
 public function dropAt[T](pointer: *mut T)
   */
 
-impl IntrinsicExt for Table {
-    fn initialize_core(&self) {
+impl Table {
+    /// Initializes the core module with intrinsic types and functions.
+    pub(super) fn initialize_core(&self) {
         let root_core_module_id =
             GlobalID::new(TargetID::CORE, table::ID::ROOT_MODULE);
 

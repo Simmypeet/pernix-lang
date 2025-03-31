@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use pernixc_handler::Panic;
-use pernixc_intrinsic::IntrinsicExt;
 use pernixc_semantic::{
     diagnostic::Diagnostic,
     table::{Table, TargetID},
@@ -17,7 +16,6 @@ pub fn build_table(
     source: impl std::fmt::Display,
 ) -> (Table, Vec<Box<dyn Diagnostic>>) {
     let mut table = Table::new(Arc::new(Panic));
-    table.initialize_core();
 
     let (_, errors) = add_target(
         &mut table,

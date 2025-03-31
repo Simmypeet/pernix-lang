@@ -30,6 +30,7 @@ use crate::{
 pub mod arbitrary;
 pub mod deserialization;
 pub mod input;
+pub mod intrinsic;
 pub mod query;
 pub mod resolution;
 
@@ -638,11 +639,15 @@ impl Table {
     /// Creates a new empty [`Table`] with the given handler.
     #[must_use]
     pub fn new(handler: Arc<dyn Handler<Box<dyn Diagnostic>>>) -> Self {
-        Self {
+        let table = Self {
             representation: Representation::default(),
             query_context: Mutex::new(Context::default()),
             handler,
-        }
+        };
+
+        table.initialize_core();
+
+        table
     }
 
     /// Sets the builder for the given derived component type.
