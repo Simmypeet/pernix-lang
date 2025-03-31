@@ -77,7 +77,7 @@ public function main():
 "#;
 
 #[test]
-fn drop() {
+fn aggregate_drop() {
     let output = compile_file_with(SOURCE, |x| {
         x.write_stdin("1 2 3 4 5 6 7");
     });
