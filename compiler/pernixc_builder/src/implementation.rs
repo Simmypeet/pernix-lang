@@ -6,7 +6,7 @@ use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
-use pernixc_table::{
+use pernixc_semantic::{
     component::{
         syntax_tree::ImplementationQualifiedIdentifier as SyntaxTree, Derived,
         Implements, SymbolKind,

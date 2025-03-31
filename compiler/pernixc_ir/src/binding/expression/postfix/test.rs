@@ -1,6 +1,6 @@
 use pernixc_handler::{Panic, Storage};
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implemented, Member},
     diagnostic::Diagnostic,
     GlobalID,

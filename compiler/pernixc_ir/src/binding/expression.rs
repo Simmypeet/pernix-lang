@@ -8,7 +8,7 @@ use pernixc_handler::Handler;
 use pernixc_lexical::token;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, Label};
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Qualifier, Type};
 
 use super::{

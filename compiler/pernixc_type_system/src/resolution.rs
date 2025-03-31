@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation as ImplementationComponent;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implemented, Implements, SymbolKind, TraitImplementation},
     GlobalID,
 };

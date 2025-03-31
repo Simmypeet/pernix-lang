@@ -5,7 +5,7 @@ use pernixc_component::fields::{Field, Fields};
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{GlobalID, Table};
+use pernixc_semantic::{GlobalID, Table};
 
 /// The field with the same name already exists in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

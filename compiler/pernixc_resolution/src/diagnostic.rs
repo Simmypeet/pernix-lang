@@ -2,8 +2,8 @@
 
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
+use pernixc_semantic::{component::SymbolKind, GlobalID, Table};
 use pernixc_source_file::Span;
-use pernixc_table::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::generic_parameter::GenericKind;
 
 /// The lifetime parameter was not found in the given scope.

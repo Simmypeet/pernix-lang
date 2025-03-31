@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashSet, fmt::Debug, sync::Arc};
 
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implemented, Parent, SymbolKind},
     GlobalID, Table,
 };
@@ -55,7 +55,7 @@ pub trait Property<T>: 'static + Debug {
 #[derive(Debug)]
 pub struct ByEquality {
     pub equality: TraitMember<Default>,
-    pub trait_id: pernixc_table::ID,
+    pub trait_id: pernixc_semantic::ID,
     pub property: Box<dyn Property<Type<Default>>>,
 }
 
@@ -113,7 +113,7 @@ impl Arbitrary for ByEquality {
         let args =
             args.unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (TraitMember::arbitrary(), pernixc_table::ID::arbitrary(), args)
+        (TraitMember::arbitrary(), pernixc_semantic::ID::arbitrary(), args)
             .prop_map(|(equality, trait_id, property)| Self {
                 equality: TraitMember(MemberSymbol {
                     id: equality.0.id,

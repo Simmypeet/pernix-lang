@@ -9,7 +9,7 @@ use inkwell::targets::TargetData;
 use pernixc_abort::Abort;
 use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Name, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID, Table,
@@ -129,7 +129,7 @@ pub fn codegen<'ctx>(
             .table
             .get::<Name>(GlobalID::new(
                 input.main_function_id.target_id,
-                pernixc_table::ID::ROOT_MODULE,
+                pernixc_semantic::ID::ROOT_MODULE,
             ))
             .as_str(),
     );

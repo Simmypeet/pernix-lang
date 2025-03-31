@@ -2,7 +2,7 @@
 
 use pernixc_abort::Abort;
 use pernixc_source_file::Span;
-use pernixc_table::Table;
+use pernixc_semantic::Table;
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, Default, ModelOf,
     Never,
@@ -92,7 +92,7 @@ pub struct Model;
 )]
 pub struct Erased;
 
-impl pernixc_table::Display for Erased {
+impl pernixc_semantic::Display for Erased {
     fn fmt(
         &self,
         _: &Table,
@@ -137,7 +137,7 @@ impl From<Never> for NoConstraint {
     fn from(never: Never) -> Self { match never {} }
 }
 
-impl pernixc_table::Display for NoConstraint {
+impl pernixc_semantic::Display for NoConstraint {
     fn fmt(
         &self,
         _: &Table,
@@ -147,7 +147,7 @@ impl pernixc_table::Display for NoConstraint {
     }
 }
 
-impl pernixc_table::Display for Constraint {
+impl pernixc_semantic::Display for Constraint {
     #[allow(clippy::enum_glob_use)]
     fn fmt(
         &self,

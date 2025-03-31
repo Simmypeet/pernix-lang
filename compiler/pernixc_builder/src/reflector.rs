@@ -10,7 +10,7 @@ use pernixc_storage::{
     serde::{MergerFn, Reflector},
     ArcTrait,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{
         Accessibility, Extern, Implemented, Implements, LocationSpan, Member,
         Name, Parent, PositiveTraitImplementation, SymbolKind,

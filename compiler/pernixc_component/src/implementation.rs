@@ -1,6 +1,6 @@
 //! Contains the definition of [`Implementation`] cmoponent.
 
-use pernixc_table::component::Derived;
+use pernixc_semantic::component::Derived;
 use pernixc_term::{generic_arguments::GenericArguments, Default};
 use serde::{Deserialize, Serialize};
 

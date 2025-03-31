@@ -7,12 +7,12 @@ use pernixc_abort::Abort;
 use pernixc_component::type_alias::TypeAlias;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::Identifier;
+use pernixc_semantic::{
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+};
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
-};
-use pernixc_table::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments,

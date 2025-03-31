@@ -7,7 +7,7 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     control_flow_graph::Point, value::register::Register, Representation,
 };
-use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic, GlobalID};
+use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic, GlobalID};
 use pernixc_term::{
     r#type::Type, variance::Variance, visitor::RecursiveIterator, Model,
 };

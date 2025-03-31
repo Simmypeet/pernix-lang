@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use pernixc_handler::Panic;
-use pernixc_table::Table;
+use pernixc_semantic::Table;
 use pernixc_term::r#type::{Primitive, Type};
 use pernixc_type_system::environment::Premise;
 

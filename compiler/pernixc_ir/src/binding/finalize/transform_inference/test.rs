@@ -1,6 +1,6 @@
 use pernixc_handler::{Panic, Storage};
 use pernixc_syntax::utility::parse;
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     r#type::{Primitive, Type},

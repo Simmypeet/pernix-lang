@@ -17,7 +17,7 @@ use pernixc_component::{
     variant::Variant,
 };
 use pernixc_ir::model::Erased;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Member, Name, SymbolKind, VariantDeclarationOrder},
     DisplayObject, GlobalID,
 };

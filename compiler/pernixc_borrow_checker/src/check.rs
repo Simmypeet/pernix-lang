@@ -9,7 +9,7 @@ use pernixc_ir::{
     Representation,
 };
 use pernixc_source_file::Span;
-use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic, GlobalID};
+use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic, GlobalID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     lifetime::Lifetime,

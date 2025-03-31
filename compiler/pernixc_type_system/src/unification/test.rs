@@ -2,7 +2,7 @@ use std::{
     borrow::Cow, collections::HashSet, fmt::Debug, result::Result, sync::Arc,
 };
 
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implemented, Parent, SymbolKind},
     GlobalID, Table,
 };
@@ -385,7 +385,7 @@ impl Arbitrary for SymbolCongruence {
 pub struct Mapping {
     pub property: Box<dyn Property<Type<Default>>>,
     pub trait_member: TraitMember<Default>,
-    pub trait_id: pernixc_table::ID,
+    pub trait_id: pernixc_semantic::ID,
 }
 
 impl Property<Type<Default>> for Mapping {
@@ -446,7 +446,7 @@ impl Arbitrary for Mapping {
         let strategy = strategy
             .unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (strategy, TraitMember::arbitrary(), pernixc_table::ID::arbitrary())
+        (strategy, TraitMember::arbitrary(), pernixc_semantic::ID::arbitrary())
             .prop_map(|(property, trait_member, trait_id)| Self {
                 property,
                 trait_id,

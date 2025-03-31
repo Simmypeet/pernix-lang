@@ -16,7 +16,7 @@ use pernixc_component::{
     implementation::Implementation,
 };
 use pernixc_source_file::Span;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Member, Parent, SymbolKind},
     GlobalID, Table,
 };

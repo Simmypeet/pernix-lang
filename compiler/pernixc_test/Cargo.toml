@@ -13,7 +13,7 @@ pernixc_memory_checker = { path = "../pernixc_memory_checker" }
 pernixc_borrow_checker = { path = "../pernixc_borrow_checker" }
 pernixc_resolution = { path = "../pernixc_resolution" }
 pernixc_syntax = { path = "../pernixc_syntax" }
-pernixc_table = { path = "../pernixc_table" }
+pernixc_semantic = { path = "../pernixc_semantic" }
 pernixc_builder = { path = "../pernixc_builder" }
 pernixc_ir = { path = "../pernixc_ir" }
 pernixc_term = { path = "../pernixc_term" }

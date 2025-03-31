@@ -2,7 +2,7 @@ use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Parent, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID,

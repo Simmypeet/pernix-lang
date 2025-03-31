@@ -20,7 +20,7 @@ use pernixc_ir::{
     Representation, Values,
 };
 use pernixc_source_file::Span;
-use pernixc_table::{
+use pernixc_semantic::{
     component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::{

@@ -1,7 +1,7 @@
 //! Contains the definition of the [`ElidedLifetimes`] component.
 
 use pernixc_arena::{Arena, ID};
-use pernixc_table::{component::Derived, MemberID};
+use pernixc_semantic::{component::Derived, MemberID};
 use serde::{Deserialize, Serialize};
 
 /// Represents a lifetime that has been generated implicitly by the compiler

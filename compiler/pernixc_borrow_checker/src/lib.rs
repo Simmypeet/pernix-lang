@@ -215,8 +215,8 @@ use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
 use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, Representation, Values};
+use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_source_file::Span;
-use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_term::{
     constant::Constant,
     elided_lifetimes::ElidedLifetimeID,
@@ -317,7 +317,7 @@ impl<M: pernixc_term::Model> From<UniversalRegion> for Lifetime<M> {
     }
 }
 
-impl pernixc_table::Display for UniversalRegion {
+impl pernixc_semantic::Display for UniversalRegion {
     fn fmt(
         &self,
         table: &Table,

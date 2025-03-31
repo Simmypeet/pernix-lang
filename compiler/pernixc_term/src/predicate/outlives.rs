@@ -1,4 +1,4 @@
-use pernixc_table::{DisplayObject, Table};
+use pernixc_semantic::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 
 use super::contains_error;
@@ -28,9 +28,9 @@ impl<T: ModelOf> Outlives<T> {
     }
 }
 
-impl<T: pernixc_table::Display + ModelOf> pernixc_table::Display for Outlives<T>
+impl<T: pernixc_semantic::Display + ModelOf> pernixc_semantic::Display for Outlives<T>
 where
-    Lifetime<T::Model>: pernixc_table::Display,
+    Lifetime<T::Model>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

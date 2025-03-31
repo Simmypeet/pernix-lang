@@ -8,7 +8,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use pernixc_component::implementation::Implementation;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{
         Implemented, Implements, PositiveTraitImplementation, SymbolKind,
         TraitImplementation,

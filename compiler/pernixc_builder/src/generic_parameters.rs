@@ -13,7 +13,7 @@ use pernixc_syntax::syntax_tree::{
     item::generic_parameter::GenericParameter as GenericParameterSyn,
     ConnectedList,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{
         syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
     },

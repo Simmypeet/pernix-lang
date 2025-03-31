@@ -20,7 +20,7 @@ use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, QualifiedIdentifierRoot,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table,

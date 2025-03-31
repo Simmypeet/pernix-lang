@@ -8,7 +8,7 @@ use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
-use pernixc_table::{
+use pernixc_semantic::{
     component::{
         Extern, ExternC, FunctionUnsafeness, Implemented, Implements, Import,
         Member, Parent, SymbolKind,

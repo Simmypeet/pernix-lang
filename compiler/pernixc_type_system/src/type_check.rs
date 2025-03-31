@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
 use derive_new::new;
 use pernixc_component::{fields::Fields, variant::Variant};
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Parent, SymbolKind},
     GlobalID,
 };

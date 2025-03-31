@@ -4,7 +4,7 @@ use std::fmt;
 
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use pernixc_table::{DisplayObject, Table};
+use pernixc_semantic::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
@@ -156,9 +156,9 @@ pub struct Phantom<M: Model>(pub Box<Type<M>>);
 )]
 pub struct TraitMember<M: Model>(pub MemberSymbol<M>);
 
-impl<M: Model> pernixc_table::Display for TraitMember<M>
+impl<M: Model> pernixc_semantic::Display for TraitMember<M>
 where
-    GenericArguments<M>: pernixc_table::Display,
+    GenericArguments<M>: pernixc_semantic::Display,
 {
     fn fmt(&self, table: &Table, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", DisplayObject { display: &self.0, table })
@@ -178,11 +178,11 @@ pub struct FunctionSignature<M: Model> {
     pub return_type: Box<Type<M>>,
 }
 
-impl<M: Model> pernixc_table::Display for FunctionSignature<M>
+impl<M: Model> pernixc_semantic::Display for FunctionSignature<M>
 where
-    M::TypeInference: pernixc_table::Display,
-    Constant<M>: pernixc_table::Display,
-    Lifetime<M>: pernixc_table::Display,
+    M::TypeInference: pernixc_semantic::Display,
+    Constant<M>: pernixc_semantic::Display,
+    Lifetime<M>: pernixc_semantic::Display,
 {
     fn fmt(&self, table: &Table, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "function(")?;
@@ -1170,11 +1170,11 @@ impl<M: Model> Match for Type<M> {
     }
 }
 
-impl<M: Model> pernixc_table::Display for Array<M>
+impl<M: Model> pernixc_semantic::Display for Array<M>
 where
-    M::TypeInference: pernixc_table::Display,
-    Constant<M>: pernixc_table::Display,
-    Lifetime<M>: pernixc_table::Display,
+    M::TypeInference: pernixc_semantic::Display,
+    Constant<M>: pernixc_semantic::Display,
+    Lifetime<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,
@@ -1190,11 +1190,11 @@ where
     }
 }
 
-impl<M: Model> pernixc_table::Display for Type<M>
+impl<M: Model> pernixc_semantic::Display for Type<M>
 where
-    M::TypeInference: pernixc_table::Display,
-    Constant<M>: pernixc_table::Display,
-    Lifetime<M>: pernixc_table::Display,
+    M::TypeInference: pernixc_semantic::Display,
+    Constant<M>: pernixc_semantic::Display,
+    Lifetime<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

@@ -2,7 +2,7 @@
 
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
-use pernixc_table::{component::LocationSpan, GlobalID, Table};
+use pernixc_semantic::{component::LocationSpan, GlobalID, Table};
 
 /// The `main` symbol is reserved from the main function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

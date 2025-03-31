@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use pernixc_table::component::Derived;
+use pernixc_semantic::component::Derived;
 use pernixc_term::{
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},

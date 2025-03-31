@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_component::implied_predicates::ImpliedPredicates;
 use pernixc_source_file::Span;
-use pernixc_table::{component::SymbolKind, GlobalID, Table};
+use pernixc_semantic::{component::SymbolKind, GlobalID, Table};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     instantiation::{self, Instantiation},

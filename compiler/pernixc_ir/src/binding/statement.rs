@@ -3,7 +3,7 @@
 use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Qualifier, Type};
 
 use super::{

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use pernixc_arena::ID;
-use pernixc_table::component::Derived;
+use pernixc_semantic::component::Derived;
 use serde::{Deserialize, Serialize};
 
 use crate::generic_parameter::{LifetimeParameter, TypeParameter};

@@ -7,7 +7,7 @@ use pernixc_component::{
     implementation::Implementation,
     implied_predicates::{ImpliedPredicate, ImpliedPredicates},
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{
         Accessibility, FunctionConstness, FunctionUnsafeness, Implemented,
         Implements, Import, Member, Name, Parent, SymbolKind,
@@ -91,7 +91,7 @@ public function dropAt[T](pointer: *mut T)
 impl IntrinsicExt for Table {
     fn initialize_core(&self) {
         let root_core_module_id =
-            GlobalID::new(TargetID::CORE, pernixc_table::ID::ROOT_MODULE);
+            GlobalID::new(TargetID::CORE, pernixc_semantic::ID::ROOT_MODULE);
 
         assert!(self.add_component(root_core_module_id, SymbolKind::Module));
         assert!(self.add_component(root_core_module_id, Accessibility::Public));
@@ -124,13 +124,13 @@ fn initialize_no_drop(
 ) {
     let no_drop_id = GlobalID::new(
         TargetID::CORE,
-        pernixc_table::ID(id_gen.next().unwrap()),
+        pernixc_semantic::ID(id_gen.next().unwrap()),
     );
 
     assert!(table.add_component(no_drop_id, SymbolKind::Struct));
     assert!(table.add_component(no_drop_id, Name("NoDrop".to_string())));
     assert!(table.add_component(no_drop_id, Parent {
-        parent: Some(pernixc_table::ID::ROOT_MODULE)
+        parent: Some(pernixc_semantic::ID::ROOT_MODULE)
     }));
     assert!(table.add_component(no_drop_id, Accessibility::Public));
     let t_id;
@@ -177,13 +177,13 @@ fn initialize_drop_at(
 ) {
     let drop_at_id = GlobalID::new(
         TargetID::CORE,
-        pernixc_table::ID(id_gen.next().unwrap()),
+        pernixc_semantic::ID(id_gen.next().unwrap()),
     );
 
     assert!(table.add_component(drop_at_id, SymbolKind::Function));
     assert!(table.add_component(drop_at_id, Name("dropAt".to_string())));
     assert!(table.add_component(drop_at_id, Parent {
-        parent: Some(pernixc_table::ID::ROOT_MODULE)
+        parent: Some(pernixc_semantic::ID::ROOT_MODULE)
     }));
     let mut generic_params = GenericParameters::default();
     let t_id = generic_params
@@ -229,13 +229,13 @@ fn initialize_sizeof(
 ) {
     let sizeof_id = GlobalID::new(
         TargetID::CORE,
-        pernixc_table::ID(id_gen.next().unwrap()),
+        pernixc_semantic::ID(id_gen.next().unwrap()),
     );
 
     assert!(table.add_component(sizeof_id, SymbolKind::Function));
     assert!(table.add_component(sizeof_id, Name("sizeof".to_string())));
     assert!(table.add_component(sizeof_id, Parent {
-        parent: Some(pernixc_table::ID::ROOT_MODULE)
+        parent: Some(pernixc_semantic::ID::ROOT_MODULE)
     }));
     assert!(table.add_component(sizeof_id, {
         let mut generic_params = GenericParameters::default();
@@ -272,13 +272,13 @@ fn initialize_alignof(
 ) {
     let alignof_id = GlobalID::new(
         TargetID::CORE,
-        pernixc_table::ID(id_gen.next().unwrap()),
+        pernixc_semantic::ID(id_gen.next().unwrap()),
     );
 
     assert!(table.add_component(alignof_id, SymbolKind::Function));
     assert!(table.add_component(alignof_id, Name("alignof".to_string())));
     assert!(table.add_component(alignof_id, Parent {
-        parent: Some(pernixc_table::ID::ROOT_MODULE)
+        parent: Some(pernixc_semantic::ID::ROOT_MODULE)
     }));
     assert!(table.add_component(alignof_id, {
         let mut generic_params = GenericParameters::default();
@@ -316,12 +316,12 @@ fn initialize_copy_marker(
 ) {
     let id = id_gen.next().unwrap();
 
-    let copy_marker_id = GlobalID::new(TargetID::CORE, pernixc_table::ID(id));
+    let copy_marker_id = GlobalID::new(TargetID::CORE, pernixc_semantic::ID(id));
 
     assert!(table.add_component(copy_marker_id, SymbolKind::Marker));
     assert!(table.add_component(copy_marker_id, Name("Copy".to_string())));
     assert!(table.add_component(copy_marker_id, Parent {
-        parent: Some(pernixc_table::ID::ROOT_MODULE)
+        parent: Some(pernixc_semantic::ID::ROOT_MODULE)
     }));
     assert!(table.add_component(copy_marker_id, {
         let mut generic_params = GenericParameters::default();
@@ -347,7 +347,7 @@ fn initialize_copy_marker(
     for primitive in Primitive::iter() {
         let impl_id = GlobalID::new(
             TargetID::CORE,
-            pernixc_table::ID(id_gen.next().unwrap()),
+            pernixc_semantic::ID(id_gen.next().unwrap()),
         );
 
         assert!(table
@@ -373,7 +373,7 @@ fn initialize_copy_marker(
     {
         let impl_id = GlobalID::new(
             TargetID::CORE,
-            pernixc_table::ID(id_gen.next().unwrap()),
+            pernixc_semantic::ID(id_gen.next().unwrap()),
         );
         let mut generic_parameters = GenericParameters::default();
         let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
@@ -430,7 +430,7 @@ fn initialize_copy_marker(
     {
         let impl_id = GlobalID::new(
             TargetID::CORE,
-            pernixc_table::ID(id_gen.next().unwrap()),
+            pernixc_semantic::ID(id_gen.next().unwrap()),
         );
         let mut generic_parameters = GenericParameters::default();
         let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
@@ -487,7 +487,7 @@ fn initialize_copy_marker(
     let mut impl_pointer = |mutable| {
         let impl_id = GlobalID::new(
             TargetID::CORE,
-            pernixc_table::ID(id_gen.next().unwrap()),
+            pernixc_semantic::ID(id_gen.next().unwrap()),
         );
         let mut generic_parameters = GenericParameters::default();
         let t_ty = Type::Parameter(TypeParameterID::new(
@@ -530,11 +530,11 @@ fn initialize_drop_trait(
 ) {
     let drop_trait_id = GlobalID::new(
         TargetID::CORE,
-        pernixc_table::ID(id_gen.next().unwrap()),
+        pernixc_semantic::ID(id_gen.next().unwrap()),
     );
     let drop_function_id = GlobalID::new(
         TargetID::CORE,
-        pernixc_table::ID(id_gen.next().unwrap()),
+        pernixc_semantic::ID(id_gen.next().unwrap()),
     );
 
     let mut trait_generic_params = GenericParameters::default();
@@ -552,7 +552,7 @@ fn initialize_drop_trait(
     assert!(table.add_component(drop_trait_id, Name("Drop".to_string())));
     assert!(table.add_component(drop_trait_id, ForallLifetimes::default()));
     assert!(table.add_component(drop_trait_id, Parent {
-        parent: Some(pernixc_table::ID::ROOT_MODULE)
+        parent: Some(pernixc_semantic::ID::ROOT_MODULE)
     }));
     assert!(table.add_component(drop_trait_id, trait_generic_params));
     assert!(table.add_component(drop_trait_id, WhereClause::default()));

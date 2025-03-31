@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use derive_new::new;
-use pernixc_table::{GlobalID, Table};
+use pernixc_semantic::{GlobalID, Table};
 
 /// Builder for all the components of the symbols.
 #[derive(Clone, new)]

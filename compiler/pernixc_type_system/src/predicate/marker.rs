@@ -4,7 +4,7 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
-use pernixc_table::{component::SymbolKind, GlobalID};
+use pernixc_semantic::{component::SymbolKind, GlobalID};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,

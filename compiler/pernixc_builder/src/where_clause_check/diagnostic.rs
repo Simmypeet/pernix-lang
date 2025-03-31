@@ -3,7 +3,7 @@
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{DisplayObject, Table};
+use pernixc_semantic::{DisplayObject, Table};
 use pernixc_term::{
     predicate::{self, Predicate},
     r#type,

@@ -24,7 +24,7 @@ use constant::Constant;
 use enum_as_inner::EnumAsInner;
 use generic_arguments::GenericArguments;
 use lifetime::Lifetime;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Name, Parent},
     DisplayObject, GlobalID, Table,
 };
@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 )]
 pub enum Never {}
 
-impl pernixc_table::Display for Never {
+impl pernixc_semantic::Display for Never {
     fn fmt(
         &self,
         _: &Table,
@@ -249,9 +249,9 @@ impl<M: Model> ModelOf for MemberSymbol<M> {
     }
 }
 
-impl<M: Model> pernixc_table::Display for MemberSymbol<M>
+impl<M: Model> pernixc_semantic::Display for MemberSymbol<M>
 where
-    GenericArguments<M>: pernixc_table::Display,
+    GenericArguments<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,
@@ -320,9 +320,9 @@ impl<M: Model> ModelOf for Symbol<M> {
     }
 }
 
-impl<M: Model> pernixc_table::Display for Symbol<M>
+impl<M: Model> pernixc_semantic::Display for Symbol<M>
 where
-    GenericArguments<M>: pernixc_table::Display,
+    GenericArguments<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,
@@ -420,7 +420,7 @@ impl<T: ModelOf> Tuple<T> {
     }
 }
 
-impl<T: pernixc_table::Display + Clone> pernixc_table::Display for Tuple<T> {
+impl<T: pernixc_semantic::Display + Clone> pernixc_semantic::Display for Tuple<T> {
     fn fmt(
         &self,
         table: &Table,

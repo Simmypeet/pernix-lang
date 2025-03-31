@@ -10,7 +10,7 @@ use pernixc_component::{
     fields::Fields, implementation::Implementation, variant::Variant,
 };
 use pernixc_ir::model::Erased;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implemented, Member, SymbolKind, VariantDeclarationOrder},
     DisplayObject, GlobalID, TargetID,
 };

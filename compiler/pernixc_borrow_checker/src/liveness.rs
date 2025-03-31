@@ -15,8 +15,10 @@ use pernixc_ir::{
     value::register::Register,
     Representation,
 };
+use pernixc_semantic::{
+    component::SymbolKind, diagnostic::Diagnostic, GlobalID,
+};
 use pernixc_source_file::Span;
-use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic, GlobalID};
 use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},

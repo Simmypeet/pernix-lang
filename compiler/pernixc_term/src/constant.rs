@@ -3,7 +3,7 @@
 use std::{fmt, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_table::{DisplayObject, GlobalID, Table};
+use pernixc_semantic::{DisplayObject, GlobalID, Table};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -562,9 +562,9 @@ impl<M: Model> Match for Constant<M> {
     }
 }
 
-impl<M: Model> pernixc_table::Display for Constant<M>
+impl<M: Model> pernixc_semantic::Display for Constant<M>
 where
-    M::ConstantInference: pernixc_table::Display,
+    M::ConstantInference: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

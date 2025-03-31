@@ -2,7 +2,7 @@
 
 use pernixc_arena::{Arena, ID};
 use pernixc_source_file::Span;
-use pernixc_table::component::Derived;
+use pernixc_semantic::component::Derived;
 use pernixc_term::{r#type::Type, Default};
 use serde::{Deserialize, Serialize};
 

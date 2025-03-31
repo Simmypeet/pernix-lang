@@ -1,7 +1,7 @@
 //! Contains the function [`Environment::get_variance_of()`]
 
 use pernixc_abort::Abort;
-use pernixc_table::component::SymbolKind;
+use pernixc_semantic::component::SymbolKind;
 use pernixc_term::{
     generic_parameter::GenericParameters,
     r#type::{self, Type},

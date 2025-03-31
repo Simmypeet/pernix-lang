@@ -13,7 +13,7 @@ use pernixc_ir::{
     Representation,
 };
 use pernixc_source_file::Span;
-use pernixc_table::{diagnostic::Diagnostic, GlobalID};
+use pernixc_semantic::{diagnostic::Diagnostic, GlobalID};
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,

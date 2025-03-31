@@ -8,7 +8,7 @@ use pernixc_arena::ID;
 use pernixc_component::fields::Field;
 use pernixc_handler::Handler;
 use pernixc_source_file::{SourceElement, Span};
-use pernixc_table::{diagnostic::Diagnostic, GlobalID};
+use pernixc_semantic::{diagnostic::Diagnostic, GlobalID};
 use pernixc_term::r#type::Qualifier;
 
 use crate::{address::Address, instruction::SwitchValue};

@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use pernixc_arena::ID;
-use pernixc_table::component::Derived;
+use pernixc_semantic::component::Derived;
 use pernixc_term::generic_parameter::LifetimeParameter;
 use serde::{Deserialize, Serialize};
 

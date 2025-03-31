@@ -3,7 +3,7 @@
 
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
-use pernixc_table::{diagnostic::Diagnostic, GlobalID};
+use pernixc_semantic::{diagnostic::Diagnostic, GlobalID};
 use pernixc_term::{
     generic_arguments::GenericArguments, instantiation::Instantiation,
     predicate::Predicate, Default, Model,

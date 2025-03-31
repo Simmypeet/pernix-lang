@@ -1,5 +1,5 @@
 use derive_new::new;
-use pernixc_table::{DisplayObject, GlobalID, Table};
+use pernixc_semantic::{DisplayObject, GlobalID, Table};
 use serde::{Deserialize, Serialize};
 
 use super::contains_error;
@@ -85,9 +85,9 @@ impl<M: Model> Positive<M> {
     }
 }
 
-impl<M: Model> pernixc_table::Display for Positive<M>
+impl<M: Model> pernixc_semantic::Display for Positive<M>
 where
-    GenericArguments<M>: pernixc_table::Display,
+    GenericArguments<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,
@@ -181,9 +181,9 @@ impl<M: Model> Negative<M> {
     }
 }
 
-impl<M: Model> pernixc_table::Display for Negative<M>
+impl<M: Model> pernixc_semantic::Display for Negative<M>
 where
-    GenericArguments<M>: pernixc_table::Display,
+    GenericArguments<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

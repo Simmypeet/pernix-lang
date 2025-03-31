@@ -1,4 +1,4 @@
-use pernixc_table::{DisplayObject, Table};
+use pernixc_semantic::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 
 use super::contains_error;
@@ -13,7 +13,7 @@ use crate::{
 )]
 pub struct Tuple<T>(pub T);
 
-impl<T: pernixc_table::Display> pernixc_table::Display for Tuple<T> {
+impl<T: pernixc_semantic::Display> pernixc_semantic::Display for Tuple<T> {
     fn fmt(
         &self,
         table: &Table,

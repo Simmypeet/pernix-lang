@@ -1,4 +1,4 @@
-use pernixc_table::GlobalID;
+use pernixc_semantic::GlobalID;
 use proptest::{
     arbitrary::Arbitrary,
     prop_oneof,

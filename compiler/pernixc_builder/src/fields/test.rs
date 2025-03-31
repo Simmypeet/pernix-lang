@@ -1,5 +1,5 @@
 use pernixc_component::fields::Fields;
-use pernixc_table::component::Accessibility;
+use pernixc_semantic::component::Accessibility;
 use pernixc_term::{
     generic_parameter::{GenericParameters, TypeParameterID},
     r#type::Type,

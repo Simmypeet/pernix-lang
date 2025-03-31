@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use pernixc_table::{component::SymbolKind, GlobalID, Table, TargetID};
+use pernixc_semantic::{component::SymbolKind, GlobalID, Table, TargetID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameter::{
@@ -68,7 +68,7 @@ proptest! {
 fn basic_compatible() {
     // Variance::Covariant: &'a bool :> &'static bool then 'a: 'static
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
-        parent: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
         id: pernixc_arena::ID::new(0),
     });
     let static_lt = Lifetime::Static;
@@ -143,8 +143,8 @@ fn basic_compatible() {
 #[test]
 #[allow(clippy::similar_names)]
 fn compatible_with_adt() {
-    let global_id = GlobalID::new(TargetID(1), pernixc_table::ID(1));
-    let adt_id = GlobalID::new(TargetID(1), pernixc_table::ID(2));
+    let global_id = GlobalID::new(TargetID(1), pernixc_semantic::ID(1));
+    let adt_id = GlobalID::new(TargetID(1), pernixc_semantic::ID(2));
 
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
         parent: global_id,
@@ -248,7 +248,7 @@ fn compatible_with_adt() {
 fn compatible_with_mutable_reference() {
     // &'a mutable &'b bool == &'c mutable &'d bool
 
-    let global_id = GlobalID::new(TargetID(1), pernixc_table::ID(1));
+    let global_id = GlobalID::new(TargetID(1), pernixc_semantic::ID(1));
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
         parent: global_id,
         id: pernixc_arena::ID::new(0),

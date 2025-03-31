@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implemented, Parent, SymbolKind},
     GlobalID, Table, TargetID,
 };
@@ -23,7 +23,7 @@ use crate::{
 #[test]
 fn basic() {
     let trait_member = TraitMember::<Default>(MemberSymbol {
-        id: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        id: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -53,7 +53,7 @@ fn basic() {
 #[test]
 fn sub_term() {
     let trait_member = TraitMember::<Default>(MemberSymbol {
-        id: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        id: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -72,11 +72,11 @@ fn sub_term() {
 
     let result = environment
         .query(&Simplify(Type::Symbol(Symbol {
-            id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+            id: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+                    id: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![Type::TraitMember(trait_member)],
@@ -92,11 +92,11 @@ fn sub_term() {
     assert_eq!(
         result.result,
         Type::Symbol(Symbol {
-            id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+            id: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+                    id: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![equivalent],
@@ -114,7 +114,7 @@ fn sub_term() {
 #[test]
 fn already_simplified() {
     let trait_member = TraitMember::<Default>(MemberSymbol {
-        id: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        id: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -140,16 +140,16 @@ fn already_simplified() {
 #[test]
 fn with_lifetime_matching() {
     let first_lifetime = Lifetime::Parameter(LifetimeParameterID {
-        parent: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
         id: pernixc_arena::ID::new(0),
     });
     let second_lifetime = Lifetime::Parameter(LifetimeParameterID {
-        parent: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
         id: pernixc_arena::ID::new(1),
     });
 
     let to_be_simplified = TraitMember::<Default>(MemberSymbol {
-        id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+        id: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
             lifetimes: vec![first_lifetime],
@@ -159,7 +159,7 @@ fn with_lifetime_matching() {
     });
 
     let trait_member = TraitMember::<Default>(MemberSymbol {
-        id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+        id: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
             lifetimes: vec![second_lifetime],
@@ -172,15 +172,15 @@ fn with_lifetime_matching() {
     let table = Table::new(Arc::new(pernixc_handler::Panic));
 
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(2)),
-        Parent { parent: Some(pernixc_table::ID(3)) }
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
+        Parent { parent: Some(pernixc_semantic::ID(3)) }
     ));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(3)),
         SymbolKind::Trait
     ));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(3)),
         Implemented(HashSet::new())
     ));
 
@@ -217,12 +217,12 @@ fn with_lifetime_matching() {
 #[test]
 fn multiple_equivalences() {
     let first_trait_member = TraitMember::<Default>(MemberSymbol {
-        id: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+        id: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
     let second_trait_member = TraitMember::<Default>(MemberSymbol {
-        id: GlobalID::new(TargetID(1), pernixc_table::ID(2)),
+        id: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -230,19 +230,19 @@ fn multiple_equivalences() {
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(1)),
-        Parent { parent: Some(pernixc_table::ID(3)) }
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
+        Parent { parent: Some(pernixc_semantic::ID(3)) }
     ));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(2)),
-        Parent { parent: Some(pernixc_table::ID(3)) }
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
+        Parent { parent: Some(pernixc_semantic::ID(3)) }
     ));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(3)),
         SymbolKind::Trait
     ));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(3)),
         Implemented(HashSet::new())
     ));
     let mut premise = Premise::default();
@@ -287,7 +287,7 @@ fn transitive() {
 
     let trait_member = |idx, lifetime| {
         TraitMember::<Default>(MemberSymbol {
-            id: GlobalID::new(TargetID(1), pernixc_table::ID(idx)),
+            id: GlobalID::new(TargetID(1), pernixc_semantic::ID(idx)),
             member_generic_arguments: GenericArguments::default(),
             parent_generic_arguments: GenericArguments {
                 lifetimes: vec![lifetime],
@@ -299,7 +299,7 @@ fn transitive() {
 
     let lt = |idx| {
         Lifetime::<Default>::Parameter(LifetimeParameterID {
-            parent: GlobalID::new(TargetID(1), pernixc_table::ID(1)),
+            parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
             id: pernixc_arena::ID::new(idx),
         })
     };
@@ -316,20 +316,20 @@ fn transitive() {
     let table = Table::new(Arc::new(pernixc_handler::Panic));
 
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(2)),
-        Parent { parent: Some(pernixc_table::ID(4)) }
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
+        Parent { parent: Some(pernixc_semantic::ID(4)) }
     ));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(3)),
-        Parent { parent: Some(pernixc_table::ID(4)) }
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(3)),
+        Parent { parent: Some(pernixc_semantic::ID(4)) }
     ));
 
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(4)),
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(4)),
         SymbolKind::Trait,
     ));
     assert!(table.add_component(
-        GlobalID::new(TargetID(1), pernixc_table::ID(4)),
+        GlobalID::new(TargetID(1), pernixc_semantic::ID(4)),
         Implemented(HashSet::new()),
     ));
 

@@ -8,7 +8,7 @@ use pernixc_component::{
     fields::Fields,
     function_signature::{FunctionSignature, Parameter},
 };
-use pernixc_table::GlobalID;
+use pernixc_semantic::GlobalID;
 use pernixc_term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},

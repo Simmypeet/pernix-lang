@@ -3,7 +3,7 @@
 use diagnostic::GenericParametersAreNotAllowedInExternFunction;
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_table::{
+use pernixc_semantic::{
     component::Extern, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::generic_parameter::GenericParameters;

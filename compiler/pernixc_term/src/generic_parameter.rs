@@ -6,7 +6,7 @@ use getset::Getters;
 use paste::paste;
 use pernixc_arena::{Arena, ID};
 use pernixc_source_file::Span;
-use pernixc_table::{component::Derived, GlobalID, MemberID};
+use pernixc_semantic::{component::Derived, GlobalID, MemberID};
 use serde::{Deserialize, Serialize};
 
 use crate::{

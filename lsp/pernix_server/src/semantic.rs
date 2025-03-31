@@ -16,7 +16,7 @@ use pernixc_intrinsic::IntrinsicExt;
 use pernixc_lexical::token::Identifier;
 use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_table::{Table, TargetID};
+use pernixc_semantic::{Table, TargetID};
 use tower_lsp::lsp_types::Url;
 
 use crate::{extension::DaignosticExt, workspace};
@@ -112,7 +112,7 @@ impl Semantic {
         };
 
         let semantic_error_storage = Arc::new(Storage::<
-            Box<dyn pernixc_table::diagnostic::Diagnostic>,
+            Box<dyn pernixc_semantic::diagnostic::Diagnostic>,
         >::new());
 
         let collector = DiagnosticCollector(RwLock::new(Vec::new()));

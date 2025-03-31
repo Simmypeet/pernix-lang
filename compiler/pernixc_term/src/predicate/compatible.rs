@@ -1,5 +1,5 @@
 use derive_new::new;
-use pernixc_table::DisplayObject;
+use pernixc_semantic::DisplayObject;
 use serde::{Deserialize, Serialize};
 
 use crate::{Model, ModelOf};
@@ -23,14 +23,14 @@ pub struct Compatible<T, U = T> {
     pub rhs: U,
 }
 
-impl<T, U> pernixc_table::Display for Compatible<T, U>
+impl<T, U> pernixc_semantic::Display for Compatible<T, U>
 where
-    T: pernixc_table::Display,
-    U: pernixc_table::Display,
+    T: pernixc_semantic::Display,
+    U: pernixc_semantic::Display,
 {
     fn fmt(
         &self,
-        table: &pernixc_table::Table,
+        table: &pernixc_semantic::Table,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         write!(

@@ -18,7 +18,7 @@ use pernixc_resolution::{
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
-use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
+use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,

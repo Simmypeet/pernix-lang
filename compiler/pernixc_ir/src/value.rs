@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use literal::Literal;
 use pernixc_arena::{Key, ID};
-use pernixc_table::GlobalID;
+use pernixc_semantic::GlobalID;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     environment::Environment, normalizer::Normalizer, simplify::Simplify,

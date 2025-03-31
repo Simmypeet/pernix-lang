@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implemented, Parent, SymbolKind},
     GlobalID, Table, TargetID, ID,
 };
@@ -377,7 +377,7 @@ impl<T: Clone + Debug + 'static> Property<T> for Identity<T> {
 pub struct Mapping {
     pub property: Box<dyn Property<Type<Default>>>,
     pub target_trait_member: TraitMember<Default>,
-    pub trait_id: pernixc_table::ID,
+    pub trait_id: pernixc_semantic::ID,
     pub map_at_lhs: bool,
 }
 
@@ -870,7 +870,7 @@ pub struct Decoy {
     #[allow(clippy::type_complexity)]
     types: Vec<(
         Compatible<TraitMember<Default>, Type<Default>>,
-        pernixc_table::ID,
+        pernixc_semantic::ID,
     )>,
 }
 
@@ -881,7 +881,7 @@ impl Arbitrary for Decoy {
         let equality = (
             MemberSymbol::arbitrary(),
             Type::arbitrary().prop_map(purge),
-            pernixc_table::ID::arbitrary(),
+            pernixc_semantic::ID::arbitrary(),
         )
             .prop_map(|(lhs, rhs, id)| {
                 (

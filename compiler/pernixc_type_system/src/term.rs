@@ -6,7 +6,7 @@ use pernixc_arena::ID;
 use pernixc_component::{
     fields::Fields, type_alias::TypeAlias, variant::Variant,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Member, Name, Parent, SymbolKind},
     GlobalID, MemberID, Table,
 };

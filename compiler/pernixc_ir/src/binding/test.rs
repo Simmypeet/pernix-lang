@@ -9,7 +9,7 @@ use pernixc_handler::{Panic, Storage};
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Member, Name, Parent, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID, Table, TargetID,
@@ -45,11 +45,11 @@ impl Template {
         let table = Table::new(Arc::new(Panic));
 
         let test_root_module_id =
-            GlobalID::new(TargetID(1), pernixc_table::ID::ROOT_MODULE);
+            GlobalID::new(TargetID(1), pernixc_semantic::ID::ROOT_MODULE);
 
         let test_function_id = GlobalID::new(
             TargetID(1),
-            pernixc_table::ID(pernixc_table::ID::ROOT_MODULE.0 + 1),
+            pernixc_semantic::ID(pernixc_semantic::ID::ROOT_MODULE.0 + 1),
         );
 
         assert!(table.add_component(test_root_module_id, SymbolKind::Module));
@@ -136,7 +136,7 @@ impl CreateBinderAtExt for Table {
         assert_eq!(*self.get::<SymbolKind>(function_id), SymbolKind::Function);
 
         let function_signature =
-        self.get::<pernixc_table::component::syntax_tree::FunctionSignature>(
+        self.get::<pernixc_semantic::component::syntax_tree::FunctionSignature>(
             function_id,
         );
 

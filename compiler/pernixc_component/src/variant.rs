@@ -1,7 +1,7 @@
 //! Contains the definition of [`Variant`]
 
 use derive_more::{Deref, DerefMut};
-use pernixc_table::component::Derived;
+use pernixc_semantic::component::Derived;
 use pernixc_term::{r#type::Type, Default};
 use serde::{Deserialize, Serialize};
 

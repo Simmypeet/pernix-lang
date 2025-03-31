@@ -4,7 +4,7 @@ use core::fmt;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::Key;
-use pernixc_table::{DisplayObject, Table};
+use pernixc_semantic::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -49,9 +49,9 @@ pub enum Lifetime<M: Model> {
     Error(Error),
 }
 
-impl<M: Model> pernixc_table::Display for Lifetime<M>
+impl<M: Model> pernixc_semantic::Display for Lifetime<M>
 where
-    M::LifetimeInference: pernixc_table::Display,
+    M::LifetimeInference: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

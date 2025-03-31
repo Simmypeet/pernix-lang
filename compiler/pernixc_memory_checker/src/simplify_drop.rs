@@ -21,7 +21,7 @@ use pernixc_ir::{
     },
     Values,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Member, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID, TargetID,

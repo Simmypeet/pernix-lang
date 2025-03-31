@@ -12,7 +12,7 @@ use diagnostic::{
 use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{
         Implemented, Implements, LocationSpan, Member, Name, Parent,
         SymbolKind, TraitImplementation,

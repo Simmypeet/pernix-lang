@@ -7,7 +7,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-pernixc_table = { path = "../pernixc_table" }
+pernixc_semantic = { path = "../pernixc_semantic" }
 pernixc_handler = { path = "../pernixc_handler" }
 pernixc_term = { path = "../pernixc_term" }
 pernixc_ir = { path = "../pernixc_ir" }

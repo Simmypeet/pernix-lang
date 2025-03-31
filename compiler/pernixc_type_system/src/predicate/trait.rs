@@ -1,7 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_table::{component::SymbolKind, GlobalID};
+use pernixc_semantic::{component::SymbolKind, GlobalID};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameter::GenericParameters,

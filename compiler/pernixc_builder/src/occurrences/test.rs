@@ -1,5 +1,5 @@
 use pernixc_component::fields::Fields;
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameter::{

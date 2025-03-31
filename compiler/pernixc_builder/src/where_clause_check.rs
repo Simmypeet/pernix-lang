@@ -6,7 +6,7 @@ use diagnostic::{
     AmbiguousPredicates, DefinitePremisePredicate, RecursiveTraitTypeEquality,
 };
 use pernixc_handler::Handler;
-use pernixc_table::{
+use pernixc_semantic::{
     component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_term::predicate::Predicate;

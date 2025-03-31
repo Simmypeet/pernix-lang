@@ -32,7 +32,7 @@ use pernixc_log::{
 use pernixc_source_file::SourceFile;
 use pernixc_storage::{serde::Reflector, ArcTrait};
 use pernixc_syntax::syntax_tree::target::Target;
-use pernixc_table::{
+use pernixc_semantic::{
     component::Member, diagnostic::Diagnostic, AddTargetError,
     CompilationMetaData, GlobalID, Table, TargetID,
 };
@@ -436,7 +436,7 @@ fn semantic_analysis(
     Reflector<GlobalID, ArcTrait, ComponentTag, String>,
 )> {
     let storage = Arc::new(Storage::<
-        Box<dyn pernixc_table::diagnostic::Diagnostic>,
+        Box<dyn pernixc_semantic::diagnostic::Diagnostic>,
     >::new());
 
     let reflector = pernixc_builder::reflector::get();
@@ -834,7 +834,7 @@ fn emit_as_machine_code(
     let inkwell_context = inkwell::context::Context::create();
 
     let result = if let Some(main_function_id) = table
-        .get::<Member>(GlobalID::new(target_id, pernixc_table::ID::ROOT_MODULE))
+        .get::<Member>(GlobalID::new(target_id, pernixc_semantic::ID::ROOT_MODULE))
         .get("main")
         .copied()
     {

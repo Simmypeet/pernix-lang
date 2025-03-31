@@ -10,7 +10,7 @@ use parking_lot::RwLock;
 use pernixc_arena::ID;
 use pernixc_component::{fields::Fields, variant::Variant};
 use pernixc_handler::Handler;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Derived, Member, SymbolKind},
     diagnostic::Diagnostic,
     query, GlobalID, Table, TargetID,
@@ -36,9 +36,9 @@ enum VarianceVariable {
     /// The variance is being transformed in the form of `0.xfrom(1)`.
     Transform(Box<VarianceVariable>, Box<VarianceVariable>),
     /// The variance of the type parameter is being inferred.
-    InferringType(ID<TypeParameter>, pernixc_table::ID),
+    InferringType(ID<TypeParameter>, pernixc_semantic::ID),
     /// The variance of the lifetime parameter is being inferred.
-    InferringLifetime(ID<LifetimeParameter>, pernixc_table::ID),
+    InferringLifetime(ID<LifetimeParameter>, pernixc_semantic::ID),
 }
 
 impl VarianceVariable {
@@ -61,11 +61,11 @@ impl VarianceVariable {
 #[derive(Default)]
 struct Context {
     type_parameter_constraints:
-        Vec<(ID<TypeParameter>, pernixc_table::ID, VarianceVariable)>,
+        Vec<(ID<TypeParameter>, pernixc_semantic::ID, VarianceVariable)>,
     lifetime_parameter_constraints:
-        Vec<(ID<LifetimeParameter>, pernixc_table::ID, VarianceVariable)>,
+        Vec<(ID<LifetimeParameter>, pernixc_semantic::ID, VarianceVariable)>,
 
-    variance_maps: HashMap<pernixc_table::ID, Variances>,
+    variance_maps: HashMap<pernixc_semantic::ID, Variances>,
 }
 
 impl Context {

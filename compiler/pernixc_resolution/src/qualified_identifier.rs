@@ -3,16 +3,16 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_component::implementation::Implementation;
-use pernixc_source_file::SourceElement;
-use pernixc_syntax::syntax_tree::{
-    QualifiedIdentifier, QualifiedIdentifierRoot,
-};
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implements, Import, Member, SymbolKind},
     resolution::diagnostic::{
         NoGenericArgumentsRequired, SymbolNotFound, ThisNotFound,
     },
     GlobalID, Table,
+};
+use pernixc_source_file::SourceElement;
+use pernixc_syntax::syntax_tree::{
+    QualifiedIdentifier, QualifiedIdentifierRoot,
 };
 use pernixc_term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
@@ -36,17 +36,17 @@ pub struct Generic<M: Model> {
     /// member while specifying the trait implementation itself.
     ///
     /// # Possible Kind
-    /// - [`pernixc_table::SymbolKind::Struct`]
-    /// - [`pernixc_table::SymbolKind::Enum`]
-    /// - [`pernixc_table::SymbolKind::ExternFunction`]
-    /// - [`pernixc_table::SymbolKind::Function`]
-    /// - [`pernixc_table::SymbolKind::Trait`]
-    /// - [`pernixc_table::SymbolKind::Constant`]
-    /// - [`pernixc_table::SymbolKind::Type`]
-    /// - [`pernixc_table::SymbolKind::Marker`]
-    /// - [`pernixc_table::SymbolKind::TraitImplementationType`]
-    /// - [`pernixc_table::SymbolKind::TraitImplementationFunction`]
-    /// - [`pernixc_table::SymbolKind::TraitImplementationConstant`]
+    /// - [`pernixc_semantic::SymbolKind::Struct`]
+    /// - [`pernixc_semantic::SymbolKind::Enum`]
+    /// - [`pernixc_semantic::SymbolKind::ExternFunction`]
+    /// - [`pernixc_semantic::SymbolKind::Function`]
+    /// - [`pernixc_semantic::SymbolKind::Trait`]
+    /// - [`pernixc_semantic::SymbolKind::Constant`]
+    /// - [`pernixc_semantic::SymbolKind::Type`]
+    /// - [`pernixc_semantic::SymbolKind::Marker`]
+    /// - [`pernixc_semantic::SymbolKind::TraitImplementationType`]
+    /// - [`pernixc_semantic::SymbolKind::TraitImplementationFunction`]
+    /// - [`pernixc_semantic::SymbolKind::TraitImplementationConstant`]
     pub id: GlobalID,
 
     /// The generic arguments that are supplied to the resolved symbol.
@@ -75,10 +75,10 @@ pub struct MemberGeneric<M: Model> {
     ///
     /// # Possible Kind
     ///
-    /// - [`pernixc_table::SymbolKind::TraitType`]
-    /// - [`pernixc_table::SymbolKind::TraitFunction`]
-    /// - [`pernixc_table::SymbolKind::TraitConstant`]
-    /// - [`pernixc_table::SymbolKind::AdtImplementationFunction`]
+    /// - [`pernixc_semantic::SymbolKind::TraitType`]
+    /// - [`pernixc_semantic::SymbolKind::TraitFunction`]
+    /// - [`pernixc_semantic::SymbolKind::TraitConstant`]
+    /// - [`pernixc_semantic::SymbolKind::AdtImplementationFunction`]
     pub id: GlobalID,
 
     /// The generic arguments that are supplied to the parent symbol. Suppose
@@ -203,7 +203,7 @@ pub(super) fn resolve_root<M: Model>(
         QualifiedIdentifierRoot::Target(_) => {
             Resolution::Module(GlobalID::new(
                 referring_site.target_id,
-                pernixc_table::ID::ROOT_MODULE,
+                pernixc_semantic::ID::ROOT_MODULE,
             ))
         }
         QualifiedIdentifierRoot::This(this) => {

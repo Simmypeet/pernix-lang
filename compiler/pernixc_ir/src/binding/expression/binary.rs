@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use pernixc_handler::Handler;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Primitive, Qualifier, Type};
 
 use super::{Bind, Config, Expression, LValue, Target};

@@ -8,7 +8,7 @@ mod r#trait;
 mod tuple;
 
 use enum_as_inner::EnumAsInner;
-use pernixc_table::Table;
+use pernixc_semantic::Table;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -236,17 +236,17 @@ impl<M: Model> ModelOf for Predicate<M> {
     }
 }
 
-impl<M: Model> pernixc_table::Display for Predicate<M>
+impl<M: Model> pernixc_semantic::Display for Predicate<M>
 where
-    Compatible<TraitMember<M>, Type<M>>: pernixc_table::Display,
-    ConstantType<M>: pernixc_table::Display,
-    Outlives<Lifetime<M>>: pernixc_table::Display,
-    Outlives<Type<M>>: pernixc_table::Display,
-    Tuple<Type<M>>: pernixc_table::Display,
-    PositiveTrait<M>: pernixc_table::Display,
-    NegativeTrait<M>: pernixc_table::Display,
-    PositiveMarker<M>: pernixc_table::Display,
-    NegativeMarker<M>: pernixc_table::Display,
+    Compatible<TraitMember<M>, Type<M>>: pernixc_semantic::Display,
+    ConstantType<M>: pernixc_semantic::Display,
+    Outlives<Lifetime<M>>: pernixc_semantic::Display,
+    Outlives<Type<M>>: pernixc_semantic::Display,
+    Tuple<Type<M>>: pernixc_semantic::Display,
+    PositiveTrait<M>: pernixc_semantic::Display,
+    NegativeTrait<M>: pernixc_semantic::Display,
+    PositiveMarker<M>: pernixc_semantic::Display,
+    NegativeMarker<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

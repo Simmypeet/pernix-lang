@@ -1,7 +1,7 @@
 //! Contains the extension trait for getting the overall accessibility of a
 //! term.
 
-use pernixc_table::{
+use pernixc_semantic::{
     component::Accessibility, GlobalAccessibility, GlobalID,
     MergeAccessibilityError, Table,
 };

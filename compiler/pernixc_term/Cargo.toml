@@ -9,7 +9,7 @@ rust-version.workspace = true
 [dependencies]
 serde = { workspace = true }
 derive_more = { workspace = true }
-pernixc_table = { path = "../pernixc_table" }
+pernixc_semantic = { path = "../pernixc_semantic" }
 enum-as-inner = { workspace = true }
 paste = { workspace = true }
 getset = { workspace = true }

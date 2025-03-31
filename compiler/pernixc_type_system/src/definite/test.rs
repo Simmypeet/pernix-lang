@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
-use pernixc_table::{GlobalID, Table};
+use pernixc_semantic::{GlobalID, Table};
 use pernixc_term::{
     constant, constant::Constant, generic_arguments::GenericArguments, r#type,
     r#type::Type, Default, Symbol,

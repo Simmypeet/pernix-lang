@@ -6,7 +6,7 @@ use inkwell::{
     intrinsics::Intrinsic, targets::TargetData, values::FunctionValue,
 };
 use pernixc_handler::Handler;
-use pernixc_table::{diagnostic::Diagnostic, GlobalID, Table};
+use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
 
 use crate::{constant, function, r#type};
 

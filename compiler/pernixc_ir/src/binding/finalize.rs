@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
-use pernixc_table::{component::SymbolKind, diagnostic::Diagnostic};
+use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic};
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt},

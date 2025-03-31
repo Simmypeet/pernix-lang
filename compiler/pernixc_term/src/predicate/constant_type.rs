@@ -1,4 +1,4 @@
-use pernixc_table::{DisplayObject, Table};
+use pernixc_semantic::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 
 use super::contains_error;
@@ -14,9 +14,9 @@ use crate::{
 )]
 pub struct ConstantType<M: Model>(pub Type<M>);
 
-impl<M: Model> pernixc_table::Display for ConstantType<M>
+impl<M: Model> pernixc_semantic::Display for ConstantType<M>
 where
-    Type<M>: pernixc_table::Display,
+    Type<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

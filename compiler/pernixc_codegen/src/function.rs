@@ -29,7 +29,7 @@ use pernixc_ir::{
     value::{register::Register, Value},
     IR,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Extern, Implements, Name, Parent, SymbolKind},
     DisplayObject, GlobalID, TargetID,
 };

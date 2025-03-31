@@ -8,7 +8,7 @@ use pernixc_syntax::syntax_tree::{
     self,
     expression::block::{Group, GroupOrIfElse},
 };
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::r#type::{Primitive, Type};
 
 use super::{Bind, Config, Expression, Target};

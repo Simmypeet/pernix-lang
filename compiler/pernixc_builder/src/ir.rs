@@ -8,7 +8,7 @@ use pernixc_ir::{binding::Binder, IR};
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{self, Derived, SymbolKind},
     diagnostic::Diagnostic,
     query::Builder,

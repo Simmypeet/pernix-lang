@@ -7,7 +7,7 @@ use getset::Getters;
 use model::Transform;
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, Key, ID};
-use pernixc_table::{component::Derived, Table};
+use pernixc_semantic::{component::Derived, Table};
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, Model,
 };

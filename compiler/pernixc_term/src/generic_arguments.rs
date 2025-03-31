@@ -1,6 +1,6 @@
 //! Contains the definition of the [`GenericArguments`].
 
-use pernixc_table::{DisplayObject, Table};
+use pernixc_semantic::{DisplayObject, Table};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -34,11 +34,11 @@ pub struct GenericArguments<M: Model> {
     pub constants: Vec<Constant<M>>,
 }
 
-impl<M: Model> pernixc_table::Display for GenericArguments<M>
+impl<M: Model> pernixc_semantic::Display for GenericArguments<M>
 where
-    Lifetime<M>: pernixc_table::Display,
-    Type<M>: pernixc_table::Display,
-    Constant<M>: pernixc_table::Display,
+    Lifetime<M>: pernixc_semantic::Display,
+    Type<M>: pernixc_semantic::Display,
+    Constant<M>: pernixc_semantic::Display,
 {
     fn fmt(
         &self,

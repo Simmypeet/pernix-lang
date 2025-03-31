@@ -5,7 +5,7 @@ use pernixc_component::implementation::Implementation;
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
 use pernixc_source_file::Span;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Implements, LocationSpan, SymbolKind},
     DisplayObject, GlobalID, MemberID, Table,
 };

@@ -21,12 +21,12 @@ use pernixc_ir::{
     },
     Representation, Values,
 };
-use pernixc_source_file::Span;
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Parent, SymbolKind},
     diagnostic::Diagnostic,
     GlobalID,
 };
+use pernixc_source_file::Span;
 use pernixc_term::{
     elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
     generic_parameter::{GenericParameters, LifetimeParameterID},

@@ -12,7 +12,7 @@ use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
-use pernixc_table::{diagnostic::Diagnostic, Table};
+use pernixc_semantic::{diagnostic::Diagnostic, Table};
 use pernixc_term::{
     constant::Constant, lifetime::Lifetime, r#type::Type,
     visitor::RecursiveIterator, ModelOf as _, Never,
@@ -71,7 +71,7 @@ impl pernixc_term::Model for Model {
     }
 }
 
-impl<U> pernixc_table::Display for InferenceVariable<U> {
+impl<U> pernixc_semantic::Display for InferenceVariable<U> {
     fn fmt(
         &self,
         _: &Table,

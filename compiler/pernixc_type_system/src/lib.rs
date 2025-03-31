@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
-use pernixc_table::diagnostic::Diagnostic;
+use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
@@ -136,7 +136,7 @@ impl OverflowError {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Abort
     where
-        Predicate<M>: pernixc_table::Display,
+        Predicate<M>: pernixc_semantic::Display,
     {
         handler.receive(Box::new(diagnostic::UndecidablePredicate::new(
             predicate,

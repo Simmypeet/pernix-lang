@@ -8,8 +8,8 @@ use pernixc_ir::{
     value::register::Assignment,
     Representation,
 };
+use pernixc_semantic::Table;
 use pernixc_source_file::Span;
-use pernixc_table::Table;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,

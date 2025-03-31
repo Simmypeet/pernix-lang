@@ -6,7 +6,7 @@ use std::{
 };
 
 use pernixc_arena::ID;
-use pernixc_table::{GlobalID, MemberID};
+use pernixc_semantic::{GlobalID, MemberID};
 use serde::{Deserialize, Serialize};
 
 use super::{

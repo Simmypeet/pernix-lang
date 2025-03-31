@@ -22,7 +22,7 @@ use pernixc_ir::{
         Value,
     },
 };
-use pernixc_table::{
+use pernixc_semantic::{
     component::{Member, Name, Parent, SymbolKind, VariantDeclarationOrder},
     GlobalID,
 };
