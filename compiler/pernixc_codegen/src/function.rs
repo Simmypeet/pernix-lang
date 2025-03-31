@@ -19,10 +19,6 @@ use inkwell::{
     AddressSpace,
 };
 use pernixc_arena::ID;
-use pernixc_component::{
-    function_signature::{FunctionSignature, Parameter},
-    implementation::Implementation,
-};
 use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::Block,
@@ -30,12 +26,19 @@ use pernixc_ir::{
     IR,
 };
 use pernixc_semantic::{
-    component::{Extern, Implements, Name, Parent, SymbolKind},
-    DisplayObject, GlobalID, TargetID,
-};
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments, generic_parameter::GenericParameters,
-    instantiation::Instantiation, r#type::Type, Model as _, Symbol, Tuple,
+    component::{
+        derived::{
+            function_signature::{FunctionSignature, Parameter},
+            generic_parameters::GenericParameters,
+            implementation::Implementation,
+        },
+        input::{Extern, Implements, Name, Parent, SymbolKind},
+    },
+    table::{DisplayObject, GlobalID, TargetID},
+    term::{
+        generic_arguments::GenericArguments, instantiation::Instantiation,
+        r#type::Type, Model as _, Symbol, Tuple,
+    },
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -180,7 +183,7 @@ impl<'ctx> Context<'_, 'ctx> {
             | SymbolKind::AdtImplementationFunction => {
                 let parent_implementation_id = GlobalID::new(
                     callable_id.target_id,
-                    self.table().get::<Parent>(callable_id).parent.unwrap(),
+                    self.table().get::<Parent>(callable_id).unwrap(),
                 );
                 let implemented_id =
                     self.table().get::<Implements>(parent_implementation_id).0;

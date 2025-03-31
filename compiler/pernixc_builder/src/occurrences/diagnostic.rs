@@ -3,14 +3,14 @@
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
 use pernixc_semantic::{
-    component::{Implements, LocationSpan},
-    DisplayObject, GlobalID, Table,
+    component::input::{Implements, LocationSpan},
+    table::{self, DisplayObject, GlobalID, Table},
+    term::{
+        constant::Constant, generic_arguments::GenericArguments, r#type::Type,
+        Model,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant, generic_arguments::GenericArguments, r#type::Type,
-    Model,
-};
 
 /// The generic arguments are not compatible with the generic arguments defined
 /// in the implementation.
@@ -29,7 +29,7 @@ pub struct MismatchedImplementationArguments<M: Model> {
 
 impl<M: Model> Report<&Table> for MismatchedImplementationArguments<M>
 where
-    GenericArguments<M>: pernixc_semantic::Display,
+    GenericArguments<M>: table::Display,
 {
     fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
         let span = table.get::<LocationSpan>(self.adt_implementation_id);
@@ -71,7 +71,7 @@ pub struct AdtImplementationIsNotGeneralEnough<M: Model> {
 
 impl<M: Model> Report<&Table> for AdtImplementationIsNotGeneralEnough<M>
 where
-    GenericArguments<M>: pernixc_semantic::Display,
+    GenericArguments<M>: table::Display,
 {
     fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
         let span = table.get::<LocationSpan>(self.adt_implementation_id);
@@ -118,8 +118,8 @@ pub struct ConstantArgumentTypeMismatched<M: Model> {
 
 impl<M: Model> Report<&Table> for ConstantArgumentTypeMismatched<M>
 where
-    Type<M>: pernixc_semantic::Display,
-    Constant<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
+    Constant<M>: table::Display,
 {
     fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
         pernixc_diagnostic::Diagnostic {

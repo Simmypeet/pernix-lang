@@ -7,16 +7,18 @@ use diagnostic::{
 use function::Call;
 use inkwell::targets::TargetData;
 use pernixc_abort::Abort;
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::{Name, SymbolKind},
+    component::{
+        derived::{
+            function_signature::FunctionSignature,
+            generic_parameters::GenericParameters, where_clause::WhereClause,
+        },
+        input::{Name, SymbolKind},
+    },
     diagnostic::Diagnostic,
-    GlobalID, Table,
-};
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters, instantiation::Instantiation,
-    r#type::Type, where_clause::WhereClause, Tuple,
+    table::{self, GlobalID, Table},
+    term::{instantiation::Instantiation, r#type::Type, Tuple},
 };
 
 pub mod constant;
@@ -129,7 +131,7 @@ pub fn codegen<'ctx>(
             .table
             .get::<Name>(GlobalID::new(
                 input.main_function_id.target_id,
-                pernixc_semantic::ID::ROOT_MODULE,
+                table::ID::ROOT_MODULE,
             ))
             .as_str(),
     );

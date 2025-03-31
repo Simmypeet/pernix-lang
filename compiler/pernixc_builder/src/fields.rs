@@ -8,13 +8,16 @@ use std::{
 
 use diagnostic::FieldDuplication;
 use pernixc_arena::Arena;
-use pernixc_component::fields::{Field, Fields};
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_semantic::{
-    component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
+    component::{
+        derived::fields::{Field, Fields},
+        input::{syntax_tree as syntax_tree_component, SymbolKind},
+        Derived,
+    },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
+    table::{query, GlobalID, Table},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_type_system::{

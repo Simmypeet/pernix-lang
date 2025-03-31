@@ -1,6 +1,6 @@
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters,
-    variance::{Variance, Variances},
+use pernixc_semantic::component::derived::{
+    generic_parameters::GenericParameters,
+    variances::{Variance, Variances},
 };
 
 use crate::utility::build_table;

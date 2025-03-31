@@ -11,3 +11,4 @@ pub mod late_bound;
 pub mod type_alias;
 pub mod variances;
 pub mod variant;
+pub mod where_clause;

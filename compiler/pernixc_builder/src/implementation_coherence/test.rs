@@ -2,21 +2,24 @@ use std::sync::Arc;
 
 use pernixc_handler::Panic;
 use pernixc_semantic::{
-    component::{Implemented, Implements, Member, Parent},
-    GlobalID, Table,
+    component::{
+        derived::generic_parameters::{
+            ConstantParameterID, GenericKind, GenericParameters,
+            LifetimeParameter, LifetimeParameterID, TypeParameter,
+            TypeParameterID,
+        },
+        input::{Implemented, Implements, Member, Parent},
+    },
+    table::{GlobalID, Table},
+    term::{
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{Outlives, PositiveTrait, Predicate},
+        r#type::{Primitive, Type},
+        Default,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        ConstantParameterID, GenericKind, GenericParameters, LifetimeParameter,
-        LifetimeParameterID, TypeParameter, TypeParameterID,
-    },
-    lifetime::Lifetime,
-    predicate::{Outlives, PositiveTrait, Predicate},
-    r#type::{Primitive, Type},
-    Default,
-};
 use pernixc_type_system::diagnostic::UnsatisfiedPredicate;
 
 use crate::{
@@ -403,7 +406,7 @@ fn constant_parameter_type_mismatched() {
         table.query::<GenericParameters>(trait_output_id).unwrap();
     let trait_id = GlobalID::new(
         trait_output_id.target_id,
-        table.get::<Parent>(trait_output_id).parent.unwrap(),
+        table.get::<Parent>(trait_output_id).unwrap(),
     );
     let trait_w_const_id = ConstantParameterID::new(
         trait_output_id,

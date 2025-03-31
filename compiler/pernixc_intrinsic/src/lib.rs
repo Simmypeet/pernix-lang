@@ -16,6 +16,7 @@ use pernixc_semantic::{
             },
             implementation::Implementation,
             implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+            where_clause::{Predicate, WhereClause},
         },
         input::{
             Accessibility, FunctionConstness, FunctionUnsafeness, Implemented,
@@ -28,7 +29,6 @@ use pernixc_semantic::{
         lifetime::Lifetime,
         predicate::{self, Outlives},
         r#type::{Pointer, Primitive, Qualifier, Reference, Type},
-        where_clause::{Predicate, WhereClause},
         Default, Tuple,
     },
 };

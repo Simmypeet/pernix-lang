@@ -1,14 +1,19 @@
-use pernixc_semantic::component::derived::fields::Fields;
 use pernixc_handler::Panic;
+use pernixc_semantic::{
+    component::derived::{
+        fields::Fields,
+        generic_parameters::{GenericParameters, TypeParameterID},
+    },
+    term::{
+        self,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        r#type::{Primitive, Qualifier, Reference, Tuple, Type},
+        Symbol, TupleElement,
+    },
+};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::{GenericParameters, TypeParameterID},
-    lifetime::Lifetime,
-    r#type::{Primitive, Qualifier, Reference, Tuple, Type},
-    Symbol, TupleElement,
-};
 
 use crate::{
     address::{self, Address, Field, Memory},

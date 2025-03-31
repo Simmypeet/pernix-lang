@@ -2,13 +2,16 @@
 
 use std::sync::Arc;
 
-use pernixc_component::variant::Variant;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_semantic::{
-    component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
+    component::{
+        derived::variant::Variant,
+        input::{syntax_tree as syntax_tree_component, SymbolKind},
+        Derived,
+    },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
+    table::{query, GlobalID, Table},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_type_system::{

@@ -2,13 +2,15 @@
 
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
-use pernixc_semantic::{component::SymbolKind, GlobalID, Table};
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    forall_lifetime::{ForallLifetimeID, ForallLifetimes},
-    r#type::Type,
-    Default,
+use pernixc_semantic::{
+    component::{
+        derived::forall_lifetimes::{ForallLifetimeID, ForallLifetimes},
+        input::SymbolKind,
+    },
+    table::{GlobalID, Table},
+    term::{r#type::Type, Default},
 };
+use pernixc_source_file::Span;
 
 /// The higher-ranked lifetime with the same name already exists in the given
 /// scope.

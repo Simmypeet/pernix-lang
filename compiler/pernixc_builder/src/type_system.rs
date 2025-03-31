@@ -3,9 +3,12 @@
 
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_semantic::diagnostic::Diagnostic;
+use pernixc_semantic::{
+    diagnostic::Diagnostic,
+    table,
+    term::{predicate::Predicate, r#type::Type, Model},
+};
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{predicate::Predicate, r#type::Type, Model};
 use pernixc_type_system::{
     diagnostic::UnsatisfiedPredicate, environment::Environment,
     normalizer::Normalizer, simplify::Simplify, Error, LifetimeConstraint,
@@ -39,9 +42,9 @@ pub trait EnvironmentExt {
 
 impl<M: Model, N: Normalizer<M>> EnvironmentExt for Environment<'_, M, N>
 where
-    M::LifetimeInference: pernixc_semantic::Display,
-    M::TypeInference: pernixc_semantic::Display,
-    M::ConstantInference: pernixc_semantic::Display,
+    M::LifetimeInference: table::Display,
+    M::TypeInference: table::Display,
+    M::ConstantInference: table::Display,
 {
     type Model = M;
 

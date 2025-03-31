@@ -1,19 +1,22 @@
 use std::sync::Arc;
 
-use pernixc_component::{
-    fields::Fields, function_signature::FunctionSignature,
-    implementation::Implementation, implied_predicates::ImpliedPredicates,
-    late_bound::LateBound, type_alias::TypeAlias, variant::Variant,
-};
 use pernixc_ir::IR;
 use pernixc_semantic::{
-    component::{Derived, SymbolKind},
-    GlobalID, Table, TargetID,
-};
-use pernixc_semantic::term::{
-    elided_lifetimes::ElidedLifetimes, forall_lifetime::ForallLifetimes,
-    generic_parameter::GenericParameters, variance::Variances,
-    where_clause::WhereClause,
+    component::{
+        derived::{
+            elided_lifetimes::ElidedLifetimes, fields::Fields,
+            forall_lifetimes::ForallLifetimes,
+            function_signature::FunctionSignature,
+            generic_parameters::GenericParameters,
+            implementation::Implementation,
+            implied_predicates::ImpliedPredicates, late_bound::LateBound,
+            type_alias::TypeAlias, variances::Variances, variant::Variant,
+            where_clause::WhereClause,
+        },
+        input::SymbolKind,
+        Derived,
+    },
+    table::{GlobalID, Table, TargetID},
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use typed_builder::TypedBuilder;

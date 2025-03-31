@@ -1,17 +1,21 @@
-use pernixc_component::fields::Fields;
-use pernixc_semantic::diagnostic::Diagnostic;
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        GenericParameters, LifetimeParameterID, TypeParameterID,
+use pernixc_semantic::{
+    component::derived::{
+        fields::Fields,
+        generic_parameters::{
+            GenericParameters, LifetimeParameterID, TypeParameterID,
+        },
     },
-    lifetime::Lifetime,
-    predicate::{
-        Compatible, ConstantType, NegativeMarker, Outlives, PositiveMarker,
-        PositiveTrait, Predicate, Tuple,
+    diagnostic::Diagnostic,
+    term::{
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{
+            Compatible, ConstantType, NegativeMarker, Outlives, PositiveMarker,
+            PositiveTrait, Predicate, Tuple,
+        },
+        r#type::{Primitive, Qualifier, Reference, TraitMember, Type},
+        Default, MemberSymbol, Symbol,
     },
-    r#type::{Primitive, Qualifier, Reference, TraitMember, Type},
-    Default, MemberSymbol, Symbol,
 };
 use pernixc_type_system::diagnostic::{
     ImplementationIsNotGeneralEnough, UnsatisfiedPredicate,

@@ -12,25 +12,28 @@ use inkwell::{
     AddressSpace,
 };
 use pernixc_arena::ID;
-use pernixc_component::{
-    fields::{Field, Fields},
-    variant::Variant,
-};
 use pernixc_ir::model::Erased;
 use pernixc_semantic::{
-    component::{Member, Name, SymbolKind, VariantDeclarationOrder},
-    DisplayObject, GlobalID,
-};
-use pernixc_semantic::term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    r#type::{Primitive, Tuple, Type},
-    sub_term::TermLocation,
-    visitor::MutableRecursive,
-    Model as _, Symbol,
+    component::{
+        derived::{
+            fields::{Field, Fields},
+            generic_parameters::GenericParameters,
+            variant::Variant,
+        },
+        input::{Member, Name, SymbolKind, VariantDeclarationOrder},
+    },
+    table::{DisplayObject, GlobalID},
+    term::{
+        self,
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        r#type::{Primitive, Tuple, Type},
+        sub_term::TermLocation,
+        visitor::MutableRecursive,
+        Model as _, Symbol,
+    },
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -226,25 +229,16 @@ impl<'ctx> Context<'_, 'ctx> {
         let mut erase_lifetime = EraseLifetime;
 
         for lifetime in instantiation.lifetimes.values_mut() {
-            pernixc_term::visitor::accept_recursive_mut(
-                lifetime,
-                &mut erase_lifetime,
-            );
+            term::visitor::accept_recursive_mut(lifetime, &mut erase_lifetime);
         }
 
         for ty in &mut instantiation.types.values_mut() {
-            pernixc_term::visitor::accept_recursive_mut(
-                ty,
-                &mut erase_lifetime,
-            );
+            term::visitor::accept_recursive_mut(ty, &mut erase_lifetime);
             take_mut::take(ty, |ty| self.normalize_term(ty));
         }
 
         for constant in &mut instantiation.constants.values_mut() {
-            pernixc_term::visitor::accept_recursive_mut(
-                constant,
-                &mut erase_lifetime,
-            );
+            term::visitor::accept_recursive_mut(constant, &mut erase_lifetime);
             take_mut::take(constant, |constant| self.normalize_term(constant));
         }
     }
@@ -258,25 +252,16 @@ impl<'ctx> Context<'_, 'ctx> {
         let mut erase_lifetime = EraseLifetime;
 
         for lifetime in &mut generic_arguments.lifetimes {
-            pernixc_term::visitor::accept_recursive_mut(
-                lifetime,
-                &mut erase_lifetime,
-            );
+            term::visitor::accept_recursive_mut(lifetime, &mut erase_lifetime);
         }
 
         for ty in &mut generic_arguments.types {
-            pernixc_term::visitor::accept_recursive_mut(
-                ty,
-                &mut erase_lifetime,
-            );
+            term::visitor::accept_recursive_mut(ty, &mut erase_lifetime);
             take_mut::take(ty, |ty| self.normalize_term(ty));
         }
 
         for constant in &mut generic_arguments.constants {
-            pernixc_term::visitor::accept_recursive_mut(
-                constant,
-                &mut erase_lifetime,
-            );
+            term::visitor::accept_recursive_mut(constant, &mut erase_lifetime);
             take_mut::take(constant, |constant| self.normalize_term(constant));
         }
     }
@@ -296,10 +281,7 @@ impl<'ctx> Context<'_, 'ctx> {
         );
 
         let mut erase_lifetime = EraseLifetime;
-        pernixc_term::visitor::accept_recursive_mut(
-            &mut term,
-            &mut erase_lifetime,
-        );
+        term::visitor::accept_recursive_mut(&mut term, &mut erase_lifetime);
 
         env.simplify(term).unwrap().result.clone()
     }
@@ -490,7 +472,7 @@ impl<'ctx> Context<'_, 'ctx> {
             .collect::<Vec<_>>();
 
         variants.sort_by_cached_key(|x| {
-            self.table().get::<VariantDeclarationOrder>(*x).order
+            **self.table().get::<VariantDeclarationOrder>(*x)
         });
 
         let mut llvm_variant_types = Vec::new();

@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use pernixc_handler::Panic;
 use pernixc_intrinsic::IntrinsicExt;
-use pernixc_semantic::{diagnostic::Diagnostic, Table, TargetID};
+use pernixc_semantic::{
+    diagnostic::Diagnostic,
+    table::{Table, TargetID},
+};
 use pernixc_source_file::SourceFile;
 
 use crate::Compilation;

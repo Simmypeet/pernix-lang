@@ -2,7 +2,10 @@
 
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
-use pernixc_semantic::{component::LocationSpan, GlobalID, Table};
+use pernixc_semantic::{
+    component::input::LocationSpan,
+    table::{GlobalID, Table},
+};
 
 /// The extern function can't have any generic parameters other than lifetime
 /// parameters.

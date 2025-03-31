@@ -1,21 +1,23 @@
 //! Diagnostics for the implementation coherence check.
 
 use pernixc_arena::ID;
-use pernixc_component::implementation::Implementation;
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
 use pernixc_semantic::{
-    component::{Implements, LocationSpan, SymbolKind},
-    DisplayObject, GlobalID, MemberID, Table,
+    component::{
+        derived::{
+            generic_parameters::{
+                ConstantParameterID, GenericKind, GenericParameter,
+                GenericParameters,
+            },
+            implementation::Implementation,
+        },
+        input::{Implements, LocationSpan, SymbolKind},
+    },
+    table::{DisplayObject, GlobalID, MemberID, Table},
+    term::{predicate::Predicate, Default},
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    generic_parameter::{
-        ConstantParameterID, GenericKind, GenericParameter, GenericParameters,
-    },
-    predicate::Predicate,
-    Default,
-};
 
 /// Generic parameter is unused in the implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

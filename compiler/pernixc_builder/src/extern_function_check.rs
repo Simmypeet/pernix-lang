@@ -4,9 +4,12 @@ use diagnostic::GenericParametersAreNotAllowedInExternFunction;
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::Extern, diagnostic::Diagnostic, GlobalID, Table,
+    component::{
+        derived::generic_parameters::GenericParameters, input::Extern,
+    },
+    diagnostic::Diagnostic,
+    table::{GlobalID, Table},
 };
-use pernixc_semantic::term::generic_parameter::GenericParameters;
 
 pub mod diagnostic;
 

@@ -6,10 +6,12 @@ use pernixc_abort::Abort;
 use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{binding::Binder, IR};
 use pernixc_semantic::{
-    component::{self, Derived, SymbolKind},
+    component::{
+        input::{syntax_tree, SymbolKind},
+        Derived,
+    },
     diagnostic::Diagnostic,
-    query::Builder,
-    GlobalID, Table,
+    table::{query::Builder, GlobalID, Table},
 };
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
@@ -37,9 +39,8 @@ impl Builder<IR> for builder::Builder {
         let _scope =
             self.start_building(table, global_id, IR::component_name());
 
-        let signature =
-            table.get::<component::syntax_tree::FunctionSignature>(global_id);
-        let body = table.get::<component::syntax_tree::FunctionBody>(global_id);
+        let signature = table.get::<syntax_tree::FunctionSignature>(global_id);
+        let body = table.get::<syntax_tree::FunctionBody>(global_id);
 
         let storage = Storage::<Box<dyn Diagnostic>>::new();
 

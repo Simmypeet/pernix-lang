@@ -1,9 +1,9 @@
-use pernixc_semantic::term::{
-    generic_parameter::{
+use pernixc_semantic::{
+    component::derived::generic_parameters::{
         ConstantParameter, GenericKind, GenericParameters, LifetimeParameter,
         TypeParameter, TypeParameterID,
     },
-    r#type::{Primitive, Type},
+    term::r#type::{Primitive, Type},
 };
 
 use crate::{

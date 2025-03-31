@@ -1,15 +1,17 @@
-use pernixc_component::{
-    function_signature::FunctionSignature,
-    implied_predicates::{ImpliedPredicate, ImpliedPredicates},
-    late_bound::LateBound,
-};
 use pernixc_resolution::diagnostic::UnexpectedInference;
-use pernixc_semantic::term::{
-    elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-    generic_parameter::{GenericKind, GenericParameters, TypeParameterID},
-    lifetime::Lifetime,
-    predicate::Outlives,
-    r#type::{Qualifier, Reference, Type},
+use pernixc_semantic::{
+    component::derived::{
+        elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
+        function_signature::FunctionSignature,
+        generic_parameters::{GenericKind, GenericParameters, TypeParameterID},
+        implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+        late_bound::LateBound,
+    },
+    term::{
+        lifetime::Lifetime,
+        predicate::Outlives,
+        r#type::{Qualifier, Reference, Type},
+    },
 };
 
 use crate::utility::build_table;

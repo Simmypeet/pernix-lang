@@ -1,8 +1,12 @@
-use pernixc_component::fields::Fields;
-use pernixc_semantic::component::Accessibility;
-use pernixc_semantic::term::{
-    generic_parameter::{GenericParameters, TypeParameterID},
-    r#type::Type,
+use pernixc_semantic::{
+    component::{
+        derived::{
+            fields::Fields,
+            generic_parameters::{GenericParameters, TypeParameterID},
+        },
+        input::Accessibility,
+    },
+    term::r#type::Type,
 };
 
 use crate::{fields::diagnostic::FieldDuplication, utility::build_table};

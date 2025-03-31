@@ -2,18 +2,21 @@
 
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
-use pernixc_semantic::{DisplayObject, Table};
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    predicate::{self, Predicate},
-    r#type,
+use pernixc_semantic::{
+    table::{DisplayObject, Table},
+    term::{
+        self,
+        predicate::{self, Predicate},
+        r#type,
+    },
 };
+use pernixc_source_file::Span;
 
 /// The predicates are ambiguous to each other.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousPredicates {
     /// The list of predicates that are ambiguous to each other.
-    pub predicates: Vec<Predicate<pernixc_term::Default>>,
+    pub predicates: Vec<Predicate<term::Default>>,
 
     /// The span where the ambiguous predicates are declared.
     pub predicate_declaration_spans: Vec<Span>,
@@ -56,7 +59,7 @@ pub struct DefinitePremisePredicate {
     pub span: Span,
 
     /// The definite premise.
-    pub predicate: Predicate<pernixc_term::Default>,
+    pub predicate: Predicate<term::Default>,
 }
 
 impl Report<&Table> for DefinitePremisePredicate {
@@ -81,8 +84,8 @@ impl Report<&Table> for DefinitePremisePredicate {
 pub struct RecursiveTraitTypeEquality {
     /// The trait type equality that is recursive.
     pub trait_type_equality: predicate::Compatible<
-        r#type::TraitMember<pernixc_term::Default>,
-        r#type::Type<pernixc_term::Default>,
+        r#type::TraitMember<term::Default>,
+        r#type::Type<term::Default>,
     >,
 
     /// The span where the recursive trait type equalities are declared.

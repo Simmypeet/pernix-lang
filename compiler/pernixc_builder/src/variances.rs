@@ -8,19 +8,27 @@ use std::{collections::HashMap, sync::Arc};
 
 use parking_lot::RwLock;
 use pernixc_arena::ID;
-use pernixc_component::{fields::Fields, variant::Variant};
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::{Derived, Member, SymbolKind},
+    component::{
+        derived::{
+            fields::Fields,
+            generic_parameters::{
+                GenericParameters, LifetimeParameter, TypeParameter,
+            },
+            variances::{Variance, Variances},
+            variant::Variant,
+        },
+        input::{Member, SymbolKind},
+        Derived,
+    },
     diagnostic::Diagnostic,
-    query, GlobalID, Table, TargetID,
-};
-use pernixc_semantic::term::{
-    generic_parameter::{GenericParameters, LifetimeParameter, TypeParameter},
-    lifetime::Lifetime,
-    r#type::{Qualifier, Type},
-    variance::{Variance, Variances},
-    Default,
+    table::{self, query, GlobalID, Table, TargetID},
+    term::{
+        lifetime::Lifetime,
+        r#type::{Qualifier, Type},
+        Default,
+    },
 };
 
 use crate::builder;
@@ -36,9 +44,9 @@ enum VarianceVariable {
     /// The variance is being transformed in the form of `0.xfrom(1)`.
     Transform(Box<VarianceVariable>, Box<VarianceVariable>),
     /// The variance of the type parameter is being inferred.
-    InferringType(ID<TypeParameter>, pernixc_semantic::ID),
+    InferringType(ID<TypeParameter>, table::ID),
     /// The variance of the lifetime parameter is being inferred.
-    InferringLifetime(ID<LifetimeParameter>, pernixc_semantic::ID),
+    InferringLifetime(ID<LifetimeParameter>, table::ID),
 }
 
 impl VarianceVariable {
@@ -61,11 +69,11 @@ impl VarianceVariable {
 #[derive(Default)]
 struct Context {
     type_parameter_constraints:
-        Vec<(ID<TypeParameter>, pernixc_semantic::ID, VarianceVariable)>,
+        Vec<(ID<TypeParameter>, table::ID, VarianceVariable)>,
     lifetime_parameter_constraints:
-        Vec<(ID<LifetimeParameter>, pernixc_semantic::ID, VarianceVariable)>,
+        Vec<(ID<LifetimeParameter>, table::ID, VarianceVariable)>,
 
-    variance_maps: HashMap<pernixc_semantic::ID, Variances>,
+    variance_maps: HashMap<table::ID, Variances>,
 }
 
 impl Context {

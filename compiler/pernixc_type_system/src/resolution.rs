@@ -7,15 +7,14 @@ use pernixc_semantic::{
     component::{
         derived::{
             implementation::Implementation as ImplementationComponent,
-            variances::Variance,
+            variances::Variance, where_clause::WhereClause,
         },
         input::{Implemented, Implements, SymbolKind, TraitImplementation},
     },
     table::GlobalID,
     term::{
         generic_arguments::GenericArguments, instantiation::Instantiation,
-        predicate::Predicate, r#type::Type, where_clause::WhereClause, Default,
-        Model,
+        predicate::Predicate, r#type::Type, Default, Model,
     },
 };
 use thiserror::Error;

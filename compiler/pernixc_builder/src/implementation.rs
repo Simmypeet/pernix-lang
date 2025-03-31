@@ -3,20 +3,26 @@
 use std::sync::Arc;
 
 use pernixc_abort::Abort;
-use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_semantic::{
     component::{
-        syntax_tree::ImplementationQualifiedIdentifier as SyntaxTree, Derived,
-        Implements, SymbolKind,
+        derived::{
+            generic_parameters::GenericParameters,
+            implementation::Implementation,
+        },
+        input::{
+            syntax_tree::ImplementationQualifiedIdentifier as SyntaxTree,
+            Implements, SymbolKind,
+        },
+        Derived,
     },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
-};
-use pernixc_semantic::term::{
-    constant::Constant, generic_arguments::GenericArguments,
-    generic_parameter::GenericParameters, lifetime::Lifetime, r#type::Type,
+    table::{query, GlobalID, Table},
+    term::{
+        self, constant::Constant, generic_arguments::GenericArguments,
+        lifetime::Lifetime, r#type::Type,
+    },
 };
 
 use crate::{builder::Builder, occurrences};
@@ -82,17 +88,17 @@ impl query::Builder<Implementation> for Builder {
                     lifetimes: implemented_generic_parameters
                         .lifetimes()
                         .iter()
-                        .map(|_| Lifetime::Error(pernixc_term::Error))
+                        .map(|_| Lifetime::Error(term::Error))
                         .collect(),
                     types: implemented_generic_parameters
                         .types()
                         .iter()
-                        .map(|_| Type::Error(pernixc_term::Error))
+                        .map(|_| Type::Error(term::Error))
                         .collect(),
                     constants: implemented_generic_parameters
                         .constants()
                         .iter()
-                        .map(|_| Constant::Error(pernixc_term::Error))
+                        .map(|_| Constant::Error(term::Error))
                         .collect(),
                 }
             });

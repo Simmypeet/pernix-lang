@@ -4,11 +4,13 @@
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
-use pernixc_semantic::{MemberID, Table};
-use pernixc_source_file::Span;
-use pernixc_semantic::term::generic_parameter::{
-    GenericKind, GenericParameter, GenericParameters,
+use pernixc_semantic::{
+    component::derived::generic_parameters::{
+        GenericKind, GenericParameter, GenericParameters,
+    },
+    table::{MemberID, Table},
 };
+use pernixc_source_file::Span;
 
 /// The generic parameter was declared in the wrong order.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

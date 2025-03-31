@@ -30,8 +30,12 @@ use pernixc_log::{
     Message, Severity,
 };
 use pernixc_semantic::{
-    component::Member, diagnostic::Diagnostic, AddTargetError,
-    CompilationMetaData, GlobalID, Table, TargetID,
+    component::input::Member,
+    diagnostic::Diagnostic,
+    table::{
+        self, input::AddTargetError, CompilationMetaData, GlobalID, Table,
+        TargetID,
+    },
 };
 use pernixc_source_file::SourceFile;
 use pernixc_storage::{serde::Reflector, ArcTrait};
@@ -834,10 +838,7 @@ fn emit_as_machine_code(
     let inkwell_context = inkwell::context::Context::create();
 
     let result = if let Some(main_function_id) = table
-        .get::<Member>(GlobalID::new(
-            target_id,
-            pernixc_semantic::ID::ROOT_MODULE,
-        ))
+        .get::<Member>(GlobalID::new(target_id, table::ID::ROOT_MODULE))
         .get("main")
         .copied()
     {

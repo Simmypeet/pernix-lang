@@ -6,23 +6,28 @@ use inkwell::{
     values::{FunctionValue, PointerValue},
     AddressSpace,
 };
-use pernixc_component::{
-    fields::Fields, implementation::Implementation, variant::Variant,
-};
 use pernixc_ir::model::Erased;
 use pernixc_semantic::{
-    component::{Implemented, Member, SymbolKind, VariantDeclarationOrder},
-    DisplayObject, GlobalID, TargetID,
-};
-use pernixc_semantic::term::{
-    constant::Constant,
-    elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-    generic_arguments::GenericArguments,
-    generic_parameter::{GenericParameters, LifetimeParameterID},
-    instantiation::Instantiation,
-    lifetime::Lifetime,
-    r#type::{Array, Type},
-    Model as _, Symbol, Tuple,
+    component::{
+        derived::{
+            elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
+            fields::Fields,
+            generic_parameters::{GenericParameters, LifetimeParameterID},
+            implementation::Implementation,
+            variant::Variant,
+        },
+        input::{Implemented, Member, SymbolKind, VariantDeclarationOrder},
+    },
+    table::{DisplayObject, GlobalID, TargetID},
+    term::{
+        self,
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::Instantiation,
+        lifetime::Lifetime,
+        r#type::{Array, Type},
+        Model as _, Symbol, Tuple,
+    },
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -184,7 +189,7 @@ impl<'ctx> Context<'_, 'ctx> {
                     let declaration_order = self
                         .table()
                         .get::<VariantDeclarationOrder>(variant_id)
-                        .order;
+                        .0;
 
                     let variant =
                         self.table().query::<Variant>(variant_id).unwrap();
@@ -582,9 +587,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 table: self.table(),
                 display: &Array {
                     length: Constant::Primitive(
-                        pernixc_term::constant::Primitive::Usize(
-                            array_tup_ty.1
-                        )
+                        term::constant::Primitive::Usize(array_tup_ty.1)
                     ),
                     r#type: Box::new(array_tup_ty.0.clone())
                 }

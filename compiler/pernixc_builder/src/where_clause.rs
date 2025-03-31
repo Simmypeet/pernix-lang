@@ -17,29 +17,34 @@ use pernixc_resolution::{
     Config, Ext, ExtraNamespace, GetGenericParameterNamespaceExt as _,
 };
 use pernixc_semantic::{
-    component::{syntax_tree as syntax_tree_component, Derived, SymbolKind},
+    component::{
+        derived::{
+            forall_lifetimes::{
+                self, ForallLifetime, ForallLifetimeID, ForallLifetimes
+            },
+            generic_parameters::{GenericParameters, TypeParameterID},
+            where_clause::{self, WhereClause},
+        },
+        input::{syntax_tree as syntax_tree_component, SymbolKind},
+        Derived,
+    },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
+    table::{query, GlobalID, Table},
+    term::{
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{
+            self, Compatible, NegativeMarker, PositiveMarker, PositiveTrait,
+            Predicate,
+        },
+        r#type::{TraitMember, Type},
+        visitor::RecursiveIterator,
+        Default, MemberSymbol,
+    },
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, QualifiedIdentifierRoot,
-};
-use pernixc_semantic::term::{
-    forall_lifetime::{
-        self, ForallLifetime, ForallLifetimeID, ForallLifetimes,
-    },
-    generic_arguments::GenericArguments,
-    generic_parameter::{GenericParameters, TypeParameterID},
-    lifetime::Lifetime,
-    predicate::{
-        self, Compatible, NegativeMarker, PositiveMarker, PositiveTrait,
-        Predicate,
-    },
-    r#type::{TraitMember, Type},
-    visitor::RecursiveIterator,
-    where_clause::{self, WhereClause},
-    Default, MemberSymbol,
 };
 
 pub mod diagnostic;
@@ -67,7 +72,7 @@ fn create_forall_lifetimes(
                 let forall = table
                     .query::<ForallLifetimes>(global_id)
                     .unwrap()
-                    .insert(ForallLifetime::Named(forall_lifetime::Named {
+                    .insert(ForallLifetime::Named(forall_lifetimes::Named {
                         name: syn.identifier.span.str().to_owned(),
                         span: Some(syn.identifier.span.clone()),
                     }));

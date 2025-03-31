@@ -4,36 +4,40 @@ use std::{borrow::Cow, collections::HashSet, sync::Arc};
 
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
-use pernixc_component::{
-    function_signature::{FunctionSignature, Parameter},
-    implied_predicates::{ImpliedPredicate, ImpliedPredicates},
-    late_bound::LateBound,
-};
 use pernixc_handler::Handler;
 use pernixc_resolution::{
     Config, ElidedTermProvider, Ext, GetGenericParameterNamespaceExt as _,
 };
 use pernixc_semantic::{
     component::{
-        syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
+        derived::{
+            elided_lifetimes::{
+                ElidedLifetime, ElidedLifetimeID, ElidedLifetimes,
+            },
+            function_signature::{FunctionSignature, Parameter},
+            generic_parameters::{GenericParameters, LifetimeParameter},
+            implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+            late_bound::LateBound,
+            where_clause::WhereClause,
+        },
+        input::{syntax_tree as syntax_tree_component, Parent, SymbolKind},
+        Derived,
     },
     diagnostic::Diagnostic,
-    query, GlobalID, Table,
+    table::{query, GlobalID, Table},
+    term::{
+        self,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{Outlives, Predicate},
+        r#type::Type,
+        visitor::RecursiveIterator,
+        Default, Tuple,
+    },
 };
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
-};
-use pernixc_semantic::term::{
-    elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
-    generic_arguments::GenericArguments,
-    generic_parameter::{GenericParameters, LifetimeParameter},
-    lifetime::Lifetime,
-    predicate::{Outlives, Predicate},
-    r#type::Type,
-    visitor::RecursiveIterator,
-    where_clause::WhereClause,
-    Default, Tuple,
 };
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt},
@@ -284,7 +288,7 @@ impl query::Builder<Intermediate> for Builder {
         let mut active_premise =
             table.get_active_premise::<Default>(GlobalID::new(
                 global_id.target_id,
-                table.get::<Parent>(global_id).parent.unwrap(),
+                table.get::<Parent>(global_id).unwrap(),
             ));
 
         'out: {
@@ -472,7 +476,7 @@ impl query::Builder<FunctionSignature> for Builder {
                 Arc::new(FunctionSignature {
                     parameters: Arena::default(),
                     parameter_order: Vec::new(),
-                    return_type: Type::Error(pernixc_term::Error),
+                    return_type: Type::Error(term::Error),
                 })
             },
             |x| x.function_signature.clone(),

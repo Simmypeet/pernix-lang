@@ -10,33 +10,38 @@ use diagnostic::{
     MismatchedImplementationConstantTypeParameter, OrphanRuleViolation,
 };
 use pernixc_abort::Abort;
-use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_semantic::{
     component::{
-        Implemented, Implements, LocationSpan, Member, Name, Parent,
-        SymbolKind, TraitImplementation,
+        derived::{
+            generic_parameters::{
+                ConstantParameterID, GenericKind, GenericParameters,
+                LifetimeParameterID, TypeParameterID,
+            },
+            implementation::Implementation,
+            variances::Variance,
+            where_clause::WhereClause,
+        },
+        input::{
+            Implemented, Implements, LocationSpan, Member, Name, Parent,
+            SymbolKind, TraitImplementation,
+        },
     },
     diagnostic::Diagnostic,
-    GlobalID, Table,
-};
-use pernixc_semantic::term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        ConstantParameterID, GenericKind, GenericParameters,
-        LifetimeParameterID, TypeParameterID,
+    table::{GlobalID, Table},
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        r#type::Type,
+        sub_term::{
+            SubConstantLocation, SubLifetimeLocation, SubTypeLocation,
+            TermLocation,
+        },
+        visitor::RecursiveIterator,
+        Default, Kind,
     },
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    r#type::Type,
-    sub_term::{
-        SubConstantLocation, SubLifetimeLocation, SubTypeLocation, TermLocation,
-    },
-    variance::Variance,
-    visitor::RecursiveIterator,
-    where_clause::WhereClause,
-    Default, Kind,
 };
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt, Premise},
@@ -481,7 +486,7 @@ pub(super) fn check_implementation_member(
     let this_name = table.get::<Name>(implementation_member_id);
     let parent_impl = GlobalID::new(
         implementation_member_id.target_id,
-        table.get::<Parent>(implementation_member_id).parent.unwrap(),
+        table.get::<Parent>(implementation_member_id).unwrap(),
     );
 
     let trait_id = table.get::<Implements>(parent_impl).0;

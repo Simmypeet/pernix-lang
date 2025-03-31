@@ -5,18 +5,16 @@ use pernixc_handler::{Panic, Storage};
 use pernixc_semantic::{
     component::{
         derived::{
+            elided_lifetimes::ElidedLifetimes,
             function_signature::FunctionSignature,
-            implied_predicates::ImpliedPredicates,
+            generic_parameters::GenericParameters,
+            implied_predicates::ImpliedPredicates, where_clause::WhereClause,
         },
-        Member, Name, Parent, SymbolKind,
+        input::{syntax_tree, Member, Name, Parent, SymbolKind},
     },
     diagnostic::Diagnostic,
-    term::{
-        elided_lifetimes::ElidedLifetimes,
-        generic_parameter::GenericParameters, r#type::Type,
-        where_clause::WhereClause, Default,
-    },
-    GlobalID, Table, TargetID,
+    table::{self, GlobalID, Table, TargetID},
+    term::{self, r#type::Type, Default},
 };
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
@@ -48,20 +46,16 @@ impl Template {
         let table = Table::new(Arc::new(Panic));
 
         let test_root_module_id =
-            GlobalID::new(TargetID(1), pernixc_semantic::ID::ROOT_MODULE);
+            GlobalID::new(TargetID(1), table::ID::ROOT_MODULE);
 
-        let test_function_id = GlobalID::new(
-            TargetID(1),
-            pernixc_semantic::ID(pernixc_semantic::ID::ROOT_MODULE.0 + 1),
-        );
+        let test_function_id =
+            GlobalID::new(TargetID(1), table::ID(table::ID::ROOT_MODULE.0 + 1));
 
         assert!(table.add_component(test_root_module_id, SymbolKind::Module));
         assert!(
             table.add_component(test_root_module_id, Name("test".to_string()))
         );
-        assert!(
-            table.add_component(test_root_module_id, Parent { parent: None })
-        );
+        assert!(table.add_component(test_root_module_id, Parent(None)));
         assert!(table.add_component(
             test_root_module_id,
             Member(
@@ -87,9 +81,10 @@ impl Template {
             parameter_order: Vec::new(),
             return_type: ty,
         }));
-        assert!(table.add_component(test_function_id, Parent {
-            parent: Some(test_root_module_id.id)
-        }));
+        assert!(table.add_component(
+            test_function_id,
+            Parent(Some(test_root_module_id.id))
+        ));
 
         Self {
             table,
@@ -139,9 +134,7 @@ impl CreateBinderAtExt for Table {
         assert_eq!(*self.get::<SymbolKind>(function_id), SymbolKind::Function);
 
         let function_signature =
-        self.get::<pernixc_semantic::component::syntax_tree::FunctionSignature>(
-            function_id,
-        );
+            self.get::<syntax_tree::FunctionSignature>(function_id);
 
         Binder::new_function(
             self,

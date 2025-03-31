@@ -1,12 +1,14 @@
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::{
+use pernixc_semantic::{
+    component::derived::generic_parameters::{
         GenericParameters, LifetimeParameterID, TypeParameterID,
     },
-    lifetime::Lifetime,
-    predicate::{Compatible, ConstantType, PositiveTrait, Predicate},
-    r#type::{self, Primitive, Qualifier, Reference, Type},
-    MemberSymbol,
+    term::{
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{Compatible, ConstantType, PositiveTrait, Predicate},
+        r#type::{self, Primitive, Qualifier, Reference, Type},
+        MemberSymbol,
+    },
 };
 
 use crate::{

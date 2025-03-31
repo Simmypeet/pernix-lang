@@ -6,7 +6,10 @@ use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_semantic::{
     component::{
-        derived::{implied_predicates::ImpliedPredicates, variances::Variance},
+        derived::{
+            implied_predicates::ImpliedPredicates, variances::Variance,
+            where_clause::WhereClause,
+        },
         input::SymbolKind,
     },
     table::{GlobalID, Table},
@@ -17,7 +20,6 @@ use pernixc_semantic::{
         predicate::{Outlives, Predicate},
         r#type::Type,
         visitor::RecursiveIterator,
-        where_clause::WhereClause,
         Model,
     },
 };

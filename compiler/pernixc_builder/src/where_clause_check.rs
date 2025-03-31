@@ -7,9 +7,11 @@ use diagnostic::{
 };
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
+    component::input::SymbolKind,
+    diagnostic::Diagnostic,
+    table::{GlobalID, Table},
+    term::{self, predicate::Predicate},
 };
-use pernixc_semantic::term::predicate::Predicate;
 use pernixc_type_system::{
     diagnostic::TypeCalculatingOverflow,
     environment::{Environment, Error, GetActivePremiseExt},
@@ -31,7 +33,7 @@ pub fn check(
         return;
     }
 
-    let premise = table.get_active_premise::<pernixc_term::Default>(id);
+    let premise = table.get_active_premise::<term::Default>(id);
 
     let (_, errors) = Environment::diagnose(
         Cow::Borrowed(&premise),
@@ -39,8 +41,8 @@ pub fn check(
         normalizer::NO_OP,
     );
 
-    let active_premise_with_span = table
-        .get_active_premise_predicates_with_span::<pernixc_term::Default>(id);
+    let active_premise_with_span =
+        table.get_active_premise_predicates_with_span::<term::Default>(id);
 
     for error in errors {
         match error {

@@ -14,7 +14,7 @@ use pernixc_diagnostic::Report;
 use pernixc_handler::{Handler, Storage};
 use pernixc_intrinsic::IntrinsicExt;
 use pernixc_lexical::token::Identifier;
-use pernixc_semantic::{Table, TargetID};
+use pernixc_semantic::table::{Table, TargetID};
 use pernixc_source_file::SourceFile;
 use pernixc_syntax::syntax_tree::target::Target;
 use tower_lsp::lsp_types::Url;

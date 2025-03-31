@@ -15,6 +15,7 @@ use pernixc_semantic::{
                 TypeParameter,
             },
             implementation::Implementation,
+            where_clause::{self, WhereClause},
         },
         input::{
             Implemented, Implements, PositiveTraitImplementation, SymbolKind,
@@ -30,7 +31,6 @@ use pernixc_semantic::{
         predicate::{PositiveTrait, Predicate},
         r#type::Type,
         visitor::RecursiveIterator,
-        where_clause::{self, WhereClause},
         Default, Kind, Tuple,
     },
 };

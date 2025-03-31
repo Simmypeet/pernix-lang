@@ -1,12 +1,16 @@
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        GenericParameters, LifetimeParameterID, TypeParameterID,
+use pernixc_semantic::{
+    component::derived::{
+        generic_parameters::{
+            GenericParameters, LifetimeParameterID, TypeParameterID,
+        },
+        where_clause::WhereClause,
     },
-    lifetime::Lifetime,
-    r#type::{Primitive, TraitMember, Type},
-    where_clause::WhereClause,
-    MemberSymbol,
+    term::{
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        r#type::{Primitive, TraitMember, Type},
+        MemberSymbol,
+    },
 };
 
 use crate::{

@@ -10,24 +10,21 @@ use pernixc_handler::Handler;
 use pernixc_resolution::{Config, Ext, GetGenericParameterNamespaceExt as _};
 use pernixc_semantic::{
     component::{
-        syntax_tree as syntax_tree_component, Derived, Parent, SymbolKind,
+        derived::generic_parameters::{
+            ConstantParameter, GenericKind, GenericParameters,
+            LifetimeParameter, TypeParameter,
+        },
+        input::{syntax_tree as syntax_tree_component, Parent, SymbolKind},
+        Derived,
     },
     diagnostic::Diagnostic,
-    query, GlobalID, MemberID, Table,
+    table::{query, GlobalID, MemberID, Table},
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type},
 };
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{
     item::generic_parameter::GenericParameter as GenericParameterSyn,
     ConnectedList,
-};
-use pernixc_semantic::term::{
-    constant::Constant,
-    generic_parameter::{
-        ConstantParameter, GenericKind, GenericParameters, LifetimeParameter,
-        TypeParameter,
-    },
-    lifetime::Lifetime,
-    r#type::Type,
 };
 
 use crate::{
@@ -142,7 +139,7 @@ impl query::Builder<GenericParameters> for Builder {
         let mut extra_name_space =
             table.get_generic_parameter_namepsace(GlobalID::new(
                 global_id.target_id,
-                table.get::<Parent>(global_id).parent.unwrap(),
+                table.get::<Parent>(global_id).unwrap(),
             ));
 
         for lifetime_parameter_syn in lifetime_parameter_syns {

@@ -1,5 +1,5 @@
 use pernixc_arena::ID;
-use pernixc_semantic::component::derived::fields::Field;
+use pernixc_semantic::component::derived::fields::{self, Field};
 use pernixc_syntax::{syntax_tree, utility::parse};
 
 use crate::binding::{
@@ -34,8 +34,7 @@ fn struct_expression() {
     let mut binder = table.create_binder_at(["test", "test"]);
 
     let struct_id = table.get_by_qualified_name(["test", "Vector2"]).unwrap();
-    let fields =
-        table.query::<pernixc_component::fields::Fields>(struct_id).unwrap();
+    let fields = table.query::<fields::Fields>(struct_id).unwrap();
 
     let x_field_id = fields.field_ids_by_name["x"];
     let y_field_id = fields.field_ids_by_name["y"];
@@ -82,8 +81,7 @@ fn struct_uninitialized_field_error() {
     let mut binder = table.create_binder_at(["test", "test"]);
 
     let struct_id = table.get_by_qualified_name(["test", "Vector2"]).unwrap();
-    let fields =
-        table.query::<pernixc_component::fields::Fields>(struct_id).unwrap();
+    let fields = table.query::<fields::Fields>(struct_id).unwrap();
 
     let y_field_id = fields.field_ids_by_name["y"];
 
@@ -107,8 +105,7 @@ fn struct_duplicated_initialization_error() {
     let mut binder = table.create_binder_at(["test", "test"]);
 
     let struct_id = table.get_by_qualified_name(["test", "Vector2"]).unwrap();
-    let fields =
-        table.query::<pernixc_component::fields::Fields>(struct_id).unwrap();
+    let fields = table.query::<fields::Fields>(struct_id).unwrap();
 
     let x_field_id = fields.field_ids_by_name["x"];
 
@@ -157,8 +154,7 @@ fn struct_field_is_not_accessible_error() {
 
     let struct_id =
         table.get_by_qualified_name(["test", "inner", "Vector2"]).unwrap();
-    let fields =
-        table.query::<pernixc_component::fields::Fields>(struct_id).unwrap();
+    let fields = table.query::<fields::Fields>(struct_id).unwrap();
 
     let y_field_id = fields.field_ids_by_name["y"];
 

@@ -1,16 +1,22 @@
 use pernixc_handler::{Panic, Storage};
 use pernixc_semantic::{
-    component::{Implemented, Member},
+    component::{
+        derived::{
+            fields,
+            generic_parameters::{GenericParameters, TypeParameterID},
+        },
+        input::{Implemented, Member},
+    },
     diagnostic::Diagnostic,
-    GlobalID,
+    table::GlobalID,
+    term::{
+        self,
+        lifetime::Lifetime,
+        r#type::{Primitive, Qualifier, Reference, Type},
+        Model,
+    },
 };
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_semantic::term::{
-    generic_parameter::{GenericParameters, TypeParameterID},
-    lifetime::Lifetime,
-    r#type::{Primitive, Qualifier, Reference, Type},
-    Model,
-};
 use pernixc_type_system::equality::Equality;
 
 use crate::{
@@ -78,10 +84,7 @@ fn invalid_cast_type() {
         .downcast_ref::<InvalidCastType<model::Constrained>>()
         .unwrap();
 
-    assert_eq!(
-        error.r#type,
-        Type::Tuple(term::Tuple { elements: Vec::new() })
-    );
+    assert_eq!(error.r#type, Type::Tuple(term::Tuple { elements: Vec::new() }));
 }
 
 #[test]
@@ -365,8 +368,7 @@ fn struct_field_access() {
     };
     let vector_id =
         table.get_by_qualified_name(["test", "math", "Vector2"]).unwrap();
-    let fields =
-        table.query::<pernixc_component::fields::Fields>(vector_id).unwrap();
+    let fields = table.query::<fields::Fields>(vector_id).unwrap();
 
     // x field
     {

@@ -14,7 +14,10 @@ use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_semantic::{
     component::{
-        derived::implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+        derived::{
+            implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+            where_clause::WhereClause,
+        },
         input::SymbolKind,
     },
     table::{GlobalID, Table},
@@ -23,7 +26,6 @@ use pernixc_semantic::{
         predicate::{Compatible, Outlives, Predicate},
         r#type::{TraitMember, Type},
         visitor::RecursiveIterator,
-        where_clause::WhereClause,
         Kind, Model, ModelOf,
     },
 };

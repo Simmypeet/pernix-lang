@@ -1,27 +1,29 @@
 //! Contains the function used for creating the [`Reflector`] instance.
 
-use pernixc_component::{
-    fields::Fields, function_signature::FunctionSignature,
-    implementation::Implementation, implied_predicates::ImpliedPredicates,
-    late_bound::LateBound, type_alias::TypeAlias, variant::Variant,
-};
 use pernixc_ir::IR;
 use pernixc_semantic::{
     component::{
-        Accessibility, Extern, Implemented, Implements, LocationSpan, Member,
-        Name, Parent, PositiveTraitImplementation, SymbolKind,
-        TraitImplementation, VariantDeclarationOrder,
+        derived::{
+            elided_lifetimes::ElidedLifetimes, fields::Fields,
+            forall_lifetimes::ForallLifetimes,
+            function_signature::FunctionSignature,
+            generic_parameters::GenericParameters,
+            implementation::Implementation,
+            implied_predicates::ImpliedPredicates, late_bound::LateBound,
+            type_alias::TypeAlias, variances::Variances, variant::Variant,
+            where_clause::WhereClause,
+        },
+        input::{
+            Accessibility, Extern, Implemented, Implements, LocationSpan,
+            Member, Name, Parent, PositiveTraitImplementation, SymbolKind,
+            TraitImplementation, VariantDeclarationOrder,
+        },
     },
-    GlobalID,
+    table::GlobalID,
 };
 use pernixc_storage::{
     serde::{MergerFn, Reflector},
     ArcTrait,
-};
-use pernixc_semantic::term::{
-    elided_lifetimes::ElidedLifetimes, forall_lifetime::ForallLifetimes,
-    generic_parameter::GenericParameters, variance::Variances,
-    where_clause::WhereClause,
 };
 use serde::{Deserialize, Serialize};
 

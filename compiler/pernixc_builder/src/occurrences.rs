@@ -10,29 +10,33 @@ use diagnostic::{
 use enum_as_inner::EnumAsInner;
 use parking_lot::RwLock;
 use pernixc_abort::Abort;
-use pernixc_component::implementation::Implementation;
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic::{
-    component::{Input, Parent, SymbolKind},
+    component::{
+        derived::{
+            generic_parameters::GenericParameters,
+            implementation::Implementation, variances::Variance,
+            where_clause::WhereClause,
+        },
+        input::{Parent, SymbolKind},
+        Input,
+    },
     diagnostic::Diagnostic,
-    GlobalID, Table,
+    table::{GlobalID, Table},
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::Instantiation,
+        lifetime::Lifetime,
+        predicate::{self, Outlives, PositiveTrait, Predicate},
+        r#type::{Primitive, Type},
+        visitor::RecursiveIterator,
+        Default,
+    },
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
-use pernixc_semantic::term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::GenericParameters,
-    instantiation::Instantiation,
-    lifetime::Lifetime,
-    predicate::{self, Outlives, PositiveTrait, Predicate},
-    r#type::{Primitive, Type},
-    variance::Variance,
-    visitor::RecursiveIterator,
-    where_clause::WhereClause,
-    Default,
-};
 use pernixc_type_system::{
     compatible::Compatibility,
     deduction,
@@ -396,7 +400,6 @@ impl Checker<'_> {
                             self.environment
                                 .table()
                                 .get::<Parent>(member_generic.id)
-                                .parent
                                 .unwrap(),
                         ))
                     }
@@ -409,7 +412,6 @@ impl Checker<'_> {
                             self.environment
                                 .table()
                                 .get::<Parent>(member_generic.id)
-                                .parent
                                 .unwrap(),
                         );
 
@@ -447,7 +449,6 @@ impl Checker<'_> {
                             self.environment
                                 .table()
                                 .get::<Parent>(member_generic.id)
-                                .parent
                                 .unwrap(),
                         );
 

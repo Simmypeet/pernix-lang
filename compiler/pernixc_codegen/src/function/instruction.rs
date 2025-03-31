@@ -7,7 +7,6 @@ use inkwell::{
     AddressSpace, FloatPredicate, IntPredicate,
 };
 use pernixc_arena::ID;
-use pernixc_component::fields::Fields;
 use pernixc_ir::{
     control_flow_graph::Block,
     instruction::{
@@ -23,19 +22,24 @@ use pernixc_ir::{
     },
 };
 use pernixc_semantic::{
-    component::{Member, Name, Parent, SymbolKind, VariantDeclarationOrder},
-    GlobalID,
-};
-use pernixc_semantic::term::{
-    constant::Constant,
-    elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-    generic_parameter::{
-        ConstantParameterID, GenericParameters, LifetimeParameterID,
-        TypeParameterID,
+    component::{
+        derived::{
+            elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
+            fields::Fields,
+            generic_parameters::{
+                ConstantParameterID, GenericParameters, LifetimeParameterID,
+                TypeParameterID,
+            },
+        },
+        input::{Member, Name, Parent, SymbolKind, VariantDeclarationOrder},
     },
-    instantiation,
-    lifetime::Lifetime,
-    r#type::{Primitive, Type},
+    table::GlobalID,
+    term::{
+        constant::Constant,
+        instantiation,
+        lifetime::Lifetime,
+        r#type::{Primitive, Type},
+    },
 };
 
 use super::{
@@ -344,7 +348,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.context
                         .table()
                         .get::<Parent>(function_call.callable_id)
-                        .parent
                         .unwrap(),
                 );
 
@@ -1225,7 +1228,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         .context
                         .table()
                         .get::<VariantDeclarationOrder>(variant.variant_id)
-                        .order
+                        .0
                 {
                     Ok(Some(LlvmValue::Scalar(
                         self.context
@@ -1254,7 +1257,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                                 .get::<VariantDeclarationOrder>(
                                     variant.variant_id,
                                 )
-                                .order
+                                .0
                                 .try_into()
                                 .unwrap(),
                             false,
@@ -1276,7 +1279,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .context
                     .table()
                     .get::<VariantDeclarationOrder>(variant.variant_id)
-                    .order;
+                    .0;
 
                 let tag_pointer = self
                     .inkwell_builder
