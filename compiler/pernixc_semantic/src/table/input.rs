@@ -38,10 +38,10 @@ use super::{
     GlobalID, Representation, TargetID, ID,
 };
 use crate::{
-    component::{
-        self, syntax_tree as syntax_tree_component, Accessibility, Extern,
-        ExternC, FunctionConstness, FunctionUnsafeness, Implemented,
-        Implements, Import, LocationSpan, Member, Name, Parent,
+    component::input::{
+        syntax_tree as syntax_tree_component, Accessibility, Extern, ExternC,
+        FunctionConstness, FunctionUnsafeness, HierarchyRelationship,
+        Implemented, Implements, Import, LocationSpan, Member, Name, Parent,
         PositiveTraitImplementation, SymbolKind, TraitImplementation, Using,
         VariantDeclarationOrder,
     },
@@ -197,9 +197,10 @@ impl Representation {
         let name = self.storage.get::<Name>(implemented_id).unwrap().0.clone();
 
         assert!(self.storage.add_component(new_symbol_id, Name(name)));
-        assert!(self.storage.add_component(new_symbol_id, Parent {
-            parent: Some(defined_in_module_id.id)
-        },));
+        assert!(self.storage.add_component(
+            new_symbol_id,
+            Parent(Some(defined_in_module_id.id))
+        ));
         assert!(self.storage.add_component(new_symbol_id, symbol_kind));
 
         if symbol_kind.has_member() {
@@ -1191,9 +1192,9 @@ impl Representation {
         assert!(self
             .storage
             .add_component(new_symbol_id, Name(name.span.str().to_owned())));
-        assert!(self.storage.add_component(new_symbol_id, Parent {
-            parent: Some(parent_id.id)
-        }));
+        assert!(self
+            .storage
+            .add_component(new_symbol_id, Parent(Some(parent_id.id))));
         assert!(self.storage.add_component(new_symbol_id, symbol_kind));
 
         if let Some(accessibility) = accessibility {
@@ -1293,9 +1294,7 @@ impl Representation {
 
             assert!(self
                 .storage
-                .add_component(variant_id, VariantDeclarationOrder {
-                    order: index
-                }));
+                .add_component(variant_id, VariantDeclarationOrder(index)));
         }
 
         enum_id
@@ -1430,7 +1429,7 @@ impl Representation {
                     *self.storage.get(trait_id).unwrap(),
                 )
                 .unwrap()
-                == component::HierarchyRelationship::Parent
+                == HierarchyRelationship::Parent
             {
                 handler.receive(Box::new(SymbolIsMoreAccessibleThanParent {
                     symbol_id: member_id,
@@ -1505,9 +1504,9 @@ impl Representation {
 
         // has the parent module id
 
-        assert!(self.storage.add_component(module_id, Parent {
-            parent: parent_module_id.map(|x| x.id)
-        }));
+        assert!(self
+            .storage
+            .add_component(module_id, Parent(parent_module_id.map(|x| x.id))));
 
         if let Some(parent_module_id) = parent_module_id {
             assert!(self.storage.add_component(

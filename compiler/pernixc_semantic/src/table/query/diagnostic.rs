@@ -4,7 +4,7 @@ use pernixc_diagnostic::Report;
 use pernixc_log::Severity;
 
 use super::Record;
-use crate::{component::LocationSpan, table::Table};
+use crate::{component::input::LocationSpan, table::Table};
 
 /// A cyclic dependency between symbols detected during the query.
 #[derive(

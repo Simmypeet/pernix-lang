@@ -16,7 +16,7 @@ use pernixc_syntax::syntax_tree::{
 
 use super::{input::diagnostic::ExpectModule, GlobalID, Representation, ID};
 use crate::{
-    component::{Import, Member, SymbolKind},
+    component::input::{Import, Member, SymbolKind},
     diagnostic::Diagnostic,
 };
 

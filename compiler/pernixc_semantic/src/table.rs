@@ -18,8 +18,11 @@ use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 
 use crate::{
     component::{
-        Accessibility, Derived, HierarchyRelationship, Implemented, Implements,
-        Import, Input, InputMut, Member, Name, Parent, SymbolKind,
+        input::{
+            Accessibility, HierarchyRelationship, Implemented, Implements,
+            Import, Member, Name, Parent, SymbolKind,
+        },
+        Derived, Input, InputMut,
     },
     diagnostic::Diagnostic,
 };
@@ -195,10 +198,9 @@ impl Iterator for ScopeWalker<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_id {
             Some(current_id) => {
-                let next = self
+                let next = **self
                     .representation
-                    .get::<Parent>(GlobalID::new(self.target_id, current_id))
-                    .parent;
+                    .get::<Parent>(GlobalID::new(self.target_id, current_id));
 
                 self.current_id = next;
                 Some(current_id)
@@ -283,7 +285,7 @@ impl Representation {
                 qualified_name.insert_str(0, &current_name);
             }
 
-            if let Some(parent_id) = self.get::<Parent>(id).parent {
+            if let Some(parent_id) = **self.get::<Parent>(id) {
                 id = GlobalID::new(id.target_id, parent_id);
             } else {
                 break;
@@ -308,9 +310,7 @@ impl Representation {
 
             id = GlobalID::new(
                 id.target_id,
-                self.get::<Parent>(id)
-                    .parent
-                    .expect("should always have a parent "),
+                self.get::<Parent>(id).expect("should always have a parent "),
             );
         }
     }
@@ -444,7 +444,7 @@ impl Representation {
             | SymbolKind::TraitImplementationConstant
             | SymbolKind::Variant => self.get_accessibility(GlobalID::new(
                 id.target_id,
-                self.get::<Parent>(id).parent.unwrap(),
+                self.get::<Parent>(id).unwrap(),
             )),
 
             SymbolKind::PositiveTraitImplementation

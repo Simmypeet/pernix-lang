@@ -8,7 +8,7 @@ use pernixc_log::Severity;
 use pernixc_source_file::Span;
 
 use crate::{
-    component::{Accessibility, LocationSpan, Name, SymbolKind},
+    component::input::{Accessibility, LocationSpan, Name, SymbolKind},
     table::{GlobalID, Representation, Table, TargetID},
 };
 

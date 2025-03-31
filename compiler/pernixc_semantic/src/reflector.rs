@@ -6,7 +6,7 @@ use pernixc_storage::{
 };
 
 use crate::{
-    component::{
+    component::input::{
         Accessibility, Extern, Implemented, Implements, LocationSpan, Member,
         Name, Parent, PositiveTraitImplementation, SymbolKind,
         TraitImplementation,

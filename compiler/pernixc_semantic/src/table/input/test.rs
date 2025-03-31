@@ -5,7 +5,7 @@ use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
 
 use crate::{
-    component::{Accessibility, Import, Member, Name, Parent},
+    component::input::{Accessibility, Import, Member, Name, Parent},
     diagnostic::Diagnostic,
     table::{
         input::diagnostic::{
@@ -51,7 +51,7 @@ fn submodule() {
         table.storage.get::<Accessibility>(root_module_id).as_deref(),
         Some(&Accessibility::Public)
     );
-    assert!(table.get::<Parent>(root_module_id).parent.is_none());
+    assert!(table.get::<Parent>(root_module_id).is_none());
 
     let root_members = table.storage.get::<Member>(root_module_id).unwrap();
 
@@ -87,11 +87,11 @@ fn submodule() {
 
     assert_eq!(
         table.storage.get::<Parent>(second_module_id).as_deref(),
-        Some(&Parent { parent: Some(root_module_id.id) })
+        Some(&Parent(Some(root_module_id.id)))
     );
     assert_eq!(
         table.storage.get::<Parent>(first_module_id).as_deref(),
-        Some(&Parent { parent: Some(root_module_id.id) })
+        Some(&Parent(Some(root_module_id.id)))
     );
 
     let second_members = table.storage.get::<Member>(second_module_id).unwrap();
