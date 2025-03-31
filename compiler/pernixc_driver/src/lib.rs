@@ -2,6 +2,7 @@
 
 use std::{
     fs::File,
+    io::ErrorKind,
     path::{Path, PathBuf},
     process::ExitCode,
     sync::Arc,
@@ -491,7 +492,7 @@ fn semantic_analysis(
     );
     progress.finish_with_message(format!(
         "{} finished in {:?}",
-        Style::Bold.with(Color::Green.with("Analyis")),
+        Style::Bold.with(Color::Green.with("Analysis")),
         timer.elapsed()
     ));
 
@@ -640,17 +641,154 @@ fn emit_as_library(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum MachineCodeKind {
+    LlvmIR,
+    Binary(bool),
+}
+
+fn linker_command(obj: &Path, out: &Path) -> Option<std::process::Command> {
+    if cfg!(target_os = "macos") {
+        let mut cmd = std::process::Command::new("cc");
+        cmd.arg("-o").arg(out).arg(obj).arg("-Wl").arg("-dead_strip");
+
+        Some(cmd)
+    } else if cfg!(target_os = "linux") {
+        let mut cmd = std::process::Command::new("cc");
+        cmd.arg("-o")
+            .arg(out)
+            .arg(obj)
+            .arg("-no-pie")
+            .arg("-W")
+            .arg("--data-sections");
+
+        Some(cmd)
+    } else if cfg!(target_os = "windows") {
+        // NOTE: not really sure about the flags; need further testing.
+
+        let mut cmd = std::process::Command::new("link");
+        cmd.arg(format!("/out:{}", out.display()))
+            .arg(obj)
+            .arg("kernel32.lib")
+            .arg("ucrt.lib")
+            .arg("msvcrt.lib");
+
+        Some(cmd)
+    } else {
+        None
+    }
+}
+
+fn invoke_linker(
+    temp_obj_path: &Path,
+    output_path: &Path,
+    progress: &ProgressBar,
+) -> bool {
+    let linker_cmd = linker_command(temp_obj_path, output_path);
+
+    let Some(mut cmd) = linker_cmd else {
+        progress.finish_and_clear();
+        eprintln!(
+            "{}",
+            Message::new(
+                Severity::Error,
+                "linker command not supported on this platform"
+            )
+        );
+
+        return false;
+    };
+
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            progress.finish_and_clear();
+            eprintln!(
+                "{}",
+                Message::new(
+                    Severity::Error,
+                    format!("failed to spawn linker: {err}")
+                )
+            );
+
+            if err.kind() == ErrorKind::NotFound {
+                if cfg!(target_os = "windows") {
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Info,
+                            "linker `link` not found; please install Visual \
+                             Studio Build Tools"
+                        )
+                    );
+                } else if cfg!(target_os = "linux") {
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Info,
+                            "linker `cc` not found; please install the \
+                             `build-essential` package"
+                        )
+                    );
+                } else if cfg!(target_os = "macos") {
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Info,
+                            "linker `cc` not found; please install Xcode \
+                             Command Line Tools"
+                        )
+                    );
+                }
+            }
+
+            return false;
+        }
+    };
+
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(err) => {
+            progress.finish_and_clear();
+            eprintln!(
+                "{}",
+                Message::new(
+                    Severity::Error,
+                    format!("failed to wait for linker: {err}")
+                )
+            );
+
+            return false;
+        }
+    };
+
+    if !status.success() {
+        progress.finish_and_clear();
+        eprintln!(
+            "{}",
+            Message::new(
+                Severity::Error,
+                format!("linker failed with status: {status}")
+            )
+        );
+
+        return false;
+    }
+
+    true
+}
+
 #[allow(
     clippy::single_match_else,
     clippy::let_and_return,
     clippy::too_many_lines
 )]
-fn emit_as_exe(
+fn emit_as_machine_code(
     table: &Table,
     target_id: TargetID,
     output_path: &Path,
     opt_level: OptimizationLevel,
-    kind: TargetKind,
+    kind: MachineCodeKind,
 ) -> bool {
     let instant = Instant::now();
     let progress = ProgressBar::new(0);
@@ -730,15 +868,27 @@ fn emit_as_exe(
                 )
                 .unwrap();
 
+            let temp_obj_path = matches!(kind, MachineCodeKind::Binary(_))
+                .then(|| {
+                    let mut temp_obj_path = output_path.to_owned();
+                    temp_obj_path.set_file_name(format!(
+                        "{}-{}-temp.o",
+                        output_path.file_stem().unwrap().to_str().unwrap(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs()
+                    ));
+                    temp_obj_path
+                });
+
             let result = match kind {
-                TargetKind::Executable => target_machine.write_to_file(
+                MachineCodeKind::Binary(_) => target_machine.write_to_file(
                     &module,
                     inkwell::targets::FileType::Object,
-                    output_path,
+                    temp_obj_path.as_ref().unwrap(),
                 ),
-                TargetKind::LLvmIR => module.print_to_file(output_path),
-
-                TargetKind::Ron | TargetKind::Library => unreachable!(),
+                MachineCodeKind::LlvmIR => module.print_to_file(output_path),
             };
 
             if let Err(error) = result {
@@ -752,6 +902,44 @@ fn emit_as_exe(
                 );
 
                 return false;
+            }
+
+            if let MachineCodeKind::Binary(_) = kind {
+                if !invoke_linker(
+                    temp_obj_path.as_ref().unwrap(),
+                    output_path,
+                    &progress,
+                ) {
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Info,
+                            format!(
+                                "you can continue to link the object file \
+                                 manually using the appropriate linker \
+                                 command at `{}`",
+                                temp_obj_path.as_ref().unwrap().display()
+                            )
+                        )
+                    );
+                    return false;
+                }
+
+                // delete the temporary object file
+                if let Err(error) =
+                    std::fs::remove_file(temp_obj_path.as_ref().unwrap())
+                {
+                    progress.finish_and_clear();
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Error,
+                            format!("failed to delete temporary file: {error}")
+                        )
+                    );
+
+                    return false;
+                }
             }
 
             progress.finish_with_message(format!(
@@ -780,6 +968,7 @@ fn emit_as_exe(
 
 /// Runs the program with the given arguments.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn run(argument: &Arguments) -> ExitCode {
     let Some(source_file) = create_root_source_file(argument) else {
         return ExitCode::FAILURE;
@@ -837,8 +1026,14 @@ pub fn run(argument: &Arguments) -> ExitCode {
         })
         | Command::Run(Run { opt_level, .. }) => {
             let kind = match &argument.command {
-                Command::Build(Build { kind, .. }) => *kind,
-                Command::Run(_) => TargetKind::Executable,
+                Command::Build(Build { kind, .. }) => match kind {
+                    TargetKind::Executable => MachineCodeKind::Binary(false),
+                    TargetKind::LLvmIR => MachineCodeKind::LlvmIR,
+
+                    TargetKind::Library | TargetKind::Ron => unreachable!(),
+                },
+
+                Command::Run(_) => MachineCodeKind::Binary(true),
                 Command::Check(_) => unreachable!(),
             };
 
@@ -847,17 +1042,95 @@ pub fn run(argument: &Arguments) -> ExitCode {
             }
 
             // emit the executable
-            if emit_as_exe(
+            if !emit_as_machine_code(
                 &table,
                 target_id,
                 output_path.as_ref().unwrap(),
                 *opt_level,
                 kind,
             ) {
+                return ExitCode::FAILURE;
+            }
+
+            let run_executable = matches!(kind, MachineCodeKind::Binary(true));
+
+            if !run_executable {
                 return ExitCode::SUCCESS;
             }
 
-            ExitCode::FAILURE
+            eprintln!(
+                "{}",
+                Message::new(
+                    Severity::Info,
+                    format!(
+                        "invoking the executable at `{}`",
+                        output_path.as_ref().unwrap().display()
+                    )
+                )
+            );
+
+            let mut command =
+                std::process::Command::new(output_path.as_ref().unwrap());
+
+            command.stdin(std::process::Stdio::inherit());
+            command.stdout(std::process::Stdio::inherit());
+            command.stderr(std::process::Stdio::inherit());
+
+            let mut child = match command.spawn() {
+                Ok(child) => child,
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Error,
+                            format!("failed to spawn executable: {error}")
+                        )
+                    );
+
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let status = match child.wait() {
+                Ok(status) => status,
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Error,
+                            format!("failed to wait for executable: {error}")
+                        )
+                    );
+
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            if let Some(code) = status.code() {
+                if code != 0 {
+                    eprintln!(
+                        "{}",
+                        Message::new(
+                            Severity::Error,
+                            format!("executable failed with status: {code}")
+                        )
+                    );
+
+                    return ExitCode::FAILURE;
+                }
+            } else {
+                eprintln!(
+                    "{}",
+                    Message::new(
+                        Severity::Error,
+                        "executable terminated by signal"
+                    )
+                );
+
+                return ExitCode::FAILURE;
+            }
+
+            ExitCode::SUCCESS
         }
 
         Command::Check(_) => {
