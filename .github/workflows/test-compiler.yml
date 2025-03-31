@@ -52,7 +52,7 @@ jobs:
                   echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
             - name: Install cargo-nextest
-              uses: baptiste0928/cargo-install@v1
+              uses: baptiste0928/cargo-install@v3.3.0
               with:
                   crate: cargo-nextest
                   args: --locked
