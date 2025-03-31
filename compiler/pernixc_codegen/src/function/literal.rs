@@ -1,5 +1,7 @@
-use pernixc_ir::value::literal::{Literal, Numeric};
-use pernixc_semantic::term::r#type::Primitive;
+use pernixc_semantic::{
+    component::derived::ir::value::literal::{Literal, Numeric},
+    term::r#type::Primitive,
+};
 
 use super::{Builder, Error, LlvmValue};
 use crate::Model;
@@ -95,7 +97,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// in the `.data` section or similar in the final binary.
     pub fn get_string(
         &mut self,
-        string: &pernixc_ir::value::literal::String,
+        string: &pernixc_semantic::component::derived::ir::value::literal::String,
     ) -> inkwell::values::BasicValueEnum<'ctx> {
         self.context
             .get_global_const_string(string.value.as_ref())

@@ -8,10 +8,10 @@ use pernixc_borrow_checker::{
     NonStaticUniversalRegion, UniversalRegion,
 };
 use pernixc_builder::utility::build_table;
-use pernixc_ir::model::Model as IRModel;
 use pernixc_semantic::{
-    component::derived::generic_parameters::{
-        GenericParameters, LifetimeParameterID,
+    component::derived::{
+        generic_parameters::{GenericParameters, LifetimeParameterID},
+        ir::model::Model as IRModel,
     },
     term::{
         lifetime::Lifetime,

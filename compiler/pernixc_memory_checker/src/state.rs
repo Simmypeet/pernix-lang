@@ -5,14 +5,18 @@ use getset::{CopyGetters, Getters};
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    address::{self, Address, Offset},
-    instruction::{Drop, DropUnpackTuple, Instruction},
-    model, scope,
-};
 use pernixc_semantic::{
     component::{
-        derived::{fields, generic_parameters::GenericParameters, variant},
+        derived::{
+            fields,
+            generic_parameters::GenericParameters,
+            ir::{
+                address::{self, Address, Offset},
+                instruction::{Drop, DropUnpackTuple, Instruction},
+                model, scope,
+            },
+            variant,
+        },
         input::SymbolKind,
     },
     diagnostic::Diagnostic,

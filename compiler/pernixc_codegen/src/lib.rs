@@ -29,7 +29,7 @@ pub mod r#type;
 pub mod zst;
 
 /// The model used for the code generation process.
-pub type Model = pernixc_ir::model::Model;
+pub type Model = pernixc_semantic::component::derived::ir::model::Model;
 
 /// The input of the code generation process.
 pub struct Input<'i, 'ctx> {

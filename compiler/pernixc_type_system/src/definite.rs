@@ -2,7 +2,9 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use pernixc_semantic::term::{generic_arguments::GenericArguments, visitor, Model};
+use pernixc_semantic::term::{
+    generic_arguments::GenericArguments, visitor, Model,
+};
 
 use crate::{
     environment::{Environment, Query},

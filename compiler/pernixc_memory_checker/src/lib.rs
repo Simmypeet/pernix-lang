@@ -9,18 +9,23 @@ use diagnostic::{
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    address::{self, Address, Memory},
-    alloca::Alloca,
-    control_flow_graph::Block,
-    instruction::{Instruction, Jump, Terminator, UnconditionalJump},
-    model,
-    value::register::{Assignment, Borrow, Load},
-    Representation, Values,
-};
 use pernixc_semantic::{
     component::{
-        derived::function_signature::FunctionSignature, input::SymbolKind,
+        derived::{
+            function_signature::FunctionSignature,
+            ir::{
+                address::{self, Address, Memory},
+                alloca::Alloca,
+                control_flow_graph::Block,
+                instruction::{
+                    Instruction, Jump, Terminator, UnconditionalJump,
+                },
+                model,
+                value::register::{Assignment, Borrow, Load},
+                Representation, Values,
+            },
+        },
+        input::SymbolKind,
     },
     diagnostic::Diagnostic,
     table::{GlobalID, Table},
@@ -32,6 +37,7 @@ use pernixc_semantic::{
     },
 };
 use pernixc_source_file::Span;
+use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
     environment::{Environment as TyEnvironment, GetActivePremiseExt},
     normalizer::{self, Normalizer},
@@ -112,9 +118,8 @@ fn handle_load(
     ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Result<(), Abort> {
-    let ty = values
-        .type_of_address(&load.address, current_site, ty_environment)
-        .unwrap();
+    let ty =
+        values.type_of(&load.address, current_site, ty_environment).unwrap();
 
     // has been checked previously
     let memory_state = 'memory_state: {

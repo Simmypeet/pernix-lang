@@ -16,7 +16,6 @@ members = [
     "compiler/pernixc_builder",
     "compiler/pernixc_driver",
     "compiler/pernixc",
-    "compiler/pernixc_ir",
     "compiler/pernixc_transitive_closure",
     "compiler/pernixc_intrinsic",
     "compiler/pernixc_memory_checker",
@@ -24,6 +23,8 @@ members = [
     "compiler/pernixc_abort",
     "compiler/pernixc_test",
     "compiler/pernixc_codegen",
+    "compiler/pernixc_bind",
+    "compiler/pernixc_type_of",
     "lsp/pernix_server",
 ]
 

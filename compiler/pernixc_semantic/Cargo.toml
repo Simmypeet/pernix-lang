@@ -7,6 +7,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+pernixc_transitive_closure = { path = "../pernixc_transitive_closure" }
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
 pernixc_handler = { path = "../pernixc_handler" }

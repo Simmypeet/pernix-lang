@@ -3,12 +3,12 @@
 
 use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
-use pernixc_ir::{
-    model::{Erased, Model as IRModel, Transform},
-    value::register::Assignment,
-    Representation,
-};
 use pernixc_semantic::{
+    component::derived::ir::{
+        model::{Erased, Model as IRModel, Transform},
+        value::register::Assignment,
+        Representation,
+    },
     table::Table,
     term::{
         constant::Constant,

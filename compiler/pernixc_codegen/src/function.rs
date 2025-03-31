@@ -19,18 +19,18 @@ use inkwell::{
     AddressSpace,
 };
 use pernixc_arena::ID;
-use pernixc_ir::{
-    address::{Address, Memory},
-    control_flow_graph::Block,
-    value::{register::Register, Value},
-    IR,
-};
 use pernixc_semantic::{
     component::{
         derived::{
             function_signature::{FunctionSignature, Parameter},
             generic_parameters::GenericParameters,
             implementation::Implementation,
+            ir::{
+                address::{Address, Memory},
+                control_flow_graph::Block,
+                value::{register::Register, Value},
+                IR,
+            },
         },
         input::{Extern, Implements, Name, Parent, SymbolKind},
     },
@@ -40,6 +40,7 @@ use pernixc_semantic::{
         r#type::Type, Model as _, Symbol, Tuple,
     },
 };
+use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
     environment::{Environment, Premise},
     normalizer,
@@ -747,7 +748,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     #[allow(unused)]
     fn type_of_address_pnx(&mut self, address: &Address<Model>) -> Type<Model> {
-        let ty = self.function_ir.values.type_of_address(
+        let ty = self.function_ir.values.type_of(
             address,
             self.callable_id,
             &self.environment,
@@ -760,7 +761,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         address: &Address<Model>,
     ) -> Result<BasicTypeEnum<'ctx>, Zst> {
-        let ty = self.function_ir.values.type_of_address(
+        let ty = self.function_ir.values.type_of(
             address,
             self.callable_id,
             &self.environment,
@@ -776,7 +777,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         register_id: ID<Register<Model>>,
     ) -> Result<BasicTypeEnum<'ctx>, Zst> {
-        let ty = self.function_ir.values.type_of_register(
+        let ty = self.function_ir.values.type_of(
             register_id,
             self.callable_id,
             &self.environment,
@@ -792,7 +793,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         &mut self,
         register_id: ID<Register<Model>>,
     ) -> Type<Model> {
-        let ty = self.function_ir.values.type_of_register(
+        let ty = self.function_ir.values.type_of(
             register_id,
             self.callable_id,
             &self.environment,
@@ -802,7 +803,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     fn type_of_value_pnx(&mut self, value: &Value<Model>) -> Type<Model> {
-        let ty = self.function_ir.values.type_of_value(
+        let ty = self.function_ir.values.type_of(
             value,
             self.callable_id,
             &self.environment,

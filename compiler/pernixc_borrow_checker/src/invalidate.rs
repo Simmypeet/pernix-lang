@@ -4,15 +4,17 @@ use getset::{CopyGetters, Getters};
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    address::{Address, Memory},
-    control_flow_graph::{Point, Reachability},
-    instruction::{AccessMode, Instruction},
-    value::register::Register,
-    Representation,
-};
 use pernixc_semantic::{
-    component::derived::function_signature::FunctionSignature,
+    component::derived::{
+        function_signature::FunctionSignature,
+        ir::{
+            address::{Address, Memory},
+            control_flow_graph::{Point, Reachability},
+            instruction::{AccessMode, Instruction},
+            value::register::Register,
+            Representation,
+        },
+    },
     diagnostic::Diagnostic,
     table::GlobalID,
     term::{

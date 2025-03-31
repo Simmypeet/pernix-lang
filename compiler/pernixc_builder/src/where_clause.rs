@@ -20,7 +20,7 @@ use pernixc_semantic::{
     component::{
         derived::{
             forall_lifetimes::{
-                self, ForallLifetime, ForallLifetimeID, ForallLifetimes
+                self, ForallLifetime, ForallLifetimeID, ForallLifetimes,
             },
             generic_parameters::{GenericParameters, TypeParameterID},
             where_clause::{self, WhereClause},

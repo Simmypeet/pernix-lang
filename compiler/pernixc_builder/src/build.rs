@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pernixc_ir::IR;
 use pernixc_semantic::{
     component::{
         derived::{
@@ -9,9 +8,9 @@ use pernixc_semantic::{
             function_signature::FunctionSignature,
             generic_parameters::GenericParameters,
             implementation::Implementation,
-            implied_predicates::ImpliedPredicates, late_bound::LateBound,
-            type_alias::TypeAlias, variances::Variances, variant::Variant,
-            where_clause::WhereClause,
+            implied_predicates::ImpliedPredicates, ir::IR,
+            late_bound::LateBound, type_alias::TypeAlias, variances::Variances,
+            variant::Variant, where_clause::WhereClause,
         },
         input::SymbolKind,
         Derived,

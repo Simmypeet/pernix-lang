@@ -7,20 +7,6 @@ use inkwell::{
     AddressSpace, FloatPredicate, IntPredicate,
 };
 use pernixc_arena::ID;
-use pernixc_ir::{
-    control_flow_graph::Block,
-    instruction::{
-        Instruction, Jump, RegisterAssignment, SwitchValue, Terminator,
-        TuplePack,
-    },
-    model::Erased,
-    value::{
-        register::{
-            self, Assignment, BinaryOperator, Register, RelationalOperator,
-        },
-        Value,
-    },
-};
 use pernixc_semantic::{
     component::{
         derived::{
@@ -29,6 +15,21 @@ use pernixc_semantic::{
             generic_parameters::{
                 ConstantParameterID, GenericParameters, LifetimeParameterID,
                 TypeParameterID,
+            },
+            ir::{
+                control_flow_graph::Block,
+                instruction::{
+                    Instruction, Jump, RegisterAssignment, SwitchValue,
+                    Terminator, TuplePack,
+                },
+                model::Erased,
+                value::{
+                    register::{
+                        self, Assignment, BinaryOperator, Register,
+                        RelationalOperator,
+                    },
+                    Value,
+                },
             },
         },
         input::{Member, Name, Parent, SymbolKind, VariantDeclarationOrder},
@@ -79,7 +80,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     fn build_store(
         &mut self,
-        store: &pernixc_ir::instruction::Store<Model>,
+        store: &pernixc_semantic::component::derived::ir::instruction::Store<
+            Model,
+        >,
     ) -> Result<(), Error> {
         let dest_value = self.get_value(&store.value)?;
         let store_address = self.get_address(&store.address)?;

@@ -3,10 +3,11 @@
 use std::{borrow::Cow, sync::Arc};
 
 use pernixc_abort::Abort;
+use pernixc_bind::Binder;
 use pernixc_handler::{Handler, Storage};
-use pernixc_ir::{binding::Binder, IR};
 use pernixc_semantic::{
     component::{
+        derived::ir::IR,
         input::{syntax_tree, SymbolKind},
         Derived,
     },

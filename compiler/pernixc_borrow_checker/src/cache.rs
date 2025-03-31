@@ -3,18 +3,23 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    control_flow_graph::Point, value::register::Register, Representation,
-};
 use pernixc_semantic::{
     component::{
-        derived::{function_signature::FunctionSignature, variances::Variance},
+        derived::{
+            function_signature::FunctionSignature,
+            ir::{
+                control_flow_graph::Point, value::register::Register,
+                Representation,
+            },
+            variances::Variance,
+        },
         input::SymbolKind,
     },
     diagnostic::Diagnostic,
     table::GlobalID,
     term::{r#type::Type, visitor::RecursiveIterator, Model},
 };
+use pernixc_type_of::TypeOf;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::{Model as BorrowModel, Region, UniversalRegion};
@@ -61,7 +66,7 @@ impl RegisterInfos {
             let register = ir.values.registers.get(inst.id).unwrap();
             let ty = ir
                 .values
-                .type_of_register(inst.id, current_site, environment)
+                .type_of(inst.id, current_site, environment)
                 .map_err(|x| {
                     x.report_overflow(|x| {
                         x.report_as_type_calculating_overflow(

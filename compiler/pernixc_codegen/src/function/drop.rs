@@ -6,7 +6,6 @@ use inkwell::{
     values::{FunctionValue, PointerValue},
     AddressSpace,
 };
-use pernixc_ir::model::Erased;
 use pernixc_semantic::{
     component::{
         derived::{
@@ -14,6 +13,7 @@ use pernixc_semantic::{
             fields::Fields,
             generic_parameters::{GenericParameters, LifetimeParameterID},
             implementation::Implementation,
+            ir::model::Erased,
             variant::Variant,
         },
         input::{Implemented, Member, SymbolKind, VariantDeclarationOrder},

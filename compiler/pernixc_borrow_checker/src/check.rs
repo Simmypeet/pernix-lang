@@ -1,15 +1,18 @@
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    address::{Address, Memory, Offset, Tuple},
-    control_flow_graph::{Point, Reachability},
-    instruction::{AccessMode, Instruction, Read},
-    value::register::{Assignment, Load},
-    Representation,
-};
 use pernixc_semantic::{
     component::{
-        derived::function_signature::FunctionSignature, input::SymbolKind,
+        derived::{
+            function_signature::FunctionSignature,
+            ir::{
+                address::{Address, Memory, Offset, Tuple},
+                control_flow_graph::{Point, Reachability},
+                instruction::{AccessMode, Instruction, Read},
+                value::register::{Assignment, Load},
+                Representation,
+            },
+        },
+        input::SymbolKind,
     },
     diagnostic::Diagnostic,
     table::GlobalID,
@@ -21,6 +24,7 @@ use pernixc_semantic::{
     },
 };
 use pernixc_source_file::Span;
+use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
     diagnostic::{UndecidablePredicate, UnsatisfiedPredicate},
     environment::Environment,
@@ -45,11 +49,7 @@ impl<N: Normalizer<BorrowModel>> Checker<'_, N> {
         let ty = self
             .representation()
             .values
-            .type_of_address(
-                &load.address,
-                self.current_site(),
-                self.environment(),
-            )
+            .type_of(&load.address, self.current_site(), self.environment())
             .map_err(|x| {
                 x.report_overflow(|x| {
                     x.report_as_type_calculating_overflow(
@@ -136,7 +136,7 @@ impl<N: Normalizer<BorrowModel>> Checker<'_, N> {
                     Ok(Some(_)) => {}
                     Ok(None) => {
                         self.handler().receive(Box::new(
-                            UnsatisfiedPredicate::<pernixc_ir::model::Model> {
+                            UnsatisfiedPredicate::<pernixc_semantic::component::derived::ir::model::Model> {
                                 predicate: Predicate::LifetimeOutlives(
                                     Outlives::new(
                                         universal_region.into(),
@@ -150,7 +150,7 @@ impl<N: Normalizer<BorrowModel>> Checker<'_, N> {
                     }
                     Err(pernixc_type_system::Error::Overflow(error)) => {
                         self.handler().receive(Box::new(
-                            UndecidablePredicate::<pernixc_ir::model::Model> {
+                            UndecidablePredicate::<pernixc_semantic::component::derived::ir::model::Model> {
                                 predicate: Predicate::LifetimeOutlives(
                                     Outlives::new(
                                         universal_region.into(),

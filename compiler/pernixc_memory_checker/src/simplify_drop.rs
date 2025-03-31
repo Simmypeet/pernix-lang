@@ -10,19 +10,23 @@ use std::{collections::HashSet, sync::Arc};
 
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    address::{self, Address, Field, Index, Memory, Variant},
-    instruction::{Drop, DropUnpackTuple, Instruction},
-    model,
-    value::{
-        literal::{Literal, Unreachable},
-        Value,
-    },
-    Values,
-};
 use pernixc_semantic::{
     component::{
-        derived::{fields, function_signature::FunctionSignature, variant},
+        derived::{
+            fields,
+            function_signature::FunctionSignature,
+            ir::{
+                address::{self, Address, Field, Index, Memory, Variant},
+                instruction::{Drop, DropUnpackTuple, Instruction},
+                model,
+                value::{
+                    literal::{Literal, Unreachable},
+                    Value,
+                },
+                Values,
+            },
+            variant,
+        },
         input::{Member, SymbolKind},
     },
     diagnostic::Diagnostic,
@@ -33,6 +37,7 @@ use pernixc_semantic::{
         r#type::{Primitive, Type},
     },
 };
+use pernixc_type_of::TypeOf;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 pub(super) fn simplify_drops(
@@ -83,7 +88,7 @@ pub(super) fn simplify_drop(
     };
 
     let ty = values
-        .type_of_address(&drop.address, current_site, environment)
+        .type_of(&drop.address, current_site, environment)
         .map_err(|x| {
             x.report_overflow(|x| {
                 x.report_as_type_calculating_overflow(span_of.clone(), handler)

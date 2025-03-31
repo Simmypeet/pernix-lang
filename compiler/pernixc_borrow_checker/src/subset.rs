@@ -5,19 +5,6 @@ use getset::Getters;
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    address::Address,
-    control_flow_graph::{Block, Point},
-    instruction::{Instruction, Store},
-    value::{
-        register::{
-            Array, Assignment, Borrow, FunctionCall, Phi, Register, Struct,
-            Tuple, Variant,
-        },
-        Value,
-    },
-    Representation, Values,
-};
 use pernixc_semantic::{
     component::{
         derived::{
@@ -25,6 +12,19 @@ use pernixc_semantic::{
             fields::Fields,
             function_signature::FunctionSignature,
             generic_parameters::{GenericParameters, LifetimeParameterID},
+            ir::{
+                address::Address,
+                control_flow_graph::{Block, Point},
+                instruction::{Instruction, Store},
+                value::{
+                    register::{
+                        Array, Assignment, Borrow, FunctionCall, Phi, Register,
+                        Struct, Tuple, Variant,
+                    },
+                    Value,
+                },
+                Representation, Values,
+            },
             variances::Variance,
             variant,
         },
@@ -42,6 +42,7 @@ use pernixc_semantic::{
 };
 use pernixc_source_file::Span;
 use pernixc_transitive_closure::TransitiveClosure;
+use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
     compatible::Compatibility,
     environment::{Environment, GetActivePremiseExt},
@@ -336,7 +337,7 @@ pub(super) fn get_changes_of_struct(
 
         let Succeeded { result: value_ty, constraints: value_constraints } =
             values
-                .type_of_value(
+                .type_of(
                     struct_lit.initializers_by_field_id.get(&field_id).unwrap(),
                     current_site,
                     environment,
@@ -413,27 +414,25 @@ pub(super) fn get_changes_of_phi(
     let mut constraints = BTreeSet::new();
     for value in phi.incoming_values.values() {
         let Succeeded { result: value_ty, constraints: value_ty_constraints } =
-            values.type_of_value(value, current_site, environment).map_err(
-                |x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_check_overflow(
-                            match value {
-                                Value::Register(id) => values
-                                    .registers
-                                    .get(*id)
-                                    .unwrap()
-                                    .span
-                                    .clone()
-                                    .unwrap(),
-                                Value::Literal(literal) => {
-                                    literal.span().cloned().unwrap()
-                                }
-                            },
-                            handler,
-                        )
-                    })
-                },
-            )?;
+            values.type_of(value, current_site, environment).map_err(|x| {
+                x.report_overflow(|x| {
+                    x.report_as_type_check_overflow(
+                        match value {
+                            Value::Register(id) => values
+                                .registers
+                                .get(*id)
+                                .unwrap()
+                                .span
+                                .clone()
+                                .unwrap(),
+                            Value::Literal(literal) => {
+                                literal.span().cloned().unwrap()
+                            }
+                        },
+                        handler,
+                    )
+                })
+            })?;
 
         constraints.extend(value_ty_constraints);
 
@@ -499,9 +498,8 @@ pub(super) fn get_changes_of_array(
             Value::Literal(literal) => literal.span().cloned().unwrap(),
         };
 
-        let Succeeded { result: value_ty, constraints } = values
-            .type_of_value(value, current_site, environment)
-            .map_err(|x| {
+        let Succeeded { result: value_ty, constraints } =
+            values.type_of(value, current_site, environment).map_err(|x| {
                 x.report_overflow(|x| {
                     x.report_as_type_calculating_overflow(
                         value_span.clone(),
@@ -599,15 +597,15 @@ pub(super) fn get_changes_of_variant(
 
         let Succeeded { result: value_ty, constraints: value_constraints } =
             values
-                .type_of_value(associated_value, current_site, environment)
+                .type_of(associated_value, current_site, environment)
                 .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_calculating_overflow(
-                        value_span.clone(),
-                        handler,
-                    )
-                })
-            })?;
+                    x.report_overflow(|x| {
+                        x.report_as_type_calculating_overflow(
+                            value_span.clone(),
+                            handler,
+                        )
+                    })
+                })?;
 
         lifetime_constraints.extend(value_constraints);
 
@@ -669,7 +667,7 @@ pub(super) fn get_changes_of_tuple(
     let mut lifetime_constraints = BTreeSet::new();
     for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
         let ty = values
-            .type_of_value(&element.value, current_site, environment)
+            .type_of(&element.value, current_site, environment)
             .unwrap()
             .result;
 
@@ -749,7 +747,7 @@ pub(super) fn get_changes_of_function_call(
         let Succeeded {
             result: argument_ty,
             constraints: argument_ty_constraints,
-        } = values.type_of_value(argument, current_site, environment).map_err(
+        } = values.type_of(argument, current_site, environment).map_err(
             |x| {
                 x.report_overflow(|x| {
                     x.report_as_type_calculating_overflow(
@@ -942,13 +940,13 @@ pub(super) fn get_changes_of_store_internal(
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Result<Changes, Abort> {
     let Succeeded { result: address_ty, constraints: address_constraints } =
-        values
-            .type_of_address(store_address, current_site, environment)
-            .map_err(|x| {
+        values.type_of(store_address, current_site, environment).map_err(
+            |x| {
                 x.report_overflow(|x| {
                     x.report_as_type_calculating_overflow(span.clone(), handler)
                 })
-            })?;
+            },
+        )?;
 
     // get the compatibility constraints between the value and the address
     let compatibility = environment
@@ -1004,7 +1002,7 @@ pub(super) fn get_changes_of_store(
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Result<Changes, Abort> {
     let value_ty = values
-        .type_of_value(&store_inst.value, current_site, environment)
+        .type_of(&store_inst.value, current_site, environment)
         .map_err(|x| {
             x.report_overflow(|x| {
                 x.report_as_type_calculating_overflow(
@@ -1291,7 +1289,7 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
                         } = self
                             .representation
                             .values
-                            .type_of_register(
+                            .type_of(
                                 register_assignment.id,
                                 self.current_site,
                                 self.environment,
@@ -1447,7 +1445,7 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
                 let tuple_ty = self
                     .representation
                     .values
-                    .type_of_address(
+                    .type_of(
                         &tuple_pack.tuple_address,
                         self.current_site,
                         self.environment,

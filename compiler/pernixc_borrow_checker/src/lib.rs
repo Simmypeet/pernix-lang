@@ -214,11 +214,11 @@ use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
 use pernixc_handler::Handler;
-use pernixc_ir::{address::Address, Representation, Values};
 use pernixc_semantic::{
     component::derived::{
         elided_lifetimes::ElidedLifetimeID,
         generic_parameters::{GenericParameters, LifetimeParameterID},
+        ir::{address::Address, Representation, Values},
     },
     diagnostic::Diagnostic,
     table::{self, GlobalID, Table},
@@ -232,6 +232,7 @@ use pernixc_semantic::{
     },
 };
 use pernixc_source_file::Span;
+use pernixc_type_of::TypeOf;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 use serde::{Deserialize, Serialize};
 
@@ -470,8 +471,8 @@ fn get_dereferenced_regions_in_address(
 
             Address::Reference(reference) => {
                 let pointee_ty = values
-                    .type_of_address(
-                        &reference.reference_address,
+                    .type_of(
+                        &*reference.reference_address,
                         current_site,
                         environment,
                     )
@@ -508,7 +509,7 @@ fn get_regions_in_address(
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> Result<HashSet<Region>, Abort> {
     let address_ty = values
-        .type_of_address(address, current_site, environment)
+        .type_of(address, current_site, environment)
         .map_err(|x| {
             x.report_overflow(|x| {
                 x.report_as_type_calculating_overflow(span.clone(), handler)
@@ -541,8 +542,8 @@ fn get_regions_in_address(
 
                 Address::Reference(reference) => {
                     let pointee_ty = values
-                        .type_of_address(
-                            &reference.reference_address,
+                        .type_of(
+                            &*reference.reference_address,
                             current_site,
                             environment,
                         )
@@ -579,7 +580,7 @@ fn get_regions_in_address(
 /// Performs the borrow check analysis.
 #[allow(clippy::missing_errors_doc)]
 pub fn borrow_check(
-    ir: &Representation<pernixc_ir::model::Model>,
+    ir: &Representation<pernixc_semantic::component::derived::ir::model::Model>,
     current_site: GlobalID,
     environment: &Environment<Model, impl Normalizer<Model>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,

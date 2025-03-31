@@ -12,12 +12,12 @@ use inkwell::{
     AddressSpace,
 };
 use pernixc_arena::ID;
-use pernixc_ir::model::Erased;
 use pernixc_semantic::{
     component::{
         derived::{
             fields::{Field, Fields},
             generic_parameters::GenericParameters,
+            ir::model::Erased,
             variant::Variant,
         },
         input::{Member, Name, SymbolKind, VariantDeclarationOrder},

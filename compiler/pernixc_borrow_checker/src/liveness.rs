@@ -4,19 +4,21 @@ use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    address::{self, Address, Memory},
-    control_flow_graph::{Block, ControlFlowGraph, Point},
-    instruction::{AccessKind, AccessMode, Instruction, Jump, Terminator},
-    value::register::Register,
-    Representation,
-};
 use pernixc_semantic::{
     component::{
         derived::{
             fields::{Field, Fields},
             function_signature::FunctionSignature,
             generic_parameters::GenericParameters,
+            ir::{
+                address::{self, Address, Memory},
+                control_flow_graph::{Block, ControlFlowGraph, Point},
+                instruction::{
+                    AccessKind, AccessMode, Instruction, Jump, Terminator,
+                },
+                value::register::Register,
+                Representation,
+            },
             variant,
         },
         input::SymbolKind,

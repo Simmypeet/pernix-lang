@@ -1,5 +1,6 @@
 use inkwell::values::{AsValueRef, PointerValue};
-use pernixc_ir::address::Address;
+use pernixc_semantic::component::derived::ir::address::Address;
+use pernixc_type_of::TypeOf;
 
 use super::{Builder, Error, LlvmAddress, LlvmValue};
 use crate::{r#type::LlvmEnumSignature, Model};
@@ -89,11 +90,11 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 };
 
                 let tuple_index = match index.offset {
-                    pernixc_ir::address::Offset::FromStart(a) => a,
-                    pernixc_ir::address::Offset::FromEnd(b) => {
+                    pernixc_semantic::component::derived::ir::address::Offset::FromStart(a) => a,
+                    pernixc_semantic::component::derived::ir::address::Offset::FromEnd(b) => {
                         elements_len - 1 - b
                     }
-                    pernixc_ir::address::Offset::Unpacked => unreachable!(),
+                    pernixc_semantic::component::derived::ir::address::Offset::Unpacked => unreachable!(),
                 };
 
                 let Some(llvm_field_index) = llvm_tuple
@@ -140,8 +141,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.context.monomorphize_term(
                         self.function_ir
                             .values
-                            .type_of_address(
-                                &index.array_address,
+                            .type_of(
+                                &*index.array_address,
                                 self.callable_id,
                                 &self.environment,
                             )
