@@ -10,7 +10,7 @@ use std::{
 };
 
 use bincode::{DefaultOptions, Options};
-use clap::{Args, Subcommand};
+use clap::{builder::styling, Args, Subcommand};
 use enum_as_inner::EnumAsInner;
 use indicatif::{ProgressBar, ProgressStyle};
 use inkwell::{
@@ -38,6 +38,47 @@ use pernixc_table::{
 };
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
+
+#[must_use]
+const fn get_styles() -> clap::builder::Styles {
+    clap::builder::Styles::styled()
+        .usage(
+            styling::Style::new().bold().underline().fg_color(Some(
+                styling::Color::Ansi(styling::AnsiColor::Yellow),
+            )),
+        )
+        .header(
+            styling::Style::new()
+                .bold()
+                .underline()
+                .fg_color(Some(styling::Color::Ansi(styling::AnsiColor::Cyan))),
+        )
+        .literal(
+            styling::Style::new().fg_color(Some(styling::Color::Ansi(
+                styling::AnsiColor::Green,
+            ))),
+        )
+        .invalid(
+            styling::Style::new()
+                .bold()
+                .fg_color(Some(styling::Color::Ansi(styling::AnsiColor::Red))),
+        )
+        .error(
+            styling::Style::new()
+                .bold()
+                .fg_color(Some(styling::Color::Ansi(styling::AnsiColor::Red))),
+        )
+        .valid(
+            styling::Style::new().bold().underline().fg_color(Some(
+                styling::Color::Ansi(styling::AnsiColor::Green),
+            )),
+        )
+        .placeholder(
+            styling::Style::new().fg_color(Some(styling::Color::Ansi(
+                styling::AnsiColor::White,
+            ))),
+        )
+}
 
 /// The input to the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
@@ -196,6 +237,7 @@ pub enum TargetKind {
 /// The arguments to the program.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, clap::Parser)]
 #[clap(name = "pernixc", version, about, author)]
+#[command(styles = get_styles())]
 pub struct Arguments {
     /// The subcommand to run.
     #[clap(subcommand, flatten = true)]
