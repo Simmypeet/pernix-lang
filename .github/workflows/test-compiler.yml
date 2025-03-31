@@ -1,0 +1,61 @@
+on:
+    workflow_dispatch:
+    push:
+        branches:
+            - main
+            - dev
+permissions:
+    contents: write
+
+name: Build Pernixc Compiler
+jobs:
+    build:
+        name: Build Pernix Compiler
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [windows-latest, macOS-latest, macOS-13, ubuntu-20.04]
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Build LLVM on Unix-like
+              if: runner.os != 'Windows'
+              uses: ./.github/actions/build-llvm
+              with:
+                  llvm-version: 18.1.8
+                  install-prefix: ${{ github.workspace }}/__llvm18
+                  generator: "Ninja"
+                  shell: "bash"
+
+            - name: Build LLVM on Windows
+              if: runner.os  == 'Windows'
+              uses: ./.github/actions/build-llvm
+              with:
+                  llvm-version: 18.1.8
+                  install-prefix: ${{ github.workspace }}/__llvm18
+                  generator: "Visual Studio 17 2022"
+                  shell: "pwsh"
+
+            - name: Set LLVM prefix on Unix-like
+              if: runner.os != 'Windows'
+              run: |
+                  ls ${{ github.workspace }}/__llvm18
+                  echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" >> $GITHUB_ENV
+
+            - name: Set LLVM prefix on Windows
+              if: runner.os  == 'Windows'
+              run: |
+                  ls ${{ github.workspace }}/__llvm18
+                  echo "LLVM_SYS_181_PREFIX${{ github.workspace }}/__llvm18"
+                  echo "LLVM_SYS_181_PREFIX=${{ github.workspace }}/__llvm18" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+            - name: Install cargo-nextest
+              uses: baptiste0928/cargo-install@v1
+              with:
+                  crate: cargo-nextest
+                  args: --locked
+
+            - name: Run cargo nextest
+              run: cargo nextest run --verbose --release --no-fail-fast
