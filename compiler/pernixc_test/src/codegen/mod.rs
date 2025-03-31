@@ -7,7 +7,7 @@
 use std::{path::Path, process::ExitCode};
 
 use assert_cmd::Command;
-use pernixc_driver::{Arguments, OptimizationLevel, TargetKind};
+use pernixc_driver::{Arguments, Input, OptimizationLevel, Output, Run};
 
 mod aggregate_drop;
 mod alignof;
@@ -92,15 +92,17 @@ fn compile_file_with(
 
     // invoke the compiler and create the object file
     assert_eq!(
-        pernixc_driver::run(Arguments {
-            file: source_file,
-            opt_level: OptimizationLevel::O3,
-            target_name: Some("test".to_string()),
-            kind: TargetKind::Executable,
-            library_paths: Vec::new(),
-            output: Some(object_file.clone()),
-            show_progress: false,
-            dump_ron: false,
+        pernixc_driver::run(&Arguments {
+            command: pernixc_driver::Command::Run(Run {
+                input: Input {
+                    file: source_file,
+                    target_name: Some("test".to_string()),
+                    library_paths: Vec::new(),
+                    show_progress: false,
+                },
+                output: Output { output: Some(object_file.clone()) },
+                opt_level: OptimizationLevel::O3,
+            }),
         }),
         ExitCode::SUCCESS
     );

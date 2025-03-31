@@ -17,7 +17,7 @@ fn main() -> ExitCode {
     #[cfg(not(debug_assertions))]
     setup_panic();
 
-    pernixc_driver::run(Arguments::parse())
+    pernixc_driver::run(&Arguments::parse())
 }
 
 /// The struct capturing the information about an ICE (Internal Compiler Error)

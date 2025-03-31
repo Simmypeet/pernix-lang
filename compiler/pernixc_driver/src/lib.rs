@@ -9,6 +9,8 @@ use std::{
 };
 
 use bincode::{DefaultOptions, Options};
+use clap::{Args, Subcommand};
+use enum_as_inner::EnumAsInner;
 use indicatif::{ProgressBar, ProgressStyle};
 use inkwell::{
     passes::PassBuilderOptions,
@@ -35,6 +37,113 @@ use pernixc_table::{
 };
 use ron::ser::PrettyConfig;
 use serde::de::DeserializeSeed;
+
+/// The input to the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct Input {
+    /// The input file to compile.
+    ///
+    /// This file is the root source file of the compilation; the module will
+    /// stem from this file.
+    pub file: PathBuf,
+
+    /// The name of the target; if not specified, the target name will be
+    /// inferred from the file name.
+    #[clap(short = 't', long = "target")]
+    pub target_name: Option<String>,
+
+    /// The paths to the `plib` library to link to the target.
+    #[clap(short = 'l', long = "link")]
+    pub library_paths: Vec<PathBuf>,
+
+    /// Whether to show the progress of the compilation.
+    #[clap(long)]
+    pub show_progress: bool,
+}
+
+/// The output of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct Output {
+    /// The output path of the program. If not specified, the program will be
+    /// written to the current working directory with the same name as the
+    /// target.
+    #[clap(short = 'o', long = "output")]
+    pub output: Option<PathBuf>,
+}
+
+/// Represents the `run` subcommand of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct Run {
+    /// The input file to run the program on.
+    #[clap(flatten)]
+    pub input: Input,
+
+    /// Specifies the output path of the program.
+    #[clap(flatten)]
+    pub output: Output,
+
+    /// The optimization level of the compiler.
+    #[clap(long = "opt", default_value = "0")]
+    pub opt_level: OptimizationLevel,
+}
+
+/// Represents the `check` subcommand of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct Check {
+    /// The input file to run the program on.
+    #[clap(flatten)]
+    pub input: Input,
+}
+
+/// Represents the `build` subcommand of the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct Build {
+    /// The input file to run the program on.
+    #[clap(flatten)]
+    pub input: Input,
+
+    /// Specifies the output path of the program.
+    #[clap(flatten)]
+    pub output: Output,
+
+    /// The optimization level of the compiler.
+    #[clap(long = "opt", default_value = "0")]
+    pub opt_level: OptimizationLevel,
+
+    /// Specifies the compilation format of the target.
+    #[clap(long = "emit", default_value = "bin")]
+    pub kind: TargetKind,
+}
+
+/// The subcomamnds of the compiler.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Subcommand, EnumAsInner,
+)]
+pub enum Command {
+    /// Compiles the program as an executable binary and runs it.
+    #[clap(name = "run")]
+    Run(Run),
+
+    /// Performs semantic analysis on the program and emits the diagnostics.
+    #[clap(name = "check")]
+    Check(Check),
+
+    /// Builds the program and emits the output (defaults to `bin`).
+    #[clap(name = "build")]
+    Build(Build),
+}
+
+impl Command {
+    /// Returns the input file of the command.
+    #[must_use]
+    pub const fn input(&self) -> &Input {
+        match self {
+            Self::Run(run) => &run.input,
+            Self::Check(check) => &check.input,
+            Self::Build(build) => &build.input,
+        }
+    }
+}
 
 /// Optimizations level for the compiler.
 #[derive(
@@ -72,48 +181,19 @@ pub enum TargetKind {
     #[clap(name = "llvm")]
     LLvmIR,
 
-    /// Compiles to nothing and only performs semantic analysis.
-    #[clap(name = "none")]
-    None,
+    /// Emits the whole information of the target in a human readable
+    /// format.
+    #[clap(name = "ron")]
+    Ron,
 }
 
 /// The arguments to the program.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, clap::Parser)]
 #[clap(name = "pernixc", version, about, author)]
 pub struct Arguments {
-    /// The input file to run the program on.
-    pub file: PathBuf,
-
-    /// The optimization level of the compiler.
-    #[clap(long = "opt", default_value = "0")]
-    pub opt_level: OptimizationLevel,
-
-    /// The target name of the program. If not specified, the target name will
-    /// be inferred from the file name.
-    #[clap(short, long)]
-    pub target_name: Option<String>,
-
-    /// Specifies the compilation format of the target.
-    #[clap(short, long, default_value = "bin")]
-    pub kind: TargetKind,
-
-    /// The paths to the `plib` library to link to the target.
-    #[clap(short = 'l', long = "link")]
-    pub library_paths: Vec<PathBuf>,
-
-    /// The output path of the program. If not specified, the program will be
-    /// written to the current working directory with the same name as the
-    /// target.
-    #[clap(short, long)]
-    pub output: Option<PathBuf>,
-
-    /// Whether to show the progress of the compilation.
-    #[clap(long)]
-    pub show_progress: bool,
-
-    /// Whether to dump the table in the `ron` format.
-    #[clap(long)]
-    pub dump_ron: bool,
+    /// The subcommand to run.
+    #[clap(subcommand, flatten = true)]
+    pub command: Command,
 }
 
 #[derive(Debug, derive_more::From)]
@@ -145,12 +225,12 @@ fn update_message(
 }
 
 fn create_root_source_file(argument: &Arguments) -> Option<Arc<SourceFile>> {
-    let file = match File::open(&argument.file) {
+    let file = match File::open(&argument.command.input().file) {
         Ok(file) => file,
         Err(error) => {
             let msg = Message::new(
                 Severity::Error,
-                format!("{}: {error}", argument.file.display()),
+                format!("{}: {error}", argument.command.input().file.display()),
             );
 
             eprintln!("{msg}");
@@ -158,27 +238,34 @@ fn create_root_source_file(argument: &Arguments) -> Option<Arc<SourceFile>> {
         }
     };
 
-    let source_file = match SourceFile::load(file, argument.file.clone()) {
-        Ok(file) => Arc::new(file),
-        Err(pernixc_source_file::Error::Io(error)) => {
-            let msg = Message::new(
-                Severity::Error,
-                format!("{}: {error}", argument.file.display()),
-            );
+    let source_file =
+        match SourceFile::load(file, argument.command.input().file.clone()) {
+            Ok(file) => Arc::new(file),
+            Err(pernixc_source_file::Error::Io(error)) => {
+                let msg = Message::new(
+                    Severity::Error,
+                    format!(
+                        "{}: {error}",
+                        argument.command.input().file.display()
+                    ),
+                );
 
-            eprintln!("{msg}");
-            return None;
-        }
-        Err(pernixc_source_file::Error::Utf8(error)) => {
-            let msg = Message::new(
-                Severity::Error,
-                format!("{}: {error}", argument.file.display()),
-            );
+                eprintln!("{msg}");
+                return None;
+            }
+            Err(pernixc_source_file::Error::Utf8(error)) => {
+                let msg = Message::new(
+                    Severity::Error,
+                    format!(
+                        "{}: {error}",
+                        argument.command.input().file.display()
+                    ),
+                );
 
-            eprintln!("{msg}");
-            return None;
-        }
-    };
+                eprintln!("{msg}");
+                return None;
+            }
+        };
 
     Some(source_file)
 }
@@ -651,7 +738,7 @@ fn emit_as_exe(
                 ),
                 TargetKind::LLvmIR => module.print_to_file(output_path),
 
-                TargetKind::None | TargetKind::Library => unreachable!(),
+                TargetKind::Ron | TargetKind::Library => unreachable!(),
             };
 
             if let Err(error) = result {
@@ -693,63 +780,123 @@ fn emit_as_exe(
 
 /// Runs the program with the given arguments.
 #[must_use]
-pub fn run(argument: Arguments) -> ExitCode {
-    let Some(source_file) = create_root_source_file(&argument) else {
+pub fn run(argument: &Arguments) -> ExitCode {
+    let Some(source_file) = create_root_source_file(argument) else {
         return ExitCode::FAILURE;
     };
 
-    let (target, syntax_diags) =
-        parse_target(&source_file, argument.target_name);
+    let (target, syntax_diags) = parse_target(
+        &source_file,
+        argument.command.input().target_name.clone(),
+    );
 
     // retrieve the output path
-    let Some(output_path) =
-        get_output_path(argument.output, argument.kind, &target)
-    else {
-        return ExitCode::FAILURE;
+    let output_path = match &argument.command {
+        Command::Build(Build { output, .. })
+        | Command::Run(Run { output, .. }) => Some(get_output_path(
+            output.output.clone(),
+            argument
+                .command
+                .as_build()
+                .map_or(TargetKind::Executable, |x| x.kind),
+            &target,
+        )),
+
+        Command::Check(_) => None,
+    };
+
+    let output_path = match output_path {
+        Some(Some(path)) => Some(path),
+        None => None,
+
+        Some(None) => {
+            return ExitCode::FAILURE;
+        }
     };
 
     // perform semantic analysis
     let Some((table, target_id, semantic_diags, reflector)) = semantic_analysis(
         target,
-        argument.show_progress,
-        argument.library_paths,
+        argument.command.input().show_progress,
+        argument.command.input().library_paths.clone(),
     ) else {
         return ExitCode::FAILURE;
     };
 
-    // dump ron if specified
-    if argument.dump_ron
-        && !dump_ron(&table, target_id, &reflector, &output_path)
-    {
-        return ExitCode::FAILURE;
-    }
-
-    // if there's any kinds of error, stop the compilation
-    if !check_compiation_errors(
+    let has_compilation_error = !check_compiation_errors(
         &table,
         semantic_diags.as_vec().as_slice(),
         syntax_diags.as_vec().as_slice(),
-    ) {
-        return ExitCode::FAILURE;
-    }
+    );
 
-    let result = match argument.kind {
-        TargetKind::Executable | TargetKind::LLvmIR => emit_as_exe(
-            &table,
-            target_id,
-            &output_path,
-            argument.opt_level,
-            argument.kind,
-        ),
-        TargetKind::Library => {
-            emit_as_library(&table, target_id, &reflector, &output_path)
+    match &argument.command {
+        Command::Build(Build {
+            opt_level,
+            kind: TargetKind::Executable | TargetKind::LLvmIR,
+            ..
+        })
+        | Command::Run(Run { opt_level, .. }) => {
+            let kind = match &argument.command {
+                Command::Build(Build { kind, .. }) => *kind,
+                Command::Run(_) => TargetKind::Executable,
+                Command::Check(_) => unreachable!(),
+            };
+
+            if has_compilation_error {
+                return ExitCode::FAILURE;
+            }
+
+            // emit the executable
+            if emit_as_exe(
+                &table,
+                target_id,
+                output_path.as_ref().unwrap(),
+                *opt_level,
+                kind,
+            ) {
+                return ExitCode::SUCCESS;
+            }
+
+            ExitCode::FAILURE
         }
-        TargetKind::None => true,
-    };
 
-    if result {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
+        Command::Check(_) => {
+            if has_compilation_error {
+                return ExitCode::FAILURE;
+            }
+
+            ExitCode::SUCCESS
+        }
+
+        Command::Build(Build { kind: TargetKind::Ron, .. }) => {
+            // dump the table to a file
+            if !dump_ron(
+                &table,
+                target_id,
+                &reflector,
+                output_path.as_ref().unwrap(),
+            ) {
+                return ExitCode::FAILURE;
+            }
+
+            ExitCode::SUCCESS
+        }
+
+        Command::Build(Build { kind: TargetKind::Library, .. }) => {
+            if has_compilation_error {
+                return ExitCode::FAILURE;
+            }
+
+            if emit_as_library(
+                &table,
+                target_id,
+                &reflector,
+                output_path.as_ref().unwrap(),
+            ) {
+                return ExitCode::SUCCESS;
+            }
+
+            ExitCode::FAILURE
+        }
     }
 }
