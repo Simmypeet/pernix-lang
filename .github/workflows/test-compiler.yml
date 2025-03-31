@@ -7,10 +7,10 @@ on:
 permissions:
     contents: write
 
-name: Build Pernixc Compiler
+name: Test Pernixc Compiler
 jobs:
     build:
-        name: Build Pernix Compiler
+        name: Test Pernix Compiler
         runs-on: ${{ matrix.os }}
         strategy:
             fail-fast: false
