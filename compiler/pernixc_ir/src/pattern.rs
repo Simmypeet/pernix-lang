@@ -5,11 +5,12 @@ use std::collections::HashMap;
 use diagnostic::AlreadyBoundName;
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
-use pernixc_component::fields::Field;
 use pernixc_handler::Handler;
-use pernixc_semantic::{diagnostic::Diagnostic, GlobalID};
+use pernixc_semantic::{
+    component::derived::fields::Field, diagnostic::Diagnostic, table::GlobalID,
+    term, term::r#type::Qualifier,
+};
 use pernixc_source_file::{SourceElement, Span};
-use pernixc_semantic::term::r#type::Qualifier;
 
 use crate::{address::Address, instruction::SwitchValue};
 
@@ -170,7 +171,7 @@ impl SourceElement for Refutable {
 
 /// Represents an lvalue binding in the pattern.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NameBinding<M: pernixc_term::Model> {
+pub struct NameBinding<M: term::Model> {
     /// Whether the binding is mutable or not.
     pub mutable: bool,
 
@@ -183,12 +184,12 @@ pub struct NameBinding<M: pernixc_term::Model> {
 
 /// Contains all the named bindings in the patterns.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct NameBindingPoint<M: pernixc_term::Model> {
+pub struct NameBindingPoint<M: term::Model> {
     /// Mapping from the name of the binding to the named pattern.
     pub named_patterns_by_name: HashMap<String, NameBinding<M>>,
 }
 
-impl<M: pernixc_term::Model> NameBindingPoint<M> {
+impl<M: term::Model> NameBindingPoint<M> {
     /// Inserts a name binding into the point.
     ///
     /// # Errors

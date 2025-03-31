@@ -1,10 +1,9 @@
 use std::collections::hash_map::Entry;
 
 use pernixc_handler::Handler;
-use pernixc_semantic::diagnostic::Diagnostic;
+use pernixc_semantic::{diagnostic::Diagnostic, term, term::r#type::Type};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_semantic::term::r#type::Type;
 
 use super::{Bind, Config, Expression};
 use crate::{
@@ -44,7 +43,7 @@ impl Bind<&syntax_tree::expression::terminator::Break> for Binder<'_> {
         )?;
 
         let value_type = value.as_ref().map_or_else(
-            || Ok(Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })),
+            || Ok(Type::Tuple(term::Tuple { elements: Vec::new() })),
             |x| self.type_of_value(x, handler),
         )?;
 
@@ -53,7 +52,7 @@ impl Bind<&syntax_tree::expression::terminator::Break> for Binder<'_> {
             LoopKind::While => {
                 self.type_check(
                     &value_type,
-                    Expected::Known(Type::Tuple(pernixc_term::Tuple {
+                    Expected::Known(Type::Tuple(term::Tuple {
                         elements: Vec::new(),
                     })),
                     syntax_tree.binary.as_ref().map_or_else(

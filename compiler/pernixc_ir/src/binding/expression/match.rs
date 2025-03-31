@@ -7,16 +7,16 @@ use drain_filter_polyfill::VecExt;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::{Member, Parent, SymbolKind, VariantDeclarationOrder},
+    component::input::{Member, Parent, SymbolKind, VariantDeclarationOrder},
     diagnostic::Diagnostic,
-    GlobalID, Table,
+    table::{GlobalID, Table},
+    term::{
+        r#type::{Primitive, Qualifier, Type},
+        Symbol,
+    },
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, expression::block::Group};
-use pernixc_semantic::term::{
-    r#type::{Primitive, Qualifier, Type},
-    Symbol,
-};
 
 use super::{Bind, Config, Expression, Target};
 use crate::{
@@ -53,7 +53,7 @@ impl Refutable {
             }
             Self::Integer(integer) => Some(integer.value),
             Self::Enum(variant) => Some(SwitchValue::Positive(
-                table.get::<VariantDeclarationOrder>(variant.variant_id).order
+                table.get::<VariantDeclarationOrder>(variant.variant_id).0
                     as u64,
             )),
 
@@ -399,7 +399,6 @@ impl Binder<'_> {
                                     pattern.variant_id.target_id,
                                     self.table
                                         .get::<Parent>(pattern.variant_id)
-                                        .parent
                                         .unwrap(),
                                 ),
                             }),
@@ -458,7 +457,6 @@ impl Binder<'_> {
                                                         .get::<Parent>(
                                                             a.variant_id,
                                                         )
-                                                        .parent
                                                         .unwrap();
 
                                                     (0..self
@@ -592,7 +590,6 @@ impl Binder<'_> {
                                                 let enum_id = self
                                                     .table
                                                     .get::<Parent>(a.variant_id)
-                                                    .parent
                                                     .unwrap();
 
                                                 (0..self

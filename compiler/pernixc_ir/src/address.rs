@@ -4,16 +4,20 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::{Key, ID};
-use pernixc_component::{
-    fields::Fields,
-    function_signature::{FunctionSignature, Parameter},
-};
-use pernixc_semantic::GlobalID;
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    r#type::{Qualifier, Type},
-    Symbol,
+use pernixc_semantic::{
+    component::derived::{
+        fields::{self, Fields},
+        function_signature::{FunctionSignature, Parameter},
+        generic_parameters::GenericParameters,
+        variant,
+    },
+    table::GlobalID,
+    term::{
+        self,
+        instantiation::{self, Instantiation},
+        r#type::{Qualifier, Type},
+        Symbol,
+    },
 };
 use pernixc_type_system::{
     environment::Environment, normalizer::Normalizer, Error, Succeeded,
@@ -26,19 +30,19 @@ use crate::{alloca::Alloca, model::Transform, value::Value, Values};
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Field<M: pernixc_term::Model> {
+pub struct Field<M: term::Model> {
     /// The address to the struct.
     pub struct_address: Box<Address<M>>,
 
     /// The field that the address points to.
-    pub id: ID<pernixc_component::fields::Field>,
+    pub id: ID<fields::Field>,
 }
 
 /// The address points to an element in an array.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Index<M: pernixc_term::Model> {
+pub struct Index<M: term::Model> {
     /// The address to the array.
     pub array_address: Box<Address<M>>,
 
@@ -76,7 +80,7 @@ pub enum Offset {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Variant<M: pernixc_term::Model> {
+pub struct Variant<M: term::Model> {
     /// The address to the variant.
     pub enum_address: Box<Address<M>>,
 
@@ -88,7 +92,7 @@ pub struct Variant<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Tuple<M: pernixc_term::Model> {
+pub struct Tuple<M: term::Model> {
     /// The address to the tuple.
     pub tuple_address: Box<Address<M>>,
 
@@ -111,7 +115,7 @@ pub struct Tuple<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Reference<M: pernixc_term::Model> {
+pub struct Reference<M: term::Model> {
     /// The reference qualifier of the memory pointer.
     pub qualifier: Qualifier,
 
@@ -137,7 +141,7 @@ pub struct Reference<M: pernixc_term::Model> {
     EnumAsInner,
 )]
 #[allow(missing_docs)]
-pub enum Memory<M: pernixc_term::Model> {
+pub enum Memory<M: term::Model> {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca<M>>),
 }
@@ -156,7 +160,7 @@ pub enum Memory<M: pernixc_term::Model> {
     EnumAsInner,
 )]
 #[allow(missing_docs)]
-pub enum Address<M: pernixc_term::Model> {
+pub enum Address<M: term::Model> {
     Memory(Memory<M>),
 
     Field(Field<M>),
@@ -166,7 +170,7 @@ pub enum Address<M: pernixc_term::Model> {
     Reference(Reference<M>),
 }
 
-impl<M: pernixc_term::Model> Address<M> {
+impl<M: term::Model> Address<M> {
     /// Gets the number of dereference operations found in the address.
     pub const fn get_dereference_count(mut self: &Self) -> usize {
         let mut count = 0;
@@ -287,7 +291,7 @@ impl<M: pernixc_term::Model> Address<M> {
     }
 }
 
-impl<M: pernixc_term::Model> Address<M> {
+impl<M: term::Model> Address<M> {
     /// Transforms the [`Address`] to another model using the given transformer.
     #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
@@ -341,7 +345,7 @@ impl<M: pernixc_term::Model> Address<M> {
     }
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     /// Gets the type of the [`Address`] with the given ID.
     ///
     /// # Parameters
@@ -457,13 +461,11 @@ impl<M: pernixc_term::Model> Values<M> {
                                 let element_ty = tuple_ty.elements.remove(id);
 
                                 if element_ty.is_unpacked {
-                                    Type::Tuple(pernixc_term::Tuple {
-                                        elements: vec![
-                                            pernixc_term::TupleElement {
-                                                term: element_ty.term,
-                                                is_unpacked: true,
-                                            },
-                                        ],
+                                    Type::Tuple(term::Tuple {
+                                        elements: vec![term::TupleElement {
+                                            term: element_ty.term,
+                                            is_unpacked: true,
+                                        }],
                                     })
                                 } else {
                                     element_ty.term
@@ -509,9 +511,7 @@ impl<M: pernixc_term::Model> Values<M> {
 
                 let variant = environment
                     .table()
-                    .query::<pernixc_component::variant::Variant>(
-                    variant.id,
-                )?;
+                    .query::<variant::Variant>(variant.id)?;
 
                 let mut variant_ty = M::from_default_type(
                     variant.associated_type.clone().unwrap(),

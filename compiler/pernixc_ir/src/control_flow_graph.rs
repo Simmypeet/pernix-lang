@@ -7,7 +7,7 @@ use std::{
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, Key, ID};
-use pernixc_semantic::term::r#type::Type;
+use pernixc_semantic::term::{self, r#type::Type};
 use pernixc_transitive_closure::TransitiveClosure;
 use serde::{Deserialize, Serialize};
 
@@ -20,14 +20,14 @@ use crate::model::Transform;
 /// This data structure used an efficient algorithm to determine the
 /// reachability in constant time.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Reachability<M: pernixc_term::Model> {
+pub struct Reachability<M: term::Model> {
     blocks_to_index: HashMap<ID<Block<M>>, usize>,
     index_to_blocks: Vec<ID<Block<M>>>,
 
     transitive_closure: TransitiveClosure,
 }
 
-impl<M: pernixc_term::Model> Reachability<M> {
+impl<M: term::Model> Reachability<M> {
     /// Checks if there is a path from the `from` block to the `to` block.
     #[must_use]
     pub fn block_reachable(
@@ -67,7 +67,7 @@ impl<M: pernixc_term::Model> Reachability<M> {
 #[derive(
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Getters, CopyGetters,
 )]
-pub struct Block<M: pernixc_term::Model> {
+pub struct Block<M: term::Model> {
     /// List of instructions that are executed in sequence.
     #[get = "pub"]
     instructions: Vec<Instruction<M>>,
@@ -82,7 +82,7 @@ pub struct Block<M: pernixc_term::Model> {
     is_entry: bool,
 }
 
-impl<M: pernixc_term::Model> Block<M> {
+impl<M: term::Model> Block<M> {
     /// Transforms the [`Block`] to another model using the given
     /// transformer.
     #[allow(clippy::missing_errors_doc)]
@@ -171,7 +171,7 @@ impl<M: pernixc_term::Model> Block<M> {
     derive_more::Index,
     derive_more::IndexMut,
 )]
-pub struct ControlFlowGraph<M: pernixc_term::Model> {
+pub struct ControlFlowGraph<M: term::Model> {
     /// Contains all the blocks in the control flow graph.
     #[get = "pub"]
     #[index]
@@ -190,13 +190,13 @@ pub struct ControlFlowGraph<M: pernixc_term::Model> {
 ///
 /// The iterator is called in a depth-first and pre-order manner.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Traverser<'a, M: pernixc_term::Model> {
+pub struct Traverser<'a, M: term::Model> {
     graph: &'a ControlFlowGraph<M>,
     visited: HashSet<ID<Block<M>>>,
     stack: Vec<ID<Block<M>>>,
 }
 
-impl<'a, M: pernixc_term::Model> Iterator for Traverser<'a, M> {
+impl<'a, M: term::Model> Iterator for Traverser<'a, M> {
     type Item = (ID<Block<M>>, &'a Block<M>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -226,12 +226,12 @@ impl<'a, M: pernixc_term::Model> Iterator for Traverser<'a, M> {
 ///
 /// This iterator behaves similarly like `drain` in Rust's standard library.
 #[derive(Debug, PartialEq, Eq)]
-pub struct RemoveUnreachableBlocks<'a, M: pernixc_term::Model> {
+pub struct RemoveUnreachableBlocks<'a, M: term::Model> {
     graph: &'a mut ControlFlowGraph<M>,
     unreachable_blocks: Vec<ID<Block<M>>>,
 }
 
-impl<M: pernixc_term::Model> Iterator for RemoveUnreachableBlocks<'_, M> {
+impl<M: term::Model> Iterator for RemoveUnreachableBlocks<'_, M> {
     type Item = (ID<Block<M>>, Block<M>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -241,7 +241,7 @@ impl<M: pernixc_term::Model> Iterator for RemoveUnreachableBlocks<'_, M> {
     }
 }
 
-impl<M: pernixc_term::Model> Drop for RemoveUnreachableBlocks<'_, M> {
+impl<M: term::Model> Drop for RemoveUnreachableBlocks<'_, M> {
     fn drop(&mut self) {
         for block in self.unreachable_blocks.iter().copied() {
             self.graph.blocks.remove(block).unwrap();
@@ -249,7 +249,7 @@ impl<M: pernixc_term::Model> Drop for RemoveUnreachableBlocks<'_, M> {
     }
 }
 
-impl<M: pernixc_term::Model> ControlFlowGraph<M> {
+impl<M: term::Model> ControlFlowGraph<M> {
     /// Transforms the [`ControlFlowGraph`] to another model using the given
     /// transformer.
     #[allow(clippy::missing_errors_doc)]
@@ -666,7 +666,7 @@ impl<M: pernixc_term::Model> ControlFlowGraph<M> {
     }
 }
 
-impl<M: pernixc_term::Model> Default for ControlFlowGraph<M> {
+impl<M: term::Model> Default for ControlFlowGraph<M> {
     fn default() -> Self {
         let mut blocks = Arena::new();
 
@@ -685,7 +685,7 @@ impl<M: pernixc_term::Model> Default for ControlFlowGraph<M> {
 /// Represents an identifier to a particular instruction in the control flow
 /// graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Point<M: pernixc_term::Model> {
+pub struct Point<M: term::Model> {
     /// The index of the instruction in the block.
     pub instruction_index: usize,
 

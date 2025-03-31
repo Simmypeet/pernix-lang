@@ -4,8 +4,11 @@ use std::{borrow::Cow, collections::HashMap, num::NonZero};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::{Key, ID};
+use pernixc_semantic::term::{
+    self,
+    r#type::{Qualifier, Type},
+};
 use pernixc_source_file::Span;
-use pernixc_semantic::term::r#type::{Qualifier, Type};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -33,7 +36,7 @@ use crate::model::Transform;
     Serialize,
     Deserialize,
 )]
-pub struct UnconditionalJump<M: pernixc_term::Model> {
+pub struct UnconditionalJump<M: term::Model> {
     /// The target block of the jump.
     pub target: ID<Block<M>>,
 }
@@ -42,7 +45,7 @@ pub struct UnconditionalJump<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct ConditionalJump<M: pernixc_term::Model> {
+pub struct ConditionalJump<M: term::Model> {
     /// The condition of the jump.
     pub condition: Value<M>,
 
@@ -77,7 +80,7 @@ pub enum SwitchValue {
 /// Represents a jump to another block based on a the matching of an integer
 /// value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SwitchJump<M: pernixc_term::Model> {
+pub struct SwitchJump<M: term::Model> {
     /// The integer value to match.
     pub integer: Value<M>,
 
@@ -91,13 +94,13 @@ pub struct SwitchJump<M: pernixc_term::Model> {
 /// An enumeration containing all kinds of jump instructions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[allow(missing_docs)]
-pub enum Jump<M: pernixc_term::Model> {
+pub enum Jump<M: term::Model> {
     Unconditional(UnconditionalJump<M>),
     Conditional(ConditionalJump<M>),
     Switch(SwitchJump<M>),
 }
 
-impl<M: pernixc_term::Model> Jump<M> {
+impl<M: term::Model> Jump<M> {
     /// Transforms the [`Jump`] to another model using the given transformer.
     #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
@@ -156,7 +159,7 @@ impl<M: pernixc_term::Model> Jump<M> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Return<M: pernixc_term::Model> {
+pub struct Return<M: term::Model> {
     /// The value to return.
     pub value: Value<M>,
 
@@ -178,7 +181,7 @@ pub struct Return<M: pernixc_term::Model> {
     Serialize,
     Deserialize,
 )]
-pub struct RegisterAssignment<M: pernixc_term::Model> {
+pub struct RegisterAssignment<M: term::Model> {
     /// The register that is being assigned.
     pub id: ID<Register<M>>,
 }
@@ -190,7 +193,7 @@ pub struct RegisterAssignment<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Store<M: pernixc_term::Model> {
+pub struct Store<M: term::Model> {
     /// The address where the value will be stored.
     pub address: Address<M>,
 
@@ -240,7 +243,7 @@ pub struct Store<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct TuplePack<M: pernixc_term::Model> {
+pub struct TuplePack<M: term::Model> {
     /// The address where the packed tuple elements will be stored.
     ///
     /// The address should have a type of tuple.
@@ -303,7 +306,7 @@ pub struct ScopePop(pub ID<Scope>);
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Drop<M: pernixc_term::Model> {
+pub struct Drop<M: term::Model> {
     /// The address to drop.
     pub address: Address<M>,
 }
@@ -312,7 +315,7 @@ pub struct Drop<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct DropUnpackTuple<M: pernixc_term::Model> {
+pub struct DropUnpackTuple<M: term::Model> {
     /// The address of the tuple that contains the unpacked elements.
     pub tuple_address: Address<M>,
 
@@ -338,7 +341,7 @@ pub struct DropUnpackTuple<M: pernixc_term::Model> {
     Serialize,
     Deserialize,
 )]
-pub struct RegisterDiscard<M: pernixc_term::Model> {
+pub struct RegisterDiscard<M: term::Model> {
     /// The register that is being dropped.
     pub id: ID<Register<M>>,
 }
@@ -361,7 +364,7 @@ pub struct RegisterDiscard<M: pernixc_term::Model> {
     EnumAsInner,
 )]
 #[allow(missing_docs)]
-pub enum Instruction<M: pernixc_term::Model> {
+pub enum Instruction<M: term::Model> {
     Store(Store<M>),
     RegisterAssignment(RegisterAssignment<M>),
     RegisterDiscard(RegisterDiscard<M>),
@@ -372,7 +375,7 @@ pub enum Instruction<M: pernixc_term::Model> {
     Drop(Drop<M>),
 }
 
-impl<M: pernixc_term::Model> Instruction<M> {
+impl<M: term::Model> Instruction<M> {
     /// Transforms the [`Instruction`] to another model using the given
     /// transformer.
     #[allow(clippy::missing_errors_doc)]
@@ -439,7 +442,7 @@ impl<M: pernixc_term::Model> Instruction<M> {
 /// Either they move to another block or they return from the function.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum Terminator<M: pernixc_term::Model> {
+pub enum Terminator<M: term::Model> {
     Jump(Jump<M>),
     Return(Return<M>),
 
@@ -447,7 +450,7 @@ pub enum Terminator<M: pernixc_term::Model> {
     Panic,
 }
 
-impl<M: pernixc_term::Model> Terminator<M> {
+impl<M: term::Model> Terminator<M> {
     /// Transforms the [`Terminator`] to another model using the given
     /// transformer.
     #[allow(clippy::missing_errors_doc)]
@@ -521,7 +524,7 @@ pub enum AccessKind {
     Drop,
 }
 
-impl<M: pernixc_term::Model> Instruction<M> {
+impl<M: term::Model> Instruction<M> {
     /// Gets the address that was used during the execution of this instruction.
     ///
     /// This does not include the address that might be used during the drop.

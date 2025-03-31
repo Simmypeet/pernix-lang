@@ -1,8 +1,8 @@
 //! Contains the definition of the [`Alloca`] struct.
 
 use pernixc_arena::ID;
+use pernixc_semantic::term::{self, r#type::Type};
 use pernixc_source_file::Span;
-use pernixc_semantic::term::r#type::Type;
 use serde::{Deserialize, Serialize};
 
 use crate::{model::Transform, scope};
@@ -11,7 +11,7 @@ use crate::{model::Transform, scope};
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Alloca<M: pernixc_term::Model> {
+pub struct Alloca<M: term::Model> {
     /// The type of the value being allocated.
     pub r#type: Type<M>,
 
@@ -27,7 +27,7 @@ pub struct Alloca<M: pernixc_term::Model> {
     pub span: Option<Span>,
 }
 
-impl<M: pernixc_term::Model> Alloca<M> {
+impl<M: term::Model> Alloca<M> {
     /// Transforms the address to another model using the given transformer.
     #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(

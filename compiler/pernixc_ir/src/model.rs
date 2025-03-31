@@ -1,12 +1,14 @@
 //! Contains the definition of model used by the IR.
 
 use pernixc_abort::Abort;
-use pernixc_semantic::Table;
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, Default, ModelOf,
-    Never,
+use pernixc_semantic::{
+    table::{self, Table},
+    term::{
+        self, constant::Constant, lifetime::Lifetime, r#type::Type, Default,
+        ModelOf, Never,
+    },
 };
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 /// The set of types that can be inferred. Used in type inference.
@@ -92,7 +94,7 @@ pub struct Model;
 )]
 pub struct Erased;
 
-impl pernixc_semantic::Display for Erased {
+impl table::Display for Erased {
     fn fmt(
         &self,
         _: &Table,
@@ -106,7 +108,7 @@ impl From<Never> for Erased {
     fn from(value: Never) -> Self { match value {} }
 }
 
-impl pernixc_term::Model for Model {
+impl term::Model for Model {
     type LifetimeInference = Erased;
     type TypeInference = Never;
     type ConstantInference = Never;
@@ -137,7 +139,7 @@ impl From<Never> for NoConstraint {
     fn from(never: Never) -> Self { match never {} }
 }
 
-impl pernixc_semantic::Display for NoConstraint {
+impl table::Display for NoConstraint {
     fn fmt(
         &self,
         _: &Table,
@@ -147,7 +149,7 @@ impl pernixc_semantic::Display for NoConstraint {
     }
 }
 
-impl pernixc_semantic::Display for Constraint {
+impl table::Display for Constraint {
     #[allow(clippy::enum_glob_use)]
     fn fmt(
         &self,
@@ -183,7 +185,7 @@ impl pernixc_semantic::Display for Constraint {
 )]
 pub struct NoConstraint;
 
-impl pernixc_term::Model for Constrained {
+impl term::Model for Constrained {
     type LifetimeInference = NoConstraint;
     type TypeInference = Constraint;
     type ConstantInference = NoConstraint;
@@ -207,7 +209,7 @@ impl pernixc_term::Model for Constrained {
 /// transform the terms from the inference model to the final concrete model.
 pub trait Transform<T: ModelOf> {
     /// The target model to transform the terms to.
-    type Target: pernixc_term::Model;
+    type Target: term::Model;
 
     /// The error that might occur when transforming the terms.
     type Error: From<Abort>;

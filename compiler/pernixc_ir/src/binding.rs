@@ -10,22 +10,25 @@ use infer::{
 };
 use pernixc_abort::Abort;
 use pernixc_arena::ID;
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
 use pernixc_resolution::{
     qualified_identifier::Resolution, ElidedTermProvider, Ext, ExtraNamespace,
     GetGenericParameterNamespaceExt,
 };
-use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
+use pernixc_semantic::{
+    component::derived::function_signature::FunctionSignature,
+    diagnostic::Diagnostic,
+    table::{GlobalID, Table},
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        r#type::{Qualifier, Type},
+        Model,
+    },
+};
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
-use pernixc_semantic::term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    lifetime::Lifetime,
-    r#type::{Qualifier, Type},
-    Model,
-};
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt, Premise},
     term::Term,

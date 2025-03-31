@@ -4,8 +4,10 @@ use std::ops::Deref;
 
 use literal::Literal;
 use pernixc_arena::{Key, ID};
-use pernixc_semantic::GlobalID;
-use pernixc_semantic::term::r#type::Type;
+use pernixc_semantic::{
+    table::GlobalID,
+    term::{self, r#type::Type},
+};
 use pernixc_type_system::{
     environment::Environment, normalizer::Normalizer, simplify::Simplify,
     Error, Succeeded,
@@ -36,12 +38,12 @@ pub mod register;
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum Value<M: pernixc_term::Model> {
+pub enum Value<M: term::Model> {
     Register(ID<Register<M>>),
     Literal(Literal<M>),
 }
 
-impl<M: pernixc_term::Model> Value<M> {
+impl<M: term::Model> Value<M> {
     /// Transforms the [`Value`] another model using the given transformer.
     #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
@@ -59,7 +61,7 @@ impl<M: pernixc_term::Model> Value<M> {
     }
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     /// Gets the type of the [`Value`]
     ///
     /// # Parameters

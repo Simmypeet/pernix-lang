@@ -1,22 +1,25 @@
 use std::sync::Arc;
 
 use pernixc_arena::Arena;
-use pernixc_component::{
-    function_signature::FunctionSignature,
-    implied_predicates::ImpliedPredicates,
-};
 use pernixc_handler::{Panic, Storage};
 use pernixc_semantic::{
-    component::{Member, Name, Parent, SymbolKind},
+    component::{
+        derived::{
+            function_signature::FunctionSignature,
+            implied_predicates::ImpliedPredicates,
+        },
+        Member, Name, Parent, SymbolKind,
+    },
     diagnostic::Diagnostic,
+    term::{
+        elided_lifetimes::ElidedLifetimes,
+        generic_parameter::GenericParameters, r#type::Type,
+        where_clause::WhereClause, Default,
+    },
     GlobalID, Table, TargetID,
 };
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
-};
-use pernixc_semantic::term::{
-    elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
-    r#type::Type, where_clause::WhereClause, Default,
 };
 
 use super::{
@@ -36,7 +39,7 @@ pub struct Template {
 
 impl Template {
     pub fn new() -> Self {
-        Self::new_with_return_type(Type::Tuple(pernixc_term::Tuple {
+        Self::new_with_return_type(Type::Tuple(term::Tuple {
             elements: Vec::new(),
         }))
     }

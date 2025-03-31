@@ -1,5 +1,5 @@
 use pernixc_arena::ID;
-use pernixc_component::fields::Field;
+use pernixc_semantic::component::derived::fields::Field;
 use pernixc_syntax::{syntax_tree, utility::parse};
 
 use crate::binding::{

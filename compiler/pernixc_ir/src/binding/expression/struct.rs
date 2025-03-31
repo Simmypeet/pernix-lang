@@ -1,17 +1,24 @@
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 
 use pernixc_arena::ID;
-use pernixc_component::fields::Field;
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::{Generic, Resolution};
-use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic};
+use pernixc_semantic::{
+    component::{
+        derived::{
+            fields::{self, Field},
+            generic_parameters::GenericParameters,
+        },
+        input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    term::{
+        instantiation::{self, Instantiation},
+        Model,
+    },
+};
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    Model,
-};
 
 use super::{Bind, Config, Expression};
 use crate::{
@@ -70,8 +77,7 @@ impl Bind<&syntax_tree::expression::unit::Struct> for Binder<'_> {
         )
         .unwrap();
 
-        let fields =
-            self.table.query::<pernixc_component::fields::Fields>(struct_id)?;
+        let fields = self.table.query::<fields::Fields>(struct_id)?;
         let mut initializers_by_field_id =
             HashMap::<ID<Field>, (Value<infer::Model>, Span)>::new();
 

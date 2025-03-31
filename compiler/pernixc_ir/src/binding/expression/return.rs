@@ -1,9 +1,13 @@
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
-use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic};
+use pernixc_semantic::{
+    component::{
+        derived::function_signature::FunctionSignature, input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    term::{r#type::Type, Model},
+};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_semantic::term::{r#type::Type, Model};
 
 use super::{Bind, Config, Expression};
 use crate::{

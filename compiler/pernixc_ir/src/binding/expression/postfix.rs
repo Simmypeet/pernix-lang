@@ -1,35 +1,42 @@
 use std::collections::HashSet;
 
 use pernixc_arena::ID;
-use pernixc_component::{
-    function_signature::FunctionSignature, implementation::Implementation,
-};
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier;
 use pernixc_semantic::{
     component::{
-        Extern, ExternC, FunctionUnsafeness, Implemented, Implements, Import,
-        Member, Parent, SymbolKind,
+        derived::{
+            elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
+            fields,
+            function_signature::FunctionSignature,
+            generic_parameters::{
+                ConstantParameterID, GenericParameters, LifetimeParameterID,
+                TypeParameterID,
+            },
+            implementation::Implementation,
+            variant,
+        },
+        input::{
+            Extern, ExternC, FunctionUnsafeness, Implemented, Implements,
+            Import, Member, Parent, SymbolKind,
+        },
     },
     diagnostic::Diagnostic,
-    resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
-    GlobalID,
+    table::{
+        resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
+        GlobalID,
+    },
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        r#type::{Primitive, Qualifier, Type},
+        Default, Model, Symbol,
+    },
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
-use pernixc_semantic::term::{
-    constant::Constant,
-    elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        ConstantParameterID, GenericParameters, LifetimeParameterID,
-        TypeParameterID,
-    },
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    r#type::{Primitive, Qualifier, Type},
-    Default, Model, Symbol,
-};
 
 use super::{Bind, Config, Expression, LValue};
 use crate::{
@@ -846,10 +853,7 @@ impl Binder<'_> {
 
         let adt_implementation_id = GlobalID::new(
             adt_implementation_function_id.target_id,
-            self.table
-                .get::<Parent>(adt_implementation_function_id)
-                .parent
-                .unwrap(),
+            self.table.get::<Parent>(adt_implementation_function_id).unwrap(),
         );
         let adt_implementation_generic_params =
             self.table.query::<GenericParameters>(adt_implementation_id)?;
@@ -1147,9 +1151,7 @@ impl Binder<'_> {
                 }
 
                 // find field id
-                let fields = self
-                    .table
-                    .query::<pernixc_component::fields::Fields>(struct_id)?;
+                let fields = self.table.query::<fields::Fields>(struct_id)?;
 
                 let Some(field_id) = fields
                     .field_ids_by_name
@@ -1456,13 +1458,12 @@ impl Binder<'_> {
     ) -> Result<ID<Register<infer::Model>>, Abort> {
         let enum_id = GlobalID::new(
             variant.variant_id.target_id,
-            self.table.get::<Parent>(variant.variant_id).parent.unwrap(),
+            self.table.get::<Parent>(variant.variant_id).unwrap(),
         );
         let enum_generic_params =
             self.table.query::<GenericParameters>(enum_id)?;
-        let variant_symbol = self
-            .table
-            .query::<pernixc_component::variant::Variant>(variant.variant_id)?;
+        let variant_symbol =
+            self.table.query::<variant::Variant>(variant.variant_id)?;
 
         let instantiation = Instantiation::from_generic_arguments(
             variant.generic_arguments.clone(),
@@ -1738,7 +1739,7 @@ impl Binder<'_> {
                     SymbolKind::TraitImplementationFunction => {
                         let trait_implementation_sym_id = GlobalID::new(
                             id.target_id,
-                            self.table.get::<Parent>(id).parent.unwrap(),
+                            self.table.get::<Parent>(id).unwrap(),
                         );
                         let trait_implementation_generic_parameters =
                             self.table.query::<GenericParameters>(
@@ -1847,7 +1848,7 @@ impl Binder<'_> {
                     SymbolKind::TraitFunction => {
                         let trait_sym_id = GlobalID::new(
                             id.target_id,
-                            self.table.get::<Parent>(id).parent.unwrap(),
+                            self.table.get::<Parent>(id).unwrap(),
                         );
                         let trait_generic_params =
                             self.table
@@ -1878,7 +1879,7 @@ impl Binder<'_> {
                     SymbolKind::AdtImplementationFunction => {
                         let adt_implementation_id = GlobalID::new(
                             id.target_id,
-                            self.table.get::<Parent>(id).parent.unwrap(),
+                            self.table.get::<Parent>(id).unwrap(),
                         );
                         let adt_implementation_generic_params =
                             self.table.query::<GenericParameters>(

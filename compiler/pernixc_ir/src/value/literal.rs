@@ -1,11 +1,12 @@
 //! Contains the definition of [`Literal`].
 
 use enum_as_inner::EnumAsInner;
-use pernixc_source_file::Span;
 use pernixc_semantic::term::{
+    self,
     lifetime::Lifetime,
     r#type::{Array, Primitive, Qualifier, Reference, Type},
 };
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 use crate::model::Transform;
@@ -14,7 +15,7 @@ use crate::model::Transform;
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Numeric<M: pernixc_term::Model> {
+pub struct Numeric<M: term::Model> {
     /// The numeric value for the integer part as a string.
     pub integer_string: std::string::String,
 
@@ -49,7 +50,7 @@ pub struct Boolean {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Error<M: pernixc_term::Model> {
+pub struct Error<M: term::Model> {
     /// The expected type of the value.
     pub r#type: Type<M>,
 
@@ -74,7 +75,7 @@ pub struct Unit {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Unreachable<M: pernixc_term::Model> {
+pub struct Unreachable<M: term::Model> {
     /// The type of the unreachable value.
     pub r#type: Type<M>,
 
@@ -100,7 +101,7 @@ pub struct String {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Character<M: pernixc_term::Model> {
+pub struct Character<M: term::Model> {
     /// The value of the character.
     pub character: char,
 
@@ -119,7 +120,7 @@ pub struct Character<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Phantom<M: pernixc_term::Model> {
+pub struct Phantom<M: term::Model> {
     /// The type of the character value.
     ///
     /// The type is explicitly annotate here since it can be determined by
@@ -149,7 +150,7 @@ pub struct Phantom<M: pernixc_term::Model> {
     derive_more::From,
 )]
 #[allow(missing_docs)]
-pub enum Literal<M: pernixc_term::Model> {
+pub enum Literal<M: term::Model> {
     Numeric(Numeric<M>),
     Boolean(Boolean),
     Error(Error<M>),
@@ -160,7 +161,7 @@ pub enum Literal<M: pernixc_term::Model> {
     Phantom(Phantom<M>),
 }
 
-impl<M: pernixc_term::Model> Literal<M> {
+impl<M: term::Model> Literal<M> {
     /// Transforms the literal to another model using the given transformer.
     #[allow(clippy::missing_errors_doc)]
     pub fn transform_model<T: Transform<Type<M>>>(
@@ -212,18 +213,16 @@ impl<M: pernixc_term::Model> Literal<M> {
             Self::Numeric(n) => n.r#type.clone(),
             Self::Boolean(_) => Type::Primitive(Primitive::Bool),
             Self::Error(e) => e.r#type.clone(),
-            Self::Unit(_) => {
-                Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })
-            }
+            Self::Unit(_) => Type::Tuple(term::Tuple { elements: Vec::new() }),
             // &'static [uint8: len]
             Self::String(string) => Type::Reference(Reference {
                 qualifier: Qualifier::Immutable,
                 lifetime: Lifetime::Static,
                 pointee: Box::new(Type::Array(Array {
                     r#type: Box::new(Type::Primitive(Primitive::Uint8)),
-                    length: pernixc_term::constant::Constant::Primitive(
-                        pernixc_term::constant::Primitive::Usize(
-                            string.value.len() as u64,
+                    length: term::constant::Constant::Primitive(
+                        term::constant::Primitive::Usize(
+                            string.value.len() as u64
                         ),
                     ),
                 })),

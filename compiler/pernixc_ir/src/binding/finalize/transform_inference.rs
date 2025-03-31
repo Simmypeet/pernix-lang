@@ -2,16 +2,20 @@ use std::{collections::HashSet, convert::Infallible, option::Option};
 
 use pernixc_arena::{Key, ID};
 use pernixc_handler::Handler;
-use pernixc_semantic::{diagnostic::Diagnostic, Table};
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant,
-    lifetime::Lifetime,
-    r#type::Type,
-    sub_term::TermLocation,
-    visitor::{self, MutableRecursive, RecursiveIterator},
-    ModelOf, Never,
+use pernixc_semantic::{
+    diagnostic::Diagnostic,
+    table::Table,
+    term::{
+        self,
+        constant::Constant,
+        lifetime::Lifetime,
+        r#type::Type,
+        sub_term::TermLocation,
+        visitor::{self, MutableRecursive, RecursiveIterator},
+        ModelOf, Never,
+    },
 };
+use pernixc_source_file::Span;
 
 use crate::{
     binding::{diagnostic::TypeAnnotationRequired, infer, Abort},
@@ -38,7 +42,7 @@ impl MutableRecursive<Type<model::Constrained>> for ReplaceInference {
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         if term.is_inference() {
-            *term = Type::Error(pernixc_term::Error);
+            *term = Type::Error(term::Error);
         }
 
         true
@@ -51,7 +55,7 @@ impl MutableRecursive<Constant<model::Constrained>> for ReplaceInference {
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         if term.is_inference() {
-            *term = Constant::Error(pernixc_term::Error);
+            *term = Constant::Error(term::Error);
         }
 
         true
@@ -167,9 +171,9 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
         )?;
 
         let found_inference = RecursiveIterator::new(&ty).any(|x| match x.0 {
-            pernixc_term::Kind::Lifetime(_) => false,
-            pernixc_term::Kind::Type(a) => a.is_inference(),
-            pernixc_term::Kind::Constant(a) => a.is_inference(),
+            term::Kind::Lifetime(_) => false,
+            term::Kind::Type(a) => a.is_inference(),
+            term::Kind::Constant(a) => a.is_inference(),
         });
 
         if found_inference && self.should_report {

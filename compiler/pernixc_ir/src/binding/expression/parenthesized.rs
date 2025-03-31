@@ -1,5 +1,5 @@
 use pernixc_handler::Handler;
-use pernixc_semantic::diagnostic::Diagnostic;
+use pernixc_semantic::{diagnostic::Diagnostic, term};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 use pernixc_semantic::term::r#type::Type;
@@ -51,12 +51,12 @@ impl Bind<&syntax_tree::expression::unit::Parenthesized> for Binder<'_> {
 
             let tuple_type = self
                 .create_environment()
-                .simplify(Type::<infer::Model>::Tuple(pernixc_term::Tuple {
+                .simplify(Type::<infer::Model>::Tuple(term::Tuple {
                     elements: elements
                         .iter()
                         .map(|x| {
                             self.type_of_value(&x.value, handler).map(|ty| {
-                                pernixc_term::TupleElement {
+                                term::TupleElement {
                                     term: ty,
                                     is_unpacked: x.is_unpacked,
                                 }

@@ -11,12 +11,15 @@ use getset::{Getters, MutGetters};
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
-use pernixc_semantic::{diagnostic::Diagnostic, Table};
-use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant, lifetime::Lifetime, r#type::Type,
-    visitor::RecursiveIterator, ModelOf as _, Never,
+use pernixc_semantic::{
+    diagnostic::Diagnostic,
+    table::{self, Table},
+    term::{
+        self, constant::Constant, lifetime::Lifetime, r#type::Type,
+        visitor::RecursiveIterator, ModelOf as _, Never,
+    },
 };
+use pernixc_source_file::Span;
 use pernixc_type_system::{
     environment::{Environment, Premise},
     mapping::Mapping,
@@ -34,7 +37,7 @@ use crate::model::{self, Erased};
 /// This is used for type checking and type inference.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum Expected<M: pernixc_term::Model> {
+pub enum Expected<M: term::Model> {
     Known(Type<M>),
     Constraint(model::Constraint),
 }
@@ -49,29 +52,29 @@ impl<T> From<Never> for InferenceVariable<T> {
     fn from(value: Never) -> Self { match value {} }
 }
 
-impl pernixc_term::Model for Model {
+impl term::Model for Model {
     type LifetimeInference = Erased;
     type TypeInference = InferenceVariable<Type<Self>>;
     type ConstantInference = InferenceVariable<Constant<Self>>;
 
-    fn from_default_type(ty: Type<pernixc_term::Default>) -> Type<Self> {
+    fn from_default_type(ty: Type<term::Default>) -> Type<Self> {
         Type::from_other_model(ty)
     }
 
     fn from_default_lifetime(
-        lifetime: Lifetime<pernixc_term::Default>,
+        lifetime: Lifetime<term::Default>,
     ) -> Lifetime<Self> {
         Lifetime::from_other_model(lifetime)
     }
 
     fn from_default_constant(
-        constant: Constant<pernixc_term::Default>,
+        constant: Constant<term::Default>,
     ) -> Constant<Self> {
         Constant::from_other_model(constant)
     }
 }
 
-impl<U> pernixc_semantic::Display for InferenceVariable<U> {
+impl<U> table::Display for InferenceVariable<U> {
     fn fmt(
         &self,
         _: &Table,
@@ -89,7 +92,7 @@ pub struct InferenceVariable<T> {
     _phantom: std::marker::PhantomData<Box<T>>,
 }
 
-impl<M: pernixc_term::Model<TypeInference = InferenceVariable<Self>>>
+impl<M: term::Model<TypeInference = InferenceVariable<Self>>>
     From<InferenceVariable<Self>> for Type<M>
 {
     fn from(inference_variable: InferenceVariable<Self>) -> Self {
@@ -97,7 +100,7 @@ impl<M: pernixc_term::Model<TypeInference = InferenceVariable<Self>>>
     }
 }
 
-impl<M: pernixc_term::Model<ConstantInference = InferenceVariable<Self>>>
+impl<M: term::Model<ConstantInference = InferenceVariable<Self>>>
     From<InferenceVariable<Self>> for Constant<M>
 {
     fn from(inference_variable: InferenceVariable<Self>) -> Self {
@@ -105,9 +108,7 @@ impl<M: pernixc_term::Model<ConstantInference = InferenceVariable<Self>>>
     }
 }
 
-impl<M: pernixc_term::Model<LifetimeInference = Erased>> From<Erased>
-    for Lifetime<M>
-{
+impl<M: term::Model<LifetimeInference = Erased>> From<Erased> for Lifetime<M> {
     fn from(inference_variable: Erased) -> Self {
         Self::Inference(inference_variable)
     }
@@ -350,7 +351,7 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
     }
 }
 
-impl<M: pernixc_term::Model> Constraint<Type<M>> for model::Constraint {
+impl<M: term::Model> Constraint<Type<M>> for model::Constraint {
     fn satisfies(&self, term: &Type<M>) -> bool {
         use pernixc_semantic::term::r#type::Primitive;
 
@@ -1116,22 +1117,22 @@ impl Context {
                         continue;
                     }
 
-                    Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })
+                    Type::Tuple(term::Tuple { elements: Vec::new() })
                 }
 
                 model::Constraint::Signed
                 | model::Constraint::Integer
                 | model::Constraint::SignedInteger
                 | model::Constraint::Number => {
-                    Type::Primitive(pernixc_term::r#type::Primitive::Int32)
+                    Type::Primitive(term::r#type::Primitive::Int32)
                 }
 
                 model::Constraint::UnsignedInteger => {
-                    Type::Primitive(pernixc_term::r#type::Primitive::Uint32)
+                    Type::Primitive(term::r#type::Primitive::Uint32)
                 }
 
                 model::Constraint::Floating => {
-                    Type::Primitive(pernixc_term::r#type::Primitive::Float32)
+                    Type::Primitive(term::r#type::Primitive::Float32)
                 }
             };
 
@@ -1189,7 +1190,7 @@ impl From<InferenceVariable<Constant<Model>>>
     }
 }
 
-impl pernixc_term::Model for IntermediaryModel {
+impl term::Model for IntermediaryModel {
     type LifetimeInference = Erased;
     type TypeInference = InferenceOrConstraint<
         InferenceVariable<Type<Model>>,
@@ -1200,18 +1201,18 @@ impl pernixc_term::Model for IntermediaryModel {
         model::NoConstraint,
     >;
 
-    fn from_default_type(ty: Type<pernixc_term::Default>) -> Type<Self> {
+    fn from_default_type(ty: Type<term::Default>) -> Type<Self> {
         Type::from_other_model(ty)
     }
 
     fn from_default_lifetime(
-        lifetime: Lifetime<pernixc_term::Default>,
+        lifetime: Lifetime<term::Default>,
     ) -> Lifetime<Self> {
         Lifetime::from_other_model(lifetime)
     }
 
     fn from_default_constant(
-        constant: Constant<pernixc_term::Default>,
+        constant: Constant<term::Default>,
     ) -> Constant<Self> {
         Constant::from_other_model(constant)
     }
@@ -1239,11 +1240,7 @@ impl Normalizer<IntermediaryModel> for ConstraintNormalizer<'_> {
                 .context
                 .get_inference(*inference_id)
                 .map_or_else(
-                    || {
-                        Ok(Some(Succeeded::new(Type::Error(
-                            pernixc_term::Error,
-                        ))))
-                    },
+                    || Ok(Some(Succeeded::new(Type::Error(term::Error)))),
                     |x| match x {
                         Inference::Known(known) => Ok(Some(Succeeded::new(
                             Type::from_other_model(known.clone()),
@@ -1285,11 +1282,7 @@ impl Normalizer<IntermediaryModel> for ConstraintNormalizer<'_> {
                 .context
                 .get_inference(*inference_id)
                 .map_or_else(
-                    || {
-                        Ok(Some(Succeeded::new(Constant::Error(
-                            pernixc_term::Error,
-                        ))))
-                    },
+                    || Ok(Some(Succeeded::new(Constant::Error(term::Error)))),
                     |x| match x {
                         Inference::Known(known) => Ok(Some(Succeeded::new(
                             Constant::from_other_model(known.clone()),

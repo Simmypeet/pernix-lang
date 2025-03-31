@@ -3,18 +3,20 @@
 use std::collections::HashSet;
 
 use pernixc_arena::ID;
-use pernixc_component::fields::{Field, Fields};
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_semantic::{
-    component::{LocationSpan, Name},
-    DisplayObject, GlobalID, Table,
+    component::{
+        derived::fields::{Field, Fields},
+        input::{LocationSpan, Name},
+    },
+    table::{self, DisplayObject, GlobalID, Table},
+    term::{
+        r#type::{self, Qualifier, Type},
+        Model,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    r#type::{self, Qualifier, Type},
-    Model,
-};
 
 use crate::model;
 
@@ -101,7 +103,7 @@ pub struct CyclicInference<M: Model> {
 
 impl<M: Model> Report<&Table> for CyclicInference<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -133,7 +135,7 @@ pub struct MismatchedType<M: Model> {
 
 impl<M: Model> Report<&Table> for MismatchedType<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -181,7 +183,7 @@ pub struct CannotDereference<M: Model> {
 
 impl<M: Model> Report<&Table> for CannotDereference<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -301,7 +303,7 @@ pub struct MismatchedPatternBindingType<M: Model> {
 
 impl<M: Model> Report<&Table> for MismatchedPatternBindingType<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -754,7 +756,7 @@ pub struct InvalidRelationalOperation<M: Model> {
 
 impl<M: Model> Report<&Table> for InvalidRelationalOperation<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -783,7 +785,7 @@ pub struct MoreThanOneUnpackedInTupleExpression<M: Model> {
 
 impl<M: Model> Report<&Table> for MoreThanOneUnpackedInTupleExpression<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, _: &Table) -> Diagnostic {
         Diagnostic {
@@ -953,7 +955,7 @@ impl Report<&Table> for UnsafeRequired {
 
 impl<M: Model> Report<&Table> for InvalidCastType<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -985,7 +987,7 @@ pub struct InvalidReferenceTypeCasting<M: Model> {
 
 impl<M: Model> Report<&Table> for InvalidReferenceTypeCasting<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -1015,7 +1017,7 @@ pub struct InvalidPointerTypeCasting<M: Model> {
 
 impl<M: Model> Report<&Table> for InvalidPointerTypeCasting<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -1166,7 +1168,7 @@ pub struct ExpectedStructType<M: Model> {
 
 impl<M: Model> Report<&Table> for ExpectedStructType<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -1215,7 +1217,7 @@ pub struct ExpectedTuple<M: Model> {
 
 impl<M: Model> Report<&Table> for ExpectedTuple<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -1262,7 +1264,7 @@ pub struct TupleIndexOutOfBOunds<M: Model> {
 
 impl<M: Model> Report<&Table> for TupleIndexOutOfBOunds<M>
 where
-    r#type::Tuple<M>: pernixc_semantic::Display,
+    r#type::Tuple<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         let count = self.tuple_type.elements.len();
@@ -1293,7 +1295,7 @@ pub struct CannotIndexPastUnpackedTuple<M: Model> {
 
 impl<M: Model> Report<&Table> for CannotIndexPastUnpackedTuple<M>
 where
-    r#type::Tuple<M>: pernixc_semantic::Display,
+    r#type::Tuple<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         let unpacked_index = self
@@ -1334,7 +1336,7 @@ pub struct ExpectArray<M: Model> {
 
 impl<M: Model> Report<&Table> for ExpectArray<M>
 where
-    Type<M>: pernixc_semantic::Display,
+    Type<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {

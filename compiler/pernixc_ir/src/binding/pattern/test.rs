@@ -1,4 +1,4 @@
-use pernixc_component::fields::Fields;
+use pernixc_semantic::component::derived::fields::Fields;
 use pernixc_handler::Panic;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::{syntax_tree, utility::parse};
@@ -142,13 +142,13 @@ fn value_bound_named() {
     let syn = parse::<syntax_tree::pattern::Irrefutable>(VALUE_BOUND_NAMED);
 
     let alloca_id = binder.create_alloca(
-        Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+        Type::Tuple(term::Tuple { elements: Vec::new() }),
         syn.span(),
     );
 
     let (pattern, binding_point) = binder.bind_irrefutable(
         &syn,
-        &Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+        &Type::Tuple(term::Tuple { elements: Vec::new() }),
         Address::Memory(Memory::Alloca(alloca_id)),
     );
 
@@ -177,12 +177,12 @@ fn reference_bound_named() {
         SIMPLE_NAMED_REFERENCE_BOUND,
     );
     let alloca_id = binder.create_alloca(
-        Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+        Type::Tuple(term::Tuple { elements: Vec::new() }),
         syn.span(),
     );
     let (pattern, binding_point) = binder.bind_irrefutable(
         &syn,
-        &Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+        &Type::Tuple(term::Tuple { elements: Vec::new() }),
         Address::Memory(Memory::Alloca(alloca_id)),
     );
 
@@ -196,7 +196,7 @@ fn reference_bound_named() {
         "helloWorld",
         &Address::Memory(Memory::Alloca(alloca_id)),
         Qualifier::Mutable,
-        &Type::Tuple(pernixc_term::Tuple { elements: Vec::new() }),
+        &Type::Tuple(term::Tuple { elements: Vec::new() }),
     );
 }
 

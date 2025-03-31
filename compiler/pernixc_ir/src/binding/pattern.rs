@@ -8,20 +8,25 @@ use std::{
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::Member,
+    component::{
+        derived::{fields, generic_parameters::GenericParameters, variant},
+        input::Member,
+    },
     diagnostic::Diagnostic,
-    resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
-    GlobalID,
+    table::{
+        resolution::diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
+        GlobalID,
+    },
+    term::{
+        self,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        r#type::{Qualifier, Reference, Type},
+        Model, Symbol,
+    },
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    r#type::{Qualifier, Reference, Type},
-    Model, Symbol,
-};
 
 use super::{
     diagnostic::{
@@ -293,9 +298,7 @@ impl Pattern for Refutable {
                     let mut variant_ty = infer::Model::from_default_type(
                         binder
                             .table
-                            .query::<pernixc_component::variant::Variant>(
-                                variant.variant_id,
-                            )?
+                            .query::<variant::Variant>(variant.variant_id)?
                             .associated_type
                             .clone()
                             .unwrap(),
@@ -683,7 +686,7 @@ impl Binder<'_> {
                 ));
             }
 
-            let packed_type = Type::Tuple(pernixc_term::Tuple {
+            let packed_type = Type::Tuple(term::Tuple {
                 elements: tuple_ty.elements[type_pack_range].to_vec(),
             });
             elements.push(TupleElement::new_packed(
@@ -770,9 +773,7 @@ impl Binder<'_> {
 
         if self.type_check(
             ty,
-            Expected::Known(Type::Primitive(
-                pernixc_term::r#type::Primitive::Bool,
-            )),
+            Expected::Known(Type::Primitive(term::r#type::Primitive::Bool)),
             syntax_tree.span(),
             handler,
         )? {
@@ -823,8 +824,7 @@ impl Binder<'_> {
         )
         .unwrap();
 
-        let fields =
-            self.table.query::<pernixc_component::fields::Fields>(struct_id)?;
+        let fields = self.table.query::<fields::Fields>(struct_id)?;
 
         let mut patterns_by_field_id = HashMap::new();
 
@@ -1015,9 +1015,7 @@ impl Binder<'_> {
             }));
         }
 
-        let variant_sym = self
-            .table
-            .query::<pernixc_component::variant::Variant>(variant_id)?;
+        let variant_sym = self.table.query::<variant::Variant>(variant_id)?;
 
         match (&variant_sym.associated_type, &syntax_tree.association) {
             (Some(ty), Some(pat)) => {
@@ -1370,7 +1368,7 @@ impl Binder<'_> {
             }
 
             // create a new alloca where all the elements will be stoered.
-            let packed_type = Type::Tuple(pernixc_term::Tuple {
+            let packed_type = Type::Tuple(term::Tuple {
                 elements: tuple_ty.elements[type_pack_range.clone()].to_vec(),
             });
             let packed_alloca = self.create_alloca_with_scope_id(
@@ -1657,9 +1655,7 @@ impl Binder<'_> {
         )
         .unwrap();
 
-        let fields = self
-            .table
-            .query::<pernixc_component::fields::Fields>(*struct_id)?;
+        let fields = self.table.query::<fields::Fields>(*struct_id)?;
 
         assert_eq!(
             fields.field_declaration_order.len(),
@@ -1902,7 +1898,7 @@ impl Binder<'_> {
 
                 let mut variant_ty = infer::Model::from_default_type(
                     self.table
-                        .query::<pernixc_component::variant::Variant>(
+                        .query::<variant::Variant>(
                             reftuable_pattern.as_enum().unwrap().variant_id,
                         )?
                         .associated_type
@@ -1984,9 +1980,7 @@ impl Binder<'_> {
 
                 let struct_generic_parameters =
                     self.table.query::<GenericParameters>(struct_id)?;
-                let fields = self
-                    .table
-                    .query::<pernixc_component::fields::Fields>(struct_id)?;
+                let fields = self.table.query::<fields::Fields>(struct_id)?;
 
                 let instantiation = Instantiation::from_generic_arguments(
                     generic_arguments,
@@ -2051,7 +2045,7 @@ impl Refutable {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct FieldPath {
-    pub(super) field_id: ID<pernixc_component::fields::Field>,
+    pub(super) field_id: ID<fields::Field>,
     pub(super) struct_path: Box<Path>,
 }
 

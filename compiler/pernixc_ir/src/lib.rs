@@ -7,9 +7,10 @@ use getset::Getters;
 use model::Transform;
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, Key, ID};
-use pernixc_semantic::{component::Derived, Table};
-use pernixc_semantic::term::{
-    constant::Constant, lifetime::Lifetime, r#type::Type, Model,
+use pernixc_semantic::{
+    component::Derived,
+    table::Table,
+    term::{constant::Constant, lifetime::Lifetime, r#type::Type, Model},
 };
 use serde::{Deserialize, Serialize};
 use value::register::Register;

@@ -1,18 +1,20 @@
 use pernixc_handler::Handler;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic::{
-    component::{Parent, SymbolKind},
+    component::{
+        derived::{generic_parameters::GenericParameters, variant},
+        input::{Parent, SymbolKind},
+    },
     diagnostic::Diagnostic,
-    GlobalID,
+    table::GlobalID,
+    term::{
+        instantiation::{self, Instantiation},
+        r#type::Qualifier,
+        Model,
+    },
 };
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_semantic::term::{
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    r#type::Qualifier,
-    Model,
-};
 
 use super::{Bind, Config, Expression};
 use crate::{
@@ -105,16 +107,12 @@ impl Bind<&syntax_tree::QualifiedIdentifier> for Binder<'_> {
 
         let id = match resolution {
             Resolution::Variant(variant_res) => {
-                let variant =
-                    self.table.query::<pernixc_component::variant::Variant>(
-                        variant_res.variant_id,
-                    )?;
+                let variant = self
+                    .table
+                    .query::<variant::Variant>(variant_res.variant_id)?;
                 let parent_enum_id = GlobalID::new(
                     variant_res.variant_id.target_id,
-                    self.table
-                        .get::<Parent>(variant_res.variant_id)
-                        .parent
-                        .unwrap(),
+                    self.table.get::<Parent>(variant_res.variant_id).unwrap(),
                 );
 
                 let enum_generic_parameters =

@@ -80,7 +80,7 @@ fn invalid_cast_type() {
 
     assert_eq!(
         error.r#type,
-        Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })
+        Type::Tuple(term::Tuple { elements: Vec::new() })
     );
 }
 

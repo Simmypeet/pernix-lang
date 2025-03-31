@@ -2,10 +2,14 @@
 
 use std::borrow::Cow;
 
-use pernixc_component::function_signature::FunctionSignature;
 use pernixc_handler::Handler;
-use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic};
-use pernixc_semantic::term::r#type::Type;
+use pernixc_semantic::{
+    component::{
+        derived::function_signature::FunctionSignature, input::SymbolKind,
+    },
+    diagnostic::Diagnostic,
+    term::{self, r#type::Type},
+};
 use pernixc_type_system::{
     environment::{Environment, GetActivePremiseExt},
     normalizer,
@@ -48,7 +52,7 @@ impl Binder<'_> {
 
                 // no checking need
                 if function_signature.return_type
-                    == Type::Tuple(pernixc_term::Tuple { elements: Vec::new() })
+                    == Type::Tuple(term::Tuple { elements: Vec::new() })
                 {
                     break 'out;
                 }

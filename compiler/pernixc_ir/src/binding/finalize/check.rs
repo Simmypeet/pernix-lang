@@ -2,18 +2,20 @@ use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_semantic::{
-    component::{Parent, SymbolKind},
+    component::{
+        derived::generic_parameters::GenericParameters,
+        input::{Parent, SymbolKind},
+    },
     diagnostic::Diagnostic,
-    GlobalID,
+    table::GlobalID,
+    term::{
+        generic_arguments::GenericArguments,
+        instantiation::Instantiation,
+        predicate::{PositiveMarker, PositiveTrait, Predicate, Tuple},
+        r#type::Qualifier,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::GenericParameters,
-    instantiation::Instantiation,
-    predicate::{PositiveMarker, PositiveTrait, Predicate, Tuple},
-    r#type::Qualifier,
-};
 use pernixc_type_system::{
     diagnostic::{
         ImplementationIsNotGeneralEnough, UndecidablePredicate,
@@ -136,7 +138,6 @@ impl Representation<model::Model> {
                     environment
                         .table()
                         .get::<Parent>(variant.variant_id)
-                        .parent
                         .unwrap(),
                 );
 
@@ -199,7 +200,6 @@ impl Representation<model::Model> {
                             environment
                                 .table()
                                 .get::<Parent>(function_call.callable_id)
-                                .parent
                                 .unwrap(),
                         );
 
@@ -256,7 +256,6 @@ impl Representation<model::Model> {
                             environment
                                 .table()
                                 .get::<Parent>(function_call.callable_id)
-                                .parent
                                 .unwrap(),
                         );
 

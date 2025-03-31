@@ -11,24 +11,27 @@ use std::{
 use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
-use pernixc_component::{
-    fields::Field, function_signature::FunctionSignature,
-    implementation::Implementation,
-};
 use pernixc_semantic::{
-    component::{Member, Parent, SymbolKind},
-    GlobalID, Table,
+    component::{
+        derived::{
+            fields::Field, function_signature::FunctionSignature,
+            generic_parameters::GenericParameters,
+            implementation::Implementation,
+        },
+        input::{Member, Parent, SymbolKind},
+    },
+    table::{GlobalID, Table},
+    term::{
+        self,
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        r#type::{Primitive, Qualifier, Type},
+        MemberSymbol, ModelOf, Symbol,
+    },
 };
 use pernixc_source_file::Span;
-use pernixc_semantic::term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    r#type::{Primitive, Qualifier, Type},
-    MemberSymbol, ModelOf, Symbol,
-};
 use pernixc_type_system::{
     environment::Environment, normalizer::Normalizer, Error, Succeeded,
 };
@@ -43,7 +46,7 @@ use crate::{
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct TupleElement<M: pernixc_term::Model> {
+pub struct TupleElement<M: term::Model> {
     /// The value of the tuple element.
     pub value: Value<M>,
 
@@ -55,12 +58,12 @@ pub struct TupleElement<M: pernixc_term::Model> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Tuple<M: pernixc_term::Model> {
+pub struct Tuple<M: term::Model> {
     /// The elements of kthe tuple.
     pub elements: Vec<TupleElement<M>>,
 }
 
-impl<M: pernixc_term::Model> Tuple<M> {
+impl<M: term::Model> Tuple<M> {
     /// Returns the list of registers that are used in the tuple.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -71,7 +74,7 @@ impl<M: pernixc_term::Model> Tuple<M> {
     }
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     fn type_of_tuple_assignment(
         &self,
         tuple: &Tuple<M>,
@@ -90,21 +93,19 @@ impl<M: pernixc_term::Model> Values<M> {
             if element.is_unpacked {
                 match ty {
                     Type::Tuple(ty) => elements.extend(ty.elements),
-                    ty => elements.push(pernixc_term::TupleElement {
+                    ty => elements.push(term::TupleElement {
                         term: ty,
                         is_unpacked: true,
                     }),
                 }
             } else {
-                elements.push(pernixc_term::TupleElement {
-                    term: ty,
-                    is_unpacked: false,
-                });
+                elements
+                    .push(term::TupleElement { term: ty, is_unpacked: false });
             }
         }
 
         Ok(Succeeded::with_constraints(
-            Type::Tuple(pernixc_term::Tuple { elements }),
+            Type::Tuple(term::Tuple { elements }),
             constraints,
         ))
     }
@@ -114,12 +115,12 @@ impl<M: pernixc_term::Model> Values<M> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Load<M: pernixc_term::Model> {
+pub struct Load<M: term::Model> {
     /// The address where the value is stored and will be read from.
     pub address: Address<M>,
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     fn type_of_load_assignment(
         &self,
         load: &Load<M>,
@@ -134,7 +135,7 @@ impl<M: pernixc_term::Model> Values<M> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Borrow<M: pernixc_term::Model> {
+pub struct Borrow<M: term::Model> {
     /// The address to the value.
     pub address: Address<M>,
 
@@ -145,7 +146,7 @@ pub struct Borrow<M: pernixc_term::Model> {
     pub lifetime: Lifetime<M>,
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     fn type_of_reference_of_assignment(
         &self,
         reference_of: &Borrow<M>,
@@ -155,7 +156,7 @@ impl<M: pernixc_term::Model> Values<M> {
         self.type_of_address(&reference_of.address, current_site, environment)
             .map(|x| {
                 x.map(|x| {
-                    Type::Reference(pernixc_term::r#type::Reference {
+                    Type::Reference(term::r#type::Reference {
                         qualifier: reference_of.qualifier,
                         lifetime: reference_of.lifetime.clone(),
                         pointee: Box::new(x),
@@ -193,7 +194,7 @@ pub enum PrefixOperator {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Prefix<M: pernixc_term::Model> {
+pub struct Prefix<M: term::Model> {
     /// The operand of the prefix operator.
     pub operand: Value<M>,
 
@@ -201,7 +202,7 @@ pub struct Prefix<M: pernixc_term::Model> {
     pub operator: PrefixOperator,
 }
 
-impl<M: pernixc_term::Model> Prefix<M> {
+impl<M: term::Model> Prefix<M> {
     /// Returns the register that is used in the prefix.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -209,7 +210,7 @@ impl<M: pernixc_term::Model> Prefix<M> {
     }
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     fn type_of_prefix_assignment(
         &self,
         prefix: &Prefix<M>,
@@ -229,7 +230,7 @@ impl<M: pernixc_term::Model> Values<M> {
 
 /// Represents a struct value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Struct<M: pernixc_term::Model> {
+pub struct Struct<M: term::Model> {
     /// The struct ID of the struct.
     pub struct_id: GlobalID,
 
@@ -240,7 +241,7 @@ pub struct Struct<M: pernixc_term::Model> {
     pub generic_arguments: GenericArguments<M>,
 }
 
-impl<M: pernixc_term::Model> Struct<M> {
+impl<M: term::Model> Struct<M> {
     /// Returns the list of registers that are used in the struct.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -251,9 +252,7 @@ impl<M: pernixc_term::Model> Struct<M> {
     }
 }
 
-fn type_of_struct_assignment<M: pernixc_term::Model>(
-    st: &Struct<M>,
-) -> Type<M> {
+fn type_of_struct_assignment<M: term::Model>(st: &Struct<M>) -> Type<M> {
     Type::Symbol(Symbol {
         id: st.struct_id,
         generic_arguments: st.generic_arguments.clone(),
@@ -264,7 +263,7 @@ fn type_of_struct_assignment<M: pernixc_term::Model>(
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Variant<M: pernixc_term::Model> {
+pub struct Variant<M: term::Model> {
     /// The variant ID of the variant.
     pub variant_id: GlobalID,
 
@@ -275,7 +274,7 @@ pub struct Variant<M: pernixc_term::Model> {
     pub generic_arguments: GenericArguments<M>,
 }
 
-impl<M: pernixc_term::Model> Variant<M> {
+impl<M: term::Model> Variant<M> {
     /// Returns the list of registers that are used in the variant.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -288,11 +287,11 @@ impl<M: pernixc_term::Model> Variant<M> {
     }
 }
 
-fn type_of_variant_assignment<M: pernixc_term::Model>(
+fn type_of_variant_assignment<M: term::Model>(
     variant: &Variant<M>,
     table: &Table,
 ) -> Type<M> {
-    let enum_id = table.get::<Parent>(variant.variant_id).parent.unwrap();
+    let enum_id = table.get::<Parent>(variant.variant_id).unwrap();
 
     Type::Symbol(Symbol {
         id: GlobalID::new(variant.variant_id.target_id, enum_id),
@@ -304,7 +303,7 @@ fn type_of_variant_assignment<M: pernixc_term::Model>(
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct FunctionCall<M: pernixc_term::Model> {
+pub struct FunctionCall<M: term::Model> {
     /// The ID of the function that is called.
     pub callable_id: GlobalID,
 
@@ -315,7 +314,7 @@ pub struct FunctionCall<M: pernixc_term::Model> {
     pub instantiation: Instantiation<M>,
 }
 
-impl<M: pernixc_term::Model> FunctionCall<M> {
+impl<M: term::Model> FunctionCall<M> {
     /// Returns the list of registers that are used in the function call.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -323,7 +322,7 @@ impl<M: pernixc_term::Model> FunctionCall<M> {
     }
 }
 
-fn type_of_function_call_assignment<M: pernixc_term::Model>(
+fn type_of_function_call_assignment<M: term::Model>(
     function_call: &FunctionCall<M>,
     table: &Table,
 ) -> Result<Type<M>, Error> {
@@ -468,7 +467,7 @@ pub enum BinaryOperator {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Binary<M: pernixc_term::Model> {
+pub struct Binary<M: term::Model> {
     /// The left-hand side operand.
     pub lhs: Value<M>,
 
@@ -479,7 +478,7 @@ pub struct Binary<M: pernixc_term::Model> {
     pub operator: BinaryOperator,
 }
 
-impl<M: pernixc_term::Model> Binary<M> {
+impl<M: term::Model> Binary<M> {
     /// Returns the list of registers that are used in the binary.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -492,7 +491,7 @@ impl<M: pernixc_term::Model> Binary<M> {
     }
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     fn type_of_binary(
         &self,
         binary: &Binary<M>,
@@ -501,9 +500,7 @@ impl<M: pernixc_term::Model> Values<M> {
     ) -> Result<Succeeded<Type<M>, M>, Error> {
         // the return type always based on the lhs field
         if let BinaryOperator::Relational(_) = binary.operator {
-            Ok(Succeeded::new(Type::Primitive(
-                pernixc_term::r#type::Primitive::Bool,
-            )))
+            Ok(Succeeded::new(Type::Primitive(term::r#type::Primitive::Bool)))
         } else {
             self.type_of_value(&binary.lhs, current_site, environment)
         }
@@ -516,7 +513,7 @@ impl<M: pernixc_term::Model> Values<M> {
 /// execution. This is typcially used in the control flow related expressions
 /// such as `if` and `match`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Phi<M: pernixc_term::Model> {
+pub struct Phi<M: term::Model> {
     /// Maps the incoming block to the value.
     pub incoming_values: HashMap<ID<Block<M>>, Value<M>>,
 
@@ -528,7 +525,7 @@ pub struct Phi<M: pernixc_term::Model> {
     pub r#type: Type<M>,
 }
 
-impl<M: pernixc_term::Model> Phi<M> {
+impl<M: term::Model> Phi<M> {
     /// Returns the list of registers that are used in the phi node.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -543,7 +540,7 @@ impl<M: pernixc_term::Model> Phi<M> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Array<M: pernixc_term::Model> {
+pub struct Array<M: term::Model> {
     /// The elements of the array.
     pub elements: Vec<Value<M>>,
 
@@ -555,7 +552,7 @@ pub struct Array<M: pernixc_term::Model> {
     pub element_type: Type<M>,
 }
 
-impl<M: pernixc_term::Model> Array<M> {
+impl<M: term::Model> Array<M> {
     /// Returns the list of registers that are used in the array.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -567,7 +564,7 @@ impl<M: pernixc_term::Model> Array<M> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct Cast<M: pernixc_term::Model> {
+pub struct Cast<M: term::Model> {
     /// The value to be casted.
     pub value: Value<M>,
 
@@ -575,7 +572,7 @@ pub struct Cast<M: pernixc_term::Model> {
     pub r#type: Type<M>,
 }
 
-impl<M: pernixc_term::Model> Cast<M> {
+impl<M: term::Model> Cast<M> {
     /// Returns the register that is used in the cast.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -593,7 +590,7 @@ impl<M: pernixc_term::Model> Cast<M> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct VariantNumber<M: pernixc_term::Model> {
+pub struct VariantNumber<M: term::Model> {
     /// Address to the num to get the variant number of.
     pub address: Address<M>,
 
@@ -601,7 +598,7 @@ pub struct VariantNumber<M: pernixc_term::Model> {
     pub enum_id: GlobalID,
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     fn type_of_variant_number(
         variant_number: &VariantNumber<M>,
         environment: &Environment<M, impl Normalizer<M>>,
@@ -639,7 +636,7 @@ impl<M: pernixc_term::Model> Values<M> {
 /// register.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, EnumAsInner)]
 #[allow(missing_docs)]
-pub enum Assignment<M: pernixc_term::Model> {
+pub enum Assignment<M: term::Model> {
     Tuple(Tuple<M>),
     Load(Load<M>),
     Borrow(Borrow<M>),
@@ -654,7 +651,7 @@ pub enum Assignment<M: pernixc_term::Model> {
     VariantNumber(VariantNumber<M>),
 }
 
-impl<M: pernixc_term::Model> Assignment<M> {
+impl<M: term::Model> Assignment<M> {
     /// Returns the register that is used in the assignment.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register<M>>> {
@@ -680,7 +677,7 @@ impl<M: pernixc_term::Model> Assignment<M> {
 
 /// Represents a register in the SSA from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Register<M: pernixc_term::Model> {
+pub struct Register<M: term::Model> {
     /// The value stored in the register.
     pub assignment: Assignment<M>,
 
@@ -689,7 +686,7 @@ pub struct Register<M: pernixc_term::Model> {
     pub span: Option<Span>,
 }
 
-impl<M: pernixc_term::Model> Values<M> {
+impl<M: term::Model> Values<M> {
     /// Gets the type of the [`Register`] with the given ID.
     ///
     /// # Parameters
@@ -752,16 +749,12 @@ impl<M: pernixc_term::Model> Values<M> {
                 return self.type_of_binary(binary, current_site, environment);
             }
             Assignment::Phi(phi_node) => Ok(phi_node.r#type.clone()),
-            Assignment::Array(array) => {
-                Ok(Type::Array(pernixc_term::r#type::Array {
-                    r#type: Box::new(array.element_type.clone()),
-                    length: Constant::Primitive(
-                        pernixc_term::constant::Primitive::Usize(
-                            array.elements.len() as u64,
-                        ),
-                    ),
-                }))
-            }
+            Assignment::Array(array) => Ok(Type::Array(term::r#type::Array {
+                r#type: Box::new(array.element_type.clone()),
+                length: Constant::Primitive(term::constant::Primitive::Usize(
+                    array.elements.len() as u64,
+                )),
+            })),
             Assignment::Cast(cast) => Ok(cast.r#type.clone()),
             Assignment::VariantNumber(variant) => {
                 return Ok(Succeeded::new(Self::type_of_variant_number(
@@ -777,8 +770,8 @@ impl<M: pernixc_term::Model> Values<M> {
 
 fn transform_instantiation<
     E,
-    FM: pernixc_term::Model,
-    TM: pernixc_term::Model,
+    FM: term::Model,
+    TM: term::Model,
     T: Transform<Lifetime<FM>, Target = TM, Error = E>
         + Transform<Type<FM>, Target = TM, Error = E>
         + Transform<Constant<FM>, Target = TM, Error = E>,
@@ -823,13 +816,13 @@ fn transform_instantiation<
     })
 }
 
-impl<M: pernixc_term::Model> Register<M> {
+impl<M: term::Model> Register<M> {
     /// Transforms the [`Register`] to another model using the given
     /// transformer.
     #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
     pub fn transform_model<
         E: From<Abort>,
-        U: pernixc_term::Model,
+        U: term::Model,
         T: Transform<Lifetime<M>, Target = U, Error = E>
             + Transform<Type<M>, Target = U, Error = E>
             + Transform<Constant<M>, Target = U, Error = E>,
@@ -902,10 +895,7 @@ impl<M: pernixc_term::Model> Register<M> {
                     generic_arguments: {
                         let enum_id = GlobalID::new(
                             variant.variant_id.target_id,
-                            table
-                                .get::<Parent>(variant.variant_id)
-                                .parent
-                                .unwrap(),
+                            table.get::<Parent>(variant.variant_id).unwrap(),
                         );
 
                         transformer
@@ -965,7 +955,6 @@ impl<M: pernixc_term::Model> Register<M> {
                                 function_call.callable_id.target_id,
                                 table
                                     .get::<Parent>(function_call.callable_id)
-                                    .parent
                                     .unwrap(),
                             );
 
@@ -1014,7 +1003,6 @@ impl<M: pernixc_term::Model> Register<M> {
                                 function_call.callable_id.target_id,
                                 table
                                     .get::<Parent>(function_call.callable_id)
-                                    .parent
                                     .unwrap(),
                             );
                             let implementation = table
