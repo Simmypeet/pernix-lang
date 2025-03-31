@@ -14,7 +14,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{
     QualifiedIdentifier, QualifiedIdentifierRoot,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
     Model,
 };

@@ -15,7 +15,7 @@ use pernixc_semantic::{
     diagnostic::Diagnostic,
     query, GlobalID, Table, TargetID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::{GenericParameters, LifetimeParameter, TypeParameter},
     lifetime::Lifetime,
     r#type::{Qualifier, Type},

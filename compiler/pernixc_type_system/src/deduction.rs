@@ -6,16 +6,19 @@ use std::{
 };
 
 use pernixc_abort::Abort;
-use pernixc_term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::GenericKind,
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    predicate::Outlives,
-    r#type::Type,
-    variance::Variance,
-    Model,
+use pernixc_semantic::{
+    component::derived::{
+        generic_parameters::GenericKind, variances::Variance,
+    },
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        predicate::Outlives,
+        r#type::Type,
+        Model,
+    },
 };
 
 use crate::{

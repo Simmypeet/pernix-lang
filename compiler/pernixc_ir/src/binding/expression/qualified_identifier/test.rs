@@ -1,6 +1,6 @@
 use pernixc_handler::Panic;
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_term::r#type::Qualifier;
+use pernixc_semantic::term::r#type::Qualifier;
 
 use crate::binding::{
     diagnostic::ExpectedAssociatedValue,

@@ -1,5 +1,5 @@
 //! Implements the [`crate::environment::Query`] for various
-//! definition of [`pernixc_term::predicate`]
+//! definition of [`pernixc_semantic::term::predicate`]
 
 mod constant_type;
 mod marker;

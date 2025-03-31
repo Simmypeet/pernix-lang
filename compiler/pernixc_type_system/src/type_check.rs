@@ -3,18 +3,21 @@
 use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
 use derive_new::new;
-use pernixc_component::{fields::Fields, variant::Variant};
 use pernixc_semantic::{
-    component::{Parent, SymbolKind},
-    GlobalID,
-};
-use pernixc_term::{
-    constant::{self, Constant},
-    generic_parameter::GenericParameters,
-    instantiation::{self, Instantiation},
-    r#type::{self, Type},
-    variance::Variance,
-    Model, ModelOf, Symbol, Tuple,
+    component::{
+        derived::{
+            fields::Fields, generic_parameters::GenericParameters,
+            variances::Variance, variant::Variant,
+        },
+        input::{Parent, SymbolKind},
+    },
+    table::GlobalID,
+    term::{
+        constant::{self, Constant},
+        instantiation::{self, Instantiation},
+        r#type::{self, Type},
+        Model, ModelOf, Symbol, Tuple,
+    },
 };
 
 use crate::{

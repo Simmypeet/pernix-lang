@@ -9,7 +9,7 @@ use pernixc_component::{
     function_signature::{FunctionSignature, Parameter},
 };
 use pernixc_semantic::GlobalID;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},
     r#type::{Qualifier, Type},

@@ -10,7 +10,7 @@ use pernixc_ir::{
 };
 use pernixc_semantic::Table;
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     lifetime::Lifetime,
     r#type::Type,

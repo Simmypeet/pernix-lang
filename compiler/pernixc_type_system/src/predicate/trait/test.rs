@@ -7,27 +7,32 @@ use std::{
 };
 
 use lazy_static::lazy_static;
-use pernixc_component::implementation::Implementation;
 use pernixc_semantic::{
     component::{
-        Implemented, Implements, PositiveTraitImplementation, SymbolKind,
-        TraitImplementation,
+        derived::{
+            generic_parameters::{
+                ConstantParameter, GenericParameters, LifetimeParameter,
+                TypeParameter,
+            },
+            implementation::Implementation,
+        },
+        input::{
+            Implemented, Implements, PositiveTraitImplementation, SymbolKind,
+            TraitImplementation,
+        },
     },
-    GlobalID, MemberID, Table, TargetID, ID,
-};
-use pernixc_term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        ConstantParameter, GenericParameters, LifetimeParameter, TypeParameter,
+    table::{GlobalID, MemberID, Table, TargetID, ID},
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        predicate::{PositiveTrait, Predicate},
+        r#type::Type,
+        visitor::RecursiveIterator,
+        where_clause::{self, WhereClause},
+        Default, Kind, Tuple,
     },
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    predicate::{PositiveTrait, Predicate},
-    r#type::Type,
-    visitor::RecursiveIterator,
-    where_clause::WhereClause,
-    Default, Kind, Tuple,
 };
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy},
@@ -949,7 +954,7 @@ impl FallbackToGeneralImplementation {
         assert!(table.add_component(
             self.0.specialized_implementation_id,
             WhereClause {
-                predicates: once(pernixc_term::where_clause::Predicate {
+                predicates: once(where_clause::Predicate {
                     predicate: Predicate::PositiveTrait(PositiveTrait {
                         trait_id: impossible_constraint_id,
                         is_const: false,

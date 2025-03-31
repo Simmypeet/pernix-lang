@@ -10,7 +10,7 @@ use pernixc_semantic::{
     component::{Derived, SymbolKind},
     GlobalID, Table, TargetID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     elided_lifetimes::ElidedLifetimes, forall_lifetime::ForallLifetimes,
     generic_parameter::GenericParameters, variance::Variances,
     where_clause::WhereClause,

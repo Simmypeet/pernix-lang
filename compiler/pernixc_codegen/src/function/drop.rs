@@ -14,7 +14,7 @@ use pernixc_semantic::{
     component::{Implemented, Member, SymbolKind, VariantDeclarationOrder},
     DisplayObject, GlobalID, TargetID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
     generic_arguments::GenericArguments,

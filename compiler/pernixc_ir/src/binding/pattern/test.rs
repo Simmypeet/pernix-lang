@@ -2,7 +2,7 @@ use pernixc_component::fields::Fields;
 use pernixc_handler::Panic;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments,
     generic_parameter::{GenericParameters, TypeParameterID},
     lifetime::Lifetime,

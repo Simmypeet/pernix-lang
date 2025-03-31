@@ -1,6 +1,6 @@
 //! Contains the definition of [`Normalizer`]
 
-use pernixc_term::{constant::Constant, r#type::Type, Model};
+use pernixc_semantic::term::{constant::Constant, r#type::Type, Model};
 
 use crate::{environment::Environment, Error, Succeeded};
 

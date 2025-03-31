@@ -1,4 +1,5 @@
-use pernixc_term::{
+use pernixc_semantic::term::{
+    self,
     constant::Constant,
     generic_arguments::GenericArguments,
     lifetime::Lifetime,
@@ -29,7 +30,7 @@ impl<M: Model> MutableRecursive<Type<M>> for Purge {
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         if ty.is_trait_member() {
-            *ty = Type::Error(pernixc_term::Error);
+            *ty = Type::Error(term::Error);
         }
 
         true

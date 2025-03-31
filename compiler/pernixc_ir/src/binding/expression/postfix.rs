@@ -17,7 +17,7 @@ use pernixc_semantic::{
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
     generic_arguments::GenericArguments,

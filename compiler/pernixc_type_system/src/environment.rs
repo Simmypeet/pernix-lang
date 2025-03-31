@@ -12,19 +12,22 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
-use pernixc_component::implied_predicates::{
-    ImpliedPredicate, ImpliedPredicates,
+use pernixc_semantic::{
+    component::{
+        derived::implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+        input::SymbolKind,
+    },
+    table::{GlobalID, Table},
+    term::{
+        generic_arguments::GenericArguments,
+        predicate::{Compatible, Outlives, Predicate},
+        r#type::{TraitMember, Type},
+        visitor::RecursiveIterator,
+        where_clause::WhereClause,
+        Kind, Model, ModelOf,
+    },
 };
-use pernixc_semantic::{component::SymbolKind, GlobalID, Table};
 use pernixc_source_file::Span;
-use pernixc_term::{
-    generic_arguments::GenericArguments,
-    predicate::{Compatible, Outlives, Predicate},
-    r#type::{TraitMember, Type},
-    visitor::RecursiveIterator,
-    where_clause::WhereClause,
-    Kind, Model, ModelOf,
-};
 
 use crate::{
     definite::Definite,

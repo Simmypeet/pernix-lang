@@ -10,7 +10,7 @@ use pernixc_ir::{
 use pernixc_semantic::{
     component::SymbolKind, diagnostic::Diagnostic, GlobalID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     r#type::Type, variance::Variance, visitor::RecursiveIterator, Model,
 };
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};

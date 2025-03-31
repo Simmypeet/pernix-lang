@@ -13,7 +13,7 @@ use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
 use pernixc_semantic::{diagnostic::Diagnostic, Table};
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant, lifetime::Lifetime, r#type::Type,
     visitor::RecursiveIterator, ModelOf as _, Never,
 };
@@ -352,7 +352,7 @@ impl<T: Term, C: Constraint<T> + 'static> ContextImpl<T, C> {
 
 impl<M: pernixc_term::Model> Constraint<Type<M>> for model::Constraint {
     fn satisfies(&self, term: &Type<M>) -> bool {
-        use pernixc_term::r#type::Primitive;
+        use pernixc_semantic::term::r#type::Primitive;
 
         match self {
             Self::All(_) => true,

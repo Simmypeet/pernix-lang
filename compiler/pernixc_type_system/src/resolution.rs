@@ -3,15 +3,20 @@
 use std::collections::BTreeSet;
 
 use pernixc_abort::Abort;
-use pernixc_component::implementation::Implementation as ImplementationComponent;
 use pernixc_semantic::{
-    component::{Implemented, Implements, SymbolKind, TraitImplementation},
-    GlobalID,
-};
-use pernixc_term::{
-    generic_arguments::GenericArguments, instantiation::Instantiation,
-    predicate::Predicate, r#type::Type, variance::Variance,
-    where_clause::WhereClause, Default, Model,
+    component::{
+        derived::{
+            implementation::Implementation as ImplementationComponent,
+            variances::Variance,
+        },
+        input::{Implemented, Implements, SymbolKind, TraitImplementation},
+    },
+    table::GlobalID,
+    term::{
+        generic_arguments::GenericArguments, instantiation::Instantiation,
+        predicate::Predicate, r#type::Type, where_clause::WhereClause, Default,
+        Model,
+    },
 };
 use thiserror::Error;
 

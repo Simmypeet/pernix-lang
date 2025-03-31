@@ -1,6 +1,6 @@
 use pernixc_component::fields::Fields;
 use pernixc_semantic::component::Accessibility;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::{GenericParameters, TypeParameterID},
     r#type::Type,
 };

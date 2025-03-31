@@ -1,7 +1,7 @@
 use pernixc_handler::{Panic, Storage};
 use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_syntax::utility::parse;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments,
     r#type::{Primitive, Type},
     Symbol,

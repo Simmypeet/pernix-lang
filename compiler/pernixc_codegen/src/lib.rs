@@ -14,7 +14,7 @@ use pernixc_semantic::{
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::GenericParameters, instantiation::Instantiation,
     r#type::Type, where_clause::WhereClause, Tuple,
 };

@@ -23,7 +23,7 @@ use pernixc_semantic::{
     component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments,
     predicate::{PositiveMarker, Predicate},
     r#type::Qualifier,

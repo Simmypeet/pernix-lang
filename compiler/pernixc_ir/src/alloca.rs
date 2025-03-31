@@ -2,7 +2,7 @@
 
 use pernixc_arena::ID;
 use pernixc_source_file::Span;
-use pernixc_term::r#type::Type;
+use pernixc_semantic::term::r#type::Type;
 use serde::{Deserialize, Serialize};
 
 use crate::{model::Transform, scope};

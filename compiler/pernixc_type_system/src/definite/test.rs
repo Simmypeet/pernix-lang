@@ -1,9 +1,11 @@
 use std::{borrow::Cow, fmt::Debug, sync::Arc};
 
-use pernixc_semantic::{GlobalID, Table};
-use pernixc_term::{
-    constant, constant::Constant, generic_arguments::GenericArguments, r#type,
-    r#type::Type, Default, Symbol,
+use pernixc_semantic::{
+    table::{GlobalID, Table},
+    term::{
+        constant, constant::Constant, generic_arguments::GenericArguments,
+        r#type, r#type::Type, Default, Symbol,
+    },
 };
 use proptest::{
     arbitrary::Arbitrary,

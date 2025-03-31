@@ -6,16 +6,16 @@ use std::{
 };
 
 use pernixc_semantic::{
-    component::{Implemented, Parent, SymbolKind},
-    GlobalID, Table, TargetID, ID,
-};
-use pernixc_term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    lifetime::Lifetime,
-    predicate::{Compatible, Predicate},
-    r#type::{Primitive, TraitMember, Type},
-    Default, MemberSymbol, Symbol,
+    component::input::{Implemented, Parent, SymbolKind},
+    table::{self, GlobalID, Table, TargetID, ID},
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{Compatible, Predicate},
+        r#type::{Primitive, TraitMember, Type},
+        Default, MemberSymbol, Symbol,
+    },
 };
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy, TestCaseError},
@@ -58,9 +58,8 @@ fn symmetric() {
         parent_generic_arguments: GenericArguments::default(),
     });
 
-    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(2))
-    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(1)), Parent(Some(ID(2)))));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(2)), SymbolKind::Trait));
     assert!(table.add_component(
@@ -109,9 +108,8 @@ fn not_equal() {
     let equivalence = Type::Primitive(Primitive::Bool);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
-    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(2))
-    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(1)), Parent(Some(ID(2)))));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(2)), SymbolKind::Trait));
     assert!(table.add_component(
@@ -162,12 +160,10 @@ fn transitivity() {
     let equivalence = Type::Primitive(Primitive::Bool);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
-    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(3))
-    }));
-    assert!(table.add_component(GlobalID::new(TargetID(1), ID(2)), Parent {
-        parent: Some(ID(3))
-    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(1)), Parent(Some(ID(3)))));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(2)), Parent(Some(ID(3)))));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(3)), SymbolKind::Trait));
     assert!(table.add_component(
@@ -229,12 +225,10 @@ fn congruence() {
     let second_equivalence = Type::Primitive(Primitive::Int32);
 
     let table = Table::new(Arc::new(pernixc_handler::Panic));
-    assert!(table.add_component(GlobalID::new(TargetID(1), ID(1)), Parent {
-        parent: Some(ID(3))
-    }));
-    assert!(table.add_component(GlobalID::new(TargetID(1), ID(2)), Parent {
-        parent: Some(ID(3))
-    }));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(1)), Parent(Some(ID(3)))));
+    assert!(table
+        .add_component(GlobalID::new(TargetID(1), ID(2)), Parent(Some(ID(3)))));
     assert!(table
         .add_component(GlobalID::new(TargetID(1), ID(3)), SymbolKind::Trait));
     assert!(table.add_component(
@@ -377,7 +371,7 @@ impl<T: Clone + Debug + 'static> Property<T> for Identity<T> {
 pub struct Mapping {
     pub property: Box<dyn Property<Type<Default>>>,
     pub target_trait_member: TraitMember<Default>,
-    pub trait_id: pernixc_semantic::ID,
+    pub trait_id: table::ID,
     pub map_at_lhs: bool,
 }
 
@@ -461,10 +455,10 @@ impl Property<Type<Default>> for Mapping {
         table: &mut Table,
         premise: &mut Premise<Default>,
     ) -> Result<(Type<Default>, Type<Default>), AbortError> {
-        let add_parent = table
-            .add_component(self.target_trait_member.id, Parent {
-                parent: Some(self.trait_id),
-            });
+        let add_parent = table.add_component(
+            self.target_trait_member.id,
+            Parent(Some(self.trait_id)),
+        );
         let add_kind = table.add_component(
             GlobalID::new(self.target_trait_member.id.target_id, self.trait_id),
             SymbolKind::Trait,
@@ -814,9 +808,8 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     */
 
     for (trait_member, trait_id) in &decoy.types {
-        let add_parent = table.add_component(trait_member.lhs.id, Parent {
-            parent: Some(*trait_id),
-        });
+        let add_parent =
+            table.add_component(trait_member.lhs.id, Parent(Some(*trait_id)));
 
         let add_kind = table.add_component(
             GlobalID::new(trait_member.lhs.id.target_id, *trait_id),
@@ -868,10 +861,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 #[derive(Debug, Default)]
 pub struct Decoy {
     #[allow(clippy::type_complexity)]
-    types: Vec<(
-        Compatible<TraitMember<Default>, Type<Default>>,
-        pernixc_semantic::ID,
-    )>,
+    types: Vec<(Compatible<TraitMember<Default>, Type<Default>>, table::ID)>,
 }
 
 impl Arbitrary for Decoy {
@@ -881,7 +871,7 @@ impl Arbitrary for Decoy {
         let equality = (
             MemberSymbol::arbitrary(),
             Type::arbitrary().prop_map(purge),
-            pernixc_semantic::ID::arbitrary(),
+            table::ID::arbitrary(),
         )
             .prop_map(|(lhs, rhs, id)| {
                 (

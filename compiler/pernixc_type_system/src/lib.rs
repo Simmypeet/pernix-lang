@@ -5,15 +5,18 @@ use std::{collections::BTreeSet, sync::Arc};
 use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_semantic::diagnostic::Diagnostic;
-use pernixc_source_file::Span;
-use pernixc_term::{
-    constant::Constant,
-    lifetime::Lifetime,
-    predicate::{Outlives, Predicate},
-    r#type::Type,
-    Model,
+use pernixc_semantic::{
+    diagnostic::Diagnostic,
+    table,
+    term::{
+        constant::Constant,
+        lifetime::Lifetime,
+        predicate::{Outlives, Predicate},
+        r#type::Type,
+        Model,
+    },
 };
+use pernixc_source_file::Span;
 use unification::Log;
 
 pub mod compatible;
@@ -136,7 +139,7 @@ impl OverflowError {
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Abort
     where
-        Predicate<M>: pernixc_semantic::Display,
+        Predicate<M>: table::Display,
     {
         handler.receive(Box::new(diagnostic::UndecidablePredicate::new(
             predicate,

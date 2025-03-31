@@ -1,11 +1,13 @@
 use std::{borrow::Cow, sync::Arc};
 
-use pernixc_semantic::{GlobalID, Table, TargetID};
-use pernixc_term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::TypeParameterID,
-    r#type::{Primitive, Type},
-    Default,
+use pernixc_semantic::{
+    component::derived::generic_parameters::TypeParameterID,
+    table::{self, GlobalID, Table, TargetID},
+    term::{
+        generic_arguments::GenericArguments,
+        r#type::{Primitive, Type},
+        Default,
+    },
 };
 
 use crate::{
@@ -17,11 +19,11 @@ use crate::{
 #[test]
 fn ambiguous() {
     let t_parameter = Type::<Default>::Parameter(TypeParameterID {
-        parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
+        parent: GlobalID::new(TargetID(1), table::ID(1)),
         id: pernixc_arena::ID::new(0),
     });
     let u_parameter = Type::<Default>::Parameter(TypeParameterID {
-        parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(2)),
+        parent: GlobalID::new(TargetID(1), table::ID(2)),
         id: pernixc_arena::ID::new(0),
     });
 
@@ -49,7 +51,7 @@ fn ambiguous() {
 #[test]
 fn more_general() {
     let t_parameter = Type::<Default>::Parameter(TypeParameterID {
-        parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
+        parent: GlobalID::new(TargetID(1), table::ID(1)),
         id: pernixc_arena::ID::new(0),
     });
 
@@ -80,7 +82,7 @@ fn more_general() {
 #[test]
 fn incompatible() {
     let t_parameter = Type::<Default>::Parameter(TypeParameterID {
-        parent: GlobalID::new(TargetID(1), pernixc_semantic::ID(1)),
+        parent: GlobalID::new(TargetID(1), table::ID(1)),
         id: pernixc_arena::ID::new(0),
     });
 

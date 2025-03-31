@@ -14,7 +14,7 @@ use pernixc_semantic::{
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     elided_lifetimes::ElidedLifetimes, generic_parameter::GenericParameters,
     r#type::Type, where_clause::WhereClause, Default,
 };

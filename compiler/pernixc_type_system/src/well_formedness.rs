@@ -4,20 +4,24 @@ use std::collections::BTreeSet;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
-use pernixc_component::implied_predicates::ImpliedPredicates;
-use pernixc_semantic::{component::SymbolKind, GlobalID, Table};
-use pernixc_source_file::Span;
-use pernixc_term::{
-    generic_arguments::GenericArguments,
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    predicate::{Outlives, Predicate},
-    r#type::Type,
-    variance::Variance,
-    visitor::RecursiveIterator,
-    where_clause::WhereClause,
-    Model,
+use pernixc_semantic::{
+    component::{
+        derived::{implied_predicates::ImpliedPredicates, variances::Variance},
+        input::SymbolKind,
+    },
+    table::{GlobalID, Table},
+    term::{
+        generic_arguments::GenericArguments,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        predicate::{Outlives, Predicate},
+        r#type::Type,
+        visitor::RecursiveIterator,
+        where_clause::WhereClause,
+        Model,
+    },
 };
+use pernixc_source_file::Span;
 
 use super::{
     compatible::{Compatibility, Compatible},

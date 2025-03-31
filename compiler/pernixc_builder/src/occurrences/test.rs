@@ -1,6 +1,6 @@
 use pernixc_component::fields::Fields;
 use pernixc_semantic::diagnostic::Diagnostic;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments,
     generic_parameter::{
         GenericParameters, LifetimeParameterID, TypeParameterID,

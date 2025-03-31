@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::HashMap, num::NonZero};
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::{Key, ID};
 use pernixc_source_file::Span;
-use pernixc_term::r#type::{Qualifier, Type};
+use pernixc_semantic::term::r#type::{Qualifier, Type};
 use serde::{Deserialize, Serialize};
 
 use super::{

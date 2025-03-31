@@ -18,7 +18,7 @@ use pernixc_storage::{
     serde::{MergerFn, Reflector},
     ArcTrait,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     elided_lifetimes::ElidedLifetimes, forall_lifetime::ForallLifetimes,
     generic_parameter::GenericParameters, variance::Variances,
     where_clause::WhereClause,

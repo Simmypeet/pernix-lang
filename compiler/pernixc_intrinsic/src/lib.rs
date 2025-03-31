@@ -6,6 +6,19 @@ use pernixc_component::{
     function_signature::{FunctionSignature, Parameter},
     implementation::Implementation,
     implied_predicates::{ImpliedPredicate, ImpliedPredicates},
+    term::{
+        elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
+        forall_lifetime::ForallLifetimes,
+        generic_parameter::{
+            GenericParameters, LifetimeParameter, LifetimeParameterID,
+            TypeParameter, TypeParameterID,
+        },
+        lifetime::Lifetime,
+        predicate::{self, Outlives},
+        r#type::{Pointer, Primitive, Qualifier, Reference, Type},
+        where_clause::{Predicate, WhereClause},
+        Default, Tuple,
+    },
 };
 use pernixc_semantic::{
     component::{
@@ -13,19 +26,6 @@ use pernixc_semantic::{
         Implements, Import, Member, Name, Parent, SymbolKind,
     },
     GlobalID, Table, TargetID,
-};
-use pernixc_term::{
-    elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
-    forall_lifetime::ForallLifetimes,
-    generic_parameter::{
-        GenericParameters, LifetimeParameter, LifetimeParameterID,
-        TypeParameter, TypeParameterID,
-    },
-    lifetime::Lifetime,
-    predicate::{self, Outlives},
-    r#type::{Pointer, Primitive, Qualifier, Reference, Type},
-    where_clause::{Predicate, WhereClause},
-    Default, Tuple,
 };
 use strum::IntoEnumIterator;
 

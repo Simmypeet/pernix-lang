@@ -26,7 +26,7 @@ use pernixc_semantic::{
     diagnostic::Diagnostic,
     GlobalID, TargetID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments,
     predicate::{PositiveTrait, Predicate},
     r#type::{Primitive, Type},

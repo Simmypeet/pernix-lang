@@ -25,7 +25,7 @@ use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, QualifiedIdentifierRoot,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     forall_lifetime::{
         self, ForallLifetime, ForallLifetimeID, ForallLifetimes,
     },

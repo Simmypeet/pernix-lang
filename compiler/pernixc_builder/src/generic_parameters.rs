@@ -20,7 +20,7 @@ use pernixc_syntax::syntax_tree::{
     item::generic_parameter::GenericParameter as GenericParameterSyn,
     ConnectedList,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     generic_parameter::{
         ConstantParameter, GenericKind, GenericParameters, LifetimeParameter,

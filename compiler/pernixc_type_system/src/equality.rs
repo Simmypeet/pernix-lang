@@ -2,8 +2,10 @@
 
 use std::sync::Arc;
 
-use pernixc_semantic::{DisplayObject, Table};
-use pernixc_term::matching::Matching;
+use pernixc_semantic::{
+    table::{self, DisplayObject, Table},
+    term::matching::Matching,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -29,9 +31,7 @@ impl<T, U> Equality<T, U> {
     pub const fn new(lhs: T, rhs: U) -> Self { Self { lhs, rhs } }
 }
 
-impl<T: pernixc_semantic::Display, U: pernixc_semantic::Display>
-    pernixc_semantic::Display for Equality<T, U>
-{
+impl<T: table::Display, U: table::Display> table::Display for Equality<T, U> {
     fn fmt(
         &self,
         table: &Table,

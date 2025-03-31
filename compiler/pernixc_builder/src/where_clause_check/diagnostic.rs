@@ -4,7 +4,7 @@ use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_semantic::{DisplayObject, Table};
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     predicate::{self, Predicate},
     r#type,
 };

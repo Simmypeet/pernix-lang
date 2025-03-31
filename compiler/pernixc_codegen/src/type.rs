@@ -21,7 +21,7 @@ use pernixc_semantic::{
     component::{Member, Name, SymbolKind, VariantDeclarationOrder},
     DisplayObject, GlobalID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameter::GenericParameters,

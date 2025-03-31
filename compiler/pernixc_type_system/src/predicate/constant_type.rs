@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
-use pernixc_term::{
-    constant::Constant,
-    lifetime::Lifetime,
-    predicate::ConstantType,
-    r#type::{Primitive, Type},
-    variance::Variance,
-    visitor::{self, Element},
-    Model,
+use pernixc_semantic::{
+    component::derived::variances::Variance,
+    term::{
+        constant::Constant,
+        lifetime::Lifetime,
+        predicate::ConstantType,
+        r#type::{Primitive, Type},
+        visitor::{self, Element},
+        Model,
+    },
 };
 
 use crate::{

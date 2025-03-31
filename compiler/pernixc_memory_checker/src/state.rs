@@ -14,7 +14,7 @@ use pernixc_semantic::{
     component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},
     r#type::{self, Qualifier, Type},

@@ -9,7 +9,7 @@ use pernixc_lexical::token;
 use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, Label};
-use pernixc_term::r#type::{Qualifier, Type};
+use pernixc_semantic::term::r#type::{Qualifier, Type};
 
 use super::{
     diagnostic::{

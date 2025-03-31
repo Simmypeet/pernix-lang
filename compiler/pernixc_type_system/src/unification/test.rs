@@ -3,20 +3,22 @@ use std::{
 };
 
 use pernixc_semantic::{
-    component::{Implemented, Parent, SymbolKind},
-    GlobalID, Table,
-};
-use pernixc_term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::{
-        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+    component::{
+        derived::generic_parameters::{
+            ConstantParameterID, LifetimeParameterID, TypeParameterID,
+        },
+        input::{Implemented, Parent, SymbolKind},
     },
-    lifetime::Lifetime,
-    predicate::{Compatible, Predicate},
-    r#type::{TraitMember, Type},
-    sub_term::Location,
-    Default, MemberSymbol, Symbol, Tuple, TupleElement,
+    table::{self, GlobalID, Table},
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{Compatible, Predicate},
+        r#type::{TraitMember, Type},
+        sub_term::Location,
+        Default, MemberSymbol, Symbol, Tuple, TupleElement,
+    },
 };
 use proptest::{
     arbitrary::Arbitrary,
@@ -385,7 +387,7 @@ impl Arbitrary for SymbolCongruence {
 pub struct Mapping {
     pub property: Box<dyn Property<Type<Default>>>,
     pub trait_member: TraitMember<Default>,
-    pub trait_id: pernixc_semantic::ID,
+    pub trait_id: table::ID,
 }
 
 impl Property<Type<Default>> for Mapping {
@@ -394,9 +396,8 @@ impl Property<Type<Default>> for Mapping {
         table: &mut Table,
         premise: &mut Premise<Default>,
     ) -> Result<(), AbortError> {
-        let add_parent = table.add_component(self.trait_member.id, Parent {
-            parent: Some(self.trait_id),
-        });
+        let add_parent = table
+            .add_component(self.trait_member.id, Parent(Some(self.trait_id)));
         let add_kind = table.add_component(
             GlobalID::new(self.trait_member.id.target_id, self.trait_id),
             SymbolKind::Trait,
@@ -446,7 +447,7 @@ impl Arbitrary for Mapping {
         let strategy = strategy
             .unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (strategy, TraitMember::arbitrary(), pernixc_semantic::ID::arbitrary())
+        (strategy, TraitMember::arbitrary(), table::ID::arbitrary())
             .prop_map(|(property, trait_member, trait_id)| Self {
                 property,
                 trait_id,

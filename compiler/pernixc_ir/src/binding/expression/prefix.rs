@@ -2,7 +2,7 @@ use pernixc_handler::Handler;
 use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_term::{
+use pernixc_semantic::term::{
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Type},
 };

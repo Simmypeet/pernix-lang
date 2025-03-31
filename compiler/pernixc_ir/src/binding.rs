@@ -19,7 +19,7 @@ use pernixc_resolution::{
 use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     lifetime::Lifetime,

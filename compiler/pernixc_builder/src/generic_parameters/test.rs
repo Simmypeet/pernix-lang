@@ -1,4 +1,4 @@
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::{
         ConstantParameter, GenericKind, GenericParameters, LifetimeParameter,
         TypeParameter, TypeParameterID,

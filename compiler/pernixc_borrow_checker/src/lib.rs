@@ -217,7 +217,7 @@ use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, Representation, Values};
 use pernixc_semantic::{diagnostic::Diagnostic, GlobalID, Table};
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     elided_lifetimes::ElidedLifetimeID,
     generic_parameter::{GenericParameters, LifetimeParameterID},

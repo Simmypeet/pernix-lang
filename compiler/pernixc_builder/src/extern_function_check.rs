@@ -6,7 +6,7 @@ use pernixc_handler::Handler;
 use pernixc_semantic::{
     component::Extern, diagnostic::Diagnostic, GlobalID, Table,
 };
-use pernixc_term::generic_parameter::GenericParameters;
+use pernixc_semantic::term::generic_parameter::GenericParameters;
 
 pub mod diagnostic;
 

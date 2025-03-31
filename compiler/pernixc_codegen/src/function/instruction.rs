@@ -26,7 +26,7 @@ use pernixc_semantic::{
     component::{Member, Name, Parent, SymbolKind, VariantDeclarationOrder},
     GlobalID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
     generic_parameter::{

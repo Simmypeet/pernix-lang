@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use pernixc_term::{
-    lifetime::Lifetime, predicate::Outlives, variance::Variance, visitor, Model,
+use pernixc_semantic::{
+    component::derived::variances::Variance,
+    term::{lifetime::Lifetime, predicate::Outlives, visitor, Model},
 };
 
 use crate::{

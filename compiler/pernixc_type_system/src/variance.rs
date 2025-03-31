@@ -1,13 +1,21 @@
 //! Contains the function [`Environment::get_variance_of()`]
 
 use pernixc_abort::Abort;
-use pernixc_semantic::component::SymbolKind;
-use pernixc_term::{
-    generic_parameter::GenericParameters,
-    r#type::{self, Type},
-    sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
-    variance::{Variance, Variances},
-    Model,
+use pernixc_semantic::{
+    component::{
+        derived::{
+            generic_parameters::GenericParameters,
+            variances::{Variance, Variances},
+        },
+        input::SymbolKind,
+    },
+    term::{
+        r#type::{self, Type},
+        sub_term::{
+            Location, SubLifetimeLocation, SubTypeLocation, TermLocation,
+        },
+        Model,
+    },
 };
 
 use crate::{environment::Environment, normalizer::Normalizer};

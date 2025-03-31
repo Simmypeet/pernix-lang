@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use pernixc_term::{predicate::Outlives, visitor::Mutable, Model};
+use pernixc_semantic::term::{predicate::Outlives, visitor::Mutable, Model};
 
 use crate::{
     environment::{Environment, Query},

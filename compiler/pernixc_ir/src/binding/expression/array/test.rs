@@ -1,5 +1,5 @@
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_term::r#type::{Primitive, Type};
+use pernixc_semantic::term::r#type::{Primitive, Type};
 use pernixc_type_system::equality::Equality;
 
 use crate::{

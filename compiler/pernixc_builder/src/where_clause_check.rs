@@ -9,7 +9,7 @@ use pernixc_handler::Handler;
 use pernixc_semantic::{
     component::SymbolKind, diagnostic::Diagnostic, GlobalID, Table,
 };
-use pernixc_term::predicate::Predicate;
+use pernixc_semantic::term::predicate::Predicate;
 use pernixc_type_system::{
     diagnostic::TypeCalculatingOverflow,
     environment::{Environment, Error, GetActivePremiseExt},

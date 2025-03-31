@@ -1,18 +1,22 @@
 use std::{borrow::Cow, collections::HashSet, fmt::Debug, sync::Arc};
 
 use pernixc_semantic::{
-    component::{Implemented, Parent, SymbolKind},
-    GlobalID, Table,
-};
-use pernixc_term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::{GenericParameters, LifetimeParameter},
-    lifetime::Lifetime,
-    predicate::{Compatible, Outlives, Predicate},
-    r#type::{TraitMember, Type},
-    variance::{Variance, Variances},
-    Default, MemberSymbol, Symbol,
+    component::{
+        derived::{
+            generic_parameters::{GenericParameters, LifetimeParameter},
+            variances::{Variance, Variances},
+        },
+        input::{Implemented, Parent, SymbolKind},
+    },
+    table::{self, GlobalID, Table},
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{Compatible, Outlives, Predicate},
+        r#type::{TraitMember, Type},
+        Default, MemberSymbol, Symbol,
+    },
 };
 use proptest::{
     arbitrary::Arbitrary,
@@ -55,7 +59,7 @@ pub trait Property<T>: 'static + Debug {
 #[derive(Debug)]
 pub struct ByEquality {
     pub equality: TraitMember<Default>,
-    pub trait_id: pernixc_semantic::ID,
+    pub trait_id: table::ID,
     pub property: Box<dyn Property<Type<Default>>>,
 }
 
@@ -65,9 +69,8 @@ impl Property<Type<Default>> for ByEquality {
         table: &mut Table,
         premise: &mut Premise<Default>,
     ) -> Result<(Type<Default>, Lifetime<Default>), AbortError> {
-        let add_parent = table.add_component(self.equality.id, Parent {
-            parent: Some(self.trait_id),
-        });
+        let add_parent =
+            table.add_component(self.equality.id, Parent(Some(self.trait_id)));
         let add_kind = table.add_component(
             GlobalID::new(self.equality.id.target_id, self.trait_id),
             SymbolKind::Trait,
@@ -113,7 +116,7 @@ impl Arbitrary for ByEquality {
         let args =
             args.unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
 
-        (TraitMember::arbitrary(), pernixc_semantic::ID::arbitrary(), args)
+        (TraitMember::arbitrary(), table::ID::arbitrary(), args)
             .prop_map(|(equality, trait_id, property)| Self {
                 equality: TraitMember(MemberSymbol {
                     id: equality.0.id,

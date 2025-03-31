@@ -9,7 +9,7 @@ use pernixc_syntax::syntax_tree::{
     self,
     expression::block::{Group, GroupOrIfElse},
 };
-use pernixc_term::r#type::{Primitive, Type};
+use pernixc_semantic::term::r#type::{Primitive, Type};
 
 use super::{Bind, Config, Expression, Target};
 use crate::{

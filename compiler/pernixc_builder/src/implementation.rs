@@ -14,7 +14,7 @@ use pernixc_semantic::{
     diagnostic::Diagnostic,
     query, GlobalID, Table,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant, generic_arguments::GenericArguments,
     generic_parameter::GenericParameters, lifetime::Lifetime, r#type::Type,
 };

@@ -7,7 +7,7 @@ use pernixc_semantic::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::GenericParameters,
     instantiation::{self, Instantiation},
     r#type::Qualifier,

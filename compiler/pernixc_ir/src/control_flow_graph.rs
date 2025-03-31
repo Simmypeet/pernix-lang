@@ -7,7 +7,7 @@ use std::{
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, Key, ID};
-use pernixc_term::r#type::Type;
+use pernixc_semantic::term::r#type::Type;
 use pernixc_transitive_closure::TransitiveClosure;
 use serde::{Deserialize, Serialize};
 

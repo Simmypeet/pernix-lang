@@ -4,7 +4,7 @@
 use pernixc_handler::Handler;
 use pernixc_source_file::Span;
 use pernixc_semantic::{diagnostic::Diagnostic, GlobalID};
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments, instantiation::Instantiation,
     predicate::Predicate, Default, Model,
 };

@@ -5,7 +5,7 @@ use pernixc_semantic::{
     GlobalID,
 };
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::{GenericParameters, TypeParameterID},
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Reference, Type},

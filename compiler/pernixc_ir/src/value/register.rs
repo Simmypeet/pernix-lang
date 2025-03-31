@@ -20,7 +20,7 @@ use pernixc_semantic::{
     GlobalID, Table,
 };
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameter::GenericParameters,

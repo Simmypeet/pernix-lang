@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use pernixc_term::{predicate::Tuple, variance::Variance};
+use pernixc_semantic::{
+    component::derived::variances::Variance, term::predicate::Tuple,
+};
 
 use crate::{
     compatible::Compatibility,

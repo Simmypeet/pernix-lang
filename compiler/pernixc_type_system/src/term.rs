@@ -3,26 +3,31 @@
 use std::{cmp::Eq, fmt::Debug, hash::Hash};
 
 use pernixc_arena::ID;
-use pernixc_component::{
-    fields::Fields, type_alias::TypeAlias, variant::Variant,
-};
 use pernixc_semantic::{
-    component::{Member, Name, Parent, SymbolKind},
-    GlobalID, MemberID, Table,
-};
-use pernixc_term::{
-    constant::Constant,
-    generic_parameter::{
-        ConstantParameter, GenericParameter, GenericParameters,
-        LifetimeParameter, TypeParameter,
+    component::{
+        derived::{
+            fields::Fields,
+            generic_parameters::{
+                ConstantParameter, GenericParameter, GenericParameters,
+                LifetimeParameter, TypeParameter,
+            },
+            type_alias::TypeAlias,
+            variant::Variant,
+        },
+        input::{Member, Name, Parent, SymbolKind},
     },
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    matching,
-    predicate::{self, Compatible, Outlives, Predicate},
-    r#type::{TraitMember, Type},
-    sub_term, visitor, Kind, Model, ModelOf, Never, Symbol, Tuple,
-    TupleElement,
+    table::{GlobalID, MemberID, Table},
+    term::{
+        self,
+        constant::Constant,
+        instantiation::{self, Instantiation},
+        lifetime::Lifetime,
+        matching,
+        predicate::{self, Compatible, Outlives, Predicate},
+        r#type::{TraitMember, Type},
+        sub_term, visitor, Kind, Model, ModelOf, Never, Symbol, Tuple,
+        TupleElement,
+    },
 };
 
 use crate::{
@@ -54,7 +59,7 @@ pub trait Term:
     + instantiation::Element
     + compatible::Compatible
     + From<MemberID<ID<Self::GenericParameter>>>
-    + From<pernixc_term::Error>
+    + From<pernixc_semantic::term::Error>
     + From<Self::TraitMember>
     + Send
     + Sync
@@ -136,7 +141,7 @@ pub trait Term:
     ) -> Option<&predicate::Tuple<Self>>;
 
     #[doc(hidden)]
-    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>>;
+    fn as_tuple(&self) -> Option<&term::Tuple<Self>>;
 
     /// Tries to convert the [`Kind`] into the term kind.
     fn try_from_kind(kind: Kind<Self::Model>) -> Option<&'_ Self>;
@@ -211,7 +216,7 @@ impl<M: Model> Term for Lifetime<M> {
         None
     }
 
-    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> { None }
+    fn as_tuple(&self) -> Option<&term::Tuple<Self>> { None }
 
     fn try_from_kind(kind: Kind<Self::Model>) -> Option<&'_ Self> {
         kind.into_lifetime().ok()
@@ -230,8 +235,7 @@ fn normalize_trait_member<M: Model>(
     trait_member: &TraitMember<M>,
     environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<Option<Succeeded<Type<M>, M>>, Error> {
-    let trait_id =
-        environment.table().get::<Parent>(trait_member.id).parent.unwrap();
+    let trait_id = environment.table().get::<Parent>(trait_member.id).unwrap();
 
     // resolve the trait implementation
     let mut resolution = match environment.resolve_implementation(
@@ -313,7 +317,7 @@ fn normalize_trait_member<M: Model>(
 }
 
 fn unpack_tuple<T: Term + From<Tuple<T>> + TryInto<Tuple<T>, Error = T>>(
-    tuple: &pernixc_term::Tuple<T>,
+    tuple: &term::Tuple<T>,
 ) -> Option<Succeeded<T, T::Model>> {
     let contain_upacked = tuple.elements.iter().any(|x| x.is_unpacked);
 
@@ -542,7 +546,7 @@ impl<M: Model> Term for Type<M> {
         predicate.as_tuple_type()
     }
 
-    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> {
+    fn as_tuple(&self) -> Option<&term::Tuple<Self>> {
         if let Self::Tuple(tuple) = self {
             Some(tuple)
         } else {
@@ -651,7 +655,7 @@ impl<M: Model> Term for Constant<M> {
         None
     }
 
-    fn as_tuple(&self) -> Option<&pernixc_term::Tuple<Self>> { None }
+    fn as_tuple(&self) -> Option<&term::Tuple<Self>> { None }
 
     fn try_from_kind(kind: Kind<Self::Model>) -> Option<&'_ Self> {
         kind.into_constant().ok()

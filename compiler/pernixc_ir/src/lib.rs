@@ -8,7 +8,7 @@ use model::Transform;
 use pernixc_abort::Abort;
 use pernixc_arena::{Arena, Key, ID};
 use pernixc_semantic::{component::Derived, Table};
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, Model,
 };
 use serde::{Deserialize, Serialize};

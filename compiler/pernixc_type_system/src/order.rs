@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant, generic_arguments::GenericArguments,
     lifetime::Lifetime, r#type::Type, Model,
 };

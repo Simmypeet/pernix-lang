@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     lifetime::Lifetime,
     r#type::{Array, Primitive, Qualifier, Reference, Type},
 };

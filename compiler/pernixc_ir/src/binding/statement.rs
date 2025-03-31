@@ -4,7 +4,7 @@ use pernixc_handler::Handler;
 use pernixc_semantic::diagnostic::Diagnostic;
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_term::r#type::{Qualifier, Type};
+use pernixc_semantic::term::r#type::{Qualifier, Type};
 
 use super::{
     expression::{Bind, Config, Expression, Target},

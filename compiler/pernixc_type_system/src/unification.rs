@@ -8,7 +8,7 @@ use std::{
 
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     lifetime::Lifetime,
     matching,

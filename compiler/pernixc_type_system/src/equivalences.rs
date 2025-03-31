@@ -1,9 +1,12 @@
 //! A module for retrieving equivalences of a term based on the equality
 //! premises.
 
-use pernixc_term::{
-    constant::Constant, lifetime::Lifetime, predicate::Predicate, r#type::Type,
-    variance::Variance, Model, ModelOf,
+use pernixc_semantic::{
+    component::derived::variances::Variance,
+    term::{
+        constant::Constant, lifetime::Lifetime, predicate::Predicate,
+        r#type::Type, Model, ModelOf,
+    },
 };
 
 use crate::{

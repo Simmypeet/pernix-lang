@@ -11,7 +11,7 @@ use pernixc_source_file::Span;
 use pernixc_syntax::syntax_tree::{
     self, GenericIdentifier, QualifiedIdentifier, QualifiedIdentifierRoot,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameter::{

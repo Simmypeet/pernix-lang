@@ -4,7 +4,7 @@ use pernixc_component::{
     late_bound::LateBound,
 };
 use pernixc_resolution::diagnostic::UnexpectedInference;
-use pernixc_term::{
+use pernixc_semantic::term::{
     elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
     generic_parameter::{GenericKind, GenericParameters, TypeParameterID},
     lifetime::Lifetime,

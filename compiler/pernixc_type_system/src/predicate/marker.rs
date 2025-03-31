@@ -4,19 +4,23 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
-use pernixc_semantic::{component::SymbolKind, GlobalID};
-use pernixc_term::{
-    constant::Constant,
-    generic_arguments::GenericArguments,
-    generic_parameter::GenericParameters,
-    lifetime::Lifetime,
-    predicate::{
-        NegativeMarker as Negative, PositiveMarker as Positive, Predicate,
+use pernixc_semantic::{
+    component::{
+        derived::{generic_parameters::GenericParameters, variances::Variance},
+        input::SymbolKind,
     },
-    r#type::Type,
-    variance::Variance,
-    visitor::{self, Element, VisitNonApplicationTermError},
-    Model,
+    table::GlobalID,
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::{
+            NegativeMarker as Negative, PositiveMarker as Positive, Predicate,
+        },
+        r#type::Type,
+        visitor::{self, Element, VisitNonApplicationTermError},
+        Model,
+    },
 };
 
 use crate::{

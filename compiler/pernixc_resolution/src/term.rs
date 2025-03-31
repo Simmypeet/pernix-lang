@@ -14,7 +14,7 @@ use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments,
     generic_parameter::{GenericKind, GenericParameters},
     instantiation::{self, Instantiation},

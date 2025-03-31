@@ -13,7 +13,7 @@ use pernixc_semantic::{
 };
 use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, expression::block::Group};
-use pernixc_term::{
+use pernixc_semantic::term::{
     r#type::{Primitive, Qualifier, Type},
     Symbol,
 };

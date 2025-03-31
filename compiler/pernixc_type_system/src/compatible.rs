@@ -2,16 +2,21 @@
 
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
-use pernixc_term::{
-    constant::Constant,
-    forall_lifetime::ForallLifetimeID,
-    generic_arguments::GenericArguments,
-    lifetime::Lifetime,
-    predicate::Outlives,
-    r#type::Type,
-    sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
-    variance::Variance,
-    visitor, Model, ModelOf,
+use pernixc_semantic::{
+    component::derived::{
+        forall_lifetimes::ForallLifetimeID, variances::Variance,
+    },
+    term::{
+        constant::Constant,
+        generic_arguments::GenericArguments,
+        lifetime::Lifetime,
+        predicate::Outlives,
+        r#type::Type,
+        sub_term::{
+            Location, SubLifetimeLocation, SubTypeLocation, TermLocation,
+        },
+        visitor, Model, ModelOf,
+    },
 };
 
 use crate::{

@@ -3,7 +3,7 @@ use pernixc_handler::Handler;
 use pernixc_semantic::{component::SymbolKind, diagnostic::Diagnostic};
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree;
-use pernixc_term::{r#type::Type, Model};
+use pernixc_semantic::term::{r#type::Type, Model};
 
 use super::{Bind, Config, Expression};
 use crate::{

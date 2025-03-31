@@ -9,7 +9,7 @@ use pernixc_semantic::{
     DisplayObject, GlobalID, MemberID, Table,
 };
 use pernixc_source_file::Span;
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_parameter::{
         ConstantParameterID, GenericKind, GenericParameter, GenericParameters,
     },

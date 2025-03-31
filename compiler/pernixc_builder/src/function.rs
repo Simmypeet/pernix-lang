@@ -24,7 +24,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_syntax::syntax_tree::{
     item::function::ParameterKind, ConnectedList,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     elided_lifetimes::{ElidedLifetime, ElidedLifetimeID, ElidedLifetimes},
     generic_arguments::GenericArguments,
     generic_parameter::{GenericParameters, LifetimeParameter},

@@ -1,5 +1,5 @@
 use pernixc_ir::value::literal::{Literal, Numeric};
-use pernixc_term::r#type::Primitive;
+use pernixc_semantic::term::r#type::Primitive;
 
 use super::{Builder, Error, LlvmValue};
 use crate::Model;

@@ -1,6 +1,6 @@
 use pernixc_handler::Panic;
 use pernixc_syntax::{syntax_tree, utility::parse};
-use pernixc_term::{
+use pernixc_semantic::term::{
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Type},
 };

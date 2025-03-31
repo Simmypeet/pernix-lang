@@ -1,15 +1,19 @@
 use std::{any::Any, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_semantic::{component::SymbolKind, GlobalID};
-use pernixc_term::{
-    generic_arguments::GenericArguments,
-    generic_parameter::GenericParameters,
-    predicate::{
-        NegativeTrait as Negative, PositiveTrait as Positive, Predicate,
+use pernixc_semantic::{
+    component::{
+        derived::{generic_parameters::GenericParameters, variances::Variance},
+        input::SymbolKind,
     },
-    variance::Variance,
-    Model,
+    table::GlobalID,
+    term::{
+        generic_arguments::GenericArguments,
+        predicate::{
+            NegativeTrait as Negative, PositiveTrait as Positive, Predicate,
+        },
+        Model,
+    },
 };
 
 use crate::{

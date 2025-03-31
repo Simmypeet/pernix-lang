@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use getset::Getters;
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant, lifetime::Lifetime, r#type::Type, sub_term::SubTerm,
     Model, ModelOf,
 };

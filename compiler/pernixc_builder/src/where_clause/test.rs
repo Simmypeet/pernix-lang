@@ -1,4 +1,4 @@
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments,
     generic_parameter::{
         GenericParameters, LifetimeParameterID, TypeParameterID,

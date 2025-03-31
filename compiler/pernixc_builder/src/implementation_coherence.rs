@@ -20,7 +20,7 @@ use pernixc_semantic::{
     diagnostic::Diagnostic,
     GlobalID, Table,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameter::{

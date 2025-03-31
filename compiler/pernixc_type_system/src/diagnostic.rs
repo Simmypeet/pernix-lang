@@ -4,12 +4,11 @@ use derive_new::new;
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_semantic::{
-    component::LocationSpan, DisplayObject, GlobalID, Table,
+    component::input::LocationSpan,
+    table::{self, DisplayObject, GlobalID, Table},
+    term::{generic_arguments::GenericArguments, predicate::Predicate, Model},
 };
 use pernixc_source_file::Span;
-use pernixc_term::{
-    generic_arguments::GenericArguments, predicate::Predicate, Model,
-};
 
 use crate::OverflowError;
 
@@ -85,7 +84,7 @@ pub struct UndecidablePredicate<M: Model> {
 
 impl<M: Model> Report<&Table> for UndecidablePredicate<M>
 where
-    Predicate<M>: pernixc_semantic::Display,
+    Predicate<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -128,7 +127,7 @@ pub struct UnsatisfiedPredicate<M: Model> {
 
 impl<M: Model> Report<&Table> for UnsatisfiedPredicate<M>
 where
-    Predicate<M>: pernixc_semantic::Display,
+    Predicate<M>: table::Display,
 {
     fn report(&self, table: &Table) -> Diagnostic {
         Diagnostic {
@@ -171,7 +170,7 @@ pub struct ImplementationIsNotGeneralEnough<M: Model> {
 
 impl<M: Model> Report<&Table> for ImplementationIsNotGeneralEnough<M>
 where
-    GenericArguments<M>: pernixc_semantic::Display,
+    GenericArguments<M>: table::Display,
 {
     fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
         let span = table.get::<LocationSpan>(self.resolvable_implementation_id);

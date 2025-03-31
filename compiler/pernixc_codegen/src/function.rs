@@ -33,7 +33,7 @@ use pernixc_semantic::{
     component::{Extern, Implements, Name, Parent, SymbolKind},
     DisplayObject, GlobalID, TargetID,
 };
-use pernixc_term::{
+use pernixc_semantic::term::{
     generic_arguments::GenericArguments, generic_parameter::GenericParameters,
     instantiation::Instantiation, r#type::Type, Model as _, Symbol, Tuple,
 };
