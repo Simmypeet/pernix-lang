@@ -657,6 +657,10 @@ fn linker_command(obj: &Path, out: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("clang");
     cmd.arg(obj).arg("-o").arg(out);
 
+    if cfg!(target_os = "windows") {
+        cmd.arg("-lmsvcrt").arg("-lkernel32").arg("-luser32").arg("-ladvapi32");
+    }
+
     cmd
 }
 
