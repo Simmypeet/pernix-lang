@@ -570,6 +570,8 @@ impl Input for PositiveTraitImplementation {}
     Default,
     Serialize,
     Deserialize,
+    Deref,
+    DerefMut,
 )]
 pub struct VariantDeclarationOrder(pub usize);
 
