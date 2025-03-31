@@ -182,6 +182,11 @@ pub enum TargetKind {
     #[clap(name = "llvm")]
     LLvmIR,
 
+    /// Compiles as an object file which can be later linked to create an
+    /// executable.
+    #[clap(name = "obj")]
+    Object,
+
     /// Emits the whole information of the target in a human readable
     /// format.
     #[clap(name = "ron")]
@@ -644,39 +649,15 @@ fn emit_as_library(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum MachineCodeKind {
     LlvmIR,
+    Object,
     Binary(bool),
 }
 
-fn linker_command(obj: &Path, out: &Path) -> Option<std::process::Command> {
-    if cfg!(target_os = "macos") {
-        let mut cmd = std::process::Command::new("cc");
-        cmd.arg("-o").arg(out).arg(obj).arg("-Wl").arg("-dead_strip");
+fn linker_command(obj: &Path, out: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("clang");
+    cmd.arg(obj).arg("-o").arg(out);
 
-        Some(cmd)
-    } else if cfg!(target_os = "linux") {
-        let mut cmd = std::process::Command::new("cc");
-        cmd.arg("-o")
-            .arg(out)
-            .arg(obj)
-            .arg("-no-pie")
-            .arg("-W")
-            .arg("--data-sections");
-
-        Some(cmd)
-    } else if cfg!(target_os = "windows") {
-        // NOTE: not really sure about the flags; need further testing.
-        // maybe we just use `clang -o exe obj -fuse-ld=link` instead?
-
-        let mut cmd = std::process::Command::new("link");
-        cmd.arg("/NOLOGO")
-            .arg(format!("/OUT:{}", out.display()))
-            .arg(obj)
-            .arg("/ENTRY:main");
-
-        Some(cmd)
-    } else {
-        None
-    }
+    cmd
 }
 
 fn invoke_linker(
@@ -684,20 +665,7 @@ fn invoke_linker(
     output_path: &Path,
     progress: &ProgressBar,
 ) -> bool {
-    let linker_cmd = linker_command(temp_obj_path, output_path);
-
-    let Some(mut cmd) = linker_cmd else {
-        progress.finish_and_clear();
-        eprintln!(
-            "{}",
-            Message::new(
-                Severity::Error,
-                "linker command not supported on this platform"
-            )
-        );
-
-        return false;
-    };
+    let mut cmd = linker_command(temp_obj_path, output_path);
 
     let mut child = match cmd.spawn() {
         Ok(child) => child,
@@ -713,21 +681,17 @@ fn invoke_linker(
 
             if err.kind() == ErrorKind::NotFound {
                 if cfg!(target_os = "windows") {
-                    eprintln!(
-                        "{}",
-                        Message::new(
-                            Severity::Info,
-                            "linker `link` not found; please install Visual \
-                             Studio Build Tools"
-                        )
-                    );
+                    eprintln!("{}", Message::new(Severity::Info, 
+                        "`clang` is not installed, please install it from
+                        LLVM's official website or from Microsoft Visual Studio"));
                 } else if cfg!(target_os = "linux") {
                     eprintln!(
                         "{}",
                         Message::new(
                             Severity::Info,
-                            "linker `cc` not found; please install the \
-                             `build-essential` package"
+                            "`clang` is not installed, please install it from \
+                             your package manager (e.g. `apt install clang` \
+                             or `pacman -S clang`"
                         )
                     );
                 } else if cfg!(target_os = "macos") {
@@ -735,8 +699,8 @@ fn invoke_linker(
                         "{}",
                         Message::new(
                             Severity::Info,
-                            "linker `cc` not found; please install Xcode \
-                             Command Line Tools"
+                            "`clang` is not installed, please install it from \
+                             Xcode or from the official LLVM website"
                         )
                     );
                 }
@@ -883,11 +847,15 @@ fn emit_as_machine_code(
                 });
 
             let result = match kind {
-                MachineCodeKind::Binary(_) => target_machine.write_to_file(
-                    &module,
-                    inkwell::targets::FileType::Object,
-                    temp_obj_path.as_ref().unwrap(),
-                ),
+                MachineCodeKind::Object | MachineCodeKind::Binary(_) => {
+                    target_machine.write_to_file(
+                        &module,
+                        inkwell::targets::FileType::Object,
+                        temp_obj_path
+                            .as_ref()
+                            .map_or(output_path, |x| x.as_path()),
+                    )
+                }
                 MachineCodeKind::LlvmIR => module.print_to_file(output_path),
             };
 
@@ -1021,13 +989,15 @@ pub fn run(argument: &Arguments) -> ExitCode {
     match &argument.command {
         Command::Build(Build {
             opt_level,
-            kind: TargetKind::Executable | TargetKind::LLvmIR,
+            kind:
+                TargetKind::Executable | TargetKind::LLvmIR | TargetKind::Object,
             ..
         })
         | Command::Run(Run { opt_level, .. }) => {
             let kind = match &argument.command {
                 Command::Build(Build { kind, .. }) => match kind {
                     TargetKind::Executable => MachineCodeKind::Binary(false),
+                    TargetKind::Object => MachineCodeKind::Object,
                     TargetKind::LLvmIR => MachineCodeKind::LlvmIR,
 
                     TargetKind::Library | TargetKind::Ron => unreachable!(),
