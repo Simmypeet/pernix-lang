@@ -7,8 +7,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+pernixc_arena = { path = "../pernixc_arena" }
 getset = { workspace = true }
 thiserror = { workspace = true }
+derive_more = { workspace = true }
+serde = { workspace = true }
 
 [lints]
 workspace = true

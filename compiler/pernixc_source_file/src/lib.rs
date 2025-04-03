@@ -2,10 +2,21 @@
 
 use core::str;
 use std::{
-    cmp::Ordering, fmt::Debug, fs::File, io::Read, ops::Range, path::PathBuf,
+    cmp::Ordering,
+    collections::{hash_map::Entry, HashMap},
+    fmt::Debug,
+    fs::File,
+    io::Read,
+    ops::Range,
+    path::PathBuf,
 };
 
+pub mod map;
+
+use derive_more::{Deref, DerefMut};
 use getset::{CopyGetters, Getters};
+use pernixc_arena::{Arena, ID};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Represents an error that occurs when loading/creating a source file.
@@ -20,7 +31,7 @@ pub enum Error {
 }
 
 /// Represents an source file input for the compiler.
-#[derive(Clone, PartialEq, Eq, Hash, Getters)]
+#[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
 pub struct SourceFile {
     content: String,
 
@@ -473,6 +484,53 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
     results.push(current_position..text.len());
 
     results
+}
+
+/// A map of source files, accessing through the source file ID. Also possibly
+/// used to access the source file by its path.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Deref,
+    Default,
+    DerefMut,
+    Serialize,
+    Deserialize,
+)]
+pub struct Map {
+    #[deref]
+    #[deref_mut]
+    arena: Arena<SourceFile>,
+    ids_by_path: HashMap<PathBuf, ID<SourceFile>>,
+}
+
+impl Map {
+    /// Creates a new empty [`Map`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self { arena: Arena::new(), ids_by_path: HashMap::new() }
+    }
+
+    /// Registers a source file in the map. If the source file is already
+    /// registered, it returns the `Err(ID)` of the existing source file.
+    /// If the source file is not registered, it returns the `Ok(ID)` of the
+    /// newly registered source file.
+    pub fn register(
+        &mut self,
+        source: SourceFile,
+    ) -> Result<ID<SourceFile>, ID<SourceFile>> {
+        match self.ids_by_path.entry(source.full_path.clone()) {
+            Entry::Occupied(occupied_entry) => Err(*occupied_entry.get()),
+            Entry::Vacant(vacant_entry) => {
+                let id = self.arena.insert(source);
+                vacant_entry.insert(id);
+
+                Ok(id)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
