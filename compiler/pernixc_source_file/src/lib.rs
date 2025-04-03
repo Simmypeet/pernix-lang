@@ -550,6 +550,14 @@ impl<'a> codespan_reporting::files::Files<'a> for Map {
             .get(id)
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
+        if byte_index == source.content().len() {
+            return Ok(if source.lines.is_empty() {
+                0
+            } else {
+                source.lines.len() - 1
+            });
+        }
+
         let line = source.get_line_of_byte_index(byte_index).ok_or(
             codespan_reporting::files::Error::IndexTooLarge {
                 given: byte_index,
@@ -570,12 +578,16 @@ impl<'a> codespan_reporting::files::Files<'a> for Map {
             .get(id)
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
-        let line_range = source.lines.get(line_index).ok_or(
+        if line_index == source.lines.len() {
+            return Ok(source.lines.last().map_or(0..0, |x| x.start..x.end));
+        }
+
+        let line_range = source.lines.get(line_index).ok_or({
             codespan_reporting::files::Error::IndexTooLarge {
                 given: line_index,
                 max: source.lines.len(),
-            },
-        )?;
+            }
+        })?;
 
         Ok(line_range.clone())
     }
