@@ -12,6 +12,7 @@ getset = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
 serde = { workspace = true }
+ariadne = { workspace = true }
 
 [lints]
 workspace = true

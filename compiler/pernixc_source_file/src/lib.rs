@@ -357,6 +357,9 @@ pub struct Span {
 
     /// Gets the end byte index of the span (exclusive).
     pub end: ByteIndex,
+
+    /// The ID of the source file that this span belongs to.
+    pub source_id: ID<SourceFile>,
 }
 
 /// Is a struct pointing to a particular location in a source file.
@@ -381,43 +384,14 @@ impl Span {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
     #[must_use]
-    pub fn new(start: ByteIndex, end: ByteIndex) -> Self {
+    pub fn new(
+        start: ByteIndex,
+        end: ByteIndex,
+        source_id: ID<SourceFile>,
+    ) -> Self {
         assert!(start <= end, "start index is greater than end index");
 
-        Self { start, end }
-    }
-
-    /// Creates a span from the given start byte index to the end of the source
-    /// file.
-    ///
-    /// # Returns
-    ///
-    /// Returns [`None`] if the `start` index is not a character boundary.
-    #[must_use]
-    pub fn to_end(source_file: &SourceFile, start: ByteIndex) -> Self {
-        assert!(
-            source_file.content.is_char_boundary(start),
-            "start index `{start}` is out of bounds"
-        );
-
-        Self { start, end: source_file.content.len() }
-    }
-
-    /// Gets the starting [`Location`] of the span.
-    ///
-    /// Returns [`None`] if the start of the span is at the end of the source
-    /// file.
-    #[must_use]
-    pub fn start_location(&self, source_file: &SourceFile) -> Option<Location> {
-        source_file.get_location(self.start)
-    }
-
-    /// Gets the ending [`Location`] of the span.
-    ///
-    /// Returns [`None`] if the end of the span is the end of the source file.
-    #[must_use]
-    pub fn end_location(&self, source_file: &SourceFile) -> Option<Location> {
-        source_file.get_location(self.end)
+        Self { start, end, source_id }
     }
 
     /// Joins the starting position of this span with the end position of the
@@ -428,9 +402,20 @@ impl Span {
             self.start <= end.start,
             "start index is greater than end index"
         );
+        assert!(self.source_id == end.source_id, "source IDs are not equal");
 
-        Self { start: self.start, end: end.end }
+        Self { start: self.start, end: end.end, source_id: self.source_id }
     }
+}
+
+impl ariadne::Span for Span {
+    type SourceId = ID<SourceFile>;
+
+    fn source(&self) -> &Self::SourceId { &self.source_id }
+
+    fn start(&self) -> usize { self.start }
+
+    fn end(&self) -> usize { self.end }
 }
 
 /// Represents an element that is located within a source file.
