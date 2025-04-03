@@ -11,8 +11,6 @@ use std::{
     path::PathBuf,
 };
 
-pub mod map;
-
 use derive_more::{Deref, DerefMut};
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
