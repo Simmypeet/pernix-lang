@@ -1,11 +1,8 @@
-#![allow(clippy::future_not_send)]
-
 //! Contains the code related to the source code input.
 
 use core::str;
 use std::{
-    cmp::Ordering, fmt::Debug, fs::File, io::Read, iter::Peekable, ops::Range,
-    path::PathBuf, str::CharIndices, sync::Arc,
+    cmp::Ordering, fmt::Debug, fs::File, io::Read, ops::Range, path::PathBuf,
 };
 
 use getset::{CopyGetters, Getters};
@@ -273,15 +270,6 @@ impl SourceFile {
         self.content = content;
     }
 
-    /// Gets the [`Iterator`] for the source file.
-    #[must_use]
-    pub fn iter<'a>(self: &'a Arc<Self>) -> Iterator<'a> {
-        Iterator {
-            source_file: self,
-            iterator: self.content.char_indices().peekable(),
-        }
-    }
-
     /// Gets the number of lines in the source file.
     #[must_use]
     pub fn line_coount(&self) -> usize { self.lines.len() }
@@ -340,66 +328,24 @@ impl SourceFile {
 pub type ByteIndex = usize;
 
 /// Represents a range of characters in a source file.
-#[derive(Clone, Getters, CopyGetters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Getters,
+    CopyGetters,
+)]
 pub struct Span {
     /// Gets the start byte index of the span.
-    #[get_copy = "pub"]
-    start: ByteIndex,
+    pub start: ByteIndex,
 
     /// Gets the end byte index of the span (exclusive).
-    #[get_copy = "pub"]
-    end: ByteIndex,
-
-    /// Gets the source file that the span is located in.
-    #[get = "pub"]
-    source_file: Arc<SourceFile>,
-}
-
-#[allow(clippy::missing_fields_in_debug)]
-impl Debug for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Span")
-            .field("start", &self.start)
-            .field("end", &self.end)
-            .field("content", &self.str())
-            .finish()
-    }
-}
-
-impl PartialEq for Span {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.source_file, &other.source_file)
-            && self.start == other.start
-            && self.end == other.end
-    }
-}
-
-impl Eq for Span {}
-
-impl PartialOrd for Span {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Span {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let self_ptr_value = Arc::as_ptr(&self.source_file) as usize;
-        let other_ptr_value = Arc::as_ptr(&other.source_file) as usize;
-
-        self_ptr_value
-            .cmp(&other_ptr_value)
-            .then_with(|| self.start.cmp(&other.start))
-            .then_with(|| self.end.cmp(&other.end))
-    }
-}
-
-impl std::hash::Hash for Span {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.start.hash(state);
-        self.end.hash(state);
-        Arc::as_ptr(&self.source_file).hash(state);
-    }
+    pub end: ByteIndex,
 }
 
 /// Is a struct pointing to a particular location in a source file.
@@ -424,32 +370,10 @@ impl Span {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
     #[must_use]
-    pub fn new(
-        source_file: Arc<SourceFile>,
-        start: ByteIndex,
-        end: ByteIndex,
-    ) -> Self {
+    pub fn new(start: ByteIndex, end: ByteIndex) -> Self {
         assert!(start <= end, "start index is greater than end index");
-        assert!(
-            start <= source_file.content.len(),
-            "start index `{start}` is out of bounds"
-        );
-        assert!(
-            end <= source_file.content.len() + 1,
-            "end index `{end}` is out of bounds"
-        );
 
-        assert!(
-            source_file.content.is_char_boundary(start),
-            "start index `{start}` is not a char boundary"
-        );
-        assert!(
-            source_file.content.is_char_boundary(end)
-                || end == source_file.content.len() + 1,
-            "end index `{end}` is not a char boundary"
-        );
-
-        Self { start, end, source_file }
+        Self { start, end }
     }
 
     /// Creates a span from the given start byte index to the end of the source
@@ -459,19 +383,13 @@ impl Span {
     ///
     /// Returns [`None`] if the `start` index is not a character boundary.
     #[must_use]
-    pub fn to_end(source_file: Arc<SourceFile>, start: ByteIndex) -> Self {
+    pub fn to_end(source_file: &SourceFile, start: ByteIndex) -> Self {
         assert!(
             source_file.content.is_char_boundary(start),
             "start index `{start}` is out of bounds"
         );
 
-        Self { start, end: source_file.content.len(), source_file }
-    }
-
-    /// Gets the string slice of the source code that the span represents.
-    #[must_use]
-    pub fn str(&self) -> &str {
-        &self.source_file.content[self.start..self.end]
+        Self { start, end: source_file.content.len() }
     }
 
     /// Gets the starting [`Location`] of the span.
@@ -479,17 +397,16 @@ impl Span {
     /// Returns [`None`] if the start of the span is at the end of the source
     /// file.
     #[must_use]
-    #[allow(clippy::missing_panics_doc)]
-    pub fn start_location(&self) -> Option<Location> {
-        self.source_file.get_location(self.start)
+    pub fn start_location(&self, source_file: &SourceFile) -> Option<Location> {
+        source_file.get_location(self.start)
     }
 
     /// Gets the ending [`Location`] of the span.
     ///
     /// Returns [`None`] if the end of the span is the end of the source file.
     #[must_use]
-    pub fn end_location(&self) -> Option<Location> {
-        self.source_file.get_location(self.end)
+    pub fn end_location(&self, source_file: &SourceFile) -> Option<Location> {
+        source_file.get_location(self.end)
     }
 
     /// Joins the starting position of this span with the end position of the
@@ -497,20 +414,11 @@ impl Span {
     #[must_use]
     pub fn join(&self, end: &Self) -> Self {
         assert!(
-            Arc::ptr_eq(self.source_file(), end.source_file()),
-            "source files are not the same"
-        );
-
-        assert!(
             self.start <= end.start,
             "start index is greater than end index"
         );
 
-        Self {
-            start: self.start,
-            end: end.end,
-            source_file: self.source_file.clone(),
-        }
+        Self { start: self.start, end: end.end }
     }
 }
 
@@ -522,29 +430,6 @@ pub trait SourceElement {
 
 impl<T: SourceElement> SourceElement for Box<T> {
     fn span(&self) -> Span { self.as_ref().span() }
-}
-
-/// Is an iterator iterating over the characters in a source file that can be
-/// peeked at.
-#[derive(Debug, Clone, CopyGetters)]
-pub struct Iterator<'a> {
-    /// Gets the source file that the iterator is iterating over.
-    #[get_copy = "pub"]
-    source_file: &'a Arc<SourceFile>,
-    iterator: Peekable<CharIndices<'a>>,
-}
-
-impl Iterator<'_> {
-    /// Peeks at the next character in the source file.
-    pub fn peek(&mut self) -> Option<(ByteIndex, char)> {
-        self.iterator.peek().copied()
-    }
-}
-
-impl std::iter::Iterator for Iterator<'_> {
-    type Item = (ByteIndex, char);
-
-    fn next(&mut self) -> Option<Self::Item> { self.iterator.next() }
 }
 
 fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
