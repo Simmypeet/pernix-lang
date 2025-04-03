@@ -76,7 +76,7 @@ typed-builder = "0.20.0"
 assert_cmd = "2.0.16"
 backtrace = "0.3.69"
 toml = { version = "0.8.8", features = ["display"] }
-ariadne = { version = "0.5.1", features = ["auto-color"]}
+codespan-reporting = { version = "0.11.0" }
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }

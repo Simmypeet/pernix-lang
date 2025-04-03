@@ -44,6 +44,10 @@ pub struct SourceFile {
     lines: Vec<Range<usize>>,
 }
 
+impl AsRef<str> for SourceFile {
+    fn as_ref(&self) -> &str { &self.content }
+}
+
 impl PartialOrd for SourceFile {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -247,7 +251,8 @@ impl SourceFile {
         }
     }
 
-    /// Determines in which line number the given byte index is located.
+    /// Determines in which line number the given byte index is located (0
+    /// indexed).
     #[must_use]
     pub fn get_line_of_byte_index(
         &self,
@@ -408,16 +413,6 @@ impl Span {
     }
 }
 
-impl ariadne::Span for Span {
-    type SourceId = ID<SourceFile>;
-
-    fn source(&self) -> &Self::SourceId { &self.source_id }
-
-    fn start(&self) -> usize { self.start }
-
-    fn end(&self) -> usize { self.end }
-}
-
 /// Represents an element that is located within a source file.
 pub trait SourceElement {
     /// Gets the span location of the element.
@@ -515,6 +510,76 @@ impl Map {
                 Ok(id)
             }
         }
+    }
+}
+
+impl<'a> codespan_reporting::files::Files<'a> for Map {
+    type FileId = ID<SourceFile>;
+    type Name = std::path::Display<'a>;
+    type Source = &'a str;
+
+    fn name(
+        &'a self,
+        id: Self::FileId,
+    ) -> Result<Self::Name, codespan_reporting::files::Error> {
+        let source = self
+            .arena
+            .get(id)
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        Ok(source.full_path.display())
+    }
+
+    fn source(
+        &'a self,
+        id: Self::FileId,
+    ) -> Result<Self::Source, codespan_reporting::files::Error> {
+        let source = self
+            .arena
+            .get(id)
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        Ok(source.content())
+    }
+
+    fn line_index(
+        &'a self,
+        id: Self::FileId,
+        byte_index: usize,
+    ) -> Result<usize, codespan_reporting::files::Error> {
+        let source = self
+            .arena
+            .get(id)
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        let line = source.get_line_of_byte_index(byte_index).ok_or(
+            codespan_reporting::files::Error::IndexTooLarge {
+                given: byte_index,
+                max: source.content().len(),
+            },
+        )?;
+
+        Ok(line)
+    }
+
+    fn line_range(
+        &'a self,
+        id: Self::FileId,
+        line_index: usize,
+    ) -> Result<Range<usize>, codespan_reporting::files::Error> {
+        let source = self
+            .arena
+            .get(id)
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        let line_range = source.lines.get(line_index).ok_or(
+            codespan_reporting::files::Error::IndexTooLarge {
+                given: line_index,
+                max: source.lines.len(),
+            },
+        )?;
+
+        Ok(line_range.clone())
     }
 }
 
