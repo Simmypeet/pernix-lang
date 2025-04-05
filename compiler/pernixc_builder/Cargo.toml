@@ -13,7 +13,6 @@ pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_semantic = { path = "../pernixc_semantic" }
 pernixc_handler = { path = "../pernixc_handler" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
-pernixc_log = { path = "../pernixc_log" }
 pernixc_arena = { path = "../pernixc_arena" }
 pernixc_storage = { path = "../pernixc_storage" }
 pernixc_type_system = { path = "../pernixc_type_system" }

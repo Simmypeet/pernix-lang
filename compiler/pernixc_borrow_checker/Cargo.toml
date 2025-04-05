@@ -15,7 +15,6 @@ pernixc_handler = { path = "../pernixc_handler" }
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_transitive_closure = { path = "../pernixc_transitive_closure" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
-pernixc_log = { path = "../pernixc_log" }
 pernixc_type_of = { path = "../pernixc_type_of" }
 derive_more = { workspace = true }
 enum-as-inner = { workspace = true }

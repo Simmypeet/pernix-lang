@@ -13,7 +13,6 @@ pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_type_system = { path = "../pernixc_type_system" }
 pernixc_handler = { path = "../pernixc_handler" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
-pernixc_log = { path = "../pernixc_log" }
 pernixc_abort = { path = "../pernixc_abort" }
 pernixc_type_of = { path = "../pernixc_type_of" }
 enum-as-inner = { workspace = true }

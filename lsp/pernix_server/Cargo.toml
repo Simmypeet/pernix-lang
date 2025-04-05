@@ -23,7 +23,6 @@ pernixc_diagnostic = { path = "../../compiler/pernixc_diagnostic" }
 pernixc_handler = { path = "../../compiler/pernixc_handler" }
 pernixc_lexical = { path = "../../compiler/pernixc_lexical" }
 pernixc_syntax = { path = "../../compiler/pernixc_syntax" }
-pernixc_log = { path = "../../compiler/pernixc_log" }
 pernixc_semantic = { path = "../../compiler/pernixc_semantic" }
 pernixc_builder = { path = "../../compiler/pernixc_builder" }
 

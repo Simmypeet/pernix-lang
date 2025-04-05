@@ -13,7 +13,6 @@ pernixc_type_system = { path = "../pernixc_type_system" }
 pernixc_abort = { path = "../pernixc_abort" }
 pernixc_arena = { path = "../pernixc_arena" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
-pernixc_log = { path = "../pernixc_log" }
 pernixc_type_of = { path = "../pernixc_type_of" }
 inkwell = { workspace = true }
 derive-new = { workspace = true }

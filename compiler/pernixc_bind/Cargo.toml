@@ -16,7 +16,6 @@ pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_type_system = { path = "../pernixc_type_system" }
 pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
-pernixc_log = { path = "../pernixc_log" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 pernixc_type_of = { path = "../pernixc_type_of" }
 drain_filter_polyfill = { workspace = true }

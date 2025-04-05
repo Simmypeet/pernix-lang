@@ -12,7 +12,6 @@ rust-version.workspace = true
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
 pernixc_handler = { path = "../pernixc_handler" }
-pernixc_log = { path = "../pernixc_log" }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
