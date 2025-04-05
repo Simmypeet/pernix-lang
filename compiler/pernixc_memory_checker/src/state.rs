@@ -28,7 +28,7 @@ use pernixc_semantic::{
         Model, Symbol,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 /// Contains the state of each field in the struct.
@@ -92,7 +92,7 @@ pub enum Projection {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uninitialized {
     /// The span that last moved the value.
-    latest_accessor: Option<Span>,
+    latest_accessor: Option<GlobalSpan>,
 
     /// Used to determine the order of moves. The higher the version, the
     /// later/newer the move.
@@ -101,7 +101,7 @@ pub struct Uninitialized {
 
 impl Uninitialized {
     /// Returns the latest accessor that moved the value.
-    pub const fn latest_accessor(&self) -> Option<&Span> {
+    pub const fn latest_accessor(&self) -> Option<&GlobalSpan> {
         self.latest_accessor.as_ref()
     }
 }
@@ -127,7 +127,7 @@ pub enum State {
 
 fn try_simplify_to_uninitialized<'a>(
     iterator: impl IntoIterator<Item = &'a State>,
-) -> Option<(&'a Span, usize)> {
+) -> Option<(&'a GlobalSpan, usize)> {
     let mut iterator = iterator.into_iter();
 
     let mut current = iterator
@@ -159,7 +159,7 @@ fn try_simplify_to_uninitialized<'a>(
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 enum LatestLoad<'a> {
     Uninitialized,
-    Moved(&'a Span, usize),
+    Moved(&'a GlobalSpan, usize),
 }
 
 /// Summary of the state.
@@ -172,7 +172,7 @@ pub enum Summary {
     Uninitialized,
 
     /// The value has been moved out by some instructions
-    Moved(Span),
+    Moved(GlobalSpan),
 }
 
 /// Two memory contains the projection that aren't copmatible.
@@ -704,13 +704,13 @@ impl State {
 
     /// Returns `Some` with the register that move, if there's a moved out value
     /// in a mutable reference.
-    pub fn get_moved_out_mutable_reference(&self) -> Option<&Span> {
+    pub fn get_moved_out_mutable_reference(&self) -> Option<&GlobalSpan> {
         self.get_moved_out_mutable_reference_internal().map(|x| x.0)
     }
 
     fn get_moved_out_mutable_reference_internal(
         &self,
-    ) -> Option<(&Span, usize)> {
+    ) -> Option<(&GlobalSpan, usize)> {
         match self {
             Self::Total(_) => None,
 
@@ -1047,7 +1047,7 @@ impl Scope {
     pub fn set_uninitialized(
         &mut self,
         address: &Address<model::Model>,
-        load_span: Span,
+        load_span: GlobalSpan,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<SetStateSucceeded, Abort> {
@@ -1088,7 +1088,7 @@ impl Scope {
     pub fn set_initialized(
         &mut self,
         address: &Address<model::Model>,
-        set_span: Span,
+        set_span: GlobalSpan,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<SetStateSucceeded, Abort> {
@@ -1188,7 +1188,7 @@ impl Scope {
     fn set_state_internal(
         &mut self,
         address: &Address<model::Model>,
-        set_span: Span,
+        set_span: GlobalSpan,
         set_initialized: bool,
         root: bool,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
@@ -1590,7 +1590,7 @@ impl Stack {
     pub fn set_initialized(
         &mut self,
         address: &Address<model::Model>,
-        span: Span,
+        span: GlobalSpan,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<SetStateSucceeded, Abort> {
@@ -1626,7 +1626,7 @@ impl Stack {
     pub fn set_uninitialized(
         &mut self,
         address: &Address<model::Model>,
-        move_span: Span,
+        move_span: GlobalSpan,
         environment: &Environment<model::Model, impl Normalizer<model::Model>>,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<SetStateSucceeded, Abort> {

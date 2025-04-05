@@ -19,7 +19,7 @@ use pernixc_semantic::{
         ModelOf,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 use crate::{
     local_region_generator::LocalRegionGenerator, LocalRegionID,
@@ -89,7 +89,7 @@ impl Transform<Lifetime<IRModel>> for ToBorrowTransformer {
     fn inspect(
         &mut self,
         _: &Lifetime<IRModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -97,7 +97,7 @@ impl Transform<Lifetime<IRModel>> for ToBorrowTransformer {
     fn transform(
         &mut self,
         term: Lifetime<IRModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<Lifetime<BorrowModel>, Self::Error> {
         Ok(match term {
             Lifetime::Static => Lifetime::Static,
@@ -120,7 +120,7 @@ impl Transform<Type<IRModel>> for ToBorrowTransformer {
     fn inspect(
         &mut self,
         _: &Type<IRModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -128,7 +128,7 @@ impl Transform<Type<IRModel>> for ToBorrowTransformer {
     fn transform(
         &mut self,
         term: Type<IRModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<Type<BorrowModel>, Self::Error> {
         let mut ty: Type<BorrowModel> = Type::from_other_model(term);
         let mut visitor =
@@ -148,7 +148,7 @@ impl Transform<Constant<IRModel>> for ToBorrowTransformer {
     fn inspect(
         &mut self,
         _: &Constant<IRModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -156,7 +156,7 @@ impl Transform<Constant<IRModel>> for ToBorrowTransformer {
     fn transform(
         &mut self,
         term: Constant<IRModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<Constant<BorrowModel>, Self::Error> {
         // constant should've no lifetime, but here we are doing it anyway
         let mut constant = Constant::from_other_model(term);
@@ -180,7 +180,7 @@ impl Transform<Lifetime<BorrowModel>> for ToIRTransofmer {
     fn inspect(
         &mut self,
         _: &Lifetime<BorrowModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -188,7 +188,7 @@ impl Transform<Lifetime<BorrowModel>> for ToIRTransofmer {
     fn transform(
         &mut self,
         term: Lifetime<BorrowModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<Lifetime<IRModel>, Self::Error> {
         Ok(Lifetime::from_other_model(term))
     }
@@ -202,7 +202,7 @@ impl Transform<Type<BorrowModel>> for ToIRTransofmer {
     fn inspect(
         &mut self,
         _: &Type<BorrowModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -210,7 +210,7 @@ impl Transform<Type<BorrowModel>> for ToIRTransofmer {
     fn transform(
         &mut self,
         term: Type<BorrowModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<Type<IRModel>, Self::Error> {
         Ok(Type::from_other_model(term))
     }
@@ -224,7 +224,7 @@ impl Transform<Constant<BorrowModel>> for ToIRTransofmer {
     fn inspect(
         &mut self,
         _: &Constant<BorrowModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -232,7 +232,7 @@ impl Transform<Constant<BorrowModel>> for ToIRTransofmer {
     fn transform(
         &mut self,
         term: Constant<BorrowModel>,
-        _: Option<&Span>,
+        _: Option<&GlobalSpan>,
     ) -> Result<Constant<IRModel>, Self::Error> {
         Ok(Constant::from_other_model(term))
     }

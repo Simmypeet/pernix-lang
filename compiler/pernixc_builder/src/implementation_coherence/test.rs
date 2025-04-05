@@ -19,7 +19,7 @@ use pernixc_semantic::{
         Default,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_type_system::diagnostic::UnsatisfiedPredicate;
 
 use crate::{
@@ -129,7 +129,7 @@ fn check_instantiation_requirements_of_implemented() {
     );
 
     assert_eq!(
-        error.predicate_declaration_span.as_ref().map(Span::str),
+        error.predicate_declaration_span.as_ref().map(GlobalSpan::str),
         Some("'a")
     );
 }
@@ -534,7 +534,7 @@ fn implemented_predicate_check() {
         .as_any()
         .downcast_ref::<UnsatisfiedPredicate<Default>>()
         .is_some_and(|x| {
-            x.predicate_declaration_span.as_ref().map(Span::str)
+            x.predicate_declaration_span.as_ref().map(GlobalSpan::str)
                 == Some("Require[U]")
                 && x.predicate == expected_trait
         })));
@@ -543,7 +543,7 @@ fn implemented_predicate_check() {
         .as_any()
         .downcast_ref::<UnsatisfiedPredicate<Default>>()
         .is_some_and(|x| {
-            x.predicate_declaration_span.as_ref().map(Span::str) == Some("'d")
+            x.predicate_declaration_span.as_ref().map(GlobalSpan::str) == Some("'d")
                 && x.predicate == expected_outlives
         })));
 }

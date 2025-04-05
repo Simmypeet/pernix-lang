@@ -6,13 +6,13 @@ use pernixc_semantic::{
     component::{derived::generic_parameters::GenericKind, input::SymbolKind},
     table::{GlobalID, Table},
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 /// The lifetime parameter was not found in the given scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LifetimeParameterNotFound {
     /// The span where the lifetime parameter was referred from.
-    pub referred_span: Span,
+    pub referred_span: GlobalSpan,
 
     /// The [`GlobalID`] where the referenced occurred from.
     pub referring_site: GlobalID,
@@ -41,7 +41,7 @@ impl Report<&Table> for LifetimeParameterNotFound {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnexpectedInference {
     /// Span where the inference term was found.
-    pub unexpected_span: Span,
+    pub unexpected_span: GlobalSpan,
 
     /// The kind of the inference term.
     pub generic_kind: GenericKind,
@@ -69,7 +69,7 @@ impl Report<&Table> for UnexpectedInference {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoreThanOneUnpackedInTupleType {
     /// The span where the illegal tuple type was found.
-    pub illegal_tuple_type_span: Span,
+    pub illegal_tuple_type_span: GlobalSpan,
 }
 
 impl Report<&Table> for MoreThanOneUnpackedInTupleType {
@@ -89,7 +89,7 @@ impl Report<&Table> for MoreThanOneUnpackedInTupleType {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectType {
     /// The span where the non-type symbol was found.
-    pub non_type_symbol_span: Span,
+    pub non_type_symbol_span: GlobalSpan,
 
     /// The [`GlobalID`] where the non-type symbol was found.
     pub resolved_global_id: GlobalID,
@@ -120,7 +120,7 @@ pub struct MismatchedGenericArgumentCount {
     pub generic_kind: GenericKind,
 
     /// Span where mismatch occurred.
-    pub generic_identifier_span: Span,
+    pub generic_identifier_span: GlobalSpan,
 
     /// Expected count of generic arguments.
     pub expected_count: usize,
@@ -157,7 +157,7 @@ pub struct MisorderedGenericArgument {
     pub generic_kind: GenericKind,
 
     /// The span of the generic argument.
-    pub generic_argument: Span,
+    pub generic_argument: GlobalSpan,
 }
 
 impl Report<&Table> for MisorderedGenericArgument {

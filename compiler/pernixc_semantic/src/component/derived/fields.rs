@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -28,7 +28,7 @@ pub struct Field {
 
     /// Location of where the field is declared.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// A **persistent-derived** component storing the fields of a struct.

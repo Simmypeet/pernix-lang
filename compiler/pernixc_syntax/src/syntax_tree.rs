@@ -11,7 +11,7 @@ use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 use r#type::Type;
 
 use crate::{
@@ -134,7 +134,7 @@ pub struct EnclosedTree<T> {
 }
 
 impl<T> SourceElement for EnclosedTree<T> {
-    fn span(&self) -> Span { self.open.span().join(&self.close.span()) }
+    fn span(&self) -> GlobalSpan { self.open.span().join(&self.close.span()) }
 }
 
 /// Represents a syntax tree node with a pattern of syntax tree nodes separated
@@ -163,7 +163,7 @@ pub struct ConnectedList<Element, Separator> {
 impl<Element: SourceElement, Separator: SourceElement> SourceElement
     for ConnectedList<Element, Separator>
 {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let end = self.trailing_separator.as_ref().map_or_else(
             || {
                 self.rest.last().map_or_else(
@@ -300,7 +300,7 @@ pub struct EnclosedConnectedList<Element, Separator> {
 impl<Element, Separator> SourceElement
     for EnclosedConnectedList<Element, Separator>
 {
-    fn span(&self) -> Span { self.open.span().join(&self.close.span()) }
+    fn span(&self) -> GlobalSpan { self.open.span().join(&self.close.span()) }
 }
 
 /// Created by the [`ParseExt::enclosed_connected_list`] method.
@@ -455,7 +455,7 @@ impl SyntaxTree for AccessModifier {
 }
 
 impl SourceElement for AccessModifier {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Public(k) | Self::Private(k) | Self::Internal(k) => {
                 k.span.clone()
@@ -483,7 +483,7 @@ impl SyntaxTree for ScopeSeparator {
 }
 
 impl SourceElement for ScopeSeparator {
-    fn span(&self) -> Span { self.first.span.join(&self.second.span) }
+    fn span(&self) -> GlobalSpan { self.first.span.join(&self.second.span) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -508,7 +508,7 @@ impl SyntaxTree for Elided {
 }
 
 impl SourceElement for Elided {
-    fn span(&self) -> Span { self.first_dot.span.join(&self.second_dot.span) }
+    fn span(&self) -> GlobalSpan { self.first_dot.span.join(&self.second_dot.span) }
 }
 
 #[derive(
@@ -530,7 +530,7 @@ pub enum LifetimeIdentifier {
 }
 
 impl SourceElement for LifetimeIdentifier {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Identifier(ident) => ident.span.clone(),
             Self::Static(keyword) => keyword.span.clone(),
@@ -561,7 +561,7 @@ pub struct Lifetime {
 }
 
 impl SourceElement for Lifetime {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.apostrophe.span.join(&self.identifier.span())
     }
 }
@@ -599,7 +599,7 @@ impl SyntaxTree for Constant {
 }
 
 impl SourceElement for Constant {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Expression(expr) => expr.span(),
             Self::Elided(elided) => elided.span(),
@@ -653,7 +653,7 @@ impl SyntaxTree for GenericArgument {
 }
 
 impl SourceElement for GenericArgument {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Type(type_specifier) => type_specifier.span(),
             Self::Lifetime(lifetime_argument) => lifetime_argument.span(),
@@ -698,7 +698,7 @@ impl SyntaxTree for GenericIdentifier {
 }
 
 impl SourceElement for GenericIdentifier {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.generic_arguments.as_ref().map_or_else(
             || self.identifier.span(),
             |generic_arguments| {
@@ -729,7 +729,7 @@ impl SyntaxTree for LifetimeParameter {
 }
 
 impl SourceElement for LifetimeParameter {
-    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span) }
+    fn span(&self) -> GlobalSpan { self.apostrophe.span.join(&self.identifier.span) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -753,7 +753,7 @@ impl SyntaxTree for SimplePathRoot {
 }
 
 impl SourceElement for SimplePathRoot {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Target(target) => target.span.clone(),
             Self::Identifier(identifier) => identifier.span.clone(),
@@ -782,7 +782,7 @@ impl SyntaxTree for SimplePath {
 }
 
 impl SourceElement for SimplePath {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.rest.last().map_or_else(
             || self.root.span(),
             |last| self.root.span().join(&last.1.span),
@@ -813,7 +813,7 @@ impl SyntaxTree for QualifiedIdentifierRoot {
 }
 
 impl SourceElement for QualifiedIdentifierRoot {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Target(keyword) | Self::This(keyword) => keyword.span.clone(),
             Self::GenericIdentifier(ident) => ident.span(),
@@ -842,7 +842,7 @@ impl SyntaxTree for QualifiedIdentifier {
 }
 
 impl SourceElement for QualifiedIdentifier {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.rest.last().map_or_else(
             || self.root.span(),
             |(_, identifier)| self.root.span().join(&identifier.span()),
@@ -871,7 +871,7 @@ impl SyntaxTree for Label {
 }
 
 impl SourceElement for Label {
-    fn span(&self) -> Span { self.apostrophe.span.join(&self.identifier.span) }
+    fn span(&self) -> GlobalSpan { self.apostrophe.span.join(&self.identifier.span) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -896,7 +896,7 @@ impl SyntaxTree for ReferenceOf {
 }
 
 impl SourceElement for ReferenceOf {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.mutable_keyword.as_ref().map_or_else(
             || self.ampersand.span(),
             |keyword| self.ampersand.span().join(&keyword.span()),
@@ -928,7 +928,7 @@ impl<T> UnionList<T> {
 }
 
 impl<T: SourceElement> SourceElement for UnionList<T> {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let first = self.first.span();
         match self.rest.last() {
             Some(last) => first.join(&last.1.span()),

@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::HashMap, num::NonZero};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::{Key, ID};
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -167,7 +167,7 @@ pub struct Return<M: term::Model> {
 
     /// The span where the return instruction is generated.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents an assignment of a register.
@@ -204,7 +204,7 @@ pub struct Store<M: term::Model> {
 
     /// The span where the store instruction is generated.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// An instructions that packs the unpacked elements of a tuple into a packed
@@ -271,7 +271,7 @@ pub struct TuplePack<M: term::Model> {
 
     /// The span to the packed tuple pattern.
     #[serde(skip)]
-    pub packed_tuple_span: Option<Span>,
+    pub packed_tuple_span: Option<GlobalSpan>,
 }
 
 /// An instruction that pushes a new scope onto the scope stack.
@@ -483,7 +483,7 @@ pub struct Read {
     pub qualifier: Qualifier,
 
     /// The span where the read access is made.
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents how a particular address is accessed in an instruction.
@@ -493,13 +493,13 @@ pub enum AccessMode {
     Read(Read),
 
     /// The address is written to.
-    Write(Option<Span>),
+    Write(Option<GlobalSpan>),
 }
 
 impl AccessMode {
     /// Gets the span where the access is made.
     #[must_use]
-    pub const fn span(&self) -> Option<&Span> {
+    pub const fn span(&self) -> Option<&GlobalSpan> {
         match self {
             Self::Read(read) => read.span.as_ref(),
             Self::Write(span) => span.as_ref(),
@@ -508,7 +508,7 @@ impl AccessMode {
 
     /// Converts the access mode to a span.
     #[must_use]
-    pub fn into_span(self) -> Option<Span> {
+    pub fn into_span(self) -> Option<GlobalSpan> {
         match self {
             Self::Read(read) => read.span,
             Self::Write(span) => span,

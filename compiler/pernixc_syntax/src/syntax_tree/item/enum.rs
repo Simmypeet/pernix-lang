@@ -3,7 +3,7 @@ use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use super::{generic_parameter::GenericParameters, Body};
 use crate::{
@@ -46,7 +46,7 @@ impl SyntaxTree for Signature {
 }
 
 impl SourceElement for Signature {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.enum_keyword.span.join(&self.identifier.span)
     }
 }
@@ -88,7 +88,7 @@ impl SyntaxTree for Variant {
 }
 
 impl SourceElement for Variant {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let end = self
             .association
             .as_ref()
@@ -121,7 +121,7 @@ impl SyntaxTree for Enum {
 }
 
 impl SourceElement for Enum {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.access_modifier.span().join(&self.body.span())
     }
 }

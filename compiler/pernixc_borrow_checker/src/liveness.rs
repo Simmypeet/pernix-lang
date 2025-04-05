@@ -32,7 +32,7 @@ use pernixc_semantic::{
         Model as _, Symbol,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::{
@@ -206,7 +206,7 @@ impl Assigned {
         address: &Address<M>,
         root_ty: Type<M>,
         environment: &Environment<M, impl Normalizer<M>>,
-        access_span: Span,
+        access_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<bool, Abort> {
         Ok(self
@@ -229,7 +229,7 @@ impl Assigned {
         root_ty: Type<M>,
         root: bool,
         environment: &Environment<M, impl Normalizer<M>>,
-        access_span: Span,
+        access_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<SetAssignedResultInternal<M>, Abort> {
         // no more work to do

@@ -3,7 +3,7 @@
 use std::convert::Infallible;
 
 use pernixc_abort::Abort;
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -248,7 +248,7 @@ pub trait Transform<T: ModelOf> {
     fn inspect(
         &mut self,
         term: &T,
-        span: Option<&Span>,
+        span: Option<&GlobalSpan>,
     ) -> Result<(), Self::Error>;
 
     /// Transforms the term.
@@ -256,7 +256,7 @@ pub trait Transform<T: ModelOf> {
     fn transform(
         &mut self,
         term: T,
-        span: Option<&Span>,
+        span: Option<&GlobalSpan>,
     ) -> Result<T::Rebind<Self::Target>, Self::Error>;
 
     /// Inspects and transforms the term.
@@ -264,7 +264,7 @@ pub trait Transform<T: ModelOf> {
     fn inspect_and_transform(
         &mut self,
         term: T,
-        span: Option<&Span>,
+        span: Option<&GlobalSpan>,
     ) -> Result<T::Rebind<Self::Target>, Self::Error> {
         self.inspect(&term, span)?;
         self.transform(term, span)

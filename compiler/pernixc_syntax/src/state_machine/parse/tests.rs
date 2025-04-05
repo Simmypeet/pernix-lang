@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pernixc_handler::{Handler, Storage};
 use pernixc_lexical::{
-    token::{Keyword, KeywordKind, Punctuation, Token},
+    token::{Keyword, KeywordKind, Kind, Punctuation},
     token_stream::{DelimiterKind, TokenStream, Tree},
 };
 use pernixc_source_file::SourceFile;
@@ -190,7 +190,7 @@ fn step_into_dont_take_all() {
 
     assert!(matches!(
         error.found(),
-        Found::Token(Token::Punctuation(Punctuation { punctuation: ';', .. }))
+        Found::Token(Kind::Punctuation(Punctuation { punctuation: ';', .. }))
     ));
 
     assert_eq!(*expected, ']'.into());

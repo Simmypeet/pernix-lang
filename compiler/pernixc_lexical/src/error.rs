@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 use crate::token_stream::DelimiterKind;
 
@@ -14,7 +14,7 @@ use crate::token_stream::DelimiterKind;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct UnterminatedDelimitedComment {
     /// The span of the unclosed `/*` that starts the comment.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl Report<()> for UnterminatedDelimitedComment {
@@ -34,7 +34,7 @@ impl Report<()> for UnterminatedDelimitedComment {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct UndelimitedDelimiter {
     /// The span of the opening delimiter.
-    pub opening_span: Span,
+    pub opening_span: GlobalSpan,
 
     /// The kind of the delimiter.
     pub delimiter: DelimiterKind,
@@ -60,7 +60,7 @@ impl Report<()> for UndelimitedDelimiter {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct UnterminatedStringLiteral {
     /// The span of the unclosed double quote that starts the string literal.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl Report<()> for UnterminatedStringLiteral {
@@ -79,7 +79,7 @@ impl Report<()> for UnterminatedStringLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct InvalidEscapeSequence {
     /// The span of the invalid escape sequence (including the backslash).
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl Report<()> for InvalidEscapeSequence {
@@ -98,7 +98,7 @@ impl Report<()> for InvalidEscapeSequence {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct InvalidIndentation {
     /// The span of the invalid indentation.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl Report<()> for InvalidIndentation {
@@ -117,7 +117,7 @@ impl Report<()> for InvalidIndentation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
 pub struct InvalidNewIndentationLevel {
     /// The span of the invalid new indentation level.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl Report<()> for InvalidNewIndentationLevel {
@@ -152,7 +152,7 @@ pub enum Error {
 impl Error {
     /// Gets the span where the error occurred.
     #[must_use]
-    pub const fn span(&self) -> &Span {
+    pub const fn span(&self) -> &GlobalSpan {
         match self {
             Self::UnterminatedDelimitedComment(err) => &err.span,
             Self::UndelimitedDelimiter(err) => &err.opening_span,

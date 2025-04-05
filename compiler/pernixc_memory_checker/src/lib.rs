@@ -36,7 +36,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
     environment::{Environment as TyEnvironment, GetActivePremiseExt},
@@ -51,7 +51,7 @@ pub(crate) mod state;
 
 fn handle_store(
     store_address: &Address<model::Model>,
-    store_span: Span,
+    store_span: GlobalSpan,
     stack: &mut Stack,
     ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -85,7 +85,7 @@ fn handle_store(
 
 fn handle_borrow(
     borrow: &Borrow<model::Model>,
-    register_span: Span,
+    register_span: GlobalSpan,
     stack: &mut Stack,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
@@ -112,7 +112,7 @@ fn handle_borrow(
 fn handle_load(
     values: &Values<model::Model>,
     load: &Load<model::Model>,
-    register_span: Span,
+    register_span: GlobalSpan,
     stack: &mut Stack,
     current_site: GlobalID,
     ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,

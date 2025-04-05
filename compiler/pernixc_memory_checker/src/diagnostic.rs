@@ -3,17 +3,17 @@
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_semantic::table::Table;
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 /// The value behind the mutable reference has been moved out and needs to be
 /// restored.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MovedOutValueFromMutableReference {
     /// The span of the moved out value.
-    pub moved_out_value_span: Span,
+    pub moved_out_value_span: GlobalSpan,
 
     /// The span of the mutable reference.
-    pub reassignment_span: Option<Span>,
+    pub reassignment_span: Option<GlobalSpan>,
 }
 
 impl Report<&Table> for MovedOutValueFromMutableReference {
@@ -44,7 +44,7 @@ impl Report<&Table> for MovedOutValueFromMutableReference {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UseBeforeInitialization {
     /// The span where the value is used.
-    pub use_span: Span,
+    pub use_span: GlobalSpan,
 }
 
 impl Report<&Table> for UseBeforeInitialization {
@@ -64,10 +64,10 @@ impl Report<&Table> for UseBeforeInitialization {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UseAfterMove {
     /// The span where the value is used.
-    pub use_span: Span,
+    pub use_span: GlobalSpan,
 
     /// The span where the value is moved.
-    pub move_span: Span,
+    pub move_span: GlobalSpan,
 }
 
 impl Report<&Table> for UseAfterMove {
@@ -90,7 +90,7 @@ impl Report<&Table> for UseAfterMove {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoveInLoop {
     /// The span of the moved value.
-    pub moved_value_span: Span,
+    pub moved_value_span: GlobalSpan,
 }
 
 impl Report<&Table> for MoveInLoop {

@@ -40,7 +40,7 @@ use pernixc_semantic::{
         Model, ModelOf,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_transitive_closure::TransitiveClosure;
 use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
@@ -208,7 +208,7 @@ impl RegionChangeLog {
 pub struct Intermediate {
     /// The accumulated subset relations between regions since the beginning
     /// of the control flow graph.
-    subset_relations: HashSet<(RegionAt, RegionAt, Option<Span>)>,
+    subset_relations: HashSet<(RegionAt, RegionAt, Option<GlobalSpan>)>,
 
     /// Represents the [`Borrow`] register assignment created so far.
     ///
@@ -273,7 +273,7 @@ impl<N: Normalizer<BorrowModel>> Clone for Builder<'_, N> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Changes {
     /// Creates a new subset relation between two regions.
-    subset_relations: HashSet<(Region, Region, Span)>,
+    subset_relations: HashSet<(Region, Region, GlobalSpan)>,
 
     /// The borrow is created at the given region.
     borrow_created: Option<(ID<Register<BorrowModel>>, LocalRegionID)>,
@@ -298,7 +298,7 @@ pub struct Changes {
 pub(super) fn get_changes_of_struct(
     values: &Values<BorrowModel>,
     struct_lit: &Struct<BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -406,7 +406,7 @@ pub(super) fn get_changes_of_struct(
 pub(super) fn get_changes_of_phi(
     values: &Values<BorrowModel>,
     phi: &Phi<BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -482,7 +482,7 @@ pub(super) fn get_changes_of_phi(
 pub(super) fn get_changes_of_array(
     values: &Values<BorrowModel>,
     array: &Array<BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -555,7 +555,7 @@ pub(super) fn get_changes_of_array(
 pub(super) fn get_changes_of_variant(
     values: &Values<BorrowModel>,
     variant: &Variant<BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -660,7 +660,7 @@ pub(super) fn get_changes_of_variant(
 pub(super) fn get_changes_of_tuple(
     values: &Values<BorrowModel>,
     tuple: &Tuple<BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
 ) -> Result<Changes, Abort> {
@@ -704,7 +704,7 @@ pub(super) fn get_changes_of_tuple(
 pub(super) fn get_changes_of_function_call(
     values: &Values<BorrowModel>,
     function_call: &FunctionCall<BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -900,7 +900,7 @@ pub(super) fn get_changes_of_function_call(
 pub(super) fn get_changes_of_borrow(
     values: &Values<BorrowModel>,
     borrow: &Borrow<BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     register_id: ID<Register<BorrowModel>>,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
@@ -934,7 +934,7 @@ pub(super) fn get_changes_of_store_internal(
     values: &Values<BorrowModel>,
     store_address: &Address<BorrowModel>,
     value_type: Succeeded<Type<BorrowModel>, BorrowModel>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -2027,7 +2027,7 @@ pub struct Subset {
     transitive_closure: TransitiveClosure,
 
     #[get = "pub"]
-    direct_subset_relations: HashSet<(RegionAt, RegionAt, Option<Span>)>,
+    direct_subset_relations: HashSet<(RegionAt, RegionAt, Option<GlobalSpan>)>,
 
     #[get = "pub"]
     created_borrows:

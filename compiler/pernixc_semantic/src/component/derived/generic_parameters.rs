@@ -5,7 +5,7 @@ use std::collections::{hash_map::Entry, HashMap};
 use getset::Getters;
 use paste::paste;
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -80,7 +80,7 @@ pub trait GenericParameter: Sized + 'static {
     fn name(&self) -> &str;
 
     /// Gets the span where the generic parameter is declared.
-    fn span(&self) -> Option<&Span>;
+    fn span(&self) -> Option<&GlobalSpan>;
 
     /// Gets the kind of the generic parameter.
     fn kind() -> GenericKind;
@@ -125,13 +125,13 @@ pub struct LifetimeParameter {
 
     /// Location of where the lifetime parameter is declared.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 impl GenericParameter for LifetimeParameter {
     fn name(&self) -> &str { &self.name }
 
-    fn span(&self) -> Option<&Span> { self.span.as_ref() }
+    fn span(&self) -> Option<&GlobalSpan> { self.span.as_ref() }
 
     fn kind() -> GenericKind { GenericKind::Lifetime }
 
@@ -171,13 +171,13 @@ pub struct TypeParameter {
 
     /// The kind of the type parameter.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 impl GenericParameter for TypeParameter {
     fn name(&self) -> &str { &self.name }
 
-    fn span(&self) -> Option<&Span> { self.span.as_ref() }
+    fn span(&self) -> Option<&GlobalSpan> { self.span.as_ref() }
 
     fn kind() -> GenericKind { GenericKind::Type }
 
@@ -220,13 +220,13 @@ pub struct ConstantParameter {
 
     /// The type of the constant parameter.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 impl GenericParameter for ConstantParameter {
     fn name(&self) -> &str { &self.name }
 
-    fn span(&self) -> Option<&Span> { self.span.as_ref() }
+    fn span(&self) -> Option<&GlobalSpan> { self.span.as_ref() }
 
     fn kind() -> GenericKind { GenericKind::Constant }
 

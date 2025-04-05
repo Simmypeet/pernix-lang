@@ -1,7 +1,7 @@
 //! Contains the definition of the [`Alloca`] struct.
 
 use pernixc_arena::ID;
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -26,7 +26,7 @@ pub struct Alloca<M: term::Model> {
 
     /// The span of the allocation.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 impl<M: term::Model> Alloca<M> {

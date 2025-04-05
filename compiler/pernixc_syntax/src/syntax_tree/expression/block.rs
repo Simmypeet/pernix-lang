@@ -1,7 +1,7 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use super::{binary::Binary, Expression};
 use crate::{
@@ -45,7 +45,7 @@ impl SyntaxTree for Block {
 }
 
 impl SourceElement for Block {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Scope(syn) => syn.span(),
             Self::IfElse(syn) => syn.span(),
@@ -74,7 +74,7 @@ impl SyntaxTree for MatchArm {
 }
 
 impl SourceElement for MatchArm {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.refutable_pattern.span().join(&self.group.span())
     }
 }
@@ -100,7 +100,7 @@ impl SyntaxTree for MatchBody {
 }
 
 impl SourceElement for MatchBody {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let start = self.colon.span();
         let end = self
             .arms
@@ -138,7 +138,7 @@ impl SyntaxTree for Match {
 }
 
 impl SourceElement for Match {
-    fn span(&self) -> Span { self.match_keyword.span.join(&self.body.span()) }
+    fn span(&self) -> GlobalSpan { self.match_keyword.span.join(&self.body.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -172,7 +172,7 @@ impl SyntaxTree for Scope {
 }
 
 impl SourceElement for Scope {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let start = self
             .unsafe_keyword
             .as_ref()
@@ -209,7 +209,7 @@ impl SyntaxTree for IndentedGroup {
 }
 
 impl SourceElement for IndentedGroup {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let end = self.statements.span();
         let start = self.unsafe_keyword.as_ref().map_or_else(
             || {
@@ -242,7 +242,7 @@ impl SyntaxTree for InlineExpression {
 }
 
 impl SourceElement for InlineExpression {
-    fn span(&self) -> Span { self.colon.span().join(&self.expression.span()) }
+    fn span(&self) -> GlobalSpan { self.colon.span().join(&self.expression.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -266,7 +266,7 @@ impl SyntaxTree for Group {
 }
 
 impl SourceElement for Group {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Indented(block) => block.span(),
             Self::Inline(block) => block.span(),
@@ -293,7 +293,7 @@ impl SyntaxTree for GroupOrIfElse {
 }
 
 impl SourceElement for GroupOrIfElse {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Group(block) => block.span(),
             Self::IfElse(if_else) => if_else.span(),
@@ -322,7 +322,7 @@ impl SyntaxTree for Else {
 }
 
 impl SourceElement for Else {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.else_keyword.span().join(&self.expression.span())
     }
 }
@@ -354,7 +354,7 @@ impl SyntaxTree for IfElse {
 }
 
 impl SourceElement for IfElse {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let start = self.if_keyword.span();
         let end = self
             .else_expression
@@ -394,7 +394,7 @@ impl SyntaxTree for While {
 }
 
 impl SourceElement for While {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.while_keyword.span().join(&self.group.span())
     }
 }
@@ -418,5 +418,5 @@ impl SyntaxTree for Loop {
 }
 
 impl SourceElement for Loop {
-    fn span(&self) -> Span { self.loop_keyword.span.join(&self.group.span()) }
+    fn span(&self) -> GlobalSpan { self.loop_keyword.span.join(&self.group.span()) }
 }

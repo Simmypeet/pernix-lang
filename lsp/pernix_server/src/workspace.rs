@@ -13,7 +13,7 @@ use pernixc_lexical::{
     token,
     token_stream::{TokenStream, Tree},
 };
-use pernixc_source_file::{SourceElement, SourceFile, Span};
+use pernixc_source_file::{SourceElement, SourceFile, GlobalSpan};
 use pernixc_syntax::{
     state_machine::parse::Parse,
     syntax_tree::{
@@ -92,7 +92,7 @@ pub enum JsonConfigurationError {
         keys: Vec<&'static str>,
 
         /// The source file where the key is missing.
-        map_span: Span,
+        map_span: GlobalSpan,
     },
 
     #[error("\"rootFile\" path is invalid")]
@@ -149,7 +149,7 @@ impl JsonConfigurationError {
         &self,
         skip_parising_errors: bool,
     ) -> Option<Diagnostic> {
-        fn create_error_diagnostic(span: &Span, message: String) -> Diagnostic {
+        fn create_error_diagnostic(span: &GlobalSpan, message: String) -> Diagnostic {
             Diagnostic {
                 range: span.to_range(),
                 severity: Some(DiagnosticSeverity::ERROR),

@@ -20,7 +20,7 @@ use pernixc_semantic::{
     diagnostic::Diagnostic,
     term::r#type::{Primitive, Qualifier, Type},
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 use pernixc_syntax::syntax_tree;
 
 use super::{Bind, Config, Expression, LValue, Target};
@@ -50,7 +50,7 @@ enum BinaryNode<'a> {
 }
 
 impl SourceElement for BinaryNode<'_> {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             BinaryNode::Binary(tree) => tree.span(),
             BinaryNode::Expression(exp) => exp.span(),
@@ -65,7 +65,7 @@ struct BinaryTree<'a> {
 }
 
 impl SourceElement for BinaryTree<'_> {
-    fn span(&self) -> Span { self.left.span().join(&self.right.span()) }
+    fn span(&self) -> GlobalSpan { self.left.span().join(&self.right.span()) }
 }
 
 const fn operator_precedence(

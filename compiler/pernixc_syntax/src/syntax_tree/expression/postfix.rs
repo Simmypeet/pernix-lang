@@ -4,7 +4,7 @@ use pernixc_lexical::{
     token::{self, Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use super::{unit::Unit, Expression};
 use crate::{
@@ -28,7 +28,7 @@ pub struct Postfix {
 }
 
 impl SourceElement for Postfix {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.postfixable.span().join(&self.operator.span())
     }
 }
@@ -57,7 +57,7 @@ impl SyntaxTree for Postfixable {
 }
 
 impl SourceElement for Postfixable {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Unit(unit) => unit.span(),
             Self::Postfix(postfix) => postfix.span(),
@@ -88,7 +88,7 @@ impl SyntaxTree for PostfixOperator {
 }
 
 impl SourceElement for PostfixOperator {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Call(operator) => operator.span(),
             Self::Cast(operator) => operator.span(),
@@ -116,7 +116,7 @@ impl SyntaxTree for Call {
 }
 
 impl SourceElement for Call {
-    fn span(&self) -> Span { self.arguments.span() }
+    fn span(&self) -> GlobalSpan { self.arguments.span() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -137,7 +137,7 @@ impl SyntaxTree for Cast {
 }
 
 impl SourceElement for Cast {
-    fn span(&self) -> Span { self.as_keyword.span().join(&self.r#type.span()) }
+    fn span(&self) -> GlobalSpan { self.as_keyword.span().join(&self.r#type.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -163,7 +163,7 @@ impl SyntaxTree for AccessOperator {
 }
 
 impl SourceElement for AccessOperator {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Dot(punctuation) => punctuation.span(),
             Self::Arrow(start, end) => start.span().join(&end.span),
@@ -190,7 +190,7 @@ impl SyntaxTree for Index {
 }
 
 impl SourceElement for Index {
-    fn span(&self) -> Span { self.expression.span() }
+    fn span(&self) -> GlobalSpan { self.expression.span() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -211,7 +211,7 @@ impl SyntaxTree for TupleIndex {
 }
 
 impl SourceElement for TupleIndex {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.minus.as_ref().map_or_else(
             || self.index.span(),
             |minus| minus.span.join(&self.index.span),
@@ -251,7 +251,7 @@ impl SyntaxTree for AccessKind {
 }
 
 impl SourceElement for AccessKind {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::GenericIdentifier(identifier) => identifier.span(),
             Self::Tuple(index) => index.span(),
@@ -278,5 +278,5 @@ impl SyntaxTree for Access {
 }
 
 impl SourceElement for Access {
-    fn span(&self) -> Span { self.operator.span().join(&self.kind.span()) }
+    fn span(&self) -> GlobalSpan { self.operator.span().join(&self.kind.span()) }
 }

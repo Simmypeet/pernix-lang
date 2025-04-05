@@ -23,7 +23,7 @@ use pernixc_semantic::{
         r#type::Qualifier,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
     diagnostic::{UndecidablePredicate, UnsatisfiedPredicate},
@@ -43,7 +43,7 @@ impl<N: Normalizer<BorrowModel>> Checker<'_, N> {
     fn handle_load(
         &self,
         load: &Load<BorrowModel>,
-        register_span: &Span,
+        register_span: &GlobalSpan,
         point: Point<BorrowModel>,
     ) -> Result<(), Abort> {
         let ty = self

@@ -231,7 +231,7 @@ use pernixc_semantic::{
         ModelOf, Never,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_type_of::TypeOf;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 use serde::{Deserialize, Serialize};
@@ -445,7 +445,7 @@ impl term::Model for Model {
 fn get_dereferenced_regions_in_address(
     values: &Values<Model>,
     mut address: &Address<Model>,
-    span: &Span,
+    span: &GlobalSpan,
     current_site: GlobalID,
     environment: &Environment<Model, impl Normalizer<Model>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -502,7 +502,7 @@ fn get_dereferenced_regions_in_address(
 fn get_regions_in_address(
     values: &Values<Model>,
     mut address: &Address<Model>,
-    span: &Span,
+    span: &GlobalSpan,
     include_deref: bool,
     current_site: GlobalID,
     environment: &Environment<Model, impl Normalizer<Model>>,

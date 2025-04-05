@@ -4,7 +4,7 @@ use pernixc_lexical::{
     token::{self, Character, Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use super::Expression;
 use crate::{
@@ -57,7 +57,7 @@ impl SyntaxTree for Unit {
 }
 
 impl SourceElement for Unit {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Boolean(unit) => unit.span(),
             Self::Numeric(unit) => unit.span(),
@@ -94,7 +94,7 @@ impl SyntaxTree for Boolean {
 }
 
 impl SourceElement for Boolean {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::True(keyword) | Self::False(keyword) => keyword.span(),
         }
@@ -119,7 +119,7 @@ impl SyntaxTree for Decimal {
 }
 
 impl SourceElement for Decimal {
-    fn span(&self) -> Span { self.dot.span().join(&self.numeric.span) }
+    fn span(&self) -> GlobalSpan { self.dot.span().join(&self.numeric.span) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -148,7 +148,7 @@ impl SyntaxTree for Numeric {
 }
 
 impl SourceElement for Numeric {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let end = self.suffix.as_ref().map_or_else(
             || {
                 self.decimal.as_ref().map_or_else(
@@ -189,7 +189,7 @@ impl SyntaxTree for Unpackable {
 }
 
 impl SourceElement for Unpackable {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match &self.ellipsis {
             Some((start, ..)) => start.span().join(&self.expression.span()),
             None => self.expression.span(),
@@ -237,7 +237,7 @@ impl SyntaxTree for FieldInitializer {
 }
 
 impl SourceElement for FieldInitializer {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.identifier.span().join(&self.expression.span())
     }
 }
@@ -277,7 +277,7 @@ impl SyntaxTree for Struct {
 }
 
 impl SourceElement for Struct {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.qualified_identifier.span().join(&self.field_initializers.span())
     }
 }
@@ -301,7 +301,7 @@ impl SyntaxTree for Array {
 }
 
 impl SourceElement for Array {
-    fn span(&self) -> Span { self.arguments.span() }
+    fn span(&self) -> GlobalSpan { self.arguments.span() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -322,7 +322,7 @@ impl SyntaxTree for Phantom {
 }
 
 impl SourceElement for Phantom {
-    fn span(&self) -> Span { self.phantom_keyword.span() }
+    fn span(&self) -> GlobalSpan { self.phantom_keyword.span() }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -343,5 +343,5 @@ impl SyntaxTree for Panic {
 }
 
 impl SourceElement for Panic {
-    fn span(&self) -> Span { self.panic_keyword.span() }
+    fn span(&self) -> GlobalSpan { self.panic_keyword.span() }
 }

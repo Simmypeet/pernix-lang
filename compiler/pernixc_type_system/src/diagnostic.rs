@@ -8,7 +8,7 @@ use pernixc_semantic::{
     table::{self, DisplayObject, GlobalID, Table},
     term::{generic_arguments::GenericArguments, predicate::Predicate, Model},
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 use crate::OverflowError;
 
@@ -17,7 +17,7 @@ use crate::OverflowError;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct TypeCalculatingOverflow {
     /// The span where the overflow occurred.
-    pub overflow_span: Span,
+    pub overflow_span: GlobalSpan,
 
     /// The [`OverflowError`] that occurred.
     pub overflow_error: OverflowError,
@@ -43,7 +43,7 @@ impl Report<&Table> for TypeCalculatingOverflow {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
 pub struct TypeCheckOverflow {
     /// The span where the overflow occurred.
-    pub overflow_span: Span,
+    pub overflow_span: GlobalSpan,
 
     /// The [`OverflowError`] that occurred.
     pub overflow_error: OverflowError,
@@ -73,10 +73,10 @@ pub struct UndecidablePredicate<M: Model> {
     pub predicate: Predicate<M>,
 
     /// The span where the where clause predicate was declared.
-    pub predicate_declaration_span: Option<Span>,
+    pub predicate_declaration_span: Option<GlobalSpan>,
 
     /// The span of the instantiation that causes the bound check.
-    pub instantiation_span: Span,
+    pub instantiation_span: GlobalSpan,
 
     /// The overflow error that occurred.
     pub overflow_error: OverflowError,
@@ -119,10 +119,10 @@ pub struct UnsatisfiedPredicate<M: Model> {
     pub predicate: Predicate<M>,
 
     /// The span of the instantiation that causes the bound check.
-    pub instantiation_span: Span,
+    pub instantiation_span: GlobalSpan,
 
     /// The span of the predicate declaration.
-    pub predicate_declaration_span: Option<Span>,
+    pub predicate_declaration_span: Option<GlobalSpan>,
 }
 
 impl<M: Model> Report<&Table> for UnsatisfiedPredicate<M>
@@ -162,10 +162,10 @@ pub struct ImplementationIsNotGeneralEnough<M: Model> {
     pub generic_arguments: GenericArguments<M>,
 
     /// The span where the trait predicate was declared.
-    pub predicate_declaration_span: Option<Span>,
+    pub predicate_declaration_span: Option<GlobalSpan>,
 
     /// The span of the instantiation that cuases the error
-    pub instantiation_span: Span,
+    pub instantiation_span: GlobalSpan,
 }
 
 impl<M: Model> Report<&Table> for ImplementationIsNotGeneralEnough<M>

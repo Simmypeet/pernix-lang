@@ -9,7 +9,7 @@ pub trait SpanExt {
     fn to_range(&self) -> tower_lsp::lsp_types::Range;
 }
 
-impl SpanExt for pernixc_source_file::Span {
+impl SpanExt for pernixc_source_file::GlobalSpan {
     #[allow(clippy::cast_possible_truncation)]
     fn to_range(&self) -> tower_lsp::lsp_types::Range {
         let start = self.start_location().map_or_else(

@@ -18,7 +18,7 @@ use pernixc_semantic::{
         predicate::{Outlives, Predicate},
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_type_system::diagnostic::{
     ImplementationIsNotGeneralEnough, UnsatisfiedPredicate,
 };
@@ -52,7 +52,7 @@ fn variable_does_not_live_long_enough() {
 
     assert_eq!(error.variable_span.str(), "inner");
     assert_eq!(error.borrow_span.str(), "&inner");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*ref"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*ref"));
 }
 
 const MOVED_OUT_WHILE_BORROWED: &str = r"
@@ -137,7 +137,7 @@ fn invariant_lifetime() {
 
     assert_eq!(error.variable_span.str(), "inner");
     assert_eq!(error.borrow_span.str(), "&inner");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*ref"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*ref"));
 }
 
 const MUTABLY_ACCESS_WHILE_BORROWED: &str = r"
@@ -166,11 +166,11 @@ fn mutably_access_while_borrowed() {
         .unwrap();
 
     assert_eq!(
-        error.immutable_borrow_span.as_ref().map(Span::str),
+        error.immutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&number")
     );
     assert_eq!(error.mutable_access_span.str(), "number = 2");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*numberRef"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*numberRef"));
 }
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_LOOP: &str = r"
@@ -199,7 +199,7 @@ fn variable_does_not_live_long_enough_in_loop() {
 
     assert_eq!(error.variable_span.str(), "inner");
     assert_eq!(error.borrow_span.str(), "&inner");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*numberRef"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*numberRef"));
 }
 
 const VARIABLE_DOES_NOT_LIVE_LONG_ENOUGH_IN_INNER_LOOP: &str = r"
@@ -232,7 +232,7 @@ fn variable_does_not_live_long_enough_in_inner_loop() {
         .is_some_and(|x| {
             x.variable_span.str() == "inner"
                 && x.borrow_span.str() == "&inner"
-                && x.usage.as_local().map(Span::str) == Some("*numberRef")
+                && x.usage.as_local().map(GlobalSpan::str) == Some("*numberRef")
         })));
 
     assert!(errs.iter().any(|x| x
@@ -241,7 +241,7 @@ fn variable_does_not_live_long_enough_in_inner_loop() {
         .is_some_and(|x| {
             x.variable_span.str() == "innerInner"
                 && x.borrow_span.str() == "&innerInner"
-                && x.usage.as_local().map(Span::str) == Some("*numberRef")
+                && x.usage.as_local().map(GlobalSpan::str) == Some("*numberRef")
         })));
 }
 
@@ -299,12 +299,12 @@ fn mutably_access_more_than_once_in_function() {
         &errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut number")
     );
     assert_eq!(error.access_span.str(), "&mut number");
     assert_eq!(
-        error.borrow_usage.as_local().map(Span::str),
+        error.borrow_usage.as_local().map(GlobalSpan::str),
         Some("Vector::push(&mut vector,  &mut number)")
     );
 }
@@ -347,11 +347,11 @@ fn mutably_access_more_than_once_in_function_with_variable() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut number")
     );
     assert_eq!(error.access_span.str(), "&mut number");
-    assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("v"));
+    assert_eq!(error.borrow_usage.as_local().map(GlobalSpan::str), Some("v"));
 }
 
 const AN_ALIASED_FORMULATION: &str = r"
@@ -390,9 +390,9 @@ fn an_aliased_formulation() {
         .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
         .unwrap();
 
-    assert_eq!(error.immutable_borrow_span.as_ref().map(Span::str), Some("&x"));
+    assert_eq!(error.immutable_borrow_span.as_ref().map(GlobalSpan::str), Some("&x"));
     assert_eq!(error.mutable_access_span.str(), "x += 1");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("v"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("v"));
 }
 
 // the test case is lifted from
@@ -429,9 +429,9 @@ fn polonius_one_example() {
         .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
         .unwrap();
 
-    assert_eq!(error.immutable_borrow_span.as_ref().map(Span::str), Some("&y"));
+    assert_eq!(error.immutable_borrow_span.as_ref().map(GlobalSpan::str), Some("&y"));
     assert_eq!(error.mutable_access_span.str(), "y += 1");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*p"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*p"));
 }
 
 const STRUCT_INFERENCE_NO_ERROR: &str = r"
@@ -501,11 +501,11 @@ fn struct_inference_with_error() {
         .unwrap();
 
     assert_eq!(
-        error.immutable_borrow_span.as_ref().map(Span::str),
+        error.immutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&outer")
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*pair.first"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*pair.first"));
 }
 
 const STRUCT_INFERENCE_WITH_LIFETIME_FLOW: &str = r"
@@ -552,11 +552,11 @@ fn struct_inference_with_lifetime_flow() {
         .unwrap();
 
     assert_eq!(
-        error.immutable_borrow_span.as_ref().map(Span::str),
+        error.immutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&outer")
     );
     assert_eq!(error.mutable_access_span.str(), "outer = 32");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*pair.second"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*pair.second"));
 }
 
 const USE_MUTABLE_REF_TWICE: &str = r"
@@ -714,7 +714,7 @@ fn invalidated_universal_regions() {
     let b_id = generic_params.lifetime_parameter_ids_by_name()["b"];
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut *number")
     );
     assert_eq!(error.access_span.str(), "*number");
@@ -849,14 +849,14 @@ fn register_use_invalidated_lifetimes() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut *ref")
     );
 
     assert_eq!(error.access_span.str(), "&mut *ref");
 
     assert_eq!(
-        error.borrow_usage.as_local().map(Span::str),
+        error.borrow_usage.as_local().map(GlobalSpan::str),
         Some("(&mut *ref, &mut *ref)")
     );
 }
@@ -880,13 +880,13 @@ fn array_inference() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut x")
     );
 
     assert_eq!(error.access_span.str(), "&mut x");
     assert_eq!(
-        error.borrow_usage.as_local().map(Span::str),
+        error.borrow_usage.as_local().map(GlobalSpan::str),
         Some("[&mut x, &mut x]")
     );
 }
@@ -957,11 +957,11 @@ fn phi_inference_use_invalidated_reference() {
         .unwrap();
 
     assert_eq!(
-        error.immutable_borrow_span.as_ref().map(Span::str),
+        error.immutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&first")
     );
     assert_eq!(error.mutable_access_span.str(), "first = 2");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*ref"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*ref"));
 }
 
 const INVALIDATED_BORROWS_IN_LOOP: &str = r"
@@ -1004,11 +1004,11 @@ fn invalidated_borrows_in_loop() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut number")
     );
     assert_eq!(error.access_span.str(), "&mut number");
-    assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("vector"));
+    assert_eq!(error.borrow_usage.as_local().map(GlobalSpan::str), Some("vector"));
 }
 
 const INVALIDATED_BORROWS_IN_LOOP_WITH_BREAK: &str = r"
@@ -1108,7 +1108,7 @@ fn variable_does_not_live_long_enough_in_loop_2() {
 
     assert_eq!(error.variable_span.str(), "mut number");
     assert_eq!(error.borrow_span.str(), "&number");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("vector"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("vector"));
 }
 
 const BORROW_IN_LOOP: &str = r"
@@ -1154,7 +1154,7 @@ fn possible_use_of_going_out_of_scope_reference() {
 
     assert_eq!(error.variable_span.str(), "inner");
     assert_eq!(error.borrow_span.str(), "&inner");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*ref"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*ref"));
 }
 
 const ASSIGN_MUTABLE_REFERENCE_DOES_NOT_INVALIDATE: &str = r"
@@ -1287,11 +1287,11 @@ fn push_two_mutable_references_from_different_places_error() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut *ref")
     );
     assert_eq!(error.access_span.str(), "&mut *ref");
-    assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("vector"));
+    assert_eq!(error.borrow_usage.as_local().map(GlobalSpan::str), Some("vector"));
 }
 
 const REASSIGNED_REFERENCE: &str = r"
@@ -1345,11 +1345,11 @@ fn invalidated_immutable_reference_used_in_loop() {
         .unwrap();
 
     assert_eq!(
-        error.immutable_borrow_span.as_ref().map(Span::str),
+        error.immutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&test")
     );
     assert_eq!(error.mutable_access_span.str(), "test = 64");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("*r"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("*r"));
 }
 
 const MUTABLY_ACCESS_WHILE_MUTABLY_BORROWED: &str = r"
@@ -1372,13 +1372,13 @@ fn mutably_access_while_mutably_borrowed() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut test")
     );
 
     assert_eq!(error.access_span.str(), "test = 64");
     assert_eq!(
-        error.borrow_usage.as_local().map(Span::str),
+        error.borrow_usage.as_local().map(GlobalSpan::str),
         Some("*refm = 64")
     );
 }
@@ -1450,9 +1450,9 @@ fn polonius_two_example() {
         .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
         .unwrap();
 
-    assert_eq!(error.immutable_borrow_span.as_ref().map(Span::str), Some("&x"));
+    assert_eq!(error.immutable_borrow_span.as_ref().map(GlobalSpan::str), Some("&x"));
     assert_eq!(error.mutable_access_span.str(), "x = 3");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("v"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("v"));
 }
 
 /// these test cases are taken from
@@ -1498,9 +1498,9 @@ fn vec_push_ref_one() {
         .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
         .unwrap();
 
-    assert_eq!(error.immutable_borrow_span.as_ref().map(Span::str), Some("&x"));
+    assert_eq!(error.immutable_borrow_span.as_ref().map(GlobalSpan::str), Some("&x"));
     assert_eq!(error.mutable_access_span.str(), "x = 2");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("v"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("v"));
 }
 
 const VEC_PUSH_REF_TWO: &str = r"
@@ -1545,9 +1545,9 @@ fn vec_push_ref_two() {
         .downcast_ref::<MutablyAccessWhileImmutablyBorrowed>()
         .unwrap();
 
-    assert_eq!(error.immutable_borrow_span.as_ref().map(Span::str), Some("&x"));
+    assert_eq!(error.immutable_borrow_span.as_ref().map(GlobalSpan::str), Some("&x"));
     assert_eq!(error.mutable_access_span.str(), "x = 3");
-    assert_eq!(error.usage.as_local().map(Span::str), Some("v"));
+    assert_eq!(error.usage.as_local().map(GlobalSpan::str), Some("v"));
 }
 
 const VEC_PUSH_REF_THREE: &str = r"
@@ -1759,13 +1759,13 @@ fn complex_loop() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut a")
     );
 
     assert_eq!(error.access_span.str(), "&mut a");
 
-    assert_eq!(error.borrow_usage.as_local().map(Span::str), Some("q"));
+    assert_eq!(error.borrow_usage.as_local().map(GlobalSpan::str), Some("q"));
 }
 
 const CONDITIONAL_CONTROL_FLOW_ACCROSS_FUNCTIONS: &str = r"
@@ -1936,7 +1936,7 @@ fn return_invalidated_universal_regions_2() {
     );
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut *number")
     );
     assert_eq!(error.access_span.str(), "&mut *number");
@@ -1991,7 +1991,7 @@ fn universal_regions_through_trait_predicates() {
         errs[0].as_any().downcast_ref::<AccessWhileMutablyBorrowed>().unwrap();
 
     assert_eq!(
-        error.mutable_borrow_span.as_ref().map(Span::str),
+        error.mutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&mut *u")
     );
 
@@ -2043,7 +2043,7 @@ fn borrow_usage_in_drop() {
         .unwrap();
 
     assert_eq!(
-        error.immutable_borrow_span.as_ref().map(Span::str),
+        error.immutable_borrow_span.as_ref().map(GlobalSpan::str),
         Some("&number")
     );
 

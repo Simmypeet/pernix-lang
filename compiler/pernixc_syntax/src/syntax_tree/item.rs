@@ -4,7 +4,7 @@
 
 use pernixc_handler::Handler;
 use pernixc_lexical::token::Punctuation;
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 use where_clause::WhereClause;
 
 use super::SyntaxTree;
@@ -54,7 +54,7 @@ impl SyntaxTree for TrailingWhereClause {
 }
 
 impl SourceElement for TrailingWhereClause {
-    fn span(&self) -> Span { self.colon.span.join(&self.where_clause.span()) }
+    fn span(&self) -> GlobalSpan { self.colon.span.join(&self.where_clause.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -90,7 +90,7 @@ impl<T> SourceElement for Body<T>
 where
     T: SourceElement,
 {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let being = self.colon.span.clone();
         let end = self.members.last().map_or_else(
             || {

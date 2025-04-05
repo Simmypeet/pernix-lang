@@ -7,7 +7,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use lazy_static::lazy_static;
 use pernixc_handler::Handler;
-use pernixc_source_file::{ByteIndex, SourceElement, Span};
+use pernixc_source_file::{ByteIndex, GlobalSpan, SourceElement};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -290,11 +290,11 @@ lazy_static! {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NewLine {
     /// The span to the new line character, either `\n` or `\r\n`.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl SourceElement for NewLine {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming
@@ -303,29 +303,25 @@ impl SourceElement for NewLine {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
 #[allow(missing_docs)]
-pub enum Token {
-    WhiteSpaces(WhiteSpaces),
+pub enum Kind {
     Identifier(Identifier),
     Keyword(Keyword),
     Punctuation(Punctuation),
     Numeric(Numeric),
-    Comment(Comment),
     Character(Character),
     String(String),
     NewLine(NewLine),
 }
 
-impl Token {
+impl Kind {
     /// Returns the span of the token.
     #[must_use]
-    pub const fn span(&self) -> &Span {
+    pub const fn span(&self) -> &GlobalSpan {
         match self {
-            Self::WhiteSpaces(token) => &token.span,
             Self::Identifier(token) => &token.span,
             Self::Keyword(token) => &token.span,
             Self::Punctuation(token) => &token.span,
             Self::Numeric(token) => &token.span,
-            Self::Comment(token) => &token.span,
             Self::Character(token) => &token.span,
             Self::String(token) => &token.span,
             Self::NewLine(token) => &token.span,
@@ -338,7 +334,7 @@ impl Token {
     #[must_use]
     pub const fn is_significant(&self) -> bool {
         match self {
-            Self::NewLine(_) | Self::WhiteSpaces(_) | Self::Comment(_) => false,
+            Self::NewLine(_) => false,
 
             Self::Identifier(_)
             | Self::Keyword(_)
@@ -350,16 +346,14 @@ impl Token {
     }
 }
 
-impl SourceElement for Token {
-    fn span(&self) -> Span {
+impl SourceElement for Kind {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::NewLine(token) => token.span(),
-            Self::WhiteSpaces(token) => token.span(),
             Self::Identifier(token) => token.span(),
             Self::Keyword(token) => token.span(),
             Self::Punctuation(token) => token.span(),
             Self::Numeric(token) => token.span(),
-            Self::Comment(token) => token.span(),
             Self::Character(token) => token.span(),
             Self::String(token) => token.span(),
         }
@@ -370,7 +364,7 @@ impl SourceElement for Token {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Character {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: GlobalSpan,
 
     /// The value of the character literal.
     ///
@@ -380,14 +374,14 @@ pub struct Character {
 }
 
 impl SourceElement for Character {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Represents a hardcoded string literal value in the source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct String {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: GlobalSpan,
 
     /// The value of the string literal. The value is `None` if the string
     /// literal is invalid (e.g., invalid escape sequence).
@@ -395,49 +389,47 @@ pub struct String {
 }
 
 impl SourceElement for String {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of whitespace characters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WhiteSpaces {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl SourceElement for WhiteSpaces {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are valid in an
 /// identifier.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Identifier {
+pub struct Identifier<S> {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: S,
 }
 
-impl Identifier {
-    /// Checks if the given string is a valid identifier string.
-    pub fn is_valid_identifier_string(s: &str) -> bool {
-        let mut chars = s.chars();
+/// Checks if the given string is a valid identifier string.
+pub fn is_valid_identifier_string(s: &str) -> bool {
+    let mut chars = s.chars();
 
-        if let Some(character) = chars.next() {
-            if !Token::is_first_identifier_character(character) {
-                return false;
-            }
-        } else {
+    if let Some(character) = chars.next() {
+        if !Kind::is_first_identifier_character(character) {
             return false;
         }
-
-        let identifier = chars.all(Token::is_identifier_character);
-
-        KeywordKind::from_str(s).is_err() && identifier
+    } else {
+        return false;
     }
+
+    let identifier = chars.all(Kind::is_identifier_character);
+
+    KeywordKind::from_str(s).is_err() && identifier
 }
 
-impl SourceElement for Identifier {
-    fn span(&self) -> Span { self.span.clone() }
+impl<S> SourceElement for Identifier<S> {
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are reserved for a
@@ -445,39 +437,39 @@ impl SourceElement for Identifier {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Keyword {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: GlobalSpan,
 
     /// Is the [`KeywordKind`] that the token represents.
     pub kind: KeywordKind,
 }
 
 impl SourceElement for Keyword {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Represents a single ASCII punctuation character.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Punctuation {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: GlobalSpan,
 
     /// Is the ASCII punctuation character that the token represents.
     pub punctuation: char,
 }
 
 impl SourceElement for Punctuation {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl SourceElement for Numeric {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Is an enumeration representing the two kinds of comments in the Pernix
@@ -497,14 +489,14 @@ pub enum CommentKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Comment {
     /// Is the span that makes up the token.
-    pub span: Span,
+    pub span: GlobalSpan,
 
     /// Is the kind of comment that the token represents.
     pub kind: CommentKind,
 }
 
 impl SourceElement for Comment {
-    fn span(&self) -> Span { self.span.clone() }
+    fn span(&self) -> GlobalSpan { self.span.clone() }
 }
 
 /// Is an error that can occur when invoking the [`Token::lex`] method.
@@ -532,7 +524,7 @@ pub enum Error {
     EndOfSourceCodeIteratorArgument,
 }
 
-impl Token {
+impl Kind {
     /// Increments the iterator until the predicate returns false.
     fn walk_iter(
         iter: &mut pernixc_source_file::Iterator,
@@ -552,10 +544,12 @@ impl Token {
     fn create_span(
         start: ByteIndex,
         iter: &mut pernixc_source_file::Iterator,
-    ) -> Span {
+    ) -> GlobalSpan {
         iter.peek().map_or_else(
-            || Span::to_end(iter.source_file().clone(), start),
-            |(index, _)| Span::new(iter.source_file().clone(), start, index),
+            || GlobalSpan::to_end(iter.source_file().clone(), start),
+            |(index, _)| {
+                GlobalSpan::new(iter.source_file().clone(), start, index)
+            },
         )
     }
 
@@ -662,7 +656,7 @@ impl Token {
             } else {
                 handler.receive(
                     UnterminatedDelimitedComment {
-                        span: Span::new(
+                        span: GlobalSpan::new(
                             iter.source_file().clone(),
                             start,
                             start + 2,
@@ -706,7 +700,7 @@ impl Token {
             let Some((byte_index, character)) = iter.next() else {
                 handler.receive(error::Error::UnterminatedStringLiteral(
                     error::UnterminatedStringLiteral {
-                        span: Span::new(
+                        span: GlobalSpan::new(
                             iter.source_file().clone(),
                             start,
                             start + 1,
@@ -727,7 +721,7 @@ impl Token {
                 } else {
                     handler.receive(error::Error::InvalidEscapeSequence(
                         InvalidEscapeSequence {
-                            span: Span::new(
+                            span: GlobalSpan::new(
                                 iter.source_file().clone(),
                                 last_byte_index,
                                 byte_index,
@@ -823,7 +817,7 @@ impl Token {
                                 handler.receive(
                                     error::Error::InvalidEscapeSequence(
                                         InvalidEscapeSequence {
-                                            span: Span::new(
+                                            span: GlobalSpan::new(
                                                 iter.source_file().clone(),
                                                 content_start,
                                                 content_end,

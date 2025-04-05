@@ -9,12 +9,12 @@ use proptest::{
 
 fn tokenize(
     source: std::string::String,
-) -> Result<super::Token, proptest::test_runner::TestCaseError> {
+) -> Result<super::Kind, proptest::test_runner::TestCaseError> {
     let source_file = Arc::new(SourceFile::new(source, "test".into()));
     let mut iterator = source_file.iter();
 
     let error_storage: Storage<super::error::Error> = Storage::new();
-    let token = match super::Token::lex(&mut iterator, &error_storage) {
+    let token = match super::Kind::lex(&mut iterator, &error_storage) {
         Ok(token) => token,
         Err(error) => {
             return Err(TestCaseError::fail(format!(

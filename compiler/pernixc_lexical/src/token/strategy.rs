@@ -570,36 +570,36 @@ impl Display for Token {
     }
 }
 
-impl Input<&super::Token> for &Token {
+impl Input<&super::Kind> for &Token {
     /// Verifies that the given [`super::Token`] complies with this input.
     #[allow(clippy::missing_errors_doc)]
-    fn assert(self, output: &super::Token) -> TestCaseResult {
+    fn assert(self, output: &super::Kind) -> TestCaseResult {
         match (self, output) {
-            (Token::Identifier(i), super::Token::Identifier(o)) => {
+            (Token::Identifier(i), super::Kind::Identifier(o)) => {
                 i.assert(o)?;
             }
-            (Token::Keyword(i), super::Token::Keyword(o)) => {
+            (Token::Keyword(i), super::Kind::Keyword(o)) => {
                 i.assert(o)?;
             }
-            (Token::Nueric(i), super::Token::Numeric(o)) => {
+            (Token::Nueric(i), super::Kind::Numeric(o)) => {
                 i.assert(o)?;
             }
-            (Token::Comment(i), super::Token::Comment(o)) => {
+            (Token::Comment(i), super::Kind::Comment(o)) => {
                 i.assert(o)?;
             }
-            (Token::WhiteSpaces(i), super::Token::WhiteSpaces(o)) => {
+            (Token::WhiteSpaces(i), super::Kind::WhiteSpaces(o)) => {
                 i.assert(o)?;
             }
-            (Token::Punctuation(i), super::Token::Punctuation(o)) => {
+            (Token::Punctuation(i), super::Kind::Punctuation(o)) => {
                 i.assert(o)?;
             }
-            (Token::Character(i), super::Token::Character(o)) => {
+            (Token::Character(i), super::Kind::Character(o)) => {
                 i.assert(o)?;
             }
-            (Token::String(i), super::Token::String(o)) => {
+            (Token::String(i), super::Kind::String(o)) => {
                 i.assert(o)?;
             }
-            (Token::NewLine(i), super::Token::NewLine(o)) => {
+            (Token::NewLine(i), super::Kind::NewLine(o)) => {
                 i.assert(o)?;
             }
             _ => {

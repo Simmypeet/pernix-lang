@@ -18,7 +18,7 @@ use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::token_stream::{TokenStream, Tree};
 use pernixc_log::Severity;
-use pernixc_source_file::{SourceFile, Span};
+use pernixc_source_file::{SourceFile, GlobalSpan};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use super::{
@@ -73,7 +73,7 @@ pub struct RootSubmoduleConflict {
     pub root: Arc<SourceFile>,
 
     /// The submodule that points to the root source file.
-    pub submodule_span: Span,
+    pub submodule_span: GlobalSpan,
 }
 
 impl Report<()> for RootSubmoduleConflict {
@@ -124,10 +124,10 @@ impl Report<()> for SourceFileLoadFail {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModuleRedefinition {
     /// The span of the existing module.
-    pub existing_module_span: Span,
+    pub existing_module_span: GlobalSpan,
 
     /// The submodule that redefines the module.
-    pub redefinition_submodule_span: Span,
+    pub redefinition_submodule_span: GlobalSpan,
 }
 
 impl Report<()> for ModuleRedefinition {

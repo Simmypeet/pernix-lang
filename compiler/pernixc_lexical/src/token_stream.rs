@@ -11,7 +11,7 @@ use proptest::bits::usize;
 
 use crate::{
     error::{self, InvalidIndentation, UndelimitedDelimiter},
-    token::{self, Comment, CommentKind, Punctuation, Token},
+    token::{self, Comment, CommentKind, Punctuation, Kind},
 };
 
 pub mod strategy;
@@ -57,13 +57,13 @@ pub struct Indentation {
     /// For example, `: /*comment*/ \n` would have `:` as the colon,
     /// `/*comment*/` as the `prior_new_line_tokens`, and `\n` as the
     /// `new_line_or_line_comment`.
-    pub prior_new_line_tokens: Vec<Token>,
+    pub prior_new_line_tokens: Vec<Kind>,
 
     /// The new line character or line comment that follows the colon.
     ///
     /// The colon can be followed by a line comment as well since the line
     /// comment is also ended by a new line character.
-    pub new_line_or_line_comment: Token,
+    pub new_line_or_line_comment: Kind,
 
     /// The token that marks an end of the indentation group.
     ///
@@ -71,7 +71,7 @@ pub struct Indentation {
     /// delimiter if the indentation group is enclosed by a pair of delimiters.
     /// Alternatively, it can be `None` if the indentation group appears last
     /// in the file (EOF).
-    pub ending_token: Option<Token>,
+    pub ending_token: Option<Kind>,
 }
 
 /// Is an enumeration of the different types of delimiters in the [`Delimiter`].
@@ -99,7 +99,7 @@ pub struct Fragment {
 )]
 #[allow(missing_docs)]
 pub enum TokenKind {
-    Token(Token),
+    Token(Kind),
     Fragment(Fragment),
 }
 
@@ -130,8 +130,8 @@ enum IndentationLevelSearch {
 struct IndentationMark {
     indentation_size: usize,
     colon: Punctuation,
-    prior_new_line_tokens: Vec<Token>,
-    new_line_or_line_comment: Token,
+    prior_new_line_tokens: Vec<Kind>,
+    new_line_or_line_comment: Kind,
     starting_index: usize,
 }
 
@@ -162,7 +162,7 @@ impl TokenStream {
 
         loop {
             // Tokenizes the next token
-            match Token::lex(&mut source_file_iterator, handler) {
+            match Kind::lex(&mut source_file_iterator, handler) {
                 Ok(token) => tokens.push(token),
                 Err(token::Error::EndOfSourceCodeIteratorArgument) => {
                     break;
@@ -202,26 +202,26 @@ impl TokenStream {
             match token {
                 TokenKind::Token(token) => match token {
                     // no indentation level here, start a new line
-                    Token::Comment(Comment {
+                    Kind::Comment(Comment {
                         kind: CommentKind::Line, ..
                     })
-                    | Token::NewLine(_) => {
+                    | Kind::NewLine(_) => {
                         size = 0;
                     }
 
-                    Token::Character(_)
-                    | Token::String(_)
-                    | Token::Numeric(_)
-                    | Token::Punctuation(_)
-                    | Token::Identifier(_)
-                    | Token::Keyword(_)
-                    | Token::Comment(Comment {
+                    Kind::Character(_)
+                    | Kind::String(_)
+                    | Kind::Numeric(_)
+                    | Kind::Punctuation(_)
+                    | Kind::Identifier(_)
+                    | Kind::Keyword(_)
+                    | Kind::Comment(Comment {
                         kind: CommentKind::Delimited,
                         ..
                     }) => return (idx, IndentationLevelSearch::Found(size)),
 
                     // count the space
-                    Token::WhiteSpaces(whitespaces) => {
+                    Kind::WhiteSpaces(whitespaces) => {
                         whitespaces.span.str().chars().for_each(|x| {
                             let val = if x == '\t' {
                                 Self::TAB_INDENT_SIZE
@@ -266,7 +266,7 @@ impl TokenStream {
                 .cloned()
                 .map(|x| x.into_token().unwrap())
                 .or_else(|| {
-                    enclosing_delimiter.map(|x| Token::Punctuation(x.clone()))
+                    enclosing_delimiter.map(|x| Kind::Punctuation(x.clone()))
                 });
             let indented_tokens = tokens.drain(pop_range).collect::<Vec<_>>();
 
@@ -302,23 +302,23 @@ impl TokenStream {
         for (i, token) in tokens.iter().enumerate() {
             match token {
                 TokenKind::Token(token) => match token {
-                    Token::WhiteSpaces(_) => {}
+                    Kind::WhiteSpaces(_) => {}
 
-                    Token::Identifier(_)
-                    | Token::Keyword(_)
-                    | Token::Punctuation(_)
-                    | Token::Numeric(_)
-                    | Token::Comment(Comment {
+                    Kind::Identifier(_)
+                    | Kind::Keyword(_)
+                    | Kind::Punctuation(_)
+                    | Kind::Numeric(_)
+                    | Kind::Comment(Comment {
                         kind: CommentKind::Delimited,
                         ..
                     })
-                    | Token::Character(_)
-                    | Token::String(_) => return None,
+                    | Kind::Character(_)
+                    | Kind::String(_) => return None,
 
-                    Token::Comment(Comment {
+                    Kind::Comment(Comment {
                         kind: CommentKind::Line, ..
                     })
-                    | Token::NewLine(_) => return Some(i),
+                    | Kind::NewLine(_) => return Some(i),
                 },
                 TokenKind::Fragment(_) => return None,
             }
@@ -487,7 +487,7 @@ impl TokenStream {
         while index < tokens.len() {
             // check for the new indentation level
             if let (
-                TokenKind::Token(Token::Punctuation(Punctuation {
+                TokenKind::Token(Kind::Punctuation(Punctuation {
                     punctuation: ':',
                     ..
                 })),
@@ -523,8 +523,8 @@ impl TokenStream {
             else if matches!(
                 &tokens[index],
                 TokenKind::Token(
-                    Token::Comment(Comment { kind: CommentKind::Line, .. })
-                        | Token::NewLine(_),
+                    Kind::Comment(Comment { kind: CommentKind::Line, .. })
+                        | Kind::NewLine(_),
                 )
             ) {
                 index = Self::handle_new_indentation_line(
@@ -553,7 +553,7 @@ impl TokenStream {
     }
 
     fn pop_token(
-        tokens: &mut Vec<Token>,
+        tokens: &mut Vec<Kind>,
         source_file: &Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
     ) -> Option<TokenKind> {
@@ -563,13 +563,13 @@ impl TokenStream {
     }
 
     fn handle_popped_token(
-        tokens: &mut Vec<Token>,
-        popped_token: Token,
+        tokens: &mut Vec<Kind>,
+        popped_token: Kind,
         source_file: &Arc<SourceFile>,
         handler: &dyn Handler<error::Error>,
     ) -> Option<TokenKind> {
         match popped_token {
-            Token::Punctuation(pun) if pun.punctuation == '{' => {
+            Kind::Punctuation(pun) if pun.punctuation == '{' => {
                 Self::handle_delimited(
                     tokens,
                     pun,
@@ -579,7 +579,7 @@ impl TokenStream {
                 )
                 .map(TokenKind::Fragment)
             }
-            Token::Punctuation(pun) if pun.punctuation == '[' => {
+            Kind::Punctuation(pun) if pun.punctuation == '[' => {
                 Self::handle_delimited(
                     tokens,
                     pun,
@@ -589,7 +589,7 @@ impl TokenStream {
                 )
                 .map(TokenKind::Fragment)
             }
-            Token::Punctuation(pun) if pun.punctuation == '(' => {
+            Kind::Punctuation(pun) if pun.punctuation == '(' => {
                 Self::handle_delimited(
                     tokens,
                     pun,
@@ -605,7 +605,7 @@ impl TokenStream {
     }
 
     fn handle_delimited(
-        tokens: &mut Vec<Token>,
+        tokens: &mut Vec<Kind>,
         open: Punctuation,
         delimiter: DelimiterKind,
         source_file: &Arc<SourceFile>,
@@ -615,7 +615,7 @@ impl TokenStream {
 
         while let Some(token) = tokens.pop() {
             match (token, delimiter) {
-                (Token::Punctuation(close), DelimiterKind::Brace)
+                (Kind::Punctuation(close), DelimiterKind::Brace)
                     if close.punctuation == '}' =>
                 {
                     return Some(Fragment {
@@ -630,7 +630,7 @@ impl TokenStream {
                         },
                     })
                 }
-                (Token::Punctuation(close), DelimiterKind::Bracket)
+                (Kind::Punctuation(close), DelimiterKind::Bracket)
                     if close.punctuation == ']' =>
                 {
                     return Some(Fragment {
@@ -645,7 +645,7 @@ impl TokenStream {
                         }),
                     })
                 }
-                (Token::Punctuation(close), DelimiterKind::Parenthesis)
+                (Kind::Punctuation(close), DelimiterKind::Parenthesis)
                     if close.punctuation == ')' =>
                 {
                     return Some(Fragment {

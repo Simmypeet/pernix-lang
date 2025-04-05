@@ -16,7 +16,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use unification::Log;
 
 pub mod compatible;
@@ -103,7 +103,7 @@ impl OverflowError {
     /// [`diagnostic::TypeCalculatingOverflow`] to be reported to the user.
     pub fn report_as_type_calculating_overflow(
         self,
-        overflow_span: Span,
+        overflow_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Abort {
         handler.receive(Box::new(diagnostic::TypeCalculatingOverflow::new(
@@ -118,7 +118,7 @@ impl OverflowError {
     /// be reported to the user.
     pub fn report_as_type_check_overflow(
         self,
-        overflow_span: Span,
+        overflow_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Abort {
         handler.receive(Box::new(diagnostic::TypeCheckOverflow::new(
@@ -134,8 +134,8 @@ impl OverflowError {
     pub fn report_as_undecidable_predicate<M: Model>(
         self,
         predicate: Predicate<M>,
-        predicate_declaration_span: Option<Span>,
-        instantiation_span: Span,
+        predicate_declaration_span: Option<GlobalSpan>,
+        instantiation_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Abort
     where

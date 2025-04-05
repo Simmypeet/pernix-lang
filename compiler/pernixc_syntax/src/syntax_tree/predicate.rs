@@ -7,7 +7,7 @@ use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use super::{
     r#type, EnclosedConnectedList, Lifetime, LifetimeParameter, Parse,
@@ -51,7 +51,7 @@ impl SyntaxTree for HigherRankedLifetimes {
 }
 
 impl SourceElement for HigherRankedLifetimes {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.for_keyword.span.join(&self.lifetime_parameters.span())
     }
 }
@@ -65,7 +65,7 @@ pub struct QualifiedIdentifierBound {
 }
 
 impl SourceElement for QualifiedIdentifierBound {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let first = match (
             &self.not_keyword,
             &self.higher_ranked_lifetimes,
@@ -129,7 +129,7 @@ pub enum TypeBound {
 }
 
 impl SourceElement for TypeBound {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::QualifiedIdentifier(s) => s.span(),
             Self::Const(s) | Self::Tuple(s) => s.span(),
@@ -184,7 +184,7 @@ impl SyntaxTree for Type {
 }
 
 impl SourceElement for Type {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
             || self.r#type.span().join(&self.bounds.span()),
             |h| h.span().join(&self.bounds.span()),
@@ -222,7 +222,7 @@ impl SyntaxTree for TraitTypeEquality {
 }
 
 impl SourceElement for TraitTypeEquality {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
             || self.lhs_type.span().join(&self.lhs_type.span()),
             |h| h.span().join(&self.lhs_type.span()),
@@ -269,7 +269,7 @@ impl SyntaxTree for TraitBound {
 }
 
 impl SourceElement for TraitBound {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let first = match (
             &self.not_keyword,
             &self.higher_ranked_lifetimes,
@@ -305,7 +305,7 @@ impl SyntaxTree for Trait {
 }
 
 impl SourceElement for Trait {
-    fn span(&self) -> Span { self.trait_keyword.span.join(&self.bounds.span()) }
+    fn span(&self) -> GlobalSpan { self.trait_keyword.span.join(&self.bounds.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -343,7 +343,7 @@ impl SyntaxTree for MarkerBound {
 }
 
 impl SourceElement for MarkerBound {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let begin = self.not_keyword.as_ref().map_or_else(
             || {
                 self.higher_ranked_lifetimes.as_ref().map_or_else(
@@ -376,7 +376,7 @@ impl SyntaxTree for Marker {
 }
 
 impl SourceElement for Marker {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.marker_keyword.span.join(&self.bounds.span())
     }
 }
@@ -400,7 +400,7 @@ impl SyntaxTree for LifetimeOutlives {
 }
 
 impl SourceElement for LifetimeOutlives {
-    fn span(&self) -> Span { self.operand.span().join(&self.bounds.span()) }
+    fn span(&self) -> GlobalSpan { self.operand.span().join(&self.bounds.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -424,7 +424,7 @@ impl SyntaxTree for TupleOperand {
 }
 
 impl SourceElement for TupleOperand {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.higher_ranked_lifetimes.as_ref().map_or_else(
             || self.r#type.span(),
             |h| h.span().join(&self.r#type.span()),
@@ -499,7 +499,7 @@ impl SyntaxTree for Predicate {
 }
 
 impl SourceElement for Predicate {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::TraitTypeEquality(s) => s.span(),
             Self::Trait(s) => s.span(),

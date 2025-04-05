@@ -6,7 +6,7 @@ use std::{borrow, cmp::Ordering, fmt::Debug, vec::Drain};
 use paste::paste;
 use pernixc_handler::Handler;
 use pernixc_lexical::{
-    token::{Comment, CommentKind, Keyword, KeywordKind, Punctuation, Token},
+    token::{Comment, CommentKind, Keyword, KeywordKind, Kind, Punctuation},
     token_stream::{DelimiterKind, FragmentKind, NodeKind, Tree},
 };
 use pernixc_source_file::SourceElement;
@@ -978,7 +978,7 @@ impl<T> Passable<T> {
 }
 
 impl<T: SourceElement> SourceElement for Passable<T> {
-    fn span(&self) -> pernixc_source_file::Span {
+    fn span(&self) -> pernixc_source_file::GlobalSpan {
         match self {
             Self::Pass(keyword) => keyword.span(),
             Self::SyntaxTree(tree) => tree.span(),
@@ -1044,8 +1044,8 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
                             .get(index)
                             .and_then(|x| x.as_token()),
                         Some(
-                            Token::NewLine(_)
-                                | Token::Comment(Comment {
+                            Kind::NewLine(_)
+                                | Kind::Comment(Comment {
                                     kind: CommentKind::Line,
                                     ..
                                 })
@@ -1122,8 +1122,8 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
                             .get(index)
                             .and_then(|x| x.as_token()),
                         Some(
-                            Token::NewLine(_)
-                                | Token::Comment(Comment {
+                            Kind::NewLine(_)
+                                | Kind::Comment(Comment {
                                     kind: CommentKind::Line,
                                     ..
                                 })

@@ -6,11 +6,11 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_lexical::{
-    token::Token,
+    token::Kind,
     token_stream::{DelimiterKind, FragmentKind, Location, TokenKind, Tree},
 };
 use pernixc_log::Severity;
-use pernixc_source_file::{SourceFile, Span};
+use pernixc_source_file::{SourceFile, GlobalSpan};
 
 use crate::{
     expect::{Expected, Fragment},
@@ -21,7 +21,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 #[allow(missing_docs)]
 pub enum Found {
-    Token(Token),
+    Token(Kind),
     EndOfFile(Arc<SourceFile>),
 }
 
@@ -42,8 +42,8 @@ pub struct Error {
     /// Gets the found token or end of file
     #[get = "pub"]
     found: Found,
-    prior_insignificant: Option<Token>,
-    diagnostic_span: Span,
+    prior_insignificant: Option<Kind>,
+    diagnostic_span: GlobalSpan,
 
     /// Gets the expected tokens
     #[get = "pub"]
@@ -111,7 +111,7 @@ impl Error {
                             .kind
                         {
                             FragmentKind::Delimiter(delimiter) => Found::Token(
-                                Token::Punctuation(delimiter.close.clone()),
+                                Kind::Punctuation(delimiter.close.clone()),
                             ),
                             FragmentKind::Indentation(indentation) => {
                                 indentation.ending_token.clone().map_or_else(
@@ -147,7 +147,7 @@ impl Error {
                     {
                         TokenKind::Token(token) => Found::Token(token.clone()),
                         TokenKind::Fragment(fragment) => Found::Token(
-                            Token::Punctuation(match &fragment.kind {
+                            Kind::Punctuation(match &fragment.kind {
                                 FragmentKind::Delimiter(delimiter) => {
                                     delimiter.open.clone()
                                 }
@@ -170,7 +170,7 @@ impl Error {
         .map(|token| match token {
             TokenKind::Token(token) => token.clone(),
             TokenKind::Fragment(fragment) => {
-                Token::Punctuation(match &fragment.kind {
+                Kind::Punctuation(match &fragment.kind {
                     FragmentKind::Delimiter(delimiter) => {
                         delimiter.open.clone()
                     }
@@ -185,7 +185,7 @@ impl Error {
             diagnostic_span: prior_insignificant.as_ref().map_or_else(
                 || match &found {
                     Found::Token(token) => token.span().clone(),
-                    Found::EndOfFile(arc) => Span::new(
+                    Found::EndOfFile(arc) => GlobalSpan::new(
                         arc.clone(),
                         if arc.content().is_empty() {
                             0
@@ -200,7 +200,7 @@ impl Error {
                         prior_token.span().join(token.span())
                     }
                     Found::EndOfFile(arc) => {
-                        Span::to_end(arc.clone(), prior_token.span().end())
+                        GlobalSpan::to_end(arc.clone(), prior_token.span().end())
                     }
                 },
             ),
@@ -242,19 +242,19 @@ impl Report<()> for Error {
 
         let found_string = match &self.found {
             Found::Token(token) => match token {
-                Token::WhiteSpaces(_) => "whitespace".to_string(),
-                Token::Identifier(_) => "identifier".to_string(),
-                Token::Keyword(keyword) => {
+                Kind::WhiteSpaces(_) => "whitespace".to_string(),
+                Kind::Identifier(_) => "identifier".to_string(),
+                Kind::Keyword(keyword) => {
                     format!("`{}` keyword", keyword.kind)
                 }
-                Token::Punctuation(punctuation) => {
+                Kind::Punctuation(punctuation) => {
                     format!("`{}` punctuation", punctuation.punctuation)
                 }
-                Token::Numeric(_) => "numeric literal".to_string(),
-                Token::Comment(_) => "comment".to_string(),
-                Token::Character(_) => "character literal".to_string(),
-                Token::String(_) => "string literal".to_string(),
-                Token::NewLine(_) => "new line".to_string(),
+                Kind::Numeric(_) => "numeric literal".to_string(),
+                Kind::Comment(_) => "comment".to_string(),
+                Kind::Character(_) => "character literal".to_string(),
+                Kind::String(_) => "string literal".to_string(),
+                Kind::NewLine(_) => "new line".to_string(),
             },
 
             Found::EndOfFile(_) => "EOF".to_string(),

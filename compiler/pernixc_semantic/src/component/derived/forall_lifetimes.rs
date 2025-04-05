@@ -3,7 +3,7 @@
 use enum_as_inner::EnumAsInner;
 use parking_lot::{lock_api::MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use serde::{Deserialize, Serialize};
 
 use crate::{component::Derived, table::MemberID};
@@ -18,7 +18,7 @@ pub struct Named {
 
     /// The span where the forall lifetime was declared.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents a forall lifetime; a lifetime that represents all available

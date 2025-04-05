@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
 use pernixc_semantic::table::{DisplayObject, Table};
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 use crate::UniversalRegion;
 
@@ -14,7 +14,7 @@ use crate::UniversalRegion;
 pub enum Usage {
     /// The invalidated borrows are later used within the body of local
     /// function/scope.
-    Local(Span),
+    Local(GlobalSpan),
 
     /// The invalidated borrows might be later used by the univseral regions
     /// (the caller of the function).
@@ -28,13 +28,13 @@ pub enum Usage {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MovedOutWhileBorrowed {
     /// The span of the borrow.
-    pub borrow_span: Span,
+    pub borrow_span: GlobalSpan,
 
     /// The span of the borrow usage.
     pub usage: Usage,
 
     /// The span where the value is moved out
-    pub moved_out_span: Span,
+    pub moved_out_span: GlobalSpan,
 }
 
 impl Report<&Table> for MovedOutWhileBorrowed {
@@ -85,10 +85,10 @@ impl Report<&Table> for MovedOutWhileBorrowed {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariableDoesNotLiveLongEnough {
     /// The span where the borrows occurred
-    pub borrow_span: Span,
+    pub borrow_span: GlobalSpan,
 
     /// The span of the variable declaration.
-    pub variable_span: Span,
+    pub variable_span: GlobalSpan,
 
     /// The usage of the borrow that points to the goes out of scope variable.
     pub usage: Usage,
@@ -131,10 +131,10 @@ impl Report<&Table> for VariableDoesNotLiveLongEnough {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MutablyAccessWhileImmutablyBorrowed {
     /// The span of the mutable access.
-    pub mutable_access_span: Span,
+    pub mutable_access_span: GlobalSpan,
 
     /// The span of the prior borrow.
-    pub immutable_borrow_span: Option<Span>,
+    pub immutable_borrow_span: Option<GlobalSpan>,
 
     /// The usage span of the prior borrow.
     pub usage: Usage,
@@ -194,10 +194,10 @@ impl Report<&Table> for MutablyAccessWhileImmutablyBorrowed {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AccessWhileMutablyBorrowed {
     /// The span of the access.
-    pub access_span: Span,
+    pub access_span: GlobalSpan,
 
     /// The span of the prior borrow.
-    pub mutable_borrow_span: Option<Span>,
+    pub mutable_borrow_span: Option<GlobalSpan>,
 
     /// The usage span of the prior borrow.
     pub borrow_usage: Usage,

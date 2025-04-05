@@ -1,7 +1,7 @@
 //! Contains the definition of [`Literal`].
 
 use enum_as_inner::EnumAsInner;
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -32,7 +32,7 @@ pub struct Numeric<M: term::Model> {
 
     /// The span location of the numeric value.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents a boolean value.
@@ -45,7 +45,7 @@ pub struct Boolean {
 
     /// The span location of the boolean.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// A placeholder for a value that was failed to bind.
@@ -58,7 +58,7 @@ pub struct Error<M: term::Model> {
 
     /// The span location of the errornous expression.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents a unit value (empty tuple).
@@ -68,7 +68,7 @@ pub struct Error<M: term::Model> {
 pub struct Unit {
     /// The span location of the unit value.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// A placeholder for a value that can never be reached.
@@ -83,7 +83,7 @@ pub struct Unreachable<M: term::Model> {
 
     /// The span location of the unreachable value.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents a string literal value.
@@ -96,7 +96,7 @@ pub struct String {
 
     /// The span location of the string.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents a character literal value.
@@ -115,7 +115,7 @@ pub struct Character<M: term::Model> {
 
     /// The span location of the character.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents a phantom value created by the `phantom` keyword.
@@ -131,7 +131,7 @@ pub struct Phantom<M: term::Model> {
 
     /// The span location of the phantom keyword.
     #[serde(skip)]
-    pub span: Option<Span>,
+    pub span: Option<GlobalSpan>,
 }
 
 /// Represents a literal value.
@@ -236,7 +236,7 @@ impl<M: term::Model> Literal<M> {
     }
 
     /// Returns the span location of the literal value.
-    pub const fn span(&self) -> Option<&Span> {
+    pub const fn span(&self) -> Option<&GlobalSpan> {
         match self {
             Self::Numeric(n) => n.span.as_ref(),
             Self::Boolean(b) => b.span.as_ref(),

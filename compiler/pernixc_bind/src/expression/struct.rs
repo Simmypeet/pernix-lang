@@ -21,7 +21,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 use pernixc_syntax::syntax_tree::{self, ConnectedList};
 
 use super::{Bind, Config, Expression};
@@ -77,7 +77,7 @@ impl Bind<&syntax_tree::expression::unit::Struct> for Binder<'_> {
 
         let fields = self.table.query::<fields::Fields>(struct_id)?;
         let mut initializers_by_field_id =
-            HashMap::<ID<Field>, (Value<infer::Model>, Span)>::new();
+            HashMap::<ID<Field>, (Value<infer::Model>, GlobalSpan)>::new();
 
         for field_syn in syntax_tree
             .field_initializers

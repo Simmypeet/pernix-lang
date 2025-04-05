@@ -2,7 +2,7 @@
 
 use pernixc_diagnostic::{Related, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 use crate::table::Table;
 
@@ -10,10 +10,10 @@ use crate::table::Table;
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AlreadyBoundName {
     /// The span of the already bound identifier.
-    pub already_bound_identifier_span: Span,
+    pub already_bound_identifier_span: GlobalSpan,
 
     /// The span of the rebinding.
-    pub new_binding_span: Span,
+    pub new_binding_span: GlobalSpan,
 }
 
 impl Report<&Table> for AlreadyBoundName {

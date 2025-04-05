@@ -5,7 +5,7 @@
 use binary::Binary;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 use terminator::Terminator;
 
 use super::{Parse, SyntaxTree};
@@ -47,7 +47,7 @@ impl SyntaxTree for Expression {
 }
 
 impl SourceElement for Expression {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Binary(syn) => syn.span(),
             Self::Terminator(syn) => syn.span(),

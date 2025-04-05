@@ -354,7 +354,7 @@ pub type ByteIndex = usize;
     Getters,
     CopyGetters,
 )]
-pub struct Span {
+pub struct GlobalSpan {
     /// Gets the start byte index of the span.
     pub start: ByteIndex,
 
@@ -383,7 +383,7 @@ impl Location {
     }
 }
 
-impl Span {
+impl GlobalSpan {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
     #[must_use]
@@ -413,12 +413,17 @@ impl Span {
 
 /// Represents an element that is located within a source file.
 pub trait SourceElement {
+    /// The type of the span.
+    type Span;
+
     /// Gets the span location of the element.
-    fn span(&self) -> Span;
+    fn span(&self) -> Self::Span;
 }
 
 impl<T: SourceElement> SourceElement for Box<T> {
-    fn span(&self) -> Span { self.as_ref().span() }
+    type Span = T::Span;
+
+    fn span(&self) -> Self::Span { self.as_ref().span() }
 }
 
 fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {

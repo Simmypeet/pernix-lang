@@ -10,7 +10,7 @@ use pernixc_semantic::{
         r#type,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 /// The predicates are ambiguous to each other.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,7 +19,7 @@ pub struct AmbiguousPredicates {
     pub predicates: Vec<Predicate<term::Default>>,
 
     /// The span where the ambiguous predicates are declared.
-    pub predicate_declaration_spans: Vec<Span>,
+    pub predicate_declaration_spans: Vec<GlobalSpan>,
 }
 
 impl Report<&Table> for AmbiguousPredicates {
@@ -56,7 +56,7 @@ impl Report<&Table> for AmbiguousPredicates {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitePremisePredicate {
     /// The span of the definite premise.
-    pub span: Span,
+    pub span: GlobalSpan,
 
     /// The definite premise.
     pub predicate: Predicate<term::Default>,
@@ -89,7 +89,7 @@ pub struct RecursiveTraitTypeEquality {
     >,
 
     /// The span where the recursive trait type equalities are declared.
-    pub predicate_declaration_spans: Vec<Span>,
+    pub predicate_declaration_spans: Vec<GlobalSpan>,
 }
 
 impl Report<&Table> for RecursiveTraitTypeEquality {

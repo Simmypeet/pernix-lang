@@ -19,7 +19,7 @@ use pernixc_semantic::{
         lifetime::Lifetime, r#type::Type, Model,
     },
 };
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 use pernixc_syntax::syntax_tree::{
     self, GenericIdentifier, QualifiedIdentifier, QualifiedIdentifierRoot,
 };
@@ -133,7 +133,7 @@ pub trait Observer<M: Model> {
         table: &Table,
         referring_site: GlobalID,
         resolution: &Resolution<M>,
-        span: &Span,
+        span: &GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     );
 
@@ -316,7 +316,7 @@ pub trait Ext {
         &self,
         generic_arguments: GenericArguments<M>,
         generic_id: GlobalID,
-        generic_identifier_span: Span,
+        generic_identifier_span: GlobalSpan,
         config: Config<M>,
     ) -> Result<(GenericArguments<M>, Vec<Box<dyn Diagnostic>>), Abort>;
 
@@ -410,7 +410,7 @@ impl Ext for Table {
         &self,
         generic_arguments: GenericArguments<M>,
         generic_id: GlobalID,
-        generic_identifier_span: Span,
+        generic_identifier_span: GlobalSpan,
         config: Config<M>,
     ) -> Result<(GenericArguments<M>, Vec<Box<dyn Diagnostic>>), Abort> {
         term::verify_generic_arguments_for(

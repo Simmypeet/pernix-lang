@@ -1,6 +1,6 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind};
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use super::{
     constant, function, generic_parameter::GenericParameters, r#type,
@@ -29,7 +29,7 @@ pub struct Signature {
 }
 
 impl SourceElement for Signature {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let begin = self.final_keyword.as_ref().map_or_else(
             || {
                 self.const_keyword.as_ref().map_or_else(
@@ -85,7 +85,7 @@ pub struct MemberTemplate<S, B> {
 impl<S: SourceElement, B: SourceElement> SourceElement
     for MemberTemplate<S, B>
 {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         self.access_modifier
             .as_ref()
             .map_or_else(
@@ -121,7 +121,7 @@ pub struct FunctionSignature {
 }
 
 impl SourceElement for FunctionSignature {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let begin = self.const_keyword.as_ref().map_or_else(
             || {
                 self.unsafe_keyword.as_ref().map_or_else(
@@ -214,7 +214,7 @@ impl SyntaxTree for Member {
 }
 
 impl SourceElement for Member {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Constant(member) => member.span(),
             Self::Function(member) => member.span(),
@@ -246,7 +246,7 @@ impl SyntaxTree for Body {
 }
 
 impl SourceElement for Body {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Negative(body) => body.span(),
             Self::Positive(body) => body.span(),
@@ -275,7 +275,7 @@ impl SyntaxTree for NegativeBody {
 }
 
 impl SourceElement for NegativeBody {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         let begin = self.delete_keyword.span();
 
         begin.join(
@@ -305,7 +305,7 @@ impl SyntaxTree for Implements {
 }
 
 impl SourceElement for Implements {
-    fn span(&self) -> Span { self.signature.span().join(&self.body.span()) }
+    fn span(&self) -> GlobalSpan { self.signature.span().join(&self.body.span()) }
 }
 
 #[cfg(test)]

@@ -6,7 +6,7 @@ use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation, String},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use super::{
     expression::unit::{Boolean, Numeric},
@@ -53,7 +53,7 @@ impl SyntaxTree for Pair {
 }
 
 impl SourceElement for Pair {
-    fn span(&self) -> Span { self.key.span().join(&self.value.span()) }
+    fn span(&self) -> GlobalSpan { self.key.span().join(&self.value.span()) }
 }
 
 pub type Map = EnclosedConnectedList<Pair, Punctuation>;
@@ -98,7 +98,7 @@ impl SyntaxTree for Value {
 }
 
 impl SourceElement for Value {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Null(kw) => kw.span(),
             Self::Boolean(b) => b.span(),

@@ -43,7 +43,7 @@ impl SyntaxTree for WhereClause {
 }
 
 impl SourceElement for WhereClause {
-    fn span(&self) -> pernixc_source_file::Span {
+    fn span(&self) -> pernixc_source_file::GlobalSpan {
         let end = self
             .predicates
             .last()

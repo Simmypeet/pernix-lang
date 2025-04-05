@@ -2,7 +2,7 @@
 //! tokens from a token-stream/state-machine.
 
 use pernixc_lexical::{
-    token::{self, KeywordKind, Token},
+    token::{self, KeywordKind, Kind},
     token_stream::{self, DelimiterKind, TokenKind},
 };
 
@@ -69,7 +69,7 @@ impl Expect for Identifier {
     type Output = token::Identifier;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Token(Token::Identifier(ident)) = token {
+        if let TokenKind::Token(Kind::Identifier(ident)) = token {
             Some(ident)
         } else {
             None
@@ -81,7 +81,7 @@ impl Expect for Numeric {
     type Output = token::Numeric;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Token(Token::Numeric(ident)) = token {
+        if let TokenKind::Token(Kind::Numeric(ident)) = token {
             Some(ident)
         } else {
             None
@@ -93,7 +93,7 @@ impl Expect for String {
     type Output = token::String;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Token(Token::String(ident)) = token {
+        if let TokenKind::Token(Kind::String(ident)) = token {
             Some(ident)
         } else {
             None
@@ -105,7 +105,7 @@ impl Expect for Character {
     type Output = token::Character;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Token(Token::Character(ident)) = token {
+        if let TokenKind::Token(Kind::Character(ident)) = token {
             Some(ident)
         } else {
             None
@@ -117,7 +117,7 @@ impl Expect for char {
     type Output = token::Punctuation;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Token(Token::Punctuation(punc)) = token {
+        if let TokenKind::Token(Kind::Punctuation(punc)) = token {
             if punc.punctuation == *self {
                 Some(punc)
             } else {
@@ -133,7 +133,7 @@ impl Expect for KeywordKind {
     type Output = token::Keyword;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Token(Token::Keyword(keyword)) = token {
+        if let TokenKind::Token(Kind::Keyword(keyword)) = token {
             if keyword.kind == *self {
                 Some(keyword)
             } else {
@@ -180,7 +180,7 @@ impl Expect for NewLine {
     type Output = token::NewLine;
 
     fn expect<'a>(&self, token: &'a TokenKind) -> Option<&'a Self::Output> {
-        if let TokenKind::Token(Token::NewLine(new_line)) = token {
+        if let TokenKind::Token(Kind::NewLine(new_line)) = token {
             Some(new_line)
         } else {
             None

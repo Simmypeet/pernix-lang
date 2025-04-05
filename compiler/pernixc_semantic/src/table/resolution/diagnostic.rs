@@ -2,7 +2,7 @@
 
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::Span;
+use pernixc_source_file::GlobalSpan;
 
 use crate::table::{GlobalID, Table};
 
@@ -14,7 +14,7 @@ pub struct SymbolNotFound {
     pub searched_item_id: Option<GlobalID>,
 
     /// The span where the symbol was searched from.
-    pub resolution_span: Span,
+    pub resolution_span: GlobalSpan,
 }
 
 impl Report<&Table> for SymbolNotFound {
@@ -60,7 +60,7 @@ pub struct SymbolIsNotAccessible {
     pub referred: GlobalID,
 
     /// The span where the [`Self::referred`] is referred from.
-    pub referred_span: Span,
+    pub referred_span: GlobalSpan,
 }
 
 impl Report<&Table> for SymbolIsNotAccessible {
@@ -86,7 +86,7 @@ impl Report<&Table> for SymbolIsNotAccessible {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ThisNotFound {
     /// The span where the `this` keyword was found.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 impl Report<&Table> for ThisNotFound {
@@ -112,7 +112,7 @@ pub struct NoGenericArgumentsRequired {
     pub global_id: GlobalID,
 
     /// The span where the generic arguments were supplied.
-    pub generic_argument_span: Span,
+    pub generic_argument_span: GlobalSpan,
 }
 
 impl Report<&Table> for NoGenericArgumentsRequired {

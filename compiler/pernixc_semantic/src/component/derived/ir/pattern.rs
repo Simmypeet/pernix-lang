@@ -6,7 +6,7 @@ use diagnostic::AlreadyBoundName;
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 
 use crate::{
     component::derived::{
@@ -28,7 +28,7 @@ pub struct Integer {
     pub value: SwitchValue,
 
     /// The span of the integer literal.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// A boolean literal pattern
@@ -38,7 +38,7 @@ pub struct Boolean {
     pub value: bool,
 
     /// The span of the boolean literal.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// A pattern where the value is bound to a name
@@ -55,7 +55,7 @@ pub struct Named {
     pub reference_binding: Option<Qualifier>,
 
     /// The span to the identifier of the name binding.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// A refutable pattern specifying a variant of an enum.
@@ -68,7 +68,7 @@ pub struct Enum {
     pub pattern: Option<Box<Refutable>>,
 
     /// The span of the enum variant pattern.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// A pattern bound to an element in a tuple.
@@ -103,7 +103,7 @@ pub struct Tuple<T> {
     pub elements: Vec<TupleElement<T>>,
 
     /// The span of the whole tuple pattern.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// A pattern that matches on a struct with fields.
@@ -116,14 +116,14 @@ pub struct Structural<T> {
     pub patterns_by_field_id: HashMap<ID<Field>, T>,
 
     /// The span of the whole structural pattern.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// A pattern that discards the value
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Wildcard {
     /// The span of the wildcard.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// A pattern that cannot be refuted (always matches)
@@ -137,7 +137,7 @@ pub enum Irrefutable {
 }
 
 impl SourceElement for Irrefutable {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Named(named) => named.span.clone(),
             Self::Tuple(tuple) => tuple.span.clone(),
@@ -161,7 +161,7 @@ pub enum Refutable {
 }
 
 impl SourceElement for Refutable {
-    fn span(&self) -> Span {
+    fn span(&self) -> GlobalSpan {
         match self {
             Self::Boolean(boolean) => boolean.span.clone(),
             Self::Integer(numeric) => numeric.span.clone(),
@@ -184,7 +184,7 @@ pub struct NameBinding<M: term::Model> {
     pub load_address: Address<M>,
 
     /// The span of the identifier of the name binding.
-    pub span: Span,
+    pub span: GlobalSpan,
 }
 
 /// Contains all the named bindings in the patterns.

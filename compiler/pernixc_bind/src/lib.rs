@@ -45,7 +45,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::{SourceElement, GlobalSpan};
 use pernixc_syntax::syntax_tree;
 use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
@@ -86,7 +86,7 @@ struct BlockState {
     incoming_values: HashMap<ID<Block<infer::Model>>, Value<infer::Model>>,
     successor_block_id: ID<Block<infer::Model>>,
     express_type: Option<Type<infer::Model>>,
-    span: Span,
+    span: GlobalSpan,
 }
 
 /// The binder used for building the IR.
@@ -219,7 +219,7 @@ impl<'t> Binder<'t> {
      binding an expression."
 )]
 #[allow(missing_docs)]
-pub struct BindingError(pub Span);
+pub struct BindingError(pub GlobalSpan);
 
 /// Is an error occurred while binding the syntax tree
 #[derive(
@@ -264,7 +264,7 @@ impl<T: Default + Clone, U: Term + From<T>> ElidedTermProvider<U>
 }
 
 impl Binder<'_> {
-    fn create_unreachable(&mut self, span: Span) -> Literal<infer::Model> {
+    fn create_unreachable(&mut self, span: GlobalSpan) -> Literal<infer::Model> {
         Literal::Unreachable(Unreachable {
             r#type: {
                 let inference = InferenceVariable::<Type<_>>::new();
@@ -288,7 +288,7 @@ impl Binder<'_> {
         &mut self,
         r#type: Type<infer::Model>,
         scope_id: ID<scope::Scope>,
-        span: Span,
+        span: GlobalSpan,
     ) -> ID<Alloca<infer::Model>> {
         let alloca_id =
             self.intermediate_representation.values.allocas.insert(Alloca {
@@ -322,7 +322,7 @@ impl Binder<'_> {
     fn create_alloca(
         &mut self,
         r#type: Type<infer::Model>,
-        span: Span,
+        span: GlobalSpan,
     ) -> ID<Alloca<infer::Model>> {
         let alloca_id =
             self.intermediate_representation.values.allocas.insert(Alloca {
@@ -347,8 +347,8 @@ impl Binder<'_> {
         &mut self,
         value: Value<infer::Model>,
         scope_id: ID<scope::Scope>,
-        address_span: Option<Span>,
-        store_span: Span,
+        address_span: Option<GlobalSpan>,
+        store_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<ID<Alloca<infer::Model>>, Abort> {
         let ty = self.type_of_value(&value, handler)?;
@@ -424,7 +424,7 @@ impl Binder<'_> {
     fn create_register_assignmnet(
         &mut self,
         assignment: Assignment<infer::Model>,
-        span: Span,
+        span: GlobalSpan,
     ) -> ID<Register<infer::Model>> {
         let register_id = self
             .intermediate_representation
@@ -539,7 +539,7 @@ impl Binder<'_> {
         &mut self,
         generic_arguments: GenericArguments<infer::Model>,
         resolved_id: GlobalID,
-        generic_identifier_span: Span,
+        generic_identifier_span: GlobalSpan,
     ) -> Result<(GenericArguments<infer::Model>, Vec<Box<dyn Diagnostic>>), Abort>
     {
         let mut type_inferences = InferenceProvider::default();
@@ -778,7 +778,7 @@ impl Binder<'_> {
         &mut self,
         ty: &Type<infer::Model>,
         expected_ty: Expected<infer::Model>,
-        type_check_span: Span,
+        type_check_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Option<Box<dyn Diagnostic>>, Abort> {
         let environment = self.create_environment();
@@ -931,7 +931,7 @@ impl Binder<'_> {
         &mut self,
         ty: &Type<infer::Model>,
         expected_ty: Expected<infer::Model>,
-        type_check_span: Span,
+        type_check_span: GlobalSpan,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<bool, Abort> {
         let error = self.type_check_as_diagnostic(
