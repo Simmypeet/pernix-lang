@@ -3,9 +3,12 @@
 /// Implement this trait for a type that can report a diagnostic.
 ///
 /// This trait is typically implemented by error and warning types.
-pub trait Report<Param, S> {
+pub trait Report<Param> {
+    /// The type of the span used to represent the location of the diagnostic.
+    type Span;
+
     /// Creates a diagnostic.
-    fn report(&self, parameter: Param) -> Diagnostic<S>;
+    fn report(&self, parameter: Param) -> Diagnostic<Self::Span>;
 }
 
 /// Enumeration of the severity levels of a diagnostic.

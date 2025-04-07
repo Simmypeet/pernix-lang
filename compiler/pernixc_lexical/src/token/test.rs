@@ -1,31 +1,35 @@
-use std::sync::Arc;
-
+use pernixc_arena::ID;
 use pernixc_handler::Storage;
-use pernixc_source_file::SourceFile;
+use pernixc_source_file::{LocalSourceMap, LocalSpan, SourceFile};
 use pernixc_test_input::Input;
 use proptest::{
-    prelude::Arbitrary, prop_assert, proptest, test_runner::TestCaseError,
+    prelude::Arbitrary, prop_assert, prop_assert_eq, proptest,
+    test_runner::TestCaseError,
 };
+
+use crate::token::Tokenizer;
 
 fn tokenize(
     source: std::string::String,
-) -> Result<super::Kind, proptest::test_runner::TestCaseError> {
-    let source_file = Arc::new(SourceFile::new(source, "test".into()));
-    let mut iterator = source_file.iter();
+) -> Result<
+    (super::Token<LocalSpan>, LocalSourceMap),
+    proptest::test_runner::TestCaseError,
+> {
+    let mut local_source_map = LocalSourceMap::new();
+    let source_file = SourceFile::new(source, "test".into());
 
-    let error_storage: Storage<super::error::Error> = Storage::new();
-    let token = match super::Kind::lex(&mut iterator, &error_storage) {
-        Ok(token) => token,
-        Err(error) => {
-            return Err(TestCaseError::fail(format!(
-                "failed to tokenize the source code: {}, errors: {:?}",
-                error,
-                error_storage.as_vec()
-            )))
-        }
-    };
+    let id = local_source_map.register(source_file).unwrap();
 
-    prop_assert!(iterator.next().is_none());
+    let error_storage: Storage<super::error::Error<ID<SourceFile>>> =
+        Storage::new();
+    let mut tokenizer =
+        Tokenizer::new(local_source_map[id].content(), id, &error_storage);
+
+    let token = tokenizer
+        .next()
+        .ok_or_else(|| TestCaseError::fail("failed to get the first token"))?;
+
+    prop_assert_eq!(tokenizer.next(), None);
 
     // no errors
     prop_assert!(
@@ -34,7 +38,7 @@ fn tokenize(
         error_storage.as_vec()
     );
 
-    Ok(token)
+    Ok((token, local_source_map))
 }
 
 proptest! {
@@ -44,8 +48,8 @@ proptest! {
         input in super::strategy::Token::arbitrary()
     ) {
         let source = input.to_string();
-        let token = tokenize(source)?;
+        let (token, source_map) = tokenize(source)?;
 
-        input.assert(&token)?;
+        input.assert(&token, &source_map)?;
     }
 }

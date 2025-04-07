@@ -432,6 +432,10 @@ impl<ID> Span<ID> {
             source_id: self.source_id.clone(),
         }
     }
+
+    /// Gets the byte range of the span.
+    #[must_use]
+    pub const fn range(&self) -> Range<ByteIndex> { self.start..self.end }
 }
 
 /// Represents an element that is located within a source file.
@@ -505,14 +509,14 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
     Serialize,
     Deserialize,
 )]
-pub struct LocalMap {
+pub struct LocalSourceMap {
     #[deref]
     #[deref_mut]
     arena: Arena<SourceFile>,
     ids_by_path: HashMap<PathBuf, ID<SourceFile>>,
 }
 
-impl LocalMap {
+impl LocalSourceMap {
     /// Creates a new empty [`GlobalMap`].
     #[must_use]
     pub fn new() -> Self {
@@ -539,7 +543,7 @@ impl LocalMap {
     }
 }
 
-impl<'a> codespan_reporting::files::Files<'a> for LocalMap {
+impl<'a> codespan_reporting::files::Files<'a> for LocalSourceMap {
     type FileId = ID<SourceFile>;
     type Name = std::path::Display<'a>;
     type Source = &'a str;
@@ -624,11 +628,11 @@ impl<'a> codespan_reporting::files::Files<'a> for LocalMap {
 /// A map of source files, accessing through the [`Global<ID<SourceFile>>`].
 /// Also possibly used to access the source file by its path.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct GlobalMap {
-    maps_by_target_id: HashMap<TargetID, LocalMap>,
+pub struct GlobalSourceMap {
+    maps_by_target_id: HashMap<TargetID, LocalSourceMap>,
 }
 
-impl GlobalMap {
+impl GlobalSourceMap {
     /// Creates a new empty [`GlobalMap`].
     #[must_use]
     pub fn new() -> Self { Self { maps_by_target_id: HashMap::new() } }
@@ -656,7 +660,7 @@ impl GlobalMap {
     }
 }
 
-impl<'a> codespan_reporting::files::Files<'a> for GlobalMap {
+impl<'a> codespan_reporting::files::Files<'a> for GlobalSourceMap {
     type FileId = Global<ID<SourceFile>>;
     type Name = std::path::Display<'a>;
     type Source = &'a str;

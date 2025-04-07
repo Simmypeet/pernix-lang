@@ -1,6 +1,11 @@
 //! Is a module containing the [`Token`] type and all of its related types.
 
-use std::{collections::HashMap, hash::Hash, iter::Iterator, str::FromStr};
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    iter::{Iterator, Peekable},
+    str::{CharIndices, FromStr},
+};
 
 use bimap::BiHashMap;
 use derive_more::From;
@@ -12,7 +17,7 @@ use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
 
-use crate::error::{self, InvalidEscapeSequence, UnterminatedDelimitedComment};
+use crate::error::{self, InvalidEscapeSequence};
 
 pub mod strategy;
 
@@ -287,36 +292,165 @@ lazy_static! {
 }
 
 /// Represents a single whitespace character.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NewLine {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NewLine<S> {
     /// The span to the new line character, either `\n` or `\r\n`.
-    pub span: Span,
+    pub span: S,
 }
 
-impl SourceElement for NewLine {
-    fn span(&self) -> Span { self.span.clone() }
+impl<S: Clone> SourceElement for NewLine<S> {
+    type Span = S;
+
+    fn span(&self) -> S { self.span.clone() }
+}
+
+/// Represents a single ASCII character literal enclosed in single quotes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Character<S> {
+    /// Is the span that makes up the token.
+    pub span: S,
+
+    /// The value of the character literal.
+    ///
+    /// The value is `None` if the character literal is invalid (e.g., invalid
+    /// escape sequence).
+    pub value: Option<char>,
+}
+
+impl<S: Clone> SourceElement for Character<S> {
+    type Span = S;
+
+    fn span(&self) -> S { self.span.clone() }
+}
+
+/// Represents a hardcoded string literal value in the source code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct String<S> {
+    /// Is the span that makes up the token. This includes the opening and
+    /// closing double quotes.
+    pub span: S,
+
+    /// Checks if the string token is valid (properly escaped and closed with
+    /// double quotes).
+    pub is_valid: bool,
+}
+
+impl<S: Clone> SourceElement for String<S> {
+    type Span = S;
+
+    fn span(&self) -> S { self.span.clone() }
+}
+
+/// Represents a contiguous sequence of characters that are valid in an
+/// identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Identifier<S> {
+    /// Is the span that makes up the token.
+    pub span: S,
+}
+
+/// Checks if the given string is a valid identifier string.
+pub fn is_valid_identifier_string(s: &str) -> bool {
+    let mut chars = s.chars();
+
+    if let Some(character) = chars.next() {
+        if !is_first_identifier_character(character) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    let identifier = chars.all(is_identifier_character);
+
+    KeywordKind::from_str(s).is_err() && identifier
+}
+
+impl<S: Clone> SourceElement for Identifier<S> {
+    type Span = S;
+
+    fn span(&self) -> S { self.span.clone() }
+}
+
+/// Represents a contiguous sequence of characters that are reserved for a
+/// keyword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Keyword<S> {
+    /// Is the span that makes up the token.
+    pub span: S,
+
+    /// Is the [`KeywordKind`] that the token represents.
+    pub kind: KeywordKind,
+}
+
+impl<S: Clone> SourceElement for Keyword<S> {
+    type Span = S;
+
+    fn span(&self) -> S { self.span.clone() }
+}
+
+/// Represents a single ASCII punctuation character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Punctuation<S> {
+    /// Is the span that makes up the token.
+    pub span: S,
+
+    /// Is the ASCII punctuation character that the token represents.
+    pub punctuation: char,
+}
+
+impl<S: Clone> SourceElement for Punctuation<S> {
+    type Span = S;
+
+    fn span(&self) -> S { self.span.clone() }
+}
+
+/// Represents a hardcoded numeric literal value in the source code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Numeric<S> {
+    /// Is the span that makes up the token.
+    pub span: S,
+}
+
+impl<S: Clone> SourceElement for Numeric<S> {
+    type Span = S;
+
+    fn span(&self) -> S { self.span.clone() }
+}
+
+/// Is an enumeration representing the two kinds of comments in the Pernix
+/// programming language.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum CommentKind {
+    /// A comment that starts with `//` and ends at the end of the line.
+    Line,
+
+    /// A comment that starts with `/*` and ends with `*/`.
+    Delimited,
 }
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming
 /// language.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
 #[allow(missing_docs)]
-pub enum Kind {
-    Identifier(Identifier),
-    Keyword(Keyword),
-    Punctuation(Punctuation),
-    Numeric(Numeric),
-    Character(Character),
-    String(String),
-    NewLine(NewLine),
+pub enum Kind<S> {
+    Identifier(Identifier<S>),
+    Keyword(Keyword<S>),
+    Punctuation(Punctuation<S>),
+    Numeric(Numeric<S>),
+    Character(Character<S>),
+    String(String<S>),
+    NewLine(NewLine<S>),
 }
 
-impl Kind {
+impl<S> Kind<S> {
     /// Returns the span of the token.
     #[must_use]
-    pub const fn span(&self) -> &Span {
+    pub const fn span(&self) -> &S {
         match self {
             Self::Identifier(token) => &token.span,
             Self::Keyword(token) => &token.span,
@@ -346,8 +480,10 @@ impl Kind {
     }
 }
 
-impl SourceElement for Kind {
-    fn span(&self) -> Span {
+impl<S: Clone> SourceElement for Kind<S> {
+    type Span = S;
+
+    fn span(&self) -> S {
         match self {
             Self::NewLine(token) => token.span(),
             Self::Identifier(token) => token.span(),
@@ -358,145 +494,6 @@ impl SourceElement for Kind {
             Self::String(token) => token.span(),
         }
     }
-}
-
-/// Represents a single ASCII character literal enclosed in single quotes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Character {
-    /// Is the span that makes up the token.
-    pub span: Span,
-
-    /// The value of the character literal.
-    ///
-    /// The value is `None` if the character literal is invalid (e.g., invalid
-    /// escape sequence).
-    pub value: Option<char>,
-}
-
-impl SourceElement for Character {
-    fn span(&self) -> Span { self.span.clone() }
-}
-
-/// Represents a hardcoded string literal value in the source code.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct String {
-    /// Is the span that makes up the token.
-    pub span: Span,
-
-    /// The value of the string literal. The value is `None` if the string
-    /// literal is invalid (e.g., invalid escape sequence).
-    pub value: Option<std::string::String>,
-}
-
-impl SourceElement for String {
-    fn span(&self) -> Span { self.span.clone() }
-}
-
-/// Represents a contiguous sequence of whitespace characters.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct WhiteSpaces {
-    /// Is the span that makes up the token.
-    pub span: Span,
-}
-
-impl SourceElement for WhiteSpaces {
-    fn span(&self) -> Span { self.span.clone() }
-}
-
-/// Represents a contiguous sequence of characters that are valid in an
-/// identifier.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Identifier<S> {
-    /// Is the span that makes up the token.
-    pub span: S,
-}
-
-/// Checks if the given string is a valid identifier string.
-pub fn is_valid_identifier_string(s: &str) -> bool {
-    let mut chars = s.chars();
-
-    if let Some(character) = chars.next() {
-        if !Kind::is_first_identifier_character(character) {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
-    let identifier = chars.all(Kind::is_identifier_character);
-
-    KeywordKind::from_str(s).is_err() && identifier
-}
-
-impl<S> SourceElement for Identifier<S> {
-    fn span(&self) -> Span { self.span.clone() }
-}
-
-/// Represents a contiguous sequence of characters that are reserved for a
-/// keyword.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Keyword {
-    /// Is the span that makes up the token.
-    pub span: Span,
-
-    /// Is the [`KeywordKind`] that the token represents.
-    pub kind: KeywordKind,
-}
-
-impl SourceElement for Keyword {
-    fn span(&self) -> Span { self.span.clone() }
-}
-
-/// Represents a single ASCII punctuation character.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Punctuation {
-    /// Is the span that makes up the token.
-    pub span: Span,
-
-    /// Is the ASCII punctuation character that the token represents.
-    pub punctuation: char,
-}
-
-impl SourceElement for Punctuation {
-    fn span(&self) -> Span { self.span.clone() }
-}
-
-/// Represents a hardcoded numeric literal value in the source code.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Numeric {
-    /// Is the span that makes up the token.
-    pub span: Span,
-}
-
-impl SourceElement for Numeric {
-    fn span(&self) -> Span { self.span.clone() }
-}
-
-/// Is an enumeration representing the two kinds of comments in the Pernix
-/// programming language.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
-pub enum CommentKind {
-    /// A comment that starts with `//` and ends at the end of the line.
-    Line,
-
-    /// A comment that starts with `/*` and ends with `*/`.
-    Delimited,
-}
-
-/// Represents a portion of the source code that is ignored by the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Comment {
-    /// Is the span that makes up the token.
-    pub span: Span,
-
-    /// Is the kind of comment that the token represents.
-    pub kind: CommentKind,
-}
-
-impl SourceElement for Comment {
-    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an error that can occur when invoking the [`Token::lex`] method.
@@ -524,246 +521,186 @@ pub enum Error {
     EndOfSourceCodeIteratorArgument,
 }
 
-impl Kind {
-    /// Increments the iterator until the predicate returns false.
-    fn walk_iter(
-        iter: &mut pernixc_source_file::Iterator,
-        predicate: impl Fn(char) -> bool,
-    ) {
-        while let Some((_, character)) = iter.peek() {
-            if !predicate(character) {
-                break;
-            }
+/// Represents a token in the Pernix programming language.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Token<S> {
+    /// The kind of the token.
+    pub kind: Kind<S>,
 
-            iter.next();
+    /// The span of the insignificant token that precedes this token.
+    ///
+    /// Insignificant tokens are tokens that are most likely to be ignored by
+    /// the parser. For example, whitespace and comments are insignificant
+    /// tokens.
+    pub prior_insignificant: Option<S>,
+}
+
+fn is_whitespace(character: char) -> bool {
+    character.is_whitespace() && character != '\n' && character != '\r'
+}
+
+/// Increments the iterator until the predicate returns false.
+fn walk_iter(
+    iter: &mut Peekable<impl Iterator<Item = (ByteIndex, char)>>,
+    predicate: impl Fn(char) -> bool,
+) {
+    while let Some((_, character)) = iter.peek() {
+        if !predicate(*character) {
+            break;
+        }
+
+        iter.next();
+    }
+}
+
+/// Checks if the given character is a valid first character of an
+/// identifier.
+fn is_first_identifier_character(character: char) -> bool {
+    character == '_'
+        || (!character.is_control()
+            && !character.is_whitespace()
+            && !character.is_ascii_punctuation()
+            && !character.is_ascii_digit())
+}
+
+/// Checks if the given character is a valid character of an identifier.
+fn is_identifier_character(character: char) -> bool {
+    character == '_'
+        || (!character.is_control()
+            && !character.is_whitespace()
+            && !character.is_ascii_punctuation())
+}
+
+/// A struct used for tokenizing the source code. The struct implements
+/// [`Iterator`] trait, which allows it to be used as an iterator that iterates
+/// over token sequences in the source code.
+pub struct Tokenizer<'a, ID> {
+    source: &'a str,
+    iter: Peekable<CharIndices<'a>>,
+    handler: &'a dyn Handler<error::Error<ID>>,
+    source_id: ID,
+}
+
+impl<ID: std::fmt::Debug> std::fmt::Debug for Tokenizer<'_, ID> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tokenizer")
+            .field("source", &self.source)
+            .field("iter", &self.iter)
+            .field("source_id", &self.source_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'a, ID> Tokenizer<'a, ID> {
+    /// Creates a new [`Tokenizer`] instance.
+    ///
+    /// # Parameters
+    ///
+    /// - `source`: The source code to tokenize.
+    /// - `source_id`: The ID of the source code used for creating spans.
+    /// - `handler`: The handler to use for reporting errors.
+    pub fn new(
+        source: &'a str,
+        source_id: ID,
+        handler: &'a dyn Handler<error::Error<ID>>,
+    ) -> Self {
+        Self {
+            source,
+            iter: source.char_indices().peekable(),
+            handler,
+            source_id,
+        }
+    }
+}
+
+impl<ID: Clone> Tokenizer<'_, ID> {
+    /// Creates a span from the given start location to the current location of
+    /// the iterator.
+    fn create_span(&mut self, start: ByteIndex) -> Span<ID>
+    where
+        ID: Clone,
+    {
+        if let Some((index, _)) = self.iter.peek().copied() {
+            Span { start, end: index, source_id: self.source_id.clone() }
+        } else {
+            Span {
+                start,
+                end: self.source.len(),
+                source_id: self.source_id.clone(),
+            }
         }
     }
 
-    /// Creates a span from the given start location to the current location of
-    /// the iterator.
-    fn create_span(
+    fn handle_insignificant(&mut self) -> Option<Span<ID>> {
+        let (start, _) = self.iter.peek().copied()?;
+
+        while let Some((_, character)) = self.iter.peek().copied() {
+            if is_whitespace(character) {
+                walk_iter(&mut self.iter, is_whitespace);
+            } else if character == '#' {
+                walk_iter(&mut self.iter, |x| x != '\n' && x != '\r');
+            } else {
+                break;
+            }
+        }
+
+        if let Some((index, _)) = self.iter.peek().copied() {
+            if index == start {
+                return None;
+            }
+
+            Some(Span::new(start, index, self.source_id.clone()))
+        } else {
+            Some(Span::new(start, self.source.len(), self.source_id.clone()))
+        }
+    }
+
+    fn handle_new_line(
+        &mut self,
+        character: char,
         start: ByteIndex,
-        iter: &mut pernixc_source_file::Iterator,
-    ) -> Span {
-        iter.peek().map_or_else(
-            || Span::to_end(iter.source_file().clone(), start),
-            |(index, _)| Span::new(iter.source_file().clone(), start, index),
-        )
-    }
+    ) -> NewLine<Span<ID>> {
+        // cr
+        if character == '\r' {
+            //  lf
+            if let Some((_, '\n')) = self.iter.peek() {
+                // crlf
+                self.iter.next();
+            }
+        }
 
-    /// Checks if the given character is a valid first character of an
-    /// identifier.
-    fn is_first_identifier_character(character: char) -> bool {
-        character == '_'
-            || (!character.is_control()
-                && !character.is_whitespace()
-                && !character.is_ascii_punctuation()
-                && !character.is_ascii_digit())
-    }
-
-    /// Checks if the given character is a valid character of an identifier.
-    fn is_identifier_character(character: char) -> bool {
-        character == '_'
-            || (!character.is_control()
-                && !character.is_whitespace()
-                && !character.is_ascii_punctuation())
-    }
-
-    fn is_whitespace(character: char) -> bool {
-        character.is_whitespace() && character != '\n' && character != '\r'
-    }
-
-    fn handle_whitespace(
-        iter: &mut pernixc_source_file::Iterator,
-        start: ByteIndex,
-    ) -> Self {
-        Self::walk_iter(iter, Self::is_whitespace);
-
-        WhiteSpaces { span: Self::create_span(start, iter) }.into()
+        NewLine { span: self.create_span(start) }
     }
 
     fn handle_identifier_and_keyword(
-        iter: &mut pernixc_source_file::Iterator,
+        &mut self,
         start: ByteIndex,
-    ) -> Self {
-        Self::walk_iter(iter, Self::is_identifier_character);
+    ) -> Kind<Span<ID>> {
+        walk_iter(&mut self.iter, is_identifier_character);
 
-        let span = Self::create_span(start, iter);
-        let word = span.str();
+        let span = self.create_span(start);
+        let word = &self.source[start..span.end];
 
         // Checks if the word is a keyword
-        KeywordKind::from_str(word).ok().map_or_else(
-            || Identifier { span: span.clone() }.into(),
-            |kw| Keyword { span: span.clone(), kind: kw }.into(),
-        )
-    }
-
-    fn handle_comment(
-        iter: &mut pernixc_source_file::Iterator,
-        start: ByteIndex,
-        character: char,
-        handler: &dyn Handler<error::Error>,
-    ) -> Result<Self, Error> {
-        // Single line comment
-        if let Some((_, '/')) = iter.peek() {
-            iter.next();
-
-            Self::walk_iter(iter, |character| {
-                !(character == '\n' || character == '\r')
-            });
-
-            let is_cr =
-                iter.peek().is_some_and(|(_, character)| character == '\r');
-
-            if let (true, Some((_, '\n'))) = (is_cr, iter.next()) {
-                // skips the crlf
-                iter.next();
-            }
-
-            Ok(Comment {
-                span: Self::create_span(start, iter),
-                kind: CommentKind::Line,
-            }
-            .into())
-        }
-        // Delimited comment
-        else if let Some((_, '*')) = iter.peek() {
-            iter.next();
-
-            let mut is_terminated = false;
-
-            while let Some((_, character)) = iter.next() {
-                if character == '*' {
-                    if let Some((_, '/')) = iter.peek() {
-                        iter.next();
-
-                        is_terminated = true;
-
-                        break;
-                    }
-                }
-            }
-
-            // Checks if the comment is terminated
-            if is_terminated {
-                Ok(Comment {
-                    span: Self::create_span(start, iter),
-                    kind: CommentKind::Delimited,
-                }
-                .into())
-            } else {
-                handler.receive(
-                    UnterminatedDelimitedComment {
-                        span: Span::new(
-                            iter.source_file().clone(),
-                            start,
-                            start + 2,
-                        ),
-                    }
-                    .into(),
-                );
-                return Err(Error::FatalLexicalError);
-            }
-        }
-        // Just a single slash punctuation
-        else {
-            Ok(Punctuation {
-                span: Self::create_span(start, iter),
-                punctuation: character,
-            }
-            .into())
+        if let Ok(kind) = KeywordKind::from_str(word) {
+            Kind::Keyword(Keyword { span, kind })
+        } else {
+            Kind::Identifier(Identifier { span })
         }
     }
 
     fn handle_numeric_literal(
-        iter: &mut pernixc_source_file::Iterator,
+        &mut self,
         start: ByteIndex,
-    ) -> Self {
+    ) -> Numeric<Span<ID>> {
         // Tokenizes the whole number part
-        Self::walk_iter(iter, |character| character.is_ascii_digit());
+        walk_iter(&mut self.iter, |character| character.is_ascii_digit());
 
-        Numeric { span: Self::create_span(start, iter) }.into()
+        Numeric { span: self.create_span(start) }
     }
 
-    fn handle_string_literal(
-        iter: &mut pernixc_source_file::Iterator,
-        start: ByteIndex,
-        handler: &dyn Handler<error::Error>,
-    ) -> Result<Self, Error> {
-        let mut string = Some(std::string::String::new());
-        let mut last_backslash = false;
-        let mut last_byte_index = start;
-
-        loop {
-            let Some((byte_index, character)) = iter.next() else {
-                handler.receive(error::Error::UnterminatedStringLiteral(
-                    error::UnterminatedStringLiteral {
-                        span: Span::new(
-                            iter.source_file().clone(),
-                            start,
-                            start + 1,
-                        ),
-                    },
-                ));
-
-                return Err(Error::FatalLexicalError);
-            };
-
-            if last_backslash {
-                if let Some(value) =
-                    ESCAPE_SEQUENCE_BY_REPRESENTATION.get_by_left(&character)
-                {
-                    if let Some(string) = string.as_mut() {
-                        string.push(*value);
-                    }
-                } else {
-                    handler.receive(error::Error::InvalidEscapeSequence(
-                        InvalidEscapeSequence {
-                            span: Span::new(
-                                iter.source_file().clone(),
-                                last_byte_index,
-                                byte_index,
-                            ),
-                        },
-                    ));
-                }
-
-                last_backslash = false;
-            } else {
-                match character {
-                    // end the string
-                    '"' => {
-                        return Ok(Self::String(String {
-                            span: Self::create_span(start, iter),
-                            value: string,
-                        }));
-                    }
-
-                    // escape sequence
-                    '\\' => {
-                        last_backslash = true;
-                    }
-
-                    // normal character
-                    character => {
-                        if let Some(x) = string.as_mut() {
-                            x.push(character);
-                        }
-                        last_backslash = false;
-                    }
-                }
-            }
-
-            last_byte_index = byte_index;
-        }
-    }
-
-    fn handle_single_quote(
-        iter: &mut pernixc_source_file::Iterator,
-        start: ByteIndex,
-        handler: &dyn Handler<error::Error>,
-    ) -> Self {
-        let mut iter_cloned = iter.clone();
+    fn handle_single_quote(&mut self, start: ByteIndex) -> Kind<Span<ID>> {
+        let mut iter_cloned = self.iter.clone();
 
         match iter_cloned.next() {
             // escaped character
@@ -771,8 +708,8 @@ impl Kind {
                 let is_escaped = if char == '\\' {
                     // eat the next character
                     let Some((_, new_char)) = iter_cloned.next() else {
-                        return Self::Punctuation(Punctuation {
-                            span: Self::create_span(start, iter),
+                        return Kind::Punctuation(Punctuation {
+                            span: self.create_span(start),
                             punctuation: '\'',
                         });
                     };
@@ -785,8 +722,8 @@ impl Kind {
                 };
 
                 if !is_escaped && char == '\'' {
-                    return Self::Punctuation(Punctuation {
-                        span: Self::create_span(start, iter),
+                    return Kind::Punctuation(Punctuation {
+                        span: self.create_span(start),
                         punctuation: '\'',
                     });
                 }
@@ -795,14 +732,14 @@ impl Kind {
                     // a caharceter literal
                     Some((content_end, '\'')) => {
                         if is_escaped {
-                            iter.next(); // eat the backslash
+                            self.iter.next(); // eat the backslash
                         }
 
-                        iter.next(); // eat the character
-                        iter.next(); // eat the closing quote
+                        self.iter.next(); // eat the character
+                        self.iter.next(); // eat the closing quote
 
-                        Self::Character(Character {
-                            span: Self::create_span(start, iter),
+                        Kind::Character(Character {
+                            span: self.create_span(start),
                             value: if !is_escaped {
                                 Some(char)
                             } else if let Some(value) =
@@ -812,13 +749,13 @@ impl Kind {
                             {
                                 Some(value)
                             } else {
-                                handler.receive(
+                                self.handler.receive(
                                     error::Error::InvalidEscapeSequence(
                                         InvalidEscapeSequence {
                                             span: Span::new(
-                                                iter.source_file().clone(),
                                                 content_start,
                                                 content_end,
+                                                self.source_id.clone(),
                                             ),
                                         },
                                     ),
@@ -828,94 +765,134 @@ impl Kind {
                         })
                     }
 
-                    _ => Self::Punctuation(Punctuation {
-                        span: Self::create_span(start, iter),
+                    _ => Kind::Punctuation(Punctuation {
+                        span: self.create_span(start),
                         punctuation: '\'',
                     }),
                 }
             }
 
-            None => Self::Punctuation(Punctuation {
-                span: Self::create_span(start, iter),
+            None => Kind::Punctuation(Punctuation {
+                span: self.create_span(start),
                 punctuation: '\'',
             }),
         }
     }
 
-    fn handle_new_line(
-        iter: &mut pernixc_source_file::Iterator,
-        start: ByteIndex,
-        character: char,
-    ) -> Self {
-        // cr
-        if character == '\r' {
-            //  lf
-            if let Some((_, '\n')) = iter.peek() {
-                // crlf
-                iter.next();
+    fn handle_string_literal(&mut self, start: ByteIndex) -> String<Span<ID>> {
+        let mut last_backslash = false;
+        let mut last_byte_index = start;
+
+        let mut has_error = false;
+
+        loop {
+            let Some((byte_index, character)) = self.iter.next() else {
+                self.handler.receive(error::Error::UnterminatedStringLiteral(
+                    error::UnterminatedStringLiteral {
+                        span: Span::new(
+                            start,
+                            start + 1,
+                            self.source_id.clone(),
+                        ),
+                    },
+                ));
+
+                return String {
+                    span: Span::new(
+                        start,
+                        self.source.len(),
+                        self.source_id.clone(),
+                    ),
+                    is_valid: false,
+                };
+            };
+
+            if last_backslash {
+                if ESCAPE_SEQUENCE_BY_REPRESENTATION
+                    .get_by_left(&character)
+                    .is_none()
+                {
+                    self.handler.receive(error::Error::InvalidEscapeSequence(
+                        InvalidEscapeSequence {
+                            span: Span::new(
+                                last_byte_index,
+                                byte_index,
+                                self.source_id.clone(),
+                            ),
+                        },
+                    ));
+                    has_error = true;
+                }
+
+                last_backslash = false;
+            } else {
+                match character {
+                    // end the string
+                    '"' => {
+                        return String {
+                            span: self.create_span(start),
+                            is_valid: !has_error,
+                        };
+                    }
+
+                    // escape sequence
+                    '\\' => {
+                        last_backslash = true;
+                    }
+
+                    // normal character
+                    _ => {
+                        last_backslash = false;
+                    }
+                }
             }
-        }
 
-        NewLine { span: Self::create_span(start, iter) }.into()
+            last_byte_index = byte_index;
+        }
     }
+}
 
-    /// Lexes the source code from the given iterator.
-    ///
-    /// The tokenization starts at the current location of the iterator. The
-    /// function moves the iterator at least once and forwards it until it
-    /// makes a token. After the token is made, the iterator is left at the
-    /// next character that is not part of the token.
-    ///
-    /// # Errors
-    /// - [`Error::EndOfSourceCodeIteratorArgument`] - The iterator argument is
-    ///   at the end of the source code.
-    /// - [`Error::FatalLexicalError`] - A fatal lexical error occurred.
-    pub fn lex(
-        iter: &mut pernixc_source_file::Iterator,
-        handler: &dyn Handler<error::Error>,
-    ) -> Result<Self, Error> {
-        // Gets the first character
-        let (start, character) =
-            iter.next().ok_or(Error::EndOfSourceCodeIteratorArgument)?;
+impl<ID: Clone> Iterator for Tokenizer<'_, ID> {
+    type Item = Token<Span<ID>>;
 
+    fn next(&mut self) -> Option<Self::Item> {
         // Found white spaces
-        if Self::is_whitespace(character) {
-            Ok(Self::handle_whitespace(iter, start))
-        }
+        let prior_insignificant = self.handle_insignificant();
+
+        // Gets the first character
+        let (start, character) = self.iter.next()?;
+
         // Found new line character
-        else if character == '\n' || character == '\r' {
-            Ok(Self::handle_new_line(iter, start, character))
+        let kind = if character == '\n' || character == '\r' {
+            Kind::NewLine(self.handle_new_line(character, start))
         }
         // Found identifier/keyword
-        else if Self::is_first_identifier_character(character) {
-            Ok(Self::handle_identifier_and_keyword(iter, start))
-        }
-        // Found comment/single slash punctuation
-        else if character == '/' {
-            Self::handle_comment(iter, start, character, handler)
+        else if is_first_identifier_character(character) {
+            self.handle_identifier_and_keyword(start)
         }
         // Found numeric literal
         else if character.is_ascii_digit() {
-            Ok(Self::handle_numeric_literal(iter, start))
+            Kind::Numeric(self.handle_numeric_literal(start))
         }
         // Might found a character literal
         else if character == '\'' {
-            Ok(Self::handle_single_quote(iter, start, handler))
+            self.handle_single_quote(start)
         }
         // Found a string literal
         else if character == '"' {
-            Self::handle_string_literal(iter, start, handler)
+            Kind::String(self.handle_string_literal(start))
         }
         // Found a punctuation
         else if character.is_ascii_punctuation() {
-            Ok(Punctuation {
-                span: Self::create_span(start, iter),
+            Kind::Punctuation(Punctuation {
+                span: self.create_span(start),
                 punctuation: character,
-            }
-            .into())
+            })
         } else {
             unreachable!("should've been handled by earlier cases")
-        }
+        };
+
+        Some(Token { kind, prior_insignificant })
     }
 }
 
