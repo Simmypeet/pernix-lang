@@ -1,6 +1,5 @@
 //! This crate contains the information about the target of the compilation.
 
-use derive_more::{Deref, DerefMut};
 use serde::{Deserialize, Serialize};
 
 /// Represents an identifier for a target.
@@ -15,12 +14,15 @@ use serde::{Deserialize, Serialize};
     Hash,
     Serialize,
     Deserialize,
-    Deref,
-    DerefMut,
 )]
-pub struct TargetID(pub u64);
+pub enum TargetID {
+    /// Representing a target that is being compiled at the moment.
+    Local,
 
-impl TargetID {
-    /// The core target.
-    pub const CORE: Self = Self(0);
+    /// Representing a `core` target.
+    Core,
+
+    /// Represents an externally defined targets that are being consumed by the
+    /// current [`Self::Local`].
+    Extern(u64),
 }
