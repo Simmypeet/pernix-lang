@@ -6,6 +6,7 @@ use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Debug,
     fs::File,
+    hash::Hash,
     io::Read,
     ops::Range,
     path::PathBuf,
@@ -14,6 +15,7 @@ use std::{
 use derive_more::{Deref, DerefMut};
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
+use pernixc_target::{Global, TargetID};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -469,8 +471,8 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
     results
 }
 
-/// A map of source files, accessing through the source file ID. Also possibly
-/// used to access the source file by its path.
+/// A map of source files, accessing through the [`ID<SourceFile>`].
+/// Also possibly used to access the source file by its path.
 #[derive(
     Debug,
     Clone,
@@ -482,15 +484,15 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
     Serialize,
     Deserialize,
 )]
-pub struct Map {
+pub struct LocalMap {
     #[deref]
     #[deref_mut]
     arena: Arena<SourceFile>,
     ids_by_path: HashMap<PathBuf, ID<SourceFile>>,
 }
 
-impl Map {
-    /// Creates a new empty [`Map`].
+impl LocalMap {
+    /// Creates a new empty [`GlobalMap`].
     #[must_use]
     pub fn new() -> Self {
         Self { arena: Arena::new(), ids_by_path: HashMap::new() }
@@ -516,7 +518,7 @@ impl Map {
     }
 }
 
-impl<'a> codespan_reporting::files::Files<'a> for Map {
+impl<'a> codespan_reporting::files::Files<'a> for LocalMap {
     type FileId = ID<SourceFile>;
     type Name = std::path::Display<'a>;
     type Source = &'a str;
@@ -581,6 +583,127 @@ impl<'a> codespan_reporting::files::Files<'a> for Map {
         let source = self
             .arena
             .get(id)
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        if line_index == source.lines.len() {
+            return Ok(source.lines.last().map_or(0..0, |x| x.start..x.end));
+        }
+
+        let line_range = source.lines.get(line_index).ok_or({
+            codespan_reporting::files::Error::IndexTooLarge {
+                given: line_index,
+                max: source.lines.len(),
+            }
+        })?;
+
+        Ok(line_range.clone())
+    }
+}
+
+/// A map of source files, accessing through the [`Global<ID<SourceFile>>`].
+/// Also possibly used to access the source file by its path.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct GlobalMap {
+    maps_by_target_id: HashMap<TargetID, LocalMap>,
+}
+
+impl GlobalMap {
+    /// Creates a new empty [`GlobalMap`].
+    #[must_use]
+    pub fn new() -> Self { Self { maps_by_target_id: HashMap::new() } }
+
+    /// Registers a source file in the map. If the source file is already
+    /// registered, it returns the `Err(ID)` of the existing source file.
+    /// If the source file is not registered, it returns the `Ok(ID)` of the
+    /// newly registered source file.
+    pub fn register(
+        &mut self,
+        source: SourceFile,
+        target_id: TargetID,
+    ) -> Result<ID<SourceFile>, ID<SourceFile>> {
+        let local_map = self.maps_by_target_id.entry(target_id).or_default();
+
+        match local_map.ids_by_path.entry(source.full_path.clone()) {
+            Entry::Occupied(occupied_entry) => Err(*occupied_entry.get()),
+            Entry::Vacant(vacant_entry) => {
+                let id = local_map.arena.insert(source);
+                vacant_entry.insert(id);
+
+                Ok(id)
+            }
+        }
+    }
+}
+
+impl<'a> codespan_reporting::files::Files<'a> for GlobalMap {
+    type FileId = Global<ID<SourceFile>>;
+    type Name = std::path::Display<'a>;
+    type Source = &'a str;
+
+    fn name(
+        &'a self,
+        id: Self::FileId,
+    ) -> Result<Self::Name, codespan_reporting::files::Error> {
+        let source = self
+            .maps_by_target_id
+            .get(&id.target_id)
+            .and_then(|x| x.arena.get(id.id))
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        Ok(source.full_path.display())
+    }
+
+    fn source(
+        &'a self,
+        id: Self::FileId,
+    ) -> Result<Self::Source, codespan_reporting::files::Error> {
+        let source = self
+            .maps_by_target_id
+            .get(&id.target_id)
+            .and_then(|x| x.arena.get(id.id))
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        Ok(source.content())
+    }
+
+    fn line_index(
+        &'a self,
+        id: Self::FileId,
+        byte_index: usize,
+    ) -> Result<usize, codespan_reporting::files::Error> {
+        let source = self
+            .maps_by_target_id
+            .get(&id.target_id)
+            .and_then(|x| x.arena.get(id.id))
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
+
+        if byte_index == source.content().len() {
+            return Ok(if source.lines.is_empty() {
+                0
+            } else {
+                source.lines.len() - 1
+            });
+        }
+
+        let line = source.get_line_of_byte_index(byte_index).ok_or(
+            codespan_reporting::files::Error::IndexTooLarge {
+                given: byte_index,
+                max: source.content().len(),
+            },
+        )?;
+
+        Ok(line)
+    }
+
+    fn line_range(
+        &'a self,
+        id: Self::FileId,
+        line_index: usize,
+    ) -> Result<Range<usize>, codespan_reporting::files::Error> {
+        let source = self
+            .maps_by_target_id
+            .get(&id.target_id)
+            .and_then(|x| x.arena.get(id.id))
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
         if line_index == source.lines.len() {

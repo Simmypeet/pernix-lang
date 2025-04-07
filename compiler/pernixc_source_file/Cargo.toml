@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_arena = { path = "../pernixc_arena" }
+pernixc_target = { path = "../pernixc_target" }
 getset = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
