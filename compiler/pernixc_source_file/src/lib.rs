@@ -373,6 +373,18 @@ pub type GlobalSpan = Span<Global<ID<SourceFile>>>;
 /// A type alias for the [`Span`] type with a [`ID<SourceFile>`] ID.
 pub type LocalSpan = Span<ID<SourceFile>>;
 
+/// A trait for types that can be joined together.
+pub trait Join {
+    /// Joins the starting position of this span with the end position of the
+    /// given span.
+    #[must_use]
+    fn join(&self, end: &Self) -> Self;
+}
+
+impl Join for LocalSpan {
+    fn join(&self, end: &Self) -> Self { Self::join(self, end) }
+}
+
 /// Is a struct pointing to a particular location in a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Location {
