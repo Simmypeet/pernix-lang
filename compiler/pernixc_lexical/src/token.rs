@@ -521,11 +521,24 @@ pub enum Error {
     EndOfSourceCodeIteratorArgument,
 }
 
-/// Represents a token in the Pernix programming language.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Token<S> {
-    /// The kind of the token.
-    pub kind: Kind<S>,
+/// A wrapper over a token and prior insignificant span pair.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Deref,
+    derive_more::DerefMut,
+    derive_new::new,
+)]
+pub struct WithInsignificant<T, S> {
+    /// The token that is wrapped.
+    #[deref]
+    #[deref_mut]
+    pub token: T,
 
     /// The span of the insignificant token that precedes this token.
     ///
@@ -534,6 +547,9 @@ pub struct Token<S> {
     /// tokens.
     pub prior_insignificant: Option<S>,
 }
+
+/// Represents a token in the Pernix programming language.
+pub type Token<S> = WithInsignificant<Kind<S>, S>;
 
 fn is_whitespace(character: char) -> bool {
     character.is_whitespace() && character != '\n' && character != '\r'
@@ -574,14 +590,14 @@ fn is_identifier_character(character: char) -> bool {
 /// A struct used for tokenizing the source code. The struct implements
 /// [`Iterator`] trait, which allows it to be used as an iterator that iterates
 /// over token sequences in the source code.
-pub struct Tokenizer<'a, ID> {
+pub struct Tokenizer<'a, 'h, ID> {
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
-    handler: &'a dyn Handler<error::Error<ID>>,
+    handler: &'h dyn Handler<error::Error<ID>>,
     source_id: ID,
 }
 
-impl<ID: std::fmt::Debug> std::fmt::Debug for Tokenizer<'_, ID> {
+impl<ID: std::fmt::Debug> std::fmt::Debug for Tokenizer<'_, '_, ID> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tokenizer")
             .field("source", &self.source)
@@ -591,7 +607,7 @@ impl<ID: std::fmt::Debug> std::fmt::Debug for Tokenizer<'_, ID> {
     }
 }
 
-impl<'a, ID> Tokenizer<'a, ID> {
+impl<'a, 'h, ID> Tokenizer<'a, 'h, ID> {
     /// Creates a new [`Tokenizer`] instance.
     ///
     /// # Parameters
@@ -602,7 +618,7 @@ impl<'a, ID> Tokenizer<'a, ID> {
     pub fn new(
         source: &'a str,
         source_id: ID,
-        handler: &'a dyn Handler<error::Error<ID>>,
+        handler: &'h dyn Handler<error::Error<ID>>,
     ) -> Self {
         Self {
             source,
@@ -613,7 +629,7 @@ impl<'a, ID> Tokenizer<'a, ID> {
     }
 }
 
-impl<ID: Clone> Tokenizer<'_, ID> {
+impl<ID: Clone> Tokenizer<'_, '_, ID> {
     /// Creates a span from the given start location to the current location of
     /// the iterator.
     fn create_span(&mut self, start: ByteIndex) -> Span<ID>
@@ -852,7 +868,7 @@ impl<ID: Clone> Tokenizer<'_, ID> {
     }
 }
 
-impl<ID: Clone> Iterator for Tokenizer<'_, ID> {
+impl<ID: Clone> Iterator for Tokenizer<'_, '_, ID> {
     type Item = Token<Span<ID>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -892,7 +908,7 @@ impl<ID: Clone> Iterator for Tokenizer<'_, ID> {
             unreachable!("should've been handled by earlier cases")
         };
 
-        Some(Token { kind, prior_insignificant })
+        Some(Token { token: kind, prior_insignificant })
     }
 }
 

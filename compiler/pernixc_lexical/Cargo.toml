@@ -24,6 +24,7 @@ derive_more = { workspace = true }
 bimap = { workspace = true }
 pernixc_test_input = { path = "../pernixc_test_input" }
 proptest = { workspace = true }
+derive-new = { workspace = true }
 
 [lints]
 workspace = true

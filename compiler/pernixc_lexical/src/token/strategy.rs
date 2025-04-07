@@ -614,6 +614,6 @@ impl<F: for<'x> Files<'x, FileId = ID>, ID: Clone + Debug>
             }
         }
 
-        self.kind.assert(&output.kind, file)
+        self.kind.assert(&output.token, file)
     }
 }
