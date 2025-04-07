@@ -436,7 +436,7 @@ impl Display for Enum {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Integer {
     pub minus: bool,
-    pub value: token::strategy::Numeric,
+    pub value: token::arbitrary::Numeric,
 }
 
 impl Input<&super::Integer> for &Integer {
@@ -451,7 +451,7 @@ impl Arbitrary for Integer {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        (proptest::bool::ANY, token::strategy::Numeric::arbitrary())
+        (proptest::bool::ANY, token::arbitrary::Numeric::arbitrary())
             .prop_map(|(minus, value)| Self { minus, value })
             .boxed()
     }

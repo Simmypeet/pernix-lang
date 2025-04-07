@@ -19,7 +19,7 @@ use thiserror::Error;
 
 use crate::error::{self, InvalidEscapeSequence};
 
-pub mod strategy;
+pub mod arbitrary;
 
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///

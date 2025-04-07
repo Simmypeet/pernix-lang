@@ -45,7 +45,7 @@ proptest! {
     #[test]
     #[allow(clippy::ignored_unit_patterns)]
     fn token(
-        input in super::strategy::Token::arbitrary()
+        input in super::arbitrary::Token::arbitrary()
     ) {
         let source = input.to_string();
         let (token, source_map) = tokenize(source)?;

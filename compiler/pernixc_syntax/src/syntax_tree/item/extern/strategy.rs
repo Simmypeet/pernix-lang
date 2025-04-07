@@ -72,7 +72,7 @@ impl IndentDisplay for Function {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Extern {
-    pub convention: token::strategy::String,
+    pub convention: token::arbitrary::String,
     pub functions: Vec<Passable<Function>>,
 }
 
@@ -82,7 +82,7 @@ impl Arbitrary for Extern {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            token::strategy::String::arbitrary(),
+            token::arbitrary::String::arbitrary(),
             proptest::collection::vec(Passable::<Function>::arbitrary(), 1..10),
         )
             .prop_map(|(convention, functions)| Self { convention, functions })
