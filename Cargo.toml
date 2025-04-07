@@ -23,7 +23,9 @@ members = [
     "compiler/pernixc_codegen",
     "compiler/pernixc_bind",
     "compiler/pernixc_type_of",
-    "lsp/pernix_server", "compiler/pernixc_target",
+    "lsp/pernix_server",
+    "compiler/pernixc_target",
+    "compiler/pernixc_diff",
 ]
 
 [workspace.dependencies]
