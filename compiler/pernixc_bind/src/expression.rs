@@ -24,7 +24,7 @@ use pernixc_semantic::{
     diagnostic::Diagnostic,
     term::r#type::{Qualifier, Type},
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, Label};
 
 use super::{
@@ -72,7 +72,7 @@ pub struct LValue {
     pub address: Address<infer::Model>,
 
     /// The span of the expression that produces this l-value.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The qualifier of the l-value.
     pub qualifier: Qualifier,
@@ -205,7 +205,7 @@ impl Binder<'_> {
         &mut self,
         dereference: &'a T,
         config: Config,
-        final_span: GlobalSpan,
+        final_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error>
     where
@@ -338,7 +338,7 @@ impl Binder<'_> {
         &self,
         control_flow: LoopControlFlow,
         label: Option<&token::Identifier>,
-        syntax_tree_span: GlobalSpan,
+        syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<ID<crate::scope::Scope>, Error> {
         let mut loop_scope_id = None;
@@ -583,7 +583,7 @@ impl Binder<'_> {
         &mut self,
         label: Option<&Label>,
         statements: impl IntoIterator<Item = &'a syntax_tree::statement::Statement>,
-        span: GlobalSpan,
+        span: Span,
         scope_id: ID<crate::scope::Scope>,
         successor_block_id: ID<Block<infer::Model>>,
         is_unsafe: bool,

@@ -23,7 +23,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 use super::{
     compatible::{Compatibility, Compatible},
@@ -46,7 +46,7 @@ pub struct Unsatisfied<M: Model> {
     pub predicate: Predicate<M>,
 
     /// The span where the where clause predicate was declared.
-    pub predicate_declaration_span: Option<GlobalSpan>,
+    pub predicate_declaration_span: Option<Span>,
 }
 
 /// The satisfiability of the predicate can't be decided (most likely Overflow
@@ -57,7 +57,7 @@ pub struct Undecidable<M: Model> {
     pub predicate: Predicate<M>,
 
     /// The span where the where clause predicate was declared.
-    pub predicate_declaration_span: Option<GlobalSpan>,
+    pub predicate_declaration_span: Option<Span>,
 
     /// The overflow error that occurred.
     pub overflow_error: OverflowError,
@@ -74,7 +74,7 @@ pub struct ImplementationIsNotGeneralEnough<M: Model> {
     pub generic_arguments: GenericArguments<M>,
 
     /// The span where the where clause predicate was declared.
-    pub predicate_declaration_span: Option<GlobalSpan>,
+    pub predicate_declaration_span: Option<Span>,
 }
 
 /// Represents an error found while checking for the well-formedness.
@@ -91,7 +91,7 @@ fn get_all_predicates<M: Model>(
     table: &Table,
     global_id: GlobalID,
     instantiation: Option<&Instantiation<M>>,
-) -> Result<Vec<(Predicate<M>, Option<GlobalSpan>)>, Abort> {
+) -> Result<Vec<(Predicate<M>, Option<Span>)>, Abort> {
     let symbol_kind = *table.get::<SymbolKind>(global_id);
     let mut predicates = Vec::new();
 
@@ -172,7 +172,7 @@ fn check_implementation_satisfied<M: Model>(
     id: GlobalID,
     instantiation: &Instantiation<M>,
     generic_arguments: &GenericArguments<M>,
-    predicate_declaration_span: Option<GlobalSpan>,
+    predicate_declaration_span: Option<Span>,
     do_outlives_check: bool,
     mut is_not_general_enough: bool,
     environment: &Environment<M, impl Normalizer<M>>,
@@ -248,7 +248,7 @@ fn check_implementation_satisfied<M: Model>(
 fn handle_positive_marker_satisfied<M: Model>(
     result: &PositiveMarkerSatisfied<M>,
     pred_generic_arguments: &GenericArguments<M>,
-    predicate_declaration_span: Option<GlobalSpan>,
+    predicate_declaration_span: Option<Span>,
     do_outlives_check: bool,
     environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<(BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>), Abort> {
@@ -303,7 +303,7 @@ fn handle_positive_marker_satisfied<M: Model>(
 #[allow(clippy::too_many_lines, clippy::type_complexity)]
 pub fn predicate_satisfied<M: Model>(
     predicate: Predicate<M>,
-    predicate_declaration_span: Option<GlobalSpan>,
+    predicate_declaration_span: Option<Span>,
     do_outlives_check: bool,
     environment: &Environment<M, impl Normalizer<M>>,
 ) -> Result<(BTreeSet<LifetimeConstraint<M>>, Vec<Error<M>>), Abort> {

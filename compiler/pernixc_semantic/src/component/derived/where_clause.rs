@@ -1,6 +1,6 @@
 //! Contains the definition of [`WhereClause`] component.
 
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -18,7 +18,7 @@ pub struct Predicate {
 
     /// The span where the predicate was declared.
     #[serde(skip)]
-    pub span: Option<GlobalSpan>,
+    pub span: Option<Span>,
 }
 
 /// A **presistent-derived** component representing the where clause declared in

@@ -978,7 +978,7 @@ impl<T> Passable<T> {
 }
 
 impl<T: SourceElement> SourceElement for Passable<T> {
-    fn span(&self) -> pernixc_source_file::GlobalSpan {
+    fn span(&self) -> pernixc_source_file::Span {
         match self {
             Self::Pass(keyword) => keyword.span(),
             Self::SyntaxTree(tree) => tree.span(),

@@ -1,7 +1,7 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{block::Block, prefix::Prefixable};
 use crate::{
@@ -196,7 +196,7 @@ pub enum BinaryNode {
 }
 
 impl SourceElement for BinaryNode {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Prefixable(prefixable) => prefixable.span(),
             Self::Brace(brace) => brace.span(),
@@ -239,7 +239,7 @@ impl SyntaxTree for Binary {
 }
 
 impl SourceElement for Binary {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.chain.last().map_or_else(
             || self.first.span(),
             |(_, right)| self.first.span().join(&right.span()),

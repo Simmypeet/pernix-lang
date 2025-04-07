@@ -8,7 +8,7 @@ use pernixc_semantic::{
     table,
     term::{predicate::Predicate, r#type::Type, Model},
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use pernixc_type_system::{
     diagnostic::UnsatisfiedPredicate, environment::Environment,
     normalizer::Normalizer, simplify::Simplify, Error, LifetimeConstraint,
@@ -25,7 +25,7 @@ pub trait EnvironmentExt {
     fn simplify_and_check_lifetime_constraints(
         &self,
         ty: &Type<Self::Model>,
-        type_span: &GlobalSpan,
+        type_span: &Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Type<Self::Model>;
 
@@ -35,7 +35,7 @@ pub trait EnvironmentExt {
         lifetime_constraints: impl IntoIterator<
             Item = &'a LifetimeConstraint<Self::Model>,
         >,
-        span: &GlobalSpan,
+        span: &Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     );
 }
@@ -51,7 +51,7 @@ where
     fn simplify_and_check_lifetime_constraints(
         &self,
         ty: &Type<Self::Model>,
-        type_span: &GlobalSpan,
+        type_span: &Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Type<M> {
         match self.query(&Simplify(ty.clone())) {
@@ -83,7 +83,7 @@ where
         lifetime_constraints: impl IntoIterator<
             Item = &'a LifetimeConstraint<Self::Model>,
         >,
-        span: &GlobalSpan,
+        span: &Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
         for constraint in lifetime_constraints {

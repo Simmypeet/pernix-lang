@@ -26,7 +26,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::{
@@ -259,7 +259,7 @@ impl<'a, N: Normalizer<BorrowModel>> Checker<'a, N> {
     pub fn handle_moved_memory(
         &self,
         moved_address: &Address<BorrowModel>,
-        moved_span: &GlobalSpan,
+        moved_span: &Span,
         point: Point<BorrowModel>,
     ) -> Result<(), Abort> {
         for (borrow_register_id, (_, borrow_point)) in

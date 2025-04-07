@@ -1,7 +1,7 @@
 //! Contains the definition of function signature
 
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,7 +19,7 @@ pub struct Parameter {
 
     /// The span of the parameter.
     #[serde(skip)]
-    pub span: Option<GlobalSpan>,
+    pub span: Option<Span>,
 }
 
 /// A **presistent-derived** component representing the function signature.

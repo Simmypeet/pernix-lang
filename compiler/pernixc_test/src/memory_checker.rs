@@ -4,7 +4,7 @@ use pernixc_builder::utility::build_table;
 use pernixc_memory_checker::diagnostic::{
     MoveInLoop, MovedOutValueFromMutableReference, UseAfterMove,
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 const USE_AFTER_PARTIAL_MOVE: &str = r"
 public function consume[T](x: T):
@@ -132,7 +132,7 @@ fn reassigned_moved_out_of_reference() {
 
     assert_eq!(error.moved_out_value_span.str(), "*z");
     assert_eq!(
-        error.reassignment_span.as_ref().map(GlobalSpan::str),
+        error.reassignment_span.as_ref().map(Span::str),
         Some("z = &mut y")
     );
 }

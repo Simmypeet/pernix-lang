@@ -17,7 +17,7 @@ use pernixc_semantic::{
     table::{DisplayObject, GlobalID, MemberID, Table},
     term::{predicate::Predicate, Default},
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 /// Generic parameter is unused in the implementation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -345,7 +345,7 @@ pub struct ExtraneousImplementationMemberPredicate {
     pub predicate: Predicate<Default>,
 
     /// The declaration span of the extraneous predicate.
-    pub predicate_span: GlobalSpan,
+    pub predicate_span: Span,
 }
 
 impl Report<&Table> for ExtraneousImplementationMemberPredicate {

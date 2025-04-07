@@ -10,14 +10,14 @@ use pernixc_semantic::{
     table::{GlobalID, Table},
     term::{r#type::Type, Default},
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 /// The higher-ranked lifetime with the same name already exists in the given
 /// scope.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HigherRankedLifetimeRedefinition {
     /// The span of the redefinition.
-    pub redefinition_span: GlobalSpan,
+    pub redefinition_span: Span,
 }
 
 impl Report<&Table> for HigherRankedLifetimeRedefinition {
@@ -52,7 +52,7 @@ pub struct UnexpectedSymbolInPredicate {
     pub found_id: GlobalID,
 
     /// The span of the qualified identifier of the found symbol.
-    pub qualified_identifier_span: GlobalSpan,
+    pub qualified_identifier_span: Span,
 }
 
 impl Report<&Table> for UnexpectedSymbolInPredicate {
@@ -83,7 +83,7 @@ impl Report<&Table> for UnexpectedSymbolInPredicate {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnexpectedTypeEqualityPredicate {
     /// The span of the invalid left-hand side type.
-    pub invalid_lhs_type_span: GlobalSpan,
+    pub invalid_lhs_type_span: Span,
 
     /// The span of the type equality predicate.
     pub found_type: Type<Default>,
@@ -107,7 +107,7 @@ impl Report<&Table> for UnexpectedTypeEqualityPredicate {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ForallLifetimeIsNotAllowedInOutlivesPredicate {
     /// The span of the term that contains the forall lifetime.
-    pub forall_lifetime_span: GlobalSpan,
+    pub forall_lifetime_span: Span,
 
     /// The list of forall lifetimes found in the term.
     pub forall_lifetimes: Vec<ForallLifetimeID>,

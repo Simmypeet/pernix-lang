@@ -1,6 +1,6 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind, Punctuation};
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{generic_parameter::GenericParameters, Body};
 use crate::{
@@ -41,7 +41,7 @@ impl SyntaxTree for Signature {
 }
 
 impl SourceElement for Signature {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.struct_keyword.span.join(
             &self.generic_parameters.as_ref().map_or_else(
                 || self.identifier.span.clone(),
@@ -81,7 +81,7 @@ impl SyntaxTree for Field {
 }
 
 impl SourceElement for Field {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.access_modifier.span().join(&self.r#type.span())
     }
 }
@@ -109,7 +109,7 @@ impl SyntaxTree for Struct {
 }
 
 impl SourceElement for Struct {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.access_modifier.span().join(&self.body.span())
     }
 }

@@ -4,7 +4,7 @@ use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{generic_parameter::GenericParameters, Body};
 use crate::{
@@ -29,7 +29,7 @@ pub struct Ellipsis {
 }
 
 impl SourceElement for Ellipsis {
-    fn span(&self) -> GlobalSpan { self.first.span.join(&self.third.span) }
+    fn span(&self) -> Span { self.first.span.join(&self.third.span) }
 }
 
 impl SyntaxTree for Ellipsis {
@@ -51,7 +51,7 @@ pub enum ParameterKind {
 }
 
 impl SourceElement for ParameterKind {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Regular(parameter) => parameter.span(),
             Self::VarArgs(ellipsis) => ellipsis.span(),
@@ -96,7 +96,7 @@ impl SyntaxTree for Parameter {
 }
 
 impl SourceElement for Parameter {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.irrefutable_pattern.span().join(&self.r#type.span())
     }
 }
@@ -150,7 +150,7 @@ impl SyntaxTree for ReturnType {
 }
 
 impl SourceElement for ReturnType {
-    fn span(&self) -> GlobalSpan { self.arrow.dash.span.join(&self.r#type.span()) }
+    fn span(&self) -> Span { self.arrow.dash.span.join(&self.r#type.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -196,7 +196,7 @@ impl SyntaxTree for Signature {
 }
 
 impl SourceElement for Signature {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         let being = self.function_keyword.span();
 
         let end = self
@@ -249,7 +249,7 @@ impl SyntaxTree for Function {
 }
 
 impl SourceElement for Function {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.access_modifier.span().join(&self.body.span())
     }
 }

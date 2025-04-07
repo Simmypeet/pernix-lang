@@ -7,7 +7,7 @@ use pernixc_semantic::{
     component::derived::fields::{Field, Fields},
     table::{GlobalID, Table},
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 /// The field with the same name already exists in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,7 +19,7 @@ pub struct FieldDuplication {
     pub field_id: ID<Field>,
 
     /// The span of the redeclaration.
-    pub redeclaration_span: GlobalSpan,
+    pub redeclaration_span: Span,
 }
 
 impl Report<&Table> for FieldDuplication {

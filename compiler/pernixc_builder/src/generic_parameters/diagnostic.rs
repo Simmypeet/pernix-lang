@@ -10,7 +10,7 @@ use pernixc_semantic::{
     },
     table::{MemberID, Table},
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 /// The generic parameter was declared in the wrong order.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,7 +19,7 @@ pub struct MisOrderedGenericParameter {
     pub generic_kind: GenericKind,
 
     /// The span of the generic parameter.
-    pub generic_parameter_span: GlobalSpan,
+    pub generic_parameter_span: Span,
 }
 
 impl Report<&Table> for MisOrderedGenericParameter {
@@ -48,7 +48,7 @@ impl Report<&Table> for MisOrderedGenericParameter {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DefaultGenericParameterMustBeTrailing {
     /// The span of the generic parameter.
-    pub invalid_generic_default_parameter_span: GlobalSpan,
+    pub invalid_generic_default_parameter_span: Span,
 }
 
 impl Report<&Table> for DefaultGenericParameterMustBeTrailing {
@@ -71,7 +71,7 @@ pub struct DuplicatedGenericParameter<T> {
     pub existing_generic_parameter_id: MemberID<ID<T>>,
 
     /// The ID of the new generic parameter.
-    pub duplicating_generic_parameter_span: GlobalSpan,
+    pub duplicating_generic_parameter_span: Span,
 }
 
 impl<T: GenericParameter> Report<&Table> for DuplicatedGenericParameter<T> {

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 use super::Input;
@@ -159,7 +159,7 @@ impl Input for Parent {}
 pub struct LocationSpan {
     /// The span of the symbol.
     #[serde(skip)]
-    pub span: Option<GlobalSpan>,
+    pub span: Option<Span>,
 }
 
 impl Input for LocationSpan {}
@@ -493,7 +493,7 @@ pub struct Using {
     pub id: GlobalID,
 
     /// The span of the using statement.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 /// A **local-input** component for storing the import statements of the module.

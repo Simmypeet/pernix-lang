@@ -5,7 +5,7 @@ use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use crate::{
     error, expect,
@@ -40,7 +40,7 @@ impl<Value: SyntaxTree> SyntaxTree for DefaultGenericParameter<Value> {
 }
 
 impl<Value: SourceElement> SourceElement for DefaultGenericParameter<Value> {
-    fn span(&self) -> GlobalSpan { self.equals.span.join(&self.value.span()) }
+    fn span(&self) -> Span { self.equals.span.join(&self.value.span()) }
 }
 
 pub type DefaultTypeParameter = DefaultGenericParameter<r#type::Type>;
@@ -64,7 +64,7 @@ impl SyntaxTree for TypeParameterBound {
 }
 
 impl SourceElement for TypeParameterBound {
-    fn span(&self) -> GlobalSpan { self.colon.span.join(&self.bounds.span()) }
+    fn span(&self) -> Span { self.colon.span.join(&self.bounds.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -94,7 +94,7 @@ impl SyntaxTree for TypeParameter {
 }
 
 impl SourceElement for TypeParameter {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         let begin = self.identifier.span();
 
         let end = self.default.as_ref().map_or_else(
@@ -165,7 +165,7 @@ impl ConstantParameter {
 }
 
 impl SourceElement for ConstantParameter {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.const_keyword.span.join(
             &self
                 .default
@@ -200,7 +200,7 @@ impl SyntaxTree for GenericParameter {
 }
 
 impl SourceElement for GenericParameter {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Lifetime(lifetime_parameter) => lifetime_parameter.span(),
             Self::Type(type_parameter) => type_parameter.span(),

@@ -35,7 +35,7 @@ use pernixc_semantic::{
         Default,
     },
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree;
 use pernixc_type_system::{
     compatible::Compatibility,
@@ -63,7 +63,7 @@ pub(crate) struct Repr {
     pub lifetimes: Vec<(Lifetime<Default>, syntax_tree::Lifetime)>,
     pub constants: Vec<(Constant<Default>, syntax_tree::Constant)>,
 
-    pub resolutions: Vec<(Resolution<Default>, GlobalSpan)>,
+    pub resolutions: Vec<(Resolution<Default>, Span)>,
 
     pub unpacked_types: Vec<(Type<Default>, syntax_tree::r#type::Type)>,
     pub unpacked_constants:
@@ -94,7 +94,7 @@ impl pernixc_resolution::Observer<Default> for Observer {
         table: &Table,
         referring_site: GlobalID,
         resolution: &Resolution<Default>,
-        span: &GlobalSpan,
+        span: &Span,
         _: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
         table
@@ -186,13 +186,13 @@ pub(super) enum PredicateError {
     /// The predicate isn't satisfied.
     Unsatisfied {
         predicate: Predicate<Default>,
-        predicate_declaration_span: Option<GlobalSpan>,
+        predicate_declaration_span: Option<Span>,
     },
 
     /// The type system can't determine if the predicate is satisfiable or not.
     Undecidable {
         predicate: Predicate<Default>,
-        predicate_declaration_span: Option<GlobalSpan>,
+        predicate_declaration_span: Option<Span>,
         overflow_error: OverflowError,
     },
 
@@ -201,14 +201,14 @@ pub(super) enum PredicateError {
     ImplementationIsNotGeneralEnough {
         resolved_implementation: resolution::Implementation<Default>,
         generic_arguments: GenericArguments<Default>,
-        predicate_declaration_span: Option<GlobalSpan>,
+        predicate_declaration_span: Option<Span>,
     },
 }
 
 impl PredicateError {
     pub(super) fn report(
         self,
-        instantiation_span: GlobalSpan,
+        instantiation_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) {
         match self {
@@ -269,7 +269,7 @@ impl Checker<'_> {
         &self,
         adt_implementation_id: GlobalID,
         parent_generic_arguments: &GenericArguments<Default>,
-        resolution_span: &GlobalSpan,
+        resolution_span: &Span,
     ) -> Option<Instantiation<Default>> {
         // deduce the generic arguments
         let arguments = self
@@ -348,7 +348,7 @@ impl Checker<'_> {
         &self,
         trait_id: GlobalID,
         generic_arguments: GenericArguments<Default>,
-        instantiation_span: &GlobalSpan,
+        instantiation_span: &Span,
     ) {
         for error in self.predicate_satisfied(
             Predicate::PositiveTrait(PositiveTrait {
@@ -368,7 +368,7 @@ impl Checker<'_> {
     pub(super) fn check_resolution_occurrence(
         &self,
         resolution: &Resolution<Default>,
-        resolution_span: &GlobalSpan,
+        resolution_span: &Span,
     ) {
         match resolution {
             Resolution::Module(_)
@@ -499,7 +499,7 @@ impl Checker<'_> {
         &self,
         instantiated: GlobalID,
         generic_arguments: GenericArguments<Default>,
-        instantiation_span: &GlobalSpan,
+        instantiation_span: &Span,
     ) {
         // convert the generic arguments to an instantiation and delegate the
         // check to the `check_instantiation_predicates` method
@@ -529,7 +529,7 @@ impl Checker<'_> {
         &self,
         instantiated: GlobalID,
         instantiation: &Instantiation<Default>,
-        instantiation_span: &GlobalSpan,
+        instantiation_span: &Span,
     ) {
         let Ok(where_clause) =
             self.environment.table().query::<WhereClause>(instantiated)
@@ -559,7 +559,7 @@ impl Checker<'_> {
         implementation_id: GlobalID,
         instantiation: &Instantiation<Default>,
         generic_arguments: &GenericArguments<Default>,
-        predicate_declaration_span: Option<GlobalSpan>,
+        predicate_declaration_span: Option<Span>,
         mut is_not_general_enough: bool,
     ) -> Vec<PredicateError> {
         let mut errors = Vec::new();
@@ -645,7 +645,7 @@ impl Checker<'_> {
         &self,
         result: PositiveMarkerSatisfied<Default>,
         pred_generic_arguments: &GenericArguments<Default>,
-        predicate_declaration_span: Option<GlobalSpan>,
+        predicate_declaration_span: Option<Span>,
     ) -> (BTreeSet<LifetimeConstraint<Default>>, Vec<PredicateError>) {
         match result {
             PositiveMarkerSatisfied::Premise
@@ -690,7 +690,7 @@ impl Checker<'_> {
     pub(super) fn predicate_satisfied(
         &self,
         predicate: Predicate<Default>,
-        predicate_declaration_span: Option<GlobalSpan>,
+        predicate_declaration_span: Option<Span>,
     ) -> Vec<PredicateError> {
         let (result, mut extra_predicate_error) = match &predicate {
             Predicate::TraitTypeCompatible(eq) => {
@@ -969,7 +969,7 @@ impl Checker<'_> {
     pub(super) fn check_type_ocurrence(
         &self,
         ty: &Type<Default>,
-        instantiation_span: &GlobalSpan,
+        instantiation_span: &Span,
     ) {
         match ty {
             Type::Error(_)
@@ -1081,7 +1081,7 @@ impl Checker<'_> {
     fn check_unpacked_ocurrences(
         &self,
         unpacked_term: Type<Default>,
-        instantiation_span: &GlobalSpan,
+        instantiation_span: &Span,
     ) {
         let tuple_predicate = predicate::Tuple(unpacked_term);
 

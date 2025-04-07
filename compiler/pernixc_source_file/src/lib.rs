@@ -356,7 +356,7 @@ pub type ByteIndex = usize;
     Getters,
     CopyGetters,
 )]
-pub struct GlobalSpan {
+pub struct Span<ID> {
     /// Gets the start byte index of the span.
     pub start: ByteIndex,
 
@@ -364,8 +364,14 @@ pub struct GlobalSpan {
     pub end: ByteIndex,
 
     /// The ID of the source file that this span belongs to.
-    pub source_id: ID<SourceFile>,
+    pub source_id: ID,
 }
+
+/// A type alias for the [`Span`] type with a [`Global<ID<SourceFile>>`] ID.
+pub type GlobalSpan = Span<Global<ID<SourceFile>>>;
+
+/// A type alias for the [`Span`] type with a [`ID<SourceFile>`] ID.
+pub type LocalSpan = Span<ID<SourceFile>>;
 
 /// Is a struct pointing to a particular location in a source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -385,15 +391,11 @@ impl Location {
     }
 }
 
-impl GlobalSpan {
+impl<ID> Span<ID> {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
     #[must_use]
-    pub fn new(
-        start: ByteIndex,
-        end: ByteIndex,
-        source_id: ID<SourceFile>,
-    ) -> Self {
+    pub fn new(start: ByteIndex, end: ByteIndex, source_id: ID) -> Self {
         assert!(start <= end, "start index is greater than end index");
 
         Self { start, end, source_id }
@@ -402,14 +404,21 @@ impl GlobalSpan {
     /// Joins the starting position of this span with the end position of the
     /// given span.
     #[must_use]
-    pub fn join(&self, end: &Self) -> Self {
+    pub fn join(&self, end: &Self) -> Self
+    where
+        ID: PartialEq + Clone,
+    {
         assert!(
             self.start <= end.start,
             "start index is greater than end index"
         );
         assert!(self.source_id == end.source_id, "source IDs are not equal");
 
-        Self { start: self.start, end: end.end, source_id: self.source_id }
+        Self {
+            start: self.start,
+            end: end.end,
+            source_id: self.source_id.clone(),
+        }
     }
 }
 

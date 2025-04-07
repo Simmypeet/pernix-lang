@@ -8,7 +8,7 @@ use pernixc_lexical::{
     token::{Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     Constant, Elided, EnclosedConnectedList, Lifetime, Parse, ParseExt,
@@ -68,7 +68,7 @@ impl SyntaxTree for Primitive {
 }
 
 impl SourceElement for Primitive {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Bool(token)
             | Self::Float32(token)
@@ -96,7 +96,7 @@ pub struct Reference {
 }
 
 impl SourceElement for Reference {
-    fn span(&self) -> GlobalSpan { self.ampersand.span().join(&self.operand.span()) }
+    fn span(&self) -> Span { self.ampersand.span().join(&self.operand.span()) }
 }
 
 impl SyntaxTree for Reference {
@@ -147,7 +147,7 @@ impl SyntaxTree for Unpackable {
 }
 
 impl SourceElement for Unpackable {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match &self.ellipsis {
             Some((left, ..)) => left.span.join(&self.r#type.span()),
             None => self.r#type.span(),
@@ -196,7 +196,7 @@ impl SyntaxTree for Array {
 }
 
 impl SourceElement for Array {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.left_bracket.span.join(&self.right_bracket.span)
     }
 }
@@ -228,7 +228,7 @@ impl SyntaxTree for Pointer {
 }
 
 impl SourceElement for Pointer {
-    fn span(&self) -> GlobalSpan { self.asterisk.span.join(&self.operand.span()) }
+    fn span(&self) -> Span { self.asterisk.span.join(&self.operand.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -249,7 +249,7 @@ impl SyntaxTree for Phantom {
 }
 
 impl SourceElement for Phantom {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.phantom_keyword.span.join(&self.r#type.span())
     }
 }
@@ -298,7 +298,7 @@ impl SyntaxTree for Type {
 }
 
 impl SourceElement for Type {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Primitive(primitive) => primitive.span(),
             Self::QualifiedIdentifier(qualified) => qualified.span(),

@@ -48,7 +48,7 @@ use pernixc_semantic::{
         Default, Model, Symbol,
     },
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::{syntax_tree, syntax_tree::ConnectedList};
 
 use super::{Bind, Config, Expression, LValue};
@@ -302,7 +302,7 @@ impl Binder<'_> {
         method_ident: &syntax_tree::GenericIdentifier,
         generic_arguments: &GenericArguments<infer::Model>,
         access_type: &Type<infer::Model>,
-        arguments: &[(GlobalSpan, Value<infer::Model>)],
+        arguments: &[(Span, Value<infer::Model>)],
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<
         Vec<(
@@ -638,9 +638,9 @@ impl Binder<'_> {
 
     fn on_binding_adt_method_error<I: Iterator<Item = Box<dyn Diagnostic>>>(
         &mut self,
-        method_call_span: GlobalSpan,
+        method_call_span: Span,
         reciever: Expression,
-        mut arguments: Vec<(GlobalSpan, Value<infer::Model>)>,
+        mut arguments: Vec<(Span, Value<infer::Model>)>,
         trait_method_candidates: Vec<(
             GlobalID,
             Instantiation<infer::Model>,
@@ -1452,9 +1452,9 @@ impl Binder<'_> {
 
     fn bind_variant_call(
         &mut self,
-        arguments: Vec<(GlobalSpan, Value<infer::Model>)>,
+        arguments: Vec<(Span, Value<infer::Model>)>,
         variant: qualified_identifier::Variant<infer::Model>,
-        syntax_tree_span: GlobalSpan,
+        syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<ID<Register<infer::Model>>, Abort> {
         let enum_id = GlobalID::new(
@@ -1549,10 +1549,10 @@ impl Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind_function_call(
         &mut self,
-        arguments: &[(GlobalSpan, Value<infer::Model>)],
+        arguments: &[(Span, Value<infer::Model>)],
         callable_id: GlobalID,
         mut instantiation: Instantiation<infer::Model>,
-        syntax_tree_span: GlobalSpan,
+        syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<ID<Register<infer::Model>>, Abort> {
         let function_signature =
@@ -1692,10 +1692,10 @@ impl Binder<'_> {
     #[allow(clippy::too_many_lines)]
     fn bind_postfix_call_with_resolution(
         &mut self,
-        arguments: Vec<(GlobalSpan, Value<infer::Model>)>,
-        resolution_span: GlobalSpan,
+        arguments: Vec<(Span, Value<infer::Model>)>,
+        resolution_span: Span,
         resolution: qualified_identifier::Resolution<infer::Model>,
-        syntax_tree_span: GlobalSpan,
+        syntax_tree_span: Span,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Expression, Error> {
         // can be enum variant and functin call

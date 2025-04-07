@@ -19,7 +19,7 @@ use pernixc_semantic::{
         ModelOf,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 use crate::{diagnostic::TypeAnnotationRequired, infer, Abort};
 
@@ -77,7 +77,7 @@ impl Transform<Lifetime<infer::Model>> for Transformer<'_> {
     fn transform(
         &mut self,
         term: Lifetime<infer::Model>,
-        _: Option<&GlobalSpan>,
+        _: Option<&Span>,
     ) -> Result<Lifetime<model::Model>, Abort> {
         Ok(match term {
             Lifetime::Static => Lifetime::Static,
@@ -92,7 +92,7 @@ impl Transform<Lifetime<infer::Model>> for Transformer<'_> {
     fn inspect(
         &mut self,
         _: &Lifetime<infer::Model>,
-        _: Option<&GlobalSpan>,
+        _: Option<&Span>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -105,7 +105,7 @@ impl Transform<Constant<infer::Model>> for Transformer<'_> {
     fn inspect(
         &mut self,
         _: &Constant<infer::Model>,
-        _: Option<&GlobalSpan>,
+        _: Option<&Span>,
     ) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -113,7 +113,7 @@ impl Transform<Constant<infer::Model>> for Transformer<'_> {
     fn transform(
         &mut self,
         term: Constant<infer::Model>,
-        span: Option<&GlobalSpan>,
+        span: Option<&Span>,
     ) -> Result<Constant<model::Model>, Abort> {
         let mut constant =
             self.inference_context.transform_constant_into_constraint_model(
@@ -139,7 +139,7 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
     fn inspect(
         &mut self,
         term: &Type<infer::Model>,
-        span: Option<&GlobalSpan>,
+        span: Option<&Span>,
     ) -> Result<(), Self::Error> {
         let ty = self.inference_context.transform_type_into_constraint_model(
             term.clone(),
@@ -167,7 +167,7 @@ impl Transform<Type<infer::Model>> for Transformer<'_> {
     fn transform(
         &mut self,
         term: Type<infer::Model>,
-        span: Option<&GlobalSpan>,
+        span: Option<&Span>,
     ) -> Result<Type<model::Model>, Abort> {
         let mut ty =
             self.inference_context.transform_type_into_constraint_model(

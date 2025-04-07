@@ -10,7 +10,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 /// The generic arguments are not compatible with the generic arguments defined
 /// in the implementation.
@@ -24,7 +24,7 @@ pub struct MismatchedImplementationArguments<M: Model> {
     pub found_generic_arguments: GenericArguments<M>,
 
     /// The span of the instantiation that causes the mismatch.
-    pub instantiation_span: GlobalSpan,
+    pub instantiation_span: Span,
 }
 
 impl<M: Model> Report<&Table> for MismatchedImplementationArguments<M>
@@ -66,7 +66,7 @@ pub struct AdtImplementationIsNotGeneralEnough<M: Model> {
     pub generic_arguments: GenericArguments<M>,
 
     /// The span location of where the ADT is instantiated.
-    pub instantiation_span: GlobalSpan,
+    pub instantiation_span: Span,
 }
 
 impl<M: Model> Report<&Table> for AdtImplementationIsNotGeneralEnough<M>
@@ -107,7 +107,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConstantArgumentTypeMismatched<M: Model> {
     /// The span of the constant argument.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The expected type of the constant argument.
     pub expected_type: Type<M>,

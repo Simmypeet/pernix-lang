@@ -28,7 +28,7 @@ use pernixc_semantic::{
         Default, MemberSymbol, Model, ModelOf, Symbol, Tuple, TupleElement,
     },
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, GenericIdentifier, LifetimeIdentifier,
 };
@@ -169,7 +169,7 @@ fn resolve_generic_arguments_kinds<
     generic_arguments: impl ExactSizeIterator<Item = T>,
     parameters: impl ExactSizeIterator<Item = &'a P>,
     defaults: Option<impl ExactSizeIterator<Item = &'a T::Rebind<Default>>>,
-    generic_identifier_span: GlobalSpan,
+    generic_identifier_span: Span,
     mut config: Config<T::Model>,
     generic_kind: GenericKind,
     get_provider: impl for<'x> Fn(
@@ -262,7 +262,7 @@ pub(super) fn verify_generic_arguments_for<M: Model>(
     table: &Table,
     generic_arguments: GenericArguments<M>,
     generic_id: GlobalID,
-    generic_identifier_span: GlobalSpan,
+    generic_identifier_span: Span,
     mut config: Config<M>,
 ) -> Result<(GenericArguments<M>, Vec<Box<dyn Diagnostic>>), Abort> {
     let generic_parameters = table.query::<GenericParameters>(generic_id)?;

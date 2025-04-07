@@ -22,7 +22,7 @@ pub struct Function {
 }
 
 impl SourceElement for Function {
-    fn span(&self) -> pernixc_source_file::GlobalSpan {
+    fn span(&self) -> pernixc_source_file::Span {
         self.access_modifier.span().join(
             &self
                 .trailing_where_clause
@@ -60,7 +60,7 @@ pub struct Extern {
 }
 
 impl SourceElement for Extern {
-    fn span(&self) -> pernixc_source_file::GlobalSpan {
+    fn span(&self) -> pernixc_source_file::Span {
         self.extern_keyword.span().join(
             &self
                 .functions

@@ -1,6 +1,6 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind};
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{generic_parameter::GenericParameters, TrailingWhereClause};
 use crate::{
@@ -22,7 +22,7 @@ pub struct Signature {
 }
 
 impl SourceElement for Signature {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.marker_keyword.span().join(
             &self
                 .generic_parameters
@@ -59,7 +59,7 @@ pub struct Marker {
 }
 
 impl SourceElement for Marker {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.access_modifier.span().join(
             &self
                 .trailing_where_clause

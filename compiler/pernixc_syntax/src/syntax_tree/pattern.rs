@@ -8,7 +8,7 @@ use pernixc_lexical::{
     token::{self, Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     expression::unit::Boolean, ConnectedList, EnclosedConnectedList,
@@ -51,7 +51,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for FieldAssociation<Pattern> {
 }
 
 impl<Pattern: SourceElement> SourceElement for FieldAssociation<Pattern> {
-    fn span(&self) -> GlobalSpan { self.identifier.span().join(&self.pattern.span()) }
+    fn span(&self) -> Span { self.identifier.span().join(&self.pattern.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
@@ -75,7 +75,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Field<Pattern> {
 }
 
 impl<Pattern: SourceElement> SourceElement for Field<Pattern> {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Association(field_with_association) => {
                 field_with_association.span()
@@ -116,7 +116,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for Structural<Pattern> {
 }
 
 impl<Pattern> SourceElement for Structural<Pattern> {
-    fn span(&self) -> GlobalSpan { self.left_brace.span.join(&self.right_brace.span) }
+    fn span(&self) -> Span { self.left_brace.span.join(&self.right_brace.span) }
 }
 
 pub type EnumAssociation = EnclosedTree<Box<Refutable>>;
@@ -160,7 +160,7 @@ impl SyntaxTree for Enum {
 }
 
 impl SourceElement for Enum {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.association.as_ref().map_or_else(
             || self.case_keyword.span().join(&self.identifier.span()),
             |association| self.case_keyword.span().join(&association.span()),
@@ -183,7 +183,7 @@ impl SyntaxTree for Wildcard {
 }
 
 impl SourceElement for Wildcard {
-    fn span(&self) -> GlobalSpan { self.0.span.join(&self.1.span) }
+    fn span(&self) -> Span { self.0.span.join(&self.1.span) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -213,7 +213,7 @@ impl<Pattern: SyntaxTree + 'static> SyntaxTree for TupleElement<Pattern> {
 }
 
 impl<Pattern: SourceElement> SourceElement for TupleElement<Pattern> {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.ellipsis.as_ref().map_or_else(
             || self.pattern.span(),
             |(dots, _, _)| dots.span().join(&self.pattern.span()),
@@ -272,7 +272,7 @@ impl SyntaxTree for Named {
 }
 
 impl SourceElement for Named {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.mutable_keyword.as_ref().map_or_else(
             || {
                 self.reference_of.as_ref().map_or_else(
@@ -305,7 +305,7 @@ impl SyntaxTree for Integer {
 }
 
 impl SourceElement for Integer {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.minus.as_ref().map_or_else(
             || self.numeric.span(),
             |minus| minus.span().join(&self.numeric.span()),
@@ -354,7 +354,7 @@ impl SyntaxTree for Refutable {
 }
 
 impl SourceElement for Refutable {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Boolean(boolean_literal) => boolean_literal.span(),
             Self::Integer(numeric_literal) => numeric_literal.span(),
@@ -428,7 +428,7 @@ impl Irrefutable {
 }
 
 impl SourceElement for Irrefutable {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Structural(structural) => structural.span(),
             Self::Named(identifier) => identifier.span(),

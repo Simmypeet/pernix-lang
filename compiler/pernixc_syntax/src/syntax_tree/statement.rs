@@ -7,7 +7,7 @@ use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     expression::Expression, pattern::Irrefutable, r#type::Type, Parse,
@@ -47,7 +47,7 @@ impl SyntaxTree for Statement {
 }
 
 impl SourceElement for Statement {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::VariableDeclaration(declaration) => declaration.span(),
             Self::Expression(expression) => expression.span(),
@@ -73,7 +73,7 @@ impl SyntaxTree for TypeAnnotation {
 }
 
 impl SourceElement for TypeAnnotation {
-    fn span(&self) -> GlobalSpan { self.colon.span().join(&self.r#type.span()) }
+    fn span(&self) -> Span { self.colon.span().join(&self.r#type.span()) }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -117,7 +117,7 @@ impl SyntaxTree for VariableDeclaration {
 }
 
 impl SourceElement for VariableDeclaration {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.let_keyword.span().join(&self.expression.span())
     }
 }
@@ -146,7 +146,7 @@ impl SyntaxTree for Statements {
 }
 
 impl SourceElement for Statements {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         let begin = self.colon.span();
 
         begin.join(

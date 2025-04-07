@@ -20,7 +20,7 @@ use pernixc_semantic::{
         visitor::RecursiveIterator, ModelOf as _, Never,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use pernixc_type_system::{
     environment::{Environment, Premise},
     mapping::Mapping,
@@ -1388,7 +1388,7 @@ impl Context {
     pub fn transform_type_into_constraint_model(
         &self,
         ty: Type<Model>,
-        type_span: GlobalSpan,
+        type_span: Span,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Type<model::Constrained>, Abort> {
@@ -1429,7 +1429,7 @@ impl Context {
     pub fn transform_constant_into_constraint_model(
         &self,
         constant: Constant<Model>,
-        type_span: GlobalSpan,
+        type_span: Span,
         table: &Table,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Result<Constant<model::Constrained>, Abort> {

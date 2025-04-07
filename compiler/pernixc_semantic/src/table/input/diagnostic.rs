@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use pernixc_diagnostic::{Diagnostic, Related, Report};
 use pernixc_log::Severity;
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 use crate::{
     component::input::{Accessibility, LocationSpan, Name, SymbolKind},
@@ -123,7 +123,7 @@ impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnknownExternCallingConvention {
     /// The span of the extern calling convention.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for UnknownExternCallingConvention {
@@ -145,7 +145,7 @@ impl Report<&Table> for UnknownExternCallingConvention {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectModule {
     /// The module path that was expected to be a module.
-    pub module_path: GlobalSpan,
+    pub module_path: Span,
 
     /// The ID of the symbol that was found instead of a module.
     pub found_id: GlobalID,
@@ -175,7 +175,7 @@ impl Report<&Table> for ExpectModule {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ConflictingUsing {
     /// The span of the using statement.
-    pub using_span: GlobalSpan,
+    pub using_span: Span,
 
     /// The name that conflicts with the existing name in the module.
     pub name: String,
@@ -187,7 +187,7 @@ pub struct ConflictingUsing {
     ///
     /// This can either be the span to the declared symbol or the previous
     /// using that uses the given name.
-    pub conflicting_span: Option<GlobalSpan>,
+    pub conflicting_span: Option<Span>,
 }
 
 impl Report<&Table> for ConflictingUsing {
@@ -224,7 +224,7 @@ pub struct InvalidSymbolInImplementation {
     pub invalid_item_id: GlobalID,
 
     /// The span where invalid symbol was found.
-    pub qualified_identifier_span: GlobalSpan,
+    pub qualified_identifier_span: Span,
 }
 
 impl Report<&Table> for InvalidSymbolInImplementation {
@@ -248,7 +248,7 @@ impl Report<&Table> for InvalidSymbolInImplementation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FoundEmptyImplementationOnTrait {
     /// The span where the empty implementation was found.
-    pub empty_implementation_signature_span: GlobalSpan,
+    pub empty_implementation_signature_span: Span,
 }
 
 impl Report<&Table> for FoundEmptyImplementationOnTrait {
@@ -269,7 +269,7 @@ impl Report<&Table> for FoundEmptyImplementationOnTrait {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidConstImplementation {
     /// The span where the invalid `const` implementation was found.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for InvalidConstImplementation {
@@ -289,7 +289,7 @@ impl Report<&Table> for InvalidConstImplementation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidFinalImplementation {
     /// The span where the invalid final implementation was found.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for InvalidFinalImplementation {
@@ -309,7 +309,7 @@ impl Report<&Table> for InvalidFinalImplementation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonFinalMarkerImplementation {
     /// The span of the implementation.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for NonFinalMarkerImplementation {
@@ -332,7 +332,7 @@ impl Report<&Table> for NonFinalMarkerImplementation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnknownTraitImplementationMember {
     /// The span to the identifier of the unknown member.
-    pub identifier_span: GlobalSpan,
+    pub identifier_span: Span,
 
     /// The ID of the trait implementation.
     pub trait_id: GlobalID,
@@ -395,7 +395,7 @@ pub struct MismatchedTraitMemberAndImplementationMember {
     pub found_kind: TraitMemberKind,
 
     /// The span of the implementation member's identifier.
-    pub implementation_member_identifer_span: GlobalSpan,
+    pub implementation_member_identifer_span: Span,
 }
 
 impl Report<&Table> for MismatchedTraitMemberAndImplementationMember {
@@ -480,7 +480,7 @@ impl Report<&Table> for UnimplementedTraitMembers {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FoundImplementationMemberOnMarker {
     /// The span where the implementation was found.
-    pub implementation_member_span: GlobalSpan,
+    pub implementation_member_span: Span,
 }
 
 impl Report<&Table> for FoundImplementationMemberOnMarker {
@@ -505,7 +505,7 @@ impl Report<&Table> for FoundImplementationMemberOnMarker {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectedImplementationWithBodyForAdt {
     /// The implementation that was found to be invalid.
-    pub invalid_implementation_span: GlobalSpan,
+    pub invalid_implementation_span: Span,
 }
 
 impl Report<&Table> for ExpectedImplementationWithBodyForAdt {
@@ -526,7 +526,7 @@ impl Report<&Table> for ExpectedImplementationWithBodyForAdt {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnexpectedAdtImplementationMember {
     /// The span where the unexpected member was found.
-    pub unexpected_member_span: GlobalSpan,
+    pub unexpected_member_span: Span,
 }
 
 impl Report<&Table> for UnexpectedAdtImplementationMember {
@@ -547,7 +547,7 @@ impl Report<&Table> for UnexpectedAdtImplementationMember {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariadicArgumentsMustBeTrailing {
     /// The span of the variadic arguments.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for VariadicArgumentsMustBeTrailing {
@@ -566,7 +566,7 @@ impl Report<&Table> for VariadicArgumentsMustBeTrailing {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VariadicArgumentsAreNotAllowed {
     /// The span of the variadic arguments.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for VariadicArgumentsAreNotAllowed {
@@ -589,7 +589,7 @@ impl Report<&Table> for VariadicArgumentsAreNotAllowed {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TargetRootInImportIsNotAllowedwithFrom {
     /// The span where the target root is found.
-    pub target_root_span: GlobalSpan,
+    pub target_root_span: Span,
 }
 
 impl Report<&Table> for TargetRootInImportIsNotAllowedwithFrom {
@@ -624,7 +624,7 @@ pub struct FunctionAttributeIsNotAllowedInTraitImplementation {
     pub attribute: FunctionAttribute,
 
     /// The span to the keyword that added the attribute
-    pub keyword_span: GlobalSpan,
+    pub keyword_span: Span,
 }
 
 impl Report<&Table> for FunctionAttributeIsNotAllowedInTraitImplementation {
@@ -651,7 +651,7 @@ impl Report<&Table> for FunctionAttributeIsNotAllowedInTraitImplementation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AccessModifierIsNotAllowedInTraitImplementation {
     /// The span where the access modifier is found.
-    pub access_modifier_span: GlobalSpan,
+    pub access_modifier_span: Span,
 }
 
 impl Report<&Table> for AccessModifierIsNotAllowedInTraitImplementation {
@@ -671,7 +671,7 @@ impl Report<&Table> for AccessModifierIsNotAllowedInTraitImplementation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectAccessModifier {
     /// The span where the access modifier is expected.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for ExpectAccessModifier {

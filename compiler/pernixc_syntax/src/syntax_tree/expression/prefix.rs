@@ -1,7 +1,7 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind, Punctuation};
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::postfix::Postfixable;
 use crate::{
@@ -22,7 +22,7 @@ pub struct Prefix {
 }
 
 impl SourceElement for Prefix {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.operator.span().join(&self.prefixable.span())
     }
 }
@@ -50,7 +50,7 @@ impl SyntaxTree for Prefixable {
 }
 
 impl SourceElement for Prefixable {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Postfixable(postfixable) => postfixable.span(),
             Self::Prefix(prefix) => prefix.span(),
@@ -85,7 +85,7 @@ impl SyntaxTree for PrefixOperator {
 }
 
 impl SourceElement for PrefixOperator {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Negate(p) | Self::BitwiseNot(p) | Self::Dereference(p) => {
                 p.span()

@@ -36,7 +36,7 @@ use pernixc_semantic::{
         Symbol,
     },
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{self, expression::block::Group};
 
 use super::{Bind, Config, Expression, Target};
@@ -852,11 +852,11 @@ struct ArmInfo<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MatchInfo<'a> {
     address: Address<infer::Model>,
-    address_span: GlobalSpan,
+    address_span: Span,
     r#type: &'a Type<infer::Model>,
     qualifier: Qualifier,
     from_lvalue: bool,
-    span: GlobalSpan,
+    span: Span,
     exit_block_id: ID<Block<infer::Model>>,
     non_exhaustive_block_id: ID<Block<infer::Model>>,
     is_statement_level: bool,

@@ -5,7 +5,7 @@ use pernixc_lexical::{
     token::{Identifier, Keyword, KeywordKind, Punctuation},
     token_stream::DelimiterKind,
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     constant::Constant, function::Function, implements::Implements,
@@ -32,7 +32,7 @@ pub struct Signature {
 }
 
 impl SourceElement for Signature {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.module_keyword.span().join(&self.identifier.span())
     }
 }
@@ -58,7 +58,7 @@ pub struct From {
 }
 
 impl SourceElement for From {
-    fn span(&self) -> GlobalSpan { self.from.span().join(&self.simple_path.span()) }
+    fn span(&self) -> Span { self.from.span().join(&self.simple_path.span()) }
 }
 
 impl SyntaxTree for From {
@@ -79,7 +79,7 @@ pub struct Alias {
 }
 
 impl SourceElement for Alias {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.as_keyword.span().join(&self.identifier.span())
     }
 }
@@ -102,7 +102,7 @@ pub struct ImportItem {
 }
 
 impl SourceElement for ImportItem {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         let begin = self.simple_path.span();
 
         begin.join(
@@ -134,7 +134,7 @@ pub struct Import {
 }
 
 impl SourceElement for Import {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         let begin = self
             .from
             .as_ref()
@@ -207,7 +207,7 @@ pub struct InlineBody {
 }
 
 impl SourceElement for InlineBody {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         let begin = self.colon.span();
 
         begin.join(
@@ -240,7 +240,7 @@ pub struct Module {
 }
 
 impl SourceElement for Module {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         let begin = self.access_modifier.span();
 
         begin.join(
@@ -308,7 +308,7 @@ impl SyntaxTree for Member {
 }
 
 impl SourceElement for Member {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Module(module) => module.span(),
             Self::Import(import) => import.span(),

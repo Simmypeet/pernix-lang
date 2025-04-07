@@ -7,7 +7,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use lazy_static::lazy_static;
 use pernixc_handler::Handler;
-use pernixc_source_file::{ByteIndex, GlobalSpan, SourceElement};
+use pernixc_source_file::{ByteIndex, SourceElement, Span};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -290,11 +290,11 @@ lazy_static! {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NewLine {
     /// The span to the new line character, either `\n` or `\r\n`.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl SourceElement for NewLine {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an enumeration containing all kinds of tokens in the Pernix programming
@@ -316,7 +316,7 @@ pub enum Kind {
 impl Kind {
     /// Returns the span of the token.
     #[must_use]
-    pub const fn span(&self) -> &GlobalSpan {
+    pub const fn span(&self) -> &Span {
         match self {
             Self::Identifier(token) => &token.span,
             Self::Keyword(token) => &token.span,
@@ -347,7 +347,7 @@ impl Kind {
 }
 
 impl SourceElement for Kind {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::NewLine(token) => token.span(),
             Self::Identifier(token) => token.span(),
@@ -364,7 +364,7 @@ impl SourceElement for Kind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Character {
     /// Is the span that makes up the token.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The value of the character literal.
     ///
@@ -374,14 +374,14 @@ pub struct Character {
 }
 
 impl SourceElement for Character {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a hardcoded string literal value in the source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct String {
     /// Is the span that makes up the token.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The value of the string literal. The value is `None` if the string
     /// literal is invalid (e.g., invalid escape sequence).
@@ -389,18 +389,18 @@ pub struct String {
 }
 
 impl SourceElement for String {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of whitespace characters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WhiteSpaces {
     /// Is the span that makes up the token.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl SourceElement for WhiteSpaces {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are valid in an
@@ -429,7 +429,7 @@ pub fn is_valid_identifier_string(s: &str) -> bool {
 }
 
 impl<S> SourceElement for Identifier<S> {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a contiguous sequence of characters that are reserved for a
@@ -437,39 +437,39 @@ impl<S> SourceElement for Identifier<S> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Keyword {
     /// Is the span that makes up the token.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// Is the [`KeywordKind`] that the token represents.
     pub kind: KeywordKind,
 }
 
 impl SourceElement for Keyword {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a single ASCII punctuation character.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Punctuation {
     /// Is the span that makes up the token.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// Is the ASCII punctuation character that the token represents.
     pub punctuation: char,
 }
 
 impl SourceElement for Punctuation {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric {
     /// Is the span that makes up the token.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl SourceElement for Numeric {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an enumeration representing the two kinds of comments in the Pernix
@@ -489,14 +489,14 @@ pub enum CommentKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Comment {
     /// Is the span that makes up the token.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// Is the kind of comment that the token represents.
     pub kind: CommentKind,
 }
 
 impl SourceElement for Comment {
-    fn span(&self) -> GlobalSpan { self.span.clone() }
+    fn span(&self) -> Span { self.span.clone() }
 }
 
 /// Is an error that can occur when invoking the [`Token::lex`] method.
@@ -544,12 +544,10 @@ impl Kind {
     fn create_span(
         start: ByteIndex,
         iter: &mut pernixc_source_file::Iterator,
-    ) -> GlobalSpan {
+    ) -> Span {
         iter.peek().map_or_else(
-            || GlobalSpan::to_end(iter.source_file().clone(), start),
-            |(index, _)| {
-                GlobalSpan::new(iter.source_file().clone(), start, index)
-            },
+            || Span::to_end(iter.source_file().clone(), start),
+            |(index, _)| Span::new(iter.source_file().clone(), start, index),
         )
     }
 
@@ -656,7 +654,7 @@ impl Kind {
             } else {
                 handler.receive(
                     UnterminatedDelimitedComment {
-                        span: GlobalSpan::new(
+                        span: Span::new(
                             iter.source_file().clone(),
                             start,
                             start + 2,
@@ -700,7 +698,7 @@ impl Kind {
             let Some((byte_index, character)) = iter.next() else {
                 handler.receive(error::Error::UnterminatedStringLiteral(
                     error::UnterminatedStringLiteral {
-                        span: GlobalSpan::new(
+                        span: Span::new(
                             iter.source_file().clone(),
                             start,
                             start + 1,
@@ -721,7 +719,7 @@ impl Kind {
                 } else {
                     handler.receive(error::Error::InvalidEscapeSequence(
                         InvalidEscapeSequence {
-                            span: GlobalSpan::new(
+                            span: Span::new(
                                 iter.source_file().clone(),
                                 last_byte_index,
                                 byte_index,
@@ -817,7 +815,7 @@ impl Kind {
                                 handler.receive(
                                     error::Error::InvalidEscapeSequence(
                                         InvalidEscapeSequence {
-                                            span: GlobalSpan::new(
+                                            span: Span::new(
                                                 iter.source_file().clone(),
                                                 content_start,
                                                 content_end,

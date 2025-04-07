@@ -25,7 +25,7 @@ use pernixc_semantic::{
         r#type::Qualifier,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
     diagnostic::{
@@ -39,7 +39,7 @@ use pernixc_type_system::{
 
 fn report_error(
     well_formedness_error: well_formedness::Error<model::Model>,
-    instantiation_span: GlobalSpan,
+    instantiation_span: Span,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
     match well_formedness_error {

@@ -19,7 +19,7 @@ use pernixc_semantic::{
         Model,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 /// An enumeration of either a `break` or `continue` control flow.
 #[derive(
@@ -46,7 +46,7 @@ pub enum LoopControlFlow {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LoopWithGivenLabelNameNotFound {
     /// The span of the label identifier.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for LoopWithGivenLabelNameNotFound {
@@ -68,7 +68,7 @@ impl Report<&Table> for LoopWithGivenLabelNameNotFound {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LoopControlFlowOutsideLoop {
     /// The span of the break expression.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The kind of control flow.
     pub control_flow: LoopControlFlow,
@@ -99,7 +99,7 @@ pub struct CyclicInference<M: Model> {
     pub second: Type<M>,
 
     /// The sapn where the type check occurred.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl<M: Model> Report<&Table> for CyclicInference<M>
@@ -131,7 +131,7 @@ pub struct MismatchedType<M: Model> {
     pub found_type: Type<M>,
 
     /// The sapn where the type check occurred.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl<M: Model> Report<&Table> for MismatchedType<M>
@@ -157,7 +157,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectedLValue {
     /// The span of the r-value.
-    pub expression_span: GlobalSpan,
+    pub expression_span: Span,
 }
 
 impl Report<&Table> for ExpectedLValue {
@@ -179,7 +179,7 @@ pub struct CannotDereference<M: Model> {
     pub found_type: Type<M>,
 
     /// The span of the expression with dereference operator.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl<M: Model> Report<&Table> for CannotDereference<M>
@@ -204,7 +204,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NotAllFlowPathsExpressValue {
     /// The span of the block expression.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for NotAllFlowPathsExpressValue {
@@ -225,7 +225,7 @@ impl Report<&Table> for NotAllFlowPathsExpressValue {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedQualifierForReferenceOf {
     /// The span of the reference of expression
-    pub reference_of_span: GlobalSpan,
+    pub reference_of_span: Span,
 
     /// The qualifier of the l-value.
     pub found_qualifier: Qualifier,
@@ -299,7 +299,7 @@ pub struct MismatchedPatternBindingType<M: Model> {
     pub found_type: Type<M>,
 
     /// The span of the pattern.
-    pub pattern_span: GlobalSpan,
+    pub pattern_span: Span,
 }
 
 impl<M: Model> Report<&Table> for MismatchedPatternBindingType<M>
@@ -325,7 +325,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoreThanOnePackedTuplePattern {
     /// The span where the illegal tuple pattern was found.
-    pub illegal_tuple_pattern_span: GlobalSpan,
+    pub illegal_tuple_pattern_span: Span,
 }
 
 impl Report<&Table> for MoreThanOnePackedTuplePattern {
@@ -345,7 +345,7 @@ impl Report<&Table> for MoreThanOnePackedTuplePattern {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectedTuplePackPattern {
     /// Where the tuple pack pattern was expected.
-    pub illegal_tuple_span: GlobalSpan,
+    pub illegal_tuple_span: Span,
 }
 
 impl Report<&Table> for ExpectedTuplePackPattern {
@@ -368,7 +368,7 @@ impl Report<&Table> for ExpectedTuplePackPattern {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FieldNotFound {
     /// The span to the identifier that refers to non-existent field.
-    pub identifier_span: GlobalSpan,
+    pub identifier_span: Span,
 
     /// The struct ID where the field is not found.
     pub struct_id: GlobalID,
@@ -390,7 +390,7 @@ impl Report<&Table> for FieldNotFound {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AlreadyBoundFieldPattern {
     /// The span of the pattern.
-    pub pattern_span: GlobalSpan,
+    pub pattern_span: Span,
 
     /// The ID of the struct where the field is already bound.
     pub struct_id: GlobalID,
@@ -430,7 +430,7 @@ pub struct FieldIsNotAccessible {
     pub referring_site: GlobalID,
 
     /// The span where the field is referred from.
-    pub referring_identifier_span: GlobalSpan,
+    pub referring_identifier_span: Span,
 }
 
 impl Report<&Table> for FieldIsNotAccessible {
@@ -466,7 +466,7 @@ pub struct UnboundFields {
     pub struct_id: GlobalID,
 
     /// The span of the pattern where the fields are unbound.
-    pub pattern_span: GlobalSpan,
+    pub pattern_span: Span,
 }
 
 impl Report<&Table> for UnboundFields {
@@ -503,7 +503,7 @@ pub struct ExpectedAssociatedPattern {
 
     /// The span of the variant pattern where the associated pattern is
     /// expected.
-    pub pattern_span: GlobalSpan,
+    pub pattern_span: Span,
 }
 
 impl Report<&Table> for ExpectedAssociatedPattern {
@@ -535,7 +535,7 @@ pub struct UnexpectedAssociatedPattern {
     pub variant_id: GlobalID,
 
     /// The span of the pattern with the associated pattern.
-    pub associated_pattern_span: GlobalSpan,
+    pub associated_pattern_span: Span,
 }
 
 impl Report<&Table> for UnexpectedAssociatedPattern {
@@ -559,7 +559,7 @@ impl Report<&Table> for UnexpectedAssociatedPattern {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MismatchedTuplePatternLength {
     /// The span of the pattern.
-    pub pattern_span: GlobalSpan,
+    pub pattern_span: Span,
 
     /// The number of elements in the pattern.
     pub pattern_element_count: usize,
@@ -588,7 +588,7 @@ impl Report<&Table> for MismatchedTuplePatternLength {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TooLargeNumericLiteral {
     /// The span of the numeric literal.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for TooLargeNumericLiteral {
@@ -608,7 +608,7 @@ impl Report<&Table> for TooLargeNumericLiteral {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FoundPackTuplePatternInReferenceBoundTupleType {
     /// The span of the pattern.
-    pub pattern_span: GlobalSpan,
+    pub pattern_span: Span,
 }
 
 impl Report<&Table> for FoundPackTuplePatternInReferenceBoundTupleType {
@@ -629,7 +629,7 @@ impl Report<&Table> for FoundPackTuplePatternInReferenceBoundTupleType {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidNumericSuffix {
     /// The span of the numeric suffix.
-    pub suffix_span: GlobalSpan,
+    pub suffix_span: Span,
 }
 
 impl Report<&Table> for InvalidNumericSuffix {
@@ -652,7 +652,7 @@ impl Report<&Table> for InvalidNumericSuffix {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FloatingPointLiteralHasIntegralSuffix {
     /// The span of the numeric literal.
-    pub numeric_literal_span: GlobalSpan,
+    pub numeric_literal_span: Span,
 }
 
 impl Report<&Table> for FloatingPointLiteralHasIntegralSuffix {
@@ -676,7 +676,7 @@ pub struct ExpectedAssociatedValue {
     pub variant_id: GlobalID,
 
     /// The span of the variant.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for ExpectedAssociatedValue {
@@ -700,7 +700,7 @@ impl Report<&Table> for ExpectedAssociatedValue {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolCannotBeUsedAsAnExpression {
     /// The span of the symbol reference.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The ID of the symbol that cannot be used as an expression.
     pub symbol: GlobalID,
@@ -725,7 +725,7 @@ impl Report<&Table> for SymbolCannotBeUsedAsAnExpression {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssignToNonMutable {
     /// The span of the assignment.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for AssignToNonMutable {
@@ -752,7 +752,7 @@ pub struct InvalidRelationalOperation<M: Model> {
     pub found_type: Type<M>,
 
     /// The span of the relational operation.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl<M: Model> Report<&Table> for InvalidRelationalOperation<M>
@@ -778,7 +778,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MoreThanOneUnpackedInTupleExpression<M: Model> {
     /// The span of the tuple expression.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type of the tuple expression.
     pub r#type: Type<M>,
@@ -805,7 +805,7 @@ where
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectedStruct {
     /// The span of the qualified identifier.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for ExpectedStruct {
@@ -830,10 +830,10 @@ pub struct DuplicatedFieldInitialization {
     pub struct_id: GlobalID,
 
     /// The span of the first initialization.
-    pub prior_initialization_span: GlobalSpan,
+    pub prior_initialization_span: Span,
 
     /// The span of the duplicate initialization.
-    pub duplicate_initialization_span: GlobalSpan,
+    pub duplicate_initialization_span: Span,
 }
 
 impl Report<&Table> for DuplicatedFieldInitialization {
@@ -867,7 +867,7 @@ pub struct UninitializedFields {
     pub uninitialized_fields: HashSet<ID<Field>>,
 
     /// The span of the struct expression.
-    pub struct_expression_span: GlobalSpan,
+    pub struct_expression_span: Span,
 }
 
 impl Report<&Table> for UninitializedFields {
@@ -895,7 +895,7 @@ impl Report<&Table> for UninitializedFields {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidCastType<M: Model> {
     /// The span of the type reference.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type that cannot be used in cast expression.
     pub r#type: Type<M>,
@@ -918,7 +918,7 @@ pub enum UnsafeOperation {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnsafeRequired {
     /// The span of the expression where the unsafe operation is performed.
-    pub expression_span: GlobalSpan,
+    pub expression_span: Span,
 
     /// The operation that requires an unsafe scope.
     pub operation: UnsafeOperation,
@@ -980,7 +980,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidReferenceTypeCasting<M: Model> {
     /// The span of the operand.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type of the operand.
     pub r#type: Type<M>,
@@ -1010,7 +1010,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InvalidPointerTypeCasting<M: Model> {
     /// The span of the operand.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type of the operand.
     pub r#type: Type<M>,
@@ -1040,7 +1040,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AmbiguousMethodCall {
     /// The span where the method call was made.
-    pub method_call_span: GlobalSpan,
+    pub method_call_span: Span,
 
     /// The candidates that were found.
     pub callable_candidates: Vec<GlobalID>,
@@ -1075,7 +1075,7 @@ impl Report<&Table> for AmbiguousMethodCall {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MethodNotFound {
     /// The span where the method call was made.
-    pub method_call_span: GlobalSpan,
+    pub method_call_span: Span,
 }
 
 impl Report<&Table> for MethodNotFound {
@@ -1098,7 +1098,7 @@ pub struct AdtImplementationFunctionCannotBeUsedAsMethod {
     pub adt_implementation_function_id: GlobalID,
 
     /// The span of the function call.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for AdtImplementationFunctionCannotBeUsedAsMethod {
@@ -1137,7 +1137,7 @@ pub struct MismatchedArgumentCount {
     pub found_count: usize,
 
     /// The span of the function call.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for MismatchedArgumentCount {
@@ -1161,7 +1161,7 @@ impl Report<&Table> for MismatchedArgumentCount {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectedStructType<M: Model> {
     /// The span of the expression where the field is accessed.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type that is not a struct type.
     pub r#type: Type<M>,
@@ -1189,7 +1189,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnexpectedGenericArgumentsInField {
     /// The span of the field access.
-    pub field_access_span: GlobalSpan,
+    pub field_access_span: Span,
 }
 
 impl Report<&Table> for UnexpectedGenericArgumentsInField {
@@ -1210,7 +1210,7 @@ impl Report<&Table> for UnexpectedGenericArgumentsInField {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectedTuple<M: Model> {
     /// The span of the expression where the field is accessed.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type that is not a tuple type.
     pub r#type: Type<M>,
@@ -1238,7 +1238,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TooLargeTupleIndex {
     /// The span of the tuple index.
-    pub access_span: GlobalSpan,
+    pub access_span: Span,
 }
 
 impl Report<&Table> for TooLargeTupleIndex {
@@ -1257,7 +1257,7 @@ impl Report<&Table> for TooLargeTupleIndex {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TupleIndexOutOfBOunds<M: Model> {
     /// The span of the tuple index.
-    pub access_span: GlobalSpan,
+    pub access_span: Span,
 
     /// The index of the tuple.
     pub tuple_type: r#type::Tuple<M>,
@@ -1288,7 +1288,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CannotIndexPastUnpackedTuple<M: Model> {
     /// The span of the index.
-    pub index_span: GlobalSpan,
+    pub index_span: Span,
 
     /// The type of the tuple.
     pub tuple_type: r#type::Tuple<M>,
@@ -1329,7 +1329,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpectArray<M: Model> {
     /// The span of the expression where the elements are indexed.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type that is not an array type.
     pub r#type: Type<M>,
@@ -1357,7 +1357,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpressionIsNotCallable {
     /// The span of the expression without the call operator.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for ExpressionIsNotCallable {
@@ -1382,7 +1382,7 @@ pub struct SymbolIsNotCallable {
     pub called_id: GlobalID,
 
     /// The span of the call.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for SymbolIsNotCallable {
@@ -1403,7 +1403,7 @@ impl Report<&Table> for SymbolIsNotCallable {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BlockWithGivenLableNameNotFound {
     /// The span of the label identifier.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for BlockWithGivenLableNameNotFound {
@@ -1425,7 +1425,7 @@ impl Report<&Table> for BlockWithGivenLableNameNotFound {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExpressOutsideBlock {
     /// The span of the expression.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for ExpressOutsideBlock {
@@ -1446,7 +1446,7 @@ impl Report<&Table> for ExpressOutsideBlock {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ReturnIsNotAllowed {
     /// The span of the return expression.
-    pub span: GlobalSpan,
+    pub span: Span,
 }
 
 impl Report<&Table> for ReturnIsNotAllowed {
@@ -1466,7 +1466,7 @@ impl Report<&Table> for ReturnIsNotAllowed {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UnreachableMatchArm {
     /// The span of the match arm.
-    pub match_arm_span: GlobalSpan,
+    pub match_arm_span: Span,
 }
 
 impl Report<&Table> for UnreachableMatchArm {
@@ -1485,7 +1485,7 @@ impl Report<&Table> for UnreachableMatchArm {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonExhaustiveMatch {
     /// The span of the match expression.
-    pub match_expression_span: GlobalSpan,
+    pub match_expression_span: Span,
 }
 
 impl Report<&Table> for NonExhaustiveMatch {
@@ -1528,7 +1528,7 @@ impl Report<&Table> for NotAllFlowPathsReturnAValue {
 pub struct TypeAnnotationRequired {
     /// The span of the expression/declration where the type annotation is
     /// required.
-    pub span: GlobalSpan,
+    pub span: Span,
 
     /// The type that couldn't be further inferred.
     pub r#type: Type<model::Constrained>,

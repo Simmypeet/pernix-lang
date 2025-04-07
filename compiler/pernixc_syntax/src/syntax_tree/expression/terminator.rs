@@ -1,6 +1,6 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Keyword, KeywordKind};
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::binary::Binary;
 use crate::{
@@ -39,7 +39,7 @@ impl SyntaxTree for Terminator {
 }
 
 impl SourceElement for Terminator {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Return(syn) => syn.span(),
             Self::Continue(syn) => syn.span(),
@@ -67,7 +67,7 @@ impl SyntaxTree for Return {
 }
 
 impl SourceElement for Return {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.binary.as_ref().map_or_else(
             || self.return_keyword.span(),
             |expression| self.return_keyword.span().join(&expression.span()),
@@ -93,7 +93,7 @@ impl SyntaxTree for Continue {
 }
 
 impl SourceElement for Continue {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.label.as_ref().map_or_else(
             || self.continue_keyword.span(),
             |label| self.continue_keyword.span().join(&label.span()),
@@ -138,7 +138,7 @@ impl SyntaxTree for Express {
 }
 
 impl SourceElement for Express {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.binary.as_ref().map_or_else(
             || {
                 self.label.as_ref().map_or_else(
@@ -174,7 +174,7 @@ impl SyntaxTree for Break {
 }
 
 impl SourceElement for Break {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.binary.as_ref().map_or_else(
             || {
                 self.label.as_ref().map_or_else(

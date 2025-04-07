@@ -1,6 +1,6 @@
 use pernixc_handler::Handler;
 use pernixc_lexical::token::{Identifier, Keyword, KeywordKind};
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 
 use super::{
     constant, function, generic_parameter::GenericParameters, r#type, Body,
@@ -44,7 +44,7 @@ impl SyntaxTree for Signature {
 }
 
 impl SourceElement for Signature {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.trait_keyword.span().join(&self.identifier.span())
     }
 }
@@ -72,7 +72,7 @@ impl<T: SyntaxTree> SyntaxTree for MemberTemplate<T> {
 }
 
 impl<T: SourceElement> SourceElement for MemberTemplate<T> {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.access_modifier.span().join(
             &self
                 .trailing_where_clause
@@ -105,7 +105,7 @@ impl SyntaxTree for Member {
 }
 
 impl SourceElement for Member {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         match self {
             Self::Type(signature) => signature.span(),
             Self::Function(signature) => signature.span(),
@@ -137,7 +137,7 @@ impl SyntaxTree for Trait {
 }
 
 impl SourceElement for Trait {
-    fn span(&self) -> GlobalSpan {
+    fn span(&self) -> Span {
         self.access_modifier.span().join(&self.body.span())
     }
 }

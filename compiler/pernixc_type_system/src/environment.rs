@@ -29,7 +29,7 @@ use pernixc_semantic::{
         Kind, Model, ModelOf,
     },
 };
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 
 use crate::{
     definite::Definite,
@@ -71,7 +71,7 @@ pub trait GetActivePremiseExt {
     fn get_active_premise_predicates_with_span<M: Model>(
         &self,
         current_site: GlobalID,
-    ) -> HashMap<Predicate<M>, Vec<GlobalSpan>>;
+    ) -> HashMap<Predicate<M>, Vec<Span>>;
 }
 
 impl GetActivePremiseExt for Table {
@@ -131,8 +131,8 @@ impl GetActivePremiseExt for Table {
     fn get_active_premise_predicates_with_span<M: Model>(
         &self,
         current_site: GlobalID,
-    ) -> HashMap<Predicate<M>, Vec<GlobalSpan>> {
-        let mut spans_by_predicate: HashMap<Predicate<M>, Vec<GlobalSpan>> =
+    ) -> HashMap<Predicate<M>, Vec<Span>> {
+        let mut spans_by_predicate: HashMap<Predicate<M>, Vec<Span>> =
             HashMap::default();
 
         for global_id in self

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use enum_as_inner::EnumAsInner;
 use pernixc_abort::Abort;
 use pernixc_arena::{Key, ID};
-use pernixc_source_file::GlobalSpan;
+use pernixc_source_file::Span;
 use serde::{Deserialize, Serialize};
 
 use super::Value;
@@ -508,7 +508,7 @@ pub struct Register<M: term::Model> {
 
     /// The span where the value was defined.
     #[serde(skip)]
-    pub span: Option<GlobalSpan>,
+    pub span: Option<Span>,
 }
 
 fn transform_instantiation<
@@ -521,7 +521,7 @@ fn transform_instantiation<
 >(
     transformer: &mut T,
     instantiation: Instantiation<FM>,
-    span: Option<&GlobalSpan>,
+    span: Option<&Span>,
 ) -> Result<Instantiation<TM>, E> {
     Ok(Instantiation {
         lifetimes: instantiation

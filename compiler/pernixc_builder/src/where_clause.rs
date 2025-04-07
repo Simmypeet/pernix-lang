@@ -42,7 +42,7 @@ use pernixc_semantic::{
         Default, MemberSymbol,
     },
 };
-use pernixc_source_file::{SourceElement, GlobalSpan};
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_syntax::syntax_tree::{
     self, ConnectedList, QualifiedIdentifierRoot,
 };
@@ -437,7 +437,7 @@ fn create_type_bound_predicates(
 fn create_type_bound_predicates_internal<'a>(
     table: &Table,
     ty: &Type<Default>,
-    type_span: &GlobalSpan,
+    type_span: &Span,
     global_id: GlobalID,
     bounds: impl IntoIterator<Item = &'a syntax_tree::predicate::TypeBound>,
     mut config: Config<Default>,

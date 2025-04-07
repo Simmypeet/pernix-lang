@@ -10,7 +10,7 @@ use pernixc_lexical::{
     token_stream::{DelimiterKind, FragmentKind, Location, TokenKind, Tree},
 };
 use pernixc_log::Severity;
-use pernixc_source_file::{SourceFile, GlobalSpan};
+use pernixc_source_file::{SourceFile, Span};
 
 use crate::{
     expect::{Expected, Fragment},
@@ -43,7 +43,7 @@ pub struct Error {
     #[get = "pub"]
     found: Found,
     prior_insignificant: Option<Kind>,
-    diagnostic_span: GlobalSpan,
+    diagnostic_span: Span,
 
     /// Gets the expected tokens
     #[get = "pub"]
@@ -185,7 +185,7 @@ impl Error {
             diagnostic_span: prior_insignificant.as_ref().map_or_else(
                 || match &found {
                     Found::Token(token) => token.span().clone(),
-                    Found::EndOfFile(arc) => GlobalSpan::new(
+                    Found::EndOfFile(arc) => Span::new(
                         arc.clone(),
                         if arc.content().is_empty() {
                             0
@@ -200,7 +200,7 @@ impl Error {
                         prior_token.span().join(token.span())
                     }
                     Found::EndOfFile(arc) => {
-                        GlobalSpan::to_end(arc.clone(), prior_token.span().end())
+                        Span::to_end(arc.clone(), prior_token.span().end())
                     }
                 },
             ),
