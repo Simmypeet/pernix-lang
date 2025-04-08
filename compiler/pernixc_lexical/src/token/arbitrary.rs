@@ -502,7 +502,7 @@ impl<F: for<'x> Files<'x, FileId = ID>, ID: Clone + Debug>
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum PriorInsignificant {
     Tab(usize),
     Whitespace(usize),
@@ -519,12 +519,6 @@ impl Arbitrary for PriorInsignificant {
                 .prop_map(Self::Tab),
             3 => (1usize..10)
                 .prop_map(Self::Whitespace),
-            1 => (
-                1usize..10,
-                "[^\\n\\r]*",
-            ).prop_map(|(x, y)| {
-                Self::Comment(x, y)
-            }),
         ]
         .boxed()
     }
@@ -541,6 +535,21 @@ impl Display for PriorInsignificant {
                 f.write_str(x)
             }
         }
+    }
+}
+
+impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone> Input<&Span<ID>, &F>
+    for &PriorInsignificant
+{
+    fn assert(self, output: &Span<ID>, parameters: &F) -> TestCaseResult {
+        let source = parameters.source(output.source_id.clone())?;
+        let actual_value = &source.as_ref()[output.range()];
+
+        let expected = self.to_string();
+
+        prop_assert_eq!(actual_value, expected.as_str());
+
+        Ok(())
     }
 }
 

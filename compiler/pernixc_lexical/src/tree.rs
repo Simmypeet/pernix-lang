@@ -13,6 +13,8 @@ use crate::{
     token::{Kind, NewLine, Punctuation, Token, Tokenizer, WithInsignificant},
 };
 
+pub mod arbitrary;
+
 /// The represents how the [`TokenStream`] is structured in a fragment.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum FragmentKind<S> {
@@ -280,12 +282,11 @@ impl<ID: Clone> TokenStream<Span<ID>> {
         tokens: &mut [Node<Span<ID>>],
         source: &str,
         indentation_levels: &mut Vec<IndentationMark<Span<ID>>>,
-        new_line_offset: usize,
         index: usize,
         handler: &dyn Handler<error::Error<ID>>,
     ) -> usize {
         let indentation_start_index = index;
-        let new_line_index = new_line_offset + index + 1;
+        let new_line_index = index + 1;
 
         let mut search_index = new_line_index + 1;
 
@@ -471,7 +472,6 @@ impl<ID: Clone> TokenStream<Span<ID>> {
                     tokens,
                     source,
                     indentation_levels,
-                    index + 1,
                     index,
                     handler,
                 );
@@ -653,3 +653,6 @@ impl<ID: Clone> TokenStream<Span<ID>> {
         None
     }
 }
+
+#[cfg(test)]
+mod test;
