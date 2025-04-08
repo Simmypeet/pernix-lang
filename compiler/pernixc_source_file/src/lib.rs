@@ -8,7 +8,7 @@ use std::{
     fs::File,
     hash::Hash,
     io::Read,
-    ops::Range,
+    ops::{Index, IndexMut, Range},
     path::PathBuf,
 };
 
@@ -657,6 +657,39 @@ impl GlobalSourceMap {
                 Ok(id)
             }
         }
+    }
+
+    /// Gets the source file by its ID.
+    #[must_use]
+    pub fn get(&self, id: Global<ID<SourceFile>>) -> Option<&SourceFile> {
+        self.maps_by_target_id
+            .get(&id.target_id)
+            .and_then(|x| x.arena.get(id.id))
+    }
+
+    /// Gets the source file by its ID.
+    #[must_use]
+    pub fn get_mut(
+        &mut self,
+        id: Global<ID<SourceFile>>,
+    ) -> Option<&mut SourceFile> {
+        self.maps_by_target_id
+            .get_mut(&id.target_id)
+            .and_then(|x| x.arena.get_mut(id.id))
+    }
+}
+
+impl Index<Global<ID<SourceFile>>> for GlobalSourceMap {
+    type Output = SourceFile;
+
+    fn index(&self, id: Global<ID<SourceFile>>) -> &Self::Output {
+        self.get(id).unwrap()
+    }
+}
+
+impl IndexMut<Global<ID<SourceFile>>> for GlobalSourceMap {
+    fn index_mut(&mut self, id: Global<ID<SourceFile>>) -> &mut Self::Output {
+        self.get_mut(id).unwrap()
     }
 }
 

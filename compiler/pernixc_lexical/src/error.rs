@@ -4,7 +4,7 @@
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_diagnostic::{Diagnostic, Report, Severity};
+use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_source_file::Span;
 
 use crate::tree::DelimiterKind;
@@ -26,6 +26,14 @@ impl<ID: Clone> Report<()> for UndelimitedDelimiter<ID> {
         Diagnostic {
             span: self.opening_span.clone(),
             message: "found an undelimited delimiter".to_string(),
+            label: Some(format!(
+                "need to be cloesd with `{}` pair",
+                match self.delimiter {
+                    DelimiterKind::Parenthesis => ')',
+                    DelimiterKind::Brace => '}',
+                    DelimiterKind::Bracket => ']',
+                }
+            )),
             severity: Severity::Error,
             help_message: Some(
                 "this delimiter is not closed by its corresponding closing \
@@ -50,6 +58,7 @@ impl<ID: Clone> Report<()> for UnterminatedStringLiteral<ID> {
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         Diagnostic {
             span: self.span.clone(),
+            label: Some("need to be closed with a double quote".to_string()),
             message: "found an unterminated string literal".to_string(),
             severity: Severity::Error,
             help_message: None,
@@ -72,6 +81,7 @@ impl<ID: Clone> Report<()> for InvalidEscapeSequence<ID> {
         Diagnostic {
             span: self.span.clone(),
             message: "found an invalid escape sequence".to_string(),
+            label: None,
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
@@ -84,6 +94,12 @@ impl<ID: Clone> Report<()> for InvalidEscapeSequence<ID> {
 pub struct InvalidIndentation<ID> {
     /// The span of the invalid indentation.
     pub span: Span<ID>,
+
+    /// The expected indentation level.
+    pub expected_indentation: usize,
+
+    /// The indentation level found in the source code.
+    pub found_indentation: usize,
 }
 
 impl<ID: Clone> Report<()> for InvalidIndentation<ID> {
@@ -93,6 +109,11 @@ impl<ID: Clone> Report<()> for InvalidIndentation<ID> {
         Diagnostic {
             span: self.span.clone(),
             message: "the token is in an invalid indentation level".to_string(),
+            label: Some(format!(
+                "found {} space(s), but the expected indentation level is {} \
+                 space(s)",
+                self.found_indentation, self.expected_indentation
+            )),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
@@ -105,6 +126,15 @@ impl<ID: Clone> Report<()> for InvalidIndentation<ID> {
 pub struct InvalidNewIndentationLevel<ID> {
     /// The span of the invalid new indentation level.
     pub span: Span<ID>,
+
+    /// The span of the previous indentation level.
+    pub previous_indentation_span: Option<Span<ID>>,
+
+    /// The expected indentation level.
+    pub latest_indentation: usize,
+
+    /// The indentation level found in the source code.
+    pub found_indentation: usize,
 }
 
 impl<ID: Clone> Report<()> for InvalidNewIndentationLevel<ID> {
@@ -113,12 +143,29 @@ impl<ID: Clone> Report<()> for InvalidNewIndentationLevel<ID> {
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         Diagnostic {
             span: self.span.clone(),
-            message: "found an invalid new indentation level, it must be \
-                      deeper than the previous indentation level"
-                .to_string(),
+            message: "found an invalid new indentation level".to_string(),
+            label: Some(format!(
+                "found {} space(s), but the previous indentation level is {} \
+                 space(s)",
+                self.found_indentation, self.latest_indentation
+            )),
             severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
+            help_message: Some(
+                "must be deeper than the previous indentation level"
+                    .to_string(),
+            ),
+            related: self
+                .previous_indentation_span
+                .clone()
+                .map(|span| Related {
+                    span,
+                    message: format!(
+                        "previous indentation level is {} space(s)",
+                        self.latest_indentation
+                    ),
+                })
+                .into_iter()
+                .collect(),
         }
     }
 }

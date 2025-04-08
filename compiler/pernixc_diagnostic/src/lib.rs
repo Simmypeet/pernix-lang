@@ -35,6 +35,10 @@ pub struct Diagnostic<S> {
     /// The message to display to the user.
     pub message: String,
 
+    /// The label to display to the user. This is typically a short message
+    /// that highlights the problem.
+    pub label: Option<String>,
+
     /// The severity of the diagnostic.
     pub severity: Severity,
 

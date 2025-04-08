@@ -133,7 +133,7 @@ struct IndentationMark<S> {
     starting_index: usize,
 }
 
-impl<ID: Clone> TokenStream<Span<ID>> {
+impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
     /// The size of a space character a tab character is equivalent to.
     pub const TAB_INDENT_SIZE: usize = 4;
 
@@ -344,7 +344,7 @@ impl<ID: Clone> TokenStream<Span<ID>> {
         } else {
             handler.receive(error::Error::InvalidNewIndentationLevel(
                 error::InvalidNewIndentationLevel {
-                    span: match &tokens[index] {
+                    span: (match &tokens[index] {
                         Node::Leaf(token) => token.token.span().clone(),
                         Node::Fragment(fragment) => match &fragment.kind {
                             FragmentKind::Delimiter(delimiter) => {
@@ -354,7 +354,26 @@ impl<ID: Clone> TokenStream<Span<ID>> {
                                 indentation.colon.token.span.clone()
                             }
                         },
-                    },
+                    })
+                    .join(&match &tokens[search_index] {
+                        Node::Leaf(token) => token.token.span().clone(),
+                        Node::Fragment(fragment) => match &fragment.kind {
+                            FragmentKind::Delimiter(delimiter) => {
+                                delimiter.open.token.span.clone()
+                            }
+                            FragmentKind::Indentation(indentation) => {
+                                indentation.colon.token.span.clone()
+                            }
+                        },
+                    }),
+                    found_indentation: level,
+                    previous_indentation_span: indentation_levels
+                        .last()
+                        .map(|x| x.colon.token.span.clone()),
+                    latest_indentation: indentation_levels
+                        .last()
+                        .unwrap()
+                        .indentation_size,
                 },
             ));
         }
@@ -416,6 +435,11 @@ impl<ID: Clone> TokenStream<Span<ID>> {
                                     }
                                 }
                             },
+                            expected_indentation: indentation_levels
+                                .last()
+                                .unwrap()
+                                .indentation_size,
+                            found_indentation: level,
                         },
                     ));
                 }
