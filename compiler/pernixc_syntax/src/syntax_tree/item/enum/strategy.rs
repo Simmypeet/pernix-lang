@@ -20,7 +20,7 @@ pub struct Signature {
 
 impl Input<&super::Signature> for &Signature {
     fn assert(self, output: &super::Signature) -> TestCaseResult {
-        self.identifier.assert(&output.identifier)?;
+        self.identifier.ssert(&output.identifier)?;
         self.generic_parameters
             .as_ref()
             .assert(output.generic_parameters.as_ref())

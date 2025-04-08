@@ -10,10 +10,12 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_driver = { path = "../pernixc_driver" }
+pernixc_source_file = { path = "../pernixc_source_file" }
 clap = { workspace = true }
 backtrace = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
+codespan-reporting = { workspace = true }
 
 
 [lints]

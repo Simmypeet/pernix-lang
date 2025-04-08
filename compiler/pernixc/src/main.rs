@@ -7,8 +7,14 @@ use std::{
 
 use backtrace::Backtrace;
 use clap::Parser;
-use pernixc_driver::Arguments;
-use pernixc_log::Message;
+use codespan_reporting::{
+    diagnostic::Diagnostic,
+    term::{
+        self,
+        termcolor::{self, StandardStream},
+    },
+};
+use pernixc_driver::argument::Arguments;
 use serde::{Deserialize, Serialize};
 
 fn main() -> ExitCode {
@@ -67,21 +73,34 @@ impl IceReport {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_lines)]
 fn setup_panic() {
     std::panic::set_hook(Box::new(|info| {
-        eprintln!("{}", Message {
-            severity: pernixc_log::Severity::Error,
-            display: "internal compiler error (ICE) occurred; the error is \
-                      caused by a bug in the compiler not the error in your \
-                      code"
-        });
+        let global_source_map = pernixc_source_file::GlobalSourceMap::new();
+        let config = codespan_reporting::term::Config::default();
+        let stderr = StandardStream::stderr(termcolor::ColorChoice::Always);
 
-        eprintln!("{}", Message {
-            severity: pernixc_log::Severity::Info,
-            display: "we're sorry for the inconvenience, please report this \
-                      issue to the developers"
-        });
+        term::emit(
+            &mut stderr.lock(),
+            &config,
+            &global_source_map,
+            &Diagnostic::error().with_message(
+                "internal compiler error (ICE) occurred; the error is caused \
+                 by a bug in the compiler not the error in your code",
+            ),
+        )
+        .unwrap();
+
+        term::emit(
+            &mut stderr.lock(),
+            &config,
+            &global_source_map,
+            &Diagnostic::note().with_message(
+                "we're sorry for the inconvenience, please report this issue \
+                 to the developers",
+            ),
+        )
+        .unwrap();
 
         let payload_string = info
             .payload()
@@ -122,18 +141,26 @@ fn setup_panic() {
         let file = ice_report.write_to_temp();
 
         if let Ok((_, path)) = file {
-            eprintln!("{}", Message {
-                severity: pernixc_log::Severity::Info,
-                display: format!(
+            term::emit(
+                &mut stderr.lock(),
+                &config,
+                &global_source_map,
+                &Diagnostic::note().with_message(format!(
                     "the ICE report has been written to: {}",
                     path.display()
-                )
-            });
+                )),
+            )
+            .unwrap();
         } else {
-            eprintln!("{}", Message {
-                severity: pernixc_log::Severity::Info,
-                display: "dumping the ICE report..."
-            });
+            term::emit(
+                &mut stderr.lock(),
+                &config,
+                &global_source_map,
+                &Diagnostic::note().with_message(
+                    "dumping the ICE report to stderr:".to_string(),
+                ),
+            )
+            .unwrap();
 
             eprintln!(
                 "```\n{}```",
@@ -141,23 +168,38 @@ fn setup_panic() {
             );
         }
 
-        eprintln!("{}", Message {
-            severity: pernixc_log::Severity::Info,
-            display: "please report the issue to the developers with the \
-                      written ICE report"
-        });
+        term::emit(
+            &mut stderr.lock(),
+            &config,
+            &global_source_map,
+            &Diagnostic::note().with_message(
+                "please report the issue to the developers with the written \
+                 ICE report",
+            ),
+        )
+        .unwrap();
 
-        eprintln!("{}", Message {
-            severity: pernixc_log::Severity::Info,
-            display: "the report was not automatically sent to the developers \
-                      because of privacy concerns"
-        });
+        term::emit(
+            &mut stderr.lock(),
+            &config,
+            &global_source_map,
+            &Diagnostic::note().with_message(
+                "the report was not automatically sent to the developers \
+                 because of privacy concerns",
+            ),
+        )
+        .unwrap();
 
-        eprintln!("{}", Message {
-            severity: pernixc_log::Severity::Info,
-            display: "we appreciate your effort to report the issue and help \
-                      us improve the compiler <3"
-        });
+        term::emit(
+            &mut stderr.lock(),
+            &config,
+            &global_source_map,
+            &Diagnostic::note().with_message(
+                "we appreciate your effort to report the issue and help us \
+                 improve the compiler <3",
+            ),
+        )
+        .unwrap();
 
         std::process::exit(1);
     }));

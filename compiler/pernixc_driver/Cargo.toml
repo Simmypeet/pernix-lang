@@ -13,11 +13,14 @@ clap = { workspace = true }
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
 pernixc_handler = { path = "../pernixc_handler" }
-pernixc_syntax = { path = "../pernixc_syntax" }
-pernixc_semantic = { path = "../pernixc_semantic" }
-pernixc_builder = { path = "../pernixc_builder" }
-pernixc_codegen = { path = "../pernixc_codegen" }
-pernixc_storage = { path = "../pernixc_storage" }
+pernixc_arena = { path = "../pernixc_arena" }
+pernixc_target = { path = "../pernixc_target" }
+codespan-reporting = { workspace = true }
+# pernixc_syntax = { path = "../pernixc_syntax" }
+# pernixc_semantic = { path = "../pernixc_semantic" }
+# pernixc_builder = { path = "../pernixc_builder" }
+# pernixc_codegen = { path = "../pernixc_codegen" }
+# pernixc_storage = { path = "../pernixc_storage" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 derive_more = { workspace = true }
 ron = { workspace = true }
