@@ -82,6 +82,7 @@ impl SourceFile {
 
     /// Gets the content of the source file.
     #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn content(&self) -> &str { &self.content }
 
     /// Translates a location to a byte index.
@@ -355,6 +356,8 @@ pub type ByteIndex = usize;
     Hash,
     Getters,
     CopyGetters,
+    Serialize,
+    Deserialize,
 )]
 pub struct Span<ID> {
     /// Gets the start byte index of the span.

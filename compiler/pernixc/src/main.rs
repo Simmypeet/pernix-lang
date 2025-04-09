@@ -77,7 +77,7 @@ impl IceReport {
 fn setup_panic() {
     std::panic::set_hook(Box::new(|info| {
         let global_source_map = pernixc_source_file::GlobalSourceMap::new();
-        let config = codespan_reporting::term::Config::default();
+        let config = pernixc_driver::term::get_coonfig();
         let stderr = StandardStream::stderr(termcolor::ColorChoice::Always);
 
         term::emit(

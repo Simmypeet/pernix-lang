@@ -7,7 +7,7 @@ use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_source_file::Span;
 
-use crate::tree::DelimiterKind;
+use crate::token_stream::DelimiterKind;
 
 /// The delimiter is not closed by its corresponding closing pair.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
@@ -100,6 +100,9 @@ pub struct InvalidIndentation<ID> {
 
     /// The indentation level found in the source code.
     pub found_indentation: usize,
+
+    /// The span top the previous indentation starting point
+    pub previous_indentation_start: Option<Span<ID>>,
 }
 
 impl<ID: Clone> Report<()> for InvalidIndentation<ID> {
@@ -109,14 +112,21 @@ impl<ID: Clone> Report<()> for InvalidIndentation<ID> {
         Diagnostic {
             span: self.span.clone(),
             message: "the token is in an invalid indentation level".to_string(),
-            label: Some(format!(
-                "found {} space(s), but the expected indentation level is {} \
-                 space(s)",
-                self.found_indentation, self.expected_indentation
-            )),
+            label: Some(format!("found {} space(s)", self.found_indentation,)),
             severity: Severity::Error,
             help_message: None,
-            related: Vec::new(),
+            related: self
+                .previous_indentation_start
+                .clone()
+                .map(|span| Related {
+                    span,
+                    message: format!(
+                        "previous indentation level is {} space(s)",
+                        self.expected_indentation
+                    ),
+                })
+                .into_iter()
+                .collect(),
         }
     }
 }

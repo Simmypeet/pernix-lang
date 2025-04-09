@@ -5,14 +5,15 @@ use std::{
     hash::Hash,
     iter::{Iterator, Peekable},
     str::{CharIndices, FromStr},
+    sync::LazyLock,
 };
 
 use bimap::BiHashMap;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use lazy_static::lazy_static;
 use pernixc_handler::Handler;
 use pernixc_source_file::{ByteIndex, SourceElement, Span};
+use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -27,7 +28,17 @@ pub mod arbitrary;
 /// that the name is capitalized while the keyword is not. For example, the
 /// `function` keyword is represented by the `Function` variant.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumIter,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumIter,
+    Serialize,
+    Deserialize,
 )]
 pub enum KeywordKind {
     /// `match` keyword.
@@ -168,10 +179,55 @@ impl std::fmt::Display for KeywordKind {
     }
 }
 
+/// A bidirectional map that maps a escape sequence (on the left) to its
+/// representation (on the right).
+static ESCAPE_SEQUENCE_BY_REPRESENTATION: LazyLock<BiHashMap<char, char>> =
+    LazyLock::new(|| {
+        let mut map = BiHashMap::new();
+
+        map.insert('\'', '\'');
+        map.insert('"', '"');
+        map.insert('\\', '\\');
+        map.insert('a', '\x07');
+        map.insert('b', '\x08');
+        map.insert('t', '\x09');
+        map.insert('n', '\x0A');
+        map.insert('v', '\x0B');
+        map.insert('f', '\x0C');
+        map.insert('r', '\x0D');
+        map.insert('0', '\0');
+
+        map
+    });
+
+/// A static map that maps a string representation of a keyword to its
+/// [`KeywordKind`].
+static STRING_KEYWORD_MAP: LazyLock<HashMap<&'static str, KeywordKind>> =
+    LazyLock::new(|| {
+        let mut map = HashMap::new();
+
+        for keyword in KeywordKind::iter() {
+            map.insert(keyword.as_str(), keyword);
+        }
+
+        map
+    });
+
 /// Is an error that is returned when a string cannot be parsed into a
 /// [`Keyword`] in [`FromStr`] trait implementation.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Error,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Error,
+    Serialize,
+    Deserialize,
 )]
 #[error("invalid string representation of keyword.")]
 pub struct KeywordParseError;
@@ -180,17 +236,6 @@ impl FromStr for KeywordKind {
     type Err = KeywordParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        lazy_static! {
-            static ref STRING_KEYWORD_MAP: HashMap<&'static str, KeywordKind> = {
-                let mut map = HashMap::new();
-
-                for keyword in KeywordKind::iter() {
-                    map.insert(keyword.as_str(), keyword);
-                }
-
-                map
-            };
-        }
         STRING_KEYWORD_MAP.get(s).copied().ok_or(KeywordParseError)
     }
 }
@@ -269,30 +314,19 @@ impl KeywordKind {
     }
 }
 
-lazy_static! {
-    /// A bidirectional map that maps a escape sequence (on the left) to its
-    /// representation (on the right).
-    pub static ref ESCAPE_SEQUENCE_BY_REPRESENTATION: BiHashMap<char, char> = {
-        let mut map = BiHashMap::new();
-
-        map.insert('\'', '\'');
-        map.insert('"', '"');
-        map.insert('\\', '\\');
-        map.insert('a', '\x07');
-        map.insert('b', '\x08');
-        map.insert('t', '\x09');
-        map.insert('n', '\x0A');
-        map.insert('v', '\x0B');
-        map.insert('f', '\x0C');
-        map.insert('r', '\x0D');
-        map.insert('0', '\0');
-
-        map
-    };
-}
-
 /// Represents a single whitespace character.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct NewLine<S> {
     /// The span to the new line character, either `\n` or `\r\n`.
     pub span: S,
@@ -305,7 +339,18 @@ impl<S: Clone> SourceElement for NewLine<S> {
 }
 
 /// Represents a single ASCII character literal enclosed in single quotes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Character<S> {
     /// Is the span that makes up the token.
     pub span: S,
@@ -324,7 +369,18 @@ impl<S: Clone> SourceElement for Character<S> {
 }
 
 /// Represents a hardcoded string literal value in the source code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct String<S> {
     /// Is the span that makes up the token. This includes the opening and
     /// closing double quotes.
@@ -343,7 +399,18 @@ impl<S: Clone> SourceElement for String<S> {
 
 /// Represents a contiguous sequence of characters that are valid in an
 /// identifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Identifier<S> {
     /// Is the span that makes up the token.
     pub span: S,
@@ -374,7 +441,18 @@ impl<S: Clone> SourceElement for Identifier<S> {
 
 /// Represents a contiguous sequence of characters that are reserved for a
 /// keyword.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Keyword<S> {
     /// Is the span that makes up the token.
     pub span: S,
@@ -390,7 +468,18 @@ impl<S: Clone> SourceElement for Keyword<S> {
 }
 
 /// Represents a single ASCII punctuation character.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Punctuation<S> {
     /// Is the span that makes up the token.
     pub span: S,
@@ -406,7 +495,18 @@ impl<S: Clone> SourceElement for Punctuation<S> {
 }
 
 /// Represents a hardcoded numeric literal value in the source code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Numeric<S> {
     /// Is the span that makes up the token.
     pub span: S,
@@ -418,23 +518,21 @@ impl<S: Clone> SourceElement for Numeric<S> {
     fn span(&self) -> S { self.span.clone() }
 }
 
-/// Is an enumeration representing the two kinds of comments in the Pernix
-/// programming language.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
-pub enum CommentKind {
-    /// A comment that starts with `//` and ends at the end of the line.
-    Line,
-
-    /// A comment that starts with `/*` and ends with `*/`.
-    Delimited,
-}
-
 /// Is an enumeration containing all kinds of tokens in the Pernix programming
 /// language.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    From,
+    Serialize,
+    Deserialize,
 )]
 #[allow(missing_docs)]
 pub enum Kind<S> {
@@ -496,31 +594,6 @@ impl<S: Clone> SourceElement for Kind<S> {
     }
 }
 
-/// Is an error that can occur when invoking the [`Token::lex`] method.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    EnumAsInner,
-    thiserror::Error,
-    From,
-)]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error(
-        "encountered a fatal lexical error that causes the process to stop."
-    )]
-    FatalLexicalError,
-
-    #[error("the iterator argument is at the end of the source code.")]
-    EndOfSourceCodeIteratorArgument,
-}
-
 /// A wrapper over a token and prior insignificant span pair.
 #[derive(
     Debug,
@@ -530,6 +603,8 @@ pub enum Error {
     PartialOrd,
     Ord,
     Hash,
+    Serialize,
+    Deserialize,
     derive_more::Deref,
     derive_more::DerefMut,
     derive_new::new,

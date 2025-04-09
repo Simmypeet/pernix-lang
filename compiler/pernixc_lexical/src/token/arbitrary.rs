@@ -4,12 +4,12 @@ use std::{
     borrow::Cow,
     fmt::{Debug, Display, Write},
     str::FromStr,
+    sync::LazyLock,
 };
 
 use codespan_reporting::files::Files;
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use lazy_static::lazy_static;
 use pernixc_source_file::Span;
 use pernixc_test_input::Input;
 use proptest::{
@@ -87,10 +87,8 @@ impl Arbitrary for Keyword {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        lazy_static! {
-            static ref KEYWORDS: Vec<KeywordKind> =
-                KeywordKind::iter().collect();
-        }
+        static KEYWORDS: LazyLock<Vec<KeywordKind>> =
+            LazyLock::new(|| KeywordKind::iter().collect());
 
         proptest::sample::select(KEYWORDS.as_slice())
             .prop_map(|kind| Self { keyword: kind })

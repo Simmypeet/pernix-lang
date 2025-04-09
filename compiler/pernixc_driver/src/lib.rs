@@ -10,11 +10,13 @@ use codespan_reporting::{
 use pernixc_arena::ID;
 use pernixc_diagnostic::Report;
 use pernixc_handler::Storage;
-use pernixc_lexical::{error::Error, tree::TokenStream};
+use pernixc_lexical::{error::Error, token_stream::TokenStream};
 use pernixc_source_file::{GlobalSourceMap, SourceFile, Span};
 use pernixc_target::{Global, TargetID};
+use term::get_coonfig;
 
 pub mod argument;
+pub mod term;
 
 struct ReportTerm {
     config: codespan_reporting::term::Config,
@@ -130,7 +132,7 @@ fn create_root_source_file(
 #[allow(clippy::too_many_lines)]
 pub fn run(argument: &Arguments) -> ExitCode {
     let mut report_term = ReportTerm {
-        config: codespan_reporting::term::Config::default(),
+        config: get_coonfig(),
         stderr: StandardStream::stderr(ColorChoice::Always),
     };
     let mut source_map = GlobalSourceMap::new();

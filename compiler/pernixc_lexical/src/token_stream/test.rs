@@ -4,7 +4,10 @@ use pernixc_source_file::{LocalSourceMap, SourceFile};
 use pernixc_test_input::Input;
 use proptest::{prop_assert, proptest};
 
-use crate::{error::Error, tree::arbitrary::arbitrary_indentation};
+use crate::{
+    error::Error,
+    token_stream::{self, arbitrary::arbitrary_indentation},
+};
 
 proptest! {
    #[test]
@@ -13,14 +16,13 @@ proptest! {
     ) {
         let mut local_source_map = LocalSourceMap::new();
         let source = input.to_string();
-        println!("{source}");
 
         let source_file = SourceFile::new(source, "test".into());
 
         let id = local_source_map.register(source_file).unwrap();
 
         let storage = Storage::<Error<ID<SourceFile>>>::new();
-        let token_stream = super::TokenStream::tokenize(
+        let token_stream = token_stream::TokenStream::tokenize(
             local_source_map[id].content(),
             id,
             &storage

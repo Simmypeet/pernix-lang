@@ -44,10 +44,10 @@ impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
                     if self.size > 0 {
                         let current = &output.token_stream[i];
                         let whitespace_span = match current {
-                            crate::tree::Node::Leaf(leaf) => {
+                            crate::token_stream::Node::Leaf(leaf) => {
                                 leaf.prior_insignificant.as_ref()
                             }
-                            crate::tree::Node::Fragment(fragment) => fragment
+                            crate::token_stream::Node::Fragment(fragment) => fragment
                                 .first_fragment_token_insignificant_span(),
                         };
 
@@ -102,10 +102,10 @@ impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
                 IndentationLine::WhiteSpaces(whitespace_len) => {
                     let current = &output.token_stream[i];
                     let whitespace_span = match current {
-                        crate::tree::Node::Leaf(leaf) => {
+                        crate::token_stream::Node::Leaf(leaf) => {
                             leaf.prior_insignificant.as_ref()
                         }
-                        crate::tree::Node::Fragment(fragment) => {
+                        crate::token_stream::Node::Fragment(fragment) => {
                             fragment.first_fragment_token_insignificant_span()
                         }
                     };
