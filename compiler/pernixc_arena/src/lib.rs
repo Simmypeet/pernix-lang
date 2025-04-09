@@ -5,12 +5,13 @@
 //! more type safety when working with various containers of different types.
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::hash_map::Entry,
     fmt::Debug,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
 
+use fnv::FnvHashMap;
 use serde::{Deserialize, Serialize};
 use state::{Generator, Rebind, State};
 
@@ -101,12 +102,12 @@ impl<'de, T: 'static> serde::Deserialize<'de> for ID<T> {
 ))]
 pub struct Arena<T, G: State<T> = state::Default> {
     generator: G,
-    items: HashMap<G::ID, T>,
+    items: FnvHashMap<G::ID, T>,
 }
 
 impl<T, G: State<T> + Default> Default for Arena<T, G> {
     fn default() -> Self {
-        Self { items: HashMap::new(), generator: G::default() }
+        Self { items: FnvHashMap::default(), generator: G::default() }
     }
 }
 
@@ -123,7 +124,7 @@ impl<T, G: State<T>> Arena<T, G> {
     /// Creates a new empty [`Arena`] with the given ID generator.
     #[must_use]
     pub fn new_with(generator: G) -> Self {
-        Self { items: HashMap::new(), generator }
+        Self { items: FnvHashMap::default(), generator }
     }
 
     /// Returns the number of items in the [`Arena`].
