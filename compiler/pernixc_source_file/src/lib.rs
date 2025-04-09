@@ -500,13 +500,12 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
 }
 
 /// A map of source files, accessing through the [`Global<ID<SourceFile>>`].
-/// Also possibly used to access the source file by its path.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct GlobalSourceMap {
+pub struct SourceMap {
     maps_by_target_id: HashMap<TargetID, Arena<SourceFile>>,
 }
 
-impl GlobalSourceMap {
+impl SourceMap {
     /// Creates a new empty [`GlobalMap`].
     #[must_use]
     pub fn new() -> Self { Self { maps_by_target_id: HashMap::new() } }
@@ -517,8 +516,8 @@ impl GlobalSourceMap {
     /// newly registered source file.
     pub fn register(
         &mut self,
-        source: SourceFile,
         target_id: TargetID,
+        source: SourceFile,
     ) -> ID<SourceFile> {
         let local_map = self.maps_by_target_id.entry(target_id).or_default();
 
@@ -556,7 +555,7 @@ impl GlobalSourceMap {
     }
 }
 
-impl Index<Global<ID<SourceFile>>> for GlobalSourceMap {
+impl Index<Global<ID<SourceFile>>> for SourceMap {
     type Output = SourceFile;
 
     fn index(&self, id: Global<ID<SourceFile>>) -> &Self::Output {
@@ -564,13 +563,13 @@ impl Index<Global<ID<SourceFile>>> for GlobalSourceMap {
     }
 }
 
-impl IndexMut<Global<ID<SourceFile>>> for GlobalSourceMap {
+impl IndexMut<Global<ID<SourceFile>>> for SourceMap {
     fn index_mut(&mut self, id: Global<ID<SourceFile>>) -> &mut Self::Output {
         self.get_mut(id).unwrap()
     }
 }
 
-impl<'a> codespan_reporting::files::Files<'a> for GlobalSourceMap {
+impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
     type FileId = Global<ID<SourceFile>>;
     type Name = std::path::Display<'a>;
     type Source = &'a str;
