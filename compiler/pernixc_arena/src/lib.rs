@@ -134,7 +134,7 @@ impl<T, G: State<T>> Arena<T, G> {
     #[must_use]
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
 
-    /// Inserts a new item into the [`Arena`] and returns its `Idx`.
+    /// Inserts a new item into the [`Arena`] and returns its ID.
     pub fn insert(&mut self, item: T) -> G::ID
     where
         G: Generator<T>,
@@ -151,9 +151,9 @@ impl<T, G: State<T>> Arena<T, G> {
         self.items.retain(|id, item| f(*id, item));
     }
 
-    /// Inserts a new item into the [`Arena`] with explicit `Idx`.
+    /// Inserts a new item into the [`Arena`] with explicit ID.
     ///
-    /// If the `Idx` is already occupied, the item is reutrned back.
+    /// If the ID is already occupied, the item is reutrned back.
     ///
     /// # Returns
     ///
@@ -175,7 +175,7 @@ impl<T, G: State<T>> Arena<T, G> {
     }
 
     /// Maps the items in the [`Arena`] to another type using the given
-    /// function. The mapped items will have the same `Idx`s as the original
+    /// function. The mapped items will have the same IDs as the original
     /// items.
     pub fn map<U: 'static>(
         mut self,
@@ -197,12 +197,12 @@ impl<T, G: State<T>> Arena<T, G> {
         Arena { items, generator: rebound_gen }
     }
 
-    /// Returns a reference to the item in the [`Arena`] with the given `Idx`.
+    /// Returns a reference to the item in the [`Arena`] with the given ID.
     #[must_use]
     pub fn get(&self, id: G::ID) -> Option<&T> { self.items.get(&id) }
 
     /// Returns a mutable reference to the item in the [`Arena`] with the given
-    /// `Idx`.
+    /// ID.
     #[must_use]
     pub fn get_mut(&mut self, id: G::ID) -> Option<&mut T> {
         self.items.get_mut(&id)
@@ -214,12 +214,18 @@ impl<T, G: State<T>> Arena<T, G> {
         self.items.values()
     }
 
+    /// Checks if the [`Arena`] contains an item with the given ID.
+    #[must_use]
+    pub fn contains_id(&self, id: G::ID) -> bool {
+        self.items.contains_key(&id)
+    }
+
     /// Returns an mutable iterator over the items in the [`Arena`].
     pub fn items_mut(&mut self) -> impl ExactSizeIterator<Item = &mut T> {
         self.items.values_mut()
     }
 
-    /// Returns an iterator over the items in the [`Arena`] with their `Idx`s.
+    /// Returns an iterator over the items in the [`Arena`] with their IDs.
     #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (G::ID, &T)> {
         self.items.iter().map(|(idx, i)| (*idx, i))
@@ -233,13 +239,13 @@ impl<T, G: State<T>> Arena<T, G> {
         self.items.iter_mut().map(|(idx, i)| (*idx, i))
     }
 
-    /// Returns an iterator over the `Idx`s of the items in the [`Arena`].
+    /// Returns an iterator over the IDs of the items in the [`Arena`].
     #[must_use]
     pub fn ids(&self) -> impl ExactSizeIterator<Item = G::ID> + '_ {
         self.items.keys().copied()
     }
 
-    /// Removes the item in the [`Arena`] with the given `Idx` and returns it.
+    /// Removes the item in the [`Arena`] with the given ID and returns it.
     #[must_use]
     pub fn remove(&mut self, id: G::ID) -> Option<T> { self.items.remove(&id) }
 }
