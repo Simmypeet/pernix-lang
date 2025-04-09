@@ -1,7 +1,7 @@
 //! Arbitrary implementations for [`ID`].
 
 use proptest::{
-    num::usize,
+    num::u64,
     prelude::{Arbitrary, BoxedStrategy, Strategy},
 };
 
@@ -12,6 +12,6 @@ impl<T: 'static> Arbitrary for ID<T> {
     type Parameters = ();
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        usize::ANY.prop_map(Self::new).boxed()
+        u64::ANY.prop_map(Self::new).boxed()
     }
 }

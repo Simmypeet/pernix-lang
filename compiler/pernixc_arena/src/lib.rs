@@ -7,48 +7,23 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
     fmt::Debug,
-    hash::Hash,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
 
 use serde::{Deserialize, Serialize};
+use state::{Generator, Rebind, State};
+
+pub mod state;
 
 mod arbitrary;
-
-/// Represents a key type that can be used to index items in the [`Arena`].
-pub trait Key:
-    Debug
-    + Clone
-    + Copy
-    + PartialEq
-    + Eq
-    + PartialOrd
-    + Ord
-    + Hash
-    + 'static
-    + Send
-    + Sync
-{
-    /// Creates a new [`Key`] from the given index.
-    fn from_index(index: usize) -> Self;
-
-    /// Returns the index of the [`Key`].
-    fn into_index(self) -> usize;
-}
 
 /// Represents an unique identifier to a particular entry in the [`Arena`] of
 /// type `T`.
 pub struct ID<T: ?Sized> {
-    index: usize,
+    index: u64,
 
     _marker: PhantomData<Box<T>>,
-}
-
-impl<T: 'static> Key for ID<T> {
-    fn from_index(index: usize) -> Self { Self { index, _marker: PhantomData } }
-
-    fn into_index(self) -> usize { self.index }
 }
 
 unsafe impl<T> Send for ID<T> {}
@@ -63,7 +38,7 @@ impl<T> Debug for ID<T> {
 impl<T> ID<T> {
     /// Creates a new [`ID`] with the given index.
     #[must_use]
-    pub const fn new(index: usize) -> Self {
+    pub const fn new(index: u64) -> Self {
         Self { index, _marker: PhantomData }
     }
 }
@@ -112,91 +87,7 @@ impl<'de, T: 'static> serde::Deserialize<'de> for ID<T> {
     where
         D: serde::Deserializer<'de>,
     {
-        usize::deserialize(deserializer).map(Self::from_index)
-    }
-}
-
-/// A trait for generating unique IDs for items in the [`Arena`].
-pub trait IDGenerator<T> {
-    /// The type of ID used by the generator.
-    type ID: Eq + Hash + Clone + Copy;
-
-    /// Rebinds the current ID generator to a generator of a different arena
-    /// type.
-    type Rebind<U>: IDGenerator<U>;
-
-    /// Generates a new ID for an item in the [`Arena`].
-    fn next_id(&mut self, items: &HashMap<Self::ID, T>) -> Self::ID;
-
-    /// Got invoked when an explicit ID is inserted into the [`Arena`]. This
-    /// allows the generator to update its internal state if needed.
-    fn explict_insert_with_id(
-        &mut self,
-        id: &Self::ID,
-        items: &HashMap<Self::ID, T>,
-    );
-
-    /// Rebinds the current ID generator to a generator of a different arena
-    /// type.
-    fn rebind<U>(self) -> Self::Rebind<U>;
-
-    /// Converts an ID from the different arena type to the current arena type.
-    fn convert_rebound_id<U>(
-        rebound: &mut Self::Rebind<U>,
-        id: Self::ID,
-    ) -> <Self::Rebind<U> as IDGenerator<U>>::ID;
-}
-
-/// A simple ID generator that uses a [`usize`] as the ID type and increments it
-/// for each new item. This is the default ID generator used by the [`Arena`].
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    Serialize,
-    Deserialize,
-)]
-pub struct Serial(usize);
-
-impl Serial {
-    /// Creates a new [`Serial`] ID generator.
-    #[must_use]
-    pub const fn new() -> Self { Self(0) }
-}
-
-impl<T> IDGenerator<T> for Serial {
-    type ID = ID<T>;
-
-    type Rebind<U> = Self;
-
-    fn next_id(&mut self, _: &HashMap<Self::ID, T>) -> Self::ID {
-        let next_id = self.0;
-        self.0 += 1;
-
-        ID::new(next_id)
-    }
-
-    fn explict_insert_with_id(
-        &mut self,
-        id: &Self::ID,
-        _: &HashMap<Self::ID, T>,
-    ) {
-        self.0 = std::cmp::max(self.0, id.index);
-    }
-
-    fn rebind<U>(self) -> Self::Rebind<U> { self }
-
-    fn convert_rebound_id<U>(
-        _: &mut Self::Rebind<U>,
-        id: Self::ID,
-    ) -> <Self::Rebind<U> as IDGenerator<U>>::ID {
-        ID::new(id.index)
+        u64::deserialize(deserializer).map(Self::new)
     }
 }
 
@@ -208,18 +99,18 @@ impl<T> IDGenerator<T> for Serial {
     deserialize = "G: Deserialize<'de>, G::ID: Deserialize<'de>, T: \
                    Deserialize<'de>",
 ))]
-pub struct Arena<T, G: IDGenerator<T> = Serial> {
+pub struct Arena<T, G: State<T> = state::Default> {
     generator: G,
     items: HashMap<G::ID, T>,
 }
 
-impl<T, G: IDGenerator<T> + Default> Default for Arena<T, G> {
+impl<T, G: State<T> + Default> Default for Arena<T, G> {
     fn default() -> Self {
         Self { items: HashMap::new(), generator: G::default() }
     }
 }
 
-impl<T, G: IDGenerator<T>> Arena<T, G> {
+impl<T, G: State<T>> Arena<T, G> {
     /// Creates a new empty [`Arena`].
     #[must_use]
     pub fn new() -> Self
@@ -227,6 +118,12 @@ impl<T, G: IDGenerator<T>> Arena<T, G> {
         G: Default,
     {
         Self::default()
+    }
+
+    /// Creates a new empty [`Arena`] with the given ID generator.
+    #[must_use]
+    pub fn new_with(generator: G) -> Self {
+        Self { items: HashMap::new(), generator }
     }
 
     /// Returns the number of items in the [`Arena`].
@@ -238,19 +135,12 @@ impl<T, G: IDGenerator<T>> Arena<T, G> {
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
 
     /// Inserts a new item into the [`Arena`] and returns its `Idx`.
-    pub fn insert(&mut self, item: T) -> G::ID {
-        let next_id = self.generator.next_id(&self.items);
+    pub fn insert(&mut self, item: T) -> G::ID
+    where
+        G: Generator<T>,
+    {
+        let next_id = self.generator.next_id(&self.items, &item);
         assert!(self.items.insert(next_id, item).is_none());
-
-        next_id
-    }
-
-    /// Inserts a new item into the [`Arena`] by constructing it with the given
-    /// function with the ID of the item as the argument.
-    pub fn insert_with(&mut self, f: impl FnOnce(G::ID) -> T) -> G::ID {
-        let next_id = self.generator.next_id(&self.items);
-        let value = f(next_id);
-        assert!(self.items.insert(next_id, value).is_none());
 
         next_id
     }
@@ -290,8 +180,11 @@ impl<T, G: IDGenerator<T>> Arena<T, G> {
     pub fn map<U: 'static>(
         mut self,
         mut f: impl FnMut(T) -> U,
-    ) -> Arena<U, G::Rebind<U>> {
-        let mut rebound_gen: G::Rebind<U> = self.generator.rebind();
+    ) -> Arena<U, G::Result>
+    where
+        G: Rebind<T, U>,
+    {
+        let mut rebound_gen: G::Result = self.generator.rebind();
 
         let items = self
             .items
@@ -351,33 +244,33 @@ impl<T, G: IDGenerator<T>> Arena<T, G> {
     pub fn remove(&mut self, id: G::ID) -> Option<T> { self.items.remove(&id) }
 }
 
-impl<T, G: IDGenerator<T>> Index<G::ID> for Arena<T, G> {
+impl<T, G: State<T>> Index<G::ID> for Arena<T, G> {
     type Output = T;
 
     fn index(&self, id: G::ID) -> &Self::Output { self.get(id).unwrap() }
 }
 
-impl<T, G: IDGenerator<T>> IndexMut<G::ID> for Arena<T, G> {
+impl<T, G: State<T>> IndexMut<G::ID> for Arena<T, G> {
     fn index_mut(&mut self, id: G::ID) -> &mut Self::Output {
         self.get_mut(id).unwrap()
     }
 }
 
-impl<T, G: IDGenerator<T>> IntoIterator for Arena<T, G> {
+impl<T, G: State<T>> IntoIterator for Arena<T, G> {
     type IntoIter = std::collections::hash_map::IntoIter<G::ID, T>;
     type Item = (G::ID, T);
 
     fn into_iter(self) -> Self::IntoIter { self.items.into_iter() }
 }
 
-impl<'a, T, G: IDGenerator<T>> IntoIterator for &'a Arena<T, G> {
+impl<'a, T, G: State<T>> IntoIterator for &'a Arena<T, G> {
     type IntoIter = std::collections::hash_map::Iter<'a, G::ID, T>;
     type Item = (&'a G::ID, &'a T);
 
     fn into_iter(self) -> Self::IntoIter { self.items.iter() }
 }
 
-impl<'a, T, G: IDGenerator<T>> IntoIterator for &'a mut Arena<T, G> {
+impl<'a, T, G: State<T>> IntoIterator for &'a mut Arena<T, G> {
     type IntoIter = std::collections::hash_map::IterMut<'a, G::ID, T>;
     type Item = (&'a G::ID, &'a mut T);
 
