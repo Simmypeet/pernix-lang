@@ -75,6 +75,7 @@ assert_cmd = "2.0.16"
 backtrace = "0.3.69"
 toml = { version = "0.8.8", features = ["display"] }
 codespan-reporting = { version = "0.11.0" }
+fnv = "1.0.7"
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }
