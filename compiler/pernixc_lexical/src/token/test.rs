@@ -1,29 +1,32 @@
 use pernixc_arena::ID;
 use pernixc_handler::Storage;
-use pernixc_source_file::{LocalSourceMap, LocalSpan, SourceFile};
+use pernixc_source_file::{GlobalSpan, SourceFile, SourceMap};
+use pernixc_target::{Global, TargetID};
 use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary, prop_assert, prop_assert_eq, proptest,
     test_runner::TestCaseError,
 };
 
+use super::error::Error;
 use crate::token::Tokenizer;
 
 fn tokenize(
     source: std::string::String,
 ) -> Result<
-    (super::Token<LocalSpan>, LocalSourceMap),
+    (super::Token<GlobalSpan>, SourceMap),
     proptest::test_runner::TestCaseError,
 > {
-    let mut local_source_map = LocalSourceMap::new();
+    let mut source_map = SourceMap::new();
     let source_file = SourceFile::new(source, "test".into());
 
-    let id = local_source_map.register(source_file).unwrap();
+    let id = source_map.register(TargetID::Local, source_file);
+    let id = TargetID::Local.make_global(id);
 
-    let error_storage: Storage<super::error::Error<ID<SourceFile>>> =
-        Storage::new();
+    let error_storage: Storage<Error<Global<ID<SourceFile>>>> = Storage::new();
+
     let mut tokenizer =
-        Tokenizer::new(local_source_map[id].content(), id, &error_storage);
+        Tokenizer::new(source_map[id].content(), id, &error_storage);
 
     let token = tokenizer
         .next()
@@ -38,7 +41,7 @@ fn tokenize(
         error_storage.as_vec()
     );
 
-    Ok((token, local_source_map))
+    Ok((token, source_map))
 }
 
 proptest! {

@@ -13,6 +13,8 @@ pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
 pernixc_handler = { path = "../pernixc_handler" }
 pernixc_arena = { path = "../pernixc_arena" }
+pernixc_diff = { path = "../pernixc_diff" }
+pernixc_target = { path = "../pernixc_target" }
 serde = { workspace = true }
 codespan-reporting = { workspace = true }
 getset = { workspace = true }
@@ -26,6 +28,7 @@ bimap = { workspace = true }
 pernixc_test_input = { path = "../pernixc_test_input" }
 proptest = { workspace = true }
 derive-new = { workspace = true }
+fnv = { workspace = true }
 
 [lints]
 workspace = true

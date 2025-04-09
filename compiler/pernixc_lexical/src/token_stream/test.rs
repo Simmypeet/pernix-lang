@@ -1,6 +1,7 @@
 use pernixc_arena::ID;
 use pernixc_handler::Storage;
-use pernixc_source_file::{LocalSourceMap, SourceFile};
+use pernixc_source_file::{SourceFile, SourceMap};
+use pernixc_target::{Global, TargetID};
 use pernixc_test_input::Input;
 use proptest::{prop_assert, proptest};
 
@@ -14,16 +15,17 @@ proptest! {
     fn indentation(
         input in arbitrary_indentation()
     ) {
-        let mut local_source_map = LocalSourceMap::new();
+        let mut source_map = SourceMap::new();
         let source = input.to_string();
 
         let source_file = SourceFile::new(source, "test".into());
 
-        let id = local_source_map.register(source_file).unwrap();
+        let id = source_map.register(TargetID::Local, source_file);
+        let id = TargetID::Local.make_global(id);
 
-        let storage = Storage::<Error<ID<SourceFile>>>::new();
+        let storage = Storage::<Error<Global<ID<SourceFile>>>>::new();
         let token_stream = token_stream::TokenStream::tokenize(
-            local_source_map[id].content(),
+            source_map[id].content(),
             id,
             &storage
         );
@@ -33,7 +35,7 @@ proptest! {
 
         input.assert(
             token_stream[0].as_fragment().unwrap(),
-            (0, &local_source_map)
+            (0, &source_map)
         )?;
     }
 }
