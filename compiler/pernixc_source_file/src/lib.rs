@@ -370,11 +370,11 @@ pub struct Span<L, ID> {
     pub source_id: ID,
 }
 
-/// A type alias for the [`Span`] type with a [`Global<ID<SourceFile>>`] ID.
-pub type GlobalSpan = Span<ByteIndex, Global<ID<SourceFile>>>;
+/// A type alias for the [`Span`] type with a [`GlobalSourceID`] ID.
+pub type GlobalSpan = Span<ByteIndex, GlobalSourceID>;
 
-/// A type alias for the [`Span`] type with a [`ID<SourceFile>`] ID.
-pub type LocalSpan = Span<ByteIndex, ID<SourceFile>>;
+/// A type alias for the [`Span`] type with a [`LocalSourceID`] ID.
+pub type LocalSpan = Span<ByteIndex, LocalSourceID>;
 
 /// A type alias for the [`Span`] type with a [`ByteIndex`] as the source
 /// location.
@@ -503,14 +503,14 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
     results
 }
 
-/// A map of source files, accessing through the [`Global<ID<SourceFile>>`].
+/// A map of source files, accessing through the [`GlobalSourceID`].
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct SourceMap {
     maps_by_target_id: HashMap<TargetID, Arena<SourceFile>>,
 }
 
 impl SourceMap {
-    /// Creates a new empty [`GlobalMap`].
+    /// Creates a new empty [`SourceMap`].
     #[must_use]
     pub fn new() -> Self { Self { maps_by_target_id: HashMap::new() } }
 
@@ -522,7 +522,7 @@ impl SourceMap {
         &mut self,
         target_id: TargetID,
         source: SourceFile,
-    ) -> ID<SourceFile> {
+    ) -> LocalSourceID {
         let local_map = self.maps_by_target_id.entry(target_id).or_default();
 
         let patb = &source.full_path;
@@ -543,38 +543,35 @@ impl SourceMap {
 
     /// Gets the source file by its ID.
     #[must_use]
-    pub fn get(&self, id: Global<ID<SourceFile>>) -> Option<&SourceFile> {
+    pub fn get(&self, id: GlobalSourceID) -> Option<&SourceFile> {
         self.maps_by_target_id.get(&id.target_id).and_then(|x| x.get(id.id))
     }
 
     /// Gets the source file by its ID.
     #[must_use]
-    pub fn get_mut(
-        &mut self,
-        id: Global<ID<SourceFile>>,
-    ) -> Option<&mut SourceFile> {
+    pub fn get_mut(&mut self, id: GlobalSourceID) -> Option<&mut SourceFile> {
         self.maps_by_target_id
             .get_mut(&id.target_id)
             .and_then(|x| x.get_mut(id.id))
     }
 }
 
-impl Index<Global<ID<SourceFile>>> for SourceMap {
+impl Index<GlobalSourceID> for SourceMap {
     type Output = SourceFile;
 
-    fn index(&self, id: Global<ID<SourceFile>>) -> &Self::Output {
+    fn index(&self, id: GlobalSourceID) -> &Self::Output {
         self.get(id).unwrap()
     }
 }
 
-impl IndexMut<Global<ID<SourceFile>>> for SourceMap {
-    fn index_mut(&mut self, id: Global<ID<SourceFile>>) -> &mut Self::Output {
+impl IndexMut<GlobalSourceID> for SourceMap {
+    fn index_mut(&mut self, id: GlobalSourceID) -> &mut Self::Output {
         self.get_mut(id).unwrap()
     }
 }
 
 impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
-    type FileId = Global<ID<SourceFile>>;
+    type FileId = GlobalSourceID;
     type Name = std::path::Display<'a>;
     type Source = &'a str;
 
@@ -658,6 +655,14 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
         Ok(line_range.clone())
     }
 }
+
+/// A type alias for the [`ID`] type with a [`SourceFile`] as the inner type,
+/// used for identifying source files in the local target.
+pub type LocalSourceID = ID<SourceFile>;
+
+/// A type alias for the [`Global`] type with a [`LocalSourceID`] as the inner
+/// type, used for identifying source files across different targets.
+pub type GlobalSourceID = Global<ID<SourceFile>>;
 
 #[cfg(test)]
 mod test;

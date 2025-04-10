@@ -7,12 +7,13 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     term::termcolor::{self, ColorChoice, StandardStream},
 };
-use pernixc_arena::ID;
 use pernixc_diagnostic::Report;
 use pernixc_handler::Storage;
 use pernixc_lexical::{error::Error, token_stream::TokenStream};
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, SourceFile, SourceMap};
-use pernixc_target::{Global, TargetID};
+use pernixc_source_file::{
+    AbsoluteSpan, ByteIndex, GlobalSourceID, SourceFile, SourceMap,
+};
+use pernixc_target::TargetID;
 use term::get_coonfig;
 
 pub mod argument;
@@ -27,7 +28,7 @@ impl ReportTerm {
     fn report(
         &mut self,
         source_map: &mut SourceMap,
-        diagnostic: &Diagnostic<Global<ID<SourceFile>>>,
+        diagnostic: &Diagnostic<GlobalSourceID>,
     ) {
         let mut writer = self.stderr.lock();
         let _ = codespan_reporting::term::emit(
@@ -40,10 +41,8 @@ impl ReportTerm {
 }
 
 fn pernix_diagnostic_to_codespan_diagnostic(
-    diagostic: pernixc_diagnostic::Diagnostic<
-        AbsoluteSpan<Global<ID<SourceFile>>>,
-    >,
-) -> codespan_reporting::diagnostic::Diagnostic<Global<ID<SourceFile>>> {
+    diagostic: pernixc_diagnostic::Diagnostic<AbsoluteSpan<GlobalSourceID>>,
+) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
     let result = match diagostic.severity {
         pernixc_diagnostic::Severity::Error => {
             codespan_reporting::diagnostic::Diagnostic::error()
@@ -87,7 +86,7 @@ fn create_root_source_file(
     argument: &Arguments,
     source_map: &mut SourceMap,
     report_term: &mut ReportTerm,
-) -> Option<Global<ID<SourceFile>>> {
+) -> Option<GlobalSourceID> {
     let file = match File::open(&argument.command.input().file) {
         Ok(file) => file,
         Err(error) => {
@@ -145,7 +144,7 @@ pub fn run(argument: &Arguments) -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let storage = Storage::<Error<ByteIndex, Global<ID<SourceFile>>>>::new();
+    let storage = Storage::<Error<ByteIndex, GlobalSourceID>>::new();
     let _stream = TokenStream::tokenize(
         source_map[source_id].content(),
         source_id,

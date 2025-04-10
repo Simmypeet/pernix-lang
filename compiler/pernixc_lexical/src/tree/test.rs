@@ -1,7 +1,9 @@
 use pernixc_arena::ID;
 use pernixc_handler::Panic;
-use pernixc_source_file::{ByteIndex, SourceElement, SourceFile, SourceMap};
-use pernixc_target::{Global, TargetID};
+use pernixc_source_file::{
+    ByteIndex, GlobalSourceID, SourceElement, SourceFile, SourceMap,
+};
+use pernixc_target::TargetID;
 use proptest::{
     prop_assert, prop_assert_eq, proptest, test_runner::TestCaseResult,
 };
@@ -16,10 +18,9 @@ use crate::{
 };
 
 fn add_source_element_string<
-    S: SourceElement<Span = RelativeSpan<Global<ID<SourceFile>>>>
-        + std::fmt::Debug,
+    S: SourceElement<Span = RelativeSpan<GlobalSourceID>> + std::fmt::Debug,
 >(
-    tree: &Tree<Global<ID<SourceFile>>>,
+    tree: &Tree<GlobalSourceID>,
     source_element: &S,
     source: &str,
     dest: &mut String,
@@ -32,8 +33,8 @@ fn add_source_element_string<
 }
 
 fn create_string_from_tree(
-    tree: &Tree<Global<ID<SourceFile>>>,
-    branch_id: ID<Branch<Global<ID<SourceFile>>>>,
+    tree: &Tree<GlobalSourceID>,
+    branch_id: ID<Branch<GlobalSourceID>>,
     source: &str,
     dest: &mut String,
 ) {
@@ -99,9 +100,8 @@ fn tree_to_string(
     let id = source_map.register(TargetID::Local, file);
     let id = TargetID::Local.make_global(id);
 
-    let storage = pernixc_handler::Storage::<
-        Error<ByteIndex, Global<ID<SourceFile>>>,
-    >::new();
+    let storage =
+        pernixc_handler::Storage::<Error<ByteIndex, GlobalSourceID>>::new();
 
     let token_stream =
         TokenStream::tokenize(source_map[id].content(), id, &storage);
