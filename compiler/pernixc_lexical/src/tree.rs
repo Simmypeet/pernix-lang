@@ -526,3 +526,6 @@ impl<I: Clone + 'static> Tree<I> {
         Self { branches, root_id }
     }
 }
+
+#[cfg(test)]
+mod test;

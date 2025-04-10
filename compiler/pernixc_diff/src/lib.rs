@@ -8,10 +8,10 @@ use std::ops::Range;
 ///
 /// This trait is primarily used for computing the difference between two
 /// values.
-pub trait Comparable<T> {
+pub trait Comparable<T, U = Self> {
     /// Compares the current value with another value using the provided
     /// parameters.
-    fn compare(&self, other: &Self, parameters: T) -> bool;
+    fn compare(&self, other: &U, parameters: T) -> bool;
 }
 
 /// The result of a [`single_diff`] operation.
@@ -33,10 +33,10 @@ pub struct SingleDiff {
 /// `(1..2, 1..3)` indicating that the character range `1..2` in the first
 /// string should be replaced with the character range `1..3` in the second
 /// string to make them equal.
-pub fn single_diff<T: Comparable<U>, U: Clone>(
+pub fn single_diff<P: Clone, T: Comparable<P, U>, U>(
     original: &[T],
-    new: &[T],
-    parameters: U,
+    new: &[U],
+    parameters: P,
 ) -> Option<SingleDiff> {
     let mut prefix = 0;
     while prefix < original.len()

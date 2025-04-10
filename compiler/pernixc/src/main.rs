@@ -76,7 +76,7 @@ impl IceReport {
 #[allow(dead_code, clippy::too_many_lines)]
 fn setup_panic() {
     std::panic::set_hook(Box::new(|info| {
-        let global_source_map = pernixc_source_file::GlobalSourceMap::new();
+        let global_source_map = pernixc_source_file::SourceMap::new();
         let config = pernixc_driver::term::get_coonfig();
         let stderr = StandardStream::stderr(termcolor::ColorChoice::Always);
 

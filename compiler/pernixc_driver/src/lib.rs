@@ -11,7 +11,7 @@ use pernixc_arena::ID;
 use pernixc_diagnostic::Report;
 use pernixc_handler::Storage;
 use pernixc_lexical::{error::Error, token_stream::TokenStream};
-use pernixc_source_file::{GlobalSourceMap, SourceFile, Span};
+use pernixc_source_file::{SourceFile, SourceMap, Span};
 use pernixc_target::{Global, TargetID};
 use term::get_coonfig;
 
@@ -26,7 +26,7 @@ struct ReportTerm {
 impl ReportTerm {
     fn report(
         &mut self,
-        source_map: &mut GlobalSourceMap,
+        source_map: &mut SourceMap,
         diagnostic: &Diagnostic<Global<ID<SourceFile>>>,
     ) {
         let mut writer = self.stderr.lock();
@@ -83,7 +83,7 @@ fn pernix_diagnostic_to_codespan_diagnostic(
 
 fn create_root_source_file(
     argument: &Arguments,
-    source_map: &mut GlobalSourceMap,
+    source_map: &mut SourceMap,
     report_term: &mut ReportTerm,
 ) -> Option<Global<ID<SourceFile>>> {
     let file = match File::open(&argument.command.input().file) {
@@ -122,7 +122,7 @@ fn create_root_source_file(
             }
         };
 
-    let id = source_map.register(source_file, TargetID::Local).unwrap();
+    let id = source_map.register(TargetID::Local, source_file);
 
     Some(TargetID::Local.make_global(id))
 }
@@ -135,7 +135,7 @@ pub fn run(argument: &Arguments) -> ExitCode {
         config: get_coonfig(),
         stderr: StandardStream::stderr(ColorChoice::Always),
     };
-    let mut source_map = GlobalSourceMap::new();
+    let mut source_map = SourceMap::new();
 
     let Some(source_id) =
         create_root_source_file(argument, &mut source_map, &mut report_term)
@@ -156,6 +156,8 @@ pub fn run(argument: &Arguments) -> ExitCode {
 
         report_term.report(&mut source_map, &msg);
     }
+
+    dbg!(source_map);
 
     ExitCode::SUCCESS
 }
