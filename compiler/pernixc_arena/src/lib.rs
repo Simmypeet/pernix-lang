@@ -27,6 +27,12 @@ pub struct ID<T: ?Sized> {
     _marker: PhantomData<Box<T>>,
 }
 
+impl<T: ?Sized> ID<T> {
+    /// Returns the index of the [`ID`].
+    #[must_use]
+    pub const fn index(&self) -> u64 { self.index }
+}
+
 unsafe impl<T> Send for ID<T> {}
 unsafe impl<T> Sync for ID<T> {}
 

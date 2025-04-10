@@ -1,4 +1,5 @@
 use pernixc_arena::ID;
+use pernixc_handler::Panic;
 use pernixc_source_file::{ByteIndex, SourceElement, SourceFile, SourceMap};
 use pernixc_target::{Global, TargetID};
 use proptest::{
@@ -129,5 +130,45 @@ proptest! {
         input in arbitrary_indentation()
     ) {
         tree_to_string(&input)?;
+    }
+}
+
+const STABLE_NODE_ID_1: &str = "a a {b b} c c";
+const STABLE_NODE_ID_2: &str = "a a c c";
+const STABLE_NODE_ID_3: &str = "a a {c b c} c c";
+const STABLE_NODE_ID_4: &str = "a a {c {d} c} c c";
+
+fn calculate_root_node_id(source: String) -> u64 {
+    let mut source_map = SourceMap::default();
+    let file = SourceFile::new(source, "test".into());
+
+    let id = source_map.register(TargetID::Local, file);
+    let id = TargetID::Local.make_global(id);
+
+    let token_stream =
+        TokenStream::tokenize(source_map[id].content(), id, &Panic);
+
+    let tree = Tree::from_token_stream(token_stream, source_map[id].content());
+
+    tree.root_id().index()
+}
+
+#[test]
+fn stable_node_id() {
+    let stable_root_ids = [
+        STABLE_NODE_ID_1,
+        STABLE_NODE_ID_2,
+        STABLE_NODE_ID_3,
+        STABLE_NODE_ID_4,
+    ]
+    .into_iter()
+    .map(ToString::to_string)
+    .map(calculate_root_node_id);
+
+    let mut iter = stable_root_ids.clone();
+    let first = iter.next().unwrap();
+
+    for id in iter {
+        assert_eq!(first, id);
     }
 }
