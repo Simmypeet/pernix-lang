@@ -54,8 +54,8 @@ where
                 state_machine.expected.push(self.0.into());
 
                 Unexpected {
-                    token_index: Some(state_machine.current_token_index() - 1),
-                    node_index: state_machine.current_node_index(),
+                    token_index: Some(state_machine.current_node_index() - 1),
+                    node_index: state_machine.current_branch_id(),
                     commit_count: 1,
                 }
             })
@@ -64,7 +64,7 @@ where
 
             Err(Unexpected {
                 token_index: None,
-                node_index: state_machine.current_node_index(),
+                node_index: state_machine.current_branch_id(),
                 commit_count: 1,
             })
         }
@@ -526,7 +526,7 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
     ) -> Result<Self::Output> {
         let result = state_machine.next_step_into(
             |state_machine, location| -> Result<Self::Output> {
-                match state_machine.current_node().kind {
+                match state_machine.current_branch().kind {
                     NodeKind::Fragment { fragment, .. } => {
                         let kind_match = match self.fragment {
                             Fragment::Delimited(delimiter_kind) => fragment
@@ -557,7 +557,7 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                                 Unexpected {
                                     token_index: Some(index),
                                     node_index: state_machine
-                                        .current_node_index(),
+                                        .current_branch_id(),
                                     commit_count: 1,
                                 },
                                 vec![match self.fragment {
@@ -579,7 +579,7 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
 
                         let fragment_kind = &state_machine
                             .tree
-                            .get_node(state_machine.current_node_index())
+                            .get_node(state_machine.current_branch_id())
                             .unwrap()
                             .as_fragment()
                             .unwrap()
@@ -602,14 +602,14 @@ impl<'a, P: Parse<'a>> Parse<'a> for StepInto<P> {
                 match error {
                     StepIntoError::EndOfStream => Err(Unexpected {
                         token_index: None,
-                        node_index: state_machine.current_node_index(),
+                        node_index: state_machine.current_branch_id(),
                         commit_count: 1,
                     }),
-                    StepIntoError::NotFragment => Err(Unexpected {
+                    StepIntoError::NotBranch => Err(Unexpected {
                         token_index: Some(
-                            state_machine.current_token_index() - 1,
+                            state_machine.current_node_index() - 1,
                         ),
-                        node_index: state_machine.current_node_index(),
+                        node_index: state_machine.current_branch_id(),
                         commit_count: 1,
                     }),
                 }
@@ -1027,7 +1027,7 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
                         state_machine.tree,
                         Unexpected {
                             token_index: Some(index),
-                            node_index: state_machine.current_node_index(),
+                            node_index: state_machine.current_branch_id(),
                             commit_count: 1,
                         },
                         vec![Expected::NewLine(NewLine)],
@@ -1035,11 +1035,12 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
                 }
 
                 // find the nearest line
-                while index < state_machine.current_node().token_stream().len()
+                while index
+                    < state_machine.current_branch().token_stream().len()
                 {
                     if matches!(
                         state_machine
-                            .current_node()
+                            .current_branch()
                             .token_stream()
                             .get(index)
                             .and_then(|x| x.as_token()),
@@ -1060,7 +1061,7 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, true> {
             state_machine.location.token_index = index;
 
             if state_machine.location.token_index
-                < state_machine.current_node().token_stream().len()
+                < state_machine.current_branch().token_stream().len()
             {
                 // eat new line
                 state_machine.location.token_index += 1;
@@ -1105,7 +1106,7 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
                         state_machine.tree,
                         Unexpected {
                             token_index: Some(index),
-                            node_index: state_machine.current_node_index(),
+                            node_index: state_machine.current_branch_id(),
                             commit_count: 1,
                         },
                         vec![Expected::NewLine(NewLine)],
@@ -1113,11 +1114,12 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
                 }
 
                 // find the nearest line
-                while index < state_machine.current_node().token_stream().len()
+                while index
+                    < state_machine.current_branch().token_stream().len()
                 {
                     if matches!(
                         state_machine
-                            .current_node()
+                            .current_branch()
                             .token_stream()
                             .get(index)
                             .and_then(|x| x.as_token()),
@@ -1138,7 +1140,7 @@ impl<'a, T: Parse<'a>> Parse<'a> for IndentationItem<T, false> {
             state_machine.location.token_index = index;
 
             if state_machine.location.token_index
-                < state_machine.current_node().token_stream().len()
+                < state_machine.current_branch().token_stream().len()
             {
                 // eat new line
                 state_machine.location.token_index += 1;

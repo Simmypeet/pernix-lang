@@ -556,5 +556,27 @@ impl<I: Clone + 'static> Tree<I> {
     }
 }
 
+/// Used for identifying a [`Node`] in the token tree.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    derive_new::new,
+)]
+pub struct Location<I: 'static> {
+    /// The branch ID where the node is located.
+    pub branch_id: ID<Branch<I>>,
+
+    /// The index of the node in the [`Branch::nodes`].
+    pub node_index: usize,
+}
+
 #[cfg(test)]
 mod test;

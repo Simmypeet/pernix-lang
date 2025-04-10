@@ -10,6 +10,7 @@ members = [
     "compiler/pernixc_diagnostic",
     # "compiler/pernixc_resolution",
     # "compiler/pernixc_builder",
+    "compiler/pernixc_syntax",
     "compiler/pernixc_driver",
     "compiler/pernixc",
     # "compiler/pernixc_transitive_closure",

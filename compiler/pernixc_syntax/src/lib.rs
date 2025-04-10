@@ -5,8 +5,4 @@
 //! The final output of this phase is a [`target_parsing::TargetParsing`],
 //! representing the syntax tree of a source file.
 
-pub mod error;
-pub mod expect;
 pub mod state_machine;
-pub mod syntax_tree;
-pub mod utility;
