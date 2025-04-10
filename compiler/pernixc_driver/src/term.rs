@@ -15,5 +15,7 @@ pub fn get_coonfig() -> codespan_reporting::term::Config {
     config.styles.primary_label_help.set_bold(true);
     config.styles.primary_label_note.set_intense(true);
 
+    config.chars.snippet_start = "╭─".to_string();
+
     config
 }
