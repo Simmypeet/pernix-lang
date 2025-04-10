@@ -47,8 +47,10 @@ impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
                             crate::token_stream::Node::Leaf(leaf) => {
                                 leaf.prior_insignificant.as_ref()
                             }
-                            crate::token_stream::Node::Fragment(fragment) => fragment
-                                .first_fragment_token_insignificant_span(),
+                            crate::token_stream::Node::Fragment(fragment) => {
+                                fragment
+                                    .first_fragment_token_insignificant_span()
+                            }
                         };
 
                         let indent_size = whitespace_span.map_or(
@@ -931,8 +933,7 @@ impl Indentation {
     }
 }
 
-#[allow(unused)]
-pub(super) fn arbitrary_indentation() -> impl Strategy<Value = Indentation> {
+pub fn arbitrary_indentation() -> impl Strategy<Value = Indentation> {
     Indentation::arbitrary().prop_map(|mut x| {
         x.fix_indentation(x.size);
         x

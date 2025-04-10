@@ -3,8 +3,9 @@
 use std::hash::{Hash as _, Hasher};
 
 use fnv::FnvHasher;
+use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::{ByteIndex, Span};
+use pernixc_source_file::{ByteIndex, Join, Span};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -72,6 +73,21 @@ pub struct RelativeSpan<I: 'static> {
     pub source_id: I,
 }
 
+impl<I: Clone + 'static> Join for RelativeSpan<I> {
+    fn join(&self, end: &Self) -> Self {
+        assert_eq!(self.offset_mode, end.offset_mode);
+        assert_eq!(self.to, end.to);
+
+        Self {
+            start: self.start,
+            end: end.end,
+            offset_mode: self.offset_mode,
+            to: self.to,
+            source_id: self.source_id.clone(),
+        }
+    }
+}
+
 /// A tree node used for representing a particular token in the source code.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
@@ -123,9 +139,16 @@ pub struct Branch<I: 'static> {
 ///
 /// This is useful for easy traversal of the tree and for incremental
 /// compilation compatibility.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Getters, CopyGetters,
+)]
 pub struct Tree<I: 'static> {
+    /// The collection of branches in the token tree.
+    #[get = "pub"]
     branches: Arena<Branch<I>>,
+
+    /// The ID of the root branch in the token tree.
+    #[get_copy = "pub"]
     root_id: ID<Branch<I>>,
 }
 

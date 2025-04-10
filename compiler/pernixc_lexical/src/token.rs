@@ -12,7 +12,7 @@ use bimap::BiHashMap;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
-use pernixc_source_file::{ByteIndex, SourceElement, Span};
+use pernixc_source_file::{ByteIndex, Join, SourceElement, Span};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -621,6 +621,22 @@ pub struct WithInsignificant<T, S> {
     /// the parser. For example, whitespace and comments are insignificant
     /// tokens.
     pub prior_insignificant: Option<S>,
+}
+
+impl<SP: Join, T: SourceElement<Span = SP>> SourceElement
+    for WithInsignificant<T, SP>
+{
+    type Span = SP;
+
+    fn span(&self) -> SP {
+        let mut span = self.token.span();
+
+        if let Some(insignificant) = &self.prior_insignificant {
+            span = insignificant.join(&span);
+        }
+
+        span
+    }
 }
 
 /// Represents a token in the Pernix programming language.
