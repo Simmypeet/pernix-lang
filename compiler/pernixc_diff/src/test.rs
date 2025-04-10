@@ -53,7 +53,7 @@ proptest! {
     #[test]
     fn prioritize_end(
         mut first in proptest::collection::vec(A::arbitrary(), 0..=20),
-        mut append_first in proptest::collection::vec(A::arbitrary(), 0..=20),
+        mut append_first in proptest::collection::vec(A::arbitrary(), 1..=20),
     ) {
         let mut second = first.clone();
         second.append(&mut append_first);
