@@ -6,7 +6,7 @@ use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_handler::Handler;
-use pernixc_source_file::{ByteIndex, Span};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, Span};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -128,7 +128,7 @@ impl<S> Fragment<S> {
     }
 }
 
-impl<ID> Fragment<Span<ID>> {
+impl<ID> Fragment<AbsoluteSpan<ID>> {
     /// The start byte of the fragment.
     ///
     /// It's is the position after the open delimiter or the colon character of
@@ -224,7 +224,7 @@ struct IndentationMark<S> {
     starting_index: usize,
 }
 
-impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
+impl<ID: Clone + PartialEq> TokenStream<AbsoluteSpan<ID>> {
     /// The size of a space character a tab character is equivalent to.
     pub const TAB_INDENT_SIZE: usize = 4;
 
@@ -233,7 +233,7 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
     pub fn tokenize(
         source: &str,
         source_id: ID,
-        handler: &dyn Handler<error::Error<ID>>,
+        handler: &dyn Handler<error::Error<ByteIndex, ID>>,
     ) -> Self {
         // list of tokens to return
         let mut tokens =
@@ -277,7 +277,7 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
 
     fn get_indentation_level(
         source: &str,
-        tokens: &[Node<Span<ID>>],
+        tokens: &[Node<AbsoluteSpan<ID>>],
     ) -> (usize, IndentationLevelSearch) {
         for (idx, token) in tokens.iter().enumerate() {
             match token {
@@ -322,11 +322,11 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
 
     #[allow(clippy::type_complexity)]
     fn pop_indentation(
-        tokens: &mut Vec<Node<Span<ID>>>,
-        indentation_levels: &mut Vec<IndentationMark<Span<ID>>>,
+        tokens: &mut Vec<Node<AbsoluteSpan<ID>>>,
+        indentation_levels: &mut Vec<IndentationMark<AbsoluteSpan<ID>>>,
         pop_count: usize,
         enclosing_delimiter: Option<
-            &WithInsignificant<Punctuation<Span<ID>>, Span<ID>>,
+            &WithInsignificant<Punctuation<AbsoluteSpan<ID>>, AbsoluteSpan<ID>>,
         >,
         mut end_index: usize,
     ) -> usize {
@@ -370,11 +370,11 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
     }
 
     fn handle_possible_indentation(
-        tokens: &mut [Node<Span<ID>>],
+        tokens: &mut [Node<AbsoluteSpan<ID>>],
         source: &str,
-        indentation_levels: &mut Vec<IndentationMark<Span<ID>>>,
+        indentation_levels: &mut Vec<IndentationMark<AbsoluteSpan<ID>>>,
         index: usize,
-        handler: &dyn Handler<error::Error<ID>>,
+        handler: &dyn Handler<error::Error<ByteIndex, ID>>,
     ) -> usize {
         let indentation_start_index = index;
         let new_line_index = index + 1;
@@ -473,14 +473,14 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
     }
 
     fn handle_new_indentation_line(
-        tokens: &mut Vec<Node<Span<ID>>>,
-        indentation_levels: &mut Vec<IndentationMark<Span<ID>>>,
+        tokens: &mut Vec<Node<AbsoluteSpan<ID>>>,
+        indentation_levels: &mut Vec<IndentationMark<AbsoluteSpan<ID>>>,
         new_line_index: usize,
         source: &str,
         enclosing_delimiter: Option<
-            &WithInsignificant<Punctuation<Span<ID>>, Span<ID>>,
+            &WithInsignificant<Punctuation<AbsoluteSpan<ID>>, AbsoluteSpan<ID>>,
         >,
-        handler: &dyn Handler<error::Error<ID>>,
+        handler: &dyn Handler<error::Error<ByteIndex, ID>>,
     ) -> usize {
         let search_index = new_line_index + 1;
 
@@ -561,13 +561,13 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
 
     #[allow(clippy::too_many_lines)]
     fn handle_indentation(
-        tokens: &mut Vec<Node<Span<ID>>>,
-        indentation_levels: &mut Vec<IndentationMark<Span<ID>>>,
+        tokens: &mut Vec<Node<AbsoluteSpan<ID>>>,
+        indentation_levels: &mut Vec<IndentationMark<AbsoluteSpan<ID>>>,
         source: &str,
         enclosing_delimiter: Option<
-            &WithInsignificant<Punctuation<Span<ID>>, Span<ID>>,
+            &WithInsignificant<Punctuation<AbsoluteSpan<ID>>, AbsoluteSpan<ID>>,
         >,
-        handler: &dyn Handler<error::Error<ID>>,
+        handler: &dyn Handler<error::Error<ByteIndex, ID>>,
     ) {
         let mut index = 0;
 
@@ -636,21 +636,21 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
     }
 
     fn pop_token(
-        tokens: &mut Vec<Token<Span<ID>>>,
+        tokens: &mut Vec<Token<AbsoluteSpan<ID>>>,
         source_file: &str,
-        handler: &dyn Handler<error::Error<ID>>,
-    ) -> Option<Node<Span<ID>>> {
+        handler: &dyn Handler<error::Error<ByteIndex, ID>>,
+    ) -> Option<Node<AbsoluteSpan<ID>>> {
         tokens.pop().and_then(|x| {
             Self::handle_popped_token(tokens, x, source_file, handler)
         })
     }
 
     fn handle_popped_token(
-        tokens: &mut Vec<Token<Span<ID>>>,
-        popped_token: Token<Span<ID>>,
+        tokens: &mut Vec<Token<AbsoluteSpan<ID>>>,
+        popped_token: Token<AbsoluteSpan<ID>>,
         source_file: &str,
-        handler: &dyn Handler<error::Error<ID>>,
-    ) -> Option<Node<Span<ID>>> {
+        handler: &dyn Handler<error::Error<ByteIndex, ID>>,
+    ) -> Option<Node<AbsoluteSpan<ID>>> {
         match popped_token {
             Token {
                 token:
@@ -696,12 +696,15 @@ impl<ID: Clone + PartialEq> TokenStream<Span<ID>> {
     }
 
     fn handle_delimited(
-        tokens: &mut Vec<Token<Span<ID>>>,
-        open: WithInsignificant<Punctuation<Span<ID>>, Span<ID>>,
+        tokens: &mut Vec<Token<AbsoluteSpan<ID>>>,
+        open: WithInsignificant<
+            Punctuation<AbsoluteSpan<ID>>,
+            AbsoluteSpan<ID>,
+        >,
         delimiter: DelimiterKind,
         source_file: &str,
-        handler: &dyn Handler<error::Error<ID>>,
-    ) -> Option<Fragment<Span<ID>>> {
+        handler: &dyn Handler<error::Error<ByteIndex, ID>>,
+    ) -> Option<Fragment<AbsoluteSpan<ID>>> {
         let mut token_trees = Vec::new();
 
         while let Some(token) = tokens.pop() {

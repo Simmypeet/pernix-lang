@@ -359,22 +359,26 @@ pub type ByteIndex = usize;
     Serialize,
     Deserialize,
 )]
-pub struct Span<ID> {
+pub struct Span<L, ID> {
     /// Gets the start byte index of the span.
-    pub start: ByteIndex,
+    pub start: L,
 
     /// Gets the end byte index of the span (exclusive).
-    pub end: ByteIndex,
+    pub end: L,
 
     /// The ID of the source file that this span belongs to.
     pub source_id: ID,
 }
 
 /// A type alias for the [`Span`] type with a [`Global<ID<SourceFile>>`] ID.
-pub type GlobalSpan = Span<Global<ID<SourceFile>>>;
+pub type GlobalSpan = Span<ByteIndex, Global<ID<SourceFile>>>;
 
 /// A type alias for the [`Span`] type with a [`ID<SourceFile>`] ID.
-pub type LocalSpan = Span<ID<SourceFile>>;
+pub type LocalSpan = Span<ByteIndex, ID<SourceFile>>;
+
+/// A type alias for the [`Span`] type with a [`ByteIndex`] as the source
+/// location.
+pub type AbsoluteSpan<ID> = Span<ByteIndex, ID>;
 
 /// A trait for types that can be joined together.
 pub trait Join {
@@ -384,7 +388,7 @@ pub trait Join {
     fn join(&self, end: &Self) -> Self;
 }
 
-impl Join for LocalSpan {
+impl<L: Clone, ID: PartialEq + Clone> Join for Span<L, ID> {
     fn join(&self, end: &Self) -> Self { Self::join(self, end) }
 }
 
@@ -406,13 +410,11 @@ impl Location {
     }
 }
 
-impl<ID> Span<ID> {
+impl<L, ID> Span<L, ID> {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
     #[must_use]
-    pub fn new(start: ByteIndex, end: ByteIndex, source_id: ID) -> Self {
-        assert!(start <= end, "start index is greater than end index");
-
+    pub const fn new(start: L, end: L, source_id: ID) -> Self {
         Self { start, end, source_id }
     }
 
@@ -421,24 +423,26 @@ impl<ID> Span<ID> {
     #[must_use]
     pub fn join(&self, end: &Self) -> Self
     where
+        L: Clone,
         ID: PartialEq + Clone,
     {
-        assert!(
-            self.start <= end.start,
-            "start index is greater than end index"
-        );
         assert!(self.source_id == end.source_id, "source IDs are not equal");
 
         Self {
-            start: self.start,
-            end: end.end,
+            start: self.start.clone(),
+            end: end.end.clone(),
             source_id: self.source_id.clone(),
         }
     }
 
     /// Gets the byte range of the span.
     #[must_use]
-    pub const fn range(&self) -> Range<ByteIndex> { self.start..self.end }
+    pub fn range(&self) -> Range<L>
+    where
+        L: Clone,
+    {
+        self.start.clone()..self.end.clone()
+    }
 }
 
 /// Represents an element that is located within a source file.

@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display, Formatter};
 use codespan_reporting::files::Files;
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use pernixc_source_file::Span;
+use pernixc_source_file::AbsoluteSpan;
 use pernixc_test_input::Input;
 use proptest::{
     bits::usize,
@@ -27,11 +27,11 @@ pub struct Indentation {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
-    Input<&super::Fragment<Span<ID>>, (usize, &F)> for &Indentation
+    Input<&super::Fragment<AbsoluteSpan<ID>>, (usize, &F)> for &Indentation
 {
     fn assert(
         self,
-        output: &super::Fragment<Span<ID>>,
+        output: &super::Fragment<AbsoluteSpan<ID>>,
         (prev_size, file): (usize, &F),
     ) -> proptest::test_runner::TestCaseResult {
         prop_assert!(output.kind.is_indentation());
@@ -354,11 +354,11 @@ impl Arbitrary for Delimited {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
-    Input<&super::Fragment<Span<ID>>, &F> for &Delimited
+    Input<&super::Fragment<AbsoluteSpan<ID>>, &F> for &Delimited
 {
     fn assert(
         self,
-        output: &super::Fragment<Span<ID>>,
+        output: &super::Fragment<AbsoluteSpan<ID>>,
         file: &F,
     ) -> proptest::test_runner::TestCaseResult {
         let delimiter = output.kind.as_delimiter().ok_or(
@@ -386,11 +386,11 @@ pub enum Fragment {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
-    Input<&super::Fragment<Span<ID>>, &F> for &Fragment
+    Input<&super::Fragment<AbsoluteSpan<ID>>, &F> for &Fragment
 {
     fn assert(
         self,
-        output: &super::Fragment<Span<ID>>,
+        output: &super::Fragment<AbsoluteSpan<ID>>,
         file: &F,
     ) -> proptest::test_runner::TestCaseResult {
         match self {
@@ -435,11 +435,11 @@ impl Arbitrary for Node {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
-    Input<&super::Node<Span<ID>>, &F> for &Node
+    Input<&super::Node<AbsoluteSpan<ID>>, &F> for &Node
 {
     fn assert(
         self,
-        output: &super::Node<Span<ID>>,
+        output: &super::Node<AbsoluteSpan<ID>>,
         file: &F,
     ) -> proptest::test_runner::TestCaseResult {
         match (self, output) {
@@ -481,11 +481,11 @@ impl Display for TokenStream {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
-    Input<&super::TokenStream<Span<ID>>, &F> for &TokenStream
+    Input<&super::TokenStream<AbsoluteSpan<ID>>, &F> for &TokenStream
 {
     fn assert(
         self,
-        output: &super::TokenStream<Span<ID>>,
+        output: &super::TokenStream<AbsoluteSpan<ID>>,
         file: &F,
     ) -> proptest::test_runner::TestCaseResult {
         prop_assert_eq!(

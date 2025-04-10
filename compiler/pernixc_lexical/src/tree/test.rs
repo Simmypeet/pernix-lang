@@ -1,5 +1,5 @@
 use pernixc_arena::ID;
-use pernixc_source_file::{SourceElement, SourceFile, SourceMap};
+use pernixc_source_file::{ByteIndex, SourceElement, SourceFile, SourceMap};
 use pernixc_target::{Global, TargetID};
 use proptest::{
     prop_assert, prop_assert_eq, proptest, test_runner::TestCaseResult,
@@ -98,8 +98,9 @@ fn tree_to_string(
     let id = source_map.register(TargetID::Local, file);
     let id = TargetID::Local.make_global(id);
 
-    let storage =
-        pernixc_handler::Storage::<Error<Global<ID<SourceFile>>>>::new();
+    let storage = pernixc_handler::Storage::<
+        Error<ByteIndex, Global<ID<SourceFile>>>,
+    >::new();
 
     let token_stream =
         TokenStream::tokenize(source_map[id].content(), id, &storage);

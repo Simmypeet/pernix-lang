@@ -12,7 +12,7 @@ use bimap::BiHashMap;
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
-use pernixc_source_file::{ByteIndex, Join, SourceElement, Span};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, Join, SourceElement, Span};
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -684,7 +684,7 @@ fn is_identifier_character(character: char) -> bool {
 pub struct Tokenizer<'a, 'h, ID> {
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
-    handler: &'h dyn Handler<error::Error<ID>>,
+    handler: &'h dyn Handler<error::Error<ByteIndex, ID>>,
     source_id: ID,
 }
 
@@ -709,7 +709,7 @@ impl<'a, 'h, ID> Tokenizer<'a, 'h, ID> {
     pub fn new(
         source: &'a str,
         source_id: ID,
-        handler: &'h dyn Handler<error::Error<ID>>,
+        handler: &'h dyn Handler<error::Error<ByteIndex, ID>>,
     ) -> Self {
         Self {
             source,
@@ -723,7 +723,7 @@ impl<'a, 'h, ID> Tokenizer<'a, 'h, ID> {
 impl<ID: Clone> Tokenizer<'_, '_, ID> {
     /// Creates a span from the given start location to the current location of
     /// the iterator.
-    fn create_span(&mut self, start: ByteIndex) -> Span<ID>
+    fn create_span(&mut self, start: ByteIndex) -> AbsoluteSpan<ID>
     where
         ID: Clone,
     {
@@ -738,7 +738,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
         }
     }
 
-    fn handle_insignificant(&mut self) -> Option<Span<ID>> {
+    fn handle_insignificant(&mut self) -> Option<AbsoluteSpan<ID>> {
         let (start, _) = self.iter.peek().copied()?;
 
         while let Some((_, character)) = self.iter.peek().copied() {
@@ -766,7 +766,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
         &mut self,
         character: char,
         start: ByteIndex,
-    ) -> NewLine<Span<ID>> {
+    ) -> NewLine<AbsoluteSpan<ID>> {
         // cr
         if character == '\r' {
             //  lf
@@ -782,7 +782,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
     fn handle_identifier_and_keyword(
         &mut self,
         start: ByteIndex,
-    ) -> Kind<Span<ID>> {
+    ) -> Kind<AbsoluteSpan<ID>> {
         walk_iter(&mut self.iter, is_identifier_character);
 
         let span = self.create_span(start);
@@ -799,14 +799,17 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
     fn handle_numeric_literal(
         &mut self,
         start: ByteIndex,
-    ) -> Numeric<Span<ID>> {
+    ) -> Numeric<AbsoluteSpan<ID>> {
         // Tokenizes the whole number part
         walk_iter(&mut self.iter, |character| character.is_ascii_digit());
 
         Numeric { span: self.create_span(start) }
     }
 
-    fn handle_single_quote(&mut self, start: ByteIndex) -> Kind<Span<ID>> {
+    fn handle_single_quote(
+        &mut self,
+        start: ByteIndex,
+    ) -> Kind<AbsoluteSpan<ID>> {
         let mut iter_cloned = self.iter.clone();
 
         match iter_cloned.next() {
@@ -886,7 +889,10 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
         }
     }
 
-    fn handle_string_literal(&mut self, start: ByteIndex) -> String<Span<ID>> {
+    fn handle_string_literal(
+        &mut self,
+        start: ByteIndex,
+    ) -> String<AbsoluteSpan<ID>> {
         let mut last_backslash = false;
         let mut last_byte_index = start;
 
@@ -960,7 +966,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
 }
 
 impl<ID: Clone> Iterator for Tokenizer<'_, '_, ID> {
-    type Item = Token<Span<ID>>;
+    type Item = Token<AbsoluteSpan<ID>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Found white spaces

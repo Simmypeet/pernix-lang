@@ -1,6 +1,6 @@
 use pernixc_arena::ID;
 use pernixc_handler::Storage;
-use pernixc_source_file::{SourceFile, SourceMap};
+use pernixc_source_file::{ByteIndex, SourceFile, SourceMap};
 use pernixc_target::{Global, TargetID};
 use pernixc_test_input::Input;
 use proptest::{prop_assert, proptest};
@@ -23,7 +23,7 @@ proptest! {
         let id = source_map.register(TargetID::Local, source_file);
         let id = TargetID::Local.make_global(id);
 
-        let storage = Storage::<Error<Global<ID<SourceFile>>>>::new();
+        let storage = Storage::<Error<ByteIndex, Global<ID<SourceFile>>>>::new();
         let token_stream = token_stream::TokenStream::tokenize(
             source_map[id].content(),
             id,

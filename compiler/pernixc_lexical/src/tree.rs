@@ -5,7 +5,7 @@ use std::hash::{Hash as _, Hasher};
 use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
-use pernixc_source_file::{ByteIndex, Join, Span};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, Span};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -40,10 +40,8 @@ pub enum OffsetMode {
     End,
 }
 
-/// Used for represnting a particular location in the source code that may use
-/// relative offsets from the token node to represent the location of a token.
-///
-/// This is primarily beneficial for incremental compilation and parsing.
+/// A relative location in the source code that is relative to a branch in the
+/// token tree.
 #[derive(
     Debug,
     Clone,
@@ -56,37 +54,20 @@ pub enum OffsetMode {
     Serialize,
     Deserialize,
 )]
-pub struct RelativeSpan<I: 'static> {
-    /// The start byte of the span range.
-    pub start: ByteIndex,
+pub struct RelativeLocation<I: 'static> {
+    /// The byte offset from the branch.
+    pub offset: ByteIndex,
 
-    /// The end byte of the span range (exclusive).
-    pub end: ByteIndex,
+    /// Signifies where to start the offset from the branch (start or end).
+    pub mode: OffsetMode,
 
-    /// The mode of the relative span (start or end).
-    pub offset_mode: OffsetMode,
-
-    /// The branch ID that this relative span is relative to.
-    pub to: ID<Branch<I>>,
-
-    /// The source ID of the token.
-    pub source_id: I,
+    /// The branch ID that this relative location is relative to.
+    pub relative_to: ID<Branch<I>>,
 }
 
-impl<I: Clone + 'static> Join for RelativeSpan<I> {
-    fn join(&self, end: &Self) -> Self {
-        assert_eq!(self.offset_mode, end.offset_mode);
-        assert_eq!(self.to, end.to);
-
-        Self {
-            start: self.start,
-            end: end.end,
-            offset_mode: self.offset_mode,
-            to: self.to,
-            source_id: self.source_id.clone(),
-        }
-    }
-}
+/// A type alias for the [`Span`] that uses [`RelativeLocation`] as its source
+/// location.
+pub type RelativeSpan<I> = Span<RelativeLocation<I>, I>;
 
 /// A tree node used for representing a particular token in the source code.
 #[derive(
@@ -94,7 +75,7 @@ impl<I: Clone + 'static> Join for RelativeSpan<I> {
 )]
 #[allow(missing_docs)]
 pub enum Node<I: 'static> {
-    Leaf(Token<RelativeSpan<I>>),
+    Leaf(Token<Span<RelativeLocation<I>, I>>),
     Branch(ID<Branch<I>>),
 }
 
@@ -114,7 +95,7 @@ pub struct FragmentBranch<I: 'static> {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::large_enum_variant)]
 pub enum BranchKind<I: 'static> {
     Fragment(FragmentBranch<I>),
 
@@ -162,33 +143,30 @@ fn absolute_end_byte_of<I: Clone + 'static>(
             BranchKind::Fragment(fragment_branch) => {
                 match &fragment_branch.fragment_kind {
                     FragmentKind::Delimiter(delimiter) => {
-                        return absolute_span_of(
+                        return absolute_location_of(
                             branches,
-                            &delimiter.close.span,
+                            &delimiter.close.span.end,
                         )
-                        .end
                     }
 
                     FragmentKind::Indentation(indentation) => {
                         if let Some(x) = branch.nodes.last() {
                             match x {
                                 Node::Leaf(leaf) => {
-                                    return absolute_span_of(
+                                    return absolute_location_of(
                                         branches,
-                                        leaf.span(),
+                                        &leaf.span().end,
                                     )
-                                    .end;
                                 }
                                 Node::Branch(new_id) => {
                                     id = *new_id;
                                 }
                             }
                         } else {
-                            return absolute_span_of(
+                            return absolute_location_of(
                                 branches,
-                                &indentation.new_line.span,
-                            )
-                            .end;
+                                &indentation.new_line.span.end,
+                            );
                         }
                     }
                 }
@@ -197,7 +175,7 @@ fn absolute_end_byte_of<I: Clone + 'static>(
             BranchKind::Root => match branch.nodes.last() {
                 Some(node) => match node {
                     Node::Leaf(leaf) => {
-                        return absolute_span_of(branches, leaf.span()).end
+                        return absolute_location_of(branches, &leaf.span().end)
                     }
 
                     Node::Branch(new_id) => {
@@ -218,11 +196,11 @@ fn absolute_start_byte_of<I: Clone + 'static>(
         BranchKind::Fragment(fragment_branch) => {
             match &fragment_branch.fragment_kind {
                 FragmentKind::Delimiter(delimiter) => {
-                    absolute_span_of(branches, &delimiter.open.span).end
+                    absolute_location_of(branches, &delimiter.open.span.end)
                 }
 
                 FragmentKind::Indentation(indentation) => {
-                    absolute_span_of(branches, &indentation.colon.span).end
+                    absolute_location_of(branches, &indentation.colon.span.end)
                 }
             }
         }
@@ -230,20 +208,30 @@ fn absolute_start_byte_of<I: Clone + 'static>(
     }
 }
 
-fn absolute_span_of<I: Clone + 'static>(
+fn absolute_location_of<I: Clone + 'static>(
     branches: &Arena<Branch<I>>,
-    relative_span: &RelativeSpan<I>,
-) -> Span<I> {
-    let offset = match relative_span.offset_mode {
-        OffsetMode::Start => absolute_start_byte_of(branches, relative_span.to),
-        OffsetMode::End => absolute_end_byte_of(branches, relative_span.to),
+    relative_location: &RelativeLocation<I>,
+) -> ByteIndex {
+    let offset = match relative_location.mode {
+        OffsetMode::Start => {
+            absolute_start_byte_of(branches, relative_location.relative_to)
+        }
+        OffsetMode::End => {
+            absolute_end_byte_of(branches, relative_location.relative_to)
+        }
     };
 
-    Span::new(
-        relative_span.start + offset,
-        relative_span.end + offset,
-        relative_span.source_id.clone(),
-    )
+    relative_location.offset + offset
+}
+
+fn absolute_span_of<I: Clone + 'static>(
+    branches: &Arena<Branch<I>>,
+    relative_location: &RelativeSpan<I>,
+) -> AbsoluteSpan<I> {
+    let start = absolute_location_of(branches, &relative_location.start);
+    let end = absolute_location_of(branches, &relative_location.end);
+
+    AbsoluteSpan { start, end, source_id: relative_location.source_id.clone() }
 }
 
 impl<I: Clone + 'static> Tree<I> {
@@ -261,8 +249,20 @@ impl<I: Clone + 'static> Tree<I> {
 
     /// Calculates the absolute span of the given relative span.
     #[must_use]
-    pub fn absolute_span_of(&self, relative_span: &RelativeSpan<I>) -> Span<I> {
+    pub fn absolute_span_of(
+        &self,
+        relative_span: &RelativeSpan<I>,
+    ) -> AbsoluteSpan<I> {
         absolute_span_of(&self.branches, relative_span)
+    }
+
+    /// Calculates the absolute location of the given relative location.
+    #[must_use]
+    pub fn absolute_location_of(
+        &self,
+        relative_location: &RelativeLocation<I>,
+    ) -> ByteIndex {
+        absolute_location_of(&self.branches, relative_location)
     }
 }
 
@@ -274,19 +274,25 @@ struct OffsetInfo<I: 'static> {
 }
 
 impl<I: 'static> OffsetInfo<I> {
-    fn to_relative_span(&self, span: Span<I>) -> RelativeSpan<I> {
+    fn to_relative_span(&self, span: AbsoluteSpan<I>) -> RelativeSpan<I> {
         RelativeSpan {
-            start: span.start - self.pos,
-            end: span.end - self.pos,
-            offset_mode: self.mode,
-            to: self.branch,
+            start: RelativeLocation {
+                offset: span.start - self.pos,
+                mode: self.mode,
+                relative_to: self.branch,
+            },
+            end: RelativeLocation {
+                offset: span.end - self.pos,
+                mode: self.mode,
+                relative_to: self.branch,
+            },
             source_id: span.source_id,
         }
     }
 
     fn to_relative_punctuation(
         &self,
-        punc: WithInsignificant<Punctuation<Span<I>>, Span<I>>,
+        punc: WithInsignificant<Punctuation<AbsoluteSpan<I>>, AbsoluteSpan<I>>,
     ) -> WithInsignificant<Punctuation<RelativeSpan<I>>, RelativeSpan<I>> {
         WithInsignificant {
             token: Punctuation {
@@ -301,7 +307,7 @@ impl<I: 'static> OffsetInfo<I> {
 
     fn to_relative_newline(
         &self,
-        punc: WithInsignificant<NewLine<Span<I>>, Span<I>>,
+        punc: WithInsignificant<NewLine<AbsoluteSpan<I>>, AbsoluteSpan<I>>,
     ) -> WithInsignificant<NewLine<RelativeSpan<I>>, RelativeSpan<I>> {
         WithInsignificant {
             token: NewLine { span: self.to_relative_span(punc.token.span) },
@@ -313,7 +319,7 @@ impl<I: 'static> OffsetInfo<I> {
 
     fn to_relative_token(
         &self,
-        token: Token<Span<I>>,
+        token: Token<AbsoluteSpan<I>>,
     ) -> Token<RelativeSpan<I>> {
         WithInsignificant {
             token: match token.token {
@@ -362,7 +368,7 @@ enum GeneralBranchKind {
 /// Calculates the hash of a branch based on its kind and the tokens it
 /// contains.
 fn calculate_branch_hash<I: 'static>(
-    nodes: &[token_stream::Node<Span<I>>],
+    nodes: &[token_stream::Node<AbsoluteSpan<I>>],
     kind: GeneralBranchKind,
     source: &str,
 ) -> u64 {
@@ -391,7 +397,7 @@ fn calculate_branch_hash<I: 'static>(
 
 fn calculate_next_branch_id<I: 'static>(
     arena: &Arena<Branch<I>>,
-    nodes: &[token_stream::Node<Span<I>>],
+    nodes: &[token_stream::Node<AbsoluteSpan<I>>],
     kind: GeneralBranchKind,
     source: &str,
 ) -> ID<Branch<I>> {
@@ -406,8 +412,8 @@ fn calculate_next_branch_id<I: 'static>(
 
 fn create_tree_from_fragment<I: Clone + 'static>(
     branches: &mut Arena<Branch<I>>,
-    token_nodes: Vec<token_stream::Node<Span<I>>>,
-    fragment_kind: Option<token_stream::FragmentKind<Span<I>>>,
+    token_nodes: Vec<token_stream::Node<AbsoluteSpan<I>>>,
+    fragment_kind: Option<token_stream::FragmentKind<AbsoluteSpan<I>>>,
     mut offset_info: OffsetInfo<I>,
     source: &str,
 ) -> ID<Branch<I>> {
@@ -534,7 +540,7 @@ impl<I: Clone + 'static> Tree<I> {
     /// Creates a new [`Tree`] from the given [`TokenStream`].
     #[must_use]
     pub fn from_token_stream(
-        token_stream: TokenStream<Span<I>>,
+        token_stream: TokenStream<AbsoluteSpan<I>>,
         source: &str,
     ) -> Self {
         let mut branches = Arena::new();

@@ -10,7 +10,7 @@ use std::{
 use codespan_reporting::files::Files;
 use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
-use pernixc_source_file::Span;
+use pernixc_source_file::AbsoluteSpan;
 use pernixc_test_input::Input;
 use proptest::{
     prelude::Arbitrary,
@@ -54,11 +54,11 @@ impl Arbitrary for Identifier {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Clone + Debug>
-    Input<&super::Identifier<Span<ID>>, &F> for &Identifier
+    Input<&super::Identifier<AbsoluteSpan<ID>>, &F> for &Identifier
 {
     fn assert(
         self,
-        output: &super::Identifier<Span<ID>>,
+        output: &super::Identifier<AbsoluteSpan<ID>>,
         file: &F,
     ) -> TestCaseResult {
         let source = file.source(output.span.source_id.clone())?;
@@ -96,10 +96,10 @@ impl Arbitrary for Keyword {
     }
 }
 
-impl<ID: Debug> Input<&super::Keyword<Span<ID>>, ()> for &Keyword {
+impl<ID: Debug> Input<&super::Keyword<AbsoluteSpan<ID>>, ()> for &Keyword {
     fn assert(
         self,
-        output: &super::Keyword<Span<ID>>,
+        output: &super::Keyword<AbsoluteSpan<ID>>,
         (): (),
     ) -> TestCaseResult {
         prop_assert_eq!(self.keyword, output.kind);
@@ -131,11 +131,11 @@ impl Arbitrary for Numeric {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Clone + Debug>
-    Input<&super::Numeric<Span<ID>>, &F> for &Numeric
+    Input<&super::Numeric<AbsoluteSpan<ID>>, &F> for &Numeric
 {
     fn assert(
         self,
-        output: &super::Numeric<Span<ID>>,
+        output: &super::Numeric<AbsoluteSpan<ID>>,
         file: &F,
     ) -> TestCaseResult {
         let source = file.source(output.span.source_id.clone())?;
@@ -219,10 +219,12 @@ impl Display for Punctuation {
     }
 }
 
-impl<ID: Debug> Input<&super::Punctuation<Span<ID>>, ()> for &Punctuation {
+impl<ID: Debug> Input<&super::Punctuation<AbsoluteSpan<ID>>, ()>
+    for &Punctuation
+{
     fn assert(
         self,
-        output: &super::Punctuation<Span<ID>>,
+        output: &super::Punctuation<AbsoluteSpan<ID>>,
         (): (),
     ) -> TestCaseResult {
         prop_assert_eq!(output.punctuation, self.punctuation);
@@ -306,10 +308,10 @@ impl Display for Character {
     }
 }
 
-impl<ID: Debug> Input<&super::Character<Span<ID>>, ()> for &Character {
+impl<ID: Debug> Input<&super::Character<AbsoluteSpan<ID>>, ()> for &Character {
     fn assert(
         self,
-        output: &super::Character<Span<ID>>,
+        output: &super::Character<AbsoluteSpan<ID>>,
         (): (),
     ) -> TestCaseResult {
         if let Some(value) = output.value {
@@ -351,11 +353,11 @@ impl Arbitrary for String {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
-    Input<&super::String<Span<ID>>, &F> for &String
+    Input<&super::String<AbsoluteSpan<ID>>, &F> for &String
 {
     fn assert(
         self,
-        output: &super::String<Span<ID>>,
+        output: &super::String<AbsoluteSpan<ID>>,
         file: &F,
     ) -> TestCaseResult {
         let source = file.source(output.span.source_id.clone())?;
@@ -394,11 +396,11 @@ impl Display for NewLine {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Clone + Debug>
-    Input<&super::NewLine<Span<ID>>, &F> for &NewLine
+    Input<&super::NewLine<AbsoluteSpan<ID>>, &F> for &NewLine
 {
     fn assert(
         self,
-        output: &super::NewLine<Span<ID>>,
+        output: &super::NewLine<AbsoluteSpan<ID>>,
         file: &F,
     ) -> TestCaseResult {
         let source = file.source(output.span.source_id.clone())?;
@@ -460,11 +462,11 @@ impl Display for Kind {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Clone + Debug>
-    Input<&super::Kind<Span<ID>>, &F> for &Kind
+    Input<&super::Kind<AbsoluteSpan<ID>>, &F> for &Kind
 {
     fn assert(
         self,
-        output: &super::Kind<Span<ID>>,
+        output: &super::Kind<AbsoluteSpan<ID>>,
         file: &F,
     ) -> TestCaseResult {
         match (self, output) {
@@ -536,10 +538,14 @@ impl Display for PriorInsignificant {
     }
 }
 
-impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone> Input<&Span<ID>, &F>
-    for &PriorInsignificant
+impl<F: for<'x> Files<'x, FileId = ID>, ID: Debug + Clone>
+    Input<&AbsoluteSpan<ID>, &F> for &PriorInsignificant
 {
-    fn assert(self, output: &Span<ID>, parameters: &F) -> TestCaseResult {
+    fn assert(
+        self,
+        output: &AbsoluteSpan<ID>,
+        parameters: &F,
+    ) -> TestCaseResult {
         let source = parameters.source(output.source_id.clone())?;
         let actual_value = &source.as_ref()[output.range()];
 
@@ -595,11 +601,11 @@ impl Display for Token {
 }
 
 impl<F: for<'x> Files<'x, FileId = ID>, ID: Clone + Debug>
-    Input<&super::Token<Span<ID>>, &F> for &Token
+    Input<&super::Token<AbsoluteSpan<ID>>, &F> for &Token
 {
     fn assert(
         self,
-        output: &super::Token<Span<ID>>,
+        output: &super::Token<AbsoluteSpan<ID>>,
         file: &F,
     ) -> TestCaseResult {
         match (&self.prior_insignificant, &output.prior_insignificant) {

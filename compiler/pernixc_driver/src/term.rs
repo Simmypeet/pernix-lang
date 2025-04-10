@@ -10,5 +10,10 @@ pub fn get_coonfig() -> codespan_reporting::term::Config {
     config.styles.note_bullet.set_intense(true);
     config.styles.secondary_label.set_intense(true);
 
+    config.styles.primary_label_error.set_bold(true);
+    config.styles.primary_label_warning.set_bold(true);
+    config.styles.primary_label_help.set_bold(true);
+    config.styles.primary_label_note.set_intense(true);
+
     config
 }

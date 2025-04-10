@@ -11,7 +11,7 @@ use pernixc_arena::ID;
 use pernixc_diagnostic::Report;
 use pernixc_handler::Storage;
 use pernixc_lexical::{error::Error, token_stream::TokenStream};
-use pernixc_source_file::{SourceFile, SourceMap, Span};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, SourceFile, SourceMap};
 use pernixc_target::{Global, TargetID};
 use term::get_coonfig;
 
@@ -40,7 +40,9 @@ impl ReportTerm {
 }
 
 fn pernix_diagnostic_to_codespan_diagnostic(
-    diagostic: pernixc_diagnostic::Diagnostic<Span<Global<ID<SourceFile>>>>,
+    diagostic: pernixc_diagnostic::Diagnostic<
+        AbsoluteSpan<Global<ID<SourceFile>>>,
+    >,
 ) -> codespan_reporting::diagnostic::Diagnostic<Global<ID<SourceFile>>> {
     let result = match diagostic.severity {
         pernixc_diagnostic::Severity::Error => {
@@ -143,8 +145,8 @@ pub fn run(argument: &Arguments) -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let storage = Storage::<Error<Global<ID<SourceFile>>>>::new();
-    let stream = TokenStream::tokenize(
+    let storage = Storage::<Error<ByteIndex, Global<ID<SourceFile>>>>::new();
+    let _stream = TokenStream::tokenize(
         source_map[source_id].content(),
         source_id,
         &storage,
@@ -156,8 +158,6 @@ pub fn run(argument: &Arguments) -> ExitCode {
 
         report_term.report(&mut source_map, &msg);
     }
-
-    dbg!(source_map);
 
     ExitCode::SUCCESS
 }
