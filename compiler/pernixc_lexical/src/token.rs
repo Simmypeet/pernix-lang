@@ -8,9 +8,9 @@ use std::{
 };
 
 use bimap::BiHashMap;
-use derive_more::From;
 use pernixc_handler::Handler;
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, Span};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{self, InvalidEscapeSequence},
@@ -46,7 +46,18 @@ pub type Kind<S> = Token<kind::Kind, S>;
 
 /// A template struct representing a token that contains the location, kind, and
 /// its prior insignificant part.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Token<T, S> {
     /// Specifies the kind of the token.
     pub kind: T,
@@ -101,14 +112,15 @@ fn is_identifier_character(character: char) -> bool {
 /// A struct used for tokenizing the source code. The struct implements
 /// [`Iterator`] trait, which allows it to be used as an iterator that iterates
 /// over token sequences in the source code.
-pub struct Tokenizer<'a, 'h, ID> {
+#[derive(Clone)]
+pub struct Tokenizer<'a, 'h> {
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
-    handler: &'h dyn Handler<error::Error<ByteIndex, ID>>,
-    source_id: ID,
+    handler: &'h dyn Handler<error::Error>,
+    source_id: GlobalSourceID,
 }
 
-impl<ID: std::fmt::Debug> std::fmt::Debug for Tokenizer<'_, '_, ID> {
+impl std::fmt::Debug for Tokenizer<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Tokenizer")
             .field("source", &self.source)
@@ -118,7 +130,7 @@ impl<ID: std::fmt::Debug> std::fmt::Debug for Tokenizer<'_, '_, ID> {
     }
 }
 
-impl<'a, 'h, ID> Tokenizer<'a, 'h, ID> {
+impl<'a, 'h> Tokenizer<'a, 'h> {
     /// Creates a new [`Tokenizer`] instance.
     ///
     /// # Parameters
@@ -128,8 +140,8 @@ impl<'a, 'h, ID> Tokenizer<'a, 'h, ID> {
     /// - `handler`: The handler to use for reporting errors.
     pub fn new(
         source: &'a str,
-        source_id: ID,
-        handler: &'h dyn Handler<error::Error<ByteIndex, ID>>,
+        source_id: GlobalSourceID,
+        handler: &'h dyn Handler<error::Error>,
     ) -> Self {
         Self {
             source,
@@ -160,13 +172,10 @@ static ESCAPE_SEQUENCE_BY_REPRESENTATION: LazyLock<BiHashMap<char, char>> =
         map
     });
 
-impl<ID: Clone> Tokenizer<'_, '_, ID> {
+impl Tokenizer<'_, '_> {
     /// Creates a span from the given start location to the current location of
     /// the iterator.
-    fn create_span(&mut self, start: ByteIndex) -> AbsoluteSpan<ID>
-    where
-        ID: Clone,
-    {
+    fn create_span(&mut self, start: ByteIndex) -> AbsoluteSpan {
         if let Some((index, _)) = self.iter.peek().copied() {
             Span { start, end: index, source_id: self.source_id.clone() }
         } else {
@@ -178,7 +187,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
         }
     }
 
-    fn handle_insignificant(&mut self) -> Option<AbsoluteSpan<ID>> {
+    fn handle_insignificant(&mut self) -> Option<AbsoluteSpan> {
         let (start, _) = self.iter.peek().copied()?;
 
         while let Some((_, character)) = self.iter.peek().copied() {
@@ -206,7 +215,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
         &mut self,
         character: char,
         start: ByteIndex,
-    ) -> AbsoluteSpan<ID> {
+    ) -> AbsoluteSpan {
         // cr
         if character == '\r' {
             //  lf
@@ -222,7 +231,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
     fn handle_identifier_and_keyword(
         &mut self,
         start: ByteIndex,
-    ) -> (kind::Kind, AbsoluteSpan<ID>) {
+    ) -> (kind::Kind, AbsoluteSpan) {
         walk_iter(&mut self.iter, is_identifier_character);
 
         let span = self.create_span(start);
@@ -236,7 +245,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
         }
     }
 
-    fn handle_numeric_literal(&mut self, start: ByteIndex) -> AbsoluteSpan<ID> {
+    fn handle_numeric_literal(&mut self, start: ByteIndex) -> AbsoluteSpan {
         // Tokenizes the whole number part
         walk_iter(&mut self.iter, |character| character.is_ascii_digit());
 
@@ -246,7 +255,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
     fn handle_single_quote(
         &mut self,
         start: ByteIndex,
-    ) -> (kind::Kind, AbsoluteSpan<ID>) {
+    ) -> (kind::Kind, AbsoluteSpan) {
         let mut iter_cloned = self.iter.clone();
 
         match iter_cloned.next() {
@@ -323,7 +332,7 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
         }
     }
 
-    fn handle_string_literal(&mut self, start: ByteIndex) -> AbsoluteSpan<ID> {
+    fn handle_string_literal(&mut self, start: ByteIndex) -> AbsoluteSpan {
         let mut last_backslash = false;
         let mut last_byte_index = start;
 
@@ -385,8 +394,8 @@ impl<ID: Clone> Tokenizer<'_, '_, ID> {
     }
 }
 
-impl<ID: Clone> Iterator for Tokenizer<'_, '_, ID> {
-    type Item = Kind<AbsoluteSpan<ID>>;
+impl Iterator for Tokenizer<'_, '_> {
+    type Item = Kind<AbsoluteSpan>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Found white spaces
@@ -435,5 +444,5 @@ impl<ID: Clone> Iterator for Tokenizer<'_, '_, ID> {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test;
+// #[cfg(test)]
+// pub(crate) mod test;

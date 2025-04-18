@@ -5,22 +5,22 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
-use pernixc_source_file::Span;
+use pernixc_source_file::{AbsoluteSpan, Span};
 
 use crate::tree::DelimiterKind;
 
 /// The delimiter is not closed by its corresponding closing pair.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct UndelimitedDelimiter<L, ID> {
+pub struct UndelimitedDelimiter {
     /// The span of the opening delimiter.
-    pub opening_span: Span<L, ID>,
+    pub opening_span: AbsoluteSpan,
 
     /// The kind of the delimiter.
     pub delimiter: DelimiterKind,
 }
 
-impl<L: Clone, ID: Clone> Report<()> for UndelimitedDelimiter<L, ID> {
-    type Span = Span<L, ID>;
+impl Report<()> for UndelimitedDelimiter {
+    type Span = AbsoluteSpan;
 
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         Diagnostic {
@@ -47,13 +47,13 @@ impl<L: Clone, ID: Clone> Report<()> for UndelimitedDelimiter<L, ID> {
 
 /// The source code contains an unterminated string literal.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct UnterminatedStringLiteral<L, ID> {
+pub struct UnterminatedStringLiteral {
     /// The span of the unclosed double quote that starts the string literal.
-    pub span: Span<L, ID>,
+    pub span: AbsoluteSpan,
 }
 
-impl<L: Clone, ID: Clone> Report<()> for UnterminatedStringLiteral<L, ID> {
-    type Span = Span<L, ID>;
+impl Report<()> for UnterminatedStringLiteral {
+    type Span = AbsoluteSpan;
 
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         Diagnostic {
@@ -69,13 +69,13 @@ impl<L: Clone, ID: Clone> Report<()> for UnterminatedStringLiteral<L, ID> {
 
 /// The source code contains an invalid escape sequence.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct InvalidEscapeSequence<L, ID> {
+pub struct InvalidEscapeSequence {
     /// The span of the invalid escape sequence (including the backslash).
-    pub span: Span<L, ID>,
+    pub span: AbsoluteSpan,
 }
 
-impl<L: Clone, ID: Clone> Report<()> for InvalidEscapeSequence<L, ID> {
-    type Span = Span<L, ID>;
+impl Report<()> for InvalidEscapeSequence {
+    type Span = AbsoluteSpan;
 
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         Diagnostic {
@@ -91,9 +91,9 @@ impl<L: Clone, ID: Clone> Report<()> for InvalidEscapeSequence<L, ID> {
 
 /// Found a token in an invalid indentation level.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct InvalidIndentation<L, ID> {
+pub struct InvalidIndentation {
     /// The span of the invalid indentation.
-    pub span: Span<L, ID>,
+    pub span: AbsoluteSpan,
 
     /// The expected indentation level.
     pub expected_indentation: usize,
@@ -102,11 +102,11 @@ pub struct InvalidIndentation<L, ID> {
     pub found_indentation: usize,
 
     /// The span top the previous indentation starting point
-    pub previous_indentation_start: Option<Span<L, ID>>,
+    pub previous_indentation_start: Option<AbsoluteSpan>,
 }
 
-impl<L: Clone, ID: Clone> Report<()> for InvalidIndentation<L, ID> {
-    type Span = Span<L, ID>;
+impl Report<()> for InvalidIndentation {
+    type Span = AbsoluteSpan;
 
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         Diagnostic {
@@ -133,12 +133,12 @@ impl<L: Clone, ID: Clone> Report<()> for InvalidIndentation<L, ID> {
 
 /// The source code contains an invalid new indentation level.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
-pub struct InvalidNewIndentationLevel<L, ID> {
+pub struct InvalidNewIndentationLevel {
     /// The span of the invalid new indentation level.
-    pub span: Span<L, ID>,
+    pub span: AbsoluteSpan,
 
     /// The span of the previous indentation level.
-    pub previous_indentation_span: Option<Span<L, ID>>,
+    pub previous_indentation_span: Option<AbsoluteSpan>,
 
     /// The expected indentation level.
     pub latest_indentation: usize,
@@ -147,8 +147,8 @@ pub struct InvalidNewIndentationLevel<L, ID> {
     pub found_indentation: usize,
 }
 
-impl<L: Clone, ID: Clone> Report<()> for InvalidNewIndentationLevel<L, ID> {
-    type Span = Span<L, ID>;
+impl Report<()> for InvalidNewIndentationLevel {
+    type Span = AbsoluteSpan;
 
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         Diagnostic {
@@ -186,18 +186,18 @@ impl<L: Clone, ID: Clone> Report<()> for InvalidNewIndentationLevel<L, ID> {
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
 )]
 #[allow(missing_docs)]
-pub enum Error<L, ID> {
-    UndelimitedDelimiter(UndelimitedDelimiter<L, ID>),
-    UnterminatedStringLiteral(UnterminatedStringLiteral<L, ID>),
-    InvalidEscapeSequence(InvalidEscapeSequence<L, ID>),
-    InvalidIndentation(InvalidIndentation<L, ID>),
-    InvalidNewIndentationLevel(InvalidNewIndentationLevel<L, ID>),
+pub enum Error {
+    UndelimitedDelimiter(UndelimitedDelimiter),
+    UnterminatedStringLiteral(UnterminatedStringLiteral),
+    InvalidEscapeSequence(InvalidEscapeSequence),
+    InvalidIndentation(InvalidIndentation),
+    InvalidNewIndentationLevel(InvalidNewIndentationLevel),
 }
 
-impl<L, ID> Error<L, ID> {
+impl Error {
     /// Gets the span where the error occurred.
     #[must_use]
-    pub const fn span(&self) -> &Span<L, ID> {
+    pub const fn span(&self) -> &AbsoluteSpan {
         match self {
             Self::UndelimitedDelimiter(err) => &err.opening_span,
             Self::UnterminatedStringLiteral(err) => &err.span,
@@ -208,8 +208,8 @@ impl<L, ID> Error<L, ID> {
     }
 }
 
-impl<L: Clone, ID: Clone> Report<()> for Error<L, ID> {
-    type Span = Span<L, ID>;
+impl Report<()> for Error {
+    type Span = AbsoluteSpan;
 
     fn report(&self, (): ()) -> Diagnostic<Self::Span> {
         match self {
