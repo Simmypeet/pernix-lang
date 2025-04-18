@@ -359,7 +359,7 @@ pub type ByteIndex = usize;
     Serialize,
     Deserialize,
 )]
-pub struct Span<L, ID> {
+pub struct Span<L> {
     /// Gets the start byte index of the span.
     pub start: L,
 
@@ -367,18 +367,12 @@ pub struct Span<L, ID> {
     pub end: L,
 
     /// The ID of the source file that this span belongs to.
-    pub source_id: ID,
+    pub source_id: GlobalSourceID,
 }
-
-/// A type alias for the [`Span`] type with a [`GlobalSourceID`] ID.
-pub type GlobalSpan = Span<ByteIndex, GlobalSourceID>;
-
-/// A type alias for the [`Span`] type with a [`LocalSourceID`] ID.
-pub type LocalSpan = Span<ByteIndex, LocalSourceID>;
 
 /// A type alias for the [`Span`] type with a [`ByteIndex`] as the source
 /// location.
-pub type AbsoluteSpan<ID> = Span<ByteIndex, ID>;
+pub type AbsoluteSpan = Span<ByteIndex>;
 
 /// A trait for types that can be joined together.
 pub trait Join {
@@ -388,8 +382,16 @@ pub trait Join {
     fn join(&self, end: &Self) -> Self;
 }
 
-impl<L: Clone, ID: PartialEq + Clone> Join for Span<L, ID> {
-    fn join(&self, end: &Self) -> Self { Self::join(self, end) }
+impl<ID: PartialEq + Clone> Join for Span<ID> {
+    fn join(&self, end: &Self) -> Self {
+        assert!(self.source_id == end.source_id, "source IDs are not equal");
+
+        Self {
+            start: self.start.clone(),
+            end: end.end.clone(),
+            source_id: self.source_id,
+        }
+    }
 }
 
 /// Is a struct pointing to a particular location in a source file.
@@ -410,11 +412,11 @@ impl Location {
     }
 }
 
-impl<L, ID> Span<L, ID> {
+impl<L> Span<L> {
     /// Creates a span from the given start and end byte indices in the source
     /// file.
     #[must_use]
-    pub const fn new(start: L, end: L, source_id: ID) -> Self {
+    pub const fn new(start: L, end: L, source_id: GlobalSourceID) -> Self {
         Self { start, end, source_id }
     }
 
@@ -424,14 +426,13 @@ impl<L, ID> Span<L, ID> {
     pub fn join(&self, end: &Self) -> Self
     where
         L: Clone,
-        ID: PartialEq + Clone,
     {
         assert!(self.source_id == end.source_id, "source IDs are not equal");
 
         Self {
             start: self.start.clone(),
             end: end.end.clone(),
-            source_id: self.source_id.clone(),
+            source_id: self.source_id,
         }
     }
 
