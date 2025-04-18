@@ -5,6 +5,8 @@
 //! representing the list of tokens of a source file.
 
 pub mod error;
+pub mod kind;
 pub mod token;
-pub mod token_stream;
 pub mod tree;
+
+// pub mod token_stream;

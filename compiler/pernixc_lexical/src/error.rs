@@ -7,7 +7,7 @@ use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_source_file::Span;
 
-use crate::token_stream::DelimiterKind;
+use crate::tree::DelimiterKind;
 
 /// The delimiter is not closed by its corresponding closing pair.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
