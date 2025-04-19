@@ -177,13 +177,9 @@ impl Tokenizer<'_, '_> {
     /// the iterator.
     fn create_span(&mut self, start: ByteIndex) -> AbsoluteSpan {
         if let Some((index, _)) = self.iter.peek().copied() {
-            Span { start, end: index, source_id: self.source_id.clone() }
+            Span { start, end: index, source_id: self.source_id }
         } else {
-            Span {
-                start,
-                end: self.source.len(),
-                source_id: self.source_id.clone(),
-            }
+            Span { start, end: self.source.len(), source_id: self.source_id }
         }
     }
 
@@ -205,9 +201,9 @@ impl Tokenizer<'_, '_> {
                 return None;
             }
 
-            Some(Span::new(start, index, self.source_id.clone()))
+            Some(Span::new(start, index, self.source_id))
         } else {
-            Some(Span::new(start, self.source.len(), self.source_id.clone()))
+            Some(Span::new(start, self.source.len(), self.source_id))
         }
     }
 
@@ -238,11 +234,10 @@ impl Tokenizer<'_, '_> {
         let word = &self.source[start..span.end];
 
         // Checks if the word is a keyword
-        if let Ok(kind) = kind::Keyword::from_str(word) {
-            (kind::Kind::Keyword(kind), span)
-        } else {
-            (kind::Kind::Identifier(kind::Identifier), span)
-        }
+        kind::Keyword::from_str(word)
+            .map_or((kind::Kind::Identifier(kind::Identifier), span), |kind| {
+                (kind::Kind::Keyword(kind), span)
+            })
     }
 
     fn handle_numeric_literal(&mut self, start: ByteIndex) -> AbsoluteSpan {
@@ -310,7 +305,7 @@ impl Tokenizer<'_, '_> {
                                             span: Span::new(
                                                 content_start,
                                                 content_end,
-                                                self.source_id.clone(),
+                                                self.source_id,
                                             ),
                                         },
                                     ),
@@ -340,19 +335,11 @@ impl Tokenizer<'_, '_> {
             let Some((byte_index, character)) = self.iter.next() else {
                 self.handler.receive(error::Error::UnterminatedStringLiteral(
                     error::UnterminatedStringLiteral {
-                        span: Span::new(
-                            start,
-                            start + 1,
-                            self.source_id.clone(),
-                        ),
+                        span: Span::new(start, start + 1, self.source_id),
                     },
                 ));
 
-                return Span::new(
-                    start,
-                    self.source.len(),
-                    self.source_id.clone(),
-                );
+                return Span::new(start, self.source.len(), self.source_id);
             };
 
             if last_backslash {
@@ -365,7 +352,7 @@ impl Tokenizer<'_, '_> {
                             span: Span::new(
                                 last_byte_index,
                                 byte_index,
-                                self.source_id.clone(),
+                                self.source_id,
                             ),
                         },
                     ));

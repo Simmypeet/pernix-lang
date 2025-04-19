@@ -3,6 +3,7 @@
 use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
 use derive_more::From;
+use enum_as_inner::EnumAsInner;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -379,6 +380,7 @@ pub struct Numeric;
     Serialize,
     Deserialize,
     From,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Kind {
