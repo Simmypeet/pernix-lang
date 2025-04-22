@@ -174,3 +174,56 @@ fn stable_node_id() {
     }
 }
 */
+
+use pernixc_source_file::{SourceFile, SourceMap};
+use pernixc_target::TargetID;
+
+use super::{Tree, ROOT_BRANCH_ID};
+use crate::tree::{BranchKind, DelimiterKind};
+
+#[test]
+fn basic_delimiter_handling() {
+    let source = "+ { - } *";
+    let mut source_map = SourceMap::default();
+    let source_id = TargetID::Local.make_global(source_map.register(
+        TargetID::Local,
+        SourceFile::new(source.to_string(), "test".into()),
+    ));
+
+    let source_content = source_map[source_id].content();
+
+    let handler = pernixc_handler::Panic;
+    let tree = dbg!(Tree::from_source(source_content, source_id, &handler));
+
+    let root_branch = &tree[ROOT_BRANCH_ID];
+
+    assert_eq!(root_branch.nodes.len(), 3);
+    assert_eq!(root_branch.kind, BranchKind::Root);
+
+    assert_eq!(
+        *root_branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        '+'
+    );
+
+    {
+        let branch = *root_branch.nodes[1].as_branch().unwrap();
+        let branch = &tree[branch];
+
+        assert_eq!(branch.nodes.len(), 1);
+        assert!(branch
+            .kind
+            .as_fragment()
+            .and_then(|x| x.fragment_kind.as_delimiter())
+            .is_some_and(|x| x.delimiter == DelimiterKind::Brace));
+
+        assert_eq!(
+            *branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            '-'
+        );
+    }
+
+    assert_eq!(
+        *root_branch.nodes[2].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        '*'
+    );
+}

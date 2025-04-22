@@ -21,7 +21,7 @@ use crate::{
         InvalidNewIndentationLevel, MismatchedClosingDelimiter,
         UnexpectedClosingDelimiter,
     },
-    kind::{self, Punctuation},
+    kind,
     token::{Kind, NewLine, Punctuation, Token, Tokenizer},
 };
 
@@ -155,7 +155,9 @@ pub struct FragmentBranch {
 }
 
 /// Represents the kind of branch in the token tree.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, EnumAsInner,
+)]
 #[allow(missing_docs, clippy::large_enum_variant)]
 pub enum BranchKind {
     Fragment(FragmentBranch),
@@ -201,7 +203,7 @@ impl Tree {
             delimiter_stack: Vec::new(),
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
-            tree: Tree(Arena::new()),
+            tree: Self(Arena::new()),
         };
 
         while converter.forward() {}
@@ -619,17 +621,24 @@ impl Converter<'_, '_> {
                 &self.tree,
             );
 
-            self.tree.0.insert_with_id(branch_id, Branch {
-                kind: BranchKind::Fragment(FragmentBranch {
-                    fragment_kind: FragmentKind::Delimiter(Delimiter {
-                        open: opening_delimiter,
-                        close: closing_delimiter,
-                        delimiter: expected_delimiter,
+            self.tree
+                .0
+                .insert_with_id(branch_id, Branch {
+                    kind: BranchKind::Fragment(FragmentBranch {
+                        fragment_kind: FragmentKind::Delimiter(Delimiter {
+                            open: opening_delimiter,
+                            close: closing_delimiter,
+                            delimiter: expected_delimiter,
+                        }),
+                        parent: ROOT_BRANCH_ID,
                     }),
-                    parent: ROOT_BRANCH_ID,
-                }),
-                nodes,
-            });
+                    nodes,
+                })
+                .unwrap();
+
+            // insert the branch ID
+            self.current_nodes
+                .insert(last.open_puncutation_index, Node::Branch(branch_id));
         } else {
             // unexpected closing delimiter
             self.handler.receive(error::Error::UnexpectedClosingDelimiter(
