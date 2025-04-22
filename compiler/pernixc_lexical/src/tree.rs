@@ -1,8 +1,6 @@
 //! Responsible for structuring the stream of tokens into a tree-like structure.
 
 use std::{
-    alloc::handle_alloc_error,
-    cell::RefMut,
     hash::{Hash, Hasher},
     iter::Peekable,
     ops::Range,
@@ -13,7 +11,7 @@ use enum_as_inner::EnumAsInner;
 use fnv::FnvHasher;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, Span};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
 use serde::Serialize;
 use strum_macros::EnumIter;
 
@@ -23,7 +21,7 @@ use crate::{
         InvalidNewIndentationLevel, MismatchedClosingDelimiter,
         UnexpectedClosingDelimiter,
     },
-    kind,
+    kind::{self, Punctuation},
     token::{Kind, NewLine, Punctuation, Token, Tokenizer},
 };
 
@@ -187,6 +185,36 @@ const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 #[derive(Debug, Clone, PartialEq, Eq, Deref, Serialize)]
 pub struct Tree(Arena<Branch>);
 
+impl Tree {
+    /// Creates a new [`Tree`] from the given source code and source ID.
+    ///
+    /// The `source_id` will be assigned to all the spans in the tree.
+    pub fn from_source(
+        source: &str,
+        source_id: GlobalSourceID,
+        handler: &dyn Handler<error::Error>,
+    ) -> Self {
+        let mut converter = Converter {
+            tokenizer: Tokenizer::new(source, source_id, handler),
+            source,
+            handler,
+            delimiter_stack: Vec::new(),
+            indentation_stack: Vec::new(),
+            current_nodes: Vec::new(),
+            tree: Tree(Arena::new()),
+        };
+
+        while converter.forward() {}
+
+        converter.tree.0.insert_with_id(ROOT_BRANCH_ID, Branch {
+            kind: BranchKind::Root,
+            nodes: converter.current_nodes,
+        });
+
+        converter.tree
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct DelimiterMarker {
     delimiter: DelimiterKind,
@@ -213,9 +241,9 @@ struct IndentationMarker {
     colon_index: usize,
 }
 
-struct Converter<'a, 'handler> {
-    tokenizer: Peekable<Tokenizer<'a, 'handler>>,
-    source: &'a str,
+struct Converter<'source, 'handler> {
+    tokenizer: Tokenizer<'source, 'handler>,
+    source: &'source str,
     handler: &'handler dyn Handler<error::Error>,
 
     delimiter_stack: Vec<DelimiterMarker>,
@@ -232,6 +260,54 @@ enum LastWas {
     Any,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum GeneralBranchKind {
+    Delimited(DelimiterKind),
+    Indented,
+}
+
+fn calculate_branch_hash<'a>(
+    tokens: impl Iterator<Item = &'a Kind<RelativeSpan>>,
+    node_kind: GeneralBranchKind,
+    source: &str,
+    arena: &Arena<Branch>,
+) -> ID<Branch> {
+    let mut hasher = FnvHasher::default();
+    node_kind.hash(&mut hasher);
+
+    // hash the string content of the tokens
+    for token in tokens {
+        let start_byte = token
+            .prior_insignificant
+            .as_ref()
+            .map_or_else(|| token.span.start.offset, |x| x.start.offset);
+
+        let end_byte = token.span.end.offset;
+        let str = &source[start_byte..end_byte];
+
+        str.hash(&mut hasher);
+    }
+
+    let mut attempt = 0;
+    loop {
+        // for some reason, FnvHasher doesn't implement `Clone` trait.
+        // this is the work around to clone
+        let mut final_hasher = FnvHasher::with_key(hasher.finish());
+        attempt.hash(&mut final_hasher);
+
+        let candidate_branch_id = ID::new(final_hasher.finish());
+
+        // avoid hash collision
+        if candidate_branch_id != ROOT_BRANCH_ID
+            && !arena.contains_id(candidate_branch_id)
+        {
+            return candidate_branch_id;
+        }
+
+        attempt += 1;
+    }
+}
+
 impl Converter<'_, '_> {
     const TAB_INDENT_SIZE: usize = 4;
 
@@ -246,6 +322,8 @@ impl Converter<'_, '_> {
                 })
             });
 
+            // for now, everything is relative to the root branch and is a leaf
+            // node.
             self.current_nodes.push(Node::Leaf(Token {
                 kind: token.kind,
                 span: RelativeSpan {
@@ -291,7 +369,7 @@ impl Converter<'_, '_> {
             // check for indentation marker
             let indentation_range = self.current_indentation_range();
 
-            //  handle indentation
+            //  handle new indentation line
             if last_was == Some(LastWas::NewLine)
                 && token.kind != kind::Kind::NewLine(kind::NewLine)
                 && self.indentation_stack.len() > indentation_range.start
@@ -301,6 +379,54 @@ impl Converter<'_, '_> {
                     token.span,
                     token.prior_insignificant,
                 );
+            }
+
+            if let Token {
+                kind: kind::Kind::Punctuation(open @ ('(' | '{' | '[')),
+                ..
+            } = &token
+            {
+                // opening delimiter
+                let delimiter = match open {
+                    '(' => DelimiterKind::Parenthesis,
+                    '{' => DelimiterKind::Brace,
+                    '[' => DelimiterKind::Bracket,
+                    _ => unreachable!(),
+                };
+
+                // push the delimiter marker
+                self.delimiter_stack.push(DelimiterMarker {
+                    delimiter,
+                    location: token.span,
+                    open_puncutation_index: self.current_nodes.len() - 1,
+                    starting_indentation_level: self.indentation_stack.len(),
+                });
+            }
+            // check for the new indentation marker
+            else if last_was == Some(LastWas::Colon)
+                && token.kind == kind::Kind::NewLine(kind::NewLine)
+            {
+                // push the new indentation marker
+                let colon = self
+                    .current_nodes
+                    .get(self.current_nodes.len() - 2)
+                    .unwrap()
+                    .as_leaf()
+                    .unwrap();
+
+                assert!(colon.kind.as_punctuation().is_some_and(|x| *x == ':'));
+                assert!(colon.span.start.relative_to == ROOT_BRANCH_ID);
+                assert!(colon.span.end.relative_to == ROOT_BRANCH_ID);
+
+                self.indentation_stack.push(IndentationMarker {
+                    indentation_size: None,
+                    colon_span: AbsoluteSpan {
+                        start: colon.span.start.offset,
+                        end: colon.span.end.offset,
+                        source_id: colon.span.source_id,
+                    },
+                    colon_index: self.current_nodes.len() - 2,
+                });
             }
 
             true
@@ -345,7 +471,7 @@ impl Converter<'_, '_> {
                     },
                 ));
 
-                // TODO: pop the indentation marker
+                self.pop_invalid_indentation_marker();
             } else if let Some(prior_indentation) = prior_indentation {
                 // must be deeper indentation
                 if indentation_size
@@ -365,13 +491,15 @@ impl Converter<'_, '_> {
                         ),
                     );
 
-                    // TODO: pop the indentation marker
+                    self.pop_invalid_indentation_marker();
+                } else {
+                    // assign the indentation size
+                    self.indentation_stack
+                        .last_mut()
+                        .unwrap()
+                        .indentation_size = Some(indentation_size);
+                    new_indentation = true;
                 }
-
-                // assign the indentation size
-                self.indentation_stack.last_mut().unwrap().indentation_size =
-                    Some(indentation_size);
-                new_indentation = true;
             } else {
                 // assign the indentation size
                 self.indentation_stack.last_mut().unwrap().indentation_size =
@@ -459,6 +587,49 @@ impl Converter<'_, '_> {
             if pop_count > 0 {
                 self.pop_indentation_marker(pop_count);
             }
+
+            // extract the closing delimiter and the opening delimiter
+            let closing_delimiter = self
+                .current_nodes
+                .pop()
+                .unwrap()
+                .into_leaf()
+                .unwrap()
+                .map_kind(|x| x.into_punctuation().unwrap());
+
+            assert_eq!(closing_delimiter.kind, punc);
+
+            let mut drain =
+                self.current_nodes.drain(last.open_puncutation_index..);
+
+            let opening_delimiter = drain.next().unwrap();
+            let opening_delimiter = opening_delimiter
+                .into_leaf()
+                .unwrap()
+                .map_kind(|x| x.into_punctuation().unwrap());
+
+            assert!(matches!(opening_delimiter.kind, '[' | '{' | '('));
+
+            // collect the nodes
+            let nodes = drain.collect::<Vec<_>>();
+            let branch_id = calculate_branch_hash(
+                nodes.iter().filter_map(Node::as_leaf),
+                GeneralBranchKind::Delimited(expected_delimiter),
+                self.source,
+                &self.tree,
+            );
+
+            self.tree.0.insert_with_id(branch_id, Branch {
+                kind: BranchKind::Fragment(FragmentBranch {
+                    fragment_kind: FragmentKind::Delimiter(Delimiter {
+                        open: opening_delimiter,
+                        close: closing_delimiter,
+                        delimiter: expected_delimiter,
+                    }),
+                    parent: ROOT_BRANCH_ID,
+                }),
+                nodes,
+            });
         } else {
             // unexpected closing delimiter
             self.handler.receive(error::Error::UnexpectedClosingDelimiter(
@@ -560,3 +731,6 @@ impl Converter<'_, '_> {
         );
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -73,6 +73,19 @@ pub struct Token<T, S> {
     pub prior_insignificant: Option<S>,
 }
 
+impl<T, S> Token<T, S> {
+    /// Calls the given function with the [`Self::kind`] of the token and
+    /// returns a new token with the result of the function where the same
+    /// [`Self::span`] and [`Self::prior_insignificant`] are used.
+    pub fn map_kind<U>(self, f: impl FnOnce(T) -> U) -> Token<U, S> {
+        Token {
+            kind: f(self.kind),
+            span: self.span,
+            prior_insignificant: self.prior_insignificant,
+        }
+    }
+}
+
 fn is_whitespace(character: char) -> bool {
     character.is_whitespace() && character != '\n' && character != '\r'
 }
