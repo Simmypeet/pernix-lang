@@ -2,7 +2,6 @@
 
 use std::{
     hash::{Hash, Hasher},
-    iter::Peekable,
     ops::Range,
 };
 
@@ -208,10 +207,14 @@ impl Tree {
 
         while converter.forward() {}
 
-        converter.tree.0.insert_with_id(ROOT_BRANCH_ID, Branch {
-            kind: BranchKind::Root,
-            nodes: converter.current_nodes,
-        });
+        converter
+            .tree
+            .0
+            .insert_with_id(ROOT_BRANCH_ID, Branch {
+                kind: BranchKind::Root,
+                nodes: converter.current_nodes,
+            })
+            .unwrap();
 
         converter.tree
     }
@@ -237,6 +240,7 @@ enum IndentationSize {
     Errored,
 }
 
+#[derive(Debug)]
 struct IndentationMarker {
     indentation_size: Option<usize>,
     colon_span: AbsoluteSpan,
@@ -253,6 +257,19 @@ struct Converter<'source, 'handler> {
 
     current_nodes: Vec<Node>,
     tree: Tree,
+}
+
+impl std::fmt::Debug for Converter<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Converter")
+            .field("tokenizer", &self.tokenizer)
+            .field("source", &self.source)
+            .field("delimiter_stack", &self.delimiter_stack)
+            .field("indentation_stack", &self.indentation_stack)
+            .field("current_nodes", &self.current_nodes)
+            .field("tree", &self.tree)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -510,7 +527,7 @@ impl Converter<'_, '_> {
             }
         }
 
-        if !new_indentation {
+        if new_indentation {
             return;
         }
 
@@ -553,7 +570,7 @@ impl Converter<'_, '_> {
 
         // pop the indentation markers
         if pop_count > 0 {
-            self.pop_indentation_marker(pop_count);
+            self.pop_indentation_marker(pop_count, false);
         }
     }
 
@@ -587,7 +604,7 @@ impl Converter<'_, '_> {
                 self.indentation_stack.len() - last.starting_indentation_level;
 
             if pop_count > 0 {
-                self.pop_indentation_marker(pop_count);
+                self.pop_indentation_marker(pop_count, false);
             }
 
             // extract the closing delimiter and the opening delimiter
@@ -674,7 +691,78 @@ impl Converter<'_, '_> {
         }
     }
 
-    fn pop_indentation_marker(&mut self, pop_count: usize) {}
+    fn pop_indentation_marker(
+        &mut self,
+        pop_count: usize,
+        was_pop_at_eof: bool,
+    ) {
+        // find the index (+1) of the last token that is in the indentation
+        // block
+        let mut end_index = self
+            .current_nodes
+            .iter()
+            .enumerate()
+            .rev()
+            .skip(usize::from(!was_pop_at_eof))
+            .find_map(|(index, node)| {
+                node.as_leaf()
+                    .is_some_and(|x| !x.kind.is_new_line())
+                    .then_some(index)
+            })
+            .unwrap()
+            + 1;
+
+        for _ in 0..pop_count {
+            let marker = self.indentation_stack.pop().unwrap();
+
+            let mut iter =
+                self.current_nodes.drain(marker.colon_index..end_index);
+
+            // extract colon and new line
+            let colon = iter
+                .next()
+                .unwrap()
+                .into_leaf()
+                .unwrap()
+                .map_kind(|x| x.into_punctuation().unwrap());
+            assert_eq!(colon.kind, ':');
+            let new_line = iter
+                .next()
+                .unwrap()
+                .into_leaf()
+                .unwrap()
+                .map_kind(|x| x.into_new_line().unwrap());
+
+            let nodes = iter.collect::<Vec<_>>();
+            let branch_hash = calculate_branch_hash(
+                nodes.iter().filter_map(Node::as_leaf),
+                GeneralBranchKind::Indented,
+                self.source,
+                &self.tree,
+            );
+
+            let branch = Branch {
+                kind: BranchKind::Fragment(FragmentBranch {
+                    fragment_kind: FragmentKind::Indentation(Indentation {
+                        indentation_size: marker.indentation_size.unwrap(),
+                        colon,
+                        new_line,
+                    }),
+                    parent: ROOT_BRANCH_ID,
+                }),
+                nodes,
+            };
+
+            // insert the branch
+            self.tree.0.insert_with_id(branch_hash, branch).unwrap();
+
+            self.current_nodes
+                .insert(marker.colon_index, Node::Branch(branch_hash));
+
+            // update the end index
+            end_index = marker.colon_index + 1;
+        }
+    }
 
     fn pop_invalid_indentation_marker(&mut self) {
         let indentation_marker = self.indentation_stack.pop().unwrap();
