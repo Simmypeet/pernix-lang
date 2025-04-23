@@ -180,7 +180,7 @@ use super::{Tree, ROOT_BRANCH_ID};
 use crate::tree::{BranchKind, DelimiterKind};
 
 #[test]
-fn basic_delimiter_handling() {
+fn basic_delimiter() {
     let source = "+ { - } *";
     let mut source_map = SourceMap::default();
     let source_id = TargetID::Local.make_global(source_map.register(
@@ -227,7 +227,7 @@ fn basic_delimiter_handling() {
 }
 
 #[test]
-fn basic_indentation_handling() {
+fn basic_indentation() {
     let source: &str = "+:\n\t-\n*";
 
     let mut source_map = SourceMap::default();
