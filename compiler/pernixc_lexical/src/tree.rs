@@ -694,7 +694,7 @@ impl Converter<'_, '_> {
             .skip(usize::from(!was_pop_at_eof))
             .find_map(|(index, node)| {
                 node.as_leaf()
-                    .is_some_and(|x| !x.kind.is_new_line())
+                    .is_none_or(|x| !x.kind.is_new_line())
                     .then_some(index)
             })
             .unwrap()
