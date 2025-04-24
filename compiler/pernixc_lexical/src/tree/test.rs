@@ -449,3 +449,81 @@ fn nested_multi_pop_indentation() {
         ','
     );
 }
+
+const INDENTATION_POP_IN_DELIMITER: &str = ":
+    (:
+        *)
++";
+
+#[test]
+fn indentation_pop_in_delimiter() {
+    let mut source_map = SourceMap::default();
+    let source_id = TargetID::Local.make_global(source_map.register(
+        TargetID::Local,
+        SourceFile::new(
+            INDENTATION_POP_IN_DELIMITER.to_string(),
+            "test".into(),
+        ),
+    ));
+
+    let source_content = source_map[source_id].content();
+
+    let handler = pernixc_handler::Panic;
+    let tree = Tree::from_source(source_content, source_id, &handler);
+
+    let root_branch = &tree[ROOT_BRANCH_ID];
+
+    assert_eq!(root_branch.nodes.len(), 3);
+    assert_eq!(root_branch.kind, BranchKind::Root);
+
+    {
+        let branch = *root_branch.nodes[0].as_branch().unwrap();
+        let branch = dbg!(&tree[branch]);
+
+        assert_eq!(branch.nodes.len(), 1);
+        assert!(branch
+            .kind
+            .as_fragment()
+            .is_some_and(|x| x.fragment_kind.is_indentation()));
+
+        {
+            let branch = *branch.nodes[0].as_branch().unwrap();
+            let branch = &tree[branch];
+
+            assert_eq!(branch.nodes.len(), 1);
+            assert!(branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.as_delimiter().is_some_and(
+                    |x| x.delimiter == DelimiterKind::Parenthesis
+                )));
+
+            {
+                let branch = *branch.nodes[0].as_branch().unwrap();
+                let branch = &tree[branch];
+
+                assert_eq!(branch.nodes.len(), 1);
+                assert!(branch
+                    .kind
+                    .as_fragment()
+                    .is_some_and(|x| x.fragment_kind.is_indentation()));
+
+                assert_eq!(
+                    *branch.nodes[0]
+                        .as_leaf()
+                        .unwrap()
+                        .kind
+                        .as_punctuation()
+                        .unwrap(),
+                    '*'
+                );
+            }
+        }
+    }
+
+    assert!(root_branch.nodes[1].as_leaf().unwrap().kind.is_new_line());
+    assert_eq!(
+        *root_branch.nodes[2].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        '+'
+    );
+}
