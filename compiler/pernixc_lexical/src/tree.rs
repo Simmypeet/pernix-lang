@@ -228,18 +228,6 @@ struct DelimiterMarker {
     starting_indentation_level: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-enum IndentationSize {
-    /// Found colons and new lines, but hasn't figured out the size yet.
-    Unassigned,
-
-    /// Found colons and new lines, and has a valid new indentation size.
-    Assigned(usize),
-
-    /// Found a new invalid indentation size, stop the search.
-    Errored,
-}
-
 #[derive(Debug)]
 struct IndentationMarker {
     indentation_size: Option<usize>,
