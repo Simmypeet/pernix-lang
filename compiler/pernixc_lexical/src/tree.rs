@@ -781,25 +781,17 @@ impl Converter<'_, '_> {
         });
         let branch = Branch { kind: branch_kind, nodes: Vec::new() };
 
-        // calculate the branch ID
-        let mut hash = {
-            let hasher = FnvHasher::default();
-            hasher.finish()
-        };
-
-        // avoiding hash collision
-        while hash == ROOT_BRANCH_ID.index()
-            || self.tree.contains_id(ID::new(hash))
-        {
-            hash = hash.wrapping_add(1);
-        }
+        let branch_id = calculate_branch_hash(
+            std::iter::empty(),
+            GeneralBranchKind::Indented,
+            self.source,
+            &self.tree,
+        );
 
         // create the branch
-        self.tree.0.insert_with_id(ID::new(hash), branch).unwrap();
-        self.current_nodes.insert(
-            indentation_marker.colon_index,
-            Node::Branch(ID::new(hash)),
-        );
+        self.tree.0.insert_with_id(branch_id, branch).unwrap();
+        self.current_nodes
+            .insert(indentation_marker.colon_index, Node::Branch(branch_id));
     }
 }
 
