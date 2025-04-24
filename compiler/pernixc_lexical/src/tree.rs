@@ -660,31 +660,9 @@ impl Converter<'_, '_> {
         }
     }
 
-    fn has_indentation(&self) -> bool {
-        let i = self
-            .delimiter_stack
-            .last()
-            .map_or(0, |x| x.starting_indentation_level);
-
-        i == self.indentation_stack.len()
-    }
-
     fn current_indentation_range(&self) -> Range<usize> {
         self.delimiter_stack.last().map_or(0, |x| x.starting_indentation_level)
             ..self.indentation_stack.len()
-    }
-
-    fn current_indentation_marker(&self) -> Option<&IndentationMarker> {
-        let i = self
-            .delimiter_stack
-            .last()
-            .map_or(0, |x| x.starting_indentation_level);
-
-        if i == self.indentation_stack.len() {
-            None
-        } else {
-            self.indentation_stack.last()
-        }
     }
 
     fn pop_indentation_marker(
