@@ -207,6 +207,14 @@ impl Tree {
 
         while converter.forward() {}
 
+        // pop all indentation markers
+        if !converter.indentation_stack.is_empty() {
+            converter.pop_indentation_marker(
+                converter.indentation_stack.len(),
+                true,
+            );
+        }
+
         converter
             .tree
             .0

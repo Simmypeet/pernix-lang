@@ -527,3 +527,68 @@ fn indentation_pop_in_delimiter() {
         '+'
     );
 }
+
+const INDENTATION_POP_ALL_AT_END: &str = ":
+    +
+    :
+        -
+";
+
+#[test]
+fn indentation_pop_all_at_end() {
+    let mut source_map = SourceMap::default();
+    let source_id = TargetID::Local.make_global(source_map.register(
+        TargetID::Local,
+        SourceFile::new(INDENTATION_POP_ALL_AT_END.to_string(), "test".into()),
+    ));
+
+    let source_content = source_map[source_id].content();
+
+    let handler = pernixc_handler::Panic;
+    let tree = Tree::from_source(source_content, source_id, &handler);
+
+    let root_branch = &tree[ROOT_BRANCH_ID];
+
+    assert_eq!(root_branch.nodes.len(), 2);
+    assert_eq!(root_branch.kind, BranchKind::Root);
+
+    {
+        let branch = *root_branch.nodes[0].as_branch().unwrap();
+        let branch = &tree[branch];
+
+        assert_eq!(branch.nodes.len(), 3);
+        assert!(branch
+            .kind
+            .as_fragment()
+            .is_some_and(|x| x.fragment_kind.is_indentation()));
+
+        assert_eq!(
+            *branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            '+'
+        );
+        assert!(branch.nodes[1].as_leaf().unwrap().kind.is_new_line());
+
+        {
+            let branch = *branch.nodes[2].as_branch().unwrap();
+            let branch = &tree[branch];
+
+            assert_eq!(branch.nodes.len(), 1);
+            assert!(branch
+                .kind
+                .as_fragment()
+                .is_some_and(|x| x.fragment_kind.is_indentation()));
+
+            assert_eq!(
+                *branch.nodes[0]
+                    .as_leaf()
+                    .unwrap()
+                    .kind
+                    .as_punctuation()
+                    .unwrap(),
+                '-'
+            );
+        }
+    }
+
+    assert!(root_branch.nodes[1].as_leaf().unwrap().kind.is_new_line());
+}
