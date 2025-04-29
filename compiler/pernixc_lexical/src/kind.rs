@@ -2,12 +2,16 @@
 
 use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
-use derive_more::From;
+use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
+use flexstr::SharedStr;
 use serde::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
+
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
 
 /// Is an enumeration representing keywords in the Pernix programming language.
 ///
@@ -209,6 +213,7 @@ impl FromStr for Keyword {
 impl Keyword {
     /// Gets the string representation of the keyword as a `&str`.
     #[must_use]
+    // skipcq: RS-R1000
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::For => "for",
@@ -309,14 +314,15 @@ pub struct NewLine;
     Default,
     Serialize,
     Deserialize,
+    Deref,
+    DerefMut,
 )]
-pub struct Character;
+pub struct Character(pub char);
 
 /// Represents a hardcoded string literal value in the source code.
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -325,14 +331,34 @@ pub struct Character;
     Default,
     Serialize,
     Deserialize,
+    Deref,
+    DerefMut,
 )]
-pub struct String;
+pub struct String(pub SharedStr);
 
 /// Represents a sequence of characters that can be used to name things in the
 /// source code: `struct IDENTIFIER`.
 #[derive(
     Debug,
     Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    Deref,
+    DerefMut,
+)]
+pub struct Identifier(pub SharedStr);
+
+/// A new-type wrapper of `char` used to represent a punctuation character in
+/// the source code like `+`, `-`, `*`, `/`, etc.
+#[derive(
+    Debug,
+    Clone,
     Copy,
     PartialEq,
     Eq,
@@ -342,19 +368,16 @@ pub struct String;
     Default,
     Serialize,
     Deserialize,
+    Deref,
+    DerefMut,
 )]
-pub struct Identifier;
-
-/// A type alias of `char` used to represent a punctuation character in the
-/// source code like `+`, `-`, `*`, `/`, etc.
-pub type Punctuation = char;
+pub struct Punctuation(pub char);
 
 /// Represents a sequence of digits that can be used to represent a number in
 /// the source code: `let x = 123;`.
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -363,15 +386,16 @@ pub type Punctuation = char;
     Default,
     Serialize,
     Deserialize,
+    Deref,
+    DerefMut,
 )]
-pub struct Numeric;
+pub struct Numeric(pub SharedStr);
 
 /// An enumeration of all possible kinds of tokens in the Pernix programming
 /// language.
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,

@@ -8,6 +8,9 @@ rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+arbitrary = ["dep:proptest"]
+
 [dependencies]
 pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
@@ -26,10 +29,14 @@ lazy_static = { workspace = true }
 derive_more = { workspace = true }
 bimap = { workspace = true }
 pernixc_test_input = { path = "../pernixc_test_input" }
-proptest = { workspace = true }
+proptest = { workspace = true, optional = true }
 derive-new = { workspace = true }
 fnv = { workspace = true }
-compact_str = { workspace = true }
+flexstr = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
 
 [lints]
 workspace = true

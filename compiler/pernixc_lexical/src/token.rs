@@ -8,6 +8,7 @@ use std::{
 };
 
 use bimap::BiHashMap;
+use flexstr::ToFlex;
 use pernixc_handler::Handler;
 use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
 use serde::{Deserialize, Serialize};
@@ -17,7 +18,8 @@ use crate::{
     kind,
 };
 
-// pub mod arbitrary;
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword<S> = Token<kind::Keyword, S>;
@@ -228,7 +230,7 @@ impl Tokenizer<'_, '_> {
         // cr
         if character == '\r' {
             //  lf
-            if let Some((_, '\n')) = self.iter.peek() {
+            if matches!(self.iter.peek(), Some((_, '\n'))) {
                 // crlf
                 self.iter.next();
             }
@@ -247,10 +249,12 @@ impl Tokenizer<'_, '_> {
         let word = &self.source[start..span.end];
 
         // Checks if the word is a keyword
-        kind::Keyword::from_str(word)
-            .map_or((kind::Kind::Identifier(kind::Identifier), span), |kind| {
-                (kind::Kind::Keyword(kind), span)
-            })
+        kind::Keyword::from_str(word).map_or_else(
+            |_| {
+                (kind::Kind::Identifier(kind::Identifier(word.to_flex())), span)
+            },
+            |kind| (kind::Kind::Keyword(kind), span),
+        )
     }
 
     fn handle_numeric_literal(&mut self, start: ByteIndex) -> AbsoluteSpan {
@@ -269,11 +273,12 @@ impl Tokenizer<'_, '_> {
         match iter_cloned.next() {
             // escaped character
             Some((content_start, mut char)) => {
+                // skipcq: RS-W1209
                 let is_escaped = if char == '\\' {
                     // eat the next character
                     let Some((_, new_char)) = iter_cloned.next() else {
                         return (
-                            kind::Kind::Punctuation('\''),
+                            kind::Kind::Punctuation(kind::Punctuation('\'')),
                             self.create_span(start),
                         );
                     };
@@ -287,7 +292,7 @@ impl Tokenizer<'_, '_> {
 
                 if !is_escaped && char == '\'' {
                     return (
-                        kind::Kind::Punctuation('\''),
+                        kind::Kind::Punctuation(kind::Punctuation('\'')),
                         self.create_span(start),
                     );
                 }
@@ -303,46 +308,56 @@ impl Tokenizer<'_, '_> {
                         self.iter.next(); // eat the closing quote
 
                         (
-                            kind::Kind::Punctuation(if !is_escaped {
-                                char
-                            } else if let Some(value) =
-                                ESCAPE_SEQUENCE_BY_REPRESENTATION
-                                    .get_by_left(&char)
-                                    .copied()
-                            {
-                                value
-                            } else {
-                                self.handler.receive(
-                                    error::Error::InvalidEscapeSequence(
-                                        InvalidEscapeSequence {
-                                            span: Span::new(
-                                                content_start,
-                                                content_end,
-                                                self.source_id,
-                                            ),
-                                        },
-                                    ),
-                                );
+                            kind::Kind::Character(kind::Character(
+                                if !is_escaped {
+                                    char
+                                } else if let Some(value) =
+                                    ESCAPE_SEQUENCE_BY_REPRESENTATION
+                                        .get_by_left(&char)
+                                        .copied()
+                                {
+                                    value
+                                } else {
+                                    self.handler.receive(
+                                        error::Error::InvalidEscapeSequence(
+                                            InvalidEscapeSequence {
+                                                span: Span::new(
+                                                    content_start,
+                                                    content_end,
+                                                    self.source_id,
+                                                ),
+                                            },
+                                        ),
+                                    );
 
-                                char
-                            }),
+                                    char
+                                },
+                            )),
                             self.create_span(start),
                         )
                     }
 
-                    _ => {
-                        (kind::Kind::Punctuation('\''), self.create_span(start))
-                    }
+                    _ => (
+                        kind::Kind::Punctuation(kind::Punctuation('\'')),
+                        self.create_span(start),
+                    ),
                 }
             }
 
-            None => (kind::Kind::Punctuation('\''), self.create_span(start)),
+            None => (
+                kind::Kind::Punctuation(kind::Punctuation('\'')),
+                self.create_span(start),
+            ),
         }
     }
 
-    fn handle_string_literal(&mut self, start: ByteIndex) -> AbsoluteSpan {
+    fn handle_string_literal(
+        &mut self,
+        start: ByteIndex,
+    ) -> (std::string::String, AbsoluteSpan) {
         let mut last_backslash = false;
         let mut last_byte_index = start;
+        let mut string = std::string::String::default();
 
         loop {
             let Some((byte_index, character)) = self.iter.next() else {
@@ -352,14 +367,19 @@ impl Tokenizer<'_, '_> {
                     },
                 ));
 
-                return Span::new(start, self.source.len(), self.source_id);
+                return (
+                    string,
+                    Span::new(start, self.source.len(), self.source_id),
+                );
             };
 
             if last_backslash {
-                if ESCAPE_SEQUENCE_BY_REPRESENTATION
+                if let Some(value) = ESCAPE_SEQUENCE_BY_REPRESENTATION
                     .get_by_left(&character)
-                    .is_none()
+                    .copied()
                 {
+                    string.push(value);
+                } else {
                     self.handler.receive(error::Error::InvalidEscapeSequence(
                         InvalidEscapeSequence {
                             span: Span::new(
@@ -369,13 +389,15 @@ impl Tokenizer<'_, '_> {
                             ),
                         },
                     ));
+
+                    string.push(character);
                 }
 
                 last_backslash = false;
             } else {
                 match character {
                     // end the string
-                    '"' => return self.create_span(start),
+                    '"' => return (string, self.create_span(start)),
 
                     // escape sequence
                     '\\' => {
@@ -384,6 +406,7 @@ impl Tokenizer<'_, '_> {
 
                     // normal character
                     _ => {
+                        string.push(character);
                         last_backslash = false;
                     }
                 }
@@ -417,9 +440,12 @@ impl Iterator for Tokenizer<'_, '_> {
         }
         // Found numeric literal
         else if character.is_ascii_digit() {
+            let span = self.handle_numeric_literal(start);
             (
-                kind::Kind::Numeric(kind::Numeric),
-                self.handle_numeric_literal(start),
+                kind::Kind::Numeric(kind::Numeric(
+                    self.source[span.range()].into(),
+                )),
+                span,
             )
         }
         // Might found a character literal
@@ -428,14 +454,16 @@ impl Iterator for Tokenizer<'_, '_> {
         }
         // Found a string literal
         else if character == '"' {
-            (
-                kind::Kind::String(kind::String),
-                self.handle_string_literal(start),
-            )
+            let (string, span) = self.handle_string_literal(start);
+
+            (kind::Kind::String(kind::String(string.into())), span)
         }
         // Found a punctuation
         else if character.is_ascii_punctuation() {
-            (kind::Kind::Punctuation(character), self.create_span(start))
+            (
+                kind::Kind::Punctuation(kind::Punctuation(character)),
+                self.create_span(start),
+            )
         } else {
             unreachable!("should've been handled by earlier cases")
         };

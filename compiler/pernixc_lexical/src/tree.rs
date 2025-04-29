@@ -126,16 +126,7 @@ pub type RelativeSpan = Span<RelativeLocation>;
 
 /// A tree node used for representing a particular token in the source code.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    EnumAsInner,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Node {
@@ -339,10 +330,14 @@ impl Converter<'_, '_> {
             let last_was = self.current_nodes.last().map(|x| {
                 x.as_leaf().map_or(LastWas::Any, |x| match x.kind {
                     kind::Kind::NewLine(_) => LastWas::NewLine,
-                    kind::Kind::Punctuation(':') => LastWas::Colon,
+                    kind::Kind::Punctuation(kind::Punctuation(':')) => {
+                        LastWas::Colon
+                    }
                     _ => LastWas::Any,
                 })
             });
+            let is_new_line = token.kind.is_new_line();
+            let puncutation = token.kind.as_punctuation().map(|x| **x);
 
             // for now, everything is relative to the root branch and is a leaf
             // node.
@@ -380,7 +375,10 @@ impl Converter<'_, '_> {
 
             // closing delimiter
             if let Token {
-                kind: kind::Kind::Punctuation(punc @ (')' | '}' | ']')),
+                kind:
+                    kind::Kind::Punctuation(kind::Punctuation(
+                        punc @ (')' | '}' | ']'),
+                    )),
                 ..
             } = self.current_nodes.last().unwrap().as_leaf().unwrap()
             {
@@ -393,7 +391,7 @@ impl Converter<'_, '_> {
 
             //  handle new indentation line
             if last_was == Some(LastWas::NewLine)
-                && token.kind != kind::Kind::NewLine(kind::NewLine)
+                && !is_new_line
                 && self.indentation_stack.len() > indentation_range.start
             {
                 self.handle_indentation(
@@ -403,11 +401,7 @@ impl Converter<'_, '_> {
                 );
             }
 
-            if let Token {
-                kind: kind::Kind::Punctuation(open @ ('(' | '{' | '[')),
-                ..
-            } = &token
-            {
+            if let Some(open @ ('(' | '{' | '[')) = puncutation {
                 // opening delimiter
                 let delimiter = match open {
                     '(' => DelimiterKind::Parenthesis,
@@ -425,9 +419,7 @@ impl Converter<'_, '_> {
                 });
             }
             // check for the new indentation marker
-            else if last_was == Some(LastWas::Colon)
-                && token.kind == kind::Kind::NewLine(kind::NewLine)
-            {
+            else if last_was == Some(LastWas::Colon) && is_new_line {
                 // push the new indentation marker
                 let colon = self
                     .current_nodes
@@ -436,7 +428,10 @@ impl Converter<'_, '_> {
                     .as_leaf()
                     .unwrap();
 
-                assert!(colon.kind.as_punctuation().is_some_and(|x| *x == ':'));
+                assert!(colon
+                    .kind
+                    .as_punctuation()
+                    .is_some_and(|x| **x == ':'));
                 assert!(colon.span.start.relative_to == ROOT_BRANCH_ID);
                 assert!(colon.span.end.relative_to == ROOT_BRANCH_ID);
 
@@ -619,7 +614,7 @@ impl Converter<'_, '_> {
                 .unwrap()
                 .map_kind(|x| x.into_punctuation().unwrap());
 
-            assert_eq!(closing_delimiter.kind, punc);
+            assert_eq!(closing_delimiter.kind, kind::Punctuation(punc));
 
             let mut drain =
                 self.current_nodes.drain(last.open_puncutation_index..);
@@ -630,7 +625,10 @@ impl Converter<'_, '_> {
                 .unwrap()
                 .map_kind(|x| x.into_punctuation().unwrap());
 
-            assert!(matches!(opening_delimiter.kind, '[' | '{' | '('));
+            assert!(matches!(
+                opening_delimiter.kind,
+                kind::Punctuation('[' | '{' | '(')
+            ));
 
             // collect the nodes
             let mut nodes = drain.collect::<Vec<_>>();
@@ -713,7 +711,7 @@ impl Converter<'_, '_> {
                 .into_leaf()
                 .unwrap()
                 .map_kind(|x| x.into_punctuation().unwrap());
-            assert_eq!(colon.kind, ':');
+            assert_eq!(*colon.kind, ':');
             let new_line = iter
                 .next()
                 .unwrap()
@@ -775,7 +773,7 @@ impl Converter<'_, '_> {
         assert!(colon
             .as_leaf()
             .and_then(|x| x.kind.as_punctuation())
-            .is_some_and(|x| *x == ':'));
+            .is_some_and(|x| **x == ':'));
         assert!(new_line.as_leaf().is_some_and(|x| x.kind.is_new_line()));
         assert!(iter.next().is_none());
 
@@ -793,7 +791,7 @@ impl Converter<'_, '_> {
                     prior_insignificant: colon.prior_insignificant,
                 },
                 new_line: Token {
-                    kind: colon.kind.into_new_line().unwrap(),
+                    kind: new_line.kind.into_new_line().unwrap(),
                     span: new_line.span,
                     prior_insignificant: new_line.prior_insignificant,
                 },
