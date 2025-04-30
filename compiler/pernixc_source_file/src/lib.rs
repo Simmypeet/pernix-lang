@@ -194,14 +194,14 @@ impl SourceFile {
         let start_line = self.get_line_of_byte_index(range.start).unwrap();
         let end_line = self
             .get_line_of_byte_index(range.end)
-            .unwrap_or(self.lines.len() - 1);
+            .unwrap_or_else(|| self.lines.len() - 1);
 
         let character_difference =
             string.len() as isize - (range.end - range.start) as isize;
 
         // no new lines, we can skip the line calculations for new string
         if !string.contains('\n') && !string.contains('\r') {
-            let removing_lines = start_line + 1..end_line + 1;
+            let removing_lines = start_line + 1..=end_line;
 
             self.lines[start_line].end = (self.lines[end_line].end as isize
                 + character_difference)
@@ -226,11 +226,11 @@ impl SourceFile {
             let end_after_count = self.lines[end_line].end - range.end;
             self.lines[start_line].end = new_line_ranges[0].end;
 
-            let removing_lines = start_line + 1..end_line + 1;
+            let removing_lines = start_line + 1..=end_line;
             self.lines.drain(removing_lines);
 
             self.lines.splice(
-                (start_line + 1)..(start_line + 1),
+                (start_line + 1)..=start_line,
                 (1..(new_line_ranges.len() - 1))
                     .map(|x| new_line_ranges[x].clone()),
             );
@@ -476,6 +476,7 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
         // ordinary lf
         if char == '\n' {
             #[allow(clippy::range_plus_one)]
+            // skipcq: RS-W1003
             results.push(current_position..byte + 1);
 
             current_position = byte + 1;
@@ -492,6 +493,7 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
                 skip = true;
             } else {
                 #[allow(clippy::range_plus_one)]
+                // skipcq: RS-W1003
                 results.push(current_position..byte + 1);
 
                 current_position = byte + 1;
