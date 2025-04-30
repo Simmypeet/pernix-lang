@@ -22,6 +22,7 @@ where
     for<'a, 'b> &'a U: Input<&'b T, P>,
     Self: Debug,
 {
+    // skipcq: RS-W1050
     fn assert(self, output: &Box<T>, parameters: P) -> TestCaseResult {
         self.as_ref().assert(output.as_ref(), parameters)
     }
