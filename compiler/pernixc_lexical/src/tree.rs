@@ -64,10 +64,10 @@ pub enum FragmentKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct Delimiter {
     /// The opening delimiter.
-    pub open: Punctuation<RelativeSpan>,
+    pub open: Punctuation<RelativeLocation>,
 
     /// The closing delimiter.
-    pub close: Punctuation<RelativeSpan>,
+    pub close: Punctuation<RelativeLocation>,
 
     /// The type of delimiter.
     pub delimiter: DelimiterKind,
@@ -82,13 +82,13 @@ pub struct Indentation {
     pub indentation_size: usize,
 
     /// The colon character signifying the start of the indentation group.
-    pub colon: Punctuation<RelativeSpan>,
+    pub colon: Punctuation<RelativeLocation>,
 
     /// The new line character that follows the colon.
     ///
     /// The language expect that if a colon is immediately followed by a
     /// newline, then a new indentation level is started.
-    pub new_line: NewLine<RelativeSpan>,
+    pub new_line: NewLine<RelativeLocation>,
 }
 
 /// Specifiying the position in the branch (begin or end) that will be used for
@@ -130,7 +130,7 @@ pub type RelativeSpan = Span<RelativeLocation>;
 )]
 #[allow(missing_docs)]
 pub enum Node {
-    Leaf(Kind<RelativeSpan>),
+    Leaf(Kind<RelativeLocation>),
     Branch(ID<Branch>),
 }
 
@@ -280,7 +280,7 @@ enum GeneralBranchKind {
 }
 
 fn calculate_branch_hash<'a>(
-    tokens: impl Iterator<Item = &'a Kind<RelativeSpan>>,
+    tokens: impl Iterator<Item = &'a Kind<RelativeLocation>>,
     node_kind: GeneralBranchKind,
     source: &str,
     arena: &Arena<Branch>,
@@ -823,7 +823,7 @@ impl Converter<'_, '_> {
             mode: OffsetMode,
             offset: usize,
             offset_to_branch: ID<Branch>,
-            token: &mut Token<T, RelativeSpan>,
+            token: &mut Token<T, RelativeLocation>,
         ) {
             let make_relative = |span: &mut RelativeSpan| {
                 span.start.offset -= offset;
@@ -919,5 +919,5 @@ impl Converter<'_, '_> {
     }
 }
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

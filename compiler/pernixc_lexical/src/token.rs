@@ -18,8 +18,8 @@ use crate::{
     kind,
 };
 
-// #[cfg(any(test, feature = "arbitrary"))]
-// pub mod arbitrary;
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword<S> = Token<kind::Keyword, S>;
@@ -60,26 +60,26 @@ pub type Kind<S> = Token<kind::Kind, S>;
     Serialize,
     Deserialize,
 )]
-pub struct Token<T, S> {
+pub struct Token<T, L> {
     /// Specifies the kind of the token.
     pub kind: T,
 
     /// The span of the significant part of the token.
-    pub span: S,
+    pub span: Span<L>,
 
     /// The span of the insignificant part of the token.
     ///
     /// This can be whitespaces or comments that are preceding the token.
     /// With this information, it's possible to reconstruct the original source
     /// code with the same formatting (lossless).
-    pub prior_insignificant: Option<S>,
+    pub prior_insignificant: Option<Span<L>>,
 }
 
-impl<T, S> Token<T, S> {
+impl<T, L> Token<T, L> {
     /// Calls the given function with the [`Self::kind`] of the token and
     /// returns a new token with the result of the function where the same
     /// [`Self::span`] and [`Self::prior_insignificant`] are used.
-    pub fn map_kind<U>(self, f: impl FnOnce(T) -> U) -> Token<U, S> {
+    pub fn map_kind<U>(self, f: impl FnOnce(T) -> U) -> Token<U, L> {
         Token {
             kind: f(self.kind),
             span: self.span,
@@ -418,7 +418,7 @@ impl Tokenizer<'_, '_> {
 }
 
 impl Iterator for Tokenizer<'_, '_> {
-    type Item = Kind<AbsoluteSpan>;
+    type Item = Kind<ByteIndex>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Found white spaces
