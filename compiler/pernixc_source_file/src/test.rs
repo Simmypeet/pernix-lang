@@ -1,4 +1,4 @@
-use super::{Location, SourceFile};
+use super::{EditorLocation, SourceFile};
 
 #[test]
 fn get_line_byte_positions() {
@@ -137,7 +137,7 @@ fn replace_add_line() {
 fn replace_range_as_append() {
     let mut source_file = SourceFile::new("ABC".to_string(), "test".into());
 
-    let position = Location::new(0, 3);
+    let position = EditorLocation::new(0, 3);
     let byte_index =
         source_file.into_byte_index_include_ending(position).unwrap();
 
@@ -153,8 +153,8 @@ fn reaplce_range_delete() {
     let mut source_file =
         SourceFile::new("AAA\nBBB\nCCC".to_string(), "test".into());
 
-    let start = Location::new(0, 1);
-    let end = Location::new(2, 2);
+    let start = EditorLocation::new(0, 1);
+    let end = EditorLocation::new(2, 2);
 
     let start_byte_index =
         source_file.into_byte_index_include_ending(start).unwrap();
