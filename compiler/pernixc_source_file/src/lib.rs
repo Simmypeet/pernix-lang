@@ -87,7 +87,10 @@ impl SourceFile {
 
     /// Translates a location to a byte index.
     #[must_use]
-    pub fn into_byte_index(&self, location: Location) -> Option<ByteIndex> {
+    pub fn into_byte_index(
+        &self,
+        location: EditorLocation,
+    ) -> Option<ByteIndex> {
         let start = self.lines.get(location.line)?.start;
         let line = self.get_line(location.line)?;
 
@@ -101,7 +104,7 @@ impl SourceFile {
     #[must_use]
     pub fn into_byte_index_include_ending(
         &self,
-        location: Location,
+        location: EditorLocation,
     ) -> Option<ByteIndex> {
         let range = self.lines.get(location.line)?;
         let line = self.get_line(location.line)?;
@@ -309,7 +312,10 @@ impl SourceFile {
     /// Gets the [`Location`] of the given byte index.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
-    pub fn get_location(&self, byte_index: ByteIndex) -> Option<Location> {
+    pub fn get_location(
+        &self,
+        byte_index: ByteIndex,
+    ) -> Option<EditorLocation> {
         if !self.content.is_char_boundary(byte_index) {
             return None;
         }
@@ -337,7 +343,7 @@ impl SourceFile {
             .take_while(|(i, _)| *i + line_starting_byte_index < byte_index)
             .count();
 
-        Some(Location { line, column })
+        Some(EditorLocation { line, column })
     }
 }
 
@@ -394,9 +400,13 @@ impl<ID: PartialEq + Clone> Join for Span<ID> {
     }
 }
 
-/// Is a struct pointing to a particular location in a source file.
+/// Represents a location used to locate a particular character in the source
+/// file using the line and column numbers (0 indexed).
+///
+/// This struct is used by text editors or user-facing tools to display the
+/// location of a character in the source file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Location {
+pub struct EditorLocation {
     /// The line number of the location (starts at 0).
     pub line: usize,
 
@@ -404,7 +414,7 @@ pub struct Location {
     pub column: usize,
 }
 
-impl Location {
+impl EditorLocation {
     /// Creates a new location with the given line and column numbers.
     #[must_use]
     pub const fn new(line: usize, column: usize) -> Self {
