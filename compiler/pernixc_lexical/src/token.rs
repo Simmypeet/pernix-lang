@@ -18,8 +18,8 @@ use crate::{
     kind,
 };
 
-#[cfg(any(test, feature = "arbitrary"))]
-pub mod arbitrary;
+// #[cfg(any(test, feature = "arbitrary"))]
+// pub mod arbitrary;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword<S> = Token<kind::Keyword, S>;
@@ -168,7 +168,7 @@ impl<'a, 'h> Tokenizer<'a, 'h> {
 }
 /// A bidirectional map that maps a escape sequence (on the left) to its
 /// representation (on the right).
-static ESCAPE_SEQUENCE_BY_REPRESENTATION: LazyLock<BiHashMap<char, char>> =
+pub static ESCAPE_SEQUENCE_BY_REPRESENTATION: LazyLock<BiHashMap<char, char>> =
     LazyLock::new(|| {
         let mut map = BiHashMap::new();
 

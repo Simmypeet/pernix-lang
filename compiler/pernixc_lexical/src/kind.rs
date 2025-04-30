@@ -1,6 +1,6 @@
 //! Contains all the kinds of tokens in the Pernix programming language.
 
-use std::{collections::HashMap, str::FromStr, sync::LazyLock};
+use std::{collections::HashMap, fmt::Display, str::FromStr, sync::LazyLock};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
@@ -164,12 +164,6 @@ pub enum Keyword {
     Scope,
 }
 
-impl std::fmt::Display for Keyword {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
 /// A static map that maps a string representation of a keyword to its
 /// [`Keyword`].
 static STRING_KEYWORD_MAP: LazyLock<HashMap<&'static str, Keyword>> =
@@ -282,6 +276,12 @@ impl Keyword {
             Self::Not => "not",
             Self::Scope => "scope",
         }
+    }
+}
+
+impl Display for Keyword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
