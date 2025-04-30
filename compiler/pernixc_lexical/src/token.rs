@@ -22,29 +22,29 @@ use crate::{
 pub mod arbitrary;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
-pub type Keyword<S> = Token<kind::Keyword, S>;
+pub type Keyword<L> = Token<kind::Keyword, L>;
 
 /// Type alias for [`Token`] categorized as a [`kind::NewLine`].
-pub type NewLine<S> = Token<kind::NewLine, S>;
+pub type NewLine<L> = Token<kind::NewLine, L>;
 
 /// Type alias for [`Token`] categorized as a [`kind::Character`].
-pub type Character<S> = Token<kind::Character, S>;
+pub type Character<L> = Token<kind::Character, L>;
 
 /// Type alias for [`Token`] categorized as a [`kind::String`].
-pub type String<S> = Token<kind::String, S>;
+pub type String<L> = Token<kind::String, L>;
 
 /// Type alias for [`Token`] categorized as a [`kind::Identifier`].
-pub type Identifier<S> = Token<kind::Identifier, S>;
+pub type Identifier<L> = Token<kind::Identifier, L>;
 
 /// Type alias for [`Token`] categorized as a [`kind::Punctuation`].
-pub type Punctuation<S> = Token<kind::Punctuation, S>;
+pub type Punctuation<L> = Token<kind::Punctuation, L>;
 
 /// Type alias for [`Token`] categorized as a [`kind::Numeric`].
-pub type Numeric<S> = Token<kind::Numeric, S>;
+pub type Numeric<L> = Token<kind::Numeric, L>;
 
 /// Type alias for [`Token`] that uses [`kind::Kind`] to differentiate between
 /// different kinds of tokens.
-pub type Kind<S> = Token<kind::Kind, S>;
+pub type Kind<L> = Token<kind::Kind, L>;
 
 /// A template struct representing a token that contains the location, kind, and
 /// its prior insignificant part.
