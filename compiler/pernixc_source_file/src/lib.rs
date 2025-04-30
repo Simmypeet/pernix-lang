@@ -380,6 +380,34 @@ pub struct Span<L> {
 /// location.
 pub type AbsoluteSpan = Span<ByteIndex>;
 
+/// Implemented by the type can be used to represents a particular location in
+/// the source file that can be then converted to an absolute byte index in the
+/// source file.
+///
+/// This trait is beneficial for **relative** location types that can be then
+/// converted to an absolute byte index in the source file using optional
+/// context.
+pub trait Location<C> {
+    /// Converts the location to an absolute byte index in the source file.
+    fn to_absolute_index(
+        &self,
+        source_file: &SourceFile,
+        context: C,
+    ) -> ByteIndex;
+}
+
+impl Location<()> for ByteIndex {
+    fn to_absolute_index(&self, source_file: &SourceFile, (): ()) -> ByteIndex {
+        assert!(
+            *self < source_file.content().len(),
+            "out of bound index {self} for content length {}",
+            source_file.content().len()
+        );
+
+        *self
+    }
+}
+
 /// A trait for types that can be joined together.
 pub trait Join {
     /// Joins the starting position of this span with the end position of the
