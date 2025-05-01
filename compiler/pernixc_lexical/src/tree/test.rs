@@ -469,6 +469,84 @@ fn indentation_pop_all_at_end() {
     assert!(root_branch.nodes[1].as_leaf().unwrap().kind.is_new_line());
 }
 
+const UNCLOSED_DELIMITER: &str = "-([{}";
+
+#[test]
+fn unclosed_delimiter() {
+    let mut source_map = SourceMap::default();
+    let source_id = TargetID::Local.make_global(source_map.register(
+        TargetID::Local,
+        SourceFile::new(UNCLOSED_DELIMITER.to_string(), "test".into()),
+    ));
+
+    let source_content = source_map[source_id].content();
+
+    let storage = Storage::<Error>::new();
+    let tree = Tree::from_source(source_content, source_id, &storage);
+
+    let root_branch = &tree[ROOT_BRANCH_ID];
+
+    assert_eq!(root_branch.nodes.len(), 4);
+    assert_eq!(root_branch.kind, BranchKind::Root);
+
+    assert_eq!(
+        **root_branch.nodes[0]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
+        '-'
+    );
+    assert_eq!(
+        **root_branch.nodes[1]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
+        '('
+    );
+    assert_eq!(
+        **root_branch.nodes[2]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
+        '['
+    );
+    {
+        let branch = *root_branch.nodes[3].as_branch().unwrap();
+        let branch = &tree[branch];
+
+        assert_eq!(branch.nodes.len(), 0);
+        assert!(branch.kind.as_fragment().is_some_and(|x| x
+            .fragment_kind
+            .as_delimiter()
+            .is_some_and(|x| x.delimiter == DelimiterKind::Brace)));
+    }
+
+    let errors = storage.into_vec();
+    assert_eq!(errors.len(), 2);
+
+    assert!(errors.iter().any(|x| {
+        x.as_undelimited_delimiter().is_some_and(|x| {
+            x.delimiter == DelimiterKind::Parenthesis
+                && x.opening_span.start == 1
+                && x.opening_span.end == 2
+        })
+    }));
+
+    assert!(errors.iter().any(|x| {
+        x.as_undelimited_delimiter().is_some_and(|x| {
+            x.delimiter == DelimiterKind::Bracket
+                && x.opening_span.start == 2
+                && x.opening_span.end == 3
+        })
+    }));
+}
+
 fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {
     let mut source_map = SourceMap::new();
     let source = input.to_string();
