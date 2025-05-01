@@ -624,6 +624,7 @@ impl Converter<'_, '_> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_indentation(
         &mut self,
         indentation_range: Range<usize>,
@@ -717,20 +718,38 @@ impl Converter<'_, '_> {
             if indentation.indentation_size.unwrap().abs_diff(indentation_size)
                 > 0
             {
-                self.handler.receive(error::Error::InvalidIndentation(
-                    InvalidIndentation {
-                        span: token_span,
-                        found_indentation: indentation_size,
-                        available_indentations: self.indentation_stack
-                            [indentation_range.clone()]
-                        .iter()
-                        .map(|x| AvailableIndentation {
-                            colon_span: x.colon_span,
-                            indentation_size: x.indentation_size.unwrap(),
-                        })
-                        .collect(),
-                    },
-                ));
+                // if in the delimiter, then the indentation size must be
+                // smaller than the outer-most indentation
+                // captured in the delimiter
+                let error = self.delimiter_stack.last().is_none_or(|x| {
+                    if x.starting_indentation_level
+                        == self.indentation_stack.len()
+                    {
+                        return true;
+                    }
+
+                    self.indentation_stack[x.starting_indentation_level]
+                        .indentation_size
+                        .unwrap()
+                        < indentation_size
+                });
+
+                if error {
+                    self.handler.receive(error::Error::InvalidIndentation(
+                        InvalidIndentation {
+                            span: token_span,
+                            found_indentation: indentation_size,
+                            available_indentations: self.indentation_stack
+                                [indentation_range.clone()]
+                            .iter()
+                            .map(|x| AvailableIndentation {
+                                colon_span: x.colon_span,
+                                indentation_size: x.indentation_size.unwrap(),
+                            })
+                            .collect(),
+                        },
+                    ));
+                }
             }
 
             indentation_range.end - index - 1
