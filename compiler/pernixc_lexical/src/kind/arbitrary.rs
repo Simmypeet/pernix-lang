@@ -34,9 +34,9 @@ impl Arbitrary for Keyword {
     }
 }
 
-impl Input<&Self, ()> for Keyword {
-    fn assert(self, output: &Self, (): ()) -> TestCaseResult {
-        prop_assert_eq!(self, *output);
+impl Input<Self, ()> for &Keyword {
+    fn assert(self, output: Self, (): ()) -> TestCaseResult {
+        prop_assert_eq!(self, output);
         Ok(())
     }
 }
@@ -65,7 +65,7 @@ impl Display for NewLine {
     }
 }
 
-impl Input<&super::NewLine, ()> for NewLine {
+impl Input<&super::NewLine, ()> for &NewLine {
     fn assert(self, _: &super::NewLine, (): ()) -> TestCaseResult { Ok(()) }
 }
 
@@ -128,7 +128,7 @@ impl Arbitrary for CharacterKind {
     }
 }
 
-impl Input<&super::Character, ()> for CharacterKind {
+impl Input<&super::Character, ()> for &CharacterKind {
     fn assert(self, output: &super::Character, (): ()) -> TestCaseResult {
         prop_assert_eq!(self.get_expected_value(), **output);
         Ok(())
@@ -155,7 +155,7 @@ impl Display for Character {
     }
 }
 
-impl Input<&super::Character, ()> for Character {
+impl Input<&super::Character, ()> for &Character {
     fn assert(self, output: &super::Character, (): ()) -> TestCaseResult {
         prop_assert_eq!(self.0.get_expected_value(), **output);
         Ok(())
@@ -188,8 +188,8 @@ impl Display for Identifier {
     }
 }
 
-impl Input<&Self, ()> for Identifier {
-    fn assert(self, output: &Self, (): ()) -> TestCaseResult {
+impl Input<Self, ()> for &Identifier {
+    fn assert(self, output: Self, (): ()) -> TestCaseResult {
         prop_assert_eq!(&self.0, &output.0);
         Ok(())
     }
@@ -219,7 +219,7 @@ impl Display for String {
     }
 }
 
-impl Input<&super::String, ()> for String {
+impl Input<&super::String, ()> for &String {
     fn assert(self, output: &super::String, (): ()) -> TestCaseResult {
         let mut input_iter = self.0.iter().map(|x| x.get_expected_value());
         let mut output_iter = output.0.chars();
@@ -269,9 +269,9 @@ impl Display for Punctuation {
     }
 }
 
-impl Input<&Self, ()> for Punctuation {
-    fn assert(self, output: &Self, (): ()) -> TestCaseResult {
-        prop_assert_eq!(self.0, **output);
+impl Input<Self, ()> for &Punctuation {
+    fn assert(self, output: Self, (): ()) -> TestCaseResult {
+        prop_assert_eq!(self, output);
         Ok(())
     }
 }
@@ -293,9 +293,9 @@ impl Arbitrary for Numeric {
     }
 }
 
-impl Input<&Self, ()> for Numeric {
-    fn assert(self, output: &Self, (): ()) -> TestCaseResult {
-        prop_assert_eq!(self.0.as_str(), output.as_str());
+impl Input<Self, ()> for &Numeric {
+    fn assert(self, output: Self, (): ()) -> TestCaseResult {
+        prop_assert_eq!(self, output);
         Ok(())
     }
 }
@@ -343,21 +343,21 @@ impl Display for Kind {
     }
 }
 
-impl Input<&super::Kind, ()> for Kind {
+impl Input<&super::Kind, ()> for &Kind {
     fn assert(self, output: &super::Kind, (): ()) -> TestCaseResult {
         match (self, output) {
-            (Self::Identifier(x), super::Kind::Identifier(y)) => {
+            (Kind::Identifier(x), super::Kind::Identifier(y)) => {
                 x.assert(y, ())
             }
 
-            (Self::Keyword(x), super::Kind::Keyword(y)) => x.assert(y, ()),
-            (Self::Numeric(x), super::Kind::Numeric(y)) => x.assert(y, ()),
-            (Self::Punctuation(x), super::Kind::Punctuation(y)) => {
+            (Kind::Keyword(x), super::Kind::Keyword(y)) => x.assert(y, ()),
+            (Kind::Numeric(x), super::Kind::Numeric(y)) => x.assert(y, ()),
+            (Kind::Punctuation(x), super::Kind::Punctuation(y)) => {
                 x.assert(y, ())
             }
-            (Self::Character(x), super::Kind::Character(y)) => x.assert(y, ()),
-            (Self::String(x), super::Kind::String(y)) => x.assert(y, ()),
-            (Self::NewLine(x), super::Kind::NewLine(y)) => x.assert(y, ()),
+            (Kind::Character(x), super::Kind::Character(y)) => x.assert(y, ()),
+            (Kind::String(x), super::Kind::String(y)) => x.assert(y, ()),
+            (Kind::NewLine(x), super::Kind::NewLine(y)) => x.assert(y, ()),
 
             (x, y) => Err(TestCaseError::fail(format!(
                 "expected {x:?}, but got {y:?}"
