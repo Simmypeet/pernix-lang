@@ -1,3 +1,4 @@
+use pernixc_arena::ID;
 use pernixc_handler::Storage;
 use pernixc_source_file::{SourceFile, SourceMap};
 use pernixc_target::TargetID;
@@ -7,7 +8,7 @@ use proptest::{prop_assert, proptest, test_runner::TestCaseResult};
 use super::{arbitrary, Tree, ROOT_BRANCH_ID};
 use crate::{
     error::Error,
-    tree::{arbitrary::arbitrary_nodes, BranchKind, DelimiterKind},
+    tree::{arbitrary::arbitrary_nodes, Branch, BranchKind, DelimiterKind},
 };
 
 #[test]
@@ -545,6 +546,40 @@ fn unclosed_delimiter() {
                 && x.opening_span.end == 3
         })
     }));
+}
+
+#[test]
+fn stable_hash_id() {
+    const FIRST_STABLE_HASH_ID: &str = "{ a b {} c d }";
+    const SECOND_STABLE_HASH_ID: &str = "{ a b { e } c d }";
+    const THIRD_STABLE_HASH_ID: &str = "{ a b { e {} f } c d }";
+
+    fn get_hash(str: &str) -> ID<Branch> {
+        let mut source_map = SourceMap::default();
+        let source_id = TargetID::Local.make_global(source_map.register(
+            TargetID::Local,
+            SourceFile::new(str.to_string(), "test".into()),
+        ));
+
+        let source_content = source_map[source_id].content();
+
+        let storage = Storage::<Error>::new();
+        let tree = Tree::from_source(source_content, source_id, &storage);
+
+        let root_branch = &tree[ROOT_BRANCH_ID];
+
+        assert_eq!(root_branch.nodes.len(), 1);
+
+        *root_branch.nodes[0].as_branch().unwrap()
+    }
+
+    let first_hash = get_hash(FIRST_STABLE_HASH_ID);
+    let second_hash = get_hash(SECOND_STABLE_HASH_ID);
+    let third_hash = get_hash(THIRD_STABLE_HASH_ID);
+
+    assert!([first_hash, second_hash, third_hash]
+        .iter()
+        .all(|&x| x == first_hash));
 }
 
 fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {
