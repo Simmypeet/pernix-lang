@@ -86,6 +86,15 @@ impl<T, L> Token<T, L> {
             prior_insignificant: self.prior_insignificant,
         }
     }
+
+    /// Returns the start location of the token (including the insignificant
+    /// part).
+    #[must_use]
+    pub fn start_location(&self) -> &L {
+        self.prior_insignificant
+            .as_ref()
+            .map_or_else(|| &self.span.start, |span| &span.start)
+    }
 }
 
 fn is_whitespace(character: char) -> bool {

@@ -3,7 +3,7 @@
 use std::fmt::{Debug, Display};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_source_file::{Location, SourceMap};
+use pernixc_source_file::{Location, SourceMap, Span};
 use pernixc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy},
@@ -40,6 +40,34 @@ impl Display for PriorInsignificant {
             Self::Tab(x) => f.write_str(&"\t".repeat(*x)),
             Self::Whitespace(x) => f.write_str(&" ".repeat(*x)),
         }
+    }
+}
+
+impl<L: Location<C> + std::fmt::Debug, C: Clone>
+    Input<&Span<L>, (&SourceMap, C)> for &PriorInsignificant
+{
+    fn assert(
+        self,
+        output: &Span<L>,
+        (source_map, location_context): (&SourceMap, C),
+    ) -> proptest::test_runner::TestCaseResult {
+        let source_file = &source_map[output.source_id];
+
+        let absolute_span =
+            output.to_absolute_span(source_file, location_context);
+        let prior_insignificant_source =
+            &source_file.content()[absolute_span.range()];
+
+        let expected_prior_insignificant = self.to_string();
+
+        // check if the prior insignificant source is equal to the expected
+        // string
+        prop_assert_eq!(
+            prior_insignificant_source,
+            expected_prior_insignificant.as_str()
+        );
+
+        Ok(())
     }
 }
 

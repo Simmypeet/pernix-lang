@@ -17,8 +17,7 @@ use proptest::{
 };
 use strum::IntoEnumIterator as _;
 
-use super::Punctuation;
-pub use super::{Identifier, Keyword, Numeric};
+pub use super::{Identifier, Keyword, Numeric, Punctuation};
 use crate::token::ESCAPE_SEQUENCE_BY_REPRESENTATION;
 
 impl Arbitrary for Keyword {

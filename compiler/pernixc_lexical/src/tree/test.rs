@@ -173,11 +173,22 @@ fn stable_node_id() {
 }
 */
 
+use pernixc_handler::Storage;
 use pernixc_source_file::{SourceFile, SourceMap};
 use pernixc_target::TargetID;
+use pernixc_test_input::Input;
+use proptest::{prop_assert, proptest, test_runner::TestCaseResult};
 
-use super::{Tree, ROOT_BRANCH_ID};
-use crate::tree::{BranchKind, DelimiterKind};
+use super::{
+    arbitrary::{self, IndentationBlock, IndentationLine, Nodes},
+    Tree, ROOT_BRANCH_ID,
+};
+use crate::{
+    error::Error,
+    kind::{self, Keyword},
+    token,
+    tree::{arbitrary::arbitrary_nodes, BranchKind, DelimiterKind},
+};
 
 #[test]
 fn basic_delimiter() {
@@ -636,4 +647,63 @@ fn indentation_pop_all_at_end() {
     }
 
     assert!(root_branch.nodes[1].as_leaf().unwrap().kind.is_new_line());
+}
+
+fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {
+    println!("{input}");
+    let mut source_map = SourceMap::new();
+    let source = input.to_string();
+
+    let source_file = SourceFile::new(source, "test".into());
+
+    let id = source_map.register(TargetID::Local, source_file);
+    let id = TargetID::Local.make_global(id);
+
+    let storage = Storage::<Error>::new();
+    let tree =
+        dbg!(super::Tree::from_source(source_map[id].content(), id, &storage));
+
+    let storage = storage.as_vec();
+    prop_assert!(storage.is_empty(), "{storage:?}");
+
+    let root = &tree[ROOT_BRANCH_ID];
+    input.assert(&root.nodes, (&source_map, &tree))?;
+
+    Ok(())
+}
+
+proptest! {
+   #[test]
+    fn tree(
+        input in arbitrary_nodes()
+    ) {
+        verify_tree(&input)?;
+    }
+}
+
+#[test]
+fn minimal() -> Result<(), proptest::prelude::TestCaseError> {
+    verify_tree(&arbitrary::Nodes(vec![
+        arbitrary::Node::Fragment(arbitrary::Fragment::Delimited(
+            arbitrary::Delimited {
+                delimiter: DelimiterKind::Bracket,
+                open_insignificant: None,
+                close_insignificant: None,
+                nodes: Nodes(vec![]),
+            },
+        )),
+        arbitrary::Node::Fragment(arbitrary::Fragment::Delimited(
+            arbitrary::Delimited {
+                delimiter: DelimiterKind::Bracket,
+                open_insignificant: None,
+                close_insignificant: None,
+                nodes: Nodes(vec![arbitrary::Node::Leaf(
+                    token::arbitrary::Token {
+                        kind: kind::arbitrary::Kind::Keyword(Keyword::True),
+                        prior_insignificant: None,
+                    },
+                )]),
+            },
+        )),
+    ]))
 }

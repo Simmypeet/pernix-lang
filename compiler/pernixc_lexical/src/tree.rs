@@ -229,6 +229,34 @@ impl Tree {
 
         converter.tree
     }
+
+    /// Gets the `prior_insignificant` span of the first token in the fragment.
+    #[must_use]
+    pub fn first_fragment_token_insignificant_span(
+        &self,
+        branch_id: ID<Branch>,
+    ) -> Option<&RelativeSpan> {
+        let branch = &self.0[branch_id];
+        match &branch.kind {
+            BranchKind::Fragment(fragment_branch) => {
+                match &fragment_branch.fragment_kind {
+                    FragmentKind::Delimiter(delimiter) => {
+                        delimiter.open.prior_insignificant.as_ref()
+                    }
+                    FragmentKind::Indentation(indentation) => {
+                        indentation.colon.prior_insignificant.as_ref()
+                    }
+                }
+            }
+
+            BranchKind::Root => branch.nodes.first().and_then(|x| match x {
+                Node::Leaf(token) => token.prior_insignificant.as_ref(),
+                Node::Branch(id) => {
+                    self.first_fragment_token_insignificant_span(*id)
+                }
+            }),
+        }
+    }
 }
 
 fn absolute_end_byte_of(
@@ -786,7 +814,7 @@ impl Converter<'_, '_> {
             Self::make_branch_relative(
                 &mut self.tree.0,
                 branch_id,
-                opening_delimiter.span.start.offset,
+                opening_delimiter.span.end.offset,
                 &mut nodes,
             );
 
@@ -991,18 +1019,36 @@ impl Converter<'_, '_> {
         let mut offset_to_branch = parent_branch_id;
 
         for node in nodes {
+            if last_was_branch {
+                // the token following after a branch will have a
+                // relative offset to the preceeding branch and the
+                // will have offset starting with 0
+                offset = match node {
+                    Node::Leaf(token) => token.start_location().offset,
+                    Node::Branch(id) => {
+                        let branch = &arena[*id];
+                        match &branch.kind {
+                            BranchKind::Fragment(fragment_branch) => {
+                                match &fragment_branch.fragment_kind {
+                                    FragmentKind::Delimiter(delimiter) => {
+                                        delimiter.open.start_location().offset
+                                    }
+                                    FragmentKind::Indentation(indentation) => {
+                                        indentation
+                                            .colon
+                                            .start_location()
+                                            .offset
+                                    }
+                                }
+                            }
+                            BranchKind::Root => 0,
+                        }
+                    }
+                }
+            }
+
             match node {
                 Node::Leaf(token) => {
-                    if last_was_branch {
-                        // the token following after a branch will have a
-                        // relative offset to the preceeding branch and the
-                        // will have offset starting with 0
-                        offset = token.prior_insignificant.map_or_else(
-                            || token.span.start.offset,
-                            |x| x.start.offset,
-                        );
-                    }
-
                     make_token_relative(mode, offset, offset_to_branch, token);
 
                     last_was_branch = false;
@@ -1028,7 +1074,7 @@ impl Converter<'_, '_> {
                             );
 
                             make_token_relative(
-                                mode,
+                                OffsetMode::Start,
                                 delimiter_start,
                                 *branch_id,
                                 &mut delimiter.close,
@@ -1046,7 +1092,7 @@ impl Converter<'_, '_> {
                             );
 
                             make_token_relative(
-                                mode,
+                                OffsetMode::Start,
                                 delimiter_start,
                                 *branch_id,
                                 &mut indentation.new_line,
