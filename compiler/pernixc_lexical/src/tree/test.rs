@@ -199,7 +199,12 @@ fn basic_delimiter() {
     assert_eq!(root_branch.kind, BranchKind::Root);
 
     assert_eq!(
-        *root_branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[0]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         '+'
     );
 
@@ -215,13 +220,18 @@ fn basic_delimiter() {
             .is_some_and(|x| x.delimiter == DelimiterKind::Brace));
 
         assert_eq!(
-            *branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
             '-'
         );
     }
 
     assert_eq!(
-        *root_branch.nodes[2].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[2]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         '*'
     );
 }
@@ -247,7 +257,12 @@ fn basic_indentation() {
     assert_eq!(root_branch.kind, BranchKind::Root);
 
     assert_eq!(
-        *root_branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[0]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         '+'
     );
 
@@ -262,14 +277,19 @@ fn basic_indentation() {
             .is_some_and(|x| x.fragment_kind.is_indentation()));
 
         assert_eq!(
-            *branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
             '-'
         );
     }
 
     assert!(root_branch.nodes[2].as_leaf().unwrap().kind.is_new_line());
     assert_eq!(
-        *root_branch.nodes[3].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[3]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         '*'
     );
 }
@@ -302,7 +322,12 @@ fn nested_single_pop_indentation() {
     assert_eq!(root_branch.kind, BranchKind::Root);
 
     assert_eq!(
-        *root_branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[0]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         '+'
     );
 
@@ -317,7 +342,7 @@ fn nested_single_pop_indentation() {
             .is_some_and(|x| x.fragment_kind.is_indentation()));
 
         assert_eq!(
-            *branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
             '-'
         );
 
@@ -332,7 +357,7 @@ fn nested_single_pop_indentation() {
                 .is_some_and(|x| x.fragment_kind.is_indentation()));
 
             assert_eq!(
-                *branch.nodes[0]
+                **branch.nodes[0]
                     .as_leaf()
                     .unwrap()
                     .kind
@@ -344,14 +369,19 @@ fn nested_single_pop_indentation() {
 
         assert!(branch.nodes[2].as_leaf().unwrap().kind.is_new_line());
         assert_eq!(
-            *branch.nodes[3].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            **branch.nodes[3].as_leaf().unwrap().kind.as_punctuation().unwrap(),
             '/'
         );
     }
 
     assert!(root_branch.nodes[2].as_leaf().unwrap().kind.is_new_line());
     assert_eq!(
-        *root_branch.nodes[3].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[3]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         ','
     );
 }
@@ -385,7 +415,12 @@ fn nested_multi_pop_indentation() {
     assert_eq!(root_branch.kind, BranchKind::Root);
 
     assert_eq!(
-        *root_branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[0]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         '+'
     );
 
@@ -400,7 +435,7 @@ fn nested_multi_pop_indentation() {
             .is_some_and(|x| x.fragment_kind.is_indentation()));
 
         assert_eq!(
-            *branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
             '-'
         );
 
@@ -425,7 +460,7 @@ fn nested_multi_pop_indentation() {
                     .is_some_and(|x| x.fragment_kind.is_indentation()));
 
                 assert_eq!(
-                    *branch.nodes[0]
+                    **branch.nodes[0]
                         .as_leaf()
                         .unwrap()
                         .kind
@@ -438,14 +473,19 @@ fn nested_multi_pop_indentation() {
 
         assert!(branch.nodes[2].as_leaf().unwrap().kind.is_new_line());
         assert_eq!(
-            *branch.nodes[3].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            **branch.nodes[3].as_leaf().unwrap().kind.as_punctuation().unwrap(),
             '/'
         );
     }
 
     assert!(root_branch.nodes[2].as_leaf().unwrap().kind.is_new_line());
     assert_eq!(
-        *root_branch.nodes[3].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[3]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         ','
     );
 }
@@ -509,7 +549,7 @@ fn indentation_pop_in_delimiter() {
                     .is_some_and(|x| x.fragment_kind.is_indentation()));
 
                 assert_eq!(
-                    *branch.nodes[0]
+                    **branch.nodes[0]
                         .as_leaf()
                         .unwrap()
                         .kind
@@ -523,7 +563,12 @@ fn indentation_pop_in_delimiter() {
 
     assert!(root_branch.nodes[1].as_leaf().unwrap().kind.is_new_line());
     assert_eq!(
-        *root_branch.nodes[2].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+        **root_branch.nodes[2]
+            .as_leaf()
+            .unwrap()
+            .kind
+            .as_punctuation()
+            .unwrap(),
         '+'
     );
 }
@@ -563,7 +608,7 @@ fn indentation_pop_all_at_end() {
             .is_some_and(|x| x.fragment_kind.is_indentation()));
 
         assert_eq!(
-            *branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
+            **branch.nodes[0].as_leaf().unwrap().kind.as_punctuation().unwrap(),
             '+'
         );
         assert!(branch.nodes[1].as_leaf().unwrap().kind.is_new_line());
@@ -579,7 +624,7 @@ fn indentation_pop_all_at_end() {
                 .is_some_and(|x| x.fragment_kind.is_indentation()));
 
             assert_eq!(
-                *branch.nodes[0]
+                **branch.nodes[0]
                     .as_leaf()
                     .unwrap()
                     .kind
