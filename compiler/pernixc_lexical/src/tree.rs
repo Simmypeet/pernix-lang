@@ -715,6 +715,7 @@ impl Converter<'_, '_> {
             indent.indentation_size.map_or(0, |x| x.abs_diff(indentation_size))
         }) {
             // mismatched indentation size
+            let mut minus_one = true;
             if indentation.indentation_size.unwrap().abs_diff(indentation_size)
                 > 0
             {
@@ -749,10 +750,12 @@ impl Converter<'_, '_> {
                             .collect(),
                         },
                     ));
+                } else {
+                    minus_one = false;
                 }
             }
 
-            indentation_range.end - index - 1
+            indentation_range.end - index - usize::from(minus_one)
         } else {
             unreachable!()
         };
