@@ -1,7 +1,5 @@
 use pernixc_handler::Storage;
-use pernixc_source_file::{
-    ByteIndex, GlobalSourceID, GlobalSpan, SourceFile, SourceMap,
-};
+use pernixc_source_file::{ByteIndex, SourceFile, SourceMap};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
 use proptest::{
@@ -10,12 +8,15 @@ use proptest::{
 };
 
 use super::error::Error;
-use crate::token::Tokenizer;
+use crate::{
+    kind::{self, Kind},
+    token::Tokenizer,
+};
 
 fn tokenize(
     source: std::string::String,
 ) -> Result<
-    (super::Token<GlobalSpan>, SourceMap),
+    (super::Token<Kind, ByteIndex>, SourceMap),
     proptest::test_runner::TestCaseError,
 > {
     let mut source_map = SourceMap::new();
@@ -24,8 +25,7 @@ fn tokenize(
     let id = source_map.register(TargetID::Local, source_file);
     let id = TargetID::Local.make_global(id);
 
-    let error_storage: Storage<Error<ByteIndex, GlobalSourceID>> =
-        Storage::new();
+    let error_storage: Storage<Error> = Storage::new();
 
     let mut tokenizer =
         Tokenizer::new(source_map[id].content(), id, &error_storage);
@@ -50,11 +50,11 @@ proptest! {
     #[test]
     #[allow(clippy::ignored_unit_patterns)]
     fn token(
-        input in super::arbitrary::Token::arbitrary()
+        input in super::arbitrary::Token::<kind::arbitrary::Kind>::arbitrary()
     ) {
         let source = input.to_string();
         let (token, source_map) = tokenize(source)?;
 
-        input.assert(&token, &source_map)?;
+        input.assert(&token, (&source_map, ()))?;
     }
 }

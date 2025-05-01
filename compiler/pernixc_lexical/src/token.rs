@@ -472,5 +472,5 @@ impl Iterator for Tokenizer<'_, '_> {
     }
 }
 
-// #[cfg(test)]
-// pub(crate) mod test;
+#[cfg(test)]
+mod test;
