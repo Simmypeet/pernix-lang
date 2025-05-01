@@ -20,7 +20,7 @@ use crate::{
     error::{
         self, AvailableIndentation, ExpectIndentation, InvalidIndentation,
         InvalidNewIndentationLevel, MismatchedClosingDelimiter,
-        UnexpectedClosingDelimiter,
+        UndelimitedDelimiter, UnexpectedClosingDelimiter,
     },
     kind,
     token::{Kind, NewLine, Punctuation, Token, Tokenizer},
@@ -226,6 +226,16 @@ impl Tree {
                 nodes: converter.current_nodes,
             })
             .unwrap();
+
+        // report all of the enclosed opening delimiters
+        for delimiter in converter.delimiter_stack {
+            handler.receive(error::Error::UndelimitedDelimiter(
+                UndelimitedDelimiter {
+                    opening_span: delimiter.location,
+                    delimiter: delimiter.delimiter,
+                },
+            ));
+        }
 
         converter.tree
     }
