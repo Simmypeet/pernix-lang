@@ -10,7 +10,9 @@ use enum_as_inner::EnumAsInner;
 use fnv::FnvHasher;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
+use pernixc_source_file::{
+    AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
+};
 use serde::Serialize;
 use strum_macros::EnumIter;
 
@@ -23,6 +25,9 @@ use crate::{
     kind,
     token::{Kind, NewLine, Punctuation, Token, Tokenizer},
 };
+
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
 
 /// Representing kinds of delimiter character pair that are used to enclose
 /// a region of code.
@@ -223,6 +228,145 @@ impl Tree {
             .unwrap();
 
         converter.tree
+    }
+}
+
+fn absolute_end_byte_of(
+    branches: &Arena<Branch>,
+    mut id: ID<Branch>,
+) -> ByteIndex {
+    loop {
+        let branch = &branches[id];
+        match &branch.kind {
+            BranchKind::Fragment(fragment_branch) => {
+                match &fragment_branch.fragment_kind {
+                    FragmentKind::Delimiter(delimiter) => {
+                        return absolute_location_of(
+                            branches,
+                            &delimiter.close.span.end,
+                        )
+                    }
+
+                    FragmentKind::Indentation(indentation) => {
+                        if let Some(x) = branch.nodes.last() {
+                            match x {
+                                Node::Leaf(leaf) => {
+                                    return absolute_location_of(
+                                        branches,
+                                        &leaf.span.end,
+                                    )
+                                }
+                                Node::Branch(new_id) => {
+                                    id = *new_id;
+                                }
+                            }
+                        } else {
+                            return absolute_location_of(
+                                branches,
+                                &indentation.new_line.span.end,
+                            );
+                        }
+                    }
+                }
+            }
+
+            BranchKind::Root => match branch.nodes.last() {
+                Some(node) => match node {
+                    Node::Leaf(leaf) => {
+                        return absolute_location_of(branches, &leaf.span.end)
+                    }
+
+                    Node::Branch(new_id) => {
+                        id = *new_id;
+                    }
+                },
+                None => return 0,
+            },
+        }
+    }
+}
+
+fn absolute_start_byte_of(
+    branches: &Arena<Branch>,
+    id: ID<Branch>,
+) -> ByteIndex {
+    match &branches[id].kind {
+        BranchKind::Fragment(fragment_branch) => {
+            match &fragment_branch.fragment_kind {
+                FragmentKind::Delimiter(delimiter) => {
+                    absolute_location_of(branches, &delimiter.open.span.end)
+                }
+
+                FragmentKind::Indentation(indentation) => {
+                    absolute_location_of(branches, &indentation.colon.span.end)
+                }
+            }
+        }
+        BranchKind::Root => 0,
+    }
+}
+
+fn absolute_location_of(
+    branches: &Arena<Branch>,
+    relative_location: &RelativeLocation,
+) -> ByteIndex {
+    let offset = match relative_location.mode {
+        OffsetMode::Start => {
+            absolute_start_byte_of(branches, relative_location.relative_to)
+        }
+        OffsetMode::End => {
+            absolute_end_byte_of(branches, relative_location.relative_to)
+        }
+    };
+
+    relative_location.offset + offset
+}
+
+fn absolute_span_of(
+    branches: &Arena<Branch>,
+    relative_location: &RelativeSpan,
+) -> AbsoluteSpan {
+    let start = absolute_location_of(branches, &relative_location.start);
+    let end = absolute_location_of(branches, &relative_location.end);
+
+    AbsoluteSpan { start, end, source_id: relative_location.source_id }
+}
+
+impl Tree {
+    /// Gets the absolute start byte of the given branch ID.
+    #[must_use]
+    pub fn absolute_start_byte_of(&self, id: ID<Branch>) -> ByteIndex {
+        absolute_start_byte_of(&self.0, id)
+    }
+
+    /// Gets the absolute end byte of the given branch ID.
+    #[must_use]
+    pub fn absoluate_end_byte_of(&self, id: ID<Branch>) -> ByteIndex {
+        absolute_end_byte_of(&self.0, id)
+    }
+
+    /// Calculates the absolute span of the given relative span.
+    #[must_use]
+    pub fn absolute_span_of(
+        &self,
+        relative_span: &RelativeSpan,
+    ) -> AbsoluteSpan {
+        absolute_span_of(&self.0, relative_span)
+    }
+
+    /// Calculates the absolute location of the given relative location.
+    #[must_use]
+    pub fn absolute_location_of(
+        &self,
+        relative_location: &RelativeLocation,
+    ) -> ByteIndex {
+        absolute_location_of(&self.0, relative_location)
+    }
+}
+
+impl Location<&Tree> for RelativeLocation {
+    fn to_absolute_index(&self, _: &SourceFile, context: &Tree) -> ByteIndex {
+        context.absolute_location_of(self)
     }
 }
 
