@@ -376,6 +376,30 @@ pub struct Span<L> {
     pub source_id: GlobalSourceID,
 }
 
+impl<L> Span<L> {
+    /// Creates an absolute span from the current span.
+    ///
+    /// This is useful if the type parameter `L` is a relative location and
+    /// needs to be converted to an absolute byte index range in the source
+    /// file.
+    pub fn to_absolute_span<C: Clone>(
+        &self,
+        source_file: &SourceFile,
+        location_context: C,
+    ) -> AbsoluteSpan
+    where
+        L: Location<C>,
+    {
+        AbsoluteSpan {
+            start: self
+                .start
+                .to_absolute_index(source_file, location_context.clone()),
+            end: self.end.to_absolute_index(source_file, location_context),
+            source_id: self.source_id,
+        }
+    }
+}
+
 /// A type alias for the [`Span`] type with a [`ByteIndex`] as the source
 /// location.
 pub type AbsoluteSpan = Span<ByteIndex>;
@@ -397,15 +421,7 @@ pub trait Location<C> {
 }
 
 impl Location<()> for ByteIndex {
-    fn to_absolute_index(&self, source_file: &SourceFile, (): ()) -> ByteIndex {
-        assert!(
-            *self < source_file.content().len(),
-            "out of bound index {self} for content length {}",
-            source_file.content().len()
-        );
-
-        *self
-    }
+    fn to_absolute_index(&self, _: &SourceFile, (): ()) -> ByteIndex { *self }
 }
 
 /// A trait for types that can be joined together.
