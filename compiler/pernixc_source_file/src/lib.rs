@@ -585,17 +585,32 @@ impl SourceMap {
         let patb = &source.full_path;
         let mut hasher = FnvHasher::default();
         patb.hash(&mut hasher);
-        let mut hash = hasher.finish();
 
-        // check if the source file is already registered
-        while local_map.contains_id(ID::new(hash)) {
-            hash = hash.wrapping_add(1);
-        }
+        let finalize_hash = |hasher: FnvHasher| {
+            let mut attempt = 0;
+            loop {
+                // for some reason, FnvHasher doesn't implement `Clone` trait.
+                // this is the work around to clone
+                let mut final_hasher = FnvHasher::with_key(hasher.finish());
+                attempt.hash(&mut final_hasher);
+
+                let candidate_branch_id = ID::new(final_hasher.finish());
+
+                // avoid hash collision
+                if !local_map.contains_id(candidate_branch_id) {
+                    return candidate_branch_id;
+                }
+
+                attempt += 1;
+            }
+        };
+
+        let hash = finalize_hash(hasher);
 
         // insert the source file into the map
-        local_map.insert_with_id(ID::new(hash), source).unwrap();
+        local_map.insert_with_id(hash, source).unwrap();
 
-        ID::new(hash)
+        hash
     }
 
     /// Gets the source file by its ID.
