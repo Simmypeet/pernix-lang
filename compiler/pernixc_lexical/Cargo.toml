@@ -33,6 +33,7 @@ proptest = { workspace = true, optional = true }
 derive-new = { workspace = true }
 fnv = { workspace = true }
 flexstr = { workspace = true }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

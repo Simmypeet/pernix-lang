@@ -5,6 +5,7 @@ use std::{
     ops::Range,
 };
 
+use dashmap::DashMap;
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use fnv::FnvHasher;
@@ -179,8 +180,16 @@ const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 ///
 /// This is useful for easy traversal of the tree and for incremental
 /// compilation compatibility.
-#[derive(Debug, Clone, PartialEq, Eq, Deref, Serialize)]
-pub struct Tree(Arena<Branch>);
+#[derive(Debug, Clone, Deref, Serialize)]
+pub struct Tree {
+    #[deref]
+    arena: Arena<Branch>,
+
+    #[serde(skip)]
+    absolute_start_byte_of_cache: DashMap<ID<Branch>, ByteIndex>,
+    #[serde(skip)]
+    end_location_cache: DashMap<ID<Branch>, ByteIndex>,
+}
 
 impl Tree {
     /// Creates a new [`Tree`] from the given source code and source ID.
@@ -198,7 +207,11 @@ impl Tree {
             delimiter_stack: Vec::new(),
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
-            tree: Self(Arena::new()),
+            tree: Self {
+                arena: Arena::new(),
+                absolute_start_byte_of_cache: DashMap::new(),
+                end_location_cache: DashMap::new(),
+            },
         };
 
         while converter.forward() {}
@@ -212,7 +225,7 @@ impl Tree {
         }
 
         Converter::make_branch_relative(
-            &mut converter.tree.0,
+            &mut converter.tree.arena,
             ROOT_BRANCH_ID,
             0,
             &mut converter.current_nodes,
@@ -220,7 +233,7 @@ impl Tree {
 
         converter
             .tree
-            .0
+            .arena
             .insert_with_id(ROOT_BRANCH_ID, Branch {
                 kind: BranchKind::Root,
                 nodes: converter.current_nodes,
@@ -246,7 +259,7 @@ impl Tree {
         &self,
         branch_id: ID<Branch>,
     ) -> Option<&RelativeSpan> {
-        let branch = &self.0[branch_id];
+        let branch = &self[branch_id];
         match &branch.kind {
             BranchKind::Fragment(fragment_branch) => {
                 match &fragment_branch.fragment_kind {
@@ -374,13 +387,31 @@ impl Tree {
     /// Gets the absolute start byte of the given branch ID.
     #[must_use]
     pub fn absolute_start_byte_of(&self, id: ID<Branch>) -> ByteIndex {
-        absolute_start_byte_of(&self.0, id)
+        if id == ROOT_BRANCH_ID {
+            return 0;
+        }
+
+        match self.absolute_start_byte_of_cache.entry(id) {
+            dashmap::Entry::Occupied(occupied_entry) => *occupied_entry.get(),
+            dashmap::Entry::Vacant(vacant_entry) => {
+                let result = absolute_start_byte_of(&self.arena, id);
+                vacant_entry.insert(result);
+                result
+            }
+        }
     }
 
     /// Gets the absolute end byte of the given branch ID.
     #[must_use]
     pub fn absoluate_end_byte_of(&self, id: ID<Branch>) -> ByteIndex {
-        absolute_end_byte_of(&self.0, id)
+        match self.end_location_cache.entry(id) {
+            dashmap::Entry::Occupied(occupied_entry) => *occupied_entry.get(),
+            dashmap::Entry::Vacant(vacant_entry) => {
+                let result = absolute_end_byte_of(&self.arena, id);
+                vacant_entry.insert(result);
+                result
+            }
+        }
     }
 
     /// Calculates the absolute span of the given relative span.
@@ -389,7 +420,7 @@ impl Tree {
         &self,
         relative_span: &RelativeSpan,
     ) -> AbsoluteSpan {
-        absolute_span_of(&self.0, relative_span)
+        absolute_span_of(&self.arena, relative_span)
     }
 
     /// Calculates the absolute location of the given relative location.
@@ -398,7 +429,7 @@ impl Tree {
         &self,
         relative_location: &RelativeLocation,
     ) -> ByteIndex {
-        absolute_location_of(&self.0, relative_location)
+        absolute_location_of(&self.arena, relative_location)
     }
 }
 
@@ -844,14 +875,14 @@ impl Converter<'_, '_> {
             );
 
             Self::make_branch_relative(
-                &mut self.tree.0,
+                &mut self.tree.arena,
                 branch_id,
                 opening_delimiter.span.end.offset,
                 &mut nodes,
             );
 
             self.tree
-                .0
+                .arena
                 .insert_with_id(branch_id, Branch {
                     kind: BranchKind::Fragment(FragmentBranch {
                         fragment_kind: FragmentKind::Delimiter(Delimiter {
@@ -932,7 +963,7 @@ impl Converter<'_, '_> {
             );
 
             Self::make_branch_relative(
-                &mut self.tree.0,
+                &mut self.tree.arena,
                 branch_hash,
                 colon.span.end.offset,
                 &mut nodes,
@@ -951,7 +982,7 @@ impl Converter<'_, '_> {
             };
 
             // insert the branch
-            self.tree.0.insert_with_id(branch_hash, branch).unwrap();
+            self.tree.arena.insert_with_id(branch_hash, branch).unwrap();
 
             self.current_nodes
                 .insert(marker.colon_index, Node::Branch(branch_hash));
@@ -1012,7 +1043,7 @@ impl Converter<'_, '_> {
         );
 
         // create the branch
-        self.tree.0.insert_with_id(branch_id, branch).unwrap();
+        self.tree.arena.insert_with_id(branch_id, branch).unwrap();
         self.current_nodes
             .insert(indentation_marker.colon_index, Node::Branch(branch_id));
     }
