@@ -23,7 +23,7 @@ use pernixc_lexical::{token, tree::RelativeSpan};
 /// parser expressions using familiar rust's struct and enum syntax.
 #[macro_export]
 macro_rules! abstract_tree {
-    (
+    {
         $( #[$struct_meta:meta] )*
         $struct_vis:vis
         struct
@@ -39,7 +39,7 @@ macro_rules! abstract_tree {
                 = $parser_expr:expr
             ),* $(,)?
         }
-    ) => {
+    } => {
         $( #[$struct_meta] )*
         $struct_vis
         struct
@@ -209,7 +209,7 @@ macro_rules! abstract_tree {
         };
     };
 
-    (
+    {
         $( #[$enum_meta:meta] )*
         $enum_vis:vis
         enum
@@ -226,7 +226,7 @@ macro_rules! abstract_tree {
 
             ),* $(,)?
         }
-    ) => {
+    } => {
         $( #[$enum_meta] )*
         $enum_vis enum $enum_name {
             $(
@@ -240,7 +240,7 @@ pub trait AbstractTree: Sized + FromNode {
     fn parser() -> impl Parser;
 }
 
-abstract_tree!(
+abstract_tree! {
     /// A test struct for the macro
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Test<T: 'static> {
@@ -248,4 +248,4 @@ abstract_tree!(
         pub second: token::Kind<RelativeSpan> = expect::Identifier,
         pub third: token::Kind<RelativeSpan> = expect::Identifier,
     }
-);
+}
