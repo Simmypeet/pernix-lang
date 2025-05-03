@@ -173,7 +173,7 @@ pub struct Branch {
 }
 
 /// The constant ID that every [`Tree`] will use as the root branch ID.
-const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
+pub const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 
 /// Represents the token tree where each of the branches are the fragments
 /// in the token stream.
