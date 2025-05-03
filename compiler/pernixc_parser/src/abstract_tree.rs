@@ -167,7 +167,7 @@ macro_rules! abstract_tree {
                     #[allow(dead_code)]
                     fn $field_name()
                         -> impl $crate::parser::Parser
-                        $(+ $crate::output::Output<
+                        $(+ $crate::output::Verify<
                                 Extract = $crate::abstract_tree::__extract!(
                                     $($field_attr)?
                                 ),

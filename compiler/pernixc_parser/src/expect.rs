@@ -3,11 +3,11 @@
 
 use pernixc_lexical::{kind, token, tree::RelativeSpan};
 
-use crate::output::{One, Output};
+use crate::output::{One, Verify};
 
 /// The most basic kind of parser that used to determine if a token is a valid
 /// choice for a certain syntax tree node.
-pub trait Expect: Output {
+pub trait Expect: Verify {
     /// Determines if the given token passes the expectation.
     fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool;
 }
@@ -16,7 +16,7 @@ pub trait Expect: Output {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Identifier;
 
-impl Output for Identifier {
+impl Verify for Identifier {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -31,7 +31,7 @@ impl Expect for Identifier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentifierValue<'a>(pub &'a str);
 
-impl Output for IdentifierValue<'_> {
+impl Verify for IdentifierValue<'_> {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -46,7 +46,7 @@ impl Expect for IdentifierValue<'_> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct String;
 
-impl Output for String {
+impl Verify for String {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -61,7 +61,7 @@ impl Expect for String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Character;
 
-impl Output for Character {
+impl Verify for Character {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -76,7 +76,7 @@ impl Expect for Character {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric;
 
-impl Output for Numeric {
+impl Verify for Numeric {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -90,7 +90,7 @@ impl Expect for Numeric {
 /// Expecting the token to be a punctuation token.
 pub type Punctuation = char;
 
-impl Output for Punctuation {
+impl Verify for Punctuation {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -105,7 +105,7 @@ impl Expect for Punctuation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NewLine;
 
-impl Output for NewLine {
+impl Verify for NewLine {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -119,7 +119,7 @@ impl Expect for NewLine {
 /// Expecting the token to be a keyword token.
 pub type Keyword = kind::Keyword;
 
-impl Output for Keyword {
+impl Verify for Keyword {
     type Extract = One;
     type Output = token::Kind<RelativeSpan>;
 }
@@ -134,7 +134,7 @@ impl Expect for Keyword {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoPriorInsignificant<T>(pub T);
 
-impl<T: Output> Output for NoPriorInsignificant<T> {
+impl<T: Verify> Verify for NoPriorInsignificant<T> {
     type Extract = T::Extract;
     type Output = T::Output;
 }

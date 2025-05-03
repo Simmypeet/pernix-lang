@@ -44,7 +44,7 @@ pub trait Extract {
     ) -> Self::Result<'_, F>;
 }
 
-pub trait Output {
+pub trait Verify {
     type Extract: Extract;
     type Output: FromNode;
 }
