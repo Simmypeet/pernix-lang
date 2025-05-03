@@ -255,8 +255,9 @@ macro_rules! abstract_tree {
                     node: &$crate::concrete_tree::Node,
                 ) -> Option<Self> {
                     node.as_branch().and_then(|branch| {
-                        branch.ast_type_id.is_some_and(|x|
-                            $crate::abstract_tree::__std::any::TypeId::of::<Self>() == x
+                        branch.ast_info.is_some_and(|x|
+                            $crate::abstract_tree::__std::any::TypeId::of::<Self>()
+                                == x.ast_type_id
                         )
                         .then_some(Self(
                             branch.clone(),
