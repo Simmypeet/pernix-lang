@@ -3,7 +3,7 @@
 
 use pernixc_lexical::{kind, token, tree::RelativeSpan};
 
-use crate::output::{Multiple, One, Output};
+use crate::output::{One, Output};
 
 /// The most basic kind of parser that used to determine if a token is a valid
 /// choice for a certain syntax tree node.
