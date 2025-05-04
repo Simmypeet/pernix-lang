@@ -146,6 +146,9 @@ pub struct FragmentBranch {
     /// The kind of fragment this branch represents.
     pub fragment_kind: FragmentKind,
 
+    /// The starting location of this branch in the source code.
+    pub starting_location: RelativeLocation,
+
     /// The ID to the parent branch of this fragment.
     pub parent: ID<Branch>,
 }
@@ -229,6 +232,7 @@ impl Tree {
             ROOT_BRANCH_ID,
             0,
             &mut converter.current_nodes,
+            None,
         );
 
         converter
@@ -342,16 +346,8 @@ fn absolute_start_byte_of(
     id: ID<Branch>,
 ) -> ByteIndex {
     match &branches[id].kind {
-        BranchKind::Fragment(fragment_branch) => {
-            match &fragment_branch.fragment_kind {
-                FragmentKind::Delimiter(delimiter) => {
-                    absolute_location_of(branches, &delimiter.open.span.end)
-                }
-
-                FragmentKind::Indentation(indentation) => {
-                    absolute_location_of(branches, &indentation.colon.span.end)
-                }
-            }
+        BranchKind::Fragment(fragment) => {
+            absolute_location_of(branches, &fragment.starting_location)
         }
         BranchKind::Root => 0,
     }
@@ -371,16 +367,6 @@ fn absolute_location_of(
     };
 
     relative_location.offset + offset
-}
-
-fn absolute_span_of(
-    branches: &Arena<Branch>,
-    relative_location: &RelativeSpan,
-) -> AbsoluteSpan {
-    let start = absolute_location_of(branches, &relative_location.start);
-    let end = absolute_location_of(branches, &relative_location.end);
-
-    AbsoluteSpan { start, end, source_id: relative_location.source_id }
 }
 
 impl Tree {
@@ -420,7 +406,10 @@ impl Tree {
         &self,
         relative_span: &RelativeSpan,
     ) -> AbsoluteSpan {
-        absolute_span_of(&self.arena, relative_span)
+        let start = self.absolute_location_of(&relative_span.start);
+        let end = self.absolute_location_of(&relative_span.end);
+
+        AbsoluteSpan { start, end, source_id: relative_span.source_id }
     }
 
     /// Calculates the absolute location of the given relative location.
@@ -429,7 +418,16 @@ impl Tree {
         &self,
         relative_location: &RelativeLocation,
     ) -> ByteIndex {
-        absolute_location_of(&self.arena, relative_location)
+        let offset = match relative_location.mode {
+            OffsetMode::Start => {
+                self.absolute_start_byte_of(relative_location.relative_to)
+            }
+            OffsetMode::End => {
+                self.absoluate_end_byte_of(relative_location.relative_to)
+            }
+        };
+
+        relative_location.offset + offset
     }
 }
 
@@ -874,22 +872,30 @@ impl Converter<'_, '_> {
                 &self.tree,
             );
 
+            let mut fragment_kind = FragmentKind::Delimiter(Delimiter {
+                open: opening_delimiter,
+                close: closing_delimiter,
+                delimiter: expected_delimiter,
+            });
+
             Self::make_branch_relative(
                 &mut self.tree.arena,
                 branch_id,
-                opening_delimiter.span.end.offset,
+                opening_delimiter.start_location().offset,
                 &mut nodes,
+                Some(&mut fragment_kind),
             );
 
             self.tree
                 .arena
                 .insert_with_id(branch_id, Branch {
                     kind: BranchKind::Fragment(FragmentBranch {
-                        fragment_kind: FragmentKind::Delimiter(Delimiter {
-                            open: opening_delimiter,
-                            close: closing_delimiter,
-                            delimiter: expected_delimiter,
-                        }),
+                        fragment_kind,
+                        starting_location: RelativeLocation {
+                            offset: opening_delimiter.start_location().offset,
+                            mode: OffsetMode::Start,
+                            relative_to: ROOT_BRANCH_ID,
+                        },
                         parent: ROOT_BRANCH_ID,
                     }),
                     nodes,
@@ -962,20 +968,27 @@ impl Converter<'_, '_> {
                 &self.tree,
             );
 
+            let mut fragment_kind = FragmentKind::Indentation(Indentation {
+                indentation_size: marker.indentation_size.unwrap(),
+                colon,
+                new_line,
+            });
             Self::make_branch_relative(
                 &mut self.tree.arena,
                 branch_hash,
-                colon.span.end.offset,
+                colon.start_location().offset,
                 &mut nodes,
+                Some(&mut fragment_kind),
             );
 
             let branch = Branch {
                 kind: BranchKind::Fragment(FragmentBranch {
-                    fragment_kind: FragmentKind::Indentation(Indentation {
-                        indentation_size: marker.indentation_size.unwrap(),
-                        colon,
-                        new_line,
-                    }),
+                    fragment_kind,
+                    starting_location: RelativeLocation {
+                        offset: colon.start_location().offset,
+                        mode: OffsetMode::Start,
+                        relative_to: ROOT_BRANCH_ID,
+                    },
                     parent: ROOT_BRANCH_ID,
                 }),
                 nodes,
@@ -1018,6 +1031,11 @@ impl Converter<'_, '_> {
         let new_line = new_line.into_leaf().unwrap();
 
         let branch_kind = BranchKind::Fragment(FragmentBranch {
+            starting_location: RelativeLocation {
+                offset: colon.start_location().offset,
+                mode: OffsetMode::Start,
+                relative_to: ROOT_BRANCH_ID,
+            },
             fragment_kind: FragmentKind::Indentation(Indentation {
                 indentation_size: indentation_marker.indentation_size.unwrap(),
                 colon: Token {
@@ -1048,40 +1066,52 @@ impl Converter<'_, '_> {
             .insert(indentation_marker.colon_index, Node::Branch(branch_id));
     }
 
+    fn make_span_relative(
+        span: &mut RelativeSpan,
+        offset: usize,
+        mode: OffsetMode,
+        offset_to_branch: ID<Branch>,
+    ) {
+        span.start.offset -= offset;
+        span.start.mode = mode;
+        span.start.relative_to = offset_to_branch;
+
+        span.end.offset -= offset;
+        span.end.mode = mode;
+        span.end.relative_to = offset_to_branch;
+    }
+
+    fn make_token_relative<T>(
+        mode: OffsetMode,
+        offset: usize,
+        offset_to_branch: ID<Branch>,
+        token: &mut Token<T, RelativeLocation>,
+    ) {
+        if let Some(prior) = &mut token.prior_insignificant {
+            Self::make_span_relative(prior, offset, mode, offset_to_branch);
+        }
+
+        Self::make_span_relative(
+            &mut token.span,
+            offset,
+            mode,
+            offset_to_branch,
+        );
+    }
+
+    #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
     fn make_branch_relative(
         arena: &mut Arena<Branch>,
         parent_branch_id: ID<Branch>,
         mut offset: ByteIndex,
         nodes: &mut [Node],
+        fragmnet_kind: Option<&mut FragmentKind>,
     ) {
-        fn make_token_relative<T>(
-            mode: OffsetMode,
-            offset: usize,
-            offset_to_branch: ID<Branch>,
-            token: &mut Token<T, RelativeLocation>,
-        ) {
-            let make_relative = |span: &mut RelativeSpan| {
-                span.start.offset -= offset;
-                span.start.mode = mode;
-                span.start.relative_to = offset_to_branch;
-
-                span.end.offset -= offset;
-                span.end.mode = mode;
-                span.end.relative_to = offset_to_branch;
-            };
-
-            if let Some(prior) = &mut token.prior_insignificant {
-                make_relative(prior);
-            }
-
-            make_relative(&mut token.span);
-        }
-
         let mut mode = OffsetMode::Start;
         let mut last_was_branch = false;
         let mut offset_to_branch = parent_branch_id;
 
-        for node in nodes {
+        for node in nodes.iter_mut() {
             if last_was_branch {
                 // the token following after a branch will have a
                 // relative offset to the preceeding branch and the
@@ -1112,7 +1142,12 @@ impl Converter<'_, '_> {
 
             match node {
                 Node::Leaf(token) => {
-                    make_token_relative(mode, offset, offset_to_branch, token);
+                    Self::make_token_relative(
+                        mode,
+                        offset,
+                        offset_to_branch,
+                        token,
+                    );
 
                     last_was_branch = false;
                 }
@@ -1124,39 +1159,46 @@ impl Converter<'_, '_> {
                     // correct the parent branch
                     fragment.parent = parent_branch_id;
 
+                    fragment.starting_location.offset -= offset;
+                    fragment.starting_location.mode = mode;
+                    fragment.starting_location.relative_to = offset_to_branch;
+
                     match &mut fragment.fragment_kind {
                         FragmentKind::Delimiter(delimiter) => {
                             let delimiter_start =
-                                delimiter.open.span.end.offset;
+                                delimiter.open.start_location().offset;
 
-                            make_token_relative(
-                                mode,
-                                offset,
-                                offset_to_branch,
-                                &mut delimiter.open,
+                            assert_eq!(
+                                delimiter.open.start_location().relative_to,
+                                ROOT_BRANCH_ID
                             );
 
-                            make_token_relative(
+                            Self::make_token_relative(
                                 OffsetMode::Start,
                                 delimiter_start,
                                 *branch_id,
-                                &mut delimiter.close,
+                                &mut delimiter.open,
                             );
                         }
                         FragmentKind::Indentation(indentation) => {
-                            let delimiter_start =
-                                indentation.colon.span.end.offset;
+                            let indentation_start =
+                                indentation.colon.start_location().offset;
 
-                            make_token_relative(
-                                mode,
-                                offset,
-                                offset_to_branch,
+                            assert_eq!(
+                                indentation.colon.start_location().relative_to,
+                                ROOT_BRANCH_ID
+                            );
+
+                            Self::make_token_relative(
+                                OffsetMode::Start,
+                                indentation_start,
+                                *branch_id,
                                 &mut indentation.colon,
                             );
 
-                            make_token_relative(
+                            Self::make_token_relative(
                                 OffsetMode::Start,
-                                delimiter_start,
+                                indentation_start,
                                 *branch_id,
                                 &mut indentation.new_line,
                             );
@@ -1168,6 +1210,19 @@ impl Converter<'_, '_> {
                     last_was_branch = true;
                 }
             }
+        }
+
+        if let Some(FragmentKind::Delimiter(delimiter)) = fragmnet_kind {
+            if last_was_branch {
+                offset = delimiter.close.start_location().offset;
+            }
+
+            Self::make_token_relative(
+                mode,
+                offset,
+                offset_to_branch,
+                &mut delimiter.close,
+            );
         }
     }
 }

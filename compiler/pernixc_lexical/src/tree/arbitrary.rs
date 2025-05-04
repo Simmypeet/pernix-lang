@@ -159,7 +159,7 @@ impl Arbitrary for Indentation {
         });
 
         indentation_leaf
-            .prop_recursive(6, 96, 16, move |inner| {
+            .prop_recursive(6, 120, 20, move |inner| {
                 (
                     2usize..=16usize,
                     IndentationBlock::arbitrary_with((
@@ -519,7 +519,7 @@ impl Arbitrary for Nodes {
         )
         .prop_map(Self);
 
-        leaf.prop_recursive(6, 96, 16, |inner| {
+        leaf.prop_recursive(6, 120, 20, |inner| {
             proptest::collection::vec(Node::arbitrary_with(Some(inner)), 0..=16)
                 .prop_map(Self)
         })
