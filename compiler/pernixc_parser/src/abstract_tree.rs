@@ -3,7 +3,12 @@
 #[doc(hidden)]
 pub use std as __std;
 
-use crate::{expect, from_node::FromNode, parser::Parser};
+use crate::{
+    cache, error, expect,
+    from_node::FromNode,
+    parser::{self, parse_ast, Parser},
+    state,
+};
 
 #[macro_export]
 #[doc(hidden)]
@@ -43,6 +48,20 @@ pub trait AbstractTree: 'static + Sized + FromNode {
     /// current fragment level.
     #[must_use]
     fn step_into_fragment() -> Option<expect::Fragment> { None }
+
+    /// Parses the given tree and returns the result.
+    #[must_use]
+    fn parse(
+        tree: &pernixc_lexical::tree::Tree,
+    ) -> (Option<Self>, Vec<error::Error>) {
+        let mut cache = cache::Cache::default();
+        let mut state = state::State::new(tree, &mut cache);
+
+        let parser = parser::parse_ast::<Self>();
+        let _ = parser.parse(&mut state);
+
+        state.finalize::<Self>()
+    }
 }
 
 /// Macro used for generating both syntax tree definition and its corresponding
@@ -340,7 +359,7 @@ abstract_tree! {
     #{fragment = expect::Fragment::Indentation}
     pub struct Test<T: 'static> {
         pub first: token::Kind<RelativeLocation> = expect::Identifier,
-        pub second: token::Kind<RelativeLocation> = expect::Identifier,
+        pub second: Test<T> = parse_ast::<Test<T>>(),
         pub third: token::Kind<RelativeLocation> = expect::Identifier,
     }
 }

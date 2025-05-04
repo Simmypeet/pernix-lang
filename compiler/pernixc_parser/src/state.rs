@@ -1,5 +1,7 @@
 //! Contains the definition of the [`State`].
 
+use std::{ops::Not, sync::Arc};
+
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use pernixc_arena::ID;
@@ -8,7 +10,8 @@ use pernixc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
 use crate::{
     abstract_tree::AbstractTree,
     cache::Cache,
-    concrete_tree::AstInfo,
+    concrete_tree::{self, AstInfo},
+    error::Error,
     expect::{self, Expected},
 };
 
@@ -62,17 +65,6 @@ impl Default for Cursor {
     fn default() -> Self {
         Self { branch_id: ROOT_BRANCH_ID, node_index: Default::default() }
     }
-}
-
-/// Represents an error of encountering an unexpected token at a certain
-/// possition at its possible expected tokens.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Error {
-    /// The tokens that are expected at the cursor position.
-    pub expecteds: Vec<Expected>,
-
-    /// The cursor position where the error occurred.
-    pub at: Cursor,
 }
 
 impl<'a, 'cache> State<'a, 'cache> {
@@ -305,10 +297,10 @@ impl<'a, 'cache> State<'a, 'cache> {
             self.eat_token(node_index - starting_node_index);
 
             // start the event
-            self.events.push(Event::NewNode(AstInfo {
+            self.events.push(Event::NewNode(Some(AstInfo {
                 ast_type_id: std::any::TypeId::of::<A>(),
                 step_into_fragment: Some(branch_id),
-            }));
+            })));
 
             let mut state = State {
                 tree: self.tree,
@@ -333,10 +325,10 @@ impl<'a, 'cache> State<'a, 'cache> {
             Some(result)
         } else {
             // no step into fragment, just start the event
-            self.events.push(Event::NewNode(AstInfo {
+            self.events.push(Event::NewNode(Some(AstInfo {
                 ast_type_id: std::any::TypeId::of::<A>(),
                 step_into_fragment: None,
-            }));
+            })));
 
             // operate on the inner state
             let result = op(self);
@@ -346,6 +338,163 @@ impl<'a, 'cache> State<'a, 'cache> {
 
             Some(result)
         }
+    }
+
+    pub(crate) fn finalize<A: AbstractTree>(self) -> (Option<A>, Vec<Error>) {
+        assert!(!self.events.is_empty(), "No events to finalize");
+        assert_eq!(
+            self.branch_id(),
+            ROOT_BRANCH_ID,
+            "can only finalize the root branch"
+        );
+
+        let mut events = FlattenEvent::new(self.events);
+        let mut cursor = Cursor { branch_id: ROOT_BRANCH_ID, node_index: 0 };
+
+        let first = events
+            .next()
+            .expect("should have a first event starting the node")
+            .into_new_node()
+            .expect("should be a new node event")
+            .expect("should have ast info matching the `A` type");
+
+        assert_eq!(first.ast_type_id, std::any::TypeId::of::<A>());
+
+        let tree = Self::finalize_ast_node(
+            self.tree,
+            Some(first),
+            &mut events,
+            &mut cursor,
+        );
+
+        let tree = tree.map(|tree| {
+            A::from_node(&concrete_tree::Node::Branch(Arc::new(tree)))
+                .expect("should be able to convert the tree to the AST")
+        });
+
+        (
+            tree,
+            self.current_error
+                .expecteds
+                .is_empty()
+                .not()
+                .then_some(Error {
+                    expecteds: self.current_error.expecteds,
+                    at: self.current_error.at,
+                })
+                .into_iter()
+                .collect(),
+        )
+    }
+
+    pub(crate) fn finalize_ast_node(
+        tree: &pernixc_lexical::tree::Tree,
+        ast_info: Option<AstInfo>,
+        events: &mut impl Iterator<Item = Event>,
+        cursor: &mut Cursor,
+    ) -> Option<concrete_tree::Tree> {
+        let mut nodes = Vec::new();
+
+        // step into the fragment if needed and memorize the cursor position
+        // after finish the fragment
+        let finish_cursor = if let Some(step_into_fragment) =
+            ast_info.and_then(|x| x.step_into_fragment)
+        {
+            assert!(
+                tree[step_into_fragment].nodes[cursor.node_index]
+                    .as_branch()
+                    .is_some_and(|x| *x == step_into_fragment),
+                "mismatched step into fragment node"
+            );
+
+            cursor.node_index = 0;
+            cursor.branch_id = step_into_fragment;
+
+            // step pass the fragment
+            Some(Cursor {
+                branch_id: step_into_fragment,
+                node_index: cursor.node_index + 1,
+            })
+        } else {
+            None
+        };
+
+        let branch = &tree[cursor.branch_id];
+
+        while let Some(event) = events.next() {
+            match event {
+                Event::NewNode(ast_info) => {
+                    let Some(tree) =
+                        Self::finalize_ast_node(tree, ast_info, events, cursor)
+                    else {
+                        continue;
+                    };
+
+                    nodes.push(concrete_tree::Node::Branch(Arc::new(tree)));
+                }
+
+                Event::Take(take) => {
+                    // eat the tokens from the branch
+                    nodes.extend(
+                        branch.nodes[cursor.node_index..]
+                            .iter()
+                            .take(take)
+                            .map(|x| match x {
+                                pernixc_lexical::tree::Node::Leaf(token) => {
+                                    concrete_tree::Node::Leaf(token.clone())
+                                }
+                                pernixc_lexical::tree::Node::Branch(id) => {
+                                    concrete_tree::Node::SkipFragment(*id)
+                                }
+                            }),
+                    );
+
+                    cursor.node_index += take;
+                }
+                Event::FinishNode => {
+                    if let Some(finish_cursor) = finish_cursor {
+                        // pre-maturely stepping out, create error node
+                        if cursor.node_index < branch.nodes.len() {
+                            let errors = branch.nodes[cursor.node_index..]
+                                .iter()
+                                .map(|x| match x {
+                                    pernixc_lexical::tree::Node::Leaf(
+                                        token,
+                                    ) => {
+                                        concrete_tree::Node::Leaf(token.clone())
+                                    }
+                                    pernixc_lexical::tree::Node::Branch(id) => {
+                                        concrete_tree::Node::SkipFragment(*id)
+                                    }
+                                })
+                                .collect();
+
+                            let error_node = concrete_tree::Node::Branch(
+                                Arc::new(concrete_tree::Tree {
+                                    ast_info: None,
+                                    nodes: errors,
+                                }),
+                            );
+
+                            nodes.push(error_node);
+                        }
+
+                        *cursor = finish_cursor;
+                    }
+
+                    // done with the current node, pop the stack
+                    // if node has no tokens, return None
+                    return (finish_cursor.is_some() || !nodes.is_empty())
+                        .then_some(concrete_tree::Tree { ast_info, nodes });
+                }
+
+                Event::Inline(_) => {
+                    unreachable!("should've been flattend")
+                }
+            }
+        }
+
+        panic!("missing finish node event")
     }
 }
 
@@ -358,7 +507,7 @@ pub enum Event {
     /// Start a new node with the given [`AstInfo`] and push it onto the
     /// stack. If [`AstInfo::step_into_fragment`] present, the parser shall
     /// step into the fragment as well.
-    NewNode(AstInfo),
+    NewNode(Option<AstInfo>),
 
     /// Take token to the top-most node in the stack.
     Take(usize),
@@ -372,4 +521,36 @@ pub enum Event {
 
     /// Just inlines the list of events into the current event list.
     Inline(Vec<Event>),
+}
+
+struct FlattenEvent {
+    poll: Vec<Event>,
+}
+
+impl FlattenEvent {
+    fn new(mut events: Vec<Event>) -> Self {
+        events.reverse();
+        Self { poll: events }
+    }
+}
+
+impl Iterator for FlattenEvent {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.poll.pop()? {
+                Event::Inline(mut events) => {
+                    events.reverse();
+
+                    self.poll.append(&mut events);
+                }
+
+                event => {
+                    // if the event is not an inline event, return it
+                    return Some(event);
+                }
+            }
+        }
+    }
 }
