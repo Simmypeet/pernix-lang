@@ -13,6 +13,7 @@ getset = { workspace = true }
 static_assertions = { workspace = true }
 paste = { workspace = true }
 enum-as-inner = { workspace = true }
+derive_more = { workspace = true }
 
 [lints]
 workspace = true

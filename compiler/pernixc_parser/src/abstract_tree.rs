@@ -17,7 +17,7 @@ macro_rules! extract {
 }
 
 pub use extract as __extract;
-use pernixc_lexical::{token, tree::RelativeSpan};
+use pernixc_lexical::{token, tree::RelativeLocation};
 
 /// A trait representing an abstract syntax tree (AST) node which can be
 /// parsed using the given [`AbstractTree::parser`] function.
@@ -164,6 +164,12 @@ macro_rules! abstract_tree {
             >)?
             {
                 $(
+                    /*
+                    IF YOU FOUND ERROR HERE: please make sure that the parser
+                    generates the correct output type also check the `#[multi]`
+                    attribute on the field since some parsers are able to
+                    generate multiple nodes of the same type.
+                     */
                     #[allow(dead_code)]
                     fn $field_name()
                         -> impl $crate::parser::Parser
@@ -333,8 +339,8 @@ abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq)]
     #{fragment = state::FragmentKind::Indentation}
     pub struct Test<T: 'static> {
-        pub first: token::Kind<RelativeSpan> = expect::Identifier,
-        pub second: token::Kind<RelativeSpan> = expect::Identifier,
-        pub third: token::Kind<RelativeSpan> = expect::Identifier,
+        pub first: token::Kind<RelativeLocation> = expect::Identifier,
+        pub second: token::Kind<RelativeLocation> = expect::Identifier,
+        pub third: token::Kind<RelativeLocation> = expect::Identifier,
     }
 }

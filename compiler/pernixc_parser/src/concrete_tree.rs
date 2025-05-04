@@ -5,7 +5,7 @@ use std::{any::TypeId, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
-use pernixc_lexical::{token, tree::RelativeSpan};
+use pernixc_lexical::{token, tree::RelativeLocation};
 
 /// An enumeration of the different types of nodes that can be found in
 /// the concrete syntax tree.
@@ -13,8 +13,8 @@ use pernixc_lexical::{token, tree::RelativeSpan};
 #[allow(clippy::large_enum_variant)]
 pub enum Node {
     /// Terminal/leaf node representing a singular token.
-    Leaf(token::Kind<RelativeSpan>), /* TODO: optimize this variant to
-                                      * smaller size */
+    Leaf(token::Kind<RelativeLocation>), /* TODO: optimize this variant to
+                                          * smaller size */
 
     /// Another tree node that is a child of this node.
     Branch(Arc<Tree>),

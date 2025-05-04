@@ -1,15 +1,17 @@
 //! contains the definition of [`Expect`] trait and its implementations for
 //! various token types.
 
-use pernixc_lexical::{kind, token, tree::RelativeSpan};
+use derive_more::From;
+use enum_as_inner::EnumAsInner;
+use pernixc_lexical::{kind, token, tree::RelativeLocation};
 
 use crate::output::{One, Verify};
 
 /// The most basic kind of parser that used to determine if a token is a valid
 /// choice for a certain syntax tree node.
-pub trait Expect: Verify {
+pub trait Expect: Verify + Into<Expected> {
     /// Determines if the given token passes the expectation.
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool;
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool;
 }
 
 /// Expecting the token to be an identifier;
@@ -18,26 +20,26 @@ pub struct Identifier;
 
 impl Verify for Identifier {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
 impl Expect for Identifier {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.is_identifier()
     }
 }
 
 /// Expecting the token to be an identifier of the given value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IdentifierValue<'a>(pub &'a str);
+pub struct IdentifierValue(pub &'static str);
 
-impl Verify for IdentifierValue<'_> {
+impl Verify for IdentifierValue {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
-impl Expect for IdentifierValue<'_> {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+impl Expect for IdentifierValue {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.as_identifier().is_some_and(|x| x.0.as_str() == self.0)
     }
 }
@@ -48,11 +50,11 @@ pub struct String;
 
 impl Verify for String {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
 impl Expect for String {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.is_string()
     }
 }
@@ -63,11 +65,11 @@ pub struct Character;
 
 impl Verify for Character {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
 impl Expect for Character {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.is_character()
     }
 }
@@ -78,11 +80,11 @@ pub struct Numeric;
 
 impl Verify for Numeric {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
 impl Expect for Numeric {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.is_numeric()
     }
 }
@@ -92,11 +94,11 @@ pub type Punctuation = char;
 
 impl Verify for Punctuation {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
 impl Expect for Punctuation {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.as_punctuation().is_some_and(|x| x.0 == *self)
     }
 }
@@ -107,11 +109,11 @@ pub struct NewLine;
 
 impl Verify for NewLine {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
 impl Expect for NewLine {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.is_new_line()
     }
 }
@@ -121,11 +123,11 @@ pub type Keyword = kind::Keyword;
 
 impl Verify for Keyword {
     type Extract = One;
-    type Output = token::Kind<RelativeSpan>;
+    type Output = token::Kind<RelativeLocation>;
 }
 
 impl Expect for Keyword {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         terminal.kind.as_keyword().is_some_and(|x| x == self)
     }
 }
@@ -140,13 +142,17 @@ impl<T: Verify> Verify for NoPriorInsignificant<T> {
 }
 
 impl<T: Expect> Expect for NoPriorInsignificant<T> {
-    fn expect(&self, terminal: &token::Kind<RelativeSpan>) -> bool {
+    fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
         if terminal.prior_insignificant.is_some() {
             return false;
         }
 
         self.0.expect(terminal)
     }
+}
+
+impl<T: Expect> From<NoPriorInsignificant<T>> for Expected {
+    fn from(val: NoPriorInsignificant<T>) -> Self { val.0.into() }
 }
 
 /// Extension trait for [`Expect`] that adds additional functionality.
@@ -162,4 +168,20 @@ impl<T: Sized + Expect> Ext for T {
     fn no_prior_insignificant(self) -> NoPriorInsignificant<Self> {
         NoPriorInsignificant(self)
     }
+}
+
+/// An enumeration of all the possible expected token types.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+)]
+#[allow(missing_docs)]
+pub enum Expected {
+    Identifier(Identifier),
+    IdentifierValue(IdentifierValue),
+    String(String),
+    Character(Character),
+    Numeric(Numeric),
+    Punctuation(Punctuation),
+    NewLine(NewLine),
+    Keyword(Keyword),
 }

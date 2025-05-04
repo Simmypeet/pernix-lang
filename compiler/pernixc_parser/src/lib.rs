@@ -1,6 +1,7 @@
 //! Parser library for pernixc compiler
 
 pub mod abstract_tree;
+pub mod cache;
 pub mod concrete_tree;
 pub mod expect;
 pub mod from_node;
