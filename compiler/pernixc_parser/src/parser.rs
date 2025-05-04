@@ -1,7 +1,9 @@
 //! Contains the [`Parser`] trait and various combinators.
+use std::marker::PhantomData;
+
 use crate::{
-    expect,
-    expect::Expect,
+    abstract_tree::AbstractTree,
+    expect::{self, Expect},
     state::{Cursor, State},
 };
 
@@ -88,3 +90,28 @@ expect_impl_parser! {expect::Numeric}
 expect_impl_parser! {expect::Punctuation}
 expect_impl_parser! {expect::Keyword}
 expect_impl_parser! {~inner_state expect::NewLine}
+
+/// See [`parse_ast`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ParseAst<T>(pub PhantomData<T>);
+
+impl<T: AbstractTree> Parser for ParseAst<T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let result = state.start_ndoe::<T, _>(|state| {
+            let parser = T::parser();
+            parser.parse(state)
+        });
+
+        match result {
+            Some(Ok(())) => Ok(()),
+
+            Some(Err(Unexpected)) | None => Err(Unexpected),
+        }
+    }
+}
+
+/// Start parsing a node of the given AST type.
+#[must_use]
+pub const fn parse_ast<A: AbstractTree>() -> ParseAst<A> {
+    ParseAst(PhantomData)
+}
