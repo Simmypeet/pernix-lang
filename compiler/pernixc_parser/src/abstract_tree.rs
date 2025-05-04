@@ -78,7 +78,7 @@ pub trait AbstractTree: 'static + Sized + FromNode {
         let mut cache = cache::Cache::default();
         let mut state = state::State::new(tree, &mut cache);
 
-        let parser = parser::parse_ast::<Self>();
+        let parser = parser::ast::<Self>();
         let _ = parser.parse(&mut state);
 
         state.finalize::<Self>()
@@ -252,6 +252,41 @@ macro_rules! abstract_tree {
                 )
             }
             )?)*
+
+            /// Retrieves the inner concrete tree that this abstract tree is
+            /// layered on top of.
+            #[allow(dead_code)]
+            $struct_vis fn inner_tree(&self)
+                -> &$crate::abstract_tree::__std::sync::Arc<
+                    $crate::concrete_tree::Tree
+                >
+            {
+                &self.0
+            }
+
+            /// Casts the given tree to this abstract tree type.
+            #[allow(dead_code)]
+            $struct_vis fn from_tree(
+                tree:
+                &$crate::abstract_tree::__std::sync::Arc<
+                    $crate::concrete_tree::Tree
+                >
+            ) -> Option<Self> {
+                tree.ast_info.is_some_and(|x|
+                    $crate::abstract_tree::__std::any::TypeId::of::<Self>()
+                        == x.ast_type_id
+                )
+                .then_some(Self(
+                    tree.clone(),
+                    $(
+                        $crate::abstract_tree::__std::marker::PhantomData::<(
+                            $(
+                                $generic_param
+                            ),* ,
+                        )>
+                    )?
+                ))
+            }
         }
 
         // parser

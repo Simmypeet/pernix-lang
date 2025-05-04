@@ -1,3 +1,4 @@
+use flexstr::SharedStr;
 use pernixc_lexical::{token, tree::RelativeLocation};
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
 use pernixc_target::TargetID;
@@ -5,10 +6,12 @@ use pernixc_target::TargetID;
 use crate::{
     abstract_tree::{abstract_tree, AbstractTree},
     expect,
+    from_node::FromNode,
+    parser::ast,
 };
 
 abstract_tree! {
-    pub struct BasicSequence {
+    struct BasicSequence {
         pub public_keyword: token::Keyword<RelativeLocation>
             = expect::Keyword::Public,
 
@@ -42,6 +45,28 @@ fn parse_token_tree(
     (tree, TargetID::Local.make_global(source_id))
 }
 
+fn check_basic_sequence(
+    basic_sequence: &BasicSequence,
+    expected_name: SharedStr,
+) {
+    assert_eq!(
+        basic_sequence.public_keyword().map(|x| x.kind),
+        Some(expect::Keyword::Public)
+    );
+
+    assert_eq!(
+        basic_sequence.struct_keyword().map(|x| x.kind),
+        Some(expect::Keyword::Struct)
+    );
+
+    assert_eq!(
+        basic_sequence.identifier().map(|x| x.kind.0),
+        Some(expected_name)
+    );
+
+    assert_eq!(basic_sequence.semicolon().map(|x| x.kind.0), Some(';'));
+}
+
 #[test]
 fn basic_sequence() {
     let mut source_map = SourceMap::new();
@@ -50,21 +75,9 @@ fn basic_sequence() {
     let (tree, errors) = BasicSequence::parse(&tree);
     let tree = tree.unwrap();
 
+    check_basic_sequence(&tree, "Foo".into());
+
     assert!(errors.is_empty());
-
-    assert_eq!(
-        tree.public_keyword().map(|x| x.kind),
-        Some(expect::Keyword::Public)
-    );
-
-    assert_eq!(
-        tree.struct_keyword().map(|x| x.kind),
-        Some(expect::Keyword::Struct)
-    );
-
-    assert_eq!(tree.identifier().map(|x| x.kind.0), Some("Foo".into()));
-
-    assert_eq!(tree.semicolon().map(|x| x.kind.0), Some(';'));
 }
 
 #[test]
@@ -90,4 +103,37 @@ fn basic_sequence_missing_semicolon() {
     assert_eq!(tree.identifier().map(|x| x.kind.0), Some("Foo".into()));
 
     assert_eq!(tree.semicolon(), None);
+}
+
+abstract_tree! {
+    #[derive(Debug)]
+    pub struct TwoBasicSequences {
+        pub first = ast::<BasicSequence>(),
+        pub second = ast::<BasicSequence>(),
+    }
+}
+
+#[test]
+fn two_basic_sequences() {
+    let mut source_map = SourceMap::new();
+    let (tree, _) = parse_token_tree(
+        &mut source_map,
+        "public struct Foo; public struct Bar;",
+    );
+
+    let (tree, errors) = TwoBasicSequences::parse(&tree);
+    let tree = tree.unwrap();
+    let tree = tree.inner_tree();
+
+    assert_eq!(errors.len(), 0);
+    assert_eq!(tree.nodes.len(), 2);
+
+    check_basic_sequence(
+        &BasicSequence::from_node(&tree.nodes[0]).unwrap(),
+        "Foo".into(),
+    );
+    check_basic_sequence(
+        &BasicSequence::from_node(&tree.nodes[1]).unwrap(),
+        "Bar".into(),
+    );
 }

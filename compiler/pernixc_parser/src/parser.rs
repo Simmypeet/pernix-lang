@@ -92,11 +92,11 @@ expect_impl_parser! {expect::Punctuation}
 expect_impl_parser! {expect::Keyword}
 expect_impl_parser! {~inner_state expect::NewLine}
 
-/// See [`parse_ast`] for more information.
+/// See [`ast`] for more information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ParseAst<T>(pub PhantomData<T>);
+pub struct Ast<T>(pub PhantomData<T>);
 
-impl<T: AbstractTree> Parser for ParseAst<T> {
+impl<T: AbstractTree> Parser for Ast<T> {
     fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
         let result = state.start_ndoe::<T, _>(|state| {
             let parser = T::parser();
@@ -111,7 +111,7 @@ impl<T: AbstractTree> Parser for ParseAst<T> {
     }
 }
 
-impl<T: AbstractTree> Output for ParseAst<T> {
+impl<T: AbstractTree> Output for Ast<T> {
     type Extract = output::One;
     type Output<'x> = T;
 
@@ -125,9 +125,7 @@ impl<T: AbstractTree> Output for ParseAst<T> {
 
 /// Start parsing a node of the given AST type.
 #[must_use]
-pub const fn parse_ast<A: AbstractTree>() -> ParseAst<A> {
-    ParseAst(PhantomData)
-}
+pub const fn ast<A: AbstractTree>() -> Ast<A> { Ast(PhantomData) }
 
 #[cfg(test)]
 mod test;
