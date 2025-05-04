@@ -66,3 +66,28 @@ fn basic_sequence() {
 
     assert_eq!(tree.semicolon().map(|x| x.kind.0), Some(';'));
 }
+
+#[test]
+fn basic_sequence_missing_semicolon() {
+    let mut source_map = SourceMap::new();
+    let (tree, _) = parse_token_tree(&mut source_map, "public struct Foo");
+
+    let (tree, errors) = BasicSequence::parse(&tree);
+    let tree = tree.unwrap();
+
+    assert_eq!(errors.len(), 1);
+
+    assert_eq!(
+        tree.public_keyword().map(|x| x.kind),
+        Some(expect::Keyword::Public)
+    );
+
+    assert_eq!(
+        tree.struct_keyword().map(|x| x.kind),
+        Some(expect::Keyword::Struct)
+    );
+
+    assert_eq!(tree.identifier().map(|x| x.kind.0), Some("Foo".into()));
+
+    assert_eq!(tree.semicolon(), None);
+}
