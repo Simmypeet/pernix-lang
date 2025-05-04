@@ -73,7 +73,6 @@ macro_rules! expect_impl_parser {
             return Err(Unexpected);
         }
 
-        $state.set_node_index(node_index + 1);
         $state.eat_token((node_index - current_index) + 1);
 
         Ok(())

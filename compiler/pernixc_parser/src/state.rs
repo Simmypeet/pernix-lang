@@ -3,9 +3,14 @@
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use pernixc_arena::ID;
-use pernixc_lexical::{kind::Kind, token::Token, tree::DelimiterKind};
+use pernixc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
 
-use crate::{cache::Cache, concrete_tree::AstInfo, expect::Expected};
+use crate::{
+    abstract_tree::AbstractTree,
+    cache::Cache,
+    concrete_tree::AstInfo,
+    expect::{self, Expected},
+};
 
 /// Represents the state machine of the parser. The parser will use this state
 /// machine to scan the token tree and produce a syntax tree.
@@ -53,18 +58,15 @@ pub struct Cursor {
     pub node_index: usize,
 }
 
-/// An enumeration of what kind of fragment that the state machine can step
-/// into.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[allow(missing_docs)]
-pub enum FragmentKind {
-    Indentation,
-    Delimited(DelimiterKind),
+impl Default for Cursor {
+    fn default() -> Self {
+        Self { branch_id: ROOT_BRANCH_ID, node_index: Default::default() }
+    }
 }
 
 /// Represents an error of encountering an unexpected token at a certain
 /// possition at its possible expected tokens.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Error {
     /// The tokens that are expected at the cursor position.
     pub expecteds: Vec<Expected>,
@@ -134,13 +136,6 @@ impl<'a, 'cache> State<'a, 'cache> {
         }
     }
 
-    /// Sets the node index of the cursor to the given value.
-    pub fn set_node_index(&mut self, node_index: usize) {
-        assert!(node_index <= self.branch.nodes.len());
-
-        self.cursor.node_index = node_index;
-    }
-
     /// Adds an [`Event::Take`] event that takes the given number of tokens
     pub fn eat_token(&mut self, count: usize) {
         assert!(count > 0);
@@ -152,6 +147,9 @@ impl<'a, 'cache> State<'a, 'cache> {
         } else {
             self.events.push(Event::Take(count));
         }
+
+        // update the cursor position
+        self.cursor.node_index += count;
     }
 
     /// The current branch id that the cursor is in.
@@ -255,15 +253,107 @@ impl<'a, 'cache> State<'a, 'cache> {
 
         result
     }
+
+    /// Starts a new node with the given [`AstInfo`] and pushes it onto the
+    /// stack. If [`AstInfo::step_into_fragment`] is present, the parser shall
+    /// step into the fragment as well.
+    pub fn start_ndoe<A: AbstractTree, T>(
+        &mut self,
+        op: impl for<'x> FnOnce(&mut State<'a, 'x>) -> T,
+    ) -> Option<T> {
+        // step into the fragment
+        if let Some(some_step_info) = A::step_into_fragment() {
+            let starting_node_index = self.cursor.node_index;
+            let Some((node, node_index)) = self.peek() else {
+                self.add_error(
+                    std::iter::once(some_step_info.into()),
+                    Cursor {
+                        branch_id: self.branch_id(),
+                        node_index: self.branch.nodes.len(),
+                    },
+                );
+                return None;
+            };
+
+            // check if branch match the expected kind
+            let Some((branch, branch_id)) =
+                node.as_branch().copied().into_iter().find_map(|id| {
+                    let branch = &self.tree[id];
+                    let fragment = branch.kind.as_fragment()?;
+
+                    let expected_kind = match &fragment.fragment_kind {
+                        pernixc_lexical::tree::FragmentKind::Delimiter(
+                            delimiter,
+                        ) => expect::Fragment::Delimited(delimiter.delimiter),
+                        pernixc_lexical::tree::FragmentKind::Indentation(_) => {
+                            expect::Fragment::Indentation
+                        }
+                    };
+
+                    (expected_kind == some_step_info).then_some((branch, id))
+                })
+            else {
+                // not a branch
+                self.add_error(
+                    std::iter::once(some_step_info.into()),
+                    Cursor { branch_id: self.branch_id(), node_index },
+                );
+                return None;
+            };
+
+            // eat the token up until the fragment
+            self.eat_token(node_index - starting_node_index);
+
+            // start the event
+            self.events.push(Event::NewNode(AstInfo {
+                ast_type_id: std::any::TypeId::of::<A>(),
+                step_into_fragment: Some(branch_id),
+            }));
+
+            let mut state = State {
+                tree: self.tree,
+                branch,
+                cursor: Cursor { branch_id, node_index },
+                events: Vec::with_capacity(branch.nodes.len()),
+                new_line_significant: true,
+                current_error: std::mem::take(&mut self.current_error),
+                cache: self.cache,
+            };
+
+            // operate on the inner fragment state
+            let result = op(&mut state);
+
+            self.events.push(Event::Inline(state.events));
+            self.current_error = state.current_error;
+            self.cursor.node_index += 1; // step past the fragment
+
+            // done event
+            self.events.push(Event::FinishNode);
+
+            Some(result)
+        } else {
+            // no step into fragment, just start the event
+            self.events.push(Event::NewNode(AstInfo {
+                ast_type_id: std::any::TypeId::of::<A>(),
+                step_into_fragment: None,
+            }));
+
+            // operate on the inner state
+            let result = op(self);
+
+            // done event
+            self.events.push(Event::FinishNode);
+
+            Some(result)
+        }
+    }
 }
 
 /// The result of parsing operations. Instead of parsing the tree structure
 /// directly in each parsing operation, the state machine will keep track of
 /// the events that will be used to build the syntax tree at the end of
 /// parsing operations.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
-)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 pub enum Event {
     /// Start a new node with the given [`AstInfo`] and push it onto the
     /// stack. If [`AstInfo::step_into_fragment`] present, the parser shall
@@ -279,4 +369,7 @@ pub enum Event {
     /// left in the stepping out fragment, the leftover tokens will be grouped
     /// into a new error node and is attached to the popped node.
     FinishNode,
+
+    /// Just inlines the list of events into the current event list.
+    Inline(Vec<Event>),
 }

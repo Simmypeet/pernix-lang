@@ -3,7 +3,10 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::{kind, token, tree::RelativeLocation};
+use pernixc_lexical::{
+    kind, token,
+    tree::{DelimiterKind, RelativeLocation},
+};
 
 use crate::output::{One, Verify};
 
@@ -170,6 +173,15 @@ impl<T: Sized + Expect> Ext for T {
     }
 }
 
+/// An enumeration of what kind of fragment that the state machine can step
+/// into.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
+pub enum Fragment {
+    Indentation,
+    Delimited(DelimiterKind),
+}
+
 /// An enumeration of all the possible expected token types.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
@@ -184,4 +196,5 @@ pub enum Expected {
     Punctuation(Punctuation),
     NewLine(NewLine),
     Keyword(Keyword),
+    Fragment(Fragment),
 }

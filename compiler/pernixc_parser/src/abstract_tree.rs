@@ -3,7 +3,7 @@
 #[doc(hidden)]
 pub use std as __std;
 
-use crate::{expect, from_node::FromNode, parser::Parser, state};
+use crate::{expect, from_node::FromNode, parser::Parser};
 
 #[macro_export]
 #[doc(hidden)]
@@ -24,7 +24,7 @@ use pernixc_lexical::{token, tree::RelativeLocation};
 ///
 /// Rarely implemented directly, consider using the [`abstract_tree!`] macro
 /// to generate a struct or enum that implements this trait.
-pub trait AbstractTree: Sized + FromNode {
+pub trait AbstractTree: 'static + Sized + FromNode {
     /// Creates a parser for the syntax tree.
     ///
     /// # Note
@@ -33,7 +33,7 @@ pub trait AbstractTree: Sized + FromNode {
     /// effects. This allows the parser to "memoize" the result and enables
     /// incremental parsing.
     #[must_use = "the parser is lazy and will not parse anything until it is \
-                  used"]
+                  used, consider using `parse()` to parse the tree immediately"]
     fn parser() -> impl Parser;
 
     /// Returns the fragment that this tree must step into before parsing.
@@ -42,7 +42,7 @@ pub trait AbstractTree: Sized + FromNode {
     /// into any fragment, the parser shall parse the tree immediately in the
     /// current fragment level.
     #[must_use]
-    fn step_into_fragment() -> Option<state::FragmentKind> { None }
+    fn step_into_fragment() -> Option<expect::Fragment> { None }
 }
 
 /// Macro used for generating both syntax tree definition and its corresponding
@@ -298,7 +298,7 @@ macro_rules! abstract_tree {
                 }
 
                 $(
-                    fn step_into_fragment() -> Option<$crate::state::FragmentKind> {
+                    fn step_into_fragment() -> Option<$crate::expect::Fragment> {
                         Some($fragment)
                     }
                 )?
@@ -337,7 +337,7 @@ macro_rules! abstract_tree {
 abstract_tree! {
     /// A test struct for the macro
     #[derive(Debug, Clone, PartialEq, Eq)]
-    #{fragment = state::FragmentKind::Indentation}
+    #{fragment = expect::Fragment::Indentation}
     pub struct Test<T: 'static> {
         pub first: token::Kind<RelativeLocation> = expect::Identifier,
         pub second: token::Kind<RelativeLocation> = expect::Identifier,
