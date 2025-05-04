@@ -1,7 +1,7 @@
 //! Contains utility traits related to extracting output from the nodes inside
 //! the tree.
 
-use crate::{concrete_tree, from_node::FromNode};
+use crate::concrete_tree;
 
 /// Extracts a single matching node from the tree by returning an
 /// [`Some`] on the first matching element, [`None`] if no matching
@@ -9,54 +9,42 @@ use crate::{concrete_tree, from_node::FromNode};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct One;
 
-impl Extract for One {
-    type Result<'nodes, F> = Option<F>;
-
-    fn extract<F: FromNode>(
-        nodes: &[concrete_tree::Node],
-    ) -> Self::Result<'_, F> {
-        nodes.iter().find_map(F::from_node)
-    }
-}
-
 /// Extracts multiple matching nodes from the tree by returning an iterator
 /// of matching elements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Multiple;
 
-impl Extract for Multiple {
-    type Result<'nodes, F> = std::iter::FilterMap<
-        std::slice::Iter<'nodes, concrete_tree::Node>,
-        fn(&'nodes concrete_tree::Node) -> Option<F>,
-    >;
+/// A utility trait implemented by some parsers used to extract the output
+/// from the syntax tree node after finishing the parsing process.
+pub trait Output {
+    /// The kind of extraction to be used.
+    type Extract;
 
-    fn extract<F: FromNode>(
-        nodes: &[concrete_tree::Node],
-    ) -> Self::Result<'_, F> {
-        nodes.iter().filter_map(F::from_node)
-    }
+    /// The result of the extraction.
+    type Output<'a>;
+
+    /// Extracts the output from the concrete tree node.
+    fn output<'a>(
+        &self,
+        node: &'a concrete_tree::Node,
+    ) -> Option<Self::Output<'a>>;
 }
 
-/// A trait implemented by [`Multiple`] and [`One`] to extract nodes from the
-/// tree.
-pub trait Extract {
-    /// The result of the extraction element from the tree.
-    ///
-    /// For example, it can be an iterator of nodes or a single node.
-    type Result<'nodes, F>;
-
-    /// Extracts the nodes from the tree.
-    fn extract<F: FromNode>(
-        nodes: &[concrete_tree::Node],
-    ) -> Self::Result<'_, F>;
+/// Extracts a first single matching node from the tree by returning an
+/// [`Option`] on the first matching element, [`None`] if no matching
+/// element is found.
+pub fn extract_one<O: Output<Extract = One>>(
+    extract_parser: O,
+    node: &[concrete_tree::Node],
+) -> Option<O::Output<'_>> {
+    node.iter().find_map(move |node| extract_parser.output(node))
 }
 
-/// A utility trait implemented by some parsers used to specify the output 
-/// type of the parser.
-pub trait Verify {
-    /// Determines how to extract the output from the tree.
-    type Extract: Extract;
-
-    /// The output type of the parser.
-    type Output: FromNode;
+/// Extracts multiple matching nodes from the tree by returning an iterator
+/// of matching elements.
+pub fn extract_multiple<O: Output<Extract = Multiple>>(
+    extract_parser: O,
+    node: &[concrete_tree::Node],
+) -> impl Iterator<Item = O::Output<'_>> {
+    node.iter().filter_map(move |node| extract_parser.output(node))
 }

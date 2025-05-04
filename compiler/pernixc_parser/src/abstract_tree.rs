@@ -6,7 +6,7 @@ pub use std as __std;
 use crate::{
     cache, error, expect,
     from_node::FromNode,
-    parser::{self, parse_ast, Parser},
+    parser::{self, Parser},
     state,
 };
 
@@ -19,10 +19,31 @@ macro_rules! extract {
     () => {
         $crate::output::One
     };
+
+    ( !multi -> $ty:ty ) => {
+        impl $crate::abstract_tree::__std::iter::Iterator<Item = $ty>
+    };
+
+    ( ! -> $ty:ty) => {
+        $crate::abstract_tree::__std::option::Option<$ty>
+    };
+
+    ( ~multi -> $parser:expr, $node:expr ) => {
+        $crate::output::extract_multiple(
+            $parser,
+            $node,
+        )
+    };
+
+    ( ~ -> $parser:expr, $node:expr ) => {
+        $crate::output::extract_one(
+            $parser,
+            $node,
+        )
+    };
 }
 
 pub use extract as __extract;
-use pernixc_lexical::{token, tree::RelativeLocation};
 
 /// A trait representing an abstract syntax tree (AST) node which can be
 /// parsed using the given [`AbstractTree::parser`] function.
@@ -192,11 +213,11 @@ macro_rules! abstract_tree {
                     #[allow(dead_code)]
                     fn $field_name()
                         -> impl $crate::parser::Parser
-                        $(+ $crate::output::Verify<
+                        $(+ for<'x> $crate::output::Output<
                                 Extract = $crate::abstract_tree::__extract!(
                                     $($field_attr)?
                                 ),
-                                Output = $field_type,
+                                Output<'x> = $field_type,
                         >)?
 
                     {
@@ -220,14 +241,16 @@ macro_rules! abstract_tree {
             #[inline]
             #[must_use]
             #[doc = concat!("extracts the `", stringify!($field_name), "` field")]
-            $field_vis fn $field_name(&self)
-               -> <
-                $crate::abstract_tree::__extract!($($field_attr)?)
-                as $crate::output::Extract
-                >::Result<'_, $field_type> {
-                    <$crate::abstract_tree::__extract!($($field_attr)?)
-                        as $crate::output::Extract>::extract(&self.0.nodes)
-                }
+            $field_vis fn $field_name(&self) ->
+                $crate::abstract_tree::__extract!( ! $($field_attr)? -> $field_type )
+            {
+                $crate::abstract_tree::__extract!(
+                    ~$($field_attr)?
+                    ->
+                    $parser_expr,
+                    &self.0.nodes
+                )
+            }
             )?)*
         }
 
@@ -350,16 +373,5 @@ macro_rules! abstract_tree {
                 $variant_name($variant_type),
             )*
         }
-    }
-}
-
-abstract_tree! {
-    /// A test struct for the macro
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    #{fragment = expect::Fragment::Indentation}
-    pub struct Test<T: 'static> {
-        pub first: token::Kind<RelativeLocation> = expect::Identifier,
-        pub second: Test<T> = parse_ast::<Test<T>>(),
-        pub third: token::Kind<RelativeLocation> = expect::Identifier,
     }
 }

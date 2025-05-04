@@ -8,11 +8,11 @@ use pernixc_lexical::{
     tree::{DelimiterKind, RelativeLocation},
 };
 
-use crate::output::{One, Verify};
+use crate::output::{One, Output};
 
 /// The most basic kind of parser that used to determine if a token is a valid
 /// choice for a certain syntax tree node.
-pub trait Expect: Verify + Into<Expected> {
+pub trait Expect: Output + Into<Expected> {
     /// Determines if the given token passes the expectation.
     fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool;
 }
@@ -21,9 +21,23 @@ pub trait Expect: Verify + Into<Expected> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Identifier;
 
-impl Verify for Identifier {
+impl Output for Identifier {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+
+    type Output<'a> = token::Identifier<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_identifier().cloned().map(|y| token::Token {
+                kind: y,
+                span: x.span,
+                prior_insignificant: x.prior_insignificant,
+            })
+        })
+    }
 }
 
 impl Expect for Identifier {
@@ -36,9 +50,24 @@ impl Expect for Identifier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IdentifierValue(pub &'static str);
 
-impl Verify for IdentifierValue {
+impl Output for IdentifierValue {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+    type Output<'a> = token::Identifier<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_identifier().cloned().filter(|y| y.0 == self.0).map(|y| {
+                token::Token {
+                    kind: y,
+                    span: x.span,
+                    prior_insignificant: x.prior_insignificant,
+                }
+            })
+        })
+    }
 }
 
 impl Expect for IdentifierValue {
@@ -51,9 +80,22 @@ impl Expect for IdentifierValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct String;
 
-impl Verify for String {
+impl Output for String {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+    type Output<'a> = token::String<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_string().cloned().map(|y| token::Token {
+                kind: y,
+                span: x.span,
+                prior_insignificant: x.prior_insignificant,
+            })
+        })
+    }
 }
 
 impl Expect for String {
@@ -66,9 +108,22 @@ impl Expect for String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Character;
 
-impl Verify for Character {
+impl Output for Character {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+    type Output<'a> = token::Character<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_character().copied().map(|y| token::Token {
+                kind: y,
+                span: x.span,
+                prior_insignificant: x.prior_insignificant,
+            })
+        })
+    }
 }
 
 impl Expect for Character {
@@ -81,9 +136,22 @@ impl Expect for Character {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Numeric;
 
-impl Verify for Numeric {
+impl Output for Numeric {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+    type Output<'a> = token::Numeric<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_numeric().cloned().map(|y| token::Token {
+                kind: y,
+                span: x.span,
+                prior_insignificant: x.prior_insignificant,
+            })
+        })
+    }
 }
 
 impl Expect for Numeric {
@@ -95,9 +163,24 @@ impl Expect for Numeric {
 /// Expecting the token to be a punctuation token.
 pub type Punctuation = char;
 
-impl Verify for Punctuation {
+impl Output for Punctuation {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+    type Output<'a> = token::Punctuation<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_punctuation().filter(|x| ***x == *self).copied().map(
+                |y| token::Token {
+                    kind: y,
+                    span: x.span,
+                    prior_insignificant: x.prior_insignificant,
+                },
+            )
+        })
+    }
 }
 
 impl Expect for Punctuation {
@@ -110,9 +193,22 @@ impl Expect for Punctuation {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NewLine;
 
-impl Verify for NewLine {
+impl Output for NewLine {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+    type Output<'a> = token::NewLine<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_new_line().copied().map(|y| token::Token {
+                kind: y,
+                span: x.span,
+                prior_insignificant: x.prior_insignificant,
+            })
+        })
+    }
 }
 
 impl Expect for NewLine {
@@ -124,9 +220,24 @@ impl Expect for NewLine {
 /// Expecting the token to be a keyword token.
 pub type Keyword = kind::Keyword;
 
-impl Verify for Keyword {
+impl Output for Keyword {
     type Extract = One;
-    type Output = token::Kind<RelativeLocation>;
+    type Output<'a> = token::Keyword<RelativeLocation>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        node.as_leaf().and_then(|x| {
+            x.kind.as_keyword().filter(|x| *x == self).copied().map(|y| {
+                token::Token {
+                    kind: y,
+                    span: x.span,
+                    prior_insignificant: x.prior_insignificant,
+                }
+            })
+        })
+    }
 }
 
 impl Expect for Keyword {
@@ -139,9 +250,16 @@ impl Expect for Keyword {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoPriorInsignificant<T>(pub T);
 
-impl<T: Verify> Verify for NoPriorInsignificant<T> {
+impl<T: Output> Output for NoPriorInsignificant<T> {
     type Extract = T::Extract;
-    type Output = T::Output;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        self.0.output(node)
+    }
 }
 
 impl<T: Expect> Expect for NoPriorInsignificant<T> {
