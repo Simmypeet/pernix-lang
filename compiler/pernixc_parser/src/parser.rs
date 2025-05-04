@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 use crate::{
     abstract_tree::AbstractTree,
     expect::{self, Expect},
+    output::{self, Verify},
     state::{Cursor, State},
 };
 
@@ -108,6 +109,11 @@ impl<T: AbstractTree> Parser for ParseAst<T> {
             Some(Err(Unexpected)) | None => Err(Unexpected),
         }
     }
+}
+
+impl<T: AbstractTree> Verify for ParseAst<T> {
+    type Extract = output::One;
+    type Output = T;
 }
 
 /// Start parsing a node of the given AST type.
