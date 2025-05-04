@@ -4,24 +4,23 @@ use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
 use pernixc_target::TargetID;
 
 use crate::{
-    abstract_tree::{abstract_tree, AbstractTree},
+    abstract_tree::{abstract_tree, AbstractTree, Tag},
     expect,
-    from_node::FromNode,
     parser::ast,
 };
 
 abstract_tree! {
     struct BasicSequence {
-        pub public_keyword: token::Keyword<RelativeLocation>
+        public_keyword: token::Keyword<RelativeLocation>
             = expect::Keyword::Public,
 
-        pub struct_keyword: token::Keyword<RelativeLocation>
+        struct_keyword: token::Keyword<RelativeLocation>
             = expect::Keyword::Struct,
 
-        pub identifier: token::Identifier<RelativeLocation>
+        identifier: token::Identifier<RelativeLocation>
             = expect::Identifier,
 
-        pub semicolon: token::Punctuation<RelativeLocation>
+        semicolon: token::Punctuation<RelativeLocation>
             = ';'
     }
 }
@@ -107,9 +106,9 @@ fn basic_sequence_missing_semicolon() {
 
 abstract_tree! {
     #[derive(Debug)]
-    pub struct TwoBasicSequences {
-        pub first = ast::<BasicSequence>(),
-        pub second = ast::<BasicSequence>(),
+    struct TwoBasicSequences {
+        first: Tag<BasicSequence, 1> = ast::<Tag<BasicSequence, 1>>(),
+        second: Tag<BasicSequence, 2> = ast::<Tag<BasicSequence, 2>>(),
     }
 }
 
@@ -122,18 +121,10 @@ fn two_basic_sequences() {
     );
 
     let (tree, errors) = TwoBasicSequences::parse(&tree);
-    let tree = tree.unwrap();
-    let tree = tree.inner_tree();
+    let tree = dbg!(tree.unwrap());
 
-    assert_eq!(errors.len(), 0);
-    assert_eq!(tree.nodes.len(), 2);
+    assert!(errors.is_empty());
 
-    check_basic_sequence(
-        &BasicSequence::from_node(&tree.nodes[0]).unwrap(),
-        "Foo".into(),
-    );
-    check_basic_sequence(
-        &BasicSequence::from_node(&tree.nodes[1]).unwrap(),
-        "Bar".into(),
-    );
+    check_basic_sequence(&tree.first().unwrap(), "Foo".into());
+    check_basic_sequence(&tree.second().unwrap(), "Bar".into());
 }

@@ -412,3 +412,57 @@ macro_rules! abstract_tree {
 }
 
 pub use abstract_tree;
+
+/// A helper struct that allows you to tag multiple trees with the same type
+/// in a single [`abstract_tree!`] macro.
+///
+/// By design of the node extraction, the parser returns the first matching
+/// node in the tree which means that if you have multiple trees with the same
+/// type in the same tree and you want to extract them, it always returns the
+/// first one.
+///
+/// This struct allows you to differentiate between the trees by tagging them
+/// with a unique simplen number.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Deref,
+    derive_more::DerefMut,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct Tag<T, const N: usize>(pub T);
+
+impl<T: AbstractTree, const N: usize> AbstractTree for Tag<T, N> {
+    fn parser() -> impl Parser { parser::ast::<T>() }
+
+    fn step_into_fragment() -> Option<expect::Fragment> { None }
+}
+
+impl<T: AbstractTree, const N: usize> FromNode for Tag<T, N> {
+    fn from_node(node: &crate::concrete_tree::Node) -> Option<Self> {
+        node.as_branch().and_then(|branch| {
+            branch
+                .ast_info
+                .is_some_and(|x| {
+                    x.ast_type_id == std::any::TypeId::of::<Self>()
+                })
+                .then(|| {
+                    branch
+                        .nodes
+                        .first()
+                        .and_then(|node| T::from_node(node).map(Self))
+                })?
+        })
+    }
+}
+
+impl<T: AbstractTree, const N: usize> Tag<T, N> {
+    /// Gets the inner tree of this tag.
+    pub fn into_innter(self) -> T { self.0 }
+}
