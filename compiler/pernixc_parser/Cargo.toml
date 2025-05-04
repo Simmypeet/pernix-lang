@@ -9,6 +9,9 @@ rust-version.workspace = true
 [dependencies]
 pernixc_arena = { path = "../pernixc_arena" }
 pernixc_lexical = { path = "../pernixc_lexical" }
+pernixc_source_file = { path = "../pernixc_source_file" }
+pernixc_target = { path = "../pernixc_target" }
+pernixc_handler = { path = "../pernixc_handler" }
 getset = { workspace = true }
 static_assertions = { workspace = true }
 paste = { workspace = true }

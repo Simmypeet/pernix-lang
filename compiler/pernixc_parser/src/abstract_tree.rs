@@ -96,7 +96,7 @@ pub trait AbstractTree: 'static + Sized + FromNode {
 /// will be executed in order to parse the tree.
 ///
 /// ``` ignore
-/// abstract_tree! {
+/// ast! {
 ///     pub struct SimpleStruct {
 ///         pub visibility: AccessModifier =
 ///             parse_ast::<AccessModifier>().optional(),
@@ -127,7 +127,7 @@ pub trait AbstractTree: 'static + Sized + FromNode {
 /// first matching variant will be used.
 ///
 /// ``` ignore
-/// abstract_tree! {
+/// ast! {
 ///     pub enum ModuleItem {
 ///         Function(FunctionItem),
 ///         Struct(StructItem),
@@ -375,3 +375,5 @@ macro_rules! abstract_tree {
         }
     }
 }
+
+pub use abstract_tree;

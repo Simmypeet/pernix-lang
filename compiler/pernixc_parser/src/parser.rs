@@ -128,3 +128,6 @@ impl<T: AbstractTree> Output for ParseAst<T> {
 pub const fn parse_ast<A: AbstractTree>() -> ParseAst<A> {
     ParseAst(PhantomData)
 }
+
+#[cfg(test)]
+mod test;
