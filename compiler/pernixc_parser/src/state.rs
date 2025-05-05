@@ -1,6 +1,6 @@
 //! Contains the definition of the [`State`].
 
-use std::{ops::Not, sync::Arc};
+use std::sync::Arc;
 
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
@@ -51,6 +51,17 @@ pub struct State<'a, 'cache> {
     cache: &'cache mut Cache,
 }
 
+/// Represents a snapshot of the [`State`] at a certain point in time that can
+/// be restored later. This is used to implement the backtracking feature of
+/// the parser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Checkpoint {
+    node_index: usize,
+    error_count: usize,
+    new_line_significant: bool,
+    event_index: (usize, Option<usize>),
+}
+
 /// Used for representing the position where the parser is in the token tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Cursor {
@@ -94,6 +105,49 @@ impl<'a, 'cache> State<'a, 'cache> {
                 },
             },
             cache,
+        }
+    }
+
+    /// Takes a snapshot of the current state and returns a [`Checkpoint`] which
+    /// can be used to restore the state later using [`Self::restore`].
+    #[must_use]
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            node_index: self.cursor.node_index,
+            error_count: self.current_error.expecteds.len(),
+            new_line_significant: self.new_line_significant,
+            event_index: (
+                self.events.len(),
+                // if the last event is a take event, need to remember the
+                // number of tokens taken
+                self.events.last().and_then(|x| x.as_take().copied()),
+            ),
+        }
+    }
+
+    /// Restores the state to the given [`Checkpoint`]. This will restore the
+    /// cursor position, the event list, and the error list to the state
+    /// when the checkpoint was created.
+    pub fn restore(&mut self, checkpoint: Checkpoint) {
+        assert!(self.cursor.node_index >= checkpoint.node_index);
+        assert!(self.events.len() >= checkpoint.event_index.0);
+        assert!(self.current_error.expecteds.len() >= checkpoint.error_count);
+        assert!(checkpoint.event_index.1.is_some_and(|saved_count| self
+            .events[checkpoint.event_index.0 - 1]
+            .as_take()
+            .is_some_and(|current_count| *current_count >= saved_count)));
+
+        self.cursor.node_index = checkpoint.node_index;
+        self.new_line_significant = checkpoint.new_line_significant;
+        self.events.truncate(checkpoint.event_index.0);
+
+        if let Some(take_count) = checkpoint.event_index.1 {
+            *self
+                .events
+                .last_mut()
+                .expect("should have an event")
+                .as_take_mut()
+                .expect("should be a take event") = take_count;
         }
     }
 
@@ -343,13 +397,36 @@ impl<'a, 'cache> State<'a, 'cache> {
         }
     }
 
-    pub(crate) fn finalize<A: AbstractTree>(self) -> (Option<A>, Vec<Error>) {
+    pub(crate) fn try_take_error(&mut self) -> Option<Error> {
+        // no error to take
+        if self.current_error.expecteds.is_empty() {
+            return None;
+        }
+
+        let current_at = self.start_location_of_cursor(self.cursor);
+        let error_at = self.start_location_of_cursor(self.current_error.at);
+
+        if current_at <= error_at {
+            Some(Error {
+                expecteds: std::mem::take(&mut self.current_error.expecteds),
+                at: self.current_error.at,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn finalize<A: AbstractTree>(
+        mut self,
+    ) -> (Option<A>, Vec<Error>) {
         assert!(!self.events.is_empty(), "No events to finalize");
         assert_eq!(
             self.branch_id(),
             ROOT_BRANCH_ID,
             "can only finalize the root branch"
         );
+
+        let take_error = self.try_take_error();
 
         let mut events = FlattenEvent::new(self.events);
         let mut cursor = Cursor { branch_id: ROOT_BRANCH_ID, node_index: 0 };
@@ -375,19 +452,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 .expect("should be able to convert the tree to the AST")
         });
 
-        (
-            tree,
-            self.current_error
-                .expecteds
-                .is_empty()
-                .not()
-                .then_some(Error {
-                    expecteds: self.current_error.expecteds,
-                    at: self.current_error.at,
-                })
-                .into_iter()
-                .collect(),
-        )
+        (tree, take_error.into_iter().collect())
     }
 
     pub(crate) fn finalize_ast_node(

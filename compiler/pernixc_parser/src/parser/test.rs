@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use flexstr::SharedStr;
 use pernixc_lexical::{token, tree::RelativeLocation};
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
@@ -5,8 +7,8 @@ use pernixc_target::TargetID;
 
 use crate::{
     abstract_tree::{abstract_tree, AbstractTree, Tag},
-    expect,
-    parser::ast,
+    expect::{self, Expected},
+    parser::{ast, Parser as _},
 };
 
 abstract_tree! {
@@ -108,8 +110,7 @@ abstract_tree! {
     #[derive(Debug)]
     struct TwoBasicSequences {
         first: Tag<BasicSequence, 1> = ast::<Tag<BasicSequence, 1>>(),
-        second: Tag<BasicSequence, 2> = ast::<Tag<BasicSequence, 2>>(),
-    }
+        second: Tag<BasicSequence, 2> = ast::<Tag<BasicSequence, 2>>(), }
 }
 
 #[test]
@@ -197,4 +198,111 @@ fn sequence_with_fragment() {
         body.int32_keyword().map(|x| x.kind),
         Some(expect::Keyword::Int32)
     );
+}
+
+abstract_tree! {
+    struct Int32Reference {
+        ampersand: token::Punctuation<RelativeLocation>
+            = '&',
+
+        mut_keyword: token::Keyword<RelativeLocation>
+            = expect::Keyword::Mut.optional(),
+
+        int32_keyword: token::Keyword<RelativeLocation>
+            = expect::Keyword::Int32
+    }
+}
+
+#[test]
+fn mutable_int32_reference() {
+    let mut source_map = SourceMap::new();
+    let (tree, _) = parse_token_tree(&mut source_map, "&mut int32");
+
+    let (tree, errors) = Int32Reference::parse(&tree);
+    let tree = tree.unwrap();
+
+    assert!(errors.is_empty());
+
+    assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
+    assert!(tree.mut_keyword().is_some_and(|x| x.kind == expect::Keyword::Mut));
+    assert!(tree
+        .int32_keyword()
+        .is_some_and(|x| x.kind == expect::Keyword::Int32));
+}
+
+#[test]
+fn int32_reference() {
+    let mut source_map = SourceMap::new();
+    let (tree, _) = parse_token_tree(&mut source_map, "&int32");
+
+    let (tree, errors) = Int32Reference::parse(&tree);
+    let tree = tree.unwrap();
+
+    assert!(errors.is_empty());
+
+    assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
+    assert!(tree.mut_keyword().is_none());
+    assert!(tree
+        .int32_keyword()
+        .is_some_and(|x| x.kind == expect::Keyword::Int32));
+}
+
+#[test]
+fn int32_reference_error() {
+    let mut source_map = SourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "&bool");
+
+    let (tree, errors) = Int32Reference::parse(&token_tree);
+    let tree = tree.unwrap();
+
+    assert_eq!(errors.len(), 1);
+
+    let error = &errors[0];
+
+    // found bool at the error
+    assert!(token_tree[error.at.branch_id].nodes[error.at.node_index]
+        .as_leaf()
+        .and_then(|x| x.kind.as_keyword())
+        .is_some_and(|x| *x == expect::Keyword::Bool));
+
+    // expected either `int32` or `bool`
+    assert_eq!(
+        error.expecteds.iter().copied().collect::<HashSet<_>>(),
+        [
+            Expected::Keyword(expect::Keyword::Mut),
+            Expected::Keyword(expect::Keyword::Int32)
+        ]
+        .into_iter()
+        .collect()
+    );
+
+    assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
+    assert!(tree.mut_keyword().is_none());
+    assert!(tree.int32_keyword().is_none());
+}
+
+#[test]
+fn int32_reference_missing_int32() {
+    let mut source_map = SourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "&mut");
+
+    let (tree, errors) = Int32Reference::parse(&token_tree);
+    let tree = tree.unwrap();
+
+    assert_eq!(errors.len(), 1);
+
+    let error = &errors[0];
+
+    // found bool at the error
+    assert_eq!(token_tree[error.at.branch_id].nodes.len(), error.at.node_index);
+
+    // expected `int32`
+    assert_eq!(
+        error.expecteds.iter().copied().collect::<HashSet<_>>(),
+        std::iter::once(Expected::Keyword(expect::Keyword::Int32)).collect()
+    );
+
+    assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
+    assert!(tree.mut_keyword().is_some_and(|x| x.kind == expect::Keyword::Mut));
+    assert!(tree.int32_keyword().is_none());
 }

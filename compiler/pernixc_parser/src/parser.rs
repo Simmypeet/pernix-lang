@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use crate::{
     abstract_tree::AbstractTree,
     expect::{self, Expect},
-    output::{self, Output},
+    output::{One, Output},
     state::{Cursor, State},
 };
 
@@ -17,6 +17,15 @@ pub struct Unexpected;
 pub trait Parser {
     /// Starts the parsing process.
     fn parse(&self, state: &mut State) -> Result<(), Unexpected>;
+
+    /// Optionally parse the given parser, if successful, the result of the
+    /// parsing will be used, otherwise, skip this parser.
+    fn optional(self) -> Optional<Self>
+    where
+        Self: Sized,
+    {
+        Optional(self)
+    }
 }
 
 impl<F: Fn(&mut State) -> Result<(), Unexpected>> Parser for F {
@@ -93,7 +102,7 @@ expect_impl_parser! {expect::Keyword}
 expect_impl_parser! {~inner_state expect::NewLine}
 
 /// See [`ast`] for more information.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Ast<T>(pub PhantomData<T>);
 
 impl<T: AbstractTree> Parser for Ast<T> {
@@ -112,7 +121,7 @@ impl<T: AbstractTree> Parser for Ast<T> {
 }
 
 impl<T: AbstractTree> Output for Ast<T> {
-    type Extract = output::One;
+    type Extract = One;
     type Output<'x> = T;
 
     fn output<'a>(
@@ -126,6 +135,34 @@ impl<T: AbstractTree> Output for Ast<T> {
 /// Start parsing a node of the given AST type.
 #[must_use]
 pub const fn ast<A: AbstractTree>() -> Ast<A> { Ast(PhantomData) }
+
+/// See [`Parser::optional`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Optional<T>(pub T);
+
+impl<T: Parser> Parser for Optional<T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let checkpoint = state.checkpoint();
+
+        if self.0.parse(state) == Err(Unexpected) {
+            state.restore(checkpoint);
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: Output> Output for Optional<T> {
+    type Extract = One;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
 
 #[cfg(test)]
 mod test;
