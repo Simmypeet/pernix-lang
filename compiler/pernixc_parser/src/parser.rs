@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use crate::{
     abstract_tree::AbstractTree,
     expect::{self, Expect},
-    output::{One, Output},
+    output::{Multiple, One, Output},
     state::{Cursor, State},
 };
 
@@ -25,6 +25,15 @@ pub trait Parser {
         Self: Sized,
     {
         Optional(self)
+    }
+
+    /// Repeats the given parser until it fails, creating a list (zero or more)
+    /// of the successful trees.
+    fn repeat(self) -> Repeat<Self>
+    where
+        Self: Sized,
+    {
+        Repeat(self)
     }
 }
 
@@ -291,6 +300,39 @@ macro_rules! implements_choice {
 }
 
 implements_choice!(A B C D E F G H I J K L M N O P Q R S T U V W X Y Z);
+
+/// See [`Parser::repeat`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Repeat<T>(pub T);
+
+impl<T: Parser> Parser for Repeat<T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let mut checkpoint = state.checkpoint();
+
+        loop {
+            if self.0.parse(state) == Ok(()) {
+                checkpoint = state.checkpoint();
+            } else {
+                state.restore(checkpoint);
+                break;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: Output<Extract = One>> Output for Repeat<T> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
 
 #[cfg(test)]
 mod test;

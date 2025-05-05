@@ -21,7 +21,7 @@ macro_rules! extract {
     };
 
     ( !multi -> $ty:ty ) => {
-        impl $crate::abstract_tree::__std::iter::Iterator<Item = $ty>
+        impl $crate::abstract_tree::__std::iter::Iterator<Item = $ty> + use<'_>
     };
 
     ( ! -> $ty:ty) => {
@@ -242,6 +242,7 @@ macro_rules! abstract_tree {
             #[must_use]
             #[allow(dead_code)]
             #[doc = concat!("extracts the `", stringify!($field_name), "` field")]
+            #[allow(clippy::double_must_use)]
             $field_vis fn $field_name(&self) ->
                 $crate::abstract_tree::__extract!( ! $($field_attr)? -> $field_type )
             {

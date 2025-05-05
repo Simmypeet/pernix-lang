@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    fmt::{Debug, Display},
+};
 
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
@@ -550,18 +553,23 @@ impl Input<&Type, ()> for &TypeRef {
     }
 }
 
-fn verify_type_ref(type_ref: &TypeRef) -> TestCaseResult {
+fn verify_type_ref<TR: Display, TAst: AbstractTree + Debug>(
+    ast_ref: &TR,
+) -> TestCaseResult
+where
+    for<'x, 'y> &'x TR: Input<&'y TAst, ()>,
+{
     let mut source_map = SourceMap::new();
 
-    let source = type_ref.to_string();
+    let source = ast_ref.to_string();
     let (token_tree, _) = parse_token_tree(&mut source_map, &source);
 
-    let (tree, errors) = Type::parse(&token_tree);
+    let (tree, errors) = TAst::parse(&token_tree);
     let tree = tree.unwrap();
 
     assert!(errors.is_empty());
 
-    type_ref.assert(&tree, ())
+    ast_ref.assert(&tree, ())
 }
 
 proptest::proptest! {
@@ -569,7 +577,7 @@ proptest::proptest! {
     fn nested_type(
         type_ref in TypeRef::arbitrary()
     ) {
-        verify_type_ref(&type_ref)?;
+        verify_type_ref::<TypeRef, Type>(&type_ref)?;
     }
 }
 
@@ -594,4 +602,58 @@ fn trailing_optional() {
 
     assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
     assert!(tree.mut_keyword().is_none());
+}
+
+abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    struct Types {
+        types: #[multi] Type = ast::<Type>().repeat(),
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display,
+)]
+#[display(
+    "[{}]", 
+    self.types
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>().join(" ")
+)]
+struct TypesRef {
+    types: Vec<TypeRef>,
+}
+
+impl Arbitrary for TypesRef {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(TypeRef::arbitrary(), 0..10)
+            .prop_map(|types| Self { types })
+            .boxed()
+    }
+}
+
+impl Input<&Types, ()> for &TypesRef {
+    fn assert(
+        self,
+        output: &Types,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        let types = output.types().collect::<Vec<_>>();
+
+        self.types.assert(&types, ())
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn types(
+        types_ref in TypesRef::arbitrary()
+    ) {
+        verify_type_ref::<TypesRef, Types>(&types_ref)?;
+    }
 }
