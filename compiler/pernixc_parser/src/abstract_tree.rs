@@ -240,6 +240,7 @@ macro_rules! abstract_tree {
             $($(
             #[inline]
             #[must_use]
+            #[allow(dead_code)]
             #[doc = concat!("extracts the `", stringify!($field_name), "` field")]
             $field_vis fn $field_name(&self) ->
                 $crate::abstract_tree::__extract!( ! $($field_attr)? -> $field_type )

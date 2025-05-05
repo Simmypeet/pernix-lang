@@ -8,6 +8,13 @@ use pernixc_lexical::{
 };
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
 use pernixc_target::TargetID;
+use pernixc_test_input::Input;
+use proptest::{
+    prelude::{Arbitrary, BoxedStrategy, Just, TestCaseError},
+    prop_assert_eq, prop_oneof,
+    strategy::Strategy,
+    test_runner::TestCaseResult,
+};
 
 use crate::{
     abstract_tree::{abstract_tree, AbstractTree, Tag},
@@ -321,6 +328,74 @@ abstract_tree! {
     }
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::Display,
+)]
+enum PrimitiveRef {
+    #[display("int32")]
+    Int32,
+    #[display("uint32")]
+    Uint32,
+    #[display("bool")]
+    Bool,
+    #[display("float32")]
+    Float32,
+}
+
+impl Arbitrary for PrimitiveRef {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Just(Self::Int32),
+            Just(Self::Uint32),
+            Just(Self::Bool),
+            Just(Self::Float32),
+        ]
+        .boxed()
+    }
+}
+
+impl Input<&Primitive, ()> for &PrimitiveRef {
+    fn assert(
+        self,
+        output: &Primitive,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        match (self, output) {
+            (PrimitiveRef::Int32, Primitive::Int32(token)) => {
+                prop_assert_eq!(token.kind, expect::Keyword::Int32);
+                Ok(())
+            }
+            (PrimitiveRef::Uint32, Primitive::Uint32(token)) => {
+                prop_assert_eq!(token.kind, expect::Keyword::Uint32);
+                Ok(())
+            }
+            (PrimitiveRef::Bool, Primitive::Bool(token)) => {
+                prop_assert_eq!(token.kind, expect::Keyword::Bool);
+                Ok(())
+            }
+            (PrimitiveRef::Float32, Primitive::Float32(token)) => {
+                prop_assert_eq!(token.kind, expect::Keyword::Float32);
+                Ok(())
+            }
+
+            _ => Err(TestCaseError::fail(format!(
+                "expected {self:?} found {output:?}"
+            ))),
+        }
+    }
+}
+
 abstract_tree! {
     #[derive(Debug)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
@@ -328,6 +403,43 @@ abstract_tree! {
         r#type: Type = ast::<Type>(),
         x: token::Identifier<RelativeLocation> = expect::IdentifierValue("x"),
         length: token::Numeric<RelativeLocation> = expect::Numeric,
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display,
+)]
+#[display("[{type} x {length}]")]
+struct ArrayRef {
+    pub r#type: Box<TypeRef>,
+    pub length: usize,
+}
+
+impl Arbitrary for ArrayRef {
+    type Parameters = Option<BoxedStrategy<TypeRef>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let ty = args.unwrap_or_else(TypeRef::arbitrary);
+
+        (ty.prop_map(Box::new), proptest::num::usize::ANY)
+            .prop_map(|(r#type, length)| Self { r#type, length })
+            .boxed()
+    }
+}
+
+impl Input<&Array, ()> for &ArrayRef {
+    fn assert(
+        self,
+        output: &Array,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        Some(&*self.r#type).assert(output.r#type().as_ref(), ())?;
+
+        let result = output.length().and_then(|x| x.kind.parse::<usize>().ok());
+        prop_assert_eq!(result, Some(self.length));
+
+        Ok(())
     }
 }
 
@@ -342,6 +454,41 @@ abstract_tree! {
     }
 }
 
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display,
+)]
+#[display("&{}{type}", if *mut_keyword { "mut " } else { "" })]
+struct ReferenceRef {
+    mut_keyword: bool,
+    r#type: Box<TypeRef>,
+}
+
+impl Arbitrary for ReferenceRef {
+    type Parameters = Option<BoxedStrategy<TypeRef>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let ty = args.unwrap_or_else(TypeRef::arbitrary);
+
+        (ty.prop_map(Box::new), proptest::bool::ANY)
+            .prop_map(|(r#type, mut_keyword)| Self { mut_keyword, r#type })
+            .boxed()
+    }
+}
+
+impl Input<&Reference, ()> for &ReferenceRef {
+    fn assert(
+        self,
+        output: &Reference,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        prop_assert_eq!(self.mut_keyword, output.mut_keyword().is_some());
+        Some(&*self.r#type).assert(output.r#type().as_ref(), ())?;
+
+        Ok(())
+    }
+}
+
 abstract_tree! {
     #[derive(Debug, EnumAsInner)]
     enum Type {
@@ -351,34 +498,77 @@ abstract_tree! {
     }
 }
 
-#[test]
-fn array_of_mut_bool_reference() {
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display,
+)]
+enum TypeRef {
+    Primitive(PrimitiveRef),
+    Array(ArrayRef),
+    Reference(ReferenceRef),
+}
+
+impl Arbitrary for TypeRef {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        let leaf = PrimitiveRef::arbitrary().prop_map(Self::Primitive);
+
+        leaf.prop_recursive(10, 10, 1, |ty| {
+            prop_oneof![
+                ArrayRef::arbitrary_with(Some(ty.clone()))
+                    .prop_map(Self::Array),
+                ReferenceRef::arbitrary_with(Some(ty))
+                    .prop_map(Self::Reference)
+            ]
+        })
+        .boxed()
+    }
+}
+
+impl Input<&Type, ()> for &TypeRef {
+    fn assert(
+        self,
+        output: &Type,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        match (self, output) {
+            (TypeRef::Primitive(primitive_ref), Type::Primitive(primitive)) => {
+                primitive_ref.assert(primitive, ())
+            }
+            (TypeRef::Array(array_ref), Type::Array(array)) => {
+                array_ref.assert(array, ())
+            }
+            (TypeRef::Reference(reference_ref), Type::Reference(reference)) => {
+                reference_ref.assert(reference, ())
+            }
+
+            _ => Err(TestCaseError::fail(format!(
+                "expected {self:?} found {output:?}"
+            ))),
+        }
+    }
+}
+
+fn verify_type_ref(type_ref: &TypeRef) -> TestCaseResult {
     let mut source_map = SourceMap::new();
-    let (token_tree, _) = parse_token_tree(&mut source_map, "[&mut bool x 32]");
+
+    let source = type_ref.to_string();
+    let (token_tree, _) = parse_token_tree(&mut source_map, &source);
 
     let (tree, errors) = Type::parse(&token_tree);
     let tree = tree.unwrap();
 
     assert!(errors.is_empty());
 
-    let array = tree.into_array().unwrap();
+    type_ref.assert(&tree, ())
+}
 
-    let mut_bool_ref = array.r#type().unwrap().into_reference().unwrap();
-
-    assert!(mut_bool_ref
-        .mut_keyword()
-        .is_some_and(|x| x.kind == expect::Keyword::Mut));
-
-    let bool_primtiive = mut_bool_ref
-        .r#type()
-        .unwrap()
-        .into_primitive()
-        .unwrap()
-        .into_bool()
-        .unwrap();
-
-    assert_eq!(bool_primtiive.kind, expect::Keyword::Bool);
-
-    assert!(array.x().is_some_and(|x| *x.kind == "x"));
-    assert!(array.length().is_some_and(|x| *x.kind == "32"));
+proptest::proptest! {
+    #[test]
+    fn nested_type(
+        type_ref in TypeRef::arbitrary()
+    ) {
+        verify_type_ref(&type_ref)?;
+    }
 }

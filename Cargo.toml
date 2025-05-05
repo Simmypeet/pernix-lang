@@ -10,7 +10,7 @@ members = [
     "compiler/pernixc_diagnostic",
     # "compiler/pernixc_resolution",
     # "compiler/pernixc_builder",
-    # "compiler/pernixc_syntax",
+    "compiler/pernixc_syntax",
     "compiler/pernixc_driver",
     "compiler/pernixc",
     # "compiler/pernixc_transitive_closure",
@@ -23,10 +23,17 @@ members = [
     # "compiler/pernixc_type_of",
     "compiler/pernixc_target",
     "compiler/pernixc_diff",
+    "compiler/pernixc_parser",
     # "lsp/pernix_server",
 ]
 
 [workspace.dependencies]
+derive_more = { version = "2.0.1", features = [
+    "display",
+    "deref",
+    "deref_mut",
+    "from",
+] }
 enum-as-inner = "0.6.0"
 thiserror = "1.0.40"
 getset = "0.1.2"
@@ -34,7 +41,6 @@ proptest = "1.4.0"
 lazy_static = "1.4.0"
 strum = "0.26.1"
 strum_macros = "0.26.1"
-derive_more = "0.99.17"
 colored = "2.0.0"
 paste = "1.0.12"
 tempfile = "3.5.0"
