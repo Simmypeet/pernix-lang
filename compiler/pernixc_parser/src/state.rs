@@ -132,9 +132,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         assert!(checkpoint.event_index.1.is_none_or(|saved_count| self.events
             [checkpoint.event_index.0 - 1]
             .as_take()
-            .is_some_and(
-                |current_count| dbg!(*current_count) >= dbg!(saved_count)
-            )));
+            .is_some_and(|current_count| *current_count >= saved_count)));
 
         self.cursor.node_index = checkpoint.node_index;
         self.new_line_significant = checkpoint.new_line_significant;
@@ -474,13 +472,16 @@ impl<'a, 'cache> State<'a, 'cache> {
                 "mismatched step into fragment node"
             );
 
+            let current_branch_id = cursor.branch_id;
+            let current_node_index = cursor.node_index;
+
             cursor.node_index = 0;
             cursor.branch_id = step_into_fragment;
 
             // step pass the fragment
             Some(Cursor {
-                branch_id: step_into_fragment,
-                node_index: cursor.node_index + 1,
+                branch_id: current_branch_id,
+                node_index: current_node_index + 1,
             })
         } else {
             None
