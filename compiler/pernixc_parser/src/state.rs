@@ -400,21 +400,15 @@ impl<'a, 'cache> State<'a, 'cache> {
             return None;
         }
 
-        let current_at = self.start_location_of_cursor(self.cursor);
-        let error_at = self.start_location_of_cursor(self.current_error.at);
-
-        if current_at <= error_at {
-            Some(Error {
-                expecteds: std::mem::take(&mut self.current_error.expecteds),
-                at: self.current_error.at,
-            })
-        } else {
-            None
-        }
+        Some(Error {
+            expecteds: std::mem::take(&mut self.current_error.expecteds),
+            at: self.current_error.at,
+        })
     }
 
     pub(crate) fn finalize<A: AbstractTree>(
         mut self,
+        has_error: bool,
     ) -> (Option<A>, Vec<Error>) {
         assert!(!self.events.is_empty(), "No events to finalize");
         assert_eq!(
@@ -423,7 +417,7 @@ impl<'a, 'cache> State<'a, 'cache> {
             "can only finalize the root branch"
         );
 
-        let take_error = self.try_take_error();
+        let take_error = has_error.then(|| self.try_take_error()).flatten();
 
         let mut events = FlattenEvent::new(self.events);
         let mut cursor = Cursor { branch_id: ROOT_BRANCH_ID, node_index: 0 };

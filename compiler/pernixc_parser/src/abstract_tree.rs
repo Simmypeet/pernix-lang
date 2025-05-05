@@ -79,9 +79,9 @@ pub trait AbstractTree: 'static + Sized + FromNode {
         let mut state = state::State::new(tree, &mut cache);
 
         let parser = parser::ast::<Self>();
-        let _ = parser.parse(&mut state);
+        let result = parser.parse(&mut state);
 
-        state.finalize::<Self>()
+        state.finalize::<Self>(result.is_err())
     }
 }
 

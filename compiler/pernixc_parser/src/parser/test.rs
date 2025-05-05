@@ -572,3 +572,26 @@ proptest::proptest! {
         verify_type_ref(&type_ref)?;
     }
 }
+
+abstract_tree! {
+    struct TrailingOptional {
+        ampersand: token::Punctuation<RelativeLocation>
+            = '&',
+        mut_keyword: token::Keyword<RelativeLocation>
+            = expect::Keyword::Mut.optional(),
+    }
+}
+
+#[test]
+fn trailing_optional() {
+    let mut source_map = SourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "&");
+
+    let (tree, errors) = TrailingOptional::parse(&token_tree);
+    let tree = tree.unwrap();
+
+    assert!(errors.is_empty());
+
+    assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
+    assert!(tree.mut_keyword().is_none());
+}
