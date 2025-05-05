@@ -164,5 +164,133 @@ impl<T: Output> Output for Optional<T> {
     }
 }
 
+/// See [`IntoChoice::into_choice`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Choice<T>(pub T);
+
+/// A utility for converting tuple of parser into [`Choice`] parser.
+pub trait IntoChoice {
+    /// The result of converting to [`Choice`] parser.
+    type Output;
+
+    /// Converts a tuple of parsers into a [`Choice`] parser which will attempt
+    /// to parse each of the parser one by one unitl it finds the first matching
+    /// parser.
+    fn into_choice(self) -> Self::Output;
+}
+
+macro_rules! implements_choice {
+    () => {};
+
+    ($head:ident $($rest:ident)*) => {
+        implements_choice!($($rest)*);
+        implements_choice!(~ $head $($rest)*);
+    };
+
+    (~ $head:ident $($rest:ident)+) => {
+        impl<$head: Parser, $($rest: Parser),*> Parser
+            for Choice<($head, $($rest),*)> {
+
+            #[allow(non_snake_case)]
+            fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+                let Choice(($head, $($rest),*)) = self;
+
+                let checkpoint = state.checkpoint();
+
+                match $head.parse(state) {
+                    Ok(()) => return Ok(()),
+                    Err(Unexpected) => {
+                        state.restore(checkpoint);
+                    }
+                }
+
+                $(
+                    match $rest.parse(state) {
+                        Ok(()) => return Ok(()),
+                        Err(Unexpected) => {
+                            state.restore(checkpoint);
+                        }
+                    }
+                )*
+
+
+                Err(Unexpected)
+            }
+        }
+
+        impl<
+            $head: Output,
+            $($rest: for<'x> Output<
+                Extract = One,
+                Output<'x> = $head::Output<'x>
+            >),*> Output
+            for Choice<($head, $($rest),*)>
+        {
+            type Extract = $head::Extract;
+            type Output<'x> = $head::Output<'x>;
+
+            #[allow(non_snake_case)]
+            fn output<'a>(
+                &self,
+                node: &'a crate::concrete_tree::Node,
+            ) -> Option<Self::Output<'a>> {
+                let Choice(($head, $($rest),*)) = self;
+
+                if let Some(output) = $head.output(node) {
+                    return Some(output)
+                }
+
+                $(
+                    if let Some(output) = $rest.output(node) {
+                        return Some(output)
+                    }
+                )*
+
+                None
+            }
+        }
+
+        impl<$head: Parser, $($rest: Parser),*>
+            IntoChoice for ($head, $($rest),*) {
+            type Output = Choice<Self>;
+
+            fn into_choice(self) -> Choice<Self> {
+                Choice(self)
+            }
+        }
+    };
+
+    (~ $head:ident) => {
+        impl<$head: Parser> Parser for Choice<($head,)> {
+            fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+                self.0.0.parse(state)
+            }
+        }
+
+        impl<$head: Output> Output for Choice<($head,)> {
+            type Extract = $head::Extract;
+            type Output<'x> = $head::Output<'x>;
+
+            #[allow(non_snake_case)]
+            fn output<'a>(
+                &self,
+                node: &'a crate::concrete_tree::Node,
+            ) -> Option<Self::Output<'a>> {
+                self.0.0.output(node)
+            }
+        }
+
+        impl<$head> IntoChoice for Choice<($head,)> {
+            type Output = Choice<Self>;
+
+            fn into_choice(self) -> Self::Output {
+                Choice(self)
+            }
+        }
+    };
+}
+
+implements_choice!(A B C D E F G H I J K L M N O P Q R S T U V W X Y Z);
+
 #[cfg(test)]
 mod test;
