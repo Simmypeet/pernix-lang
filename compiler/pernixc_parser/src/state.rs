@@ -47,8 +47,69 @@ pub struct State<'a, 'cache> {
     /// encounter any error yet.
     current_error: Error,
 
+    /// The errors that has already been emitted by the recovery mechanism.
+    emitted_erorrs: Vec<Error>,
+
     /// The memoize table
     cache: &'cache mut Cache,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub(crate) struct Diff {
+    cursor: Cursor,
+    new_line_significant: bool,
+    emitted_errors: Vec<Error>,
+    events: Vec<Event>,
+}
+
+impl Diff {
+    #[must_use]
+    pub(crate) const fn node_index(&self) -> usize { self.cursor.node_index }
+
+    /// Clears the diff and recalculates the diff from the given state and
+    /// checkpoint.
+    pub(crate) fn diff_checkpoint(
+        &mut self,
+        state: &State,
+        checkpoint: &Checkpoint,
+    ) {
+        self.cursor = state.cursor;
+        self.new_line_significant = state.new_line_significant;
+
+        self.emitted_errors.clear();
+        self.events.clear();
+
+        self.emitted_errors.extend_from_slice(
+            &state.emitted_erorrs[checkpoint.emitted_error_count..],
+        );
+        self.events
+            .extend_from_slice(&state.events[checkpoint.event_index.0..]);
+
+        // calculate the diff
+        let extra_take_add = checkpoint
+            .event_index
+            .1
+            .map(|was| {
+                *state.events[checkpoint.event_index.0 - 1]
+                    .as_take()
+                    .expect("should've be a take event")
+                    - was
+            })
+            .filter(|x| *x > 0)
+            .map(Event::Take);
+
+        self.events.extend(extra_take_add);
+        self.events
+            .extend_from_slice(&state.events[checkpoint.event_index.0..]);
+    }
+
+    pub(crate) fn apply(&mut self, state: &mut State) {
+        state.cursor = self.cursor;
+        state.new_line_significant = self.new_line_significant;
+
+        state.emitted_erorrs.append(&mut self.emitted_errors);
+        state.events.append(&mut self.events);
+    }
 }
 
 /// Represents a snapshot of the [`State`] at a certain point in time that can
@@ -58,6 +119,7 @@ pub struct State<'a, 'cache> {
 pub struct Checkpoint {
     node_index: usize,
     new_line_significant: bool,
+    emitted_error_count: usize,
     event_index: (usize, Option<usize>),
 }
 
@@ -96,6 +158,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 node_index: 0,
             },
             new_line_significant: false,
+            emitted_erorrs: Vec::new(),
             current_error: Error {
                 expecteds: Vec::new(),
                 at: Cursor {
@@ -114,6 +177,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         Checkpoint {
             node_index: self.cursor.node_index,
             new_line_significant: self.new_line_significant,
+            emitted_error_count: self.emitted_erorrs.len(),
             event_index: (
                 self.events.len(),
                 // if the last event is a take event, need to remember the
@@ -137,6 +201,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         self.cursor.node_index = checkpoint.node_index;
         self.new_line_significant = checkpoint.new_line_significant;
         self.events.truncate(checkpoint.event_index.0);
+        self.emitted_erorrs.truncate(checkpoint.emitted_error_count);
 
         if let Some(take_count) = checkpoint.event_index.1 {
             *self
@@ -300,6 +365,10 @@ impl<'a, 'cache> State<'a, 'cache> {
         result
     }
 
+    /// Returns the current node index in the branch.
+    #[must_use]
+    pub const fn node_index(&self) -> usize { self.cursor.node_index }
+
     /// Starts a new node with the given [`AstInfo`] and pushes it onto the
     /// stack. If [`AstInfo::step_into_fragment`] is present, the parser shall
     /// step into the fragment as well.
@@ -361,6 +430,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 branch,
                 cursor: Cursor { branch_id, node_index: 0 },
                 events: Vec::with_capacity(branch.nodes.len()),
+                emitted_erorrs: Vec::new(),
                 new_line_significant: true,
                 current_error: std::mem::take(&mut self.current_error),
                 cache: self.cache,
@@ -371,6 +441,7 @@ impl<'a, 'cache> State<'a, 'cache> {
 
             self.events.push(Event::Inline(state.events));
             self.current_error = state.current_error;
+            self.emitted_erorrs.append(&mut state.emitted_erorrs);
             self.cursor.node_index += 1; // step past the fragment
 
             // done event
@@ -418,6 +489,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         );
 
         let take_error = has_error.then(|| self.try_take_error()).flatten();
+        self.emitted_erorrs.extend(take_error);
 
         let mut events = FlattenEvent::new(self.events);
         let mut cursor = Cursor { branch_id: ROOT_BRANCH_ID, node_index: 0 };
@@ -443,7 +515,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 .expect("should be able to convert the tree to the AST")
         });
 
-        (tree, take_error.into_iter().collect())
+        (tree, self.emitted_erorrs)
     }
 
     pub(crate) fn finalize_ast_node(

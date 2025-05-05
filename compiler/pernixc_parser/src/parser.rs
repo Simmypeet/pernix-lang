@@ -5,7 +5,7 @@ use crate::{
     abstract_tree::AbstractTree,
     expect::{self, Expect},
     output::{Multiple, One, Output},
-    state::{Cursor, State},
+    state::{Cursor, Diff, State},
 };
 
 /// A struct returned
@@ -34,6 +34,18 @@ pub trait Parser {
         Self: Sized,
     {
         Repeat(self)
+    }
+
+    /// Repeats the given parser until all of the tokens are consumed in the
+    /// branch.
+    ///
+    /// In case of failure, the parser will try parsing the next valid sequence.
+    /// and so on.
+    fn repeat_all(self) -> RepeatAll<Self>
+    where
+        Self: Sized,
+    {
+        RepeatAll(self)
     }
 }
 
@@ -188,6 +200,15 @@ pub trait IntoChoice {
     fn into_choice(self) -> Self::Output;
 }
 
+// A tempoary buffer for storing the progress of the parser while trying
+// different choice of parsers. In choice parser, if all the parsers fail,
+// the parser will try to restore one of it parser choice's result with the most
+// progress made (consume the most tokens).
+thread_local! {
+    static DIFF_BUFFER: std::cell::RefCell<Diff>
+        = std::cell::RefCell::new(Diff::default());
+}
+
 macro_rules! implements_choice {
     () => {};
 
@@ -209,6 +230,13 @@ macro_rules! implements_choice {
                 match $head.parse(state) {
                     Ok(()) => return Ok(()),
                     Err(Unexpected) => {
+                        DIFF_BUFFER.with_borrow_mut(|diff_buffer| {
+                            diff_buffer.diff_checkpoint(
+                                state,
+                                &checkpoint
+                            )
+                        });
+
                         state.restore(checkpoint);
                     }
                 }
@@ -217,10 +245,27 @@ macro_rules! implements_choice {
                     match $rest.parse(state) {
                         Ok(()) => return Ok(()),
                         Err(Unexpected) => {
+                            DIFF_BUFFER.with_borrow_mut(|diff_buffer| {
+                                // current path make more progress,
+                                // replace the diff buffer
+                                if state.node_index()
+                                    > diff_buffer.node_index() {
+                                    diff_buffer.diff_checkpoint(
+                                        state,
+                                        &checkpoint
+                                    );
+                                }
+                            });
+
                             state.restore(checkpoint);
                         }
                     }
                 )*
+
+                // apply the diff buffer with the most progress
+                DIFF_BUFFER.with_borrow_mut(|diff_buffer| {
+                    diff_buffer.apply(state);
+                });
 
 
                 Err(Unexpected)
@@ -332,6 +377,14 @@ impl<T: Output<Extract = One>> Output for Repeat<T> {
     ) -> Option<Self::Output<'a>> {
         T::output(&self.0, node)
     }
+}
+
+/// See [`Parser::repeat_all`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RepeatAll<T>(pub T);
+
+impl<T: Parser> Parser for RepeatAll<T> {
+    fn parse(&self, _: &mut State) -> Result<(), Unexpected> { todo!() }
 }
 
 #[cfg(test)]

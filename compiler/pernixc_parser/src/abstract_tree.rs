@@ -419,10 +419,10 @@ macro_rules! abstract_tree {
     } => {
         $( #[$enum_meta] )*
         $enum_vis enum $enum_name {
-            $( #[$first_variant_meta:meta] )*
+            $( #[$first_variant_meta] )*
             $first_variant_name($first_variant_type),
             $(
-                $( #[$rest_variant_meta:meta] )*
+                $( #[$rest_variant_meta] )*
                 $rest_variant_name($rest_variant_type)
             ),*
         }

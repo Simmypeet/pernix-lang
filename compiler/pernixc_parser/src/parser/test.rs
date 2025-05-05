@@ -657,3 +657,82 @@ proptest::proptest! {
         verify_type_ref::<TypesRef, Types>(&types_ref)?;
     }
 }
+
+abstract_tree! {
+    #[derive(Debug)]
+    struct Abcd {
+        a: token::Identifier<RelativeLocation>
+            = expect::IdentifierValue("a"),
+
+        b: token::Identifier<RelativeLocation>
+            = expect::IdentifierValue("b"),
+
+        c: token::Identifier<RelativeLocation>
+            = expect::IdentifierValue("c"),
+
+        d: token::Identifier<RelativeLocation>
+            = expect::IdentifierValue("d"),
+
+        semicolon: token::Punctuation<RelativeLocation>
+            = ';'
+    }
+}
+
+abstract_tree! {
+    #[derive(Debug)]
+    struct Abc {
+        a: token::Identifier<RelativeLocation>
+            = expect::IdentifierValue("a"),
+
+        b: token::Identifier<RelativeLocation>
+            = expect::IdentifierValue("b"),
+
+        c: token::Identifier<RelativeLocation>
+            = expect::IdentifierValue("c"),
+
+        semicolon: token::Punctuation<RelativeLocation>
+            = ';'
+    }
+}
+
+abstract_tree! {
+    #[derive(Debug, EnumAsInner)]
+    enum AbcOrAbcd {
+        #[allow(unused)]
+        Abc(Abc = ast::<Abc>()),
+
+        #[allow(unused)]
+        Abcd(Abcd = ast::<Abcd>())
+    }
+}
+
+#[test]
+fn error_choice_choose_most_progress() {
+    let mut source_map = SourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "a b c d e");
+
+    let (tree, errors) = AbcOrAbcd::parse(&token_tree);
+    let tree = tree.unwrap().into_abcd().unwrap();
+
+    assert_eq!(errors.len(), 1);
+
+    assert_eq!(
+        errors[0].expecteds.iter().copied().collect::<HashSet<_>>(),
+        std::iter::once(Expected::Punctuation(';')).collect()
+    );
+
+    assert!(token_tree[errors[0].at.branch_id]
+        .nodes
+        .get(errors[0].at.node_index)
+        .is_some_and(|x| x
+            .as_leaf()
+            .and_then(|x| x.kind.as_identifier())
+            .is_some_and(|x| x.as_str() == "e")));
+
+    assert_eq!(tree.a().map(|x| x.kind.0), Some("a".into()));
+    assert_eq!(tree.b().map(|x| x.kind.0), Some("b".into()));
+    assert_eq!(tree.c().map(|x| x.kind.0), Some("c".into()));
+    assert_eq!(tree.d().map(|x| x.kind.0), Some("d".into()));
+
+    assert!(tree.semicolon().is_none());
+}
