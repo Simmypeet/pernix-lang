@@ -130,7 +130,10 @@ impl<'a, 'cache> State<'a, 'cache> {
 
     /// Adds an [`Event::Take`] event that takes the given number of tokens
     pub fn eat_token(&mut self, count: usize) {
-        assert!(count > 0);
+        // do nothing if count is 0
+        if count == 0 {
+            return;
+        }
 
         // already in the last event, don't waste a new event memory
         if let Some(take) = self.events.last_mut().and_then(|x| x.as_take_mut())
