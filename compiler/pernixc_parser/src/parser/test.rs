@@ -121,7 +121,7 @@ fn two_basic_sequences() {
     );
 
     let (tree, errors) = TwoBasicSequences::parse(&tree);
-    let tree = dbg!(tree.unwrap());
+    let tree = tree.unwrap();
 
     assert!(errors.is_empty());
 

@@ -308,7 +308,7 @@ impl<'a, 'cache> State<'a, 'cache> {
             let mut state = State {
                 tree: self.tree,
                 branch,
-                cursor: Cursor { branch_id, node_index },
+                cursor: Cursor { branch_id, node_index: 0 },
                 events: Vec::with_capacity(branch.nodes.len()),
                 new_line_significant: true,
                 current_error: std::mem::take(&mut self.current_error),
@@ -404,7 +404,7 @@ impl<'a, 'cache> State<'a, 'cache> {
             ast_info.and_then(|x| x.step_into_fragment)
         {
             assert!(
-                tree[step_into_fragment].nodes[cursor.node_index]
+                tree[cursor.branch_id].nodes[cursor.node_index]
                     .as_branch()
                     .is_some_and(|x| *x == step_into_fragment),
                 "mismatched step into fragment node"
