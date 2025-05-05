@@ -33,6 +33,7 @@ pub trait Output {
 /// Extracts a first single matching node from the tree by returning an
 /// [`Option`] on the first matching element, [`None`] if no matching
 /// element is found.
+#[inline]
 pub fn extract_one<O: Output<Extract = One>>(
     extract_parser: O,
     node: &[concrete_tree::Node],
@@ -42,6 +43,7 @@ pub fn extract_one<O: Output<Extract = One>>(
 
 /// Extracts multiple matching nodes from the tree by returning an iterator
 /// of matching elements.
+#[inline]
 pub fn extract_multiple<O: Output<Extract = Multiple>>(
     extract_parser: O,
     node: &[concrete_tree::Node],
