@@ -85,7 +85,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 branch_id: pernixc_lexical::tree::ROOT_BRANCH_ID,
                 node_index: 0,
             },
-            new_line_significant: true,
+            new_line_significant: false,
             current_error: Error {
                 expecteds: Vec::new(),
                 at: Cursor {
