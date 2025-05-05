@@ -129,8 +129,8 @@ pub trait AbstractTree: 'static + Sized + FromNode {
 /// ``` ignore
 /// ast! {
 ///     pub enum ModuleItem {
-///         Function(FunctionItem),
-///         Struct(StructItem),
+///         Function(FunctionItem = parser::ast::<FunctionItem>()),
+///         Struct(StructItem = parser::ast::<StructItem>()),
 ///     }
 /// }
 ///
@@ -342,7 +342,7 @@ macro_rules! abstract_tree {
                             $crate::abstract_tree::__std::any::TypeId::of::<Self>()
                                 == x.ast_type_id
                         )
-                        .then_some(Self(
+                        .then(|| Self(
                             branch.clone(),
                             $(
                                 $crate::abstract_tree::__std::marker::PhantomData::<(
@@ -386,28 +386,203 @@ macro_rules! abstract_tree {
 
     {
         $( #[$enum_meta:meta] )*
+        $( #{fragment = $fragment:expr} )?
         $enum_vis:vis
         enum
         $enum_name:ident
-        $( < $generic_param:tt > )?
+        $(<
+            $($generic_param:ident $(: $bound:tt)? ),* $(,)?
+        >)?
         {
-            $(
-                $variant_name:ident
-                (
-                    $variant_type:ty
-                    =
-                    $parser_expr:expr
-                )
+            $( #[$first_variant_meta:meta] )*
+            $first_variant_name:ident
+            (
+                $first_variant_type:ty
+                =
+                $first_parser_expr:expr
+            )
 
-            ),* $(,)?
+            $(
+                ,
+                $( #[$rest_variant_meta:meta] )*
+                $rest_variant_name:ident
+                (
+                    $rest_variant_type:ty
+                    =
+                    $rest_parser_expr:expr
+                )
+            )*
+            $(,)?
         }
     } => {
         $( #[$enum_meta] )*
         $enum_vis enum $enum_name {
+            $( #[$first_variant_meta:meta] )*
+            $first_variant_name($first_variant_type),
             $(
-                $variant_name($variant_type),
-            )*
+                $( #[$rest_variant_meta:meta] )*
+                $rest_variant_name($rest_variant_type)
+            ),*
         }
+
+        // output verification
+        const _: () = {
+            struct __Verify
+            $(<
+                $($generic_param ),*
+            >(
+                $crate::abstract_tree::__std::marker::PhantomData<(
+                    $(
+                        $generic_param
+                    ),* ,
+                )>
+            ))?;
+
+            impl
+            $(<
+                $($generic_param $(: $bound)?),*
+            >)?
+            __Verify
+            $(<
+                $($generic_param),*
+            >)?
+            {
+                /*
+                IF YOU FOUND ERROR HERE: please make sure that the parser
+                generates the correct output type.
+                    */
+                #[allow(dead_code, non_snake_case)]
+                fn $first_variant_name()
+                    -> impl $crate::parser::Parser
+                    + for<'x> $crate::output::Output<
+                            Extract = $crate::output::One,
+                            Output<'x> = $first_variant_type,
+                            >
+
+                {
+                    $first_parser_expr
+                }
+                $(
+                    /*
+                    IF YOU FOUND ERROR HERE: please make sure that the parser
+                    generates the correct output type.
+                     */
+                    #[allow(dead_code, non_snake_case)]
+                    fn $rest_variant_name()
+                        -> impl $crate::parser::Parser
+                        + for<'x> $crate::output::Output<
+                                Extract = $crate::output::One,
+                                Output<'x> = $rest_variant_type,
+                                >
+
+                    {
+                        $rest_parser_expr
+                    }
+                )*
+            }
+        };
+
+        // parser
+        const _: () = {
+            struct __Parser
+            $(<
+                $($generic_param ),*
+            >(
+                $crate::abstract_tree::__std::marker::PhantomData<(
+                    $(
+                        $generic_param
+                    ),* ,
+                )>
+            ))?;
+
+            impl
+            $(<
+                $($generic_param $(: $bound)?),*
+            >)?
+            __Parser
+            $(<
+                $($generic_param),*
+            >)?
+            {
+                fn parser(state: &mut $crate::state::State)
+                    -> Result<(), $crate::parser::Unexpected> {
+                    let parser =  $crate::parser::Choice(
+                        ( $first_parser_expr, $($rest_parser_expr),* )
+                    );
+
+                    $crate::parser::Parser::parse(&parser, state)
+                }
+            }
+
+            impl
+            $(<
+                $($generic_param $(: $bound)?),*
+            >)?
+            $crate::from_node::FromNode
+            for
+            $enum_name
+            $(<
+                $($generic_param),*
+            >)?
+            {
+                fn from_node(
+                    node: &$crate::concrete_tree::Node,
+                ) -> Option<Self> {
+                    let branch = node.as_branch().and_then(|branch| {
+                        branch.ast_info.is_some_and(|x|
+                            $crate::abstract_tree::__std::any::TypeId::of::<Self>()
+                                == x.ast_type_id
+                        )
+                        .then(|| branch.clone())
+                    })?;
+
+                    if let Some(result) = $crate::output::extract_one(
+                        $first_parser_expr,
+                        &branch.nodes
+                    ) {
+                        return Some(Self::$first_variant_name(result));
+                    }
+
+                    $(
+
+                    if let Some(result) = $crate::output::extract_one(
+                        $rest_parser_expr,
+                        &branch.nodes
+                    ) {
+                        return Some(Self::$rest_variant_name(result));
+                    }
+                    )*
+
+                    None
+                }
+            }
+
+            impl
+            $(<
+                $($generic_param $(: $bound)?),*
+            >)?
+            $crate::abstract_tree::AbstractTree
+            for
+            $enum_name
+            $(<
+                $($generic_param),*
+            >)?
+            {
+                fn parser() -> impl $crate::parser::Parser {
+                    __Parser
+                    $( ::<
+                        $($generic_param),*
+                    >)? ::parser
+                }
+
+                $(
+                    fn step_into_fragment() -> Option<$crate::expect::Fragment> {
+                        Some($fragment)
+                    }
+                )?
+            }
+
+        };
     }
 }
 

@@ -1,7 +1,11 @@
 use std::collections::HashSet;
 
+use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
-use pernixc_lexical::{token, tree::RelativeLocation};
+use pernixc_lexical::{
+    token,
+    tree::{DelimiterKind, RelativeLocation},
+};
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
 use pernixc_target::TargetID;
 
@@ -305,4 +309,76 @@ fn int32_reference_missing_int32() {
     assert!(tree.ampersand().is_some_and(|x| *x.kind == '&'));
     assert!(tree.mut_keyword().is_some_and(|x| x.kind == expect::Keyword::Mut));
     assert!(tree.int32_keyword().is_none());
+}
+
+abstract_tree! {
+    #[derive(Debug, EnumAsInner)]
+    enum Primitive {
+        Int32(token::Keyword<RelativeLocation> = expect::Keyword::Int32),
+        Uint32(token::Keyword<RelativeLocation> = expect::Keyword::Uint32),
+        Bool(token::Keyword<RelativeLocation> = expect::Keyword::Bool),
+        Float32(token::Keyword<RelativeLocation> = expect::Keyword::Float32),
+    }
+}
+
+abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    struct Array {
+        r#type: Type = ast::<Type>(),
+        x: token::Identifier<RelativeLocation> = expect::IdentifierValue("x"),
+        length: token::Numeric<RelativeLocation> = expect::Numeric,
+    }
+}
+
+abstract_tree! {
+    #[derive(Debug)]
+    struct Reference {
+        ampersand: token::Punctuation<RelativeLocation> = '&',
+        mut_keyword: token::Keyword<RelativeLocation>
+            = expect::Keyword::Mut.optional(),
+        r#type: Type
+            = ast::<Type>()
+    }
+}
+
+abstract_tree! {
+    #[derive(Debug, EnumAsInner)]
+    enum Type {
+        Primitive(Primitive = ast::<Primitive>()),
+        Array(Array = ast::<Array>()),
+        Reference(Reference = ast::<Reference>())
+    }
+}
+
+#[test]
+fn array_of_mut_bool_reference() {
+    let mut source_map = SourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "[&mut bool x 32]");
+
+    let (tree, errors) = Type::parse(&token_tree);
+    let tree = tree.unwrap();
+
+    assert!(errors.is_empty());
+
+    let array = tree.into_array().unwrap();
+
+    let mut_bool_ref = array.r#type().unwrap().into_reference().unwrap();
+
+    assert!(mut_bool_ref
+        .mut_keyword()
+        .is_some_and(|x| x.kind == expect::Keyword::Mut));
+
+    let bool_primtiive = mut_bool_ref
+        .r#type()
+        .unwrap()
+        .into_primitive()
+        .unwrap()
+        .into_bool()
+        .unwrap();
+
+    assert_eq!(bool_primtiive.kind, expect::Keyword::Bool);
+
+    assert!(array.x().is_some_and(|x| *x.kind == "x"));
+    assert!(array.length().is_some_and(|x| *x.kind == "32"));
 }

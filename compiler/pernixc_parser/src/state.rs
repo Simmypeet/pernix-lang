@@ -57,7 +57,6 @@ pub struct State<'a, 'cache> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Checkpoint {
     node_index: usize,
-    error_count: usize,
     new_line_significant: bool,
     event_index: (usize, Option<usize>),
 }
@@ -114,7 +113,6 @@ impl<'a, 'cache> State<'a, 'cache> {
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
             node_index: self.cursor.node_index,
-            error_count: self.current_error.expecteds.len(),
             new_line_significant: self.new_line_significant,
             event_index: (
                 self.events.len(),
@@ -131,11 +129,12 @@ impl<'a, 'cache> State<'a, 'cache> {
     pub fn restore(&mut self, checkpoint: Checkpoint) {
         assert!(self.cursor.node_index >= checkpoint.node_index);
         assert!(self.events.len() >= checkpoint.event_index.0);
-        assert!(self.current_error.expecteds.len() >= checkpoint.error_count);
-        assert!(checkpoint.event_index.1.is_some_and(|saved_count| self
-            .events[checkpoint.event_index.0 - 1]
+        assert!(checkpoint.event_index.1.is_none_or(|saved_count| self.events
+            [checkpoint.event_index.0 - 1]
             .as_take()
-            .is_some_and(|current_count| *current_count >= saved_count)));
+            .is_some_and(
+                |current_count| dbg!(*current_count) >= dbg!(saved_count)
+            )));
 
         self.cursor.node_index = checkpoint.node_index;
         self.new_line_significant = checkpoint.new_line_significant;

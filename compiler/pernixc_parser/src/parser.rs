@@ -219,7 +219,7 @@ macro_rules! implements_choice {
         }
 
         impl<
-            $head: Output,
+            $head: Output<Extract = One>,
             $($rest: for<'x> Output<
                 Extract = One,
                 Output<'x> = $head::Output<'x>
@@ -267,7 +267,7 @@ macro_rules! implements_choice {
             }
         }
 
-        impl<$head: Output> Output for Choice<($head,)> {
+        impl<$head: Output<Extract = One>> Output for Choice<($head,)> {
             type Extract = $head::Extract;
             type Output<'x> = $head::Output<'x>;
 
