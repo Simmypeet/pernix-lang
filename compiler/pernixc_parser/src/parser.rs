@@ -384,7 +384,18 @@ impl<T: Output<Extract = One>> Output for Repeat<T> {
 pub struct RepeatAll<T>(pub T);
 
 impl<T: Parser> Parser for RepeatAll<T> {
-    fn parse(&self, _: &mut State) -> Result<(), Unexpected> { todo!() }
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        while state.peek().is_some() {
+            let checkpoint = state.checkpoint();
+
+            if self.0.parse(state) == Err(Unexpected) {
+                state.restore(checkpoint);
+                break;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

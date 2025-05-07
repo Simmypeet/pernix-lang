@@ -90,13 +90,27 @@ impl Diff {
             .event_index
             .1
             .map(|was| {
-                *state.events[checkpoint.event_index.0 - 1]
-                    .as_take()
-                    .expect("should've be a take event")
-                    - was
+                let last_node = &state.events[checkpoint.event_index.0 - 1];
+                let is_take = last_node.is_take();
+
+                (
+                    last_node
+                        .as_take()
+                        .copied()
+                        .or_else(|| last_node.as_error().copied())
+                        .expect("should've been a take or error event")
+                        - was,
+                    is_take,
+                )
             })
-            .filter(|x| *x > 0)
-            .map(Event::Take);
+            .filter(|(x, _)| *x > 0)
+            .map(|(count, is_take)| {
+                if is_take {
+                    Event::Take(count)
+                } else {
+                    Event::Error(count)
+                }
+            });
 
         self.events.extend(extra_take_add);
         self.events
@@ -135,7 +149,7 @@ pub struct Cursor {
 
 impl Default for Cursor {
     fn default() -> Self {
-        Self { branch_id: ROOT_BRANCH_ID, node_index: Default::default() }
+        Self { branch_id: ROOT_BRANCH_ID, node_index: usize::default() }
     }
 }
 
@@ -182,7 +196,9 @@ impl<'a, 'cache> State<'a, 'cache> {
                 self.events.len(),
                 // if the last event is a take event, need to remember the
                 // number of tokens taken
-                self.events.last().and_then(|x| x.as_take().copied()),
+                self.events.last().and_then(|x| {
+                    x.as_take().copied().or_else(|| x.as_error().copied())
+                }),
             ),
         }
     }
@@ -203,13 +219,15 @@ impl<'a, 'cache> State<'a, 'cache> {
         self.events.truncate(checkpoint.event_index.0);
         self.emitted_erorrs.truncate(checkpoint.emitted_error_count);
 
-        if let Some(take_count) = checkpoint.event_index.1 {
-            *self
-                .events
-                .last_mut()
-                .expect("should have an event")
-                .as_take_mut()
-                .expect("should be a take event") = take_count;
+        if let Some(previous_count) = checkpoint.event_index.1 {
+            match self.events.last_mut().expect("should have an event") {
+                Event::Error(count) | Event::Take(count) => {
+                    *count = previous_count;
+                }
+                Event::NewNode(_) | Event::FinishNode | Event::Inline(_) => {
+                    unreachable!("should be a take or error event")
+                }
+            }
         }
     }
 
@@ -420,10 +438,10 @@ impl<'a, 'cache> State<'a, 'cache> {
             self.eat_token(node_index - starting_node_index);
 
             // start the event
-            self.events.push(Event::NewNode(Some(AstInfo {
+            self.events.push(Event::NewNode(AstInfo {
                 ast_type_id: std::any::TypeId::of::<A>(),
                 step_into_fragment: Some(branch_id),
-            })));
+            }));
 
             let mut state = State {
                 tree: self.tree,
@@ -450,10 +468,10 @@ impl<'a, 'cache> State<'a, 'cache> {
             Some(result)
         } else {
             // no step into fragment, just start the event
-            self.events.push(Event::NewNode(Some(AstInfo {
+            self.events.push(Event::NewNode(AstInfo {
                 ast_type_id: std::any::TypeId::of::<A>(),
                 step_into_fragment: None,
-            })));
+            }));
 
             // operate on the inner state
             let result = op(self);
@@ -498,17 +516,12 @@ impl<'a, 'cache> State<'a, 'cache> {
             .next()
             .expect("should have a first event starting the node")
             .into_new_node()
-            .expect("should be a new node event")
-            .expect("should have ast info matching the `A` type");
+            .expect("should be a new node event");
 
         assert_eq!(first.ast_type_id, std::any::TypeId::of::<A>());
 
-        let tree = Self::finalize_ast_node(
-            self.tree,
-            Some(first),
-            &mut events,
-            &mut cursor,
-        );
+        let tree =
+            Self::finalize_ast_node(self.tree, first, &mut events, &mut cursor);
 
         let tree = tree.map(|tree| {
             A::from_node(&concrete_tree::Node::Branch(Arc::new(tree)))
@@ -518,9 +531,10 @@ impl<'a, 'cache> State<'a, 'cache> {
         (tree, self.emitted_erorrs)
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn finalize_ast_node(
         tree: &pernixc_lexical::tree::Tree,
-        ast_info: Option<AstInfo>,
+        ast_info: AstInfo,
         events: &mut impl Iterator<Item = Event>,
         cursor: &mut Cursor,
     ) -> Option<concrete_tree::Tree> {
@@ -528,34 +542,49 @@ impl<'a, 'cache> State<'a, 'cache> {
 
         // step into the fragment if needed and memorize the cursor position
         // after finish the fragment
-        let finish_cursor = if let Some(step_into_fragment) =
-            ast_info.and_then(|x| x.step_into_fragment)
-        {
-            assert!(
-                tree[cursor.branch_id].nodes[cursor.node_index]
-                    .as_branch()
-                    .is_some_and(|x| *x == step_into_fragment),
-                "mismatched step into fragment node"
-            );
+        let finish_cursor =
+            if let Some(step_into_fragment) = ast_info.step_into_fragment {
+                assert!(
+                    tree[cursor.branch_id].nodes[cursor.node_index]
+                        .as_branch()
+                        .is_some_and(|x| *x == step_into_fragment),
+                    "mismatched step into fragment node"
+                );
 
-            let current_branch_id = cursor.branch_id;
-            let current_node_index = cursor.node_index;
+                let current_branch_id = cursor.branch_id;
+                let current_node_index = cursor.node_index;
 
-            cursor.node_index = 0;
-            cursor.branch_id = step_into_fragment;
+                cursor.node_index = 0;
+                cursor.branch_id = step_into_fragment;
 
-            // step pass the fragment
-            Some(Cursor {
-                branch_id: current_branch_id,
-                node_index: current_node_index + 1,
-            })
-        } else {
-            None
-        };
+                // step pass the fragment
+                Some(Cursor {
+                    branch_id: current_branch_id,
+                    node_index: current_node_index + 1,
+                })
+            } else {
+                None
+            };
 
         let branch = &tree[cursor.branch_id];
+        let mut error_nodes = None::<Vec<concrete_tree::Node>>;
 
         while let Some(event) = events.next() {
+            let is_error = event.is_error();
+
+            if !is_error && error_nodes.as_ref().is_some_and(|x| !x.is_empty())
+            {
+                // if there are error nodes, create an error node
+                let error_node = concrete_tree::Node::Branch(Arc::new(
+                    concrete_tree::Tree {
+                        ast_info: None,
+                        nodes: error_nodes.take().unwrap(),
+                    },
+                ));
+
+                nodes.push(error_node);
+            }
+
             match event {
                 Event::NewNode(ast_info) => {
                     let Some(tree) =
@@ -585,6 +614,26 @@ impl<'a, 'cache> State<'a, 'cache> {
 
                     cursor.node_index += take;
                 }
+
+                Event::Error(count) => {
+                    // eat the tokens to be constructed as an error node
+                    error_nodes.get_or_insert_default().extend(
+                        branch.nodes[cursor.node_index..]
+                            .iter()
+                            .take(count)
+                            .map(|x| match x {
+                                pernixc_lexical::tree::Node::Leaf(token) => {
+                                    concrete_tree::Node::Leaf(token.clone())
+                                }
+                                pernixc_lexical::tree::Node::Branch(id) => {
+                                    concrete_tree::Node::SkipFragment(*id)
+                                }
+                            }),
+                    );
+
+                    cursor.node_index += count;
+                }
+
                 Event::FinishNode => {
                     if let Some(finish_cursor) = finish_cursor {
                         // pre-maturely stepping out, create error node
@@ -619,7 +668,10 @@ impl<'a, 'cache> State<'a, 'cache> {
                     // done with the current node, pop the stack
                     // if node has no tokens, return None
                     return (finish_cursor.is_some() || !nodes.is_empty())
-                        .then_some(concrete_tree::Tree { ast_info, nodes });
+                        .then_some(concrete_tree::Tree {
+                            ast_info: Some(ast_info),
+                            nodes,
+                        });
                 }
 
                 Event::Inline(_) => {
@@ -641,10 +693,13 @@ pub enum Event {
     /// Start a new node with the given [`AstInfo`] and push it onto the
     /// stack. If [`AstInfo::step_into_fragment`] present, the parser shall
     /// step into the fragment as well.
-    NewNode(Option<AstInfo>),
+    NewNode(AstInfo),
 
     /// Take token to the top-most node in the stack.
     Take(usize),
+
+    /// Constructs an error node with the given number of tokens.
+    Error(usize),
 
     /// Pop the top-most node in the stack and creates a new node with the
     /// popped [`AstInfo`]. If the [`AstInfo::step_into_fragment`] present, the
