@@ -1066,7 +1066,7 @@ impl Converter<'_, '_> {
             .insert(indentation_marker.colon_index, Node::Branch(branch_id));
     }
 
-    fn make_span_relative(
+    const fn make_span_relative(
         span: &mut RelativeSpan,
         offset: usize,
         mode: OffsetMode,
@@ -1081,7 +1081,7 @@ impl Converter<'_, '_> {
         span.end.relative_to = offset_to_branch;
     }
 
-    fn make_token_relative<T>(
+    const fn make_token_relative<T>(
         mode: OffsetMode,
         offset: usize,
         offset_to_branch: ID<Branch>,
