@@ -736,3 +736,80 @@ fn error_choice_choose_most_progress() {
 
     assert!(tree.semicolon().is_none());
 }
+
+abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    struct TypesAll {
+        types: #[multi] Type = ast::<Type>().repeat_all(),
+    }
+}
+
+#[test]
+fn repeat_all_error_recovery() {
+    let mut source_map = SourceMap::new();
+    let (token_tree, _) =
+        parse_token_tree(&mut source_map, "[int32 &x float32]");
+
+    let (tree, errors) = TypesAll::parse(&token_tree);
+    let tree = tree.unwrap();
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(tree.inner_tree().nodes.len(), 4);
+
+    // `None` ast_info means an error node
+    assert!(tree.inner_tree().nodes[2]
+        .as_branch()
+        .is_some_and(|x| x.ast_info.is_none()));
+
+    // 2 successful parses, 1 partially successful parse, 1 error node
+    let types = tree.types().collect::<Vec<_>>();
+    assert_eq!(types.len(), 3);
+
+    assert!(types[0].as_primitive().is_some_and(Primitive::is_int32));
+    assert!(types[1].as_reference().is_some_and(|x| {
+        x.mut_keyword().is_none() && x.r#type().is_none()
+    }));
+    assert!(types[2].as_primitive().is_some_and(Primitive::is_float32));
+}
+
+#[test]
+fn reference_missing_type() {
+    let mut source_map = SourceMap::new();
+    let (token_tree, _) = parse_token_tree(&mut source_map, "&x");
+
+    let (tree, errors) = Type::parse(&token_tree);
+    let tree = tree.unwrap();
+
+    assert_eq!(errors.len(), 1);
+    let error = &errors[0];
+
+    let token_node = token_tree[error.at.branch_id]
+        .nodes
+        .get(error.at.node_index)
+        .unwrap()
+        .as_leaf();
+
+    assert!(token_node.is_some_and(|x| {
+        x.kind.as_identifier().is_some_and(|x| x.as_str() == "x")
+    }));
+
+    assert!(
+        error.expecteds.iter().copied().collect::<HashSet<_>>()
+            == [
+                expect::Keyword::Int32.into(),
+                expect::Keyword::Uint32.into(),
+                expect::Keyword::Float32.into(),
+                expect::Keyword::Bool.into(),
+                expect::Keyword::Mut.into(),
+                expect::Fragment::Delimited(DelimiterKind::Bracket).into(),
+                '&'.into(),
+            ]
+            .into_iter()
+            .collect::<HashSet<_>>()
+    );
+
+    assert!(tree.as_reference().is_some_and(|x| {
+        x.mut_keyword().is_none() && x.r#type().is_none()
+    }));
+}

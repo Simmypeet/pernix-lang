@@ -54,87 +54,41 @@ pub struct State<'a, 'cache> {
     cache: &'cache mut Cache,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub(crate) struct Diff {
-    cursor: Cursor,
-    new_line_significant: bool,
-    emitted_errors: Vec<Error>,
-    events: Vec<Event>,
+/// Represents a snapshot of the parser state at a certain point in time. This
+/// is used to implement the backtracking feature of the parser.
+///
+/// This tracks the "result" part of the state, which is the errors and events
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ResultCheckpoint {
+    emitted_error_count: usize,
+    event_index: (usize, Option<usize>),
 }
 
-impl Diff {
+/// Represents a snapshot of the parser state at a certain point in time. This
+/// is used to implement the backtracking feature of the parser.
+///
+/// This tracks the "state" part of the state, which is the cursor position
+/// and the new line significant flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StateCheckpoint {
+    node_index: usize,
+    new_line_significant: bool,
+}
+
+impl StateCheckpoint {
+    /// Returns the node index of the cursor in the branch.
     #[must_use]
-    pub(crate) const fn node_index(&self) -> usize { self.cursor.node_index }
-
-    /// Clears the diff and recalculates the diff from the given state and
-    /// checkpoint.
-    pub(crate) fn diff_checkpoint(
-        &mut self,
-        state: &State,
-        checkpoint: &Checkpoint,
-    ) {
-        self.cursor = state.cursor;
-        self.new_line_significant = state.new_line_significant;
-
-        self.emitted_errors.clear();
-        self.events.clear();
-
-        self.emitted_errors.extend_from_slice(
-            &state.emitted_erorrs[checkpoint.emitted_error_count..],
-        );
-        self.events
-            .extend_from_slice(&state.events[checkpoint.event_index.0..]);
-
-        // calculate the diff
-        let extra_take_add = checkpoint
-            .event_index
-            .1
-            .map(|was| {
-                let last_node = &state.events[checkpoint.event_index.0 - 1];
-                let is_take = last_node.is_take();
-
-                (
-                    last_node
-                        .as_take()
-                        .copied()
-                        .or_else(|| last_node.as_error().copied())
-                        .expect("should've been a take or error event")
-                        - was,
-                    is_take,
-                )
-            })
-            .filter(|(x, _)| *x > 0)
-            .map(|(count, is_take)| {
-                if is_take {
-                    Event::Take(count)
-                } else {
-                    Event::Error(count)
-                }
-            });
-
-        self.events.extend(extra_take_add);
-        self.events
-            .extend_from_slice(&state.events[checkpoint.event_index.0..]);
-    }
-
-    pub(crate) fn apply(&mut self, state: &mut State) {
-        state.cursor = self.cursor;
-        state.new_line_significant = self.new_line_significant;
-
-        state.emitted_erorrs.append(&mut self.emitted_errors);
-        state.events.append(&mut self.events);
-    }
+    pub const fn node_index(&self) -> usize { self.node_index }
 }
 
 /// Represents a snapshot of the [`State`] at a certain point in time that can
 /// be restored later. This is used to implement the backtracking feature of
 /// the parser.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
 pub struct Checkpoint {
-    node_index: usize,
-    new_line_significant: bool,
-    emitted_error_count: usize,
-    event_index: (usize, Option<usize>),
+    pub(crate) state: StateCheckpoint,
+    pub(crate) result: ResultCheckpoint,
 }
 
 /// Used for representing the position where the parser is in the token tree.
@@ -184,13 +138,17 @@ impl<'a, 'cache> State<'a, 'cache> {
         }
     }
 
-    /// Takes a snapshot of the current state and returns a [`Checkpoint`] which
-    /// can be used to restore the state later using [`Self::restore`].
     #[must_use]
-    pub fn checkpoint(&self) -> Checkpoint {
-        Checkpoint {
+    pub(crate) const fn state_checkpoint(&self) -> StateCheckpoint {
+        StateCheckpoint {
             node_index: self.cursor.node_index,
             new_line_significant: self.new_line_significant,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn result_checkpoint(&self) -> ResultCheckpoint {
+        ResultCheckpoint {
             emitted_error_count: self.emitted_erorrs.len(),
             event_index: (
                 self.events.len(),
@@ -203,19 +161,31 @@ impl<'a, 'cache> State<'a, 'cache> {
         }
     }
 
+    /// Takes a snapshot of the current state and returns a [`Checkpoint`] which
+    /// can be used to restore the state later using [`Self::restore`].
+    #[must_use]
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            state: self.state_checkpoint(),
+            result: self.result_checkpoint(),
+        }
+    }
+
     /// Restores the state to the given [`Checkpoint`]. This will restore the
     /// cursor position, the event list, and the error list to the state
     /// when the checkpoint was created.
     pub fn restore(&mut self, checkpoint: Checkpoint) {
-        assert!(self.cursor.node_index >= checkpoint.node_index);
+        self.restore_state(checkpoint.state);
+        self.restore_result(checkpoint.result);
+    }
+
+    pub(crate) fn restore_result(&mut self, checkpoint: ResultCheckpoint) {
         assert!(self.events.len() >= checkpoint.event_index.0);
         assert!(checkpoint.event_index.1.is_none_or(|saved_count| self.events
             [checkpoint.event_index.0 - 1]
             .as_take()
             .is_some_and(|current_count| *current_count >= saved_count)));
 
-        self.cursor.node_index = checkpoint.node_index;
-        self.new_line_significant = checkpoint.new_line_significant;
         self.events.truncate(checkpoint.event_index.0);
         self.emitted_erorrs.truncate(checkpoint.emitted_error_count);
 
@@ -229,6 +199,13 @@ impl<'a, 'cache> State<'a, 'cache> {
                 }
             }
         }
+    }
+
+    pub(crate) fn restore_state(&mut self, checkpoint: StateCheckpoint) {
+        assert!(self.cursor.node_index >= checkpoint.node_index);
+
+        self.cursor.node_index = checkpoint.node_index;
+        self.new_line_significant = checkpoint.new_line_significant;
     }
 
     /// Returns the token and its node index at the current cursor position.
@@ -275,6 +252,27 @@ impl<'a, 'cache> State<'a, 'cache> {
             *take += count;
         } else {
             self.events.push(Event::Take(count));
+        }
+
+        // update the cursor position
+        self.cursor.node_index += count;
+    }
+
+    /// Adds an [`Event::Error`] event that takes the given number of tokens,
+    /// which will be later used to construct an error node.
+    pub fn eat_error(&mut self, count: usize) {
+        // do nothing if count is 0
+        if count == 0 {
+            return;
+        }
+
+        // already in the last event, don't waste a new event memory
+        if let Some(error) =
+            self.events.last_mut().and_then(|x| x.as_error_mut())
+        {
+            *error += count;
+        } else {
+            self.events.push(Event::Error(count));
         }
 
         // update the cursor position
@@ -481,6 +479,140 @@ impl<'a, 'cache> State<'a, 'cache> {
 
             Some(result)
         }
+    }
+
+    /// Removes the results that have been created between the two checkpoints.
+    ///
+    /// # For example:
+    ///
+    /// ```txt
+    /// +-------+--------+-----+
+    /// | Start | Middle | End |
+    /// +-------+--------+-----+
+    ///         ^        ^
+    ///         before   after
+    /// ```
+    ///
+    /// This will remove the `Middle` part of the result.
+    ///
+    /// ``` txt
+    /// +-------+-----+
+    /// | Start | End |
+    /// +-------+-----+
+    /// ```
+    pub(crate) fn remove_middle(
+        &mut self,
+        before: ResultCheckpoint,
+        after: ResultCheckpoint,
+    ) {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        enum EventKind {
+            Take,
+            Error,
+            Other,
+        }
+
+        assert!(before.event_index.0 <= after.event_index.0);
+        assert!(before.emitted_error_count <= after.emitted_error_count);
+        assert_eq!(
+            before.event_index.1.is_some(),
+            after.event_index.1.is_some()
+        );
+        assert!(before
+            .event_index
+            .1
+            .is_none_or(|x| { after.event_index.1.is_none_or(|y| x <= y) }));
+
+        // remove the emitted errors
+        self.emitted_erorrs
+            .drain(before.emitted_error_count..after.emitted_error_count);
+
+        if before.event_index.0 == after.event_index.0
+            && before.event_index.1.is_some()
+        {
+            let middle_count =
+                after.event_index.1.unwrap() - before.event_index.1.unwrap();
+
+            match &mut self.events[after.event_index.0 - 1] {
+                Event::Take(count) | Event::Error(count) => {
+                    *count -= middle_count;
+                }
+
+                Event::NewNode(_) | Event::FinishNode | Event::Inline(_) => {
+                    unreachable!("should've been take or error event")
+                }
+            }
+        } else if before.event_index.0 != after.event_index.0 {
+            let last_before_event_kind =
+                if let Some(before_starting_count) = before.event_index.1 {
+                    let (kind, count) =
+                        match &mut self.events[before.event_index.0 - 1] {
+                            Event::Take(count) => (EventKind::Take, count),
+                            Event::Error(count) => (EventKind::Error, count),
+                            _ => unreachable!(
+                                "should be a take or error event, but got {:?}",
+                                self.events[before.event_index.0 - 1]
+                            ),
+                        };
+
+                    *count = before_starting_count;
+
+                    kind
+                } else {
+                    EventKind::Other
+                };
+
+            let drain_one_more_end =
+                if let Some(after_starting_count) = after.event_index.1 {
+                    let (kind, count) =
+                        match &mut self.events[after.event_index.0 - 1] {
+                            Event::Take(count) => (EventKind::Take, count),
+                            Event::Error(count) => (EventKind::Error, count),
+                            _ => unreachable!(
+                                "should be a take or error event, but got {:?}",
+                                self.events[after.event_index.0 - 1]
+                            ),
+                        };
+
+                    if kind == last_before_event_kind {
+                        let added = *count - after_starting_count;
+
+                        match &mut self.events[before.event_index.0 - 1] {
+                            Event::Take(count) | Event::Error(count) => {
+                                *count += added;
+                            }
+
+                            Event::NewNode(_)
+                            | Event::FinishNode
+                            | Event::Inline(_) => unreachable!(
+                                "should be a take or error event, but got {:?}",
+                                self.events[before.event_index.0 - 1]
+                            ),
+                        }
+
+                        // the last event of `before` and the last event of
+                        // `after` have been merged, so we need to remove the
+                        // last event of `after`
+                        true
+                    } else {
+                        *count -= after_starting_count;
+                        false
+                    }
+                } else {
+                    false
+                };
+
+            let end = after.event_index.0 + usize::from(drain_one_more_end);
+
+            // remove the events in between
+            self.events.drain(before.event_index.0..end);
+        }
+    }
+
+    pub(crate) fn emit_error(&mut self) {
+        let error = self.try_take_error().expect("should have an error");
+
+        self.emitted_erorrs.push(error);
     }
 
     pub(crate) fn try_take_error(&mut self) -> Option<Error> {

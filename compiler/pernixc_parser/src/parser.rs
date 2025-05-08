@@ -5,7 +5,7 @@ use crate::{
     abstract_tree::AbstractTree,
     expect::{self, Expect},
     output::{Multiple, One, Output},
-    state::{Cursor, Diff, State},
+    state::{Cursor, State},
 };
 
 /// A struct returned
@@ -200,15 +200,6 @@ pub trait IntoChoice {
     fn into_choice(self) -> Self::Output;
 }
 
-// A tempoary buffer for storing the progress of the parser while trying
-// different choice of parsers. In choice parser, if all the parsers fail,
-// the parser will try to restore one of it parser choice's result with the most
-// progress made (consume the most tokens).
-thread_local! {
-    static DIFF_BUFFER: std::cell::RefCell<Diff>
-        = std::cell::RefCell::new(Diff::default());
-}
-
 macro_rules! implements_choice {
     () => {};
 
@@ -221,52 +212,49 @@ macro_rules! implements_choice {
         impl<$head: Parser, $($rest: Parser),*> Parser
             for Choice<($head, $($rest),*)> {
 
-            #[allow(non_snake_case)]
+            #[allow(non_snake_case, unused_assignments)]
             fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
                 let Choice(($head, $($rest),*)) = self;
 
-                let checkpoint = state.checkpoint();
+                let starting_state = state.state_checkpoint();
+                let starting_result = state.result_checkpoint();
 
-                match $head.parse(state) {
-                    Ok(()) => return Ok(()),
-                    Err(Unexpected) => {
-                        DIFF_BUFFER.with_borrow_mut(|diff_buffer| {
-                            diff_buffer.diff_checkpoint(
-                                state,
-                                &checkpoint
-                            )
-                        });
-
-                        state.restore(checkpoint);
-                    }
+                if $head.parse(state) == Ok(()) {
+                    return Ok(());
                 }
 
-                $(
-                    match $rest.parse(state) {
-                        Ok(()) => return Ok(()),
-                        Err(Unexpected) => {
-                            DIFF_BUFFER.with_borrow_mut(|diff_buffer| {
-                                // current path make more progress,
-                                // replace the diff buffer
-                                if state.node_index()
-                                    > diff_buffer.node_index() {
-                                    diff_buffer.diff_checkpoint(
-                                        state,
-                                        &checkpoint
-                                    );
-                                }
-                            });
+                let mut most_eaten_tokens = state.node_index()
+                    - starting_state.node_index();
 
-                            state.restore(checkpoint);
-                        }
+                $(
+                    state.restore_state(starting_state);
+                    let alternative_checkpoint = state.checkpoint();
+
+                    if $rest.parse(state) == Ok(()) {
+                        // remove the previous furthest result
+                        state.remove_middle(
+                            starting_result,
+                            alternative_checkpoint.result,
+                        );
+                        return Ok(());
+                    }
+
+                    let alternative_eaten = state.node_index()
+                        - alternative_checkpoint.state.node_index();
+
+                    if alternative_eaten > most_eaten_tokens {
+                        state.remove_middle(
+                            starting_result,
+                            alternative_checkpoint.result,
+                        );
+
+                        most_eaten_tokens = alternative_eaten;
+                    } else {
+                        state.restore_result(
+                            alternative_checkpoint.result
+                        );
                     }
                 )*
-
-                // apply the diff buffer with the most progress
-                DIFF_BUFFER.with_borrow_mut(|diff_buffer| {
-                    diff_buffer.apply(state);
-                });
-
 
                 Err(Unexpected)
             }
@@ -386,15 +374,41 @@ pub struct RepeatAll<T>(pub T);
 impl<T: Parser> Parser for RepeatAll<T> {
     fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
         while state.peek().is_some() {
-            let checkpoint = state.checkpoint();
+            let Err(Unexpected) = self.0.parse(state) else {
+                // if the parser is successful, continue parsing
+                continue;
+            };
 
-            if self.0.parse(state) == Err(Unexpected) {
+            state.emit_error();
+
+            while state.peek().is_some() {
+                let checkpoint = state.checkpoint();
+
+                // try to parse the next token
+                if self.0.parse(state) == Ok(()) {
+                    // break out and continue parsing the next element
+                    break;
+                }
+
+                // if failed, restore the checkpoint
                 state.restore(checkpoint);
-                break;
+                state.eat_error(1);
             }
         }
 
         Ok(())
+    }
+}
+
+impl<T: Output<Extract = One>> Output for RepeatAll<T> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
     }
 }
 
