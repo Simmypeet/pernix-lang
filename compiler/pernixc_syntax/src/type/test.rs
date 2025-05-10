@@ -7,7 +7,7 @@ use crate::{
 
 proptest::proptest! {
     #[test]
-    fn qualified_identifier(
+    fn r#type(
         reference in arbitrary::Type::arbitrary()
     ) {
         verify_ref::<_, Type>(&reference)?;

@@ -1,12 +1,16 @@
 #![allow(missing_docs)]
 
+use pernixc_lexical::kind;
 use pernixc_parser::expect;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy},
     prop_oneof,
 };
 
-use crate::{arbitrary::Lifetime, reference};
+use crate::{
+    arbitrary::{Elided, Lifetime, QualifiedIdentifier},
+    reference,
+};
 
 reference! {
     #[derive(Debug, Clone, Copy, derive_more::Display)]
@@ -126,22 +130,162 @@ impl Arbitrary for Reference {
 
 reference! {
     #[derive(Debug, Clone, derive_more::Display)]
+    #[display(
+        "{}{type}",
+        if *ellipsis { "..." } else { "" },
+    )]
+    pub struct Unpackable for super::Unpackable {
+        pub ellipsis (bool),
+        pub r#type (Box<Type>)
+    }
+}
+
+impl Arbitrary for Unpackable {
+    type Parameters = Option<BoxedStrategy<Type>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+        let ty = ty.unwrap_or_else(Type::arbitrary);
+
+        (bool::arbitrary(), ty.prop_map(Box::new))
+            .prop_map(|(ellipsis, r#type)| Self { ellipsis, r#type })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display(
+        "({})",
+        types.iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )]
+    pub struct Tuple for super::Tuple {
+        pub types (Vec<Unpackable>)
+    }
+}
+
+impl Arbitrary for Tuple {
+    type Parameters = Option<BoxedStrategy<Type>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(Unpackable::arbitrary_with(ty), 1..=10)
+            .prop_map(|types| Self { types })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display("[{type} x {numeric}]")]
+    pub struct Array for super::Array {
+        pub r#type (Box<Type>),
+
+        #{map_input_assert(numeric, &numeric.kind)}
+        pub numeric (kind::Numeric)
+    }
+}
+
+impl Arbitrary for Array {
+    type Parameters = Option<BoxedStrategy<Type>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+        let ty = ty.unwrap_or_else(Type::arbitrary);
+
+        (ty.prop_map(Box::new), kind::Numeric::arbitrary())
+            .prop_map(|(r#type, numeric)| Self { r#type, numeric })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display(
+        "*{}{type}",
+        if *mut_keyword { "mut " } else { "" },
+    )]
+    pub struct Pointer for super::Pointer {
+        pub mut_keyword (bool),
+        pub r#type (Box<Type>)
+    }
+}
+
+impl Arbitrary for Pointer {
+    type Parameters = Option<BoxedStrategy<Type>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+        let ty = ty.unwrap_or_else(Type::arbitrary);
+
+        (bool::arbitrary(), ty.prop_map(Box::new))
+            .prop_map(|(mut_keyword, r#type)| Self { mut_keyword, r#type })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    #[display("phantom {type}")]
+    pub struct Phantom for super::Phantom {
+        pub r#type (Box<Type>)
+    }
+}
+
+impl Arbitrary for Phantom {
+    type Parameters = Option<BoxedStrategy<Type>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+        let ty = ty.unwrap_or_else(Type::arbitrary);
+
+        ty.prop_map(Box::new).prop_map(|r#type| Self { r#type }).boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
     pub enum Type for super::Type {
+        QualifiedIdentifier(QualifiedIdentifier),
         Primitive(Primitive),
         Reference(Reference),
+        Tuple(Tuple),
+        Array(Array),
+        Pointer(Pointer),
+        Phantom(Phantom),
+        Elided(Elided),
     }
 }
 
 impl Arbitrary for Type {
-    type Parameters = ();
+    type Parameters = Option<BoxedStrategy<QualifiedIdentifier>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        let leaf = Primitive::arbitrary().prop_map(Type::Primitive);
+        let leaf = prop_oneof![
+            Elided::arbitrary().prop_map(Self::Elided),
+            Primitive::arbitrary().prop_map(Type::Primitive)
+        ];
 
-        leaf.prop_recursive(4, 20, 5, |inner| {
-            prop_oneof![Reference::arbitrary_with(Some(inner))
-                .prop_map(Self::Reference),]
+        leaf.prop_recursive(4, 40, 10, |inner| {
+            let qualified_identifier =
+                QualifiedIdentifier::arbitrary_with(Some(inner.clone()));
+
+            prop_oneof![
+                qualified_identifier.prop_map(Self::QualifiedIdentifier),
+                Reference::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Reference),
+                Array::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Array),
+                Pointer::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Pointer),
+                Phantom::arbitrary_with(Some(inner.clone()))
+                    .prop_map(Self::Phantom),
+                Tuple::arbitrary_with(Some(inner)).prop_map(Self::Tuple)
+            ]
         })
         .boxed()
     }

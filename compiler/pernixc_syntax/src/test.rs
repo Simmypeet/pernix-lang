@@ -36,7 +36,8 @@ where
     let mut source_map = SourceMap::new();
 
     let source = ast_ref.to_string();
-    println!("source: {source}");
+    println!("{source}");
+    println!("===============================================================");
     let (token_tree, _) = parse_token_tree(&mut source_map, &source);
 
     let (tree, errors) = TAst::parse(&token_tree);
