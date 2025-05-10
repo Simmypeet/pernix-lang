@@ -1,8 +1,8 @@
 //! Contains the definitions of the syntax tree related to expressions
 
+use binary::Binary;
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{abstract_tree, parser::ast};
-use prefix::Prefixable;
 
 pub mod binary;
 pub mod postfix;
@@ -12,6 +12,6 @@ pub mod unit;
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Expression {
-        Prefixable(Prefixable = ast::<Prefixable>()),
+        Binary(Binary = ast::<Binary>()),
     }
 }

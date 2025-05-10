@@ -1,5 +1,28 @@
 use enum_as_inner::EnumAsInner;
-use pernixc_parser::{abstract_tree, expect::Ext as _, parser::ast};
+use pernixc_parser::{
+    abstract_tree,
+    expect::Ext as _,
+    parser::{ast, Parser as _},
+};
+
+use crate::expression::prefix::Prefixable;
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Binary {
+        pub first: Prefixable = ast::<Prefixable>(),
+        pub chain: #[multi] BinarySubsequent
+            = ast::<BinarySubsequent>().repeat(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct BinarySubsequent {
+        pub operator: Operator = ast::<Operator>(),
+        pub prefixable: Prefixable = ast::<Prefixable>(),
+    }
+}
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -41,7 +64,6 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// Normal arithmetic operations
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Add {
@@ -77,7 +99,6 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// Comparison operations
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Equal {
@@ -124,7 +145,6 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// Bitwise operations
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct BitwiseAnd {
@@ -146,7 +166,6 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// Bitwise shift operations
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct BitwiseLeftShift {
@@ -163,7 +182,6 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// Compound bitwise operations
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct CompoundBitwiseAnd {
@@ -206,7 +224,6 @@ abstract_tree::abstract_tree! {
     }
 }
 
-// Assignment operation
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Assign {
@@ -217,7 +234,6 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Operator {
-        // Compound operators with 3 tokens (highest precedence in parsing)
         CompoundBitwiseLeftShift(
             CompoundBitwiseLeftShift = ast::<CompoundBitwiseLeftShift>()
         ),
@@ -296,7 +312,6 @@ abstract_tree::abstract_tree! {
         LessThan(
             LessThan = ast::<LessThan>()
         ),
-        // Assignment operator
         Assign(
             Assign = ast::<Assign>()
         ),
