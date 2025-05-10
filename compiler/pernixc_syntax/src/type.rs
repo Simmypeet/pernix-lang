@@ -16,7 +16,6 @@ pub mod arbitrary;
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     pub enum Primitive {
         Bool(Keyword = expect::Keyword::Bool),
         Float32(Keyword = expect::Keyword::Float32),
@@ -36,7 +35,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     pub struct Reference {
         pub ampersand: Punctuation = '&',
         pub lifetime: Lifetime = ast::<Lifetime>().optional(),
@@ -47,7 +45,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     pub struct Unpackable {
         pub ellipsis: Ellipsis = ast::<Ellipsis>().optional(),
         pub r#type: Type = ast::<Type>(),
@@ -56,7 +53,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct Tuple {
         pub types: #[multi] Unpackable
@@ -66,7 +62,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct Array {
         pub r#type: Type = ast::<Type>(),
@@ -77,7 +72,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     pub struct Pointer {
         pub asterisk: Punctuation = '*',
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
@@ -87,7 +81,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     pub struct Phantom {
         pub phantom: Keyword = expect::Keyword::Phantom,
         pub r#type: Type = ast::<Type>(),
@@ -96,7 +89,6 @@ abstract_tree::abstract_tree! {
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #[allow(missing_docs)]
     pub enum Type {
         Primitive(Primitive = ast::<Primitive>()),
         QualifiedIdentifier(QualifiedIdentifier = ast::<QualifiedIdentifier>()),
