@@ -175,6 +175,17 @@ pub struct Branch {
     pub nodes: Vec<Node>,
 }
 
+impl Branch {
+    /// Gets the ID of the parent branch of this branch.
+    #[must_use]
+    pub const fn parent(&self) -> Option<ID<Self>> {
+        match &self.kind {
+            BranchKind::Fragment(fragment) => Some(fragment.parent),
+            BranchKind::Root => None,
+        }
+    }
+}
+
 /// The constant ID that every [`Tree`] will use as the root branch ID.
 pub const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 

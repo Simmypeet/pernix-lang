@@ -1,6 +1,11 @@
 //! Contains all the kinds of tokens in the Pernix programming language.
 
-use std::{collections::HashMap, fmt::Display, str::FromStr, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write},
+    str::FromStr,
+    sync::LazyLock,
+};
 
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
@@ -354,6 +359,12 @@ pub struct String(pub SharedStr);
 )]
 pub struct Identifier(pub SharedStr);
 
+impl Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// A new-type wrapper of `char` used to represent a punctuation character in
 /// the source code like `+`, `-`, `*`, `/`, etc.
 #[derive(
@@ -372,6 +383,12 @@ pub struct Identifier(pub SharedStr);
     DerefMut,
 )]
 pub struct Punctuation(pub char);
+
+impl Display for Punctuation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_char(self.0)
+    }
+}
 
 /// Represents a sequence of digits that can be used to represent a number in
 /// the source code: `let x = 123;`.

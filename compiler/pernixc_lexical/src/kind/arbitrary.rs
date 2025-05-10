@@ -181,12 +181,6 @@ impl Arbitrary for Identifier {
     }
 }
 
-impl Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
 impl Input<Self, ()> for &Identifier {
     fn assert(self, output: Self, (): ()) -> TestCaseResult {
         prop_assert_eq!(&self.0, &output.0);
@@ -259,12 +253,6 @@ impl Arbitrary for Punctuation {
                 }
             })
             .boxed()
-    }
-}
-
-impl Display for Punctuation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_char(self.0)
     }
 }
 
