@@ -62,6 +62,19 @@ pub trait Parser {
     {
         RepeatAllWithSeparator(self, separator)
     }
+
+    /// Repeats the `self` parser with a `separator` parser in between. The
+    /// parser will be ran until it fails. The parser will not allow trailing
+    /// separators.
+    fn repeat_with_separator<S: Parser>(
+        self,
+        separator: S,
+    ) -> RepeatWithSeparator<Self, S>
+    where
+        Self: Sized,
+    {
+        RepeatWithSeparator(self, separator)
+    }
 }
 
 impl<F: Fn(&mut State) -> Result<(), Unexpected>> Parser for F {
@@ -380,6 +393,51 @@ impl<T: Parser> Parser for Repeat<T> {
 }
 
 impl<T: Output<Extract = One>> Output for Repeat<T> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
+
+/// See [`Parser::repeat_with_separator`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RepeatWithSeparator<T, S>(pub T, pub S);
+
+impl<T: Parser, S: Parser> Parser for RepeatWithSeparator<T, S> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let mut checkpoint = state.checkpoint();
+        let mut expect_separator = false;
+
+        loop {
+            if expect_separator && self.1.parse(state) == Err(Unexpected) {
+                state.restore(checkpoint);
+                break;
+            }
+
+            if self.0.parse(state) == Ok(()) {
+                // if the parser is successful, continue parsing
+                // and set the checkpoint
+                expect_separator = true;
+                checkpoint = state.checkpoint();
+            } else {
+                if !expect_separator {
+                    state.restore(checkpoint);
+                }
+
+                break;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: Output<Extract = One>, S> Output for RepeatWithSeparator<T, S> {
     type Extract = Multiple;
     type Output<'a> = T::Output<'a>;
 

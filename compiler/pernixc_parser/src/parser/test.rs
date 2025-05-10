@@ -875,3 +875,57 @@ fn reference_missing_type() {
         x.mut_keyword().is_none() && x.r#type().is_none()
     }));
 }
+
+abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
+    struct TypesPlus {
+        types: #[multi] Type = ast::<Type>().repeat_with_separator('+'),
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display,
+)]
+#[display(
+    "[{}]", 
+    self.types
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>().join(" + ")
+)]
+struct TypesPlusRef {
+    types: Vec<TypeRef>,
+}
+
+impl Arbitrary for TypesPlusRef {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(TypeRef::arbitrary(), 0..10)
+            .prop_map(|types| Self { types })
+            .boxed()
+    }
+}
+
+impl Input<&TypesPlus, ()> for &TypesPlusRef {
+    fn assert(
+        self,
+        output: &TypesPlus,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        let types = output.types().collect::<Vec<_>>();
+
+        self.types.assert(&types, ())
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn types_plus(
+        types_ref in TypesPlusRef::arbitrary()
+    ) {
+        verify_type_ref::<TypesPlusRef, TypesPlus>(&types_ref)?;
+    }
+}
