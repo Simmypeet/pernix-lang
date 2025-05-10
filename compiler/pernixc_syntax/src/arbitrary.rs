@@ -91,6 +91,29 @@ macro_rules! verify {
         $output_in:expr,
         $field:ident,
         $type:ty,
+        map_input_assert($map_in:expr)
+    ) => {{
+        #[allow(non_snake_case)]
+        let $field = $value_in;
+        let input = $map_in;
+
+        #[allow(non_snake_case)]
+        let $field = $output_in;
+        let output = $crate::arbitrary::map_expr!($kind, $field, $field);
+
+        $crate::arbitrary::__test_input::Input::assert(
+            $crate::arbitrary::map_expr!(~$kind, input),
+            output,
+            ()
+        )?
+    }};
+
+    (
+        $kind:ident,
+        $value_in:expr,
+        $output_in:expr,
+        $field:ident,
+        $type:ty,
         prop_assert_eq($map_in:expr, $map_out:expr)
     ) => {{
         #[allow(non_snake_case)]
@@ -117,7 +140,7 @@ macro_rules! verify {
 
         #[allow(non_snake_case)]
         let $output_temp = $output_in;
-        let output = $crate::arbitrary::map_expr!($kind, $field, $map_out);
+        let output = $crate::arbitrary::map_expr!($kind, $output_temp, $map_out);
 
         $crate::arbitrary::__proptest::prop_assert!(output);
     }};
@@ -138,7 +161,25 @@ macro_rules! verify {
         )?
     };
 
-    ( struct, $value_in:expr, $output_in:expr, $field:ident, $type:tt ) => {
+    ( struct,  $value_in:expr, $output_in:expr, $field:ident, Box<$ty:ty> ) => {
+        $crate::arbitrary::__test_input::Input::assert(
+            $crate::arbitrary::map_expr!(~struct, &**$value_in),
+            $output_in.as_ref(),
+            (),
+        )?
+    };
+
+    ( struct,  $value_in:expr, $output_in:expr, $field:ident, bool ) => {
+        $crate::arbitrary::__proptest::prop_assert_eq!(
+            *$value_in,
+            $output_in.is_some(),
+            "expected {:?} got {:?}",
+            $value_in,
+            $output_in,
+        )
+    };
+
+    ( struct, $value_in:expr, $output_in:expr, $field:ident, $type:ty ) => {
         $crate::arbitrary::__test_input::Input::assert(
             $crate::arbitrary::map_expr!(~struct, $value_in),
             $output_in.as_ref(),

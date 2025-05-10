@@ -11,6 +11,9 @@ use crate::{
     QualifiedIdentifier,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #[allow(missing_docs)]
@@ -36,7 +39,7 @@ abstract_tree::abstract_tree! {
     #[allow(missing_docs)]
     pub struct Reference {
         pub ampersand: Punctuation = '&',
-        pub lifetime: Lifetime = ast::<Lifetime>(),
+        pub lifetime: Lifetime = ast::<Lifetime>().optional(),
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
         pub r#type: Type = ast::<Type>(),
     }
@@ -105,3 +108,6 @@ abstract_tree::abstract_tree! {
         Elided(Elided = ast::<Elided>())
     }
 }
+
+#[cfg(test)]
+mod test;
