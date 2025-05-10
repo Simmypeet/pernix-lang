@@ -109,7 +109,7 @@ fn setup_panic() {
                 || {
                     info.payload()
                         .downcast_ref::<String>()
-                        .map_or("unknown", |payload| payload)
+                        .map_or("unknown", |payload| payload.as_str())
                 },
                 |payload| payload,
             )
@@ -214,7 +214,7 @@ fn render_backtrace() -> String {
     //Padding for next lines after frame's address
     const NEXT_SYMBOL_PADDING: usize = HEX_WIDTH + 6;
 
-    let mut backtrace = String::new();
+    let mut backtrace = String::default();
 
     //Here we iterate over backtrace frames
     //(each corresponds to function's stack)
