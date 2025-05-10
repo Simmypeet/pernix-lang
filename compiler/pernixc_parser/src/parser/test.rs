@@ -14,7 +14,7 @@ use pernixc_target::TargetID;
 use pernixc_test_input::Input;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, TestCaseError},
-    prop_assert_eq, prop_oneof,
+    prop_assert, prop_assert_eq, prop_oneof,
     strategy::Strategy,
     test_runner::TestCaseResult,
 };
@@ -493,11 +493,67 @@ impl Input<&Reference, ()> for &ReferenceRef {
 }
 
 abstract_tree! {
+    #[derive(Debug)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
+    struct Tuple {
+        types: #[multi] Type = ast::<Type>().repeat_all_with_separator(',')
+    }
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::Display,
+)]
+#[display(
+    "({}{})", 
+    self.types
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", "),
+    if self.trailing_comma { "," } else { "" }
+)]
+struct TupleRef {
+    types: Vec<TypeRef>,
+    trailing_comma: bool,
+}
+
+impl Arbitrary for TupleRef {
+    type Parameters = Option<BoxedStrategy<TypeRef>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(types: Self::Parameters) -> Self::Strategy {
+        let types = types.unwrap_or_else(TypeRef::arbitrary);
+
+        (proptest::collection::vec(types, 0..=10), proptest::bool::ANY)
+            .prop_map(|(types, trailing_comma)| Self {
+                trailing_comma: trailing_comma && !types.is_empty(),
+                types,
+            })
+            .boxed()
+    }
+}
+
+impl Input<&Tuple, ()> for &TupleRef {
+    fn assert(
+        self,
+        output: &Tuple,
+        (): (),
+    ) -> proptest::test_runner::TestCaseResult {
+        let types = output.types().collect::<Vec<_>>();
+
+        self.types.assert(&types, ())?;
+
+        Ok(())
+    }
+}
+
+abstract_tree! {
     #[derive(Debug, EnumAsInner)]
     enum Type {
         Primitive(Primitive = ast::<Primitive>()),
         Array(Array = ast::<Array>()),
-        Reference(Reference = ast::<Reference>())
+        Reference(Reference = ast::<Reference>()),
+        Tuple(Tuple = ast::<Tuple>())
     }
 }
 
@@ -508,6 +564,7 @@ enum TypeRef {
     Primitive(PrimitiveRef),
     Array(ArrayRef),
     Reference(ReferenceRef),
+    Tuple(TupleRef),
 }
 
 impl Arbitrary for TypeRef {
@@ -517,12 +574,13 @@ impl Arbitrary for TypeRef {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = PrimitiveRef::arbitrary().prop_map(Self::Primitive);
 
-        leaf.prop_recursive(10, 10, 1, |ty| {
+        leaf.prop_recursive(10, 50, 5, |ty| {
             prop_oneof![
                 ArrayRef::arbitrary_with(Some(ty.clone()))
                     .prop_map(Self::Array),
-                ReferenceRef::arbitrary_with(Some(ty))
-                    .prop_map(Self::Reference)
+                ReferenceRef::arbitrary_with(Some(ty.clone()))
+                    .prop_map(Self::Reference),
+                TupleRef::arbitrary_with(Some(ty)).prop_map(Self::Tuple),
             ]
         })
         .boxed()
@@ -544,6 +602,9 @@ impl Input<&Type, ()> for &TypeRef {
             }
             (TypeRef::Reference(reference_ref), Type::Reference(reference)) => {
                 reference_ref.assert(reference, ())
+            }
+            (TypeRef::Tuple(tuple_ref), Type::Tuple(tuple)) => {
+                tuple_ref.assert(tuple, ())
             }
 
             _ => Err(TestCaseError::fail(format!(
@@ -567,7 +628,7 @@ where
     let (tree, errors) = TAst::parse(&token_tree);
     let tree = tree.unwrap();
 
-    assert!(errors.is_empty());
+    prop_assert!(errors.is_empty(), "{errors:?}");
 
     ast_ref.assert(&tree, ())
 }

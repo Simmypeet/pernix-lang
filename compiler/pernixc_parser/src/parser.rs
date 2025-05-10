@@ -50,8 +50,8 @@ pub trait Parser {
 
     /// Repeats the `self` parser withe a `separator` parser in between. The
     /// parser will be ran until all of the tokens are consumed in the
-    /// branch. 
-    /// 
+    /// branch.
+    ///
     /// This parser allows trailing separators
     fn repeat_all_with_separator<S: Parser>(
         self,
@@ -436,13 +436,29 @@ impl<T: Parser, S: Parser> Parser for RepeatAllWithSeparator<T, S> {
         fn parse_with_separator<T: Parser, S: Parser>(
             repeat: &RepeatAllWithSeparator<T, S>,
             state: &mut State,
+            expect_separator: bool,
         ) -> Result<(), Unexpected> {
-            repeat.0.parse(state)?;
-            repeat.1.parse(state)
+            if expect_separator {
+                repeat.1.parse(state)?;
+            }
+
+            if state.peek().is_some() {
+                repeat.0.parse(state)
+            } else {
+                // no more tokens to parse, the last separator was a trailing
+                // separator
+                Ok(())
+            }
         }
 
+        let mut expect_separator = false;
+
         while state.peek().is_some() {
-            let Err(Unexpected) = parse_with_separator(self, state) else {
+            let Err(Unexpected) =
+                parse_with_separator(self, state, expect_separator)
+            else {
+                expect_separator = true;
+
                 // if the parser is successful, continue parsing
                 continue;
             };
@@ -455,6 +471,7 @@ impl<T: Parser, S: Parser> Parser for RepeatAllWithSeparator<T, S> {
                 // try to parse the next token
                 if self.1.parse(state) == Ok(()) {
                     // break out and continue parsing the next element
+                    expect_separator = false;
                     break;
                 }
 
@@ -465,6 +482,18 @@ impl<T: Parser, S: Parser> Parser for RepeatAllWithSeparator<T, S> {
         }
 
         Ok(())
+    }
+}
+
+impl<T: Output<Extract = One>, S> Output for RepeatAllWithSeparator<T, S> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
     }
 }
 
