@@ -864,6 +864,7 @@ fn reference_missing_type() {
                 expect::Keyword::Bool.into(),
                 expect::Keyword::Mut.into(),
                 expect::Fragment::Delimited(DelimiterKind::Bracket).into(),
+                expect::Fragment::Delimited(DelimiterKind::Parenthesis).into(),
                 '&'.into(),
             ]
             .into_iter()

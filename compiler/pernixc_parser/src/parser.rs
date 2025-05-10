@@ -238,6 +238,7 @@ macro_rules! implements_choice {
                     return Ok(());
                 }
 
+                let mut most_eaten_token_state = state.state_checkpoint();
                 let mut most_eaten_tokens = state.node_index()
                     - starting_state.node_index();
 
@@ -257,6 +258,8 @@ macro_rules! implements_choice {
                     let alternative_eaten = state.node_index()
                         - alternative_checkpoint.state.node_index();
 
+                    // this new alternative is better than the previous one,
+                    // so remove the previous one
                     if alternative_eaten > most_eaten_tokens {
                         state.remove_middle(
                             starting_result,
@@ -264,12 +267,18 @@ macro_rules! implements_choice {
                         );
 
                         most_eaten_tokens = alternative_eaten;
+                        most_eaten_token_state = state.state_checkpoint();
                     } else {
                         state.restore_result(
                             alternative_checkpoint.result
                         );
                     }
                 )*
+
+                // if we reach here, it means that all the alternatives
+                // failed, so we need to restore the state to the furthest
+                // alternative
+                state.restore_state(most_eaten_token_state);
 
                 Err(Unexpected)
             }

@@ -181,9 +181,11 @@ impl<'a, 'cache> State<'a, 'cache> {
 
     pub(crate) fn restore_result(&mut self, checkpoint: ResultCheckpoint) {
         assert!(self.events.len() >= checkpoint.event_index.0);
+
         assert!(checkpoint.event_index.1.is_none_or(|saved_count| self.events
             [checkpoint.event_index.0 - 1]
             .as_take()
+            .or(self.events[checkpoint.event_index.0 - 1].as_error())
             .is_some_and(|current_count| *current_count >= saved_count)));
 
         self.events.truncate(checkpoint.event_index.0);
@@ -201,9 +203,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         }
     }
 
-    pub(crate) fn restore_state(&mut self, checkpoint: StateCheckpoint) {
-        assert!(self.cursor.node_index >= checkpoint.node_index);
-
+    pub(crate) const fn restore_state(&mut self, checkpoint: StateCheckpoint) {
         self.cursor.node_index = checkpoint.node_index;
         self.new_line_significant = checkpoint.new_line_significant;
     }
@@ -699,18 +699,17 @@ impl<'a, 'cache> State<'a, 'cache> {
             };
 
         let branch = &tree[cursor.branch_id];
-        let mut error_nodes = None::<Vec<concrete_tree::Node>>;
+        let mut error_nodes = Vec::new();
 
         while let Some(event) = events.next() {
             let is_error = event.is_error();
 
-            if !is_error && error_nodes.as_ref().is_some_and(|x| !x.is_empty())
-            {
+            if !is_error && !error_nodes.is_empty() {
                 // if there are error nodes, create an error node
                 let error_node = concrete_tree::Node::Branch(Arc::new(
                     concrete_tree::Tree {
                         ast_info: None,
-                        nodes: error_nodes.take().unwrap(),
+                        nodes: std::mem::take(&mut error_nodes),
                     },
                 ));
 
@@ -749,7 +748,7 @@ impl<'a, 'cache> State<'a, 'cache> {
 
                 Event::Error(count) => {
                     // eat the tokens to be constructed as an error node
-                    error_nodes.get_or_insert_default().extend(
+                    error_nodes.extend(
                         branch.nodes[cursor.node_index..]
                             .iter()
                             .take(count)
@@ -796,6 +795,8 @@ impl<'a, 'cache> State<'a, 'cache> {
 
                         *cursor = finish_cursor;
                     }
+
+                    assert!(error_nodes.is_empty());
 
                     // done with the current node, pop the stack
                     // if node has no tokens, return None
