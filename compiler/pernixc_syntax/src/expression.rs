@@ -4,6 +4,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_parser::{abstract_tree, parser::ast};
 use prefix::Prefixable;
 
+pub mod binary;
 pub mod postfix;
 pub mod prefix;
 pub mod unit;
