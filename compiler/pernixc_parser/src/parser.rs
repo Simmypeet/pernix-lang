@@ -84,8 +84,8 @@ impl<F: Fn(&mut State) -> Result<(), Unexpected>> Parser for F {
 }
 
 macro_rules! expect_impl_parser {
-    { $(~$inner:ident)? $name:ty } => {
-        impl Parser for $name {
+    { $(~$inner:ident)? $name:ty $({$generic_param:ident : $($bound:tt)* })? } => {
+        impl $(< $generic_param : $($bound)*>)? Parser for $name {
             fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
                 expect_impl_parser! { #self #state $(#$inner)?}
             }
@@ -149,6 +149,11 @@ expect_impl_parser! {expect::Numeric}
 expect_impl_parser! {expect::Punctuation}
 expect_impl_parser! {expect::Keyword}
 expect_impl_parser! {~inner_state expect::NewLine}
+expect_impl_parser! {
+    ~inner_state
+    expect::NoPriorInsignificant<T>
+    {T: Expect + Copy}
+}
 
 /// See [`ast`] for more information.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
