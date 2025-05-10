@@ -15,6 +15,9 @@ use r#type::Type;
 
 pub mod r#type;
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;
 
@@ -97,7 +100,7 @@ abstract_tree::abstract_tree! {
     #[allow(missing_docs)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct GenericArguments {
-        pub argments: #[multi] GenericArgument
+        pub arguments: #[multi] GenericArgument
             = ast::<GenericArgument>().repeat_all_with_separator(',')
     }
 }
@@ -206,3 +209,6 @@ abstract_tree::abstract_tree! {
         pub third_dot: Punctuation = '.'.no_prior_insignificant(),
     }
 }
+
+#[cfg(test)]
+mod test;
