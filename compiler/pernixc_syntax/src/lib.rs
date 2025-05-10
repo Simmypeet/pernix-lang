@@ -11,6 +11,9 @@ use pernixc_parser::{
     expect::{self, Ext as _},
     parser::{ast, Parser as _},
 };
+use r#type::Type;
+
+pub mod r#type;
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;
@@ -85,6 +88,7 @@ abstract_tree::abstract_tree! {
     #[allow(missing_docs)]
     pub enum GenericArgument {
         Lifetime(Lifetime = ast::<Lifetime>()),
+        Type(Type = ast::<Type>()),
     }
 }
 
@@ -190,5 +194,15 @@ abstract_tree::abstract_tree! {
     pub struct ReferenceOf {
         pub ampersand: Punctuation = '&',
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[allow(missing_docs)]
+    pub struct Ellipsis {
+        pub first_dot: Punctuation = '.',
+        pub second_dot: Punctuation = '.'.no_prior_insignificant(),
+        pub third_dot: Punctuation = '.'.no_prior_insignificant(),
     }
 }
