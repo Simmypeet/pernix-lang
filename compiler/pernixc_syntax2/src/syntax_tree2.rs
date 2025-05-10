@@ -7,13 +7,8 @@ use pernixc_lexical::{
 };
 use pernixc_source_file::GlobalSourceID;
 
-// pub mod parse;
-
 /// Represents the state machine used to scan the token stream input and produce
 /// a syntax tree.
-///
-/// By default, all of the progression methods will skip insignificant tokens.
-/// To include insignificant tokens, use the `_no_skip` variants of the methods.
 #[derive(Debug, Clone, PartialEq, Eq, CopyGetters)]
 pub struct StateMachine<'a> {
     /// The tree of tokens to scan.

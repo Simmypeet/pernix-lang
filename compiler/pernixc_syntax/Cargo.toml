@@ -1,32 +1,15 @@
 [package]
 name = "pernixc_syntax"
-version = { workspace = true }
-description = { workspace = true }
-authors = { workspace = true }
-edition = { workspace = true }
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
 rust-version.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-pernixc_test_input = { path = "../pernixc_test_input" }
-pernixc_source_file = { path = "../pernixc_source_file" }
-pernixc_diagnostic = { path = "../pernixc_diagnostic" }
-pernixc_handler = { path = "../pernixc_handler" }
 pernixc_lexical = { path = "../pernixc_lexical" }
-pernixc_target = { path = "../pernixc_target" }
-pernixc_arena = { path = "../pernixc_arena" }
+pernixc_parser = { path = "../pernixc_parser" }
 enum-as-inner = { workspace = true }
-thiserror = { workspace = true }
-getset = { workspace = true }
-derive_more = { workspace = true }
-tempfile = { workspace = true }
-rayon = { workspace = true }
-parking_lot = { workspace = true }
-drain_filter_polyfill = { workspace = true }
-proptest = { workspace = true }
-displaydoc = { workspace = true }
-paste = { workspace = true }
 
 [lints]
 workspace = true
