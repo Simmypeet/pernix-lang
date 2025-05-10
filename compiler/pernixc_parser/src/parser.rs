@@ -47,6 +47,21 @@ pub trait Parser {
     {
         RepeatAll(self)
     }
+
+    /// Repeats the `self` parser withe a `separator` parser in between. The
+    /// parser will be ran until all of the tokens are consumed in the
+    /// branch. 
+    /// 
+    /// This parser allows trailing separators
+    fn repeat_all_with_separator<S: Parser>(
+        self,
+        separator: S,
+    ) -> RepeatAllWithSeparator<Self, S>
+    where
+        Self: Sized,
+    {
+        RepeatAllWithSeparator(self, separator)
+    }
 }
 
 impl<F: Fn(&mut State) -> Result<(), Unexpected>> Parser for F {
@@ -409,6 +424,47 @@ impl<T: Output<Extract = One>> Output for RepeatAll<T> {
         node: &'a crate::concrete_tree::Node,
     ) -> Option<Self::Output<'a>> {
         T::output(&self.0, node)
+    }
+}
+
+/// See [`Parser::repeat_all_with_separator`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RepeatAllWithSeparator<T, S>(pub T, pub S);
+
+impl<T: Parser, S: Parser> Parser for RepeatAllWithSeparator<T, S> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        fn parse_with_separator<T: Parser, S: Parser>(
+            repeat: &RepeatAllWithSeparator<T, S>,
+            state: &mut State,
+        ) -> Result<(), Unexpected> {
+            repeat.0.parse(state)?;
+            repeat.1.parse(state)
+        }
+
+        while state.peek().is_some() {
+            let Err(Unexpected) = parse_with_separator(self, state) else {
+                // if the parser is successful, continue parsing
+                continue;
+            };
+
+            state.emit_error();
+
+            while state.peek().is_some() {
+                let checkpoint = state.checkpoint();
+
+                // try to parse the next token
+                if self.1.parse(state) == Ok(()) {
+                    // break out and continue parsing the next element
+                    break;
+                }
+
+                // if failed, restore the checkpoint
+                state.restore(checkpoint);
+                state.eat_error(1);
+            }
+        }
+
+        Ok(())
     }
 }
 
