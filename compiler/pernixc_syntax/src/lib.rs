@@ -17,6 +17,7 @@ use pernixc_parser::{
 use r#type::Type;
 
 pub mod expression;
+pub mod pattern;
 pub mod r#type;
 
 #[cfg(any(test, feature = "arbitrary"))]
