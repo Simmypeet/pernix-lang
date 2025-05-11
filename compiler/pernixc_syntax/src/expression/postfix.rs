@@ -12,10 +12,13 @@ use crate::{
     GenericIdentifier, Keyword, Numeric, Punctuation,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Postfix {
-        pub postfixable: Unit = ast::<Unit>(),
+        pub unit: Unit = ast::<Unit>(),
         pub operators: #[multi] Operator = ast::<Operator>().repeat(),
     }
 }

@@ -372,7 +372,7 @@ macro_rules! reference {
             &$output_type,
             ()
         > for &$enum_name $(<$($generic_param),*>)? {
-            #[allow(unused_variables, non_snake_case)]
+            #[allow(unused_variables, non_snake_case, unreachable_patterns)]
             fn assert(
                 self,
                 output: &$output_type,
@@ -424,7 +424,7 @@ macro_rules! reference {
 
 pub use reference;
 
-use crate::r#type::arbitrary::Type;
+use crate::{expression::arbitrary::Expression, r#type::arbitrary::Type};
 
 reference! {
     #[derive(Debug, Clone, Copy, derive_more::Display)]
@@ -548,11 +548,12 @@ reference! {
 }
 
 impl Arbitrary for GenericArgument {
-    type Parameters = Option<BoxedStrategy<Type>>;
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
-        let ty = ty.unwrap_or_else(Type::arbitrary);
+    fn arbitrary_with((ty, expr): Self::Parameters) -> Self::Strategy {
+        let ty = ty.unwrap_or_else(|| Type::arbitrary_with((expr, None)));
 
         prop_oneof![
             Lifetime::arbitrary().prop_map(Self::Lifetime),
@@ -577,11 +578,12 @@ reference! {
 }
 
 impl Arbitrary for GenericArguments {
-    type Parameters = Option<BoxedStrategy<Type>>;
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(GenericArgument::arbitrary_with(ty), 0..=10)
+    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(GenericArgument::arbitrary_with(arg), 0..=10)
             .prop_map(|arguments| Self { arguments })
             .boxed()
     }
@@ -603,13 +605,14 @@ reference! {
 }
 
 impl Arbitrary for GenericIdentifier {
-    type Parameters = Option<BoxedStrategy<Type>>;
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
         (
             kind::Identifier::arbitrary(),
-            proptest::option::of(GenericArguments::arbitrary_with(ty)),
+            proptest::option::of(GenericArguments::arbitrary_with(arg)),
         )
             .prop_map(|(identifier, generic_arguments)| Self {
                 identifier,
@@ -731,14 +734,15 @@ reference! {
 }
 
 impl Arbitrary for QualifiedIdentifierRoot {
-    type Parameters = Option<BoxedStrategy<Type>>;
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Just(Self::Target),
             Just(Self::This),
-            GenericIdentifier::arbitrary_with(ty)
+            GenericIdentifier::arbitrary_with(arg)
                 .prop_map(Self::GenericIdentifier),
         ]
         .boxed()
@@ -754,11 +758,12 @@ reference! {
 }
 
 impl Arbitrary for QualifiedIdentifierSubsequent {
-    type Parameters = Option<BoxedStrategy<Type>>;
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
-        GenericIdentifier::arbitrary_with(ty)
+    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
+        GenericIdentifier::arbitrary_with(arg)
             .prop_map(|generic_identifier| Self { generic_identifier })
             .boxed()
     }
@@ -779,18 +784,40 @@ reference! {
 }
 
 impl Arbitrary for QualifiedIdentifier {
-    type Parameters = Option<BoxedStrategy<Type>>;
+    type Parameters =
+        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(ty: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
         (
-            QualifiedIdentifierRoot::arbitrary_with(ty.clone()),
+            QualifiedIdentifierRoot::arbitrary_with(arg.clone()),
             proptest::collection::vec(
-                QualifiedIdentifierSubsequent::arbitrary_with(ty),
+                QualifiedIdentifierSubsequent::arbitrary_with(arg),
                 0..=10,
             ),
         )
             .prop_map(|(root, subsequences)| Self { root, subsequences })
             .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, Copy, derive_more::Display)]
+    #[display(
+        "&{}",
+        if *mut_keyword { "mut " } else { "" },
+    )]
+    pub struct ReferenceOf for super::ReferenceOf {
+        pub mut_keyword (bool),
+    }
+}
+
+impl Arbitrary for ReferenceOf {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        bool::arbitrary().prop_map(|mut_keyword| Self { mut_keyword }).boxed()
     }
 }

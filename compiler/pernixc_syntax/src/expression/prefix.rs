@@ -3,6 +3,9 @@ use pernixc_parser::{abstract_tree, expect, parser::ast};
 
 use crate::{expression::postfix::Postfix, Keyword, Punctuation, ReferenceOf};
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Prefixable {

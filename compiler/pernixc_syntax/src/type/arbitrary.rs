@@ -9,6 +9,7 @@ use proptest::{
 
 use crate::{
     arbitrary::{Elided, Lifetime, QualifiedIdentifier},
+    expression::arbitrary::Expression,
     reference,
 };
 
@@ -261,18 +262,23 @@ reference! {
 }
 
 impl Arbitrary for Type {
-    type Parameters = Option<BoxedStrategy<QualifiedIdentifier>>;
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with((expr, _ty): Self::Parameters) -> Self::Strategy {
         let leaf = prop_oneof![
             Elided::arbitrary().prop_map(Self::Elided),
             Primitive::arbitrary().prop_map(Type::Primitive)
         ];
 
-        leaf.prop_recursive(4, 40, 10, |inner| {
-            let qualified_identifier =
-                QualifiedIdentifier::arbitrary_with(Some(inner.clone()));
+        leaf.prop_recursive(4, 40, 10, move |inner| {
+            let qualified_identifier = QualifiedIdentifier::arbitrary_with((
+                Some(inner.clone()),
+                expr.clone(),
+            ));
 
             prop_oneof![
                 qualified_identifier.prop_map(Self::QualifiedIdentifier),

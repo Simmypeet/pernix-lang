@@ -4,6 +4,9 @@ use binary::Binary;
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{abstract_tree, parser::ast};
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 pub mod binary;
 pub mod postfix;
 pub mod prefix;
@@ -15,3 +18,6 @@ abstract_tree::abstract_tree! {
         Binary(Binary = ast::<Binary>()),
     }
 }
+
+#[cfg(test)]
+mod test;
