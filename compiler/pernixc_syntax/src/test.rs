@@ -4,7 +4,11 @@ use pernixc_parser::abstract_tree::AbstractTree;
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap};
 use pernixc_target::TargetID;
 use pernixc_test_input::Input;
-use proptest::{prelude::Arbitrary, prop_assert, test_runner::TestCaseResult};
+use proptest::{
+    prelude::{Arbitrary, TestCaseError},
+    prop_assert,
+    test_runner::TestCaseResult,
+};
 
 use crate::{arbitrary, QualifiedIdentifier};
 
@@ -41,7 +45,9 @@ where
     let (token_tree, _) = parse_token_tree(&mut source_map, &source);
 
     let (tree, errors) = TAst::parse(&token_tree);
-    let tree = tree.unwrap();
+    let tree = tree.ok_or_else(|| {
+        TestCaseError::fail(format!("Failed to parse tree: {errors:?}"))
+    })?;
 
     prop_assert!(errors.is_empty(), "{errors:?}");
 
