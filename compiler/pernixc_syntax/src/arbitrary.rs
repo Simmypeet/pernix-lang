@@ -67,6 +67,52 @@ macro_rules! verify {
         $value_in:expr,
         $output_in:expr,
         $field:ident,
+        Option<$type:ty>,
+        map_input_assert($map_in:expr, $map_out:expr)
+    ) => {{
+        #[allow(non_snake_case)]
+        let $field = $value_in;
+        let input = $map_in;
+
+        #[allow(non_snake_case)]
+        let $field = $output_in;
+        let output = $crate::arbitrary::map_expr!($kind, $field, $map_out);
+
+        $crate::arbitrary::__test_input::Input::assert(
+            $crate::arbitrary::map_expr!(~$kind #[option], input),
+            output,
+            ()
+        )?
+    }};
+
+    (
+        $kind:ident,
+        $value_in:expr,
+        $output_in:expr,
+        $field:ident,
+        Option<$type:ty>,
+        map_input_assert($map_in:expr)
+    ) => {{
+        #[allow(non_snake_case)]
+        let $field = $value_in;
+        let input = $map_in;
+
+        #[allow(non_snake_case)]
+        let $field = $output_in;
+        let output = $crate::arbitrary::map_expr!($kind, $field, $field);
+
+        $crate::arbitrary::__test_input::Input::assert(
+            $crate::arbitrary::map_expr!(~$kind, input),
+            output,
+            ()
+        )?
+    }};
+
+    (
+        $kind:ident,
+        $value_in:expr,
+        $output_in:expr,
+        $field:ident,
         $type:ty,
         map_input_assert($map_in:expr, $map_out:expr)
     ) => {{
@@ -102,7 +148,7 @@ macro_rules! verify {
         let output = $crate::arbitrary::map_expr!($kind, $field, $field);
 
         $crate::arbitrary::__test_input::Input::assert(
-            $crate::arbitrary::map_expr!(~$kind, input),
+            $crate::arbitrary::map_expr!(~$kind #[option], input),
             output,
             ()
         )?

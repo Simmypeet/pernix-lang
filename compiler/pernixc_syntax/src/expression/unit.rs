@@ -11,6 +11,9 @@ use crate::{
     QualifiedIdentifier,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Unit {
@@ -31,7 +34,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Decimal {
         pub point: Punctuation = '.'.no_prior_insignificant(),
-        pub digis: crate::Numeric = expect::Numeric.no_prior_insignificant(),
+        pub digits: crate::Numeric = expect::Numeric.no_prior_insignificant(),
     }
 }
 
