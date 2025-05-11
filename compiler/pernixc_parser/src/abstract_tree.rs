@@ -114,6 +114,12 @@ macro_rules! field_extract {
         )
         where $($generic_param:ident),*
     ) => {
+        /*
+        IF YOU FOUND ERROR HERE: please make sure that the parser
+        generates the correct output type also check the `#[multi]`
+        attribute on the field since some parsers are able to
+        generate multiple nodes of the same type.
+        */
         #[inline]
         #[must_use]
         #[allow(dead_code)]
@@ -300,12 +306,6 @@ macro_rules! abstract_tree {
             >)?
             {
                 $(
-                    /*
-                    IF YOU FOUND ERROR HERE: please make sure that the parser
-                    generates the correct output type also check the `#[multi]`
-                    attribute on the field since some parsers are able to
-                    generate multiple nodes of the same type.
-                     */
                     #[allow(dead_code)]
                     fn $field_name()
                         -> impl $crate::parser::Parser
@@ -345,6 +345,21 @@ macro_rules! abstract_tree {
                 ),)?)* where $($($generic_param),*)?
             );
 
+            #[doc(hidden)]
+            fn __parser(
+                state: &mut $crate::state::State
+            ) ->  $crate::abstract_tree::__std::result::Result<
+                (),
+                $crate::parser::Unexpected,
+            > {
+                $(
+                    let parser = $parser_expr;
+                    $crate::parser::Parser::parse(&parser, state)?;
+                )*
+
+                Ok(())
+            }
+
             /// Retrieves the inner concrete tree that this abstract tree is
             /// layered on top of.
             #[allow(dead_code)]
@@ -383,38 +398,6 @@ macro_rules! abstract_tree {
 
         // parser
         const _: () = {
-            struct __Parser
-            $(<
-                $($generic_param ),*
-            >(
-                $crate::abstract_tree::__std::marker::PhantomData<(
-                    $(
-                        $generic_param
-                    ),* ,
-                )>
-            ))?;
-
-            impl
-            $(<
-                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
-            >)?
-            __Parser
-            $(<
-                $($generic_param),*
-            >)?
-            {
-                fn parser(state: &mut $crate::state::State)
-                    -> Result<(), $crate::parser::Unexpected> {
-
-                    $(
-                        let parser = $parser_expr;
-                        $crate::parser::Parser::parse(&parser, state)?;
-                    )*
-
-                    Ok(())
-                }
-            }
-
             impl
             $(<
                 $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
@@ -460,10 +443,7 @@ macro_rules! abstract_tree {
             >)?
             {
                 fn parser() -> impl $crate::parser::Parser {
-                    __Parser
-                    $( ::<
-                        $($generic_param),*
-                    >)? ::parser
+                    Self::__parser
                 }
 
                 $(
@@ -523,95 +503,8 @@ macro_rules! abstract_tree {
             ),*
         }
 
-        // output verification
-        const _: () = {
-            struct __Verify
-            $(<
-                $($generic_param ),*
-            >(
-                $crate::abstract_tree::__std::marker::PhantomData<(
-                    $(
-                        $generic_param
-                    ),* ,
-                )>
-            ))?;
-
-            impl
-            $(<
-                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
-            >)?
-            __Verify
-            $(<
-                $($generic_param),*
-            >)?
-            {
-                /*
-                IF YOU FOUND ERROR HERE: please make sure that the parser
-                generates the correct output type.
-                    */
-                #[allow(dead_code, non_snake_case)]
-                fn $first_variant_name()
-                    -> impl $crate::parser::Parser
-                    + for<'x> $crate::output::Output<
-                            Extract = $crate::output::One,
-                            Output<'x> = $first_variant_type,
-                            >
-
-                {
-                    $first_parser_expr
-                }
-                $(
-                    /*
-                    IF YOU FOUND ERROR HERE: please make sure that the parser
-                    generates the correct output type.
-                     */
-                    #[allow(dead_code, non_snake_case)]
-                    fn $rest_variant_name()
-                        -> impl $crate::parser::Parser
-                        + for<'x> $crate::output::Output<
-                                Extract = $crate::output::One,
-                                Output<'x> = $rest_variant_type,
-                                >
-
-                    {
-                        $rest_parser_expr
-                    }
-                )*
-            }
-        };
-
         // parser
         const _: () = {
-            struct __Parser
-            $(<
-                $($generic_param ),*
-            >(
-                $crate::abstract_tree::__std::marker::PhantomData<(
-                    $(
-                        $generic_param
-                    ),* ,
-                )>
-            ))?;
-
-            impl
-            $(<
-                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
-            >)?
-            __Parser
-            $(<
-                $($generic_param),*
-            >)?
-            {
-                fn parser(state: &mut $crate::state::State)
-                    -> Result<(), $crate::parser::Unexpected> {
-                    let parser =  $crate::parser::Choice(
-                        ( $first_parser_expr, $($rest_parser_expr),* )
-                    );
-
-                    $crate::parser::Parser::parse(&parser, state)
-                }
-            }
-
             impl
             $(<
                 $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
@@ -667,10 +560,10 @@ macro_rules! abstract_tree {
             >)?
             {
                 fn parser() -> impl $crate::parser::Parser {
-                    __Parser
-                    $( ::<
-                        $($generic_param),*
-                    >)? ::parser
+                    $crate::parser::Choice((
+                        $first_parser_expr,
+                        $($rest_parser_expr),*
+                    ))
                 }
 
                 $(
