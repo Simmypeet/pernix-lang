@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_lexical::kind::arbitrary::Numeric;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _},
@@ -42,6 +43,31 @@ impl Arbitrary for Postfix {
 
         (unit_strategy, operators_strategy)
             .prop_map(|(unit, operators)| Self { unit, operators })
+            .prop_filter(
+                "filter out possible of numeric with no decimal with tuple \
+                 dot access",
+                |x| {
+                    let unit_is_numeric =
+                        x.unit.as_numeric().is_some_and(|x| {
+                            x.decimal.is_none() && x.decimal.is_none()
+                        });
+
+                    let is_tuple_dot_access = x
+                        .operators
+                        .first()
+                        .and_then(|x| x.as_access())
+                        .is_some_and(|x| {
+                            x.mode.is_dot()
+                                && x.kind
+                                    .as_tuple_index()
+                                    .is_some_and(|x| !x.minus)
+                        });
+
+                    // 123.456 this can be interpreted as a decimal number
+                    // or a numeric `123` in tuple access at index `456`
+                    !(unit_is_numeric && is_tuple_dot_access)
+                },
+            )
             .boxed()
     }
 }
@@ -96,7 +122,7 @@ impl Arbitrary for Cast {
 }
 
 reference! {
-    #[derive(Debug, Clone, Copy, derive_more::Display)]
+    #[derive(Debug, Clone, Copy, derive_more::Display, EnumAsInner)]
     pub enum AccessMode for super::AccessMode {
         #[display(".")]
         #{prop_assert(|x| true)}
@@ -162,7 +188,7 @@ impl Arbitrary for ArrayIndex {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone, derive_more::Display, EnumAsInner)]
     pub enum AccessKind for super::AccessKind {
         GenericIdentifier(GenericIdentifier),
         TupleIndex(TupleIndex),
@@ -208,7 +234,7 @@ impl Arbitrary for Access {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone, derive_more::Display, EnumAsInner)]
     pub enum Operator for super::Operator {
         Call(Call),
         Cast(Cast),

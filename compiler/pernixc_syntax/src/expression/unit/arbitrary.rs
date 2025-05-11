@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_lexical::kind::{arbitrary, arbitrary::Identifier};
 use pernixc_parser::expect;
 use proptest::{
@@ -12,7 +13,7 @@ use crate::{
 };
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone, derive_more::Display, EnumAsInner)]
     pub enum Unit for super::Unit {
         Boolean(Boolean),
         Numeric(Numeric),
