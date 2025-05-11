@@ -8,6 +8,9 @@ use pernixc_parser::{
 
 use crate::{Ellipsis, Identifier, Keyword, Numeric, Punctuation, ReferenceOf};
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct FieldAssociation<P: 'static + AbstractTree> {
@@ -63,6 +66,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Enum {
+        pub case_keyword: Keyword = expect::Keyword::Case,
         pub identifier: Identifier = expect::Identifier,
         pub association: EnumAssociation = ast::<EnumAssociation>().optional(),
     }
@@ -123,3 +127,6 @@ abstract_tree::abstract_tree! {
         Wildcard(Wildcard = ast::<Wildcard>()),
     }
 }
+
+#[cfg(test)]
+mod test;
