@@ -3,6 +3,7 @@
 //! Contains all the definitions of the syntax tree
 
 use enum_as_inner::EnumAsInner;
+use expression::Expression;
 use pernixc_lexical::{
     kind,
     token::Token,
@@ -89,6 +90,7 @@ abstract_tree::abstract_tree! {
     pub enum GenericArgument {
         Lifetime(Lifetime = ast::<Lifetime>()),
         Type(Type = ast::<Type>()),
+        Constant(ConstantArgument = ast::<ConstantArgument>()),
     }
 }
 
@@ -192,6 +194,15 @@ abstract_tree::abstract_tree! {
         pub first_dot: Punctuation = '.',
         pub second_dot: Punctuation = '.'.no_prior_insignificant(),
         pub third_dot: Punctuation = '.'.no_prior_insignificant(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Brace)}
+    pub enum ConstantArgument {
+        Expression(Expression =  ast::<Expression>()),
+        Elided(Elided = ast::<Elided>()),
     }
 }
 

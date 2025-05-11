@@ -544,6 +544,7 @@ reference! {
     pub enum GenericArgument for super::GenericArgument {
         Lifetime(Lifetime),
         Type(Type),
+        Constant(ConstantArgument),
     }
 }
 
@@ -553,11 +554,13 @@ impl Arbitrary for GenericArgument {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((ty, expr): Self::Parameters) -> Self::Strategy {
-        let ty = ty.unwrap_or_else(|| Type::arbitrary_with((expr, None)));
+        let ty =
+            ty.unwrap_or_else(|| Type::arbitrary_with((expr.clone(), None)));
 
         prop_oneof![
             Lifetime::arbitrary().prop_map(Self::Lifetime),
             ty.prop_map(Self::Type),
+            ConstantArgument::arbitrary_with(expr).prop_map(Self::Constant),
         ]
         .boxed()
     }
@@ -819,5 +822,30 @@ impl Arbitrary for ReferenceOf {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         bool::arbitrary().prop_map(|mut_keyword| Self { mut_keyword }).boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone, derive_more::Display)]
+    pub enum ConstantArgument for super::ConstantArgument {
+        #[display("{{{_0}}}")]
+        Expression(Expression),
+
+        #[display("{{..}}")]
+        Elided(Elided),
+    }
+}
+
+impl Arbitrary for ConstantArgument {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(expr: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            expr.unwrap_or_else(Expression::arbitrary)
+                .prop_map(Self::Expression),
+            Elided::arbitrary().prop_map(Self::Elided),
+        ]
+        .boxed()
     }
 }
