@@ -20,11 +20,12 @@ macro_rules! extract {
         $crate::output::One
     };
 
-    ( !multi -> $ty:ty ) => {
-        impl $crate::abstract_tree::__std::iter::Iterator<Item = $ty> + use<'_>
+    ( !multi -> $ty:ty where $($generic_param:ident),* ) => {
+        impl $crate::abstract_tree::__std::iter::Iterator<Item = $ty>
+            + use<'_ $(, $generic_param)*>
     };
 
-    ( ! -> $ty:ty) => {
+    ( ! -> $ty:ty where $($generic_param:ident),* ) => {
         $crate::abstract_tree::__std::option::Option<$ty>
     };
 
@@ -44,6 +45,101 @@ macro_rules! extract {
 }
 
 pub use extract as __extract;
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! field_extract {
+    (@call_tuple
+        $((
+            $field_vis:vis
+            $fied_name:ident
+            ($parser_expr:expr)
+            ->
+            $field_type:ty
+            $(: $field_attr:ident)?
+        ),)*
+        where
+    ) => {
+        $(
+            $crate::abstract_tree::__field_extract!(
+                @call
+                (
+                    $field_vis
+                    $fied_name
+                    ($parser_expr)
+                    ->
+                    $field_type
+                    $(: $field_attr)?
+                )
+                where
+            );
+        )*
+    };
+
+    (@call_tuple
+        $((
+            $field_vis:vis
+            $fied_name:ident
+            ($parser_expr:expr)
+            ->
+            $field_type:ty
+            $(: $field_attr:ident)?
+        ),)*
+        where $tuple:tt
+    ) => {
+        $(
+            $crate::abstract_tree::__field_extract!(
+                @call
+                (
+                    $field_vis
+                    $fied_name
+                    ($parser_expr)
+                    ->
+                    $field_type
+                    $(: $field_attr)?
+                )
+                where $tuple
+            );
+        )*
+    };
+
+    (@call
+        (
+            $field_vis:vis
+            $field_name:ident
+            ($parser_expr:expr)
+            ->
+            $field_type:ty
+            $(: $field_attr:ident)?
+        )
+        where $($generic_param:ident),*
+    ) => {
+        #[inline]
+        #[must_use]
+        #[allow(dead_code)]
+        #[doc = concat!("extracts the `", stringify!($field_name), "` field")]
+        #[allow(clippy::double_must_use)]
+        $field_vis fn $field_name(&self) ->
+            $crate::abstract_tree::__extract!(
+                !
+                $($field_attr)?
+                ->
+                $field_type
+                where
+                $($generic_param),*
+            )
+        {
+            $crate::abstract_tree::__extract!(
+                ~$($field_attr)?
+                ->
+                $parser_expr,
+                &self.0.nodes
+            )
+        }
+    };
+}
+
+pub use field_extract as __field_extract;
 
 /// A trait representing an abstract syntax tree (AST) node which can be
 /// parsed using the given [`AbstractTree::parser`] function.
@@ -152,7 +248,7 @@ macro_rules! abstract_tree {
         struct
         $struct_name:ident
         $(<
-            $($generic_param:ident $(: $bound:tt)? ),* $(,)?
+            $($generic_param:ident $(: $first_bound:tt $( + $rest_bound:tt)*)? ),* $(,)?
         >)?
         {
             $(
@@ -196,7 +292,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             __Verify
             $(<
@@ -230,30 +326,24 @@ macro_rules! abstract_tree {
         // field extraction
         impl
         $(<
-            $($generic_param $(: $bound)?),*
+            $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
         >)?
         $struct_name
         $(<
             $($generic_param),*
         >)?
         {
-            $($(
-            #[inline]
-            #[must_use]
-            #[allow(dead_code)]
-            #[doc = concat!("extracts the `", stringify!($field_name), "` field")]
-            #[allow(clippy::double_must_use)]
-            $field_vis fn $field_name(&self) ->
-                $crate::abstract_tree::__extract!( ! $($field_attr)? -> $field_type )
-            {
-                $crate::abstract_tree::__extract!(
-                    ~$($field_attr)?
+            $crate::abstract_tree::__field_extract!(
+                @call_tuple
+                $($((
+                    $field_vis
+                    $field_name
+                    ($parser_expr)
                     ->
-                    $parser_expr,
-                    &self.0.nodes
-                )
-            }
-            )?)*
+                    $field_type
+                    $(: $field_attr)?
+                ),)?)* where $($($generic_param),*)?
+            );
 
             /// Retrieves the inner concrete tree that this abstract tree is
             /// layered on top of.
@@ -306,7 +396,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             __Parser
             $(<
@@ -327,7 +417,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             $crate::from_node::FromNode
             for
@@ -360,7 +450,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             $crate::abstract_tree::AbstractTree
             for
@@ -393,7 +483,7 @@ macro_rules! abstract_tree {
         enum
         $enum_name:ident
         $(<
-            $($generic_param:ident $(: $bound:tt)? ),* $(,)?
+            $($generic_param:ident $(: $first_bound:tt $( + $rest_bound:tt)*)? ),* $(,)?
         >)?
         {
             $( #[$first_variant_meta:meta] )*
@@ -418,7 +508,13 @@ macro_rules! abstract_tree {
         }
     } => {
         $( #[$enum_meta] )*
-        $enum_vis enum $enum_name {
+        $enum_vis
+        enum
+        $enum_name
+        $(<
+            $($generic_param),*
+        >)?
+        {
             $( #[$first_variant_meta] )*
             $first_variant_name($first_variant_type),
             $(
@@ -442,7 +538,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             __Verify
             $(<
@@ -499,7 +595,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             __Parser
             $(<
@@ -518,7 +614,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             $crate::from_node::FromNode
             for
@@ -561,7 +657,7 @@ macro_rules! abstract_tree {
 
             impl
             $(<
-                $($generic_param $(: $bound)?),*
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
             >)?
             $crate::abstract_tree::AbstractTree
             for
