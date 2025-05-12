@@ -4,7 +4,7 @@ use proptest::{
 };
 
 use super::{
-    binary::arbitrary::Binary,
+    binary::arbitrary::{Binary, Node},
     postfix::arbitrary::Postfix,
     prefix::arbitrary::Prefixable,
     unit::arbitrary::{Boolean, Numeric, Unit},
@@ -13,6 +13,7 @@ use crate::{
     arbitrary::{IndentDisplay, QualifiedIdentifier},
     r#type::arbitrary::Type,
     reference,
+    statement::arbitrary::Statement,
 };
 
 reference! {
@@ -26,6 +27,7 @@ impl Arbitrary for Expression {
     type Parameters = (
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -33,19 +35,19 @@ impl Arbitrary for Expression {
         let leaf = prop_oneof![
             Boolean::arbitrary().prop_map(|boolean| {
                 Self::Binary(Binary {
-                    first: Prefixable::Postfix(Postfix {
+                    first: Node::Prefixable(Prefixable::Postfix(Postfix {
                         unit: Unit::Boolean(boolean),
                         operators: Vec::default(),
-                    }),
+                    })),
                     chain: Vec::default(),
                 })
             }),
             Numeric::arbitrary().prop_map(|numeric| {
                 Self::Binary(Binary {
-                    first: Prefixable::Postfix(Postfix {
+                    first: Node::Prefixable(Prefixable::Postfix(Postfix {
                         unit: Unit::Numeric(numeric),
                         operators: Vec::default(),
-                    }),
+                    })),
                     chain: Vec::default(),
                 })
             })
@@ -57,6 +59,7 @@ impl Arbitrary for Expression {
                     Some(expr),
                     args.0.clone(),
                     args.1.clone(),
+                    args.2.clone()
                 )).prop_map(Expression::Binary),
             ]
         })

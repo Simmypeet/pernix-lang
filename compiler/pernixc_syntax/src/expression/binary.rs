@@ -5,6 +5,7 @@ use pernixc_parser::{
     parser::{ast, Parser as _},
 };
 
+use super::block::Block;
 use crate::expression::prefix::Prefixable;
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -13,7 +14,7 @@ pub mod arbitrary;
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Binary {
-        pub first: Prefixable = ast::<Prefixable>(),
+        pub first: Node = ast::<Node>(),
         pub chain: #[multi] BinarySubsequent
             = ast::<BinarySubsequent>().repeat(),
     }
@@ -23,7 +24,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct BinarySubsequent {
         pub operator: Operator = ast::<Operator>(),
-        pub prefixable: Prefixable = ast::<Prefixable>(),
+        pub node: Node = ast::<Node>(),
     }
 }
 
@@ -231,6 +232,14 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Assign {
         pub equals = '=',
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+    pub enum Node {
+        Prefixable(Prefixable = ast::<Prefixable>()),
+        Block(Block = ast::<Block>()),
     }
 }
 

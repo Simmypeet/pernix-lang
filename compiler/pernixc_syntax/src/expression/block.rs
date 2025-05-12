@@ -6,6 +6,9 @@ use pernixc_parser::{
 
 use crate::{statement::Statements, Keyword, Label};
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Block {

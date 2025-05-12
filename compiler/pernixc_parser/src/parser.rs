@@ -591,7 +591,7 @@ impl<T: Parser> Parser for Line<T> {
     fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
         // skip new line
         if let Some((_, peeked_node_index)) = state.peek() {
-            state.eat_token(state.node_index() - peeked_node_index);
+            state.eat_token(peeked_node_index - state.node_index());
         }
 
         let result =
@@ -632,15 +632,13 @@ impl<T: Parser> Parser for Line<T> {
                     // eat as error and continue finding new line
                     state.eat_error(1);
                 }
+            }
 
-                // should've been skipped to new line or stop at new line
-                if let Some((node, _)) = state.peek_no_skip() {
-                    assert!(node
-                        .as_leaf()
-                        .is_some_and(|x| x.kind.is_new_line()));
+            // should've been skipped to new line or stop at new line
+            if let Some((node, _)) = state.peek_no_skip() {
+                assert!(node.as_leaf().is_some_and(|x| x.kind.is_new_line()));
 
-                    state.eat_token(1);
-                }
+                state.eat_token(1);
             }
         }
 

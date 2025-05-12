@@ -1,10 +1,17 @@
-use proptest::prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _};
+use proptest::{
+    prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _},
+    prop_oneof,
+};
 
 use crate::{
     arbitrary::{IndentDisplay, QualifiedIdentifier},
-    expression::{arbitrary::Expression, prefix::arbitrary::Prefixable},
+    expression::{
+        arbitrary::Expression, block::arbitrary::Block,
+        prefix::arbitrary::Prefixable,
+    },
     r#type::arbitrary::Type,
     reference,
+    statement::arbitrary::Statement,
 };
 
 reference! {
@@ -160,9 +167,53 @@ impl Arbitrary for Operator {
 
 reference! {
     #[derive(Debug, Clone)]
+    pub enum Node for super::Node {
+        Prefixable(Prefixable),
+        Block(Block),
+    }
+}
+
+impl Arbitrary for Node {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            Prefixable::arbitrary_with((
+                args.0.clone(),
+                args.1.clone(),
+                args.2.clone(),
+            ))
+            .prop_map(Node::Prefixable),
+            Block::arbitrary_with(args).prop_map(Node::Block),
+        ]
+        .boxed()
+    }
+}
+
+impl IndentDisplay for Node {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Prefixable(prefixable) => prefixable.indent_fmt(f, indent),
+            Self::Block(block) => block.indent_fmt(f, indent),
+        }
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
     pub struct BinarySubsequent for super::BinarySubsequent {
         pub operator (Operator),
-        pub prefixable (Prefixable),
+        pub node (Node),
     }
 }
 
@@ -172,15 +223,15 @@ impl IndentDisplay for BinarySubsequent {
         f: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
-        write!(f, "{}", self.operator)?;
-        self.prefixable.indent_fmt(f, indent)
+        write!(f, " {} ", self.operator)?;
+        self.node.indent_fmt(f, indent)
     }
 }
 
 reference! {
     #[derive(Debug, Clone)]
     pub struct Binary for super::Binary {
-        pub first (Prefixable),
+        pub first (Node),
         pub chain (Vec<BinarySubsequent>)
     }
 }
@@ -204,6 +255,7 @@ impl Arbitrary for Binary {
         Option<BoxedStrategy<Expression>>,
         Option<BoxedStrategy<Type>>,
         Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
@@ -211,22 +263,40 @@ impl Arbitrary for Binary {
         let prefixable = Prefixable::arbitrary_with((
             args.0.clone(),
             args.1.clone(),
-            args.2,
-        ));
+            args.2.clone(),
+        ))
+        .prop_map(Node::Prefixable);
 
-        (
-            prefixable.clone(),
-            proptest::collection::vec(
-                (Operator::arbitrary(), prefixable).prop_map(
-                    |(operator, prefixable)| BinarySubsequent {
-                        operator,
-                        prefixable,
-                    },
+        let trailing = Block::arbitrary_with(args).prop_map(Node::Block);
+
+        prop_oneof![
+            1 => trailing
+                .clone()
+                .prop_map(|x| Self { first: x, chain: Vec::default() }),
+
+            5 => (
+                prefixable.clone(),
+                proptest::collection::vec(
+                    (Operator::arbitrary(), prefixable).prop_map(
+                        |(operator, node)| BinarySubsequent {
+                            operator,
+                            node,
+                        },
+                    ),
+                    0..4,
                 ),
-                0..4,
-            ),
-        )
-            .prop_map(|(first, chain)| Self { first, chain })
-            .boxed()
+                proptest::option::of((Operator::arbitrary(), trailing)),
+            )
+            .prop_map(|(first, chain, trailing)| {
+                let mut result = Self { first, chain };
+
+                if let Some((operator, node)) = trailing {
+                    result.chain.push(BinarySubsequent { operator, node });
+                }
+
+                result
+            })
+        ]
+        .boxed()
     }
 }

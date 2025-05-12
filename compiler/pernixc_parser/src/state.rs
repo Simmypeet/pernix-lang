@@ -457,7 +457,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 cursor: Cursor { branch_id, node_index: 0 },
                 events: Vec::with_capacity(branch.nodes.len()),
                 emitted_erorrs: Vec::new(),
-                new_line_significant: true,
+                new_line_significant: false,
                 current_error: std::mem::take(&mut self.current_error),
                 cache: self.cache,
             };
