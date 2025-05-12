@@ -594,7 +594,7 @@ impl<T: Parser> Parser for Line<T> {
             state.eat_token(peeked_node_index - state.node_index());
         }
 
-        let result =
+        let mut result =
             state.set_new_line_significant(true, |state| self.0.parse(state));
 
         let current = state.peek_no_skip();
@@ -616,6 +616,9 @@ impl<T: Parser> Parser for Line<T> {
                             node_index: index,
                         },
                     );
+
+                    // mark as errornous
+                    result = Err(Unexpected);
                 }
 
                 state.eat_error(1);
