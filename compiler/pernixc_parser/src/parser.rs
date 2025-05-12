@@ -75,6 +75,16 @@ pub trait Parser {
     {
         RepeatWithSeparator(self, separator)
     }
+
+    /// Makes the new line significant for the parser and then invokes the
+    /// parser. After the parser is invoked and if there's still tokens left in
+    /// the branch, expects a new line token.
+    fn line(self) -> Line<Self>
+    where
+        Self: Sized,
+    {
+        Line(self)
+    }
 }
 
 impl<F: Fn(&mut State) -> Result<(), Unexpected>> Parser for F {
@@ -563,6 +573,83 @@ impl<T: Parser, S: Parser> Parser for RepeatAllWithSeparator<T, S> {
 
 impl<T: Output<Extract = One>, S> Output for RepeatAllWithSeparator<T, S> {
     type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
+
+/// See [ `Parser::line`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Line<T>(pub T);
+
+impl<T: Parser> Parser for Line<T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        // skip new line
+        if let Some((_, peeked_node_index)) = state.peek() {
+            state.eat_token(state.node_index() - peeked_node_index);
+        }
+
+        let result =
+            state.set_new_line_significant(true, |state| self.0.parse(state));
+
+        let current = state.peek_no_skip();
+
+        // it must end on a new line or just end of the branch
+        if let Some((node, index)) = current {
+            let is_new_line =
+                node.as_leaf().is_some_and(|x| x.kind.is_new_line());
+
+            // not new line, report error (if must), and find the nearest new
+            // line
+            if !is_new_line {
+                // report error
+                if result.is_ok() {
+                    state.add_error(
+                        std::iter::once(expect::NewLine.into()),
+                        Cursor {
+                            branch_id: state.branch_id(),
+                            node_index: index,
+                        },
+                    );
+                }
+
+                state.eat_error(1);
+
+                // find nearest new line
+                while let Some((node, _)) = state.peek_no_skip() {
+                    let is_new_line =
+                        node.as_leaf().is_some_and(|x| x.kind.is_new_line());
+
+                    if is_new_line {
+                        break;
+                    }
+
+                    // eat as error and continue finding new line
+                    state.eat_error(1);
+                }
+
+                // should've been skipped to new line or stop at new line
+                if let Some((node, _)) = state.peek_no_skip() {
+                    assert!(node
+                        .as_leaf()
+                        .is_some_and(|x| x.kind.is_new_line()));
+
+                    state.eat_token(1);
+                }
+            }
+        }
+
+        result
+    }
+}
+
+impl<T: Output> Output for Line<T> {
+    type Extract = T::Extract;
     type Output<'a> = T::Output<'a>;
 
     fn output<'a>(

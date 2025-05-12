@@ -10,7 +10,7 @@ use pernixc_lexical::{
     tree::{DelimiterKind, RelativeLocation},
 };
 use pernixc_parser::{
-    abstract_tree,
+    abstract_tree::{self, AbstractTree},
     expect::{self, Ext as _},
     parser::{ast, Parser as _},
 };
@@ -204,6 +204,13 @@ abstract_tree::abstract_tree! {
     pub enum ConstantArgument {
         Expression(Expression =  ast::<Expression>()),
         Elided(Elided = ast::<Elided>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    pub enum Passable<T: 'static + AbstractTree> {
+        Pass(Keyword = expect::Keyword::Pass),
+        Line(T = ast::<T>())
     }
 }
 

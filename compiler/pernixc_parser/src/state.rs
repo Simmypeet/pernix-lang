@@ -208,6 +208,16 @@ impl<'a, 'cache> State<'a, 'cache> {
         self.new_line_significant = checkpoint.new_line_significant;
     }
 
+    /// Returns the current cursor position in the token tree.
+    #[must_use]
+    pub fn peek_no_skip(
+        &self,
+    ) -> Option<(&'a pernixc_lexical::tree::Node, usize)> {
+        let token = self.branch.nodes.get(self.cursor.node_index)?;
+
+        Some((token, self.cursor.node_index))
+    }
+
     /// Returns the token and its node index at the current cursor position.
     ///
     /// The state machine may skip over new line tokens if it's configured to
