@@ -11,6 +11,7 @@ pub mod binary;
 pub mod postfix;
 pub mod prefix;
 pub mod unit;
+pub mod block;
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]

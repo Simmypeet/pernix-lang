@@ -18,6 +18,7 @@ use r#type::Type;
 
 pub mod expression;
 pub mod pattern;
+pub mod statement;
 pub mod r#type;
 
 #[cfg(any(test, feature = "arbitrary"))]
