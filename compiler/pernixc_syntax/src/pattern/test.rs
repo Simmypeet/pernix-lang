@@ -2,7 +2,7 @@ use proptest::prelude::Arbitrary;
 
 use crate::{
     pattern::{arbitrary, Irrefutable, Refutable},
-    test::verify_ref,
+    test::verify_ref_display,
 };
 
 proptest::proptest! {
@@ -16,13 +16,13 @@ proptest::proptest! {
     fn refutable(
         reference in arbitrary::Refutable::arbitrary()
     ) {
-        verify_ref::<_, Refutable>(&reference)?;
+        verify_ref_display::<_, Refutable>(&reference)?;
     }
 
     #[test]
     fn irrefutable(
         reference in arbitrary::Irrefutable::arbitrary()
     ) {
-        verify_ref::<_, Irrefutable>(&reference)?;
+        verify_ref_display::<_, Irrefutable>(&reference)?;
     }
 }

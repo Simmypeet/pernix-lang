@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::kind::{arbitrary, arbitrary::Identifier};
 use pernixc_parser::expect;
@@ -8,12 +10,14 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::QualifiedIdentifier, expression::arbitrary::Expression,
-    r#type::arbitrary::Type, reference,
+    arbitrary::{IndentDisplay, IntoSeparated, QualifiedIdentifier},
+    expression::arbitrary::Expression,
+    r#type::arbitrary::Type,
+    reference,
 };
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display, EnumAsInner)]
+    #[derive(Debug, Clone, EnumAsInner)]
     pub enum Unit for super::Unit {
         Boolean(Boolean),
         Numeric(Numeric),
@@ -23,6 +27,29 @@ reference! {
         Array(Array),
         Phantom(Phantom),
         Panic(Panic),
+    }
+}
+
+impl IndentDisplay for Unit {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Boolean(boolean) => boolean.fmt(f),
+            Self::Numeric(numeric) => numeric.fmt(f),
+            Self::Parenthesized(parenthesized) => {
+                parenthesized.indent_fmt(f, indent)
+            }
+            Self::QualifiedIdentifier(qualified_identifier) => {
+                qualified_identifier.indent_fmt(f, indent)
+            }
+            Self::Struct(struct_) => struct_.indent_fmt(f, indent),
+            Self::Array(array) => array.indent_fmt(f, indent),
+            Self::Phantom(phantom) => phantom.fmt(f),
+            Self::Panic(panic) => panic.fmt(f),
+        }
     }
 }
 
@@ -138,14 +165,24 @@ impl Arbitrary for Numeric {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "{}{expression}",
-        if *ellipsis { "..." } else { ""},
-    )]
+    #[derive(Debug, Clone)]
     pub struct Unpackable for super::Unpackable {
         pub ellipsis (bool),
         pub expression (Box<Expression>)
+    }
+}
+
+impl IndentDisplay for Unpackable {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        if self.ellipsis {
+            write!(f, "...")?;
+        }
+
+        self.expression.indent_fmt(f, indent)
     }
 }
 
@@ -163,16 +200,21 @@ impl Arbitrary for Unpackable {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "({})",
-        unpackables.iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )]
+    #[derive(Debug, Clone)]
     pub struct Parenthesized for super::Parenthesized {
         pub unpackables (Vec<Unpackable>),
+    }
+}
+
+impl IndentDisplay for Parenthesized {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "(")?;
+        self.unpackables.into_separated(", ").indent_fmt(f, indent)?;
+        write!(f, ")")
     }
 }
 
@@ -190,13 +232,23 @@ impl Arbitrary for Parenthesized {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("{identifier}: {expression}")]
+    #[derive(Debug, Clone)]
     pub struct FieldInitializer for super::FieldInitializer{
         #{map_input_assert(identifier, &identifier.kind)}
         pub identifier (Identifier),
 
         pub expression (Box<Expression>),
+    }
+}
+
+impl IndentDisplay for FieldInitializer {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{}: ", self.identifier)?;
+        self.expression.indent_fmt(f, indent)
     }
 }
 
@@ -217,17 +269,21 @@ impl Arbitrary for FieldInitializer {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "{{ {} }}",
-        initializers
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )]
+    #[derive(Debug, Clone)]
     pub struct FieldInitializerBody for super::FieldInitializerBody{
         pub initializers (Vec<FieldInitializer>),
+    }
+}
+
+impl IndentDisplay for FieldInitializerBody {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{{")?;
+        self.initializers.into_separated(", ").indent_fmt(f, indent)?;
+        write!(f, "}}")
     }
 }
 
@@ -243,11 +299,21 @@ impl Arbitrary for FieldInitializerBody {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("{qualified_identifier} {field_initializer_body}")]
+    #[derive(Debug, Clone)]
     pub struct Struct for super::Struct {
         pub qualified_identifier (QualifiedIdentifier),
         pub field_initializer_body (FieldInitializerBody),
+    }
+}
+
+impl IndentDisplay for Struct {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.qualified_identifier.indent_fmt(f, indent)?;
+        self.field_initializer_body.indent_fmt(f, indent)
     }
 }
 
@@ -305,17 +371,21 @@ impl Arbitrary for Panic {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "[{}]",
-        expressions
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )]
+    #[derive(Debug, Clone)]
     pub struct Array for super::Array {
         pub expressions (Vec<Expression>),
+    }
+}
+
+impl IndentDisplay for Array {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "[")?;
+        self.expressions.into_separated(", ").indent_fmt(f, indent)?;
+        write!(f, "]")
     }
 }
 

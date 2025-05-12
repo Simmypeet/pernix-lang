@@ -10,11 +10,13 @@ use super::{
     unit::arbitrary::{Boolean, Numeric, Unit},
 };
 use crate::{
-    arbitrary::QualifiedIdentifier, r#type::arbitrary::Type, reference,
+    arbitrary::{IndentDisplay, QualifiedIdentifier},
+    r#type::arbitrary::Type,
+    reference,
 };
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone)]
     pub enum Expression for super::Expression {
         Binary(Binary),
     }
@@ -59,5 +61,17 @@ impl Arbitrary for Expression {
             ]
         })
         .boxed()
+    }
+}
+
+impl IndentDisplay for Expression {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Binary(binary) => binary.indent_fmt(f, indent),
+        }
     }
 }

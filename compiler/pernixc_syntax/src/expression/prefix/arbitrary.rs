@@ -2,7 +2,7 @@ use pernixc_parser::expect;
 use proptest::prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _};
 
 use crate::{
-    arbitrary::{QualifiedIdentifier, ReferenceOf},
+    arbitrary::{IndentDisplay, QualifiedIdentifier, ReferenceOf},
     expression::{arbitrary::Expression, postfix::arbitrary::Postfix},
     r#type::arbitrary::Type,
     reference,
@@ -48,10 +48,23 @@ impl Arbitrary for Operator {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone)]
     pub enum Prefixable for super::Prefixable {
         Prefix(Prefix),
         Postfix(Postfix),
+    }
+}
+
+impl IndentDisplay for Prefixable {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Prefix(prefix) => prefix.indent_fmt(f, indent),
+            Self::Postfix(postfix) => postfix.indent_fmt(f, indent),
+        }
     }
 }
 
@@ -80,11 +93,21 @@ impl Arbitrary for Prefixable {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("{operator}{prefixable}")]
+    #[derive(Debug, Clone)]
     pub struct Prefix for super::Prefix {
         pub operator (Operator),
         pub prefixable (Box<Prefixable>),
+    }
+}
+
+impl IndentDisplay for Prefix {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{}", self.operator)?;
+        self.prefixable.indent_fmt(f, indent)
     }
 }
 

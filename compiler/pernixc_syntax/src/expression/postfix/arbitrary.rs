@@ -1,3 +1,5 @@
+use std::fmt::{Display, Write};
+
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::kind::arbitrary::Numeric;
 use proptest::{
@@ -6,21 +8,35 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{GenericIdentifier, QualifiedIdentifier},
+    arbitrary::{
+        GenericIdentifier, IndentDisplay, IntoSeparated, QualifiedIdentifier,
+    },
     expression::{arbitrary::Expression, unit::arbitrary::Unit},
     r#type::arbitrary::Type,
     reference,
 };
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "{unit}{}",
-        operators.iter().map(ToString::to_string).collect::<String>()
-    )]
+    #[derive(Debug, Clone)]
     pub struct Postfix for super::Postfix {
         pub unit (Unit),
         pub operators (Vec<Operator>),
+    }
+}
+
+impl IndentDisplay for Postfix {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.unit.indent_fmt(f, indent)?;
+
+        for operator in &self.operators {
+            operator.indent_fmt(f, indent)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -73,13 +89,21 @@ impl Arbitrary for Postfix {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "({})",
-        expressions.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
-    )]
+    #[derive(Debug, Clone)]
     pub struct Call for super::Call {
         pub expressions (Vec<Expression>)
+    }
+}
+
+impl IndentDisplay for Call {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('(')?;
+        self.expressions.into_separated(", ").indent_fmt(f, indent)?;
+        f.write_char(')')
     }
 }
 
@@ -98,10 +122,20 @@ impl Arbitrary for Call {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(" as {type}")]
+    #[derive(Debug, Clone)]
     pub struct Cast for super::Cast {
         pub r#type (Type)
+    }
+}
+
+impl IndentDisplay for Cast {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str(" as ")?;
+        self.r#type.indent_fmt(f, indent)
     }
 }
 
@@ -169,10 +203,21 @@ impl Arbitrary for TupleIndex {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("[{expression}]")]
+    #[derive(Debug, Clone)]
     pub struct ArrayIndex for super::ArrayIndex {
         pub expression (Expression)
+    }
+}
+
+impl IndentDisplay for ArrayIndex {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('[')?;
+        self.expression.indent_fmt(f, indent)?;
+        f.write_char(']')
     }
 }
 
@@ -188,11 +233,25 @@ impl Arbitrary for ArrayIndex {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display, EnumAsInner)]
+    #[derive(Debug, Clone, EnumAsInner)]
     pub enum AccessKind for super::AccessKind {
         GenericIdentifier(GenericIdentifier),
         TupleIndex(TupleIndex),
         ArrayIndex(ArrayIndex),
+    }
+}
+
+impl IndentDisplay for AccessKind {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::GenericIdentifier(x) => x.indent_fmt(f, indent),
+            Self::TupleIndex(x) => x.fmt(f),
+            Self::ArrayIndex(x) => x.indent_fmt(f, indent),
+        }
     }
 }
 
@@ -213,11 +272,21 @@ impl Arbitrary for AccessKind {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("{mode}{kind}")]
+    #[derive(Debug, Clone)]
     pub struct Access for super::Access {
         pub mode (AccessMode),
         pub kind (AccessKind),
+    }
+}
+
+impl IndentDisplay for Access {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.mode.fmt(f)?;
+        self.kind.indent_fmt(f, indent)
     }
 }
 
@@ -234,11 +303,25 @@ impl Arbitrary for Access {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display, EnumAsInner)]
+    #[derive(Debug, Clone, EnumAsInner)]
     pub enum Operator for super::Operator {
         Call(Call),
         Cast(Cast),
         Access(Access),
+    }
+}
+
+impl IndentDisplay for Operator {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Call(x) => x.indent_fmt(f, indent),
+            Self::Cast(x) => x.indent_fmt(f, indent),
+            Self::Access(x) => x.indent_fmt(f, indent),
+        }
     }
 }
 

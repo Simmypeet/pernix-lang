@@ -1,7 +1,7 @@
 use proptest::prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _};
 
 use crate::{
-    arbitrary::QualifiedIdentifier,
+    arbitrary::{IndentDisplay, QualifiedIdentifier},
     expression::{arbitrary::Expression, prefix::arbitrary::Prefixable},
     r#type::arbitrary::Type,
     reference,
@@ -159,23 +159,43 @@ impl Arbitrary for Operator {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(" {operator} {prefixable}")]
+    #[derive(Debug, Clone)]
     pub struct BinarySubsequent for super::BinarySubsequent {
         pub operator (Operator),
         pub prefixable (Prefixable),
     }
 }
 
+impl IndentDisplay for BinarySubsequent {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{}", self.operator)?;
+        self.prefixable.indent_fmt(f, indent)
+    }
+}
+
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "{first}{}",
-        chain.iter().map(ToString::to_string).collect::<String>()
-    )]
+    #[derive(Debug, Clone)]
     pub struct Binary for super::Binary {
         pub first (Prefixable),
         pub chain (Vec<BinarySubsequent>)
+    }
+}
+
+impl IndentDisplay for Binary {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.first.indent_fmt(f, indent)?;
+        for subsequent in &self.chain {
+            subsequent.indent_fmt(f, indent)?;
+        }
+        Ok(())
     }
 }
 

@@ -10,7 +10,10 @@ use proptest::{
     test_runner::TestCaseResult,
 };
 
-use crate::{arbitrary, QualifiedIdentifier};
+use crate::{
+    arbitrary::{self, IndentDisplay, IndentDisplayItem},
+    QualifiedIdentifier,
+};
 
 pub fn parse_token_tree(
     source_map: &mut SourceMap,
@@ -31,7 +34,30 @@ pub fn parse_token_tree(
     (tree, TargetID::Local.make_global(source_id))
 }
 
-pub fn verify_ref<TR: Display, TAst: AbstractTree + Debug>(
+pub fn verify_ref<TR: IndentDisplay, TAst: AbstractTree + Debug>(
+    ast_ref: &TR,
+) -> TestCaseResult
+where
+    for<'x, 'y> &'x TR: Input<&'y TAst, ()>,
+{
+    let mut source_map = SourceMap::new();
+
+    let source = IndentDisplayItem(0, ast_ref).to_string();
+    println!("{source}");
+    println!("===============================================================");
+    let (token_tree, _) = parse_token_tree(&mut source_map, &source);
+
+    let (tree, errors) = TAst::parse(&token_tree);
+    let tree = tree.ok_or_else(|| {
+        TestCaseError::fail(format!("Failed to parse tree: {errors:?}"))
+    })?;
+
+    prop_assert!(errors.is_empty(), "{errors:?}");
+
+    ast_ref.assert(&tree, ())
+}
+
+pub fn verify_ref_display<TR: Display, TAst: AbstractTree + Debug>(
     ast_ref: &TR,
 ) -> TestCaseResult
 where

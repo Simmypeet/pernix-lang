@@ -209,6 +209,7 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Passable<T: 'static + AbstractTree> {
         Pass(Keyword = expect::Keyword::Pass),
         Line(T = ast::<T>())

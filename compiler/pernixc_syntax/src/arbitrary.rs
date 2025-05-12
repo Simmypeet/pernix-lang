@@ -1,16 +1,22 @@
 #![allow(missing_docs)]
 
+use std::fmt::{Display, Write};
+
 #[doc(hidden)]
 pub use derive_more as __derive_more;
+use enum_as_inner::EnumAsInner;
 use pernixc_lexical::kind;
 use pernixc_parser::expect;
 #[doc(hidden)]
 pub use pernixc_test_input as __test_input;
+use pernixc_test_input::Input;
 #[doc(hidden)]
 pub use proptest as __proptest;
 use proptest::{
-    prelude::{Arbitrary, BoxedStrategy, Just, Strategy},
+    prelude::{Arbitrary, BoxedStrategy, Just, Strategy, TestCaseError},
     prop_oneof,
+    strategy::LazyJust,
+    test_runner::TestCaseResult,
 };
 
 #[macro_export]
@@ -540,11 +546,25 @@ impl Arbitrary for Lifetime {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone)]
     pub enum GenericArgument for super::GenericArgument {
         Lifetime(Lifetime),
         Type(Type),
         Constant(ConstantArgument),
+    }
+}
+
+impl IndentDisplay for GenericArgument {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Lifetime(i) => i.fmt(f),
+            Self::Type(i) => i.indent_fmt(f, indent),
+            Self::Constant(i) => i.indent_fmt(f, indent),
+        }
     }
 }
 
@@ -567,14 +587,7 @@ impl Arbitrary for GenericArgument {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "[{}]",
-        arguments.iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )]
+    #[derive(Debug, Clone)]
     pub struct GenericArguments for super::GenericArguments {
         pub arguments (Vec<GenericArgument>),
     }
@@ -592,18 +605,91 @@ impl Arbitrary for GenericArguments {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Separated<'a, T, S> {
+    pub value: &'a [T],
+    pub separator: S,
+}
+
+impl<T: Display, S: Display> Display for Separated<'_, T, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for item in self.value {
+            if !first {
+                write!(f, "{}", self.separator)?;
+            }
+            first = false;
+            write!(f, "{item}")?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: IndentDisplay, S: Display> IndentDisplay for Separated<'_, T, S> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        let mut first = true;
+        for item in self.value {
+            if !first {
+                self.separator.fmt(f)?;
+            }
+            first = false;
+            item.indent_fmt(f, indent)?;
+        }
+        Ok(())
+    }
+}
+
+pub trait IntoSeparated<'a> {
+    type Item;
+    fn into_separated<S>(self, separator: S) -> Separated<'a, Self::Item, S>;
+}
+
+impl<'a, T> IntoSeparated<'a> for &'a [T] {
+    type Item = T;
+
+    fn into_separated<S>(self, separator: S) -> Separated<'a, Self::Item, S> {
+        Separated { value: self, separator }
+    }
+}
+
+impl IndentDisplay for GenericArguments {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('[')?;
+        self.arguments.into_separated(", ").indent_fmt(f, indent)?;
+        f.write_char(']')?;
+
+        Ok(())
+    }
+}
+
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "{identifier}{}",
-        generic_arguments.as_ref()
-            .map(ToString::to_string)
-            .unwrap_or_default()
-    )]
+    #[derive(Debug, Clone)]
     pub struct GenericIdentifier for super::GenericIdentifier {
         #{map_input_assert(identifier, &identifier.kind)}
         pub identifier (kind::Identifier),
         pub generic_arguments (Option<GenericArguments>)
+    }
+}
+
+impl IndentDisplay for GenericIdentifier {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.identifier.fmt(f)?;
+        if let Some(ref generic_arguments) = self.generic_arguments {
+            generic_arguments.indent_fmt(f, indent)?;
+        }
+        Ok(())
     }
 }
 
@@ -722,13 +808,11 @@ impl Arbitrary for SimplePath {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone)]
     pub enum QualifiedIdentifierRoot for super::QualifiedIdentifierRoot {
-        #[display("target")]
         #{prop_assert(|output| output.kind == expect::Keyword::Target)}
         Target,
 
-        #[display("this")]
         #{prop_assert(|output| output.kind == expect::Keyword::This)}
         This,
 
@@ -752,11 +836,35 @@ impl Arbitrary for QualifiedIdentifierRoot {
     }
 }
 
+impl IndentDisplay for QualifiedIdentifierRoot {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Target => f.write_str("target"),
+            Self::This => f.write_str("this"),
+            Self::GenericIdentifier(i) => i.indent_fmt(f, indent),
+        }
+    }
+}
+
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("::{generic_identifier}")]
+    #[derive(Debug, Clone)]
     pub struct QualifiedIdentifierSubsequent for super::QualifiedIdentifierSubsequent {
         pub generic_identifier (GenericIdentifier),
+    }
+}
+
+impl IndentDisplay for QualifiedIdentifierSubsequent {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("::")?;
+        self.generic_identifier.indent_fmt(f, indent)
     }
 }
 
@@ -773,16 +881,26 @@ impl Arbitrary for QualifiedIdentifierSubsequent {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "{root}{}",
-        subsequences.iter()
-            .map(ToString::to_string)
-            .collect::<String>()
-    )]
+    #[derive(Debug, Clone)]
     pub struct QualifiedIdentifier for super::QualifiedIdentifier {
         pub root (QualifiedIdentifierRoot),
         pub subsequences (Vec<QualifiedIdentifierSubsequent>),
+    }
+}
+
+impl IndentDisplay for QualifiedIdentifier {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.root.indent_fmt(f, indent)?;
+
+        for subsequence in &self.subsequences {
+            subsequence.indent_fmt(f, indent)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -826,12 +944,9 @@ impl Arbitrary for ReferenceOf {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone)]
     pub enum ConstantArgument for super::ConstantArgument {
-        #[display("{{{_0}}}")]
         Expression(Expression),
-
-        #[display("{{..}}")]
         Elided(Elided),
     }
 }
@@ -847,5 +962,166 @@ impl Arbitrary for ConstantArgument {
             Elided::arbitrary().prop_map(Self::Elided),
         ]
         .boxed()
+    }
+}
+
+impl IndentDisplay for ConstantArgument {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('{')?;
+        match self {
+            Self::Expression(i) => i.indent_fmt(f, indent)?,
+            Self::Elided(i) => i.fmt(f)?,
+        }
+        f.write_char('}')
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+)]
+pub enum Passable<T> {
+    Pass,
+    Line(T),
+}
+
+impl<T> Passable<T> {
+    pub const fn as_ref(&self) -> Passable<&T> {
+        match self {
+            Self::Pass => Passable::Pass,
+            Self::Line(i) => Passable::Line(i),
+        }
+    }
+}
+
+impl<T: Arbitrary + 'static> Arbitrary for Passable<T> {
+    type Parameters = T::Parameters;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            1 =>
+            LazyJust::new(|| Self::Pass),
+            10 =>
+            T::arbitrary_with(args).prop_map(Self::Line),
+        ]
+        .boxed()
+    }
+}
+
+impl<O: std::fmt::Debug, T: std::fmt::Debug> Input<&super::Passable<O>, ()>
+    for &Passable<T>
+where
+    for<'x, 'y> &'x T: Input<&'y O, ()>,
+{
+    fn assert(self, output: &super::Passable<O>, (): ()) -> TestCaseResult {
+        match (self, output) {
+            (Passable::Pass, super::Passable::Pass(_)) => Ok(()),
+            (Passable::Line(i), super::Passable::Line(o)) => i.assert(o, ()),
+            (i, output) => Err(TestCaseError::fail(format!(
+                "Expected {i:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl<O: std::fmt::Debug, T: std::fmt::Debug> Input<super::Passable<&O>, ()>
+    for Passable<&T>
+where
+    for<'x, 'y> &'x T: Input<&'y O, ()>,
+{
+    fn assert(self, output: super::Passable<&O>, (): ()) -> TestCaseResult {
+        match (self, output) {
+            (Passable::Pass, super::Passable::Pass(_)) => Ok(()),
+            (Passable::Line(i), super::Passable::Line(o)) => i.assert(o, ()),
+            (i, output) => Err(TestCaseError::fail(format!(
+                "Expected {i:?}, got {output:?}",
+            ))),
+        }
+    }
+}
+
+impl<T: Display> Display for Passable<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pass => f.write_str("pass"),
+            Self::Line(i) => i.fmt(f),
+        }
+    }
+}
+
+impl<T: IndentDisplay> IndentDisplay for Passable<T> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Pass => f.write_str("pass"),
+            Self::Line(i) => i.indent_fmt(f, indent),
+        }
+    }
+}
+
+/// A wrapper trait over the `std::fmt::Display` trait that allows for
+/// displaying the item with indentation.
+pub trait IndentDisplay {
+    /// Display the item with indentation.
+    #[allow(clippy::missing_errors_doc)]
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result;
+}
+
+impl<T: IndentDisplay> IndentDisplay for Box<T> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        (**self).indent_fmt(f, indent)
+    }
+}
+
+/// Write a line with indentation to the formatter.
+#[allow(clippy::missing_errors_doc)]
+pub fn write_indent_line(
+    f: &mut std::fmt::Formatter,
+    o: &impl Display,
+    indent: usize,
+) -> std::fmt::Result {
+    for _ in 0..indent {
+        f.write_str("    ")?;
+    }
+
+    writeln!(f, "{o}")
+}
+
+#[allow(clippy::missing_errors_doc)]
+pub fn write_indent_line_for_indent_display(
+    f: &mut std::fmt::Formatter,
+    o: &impl IndentDisplay,
+    indent: usize,
+) -> std::fmt::Result {
+    for _ in 0..indent {
+        f.write_str("    ")?;
+    }
+
+    o.indent_fmt(f, indent)?;
+    writeln!(f)
+}
+
+/// A wrapper over a `Display` item that includes the indentation level.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IndentDisplayItem<'a, T>(pub usize, pub &'a T);
+
+impl<T: IndentDisplay> Display for IndentDisplayItem<'_, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.1.indent_fmt(f, self.0)
     }
 }

@@ -1,5 +1,7 @@
 #![allow(missing_docs)]
 
+use std::fmt::{Display, Write};
+
 use pernixc_lexical::kind;
 use pernixc_parser::expect;
 use proptest::{
@@ -8,7 +10,9 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{Elided, Lifetime, QualifiedIdentifier},
+    arbitrary::{
+        Elided, IndentDisplay, IntoSeparated, Lifetime, QualifiedIdentifier,
+    },
     expression::arbitrary::Expression,
     reference,
 };
@@ -95,16 +99,29 @@ impl Arbitrary for Primitive {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "&{}{}{type}",
-        lifetime.as_ref().map(|x| format!("{x} ")).unwrap_or_default(),
-        if *mut_keyword { "mut " } else { "" },
-    )]
+    #[derive(Debug, Clone)]
     pub struct Reference for super::Reference {
         pub lifetime (Option<Lifetime>),
         pub mut_keyword (bool),
         pub r#type (Box<Type>)
+    }
+}
+
+impl IndentDisplay for Reference {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('&')?;
+        if let Some(lifetime) = &self.lifetime {
+            write!(f, "{lifetime} ")?;
+        }
+        if self.mut_keyword {
+            f.write_str("mut ")?;
+        }
+
+        self.r#type.indent_fmt(f, indent)
     }
 }
 
@@ -130,11 +147,7 @@ impl Arbitrary for Reference {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "{}{type}",
-        if *ellipsis { "..." } else { "" },
-    )]
+    #[derive(Debug, Clone)]
     pub struct Unpackable for super::Unpackable {
         pub ellipsis (bool),
         pub r#type (Box<Type>)
@@ -154,17 +167,35 @@ impl Arbitrary for Unpackable {
     }
 }
 
+impl IndentDisplay for Unpackable {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        if self.ellipsis {
+            f.write_str("...")?;
+        }
+        self.r#type.indent_fmt(f, indent)
+    }
+}
+
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "({})",
-        types.iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )]
+    #[derive(Debug, Clone)]
     pub struct Tuple for super::Tuple {
         pub types (Vec<Unpackable>)
+    }
+}
+
+impl IndentDisplay for Tuple {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("(")?;
+        self.types.into_separated(", ").indent_fmt(f, indent)?;
+        f.write_str(")")
     }
 }
 
@@ -180,13 +211,26 @@ impl Arbitrary for Tuple {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("[{type} x {numeric}]")]
+    #[derive(Debug, Clone)]
     pub struct Array for super::Array {
         pub r#type (Box<Type>),
 
         #{map_input_assert(numeric, &numeric.kind)}
         pub numeric (kind::Numeric)
+    }
+}
+
+impl IndentDisplay for Array {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('[')?;
+        self.r#type.indent_fmt(f, indent)?;
+        f.write_str(" x ")?;
+        self.numeric.fmt(f)?;
+        f.write_str("]")
     }
 }
 
@@ -204,14 +248,24 @@ impl Arbitrary for Array {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "*{}{type}",
-        if *mut_keyword { "mut " } else { "" },
-    )]
+    #[derive(Debug, Clone)]
     pub struct Pointer for super::Pointer {
         pub mut_keyword (bool),
         pub r#type (Box<Type>)
+    }
+}
+
+impl IndentDisplay for Pointer {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('*')?;
+        if self.mut_keyword {
+            f.write_str("mut ")?;
+        }
+        self.r#type.indent_fmt(f, indent)
     }
 }
 
@@ -229,10 +283,20 @@ impl Arbitrary for Pointer {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
-    #[display("phantom {type}")]
+    #[derive(Debug, Clone)]
     pub struct Phantom for super::Phantom {
         pub r#type (Box<Type>)
+    }
+}
+
+impl IndentDisplay for Phantom {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("phantom ")?;
+        self.r#type.indent_fmt(f, indent)
     }
 }
 
@@ -248,7 +312,7 @@ impl Arbitrary for Phantom {
 }
 
 reference! {
-    #[derive(Debug, Clone, derive_more::Display)]
+    #[derive(Debug, Clone)]
     pub enum Type for super::Type {
         QualifiedIdentifier(QualifiedIdentifier),
         Primitive(Primitive),
@@ -294,5 +358,26 @@ impl Arbitrary for Type {
             ]
         })
         .boxed()
+    }
+}
+
+impl IndentDisplay for Type {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::QualifiedIdentifier(qualified_identifier) => {
+                qualified_identifier.indent_fmt(f, indent)
+            }
+            Self::Primitive(primitive) => primitive.fmt(f),
+            Self::Reference(reference) => reference.indent_fmt(f, indent),
+            Self::Tuple(tuple) => tuple.indent_fmt(f, indent),
+            Self::Array(array) => array.indent_fmt(f, indent),
+            Self::Pointer(pointer) => pointer.indent_fmt(f, indent),
+            Self::Phantom(phantom) => phantom.indent_fmt(f, indent),
+            Self::Elided(elided) => elided.fmt(f),
+        }
     }
 }
