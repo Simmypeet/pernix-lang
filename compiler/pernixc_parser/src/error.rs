@@ -1,5 +1,7 @@
 //! Contains the definition of [`Error`] struct
 
+use std::collections::HashSet;
+
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_lexical::{
@@ -18,10 +20,10 @@ use crate::{
 
 /// Represents an error of encountering an unexpected token at a certain
 /// possition at its possible expected tokens.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Error {
     /// The tokens that are expected at the cursor position.
-    pub expecteds: Vec<Expected>,
+    pub expecteds: HashSet<Expected>,
 
     /// The cursor position where the error occurred.
     pub at: Cursor,

@@ -1,6 +1,6 @@
 //! Contains the definition of the [`State`].
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
@@ -126,9 +126,9 @@ impl<'a, 'cache> State<'a, 'cache> {
                 node_index: 0,
             },
             new_line_significant: false,
-            emitted_erorrs: Vec::new(),
+            emitted_erorrs: Vec::default(),
             current_error: Error {
-                expecteds: Vec::new(),
+                expecteds: HashSet::default(),
                 at: Cursor {
                     branch_id: pernixc_lexical::tree::ROOT_BRANCH_ID,
                     node_index: 0,
@@ -351,20 +351,9 @@ impl<'a, 'cache> State<'a, 'cache> {
 
                 self.current_error.expecteds.clear();
                 self.current_error.expecteds.extend(errors);
-
-                assert!(
-                    !self.current_error.expecteds.is_empty(),
-                    "Expected tokens should not be empty"
-                );
             }
             std::cmp::Ordering::Equal => {
-                let current_len = self.current_error.expecteds.len();
                 self.current_error.expecteds.extend(errors);
-
-                assert!(
-                    self.current_error.expecteds.len() > current_len,
-                    "Expected tokens should not be empty"
-                );
             }
             std::cmp::Ordering::Greater => {
                 // do nothing, the current error is already the latest
