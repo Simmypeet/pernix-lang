@@ -85,6 +85,15 @@ pub trait Parser {
     {
         Line(self)
     }
+
+    /// Sets the new line significance for the parser and then invokes the
+    /// parser.
+    fn new_line_significant(self, significant: bool) -> NewLineSignificant<Self>
+    where
+        Self: Sized,
+    {
+        NewLineSignificant(self, significant)
+    }
 }
 
 impl<F: Fn(&mut State) -> Result<(), Unexpected>> Parser for F {
@@ -650,6 +659,28 @@ impl<T: Parser> Parser for Line<T> {
 }
 
 impl<T: Output> Output for Line<T> {
+    type Extract = T::Extract;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
+
+/// See [`Parser::new_line_significant`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NewLineSignificant<T>(pub T, pub bool);
+
+impl<T: Parser> Parser for NewLineSignificant<T> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        state.set_new_line_significant(self.1, |state| self.0.parse(state))
+    }
+}
+
+impl<T: Output> Output for NewLineSignificant<T> {
     type Extract = T::Extract;
     type Output<'a> = T::Output<'a>;
 
