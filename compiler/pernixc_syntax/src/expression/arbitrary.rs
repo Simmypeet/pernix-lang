@@ -53,7 +53,7 @@ impl Arbitrary for Expression {
             })
         ];
 
-        leaf.prop_recursive(4, 40, 10, move |expr| {
+        leaf.prop_recursive(4, 64, 16, move |expr| {
             prop_oneof![
                 2 => Binary::arbitrary_with((
                     Some(expr),
