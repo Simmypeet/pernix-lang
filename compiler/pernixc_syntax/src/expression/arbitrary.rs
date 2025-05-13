@@ -7,6 +7,7 @@ use super::{
     binary::arbitrary::{Binary, Node},
     postfix::arbitrary::Postfix,
     prefix::arbitrary::Prefixable,
+    terminator::arbitrary::Terminator,
     unit::arbitrary::{Boolean, Numeric, Unit},
 };
 use crate::{
@@ -20,6 +21,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub enum Expression for super::Expression {
         Binary(Binary),
+        Terminator(Terminator),
     }
 }
 
@@ -56,11 +58,17 @@ impl Arbitrary for Expression {
         leaf.prop_recursive(4, 64, 16, move |expr| {
             prop_oneof![
                 2 => Binary::arbitrary_with((
-                    Some(expr),
+                    Some(expr.clone()),
                     args.0.clone(),
                     args.1.clone(),
                     args.2.clone()
                 )).prop_map(Expression::Binary),
+                1 => Terminator::arbitrary_with((
+                    Some(expr),
+                    args.0.clone(),
+                    args.1.clone(),
+                    args.2.clone()
+                )).prop_map(Expression::Terminator),
             ]
         })
         .boxed()
@@ -75,6 +83,7 @@ impl IndentDisplay for Expression {
     ) -> std::fmt::Result {
         match self {
             Self::Binary(binary) => binary.indent_fmt(f, indent),
+            Self::Terminator(terminator) => terminator.indent_fmt(f, indent),
         }
     }
 }
