@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _},
     prop_oneof,
@@ -166,7 +167,7 @@ impl Arbitrary for Operator {
 }
 
 reference! {
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, EnumAsInner)]
     pub enum Node for super::Node {
         Prefixable(Prefixable),
         Block(Block),

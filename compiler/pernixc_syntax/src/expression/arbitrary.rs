@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy},
     prop_oneof,
@@ -18,7 +19,7 @@ use crate::{
 };
 
 reference! {
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, EnumAsInner)]
     pub enum Expression for super::Expression {
         Binary(Binary),
         Terminator(Terminator),
@@ -55,7 +56,7 @@ impl Arbitrary for Expression {
             })
         ];
 
-        leaf.prop_recursive(4, 64, 16, move |expr| {
+        leaf.prop_recursive(6, 24, 4, move |expr| {
             prop_oneof![
                 2 => Binary::arbitrary_with((
                     Some(expr.clone()),

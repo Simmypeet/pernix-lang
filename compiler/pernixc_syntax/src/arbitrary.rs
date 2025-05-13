@@ -569,13 +569,15 @@ impl IndentDisplay for GenericArgument {
 }
 
 impl Arbitrary for GenericArgument {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((ty, expr): Self::Parameters) -> Self::Strategy {
-        let ty =
-            ty.unwrap_or_else(|| Type::arbitrary_with((expr.clone(), None)));
+    fn arbitrary_with((ty, expr, qi): Self::Parameters) -> Self::Strategy {
+        let ty = ty.unwrap_or_else(|| Type::arbitrary_with((expr.clone(), qi)));
 
         prop_oneof![
             Lifetime::arbitrary().prop_map(Self::Lifetime),
@@ -594,8 +596,11 @@ reference! {
 }
 
 impl Arbitrary for GenericArguments {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
@@ -694,8 +699,11 @@ impl IndentDisplay for GenericIdentifier {
 }
 
 impl Arbitrary for GenericIdentifier {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
@@ -821,8 +829,11 @@ reference! {
 }
 
 impl Arbitrary for QualifiedIdentifierRoot {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
@@ -869,8 +880,11 @@ impl IndentDisplay for QualifiedIdentifierSubsequent {
 }
 
 impl Arbitrary for QualifiedIdentifierSubsequent {
-    type Parameters =
-        (Option<BoxedStrategy<Type>>, Option<BoxedStrategy<Expression>>);
+    type Parameters = (
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
@@ -911,15 +925,47 @@ impl Arbitrary for QualifiedIdentifier {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
-        (
-            QualifiedIdentifierRoot::arbitrary_with(arg.clone()),
+        let leaf = (
+            kind::Identifier::arbitrary(),
             proptest::collection::vec(
-                QualifiedIdentifierSubsequent::arbitrary_with(arg),
-                0..=10,
+                kind::Identifier::arbitrary().prop_map(|identifier| {
+                    QualifiedIdentifierSubsequent {
+                        generic_identifier: GenericIdentifier {
+                            identifier,
+                            generic_arguments: None,
+                        },
+                    }
+                }),
+                0..=5,
             ),
         )
-            .prop_map(|(root, subsequences)| Self { root, subsequences })
-            .boxed()
+            .prop_map(|(identifier, subsequences)| Self {
+                root: QualifiedIdentifierRoot::GenericIdentifier(
+                    GenericIdentifier { identifier, generic_arguments: None },
+                ),
+                subsequences,
+            });
+
+        leaf.prop_recursive(3, 12, 4, move |x| {
+            (
+                QualifiedIdentifierRoot::arbitrary_with((
+                    arg.0.clone(),
+                    arg.1.clone(),
+                    Some(x.clone()),
+                )),
+                proptest::collection::vec(
+                    QualifiedIdentifierSubsequent::arbitrary_with((
+                        arg.0.clone(),
+                        arg.1.clone(),
+                        Some(x),
+                    )),
+                    0..=10,
+                ),
+            )
+                .prop_map(|(root, subsequences)| Self { root, subsequences })
+                .boxed()
+        })
+        .boxed()
     }
 }
 
