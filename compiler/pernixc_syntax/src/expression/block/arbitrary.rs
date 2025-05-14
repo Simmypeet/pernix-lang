@@ -15,6 +15,7 @@ use crate::{
         arbitrary::Expression, binary::arbitrary::Binary,
         terminator::arbitrary::Terminator,
     },
+    pattern::arbitrary::Refutable,
     r#type::arbitrary::Type,
     reference,
     statement::arbitrary::{Statement, Statements},
@@ -25,6 +26,9 @@ reference! {
     pub enum Block for super::Block {
         Scope(Scope),
         IfElse(IfElse),
+        Loop(Loop),
+        Match(Match),
+        While(While),
     }
 }
 
@@ -40,7 +44,10 @@ impl Arbitrary for Block {
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         prop_oneof![
             Scope::arbitrary_with(args.clone()).prop_map(Self::Scope),
-            IfElse::arbitrary_with(args).prop_map(Self::IfElse),
+            IfElse::arbitrary_with(args.clone()).prop_map(Self::IfElse),
+            Loop::arbitrary_with(args.clone()).prop_map(Self::Loop),
+            Match::arbitrary_with(args.clone()).prop_map(Self::Match),
+            While::arbitrary_with(args).prop_map(Self::While),
         ]
         .boxed()
     }
@@ -55,6 +62,9 @@ impl IndentDisplay for Block {
         match self {
             Self::Scope(scope) => scope.indent_fmt(f, indent),
             Self::IfElse(if_else) => if_else.indent_fmt(f, indent),
+            Self::Loop(loop_) => loop_.indent_fmt(f, indent),
+            Self::Match(match_) => match_.indent_fmt(f, indent),
+            Self::While(while_) => while_.indent_fmt(f, indent),
         }
     }
 }
@@ -445,5 +455,224 @@ impl IndentDisplay for Else {
         }
 
         self.group_or_if_else.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct Loop for super::Loop {
+        pub group (IndentedGroup)
+    }
+}
+
+impl Arbitrary for Loop {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        IndentedGroup::arbitrary_with(args)
+            .prop_map(|group| Self { group })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for Loop {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_str("loop")?;
+        self.group.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct While for super::While {
+        #{map_input_assert(&**binary, binary)}
+        pub binary (Box<Binary>),
+        pub group (IndentedGroup),
+    }
+}
+
+impl Arbitrary for While {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let binary = args
+            .0
+            .clone()
+            .unwrap_or_else(|| {
+                Expression::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
+            })
+            .prop_filter_map("need binary and must not contain block", |x| {
+                x.into_binary().ok().and_then(|x| {
+                    (!x.chain
+                        .last()
+                        .map_or_else(|| &x.first, |x| &x.node)
+                        .is_block())
+                    .then_some(x)
+                })
+            });
+
+        (binary.prop_map(Box::new), IndentedGroup::arbitrary_with(args))
+            .prop_map(|(binary, group)| Self { binary, group })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for While {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "while ")?;
+        self.binary.indent_fmt(f, indent)?;
+        self.group.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct MatchArm for super::MatchArm {
+        pub refutable_pattern (Refutable),
+        pub group (Group),
+    }
+}
+
+impl Arbitrary for MatchArm {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        (Refutable::arbitrary(), Group::arbitrary_with(args))
+            .prop_map(|(refutable_pattern, group)| Self {
+                refutable_pattern,
+                group,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for MatchArm {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "{}", self.refutable_pattern)?;
+        self.group.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct MatchBody for super::MatchBody {
+        pub arms (Vec<MatchArm>),
+    }
+}
+
+impl Arbitrary for MatchBody {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(MatchArm::arbitrary_with(args), 1..5)
+            .prop_map(|arms| Self { arms })
+            .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct Match for super::Match {
+        #{map_input_assert(&**binary, binary)}
+        pub binary (Box<Binary>),
+        pub body (MatchBody),
+    }
+}
+
+impl Arbitrary for Match {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+        Option<BoxedStrategy<Statement>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        let binary = args
+            .0
+            .clone()
+            .unwrap_or_else(|| {
+                Expression::arbitrary_with((
+                    args.1.clone(),
+                    args.2.clone(),
+                    args.3.clone(),
+                ))
+            })
+            .prop_filter_map("need binary and must not contain block", |x| {
+                x.into_binary().ok().and_then(|x| {
+                    (!x.chain
+                        .last()
+                        .map_or_else(|| &x.first, |x| &x.node)
+                        .is_block())
+                    .then_some(x)
+                })
+            });
+
+        (binary.prop_map(Box::new), MatchBody::arbitrary_with(args))
+            .prop_map(|(binary, body)| Self { binary, body })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for Match {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, "match ")?;
+        self.binary.indent_fmt(f, indent)?;
+        f.write_str(":")?;
+
+        for arm in &self.body.arms {
+            f.write_char('\n')?;
+            for _ in 0..=indent {
+                f.write_str("    ")?;
+            }
+            arm.indent_fmt(f, indent + 1)?;
+        }
+
+        Ok(())
     }
 }
