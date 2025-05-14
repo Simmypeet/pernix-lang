@@ -99,7 +99,6 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Indentation}
     pub struct MatchBody {
-        pub colon: Punctuation = ':',
         pub arms: #[multi] MatchArm = ast::<MatchArm>().line().repeat_all(),
     }
 }
