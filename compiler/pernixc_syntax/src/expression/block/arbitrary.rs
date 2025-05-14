@@ -8,8 +8,8 @@ use proptest::{
 
 use crate::{
     arbitrary::{
-        write_indent_line_for_indent_display, IndentDisplay, Label,
-        QualifiedIdentifier,
+        write_indent_line, write_indent_line_for_indent_display, IndentDisplay,
+        Label, QualifiedIdentifier,
     },
     expression::{
         arbitrary::Expression, binary::arbitrary::Binary,
@@ -488,6 +488,11 @@ impl IndentDisplay for Loop {
         indent: usize,
     ) -> std::fmt::Result {
         f.write_str("loop")?;
+
+        if self.group.unsafe_keyword || self.group.label.is_some() {
+            f.write_char(' ')?;
+        }
+
         self.group.indent_fmt(f, indent)
     }
 }
@@ -545,6 +550,11 @@ impl IndentDisplay for While {
     ) -> std::fmt::Result {
         write!(f, "while ")?;
         self.binary.indent_fmt(f, indent)?;
+
+        if self.group.unsafe_keyword || self.group.label.is_some() {
+            f.write_char(' ')?;
+        }
+
         self.group.indent_fmt(f, indent)
     }
 }
@@ -583,6 +593,15 @@ impl IndentDisplay for MatchArm {
         indent: usize,
     ) -> std::fmt::Result {
         write!(f, "{}", self.refutable_pattern)?;
+
+        if self
+            .group
+            .as_indented()
+            .is_some_and(|x| x.unsafe_keyword || x.label.is_some())
+        {
+            f.write_char(' ')?;
+        }
+
         self.group.indent_fmt(f, indent)
     }
 }
@@ -663,14 +682,10 @@ impl IndentDisplay for Match {
     ) -> std::fmt::Result {
         write!(f, "match ")?;
         self.binary.indent_fmt(f, indent)?;
-        f.write_str(":")?;
+        write_indent_line(f, &":", indent)?;
 
         for arm in &self.body.arms {
-            f.write_char('\n')?;
-            for _ in 0..=indent {
-                f.write_str("    ")?;
-            }
-            arm.indent_fmt(f, indent + 1)?;
+            write_indent_line_for_indent_display(f, arm, indent + 1)?;
         }
 
         Ok(())
