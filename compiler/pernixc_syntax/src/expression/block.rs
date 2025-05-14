@@ -6,6 +6,7 @@ use pernixc_parser::{
 
 use crate::{
     expression::{binary::Binary, Expression},
+    pattern::Refutable,
     statement::Statements,
     Keyword, Label, Punctuation,
 };
@@ -18,6 +19,9 @@ abstract_tree::abstract_tree! {
     pub enum Block {
         Scope(Scope = ast::<Scope>()),
         IfElse(IfElse = ast::<IfElse>()),
+        Loop(Loop = ast::<Loop>()),
+        Match(Match = ast::<Match>()),
+        While(While = ast::<While>()),
     }
 }
 
@@ -80,5 +84,48 @@ abstract_tree::abstract_tree! {
         pub else_keyword: Keyword
             = expect::Keyword::Else.new_line_significant(false),
         pub group_or_if_else: GroupOrIfElse = ast::<GroupOrIfElse>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct MatchArm {
+        pub refutable_pattern: Refutable = ast::<Refutable>(),
+        pub group: Group = ast::<Group>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #{fragment = expect::Fragment::Indentation}
+    pub struct MatchBody {
+        pub colon: Punctuation = ':',
+        pub arms: #[multi] MatchArm = ast::<MatchArm>().line().repeat_all(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Match {
+        pub match_keyword: Keyword = expect::Keyword::Match,
+        pub binary: Binary = ast::<Binary>(),
+        pub body: MatchBody = ast::<MatchBody>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct While {
+        pub while_keyword: Keyword = expect::Keyword::While,
+        pub binary: Binary = ast::<Binary>(),
+        pub group: IndentedGroup = ast::<IndentedGroup>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Loop {
+        pub loop_keyword: Keyword = expect::Keyword::Loop,
+        pub group: IndentedGroup = ast::<IndentedGroup>(),
     }
 }
