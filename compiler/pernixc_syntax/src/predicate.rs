@@ -149,3 +149,6 @@ abstract_tree::abstract_tree! {
         ),
     }
 }
+
+#[cfg(test)]
+mod test;

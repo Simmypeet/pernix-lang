@@ -256,21 +256,18 @@ impl IndentDisplay for AccessKind {
 }
 
 impl Arbitrary for AccessKind {
-    type Parameters = (
-        Option<BoxedStrategy<Expression>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<QualifiedIdentifier>>,
-    );
+    type Parameters =
+        (Option<BoxedStrategy<Expression>>, Option<BoxedStrategy<Type>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(
-        (expression, ty, qi): Self::Parameters,
-    ) -> Self::Strategy {
+    fn arbitrary_with((expression, ty): Self::Parameters) -> Self::Strategy {
+        let expression = expression.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
-            GenericIdentifier::arbitrary_with((ty, expression.clone(), qi))
+            GenericIdentifier::arbitrary_with((ty, Some(expression.clone())))
                 .prop_map(Self::GenericIdentifier),
             TupleIndex::arbitrary().prop_map(Self::TupleIndex),
-            ArrayIndex::arbitrary_with(expression).prop_map(Self::ArrayIndex),
+            ArrayIndex::arbitrary_with(Some(expression))
+                .prop_map(Self::ArrayIndex),
         ]
         .boxed()
     }
@@ -296,20 +293,12 @@ impl IndentDisplay for Access {
 }
 
 impl Arbitrary for Access {
-    type Parameters = (
-        Option<BoxedStrategy<Expression>>,
-        Option<BoxedStrategy<Type>>,
-        Option<BoxedStrategy<QualifiedIdentifier>>,
-    );
+    type Parameters =
+        (Option<BoxedStrategy<Expression>>, Option<BoxedStrategy<Type>>);
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with(
-        (expression, ty, qi): Self::Parameters,
-    ) -> Self::Strategy {
-        (
-            AccessMode::arbitrary(),
-            AccessKind::arbitrary_with((expression, ty, qi)),
-        )
+    fn arbitrary_with((expression, ty): Self::Parameters) -> Self::Strategy {
+        (AccessMode::arbitrary(), AccessKind::arbitrary_with((expression, ty)))
             .prop_map(|(mode, kind)| Self { mode, kind })
             .boxed()
     }
@@ -351,9 +340,9 @@ impl Arbitrary for Operator {
     ) -> Self::Strategy {
         prop_oneof![
             Call::arbitrary_with(expression.clone()).prop_map(Self::Call),
-            Cast::arbitrary_with((expression.clone(), ty.clone(), qi.clone()))
+            Cast::arbitrary_with((expression.clone(), ty.clone(), qi))
                 .prop_map(Self::Cast),
-            Access::arbitrary_with((expression, ty, qi)).prop_map(Self::Access),
+            Access::arbitrary_with((expression, ty,)).prop_map(Self::Access),
         ]
         .boxed()
     }
