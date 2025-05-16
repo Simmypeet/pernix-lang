@@ -200,8 +200,6 @@ pub struct Tree {
     arena: Arena<Branch>,
 
     #[serde(skip)]
-    absolute_start_byte_of_cache: DashMap<ID<Branch>, ByteIndex>,
-    #[serde(skip)]
     end_location_cache: DashMap<ID<Branch>, ByteIndex>,
 }
 
@@ -223,7 +221,6 @@ impl Tree {
             current_nodes: Vec::new(),
             tree: Self {
                 arena: Arena::new(),
-                absolute_start_byte_of_cache: DashMap::new(),
                 end_location_cache: DashMap::new(),
             },
         };
@@ -300,37 +297,44 @@ impl Tree {
 fn absolute_end_byte_of(
     branches: &Arena<Branch>,
     mut id: ID<Branch>,
+    end_cache: Option<&DashMap<ID<Branch>, ByteIndex>>,
 ) -> ByteIndex {
     loop {
+        if let Some(end_cache) = end_cache {
+            if let Some(end) = end_cache.get(&id) {
+                return *end;
+            }
+        }
+
         let branch = &branches[id];
-        match &branch.kind {
+        let result = match &branch.kind {
             BranchKind::Fragment(fragment_branch) => {
                 match &fragment_branch.fragment_kind {
-                    FragmentKind::Delimiter(delimiter) => {
-                        return absolute_location_of(
-                            branches,
-                            &delimiter.close.span.end,
-                        )
-                    }
+                    FragmentKind::Delimiter(delimiter) => absolute_location_of(
+                        branches,
+                        &delimiter.close.span.end,
+                        end_cache,
+                    ),
 
                     FragmentKind::Indentation(indentation) => {
                         if let Some(x) = branch.nodes.last() {
                             match x {
-                                Node::Leaf(leaf) => {
-                                    return absolute_location_of(
-                                        branches,
-                                        &leaf.span.end,
-                                    )
-                                }
+                                Node::Leaf(leaf) => absolute_location_of(
+                                    branches,
+                                    &leaf.span.end,
+                                    end_cache,
+                                ),
                                 Node::Branch(new_id) => {
                                     id = *new_id;
+                                    continue;
                                 }
                             }
                         } else {
-                            return absolute_location_of(
+                            absolute_location_of(
                                 branches,
                                 &indentation.new_line.span.end,
-                            );
+                                end_cache,
+                            )
                         }
                     }
                 }
@@ -338,28 +342,40 @@ fn absolute_end_byte_of(
 
             BranchKind::Root => match branch.nodes.last() {
                 Some(node) => match node {
-                    Node::Leaf(leaf) => {
-                        return absolute_location_of(branches, &leaf.span.end)
-                    }
+                    Node::Leaf(leaf) => absolute_location_of(
+                        branches,
+                        &leaf.span.end,
+                        end_cache,
+                    ),
 
                     Node::Branch(new_id) => {
                         id = *new_id;
+                        continue;
                     }
                 },
-                None => return 0,
+                None => 0,
             },
+        };
+
+        if let Some(end_cache) = end_cache {
+            end_cache.insert(id, result);
         }
+
+        return result;
     }
 }
 
 fn absolute_start_byte_of(
     branches: &Arena<Branch>,
     id: ID<Branch>,
+    end_cache: Option<&DashMap<ID<Branch>, ByteIndex>>,
 ) -> ByteIndex {
     match &branches[id].kind {
-        BranchKind::Fragment(fragment) => {
-            absolute_location_of(branches, &fragment.starting_location)
-        }
+        BranchKind::Fragment(fragment) => absolute_location_of(
+            branches,
+            &fragment.starting_location,
+            end_cache,
+        ),
         BranchKind::Root => 0,
     }
 }
@@ -367,14 +383,19 @@ fn absolute_start_byte_of(
 fn absolute_location_of(
     branches: &Arena<Branch>,
     relative_location: &RelativeLocation,
+    end_cache: Option<&DashMap<ID<Branch>, ByteIndex>>,
 ) -> ByteIndex {
     let offset = match relative_location.mode {
-        OffsetMode::Start => {
-            absolute_start_byte_of(branches, relative_location.relative_to)
-        }
-        OffsetMode::End => {
-            absolute_end_byte_of(branches, relative_location.relative_to)
-        }
+        OffsetMode::Start => absolute_start_byte_of(
+            branches,
+            relative_location.relative_to,
+            end_cache,
+        ),
+        OffsetMode::End => absolute_end_byte_of(
+            branches,
+            relative_location.relative_to,
+            end_cache,
+        ),
     };
 
     relative_location.offset + offset
@@ -388,27 +409,13 @@ impl Tree {
             return 0;
         }
 
-        match self.absolute_start_byte_of_cache.entry(id) {
-            dashmap::Entry::Occupied(occupied_entry) => *occupied_entry.get(),
-            dashmap::Entry::Vacant(vacant_entry) => {
-                let result = absolute_start_byte_of(&self.arena, id);
-                vacant_entry.insert(result);
-                result
-            }
-        }
+        absolute_start_byte_of(&self.arena, id, Some(&self.end_location_cache))
     }
 
     /// Gets the absolute end byte of the given branch ID.
     #[must_use]
     pub fn absoluate_end_byte_of(&self, id: ID<Branch>) -> ByteIndex {
-        match self.end_location_cache.entry(id) {
-            dashmap::Entry::Occupied(occupied_entry) => *occupied_entry.get(),
-            dashmap::Entry::Vacant(vacant_entry) => {
-                let result = absolute_end_byte_of(&self.arena, id);
-                vacant_entry.insert(result);
-                result
-            }
-        }
+        absolute_end_byte_of(&self.arena, id, Some(&self.end_location_cache))
     }
 
     /// Calculates the absolute span of the given relative span.
