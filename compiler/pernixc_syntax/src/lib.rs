@@ -18,6 +18,7 @@ use r#type::Type;
 
 pub mod expression;
 pub mod pattern;
+pub mod predicate;
 pub mod statement;
 pub mod r#type;
 
