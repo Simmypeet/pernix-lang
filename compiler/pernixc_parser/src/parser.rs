@@ -507,23 +507,19 @@ pub struct RepeatWithSeparatorAtLeastOnce<T, S>(pub T, pub S);
 
 impl<T: Parser, S: Parser> Parser for RepeatWithSeparatorAtLeastOnce<T, S> {
     fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
-        let mut checkpoint = state.checkpoint();
-        let mut expect_separator = false;
-
         if self.0.parse(state) == Err(Unexpected) {
-            state.restore(checkpoint);
             return Err(Unexpected);
         }
 
+        let mut checkpoint = state.checkpoint();
         loop {
-            if expect_separator && self.1.parse(state) == Err(Unexpected) {
+            if self.1.parse(state) == Err(Unexpected) {
                 state.restore(checkpoint);
                 break;
             }
 
             self.0.parse(state)?;
 
-            expect_separator = true;
             checkpoint = state.checkpoint();
         }
 
