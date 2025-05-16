@@ -1,7 +1,8 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
-    abstract_tree, expect,
+    abstract_tree::{self, Tag},
+    expect,
     parser::{ast, Parser as _},
 };
 
@@ -71,9 +72,9 @@ abstract_tree::abstract_tree! {
     pub struct TraitTypeEquality {
         pub higher_ranked_lifetimes: HigherRankedLifetimes
             = ast::<HigherRankedLifetimes>().optional(),
-        pub lhs: r#type::Type = ast::<r#type::Type>(),
+        pub lhs: Tag<r#type::Type, 1> = ast::<Tag<r#type::Type, 1>>(),
         pub equals: Punctuation = '=',
-        pub rhs: r#type::Type = ast::<r#type::Type>(),
+        pub rhs: Tag<r#type::Type, 2> = ast::<Tag<r#type::Type, 2>>(),
     }
 }
 

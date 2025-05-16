@@ -311,7 +311,9 @@ reference! {
     #[derive(Debug, Clone)]
     pub struct TraitTypeEquality for super::TraitTypeEquality {
         pub higher_ranked_lifetimes (Option<HigherRankedLifetimes>),
+        #{map_input_assert(lhs, &**lhs)}
         pub lhs (r#type::arbitrary::Type),
+        #{map_input_assert(rhs, &**rhs)}
         pub rhs (r#type::arbitrary::Type),
     }
 }
