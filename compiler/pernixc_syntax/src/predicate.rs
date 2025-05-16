@@ -5,12 +5,19 @@ use pernixc_parser::{
     parser::{ast, Parser as _},
 };
 
-use crate::{r#type, Keyword, Lifetime, Punctuation, QualifiedIdentifier};
+use crate::{
+    r#type, Keyword, Lifetime, LifetimeParameter, Punctuation,
+    QualifiedIdentifier,
+};
+
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct HigherRankedLifetimes {
         pub for_keyword: Keyword = expect::Keyword::For,
+        pub lifetimes: LifetimeParameters = ast::<LifetimeParameters>(),
     }
 }
 
@@ -27,7 +34,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct QualifiedIdentifierBound {
         pub not_keyword: Keyword = expect::Keyword::Not.optional(),
-        pub higher_rankded_lifetimes: HigherRankedLifetimes
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
             = ast::<HigherRankedLifetimes>().optional(),
         pub const_keyword: Keyword = expect::Keyword::Const.optional(),
         pub qualified_identifier: QualifiedIdentifier
@@ -50,7 +57,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Type {
-        pub higher_rankded_lifetimes: HigherRankedLifetimes
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
             = ast::<HigherRankedLifetimes>().optional(),
         pub r#type: r#type::Type = ast::<r#type::Type>(),
         pub colon: Punctuation = ':',
@@ -62,7 +69,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TraitTypeEquality {
-        pub higher_rankded_lifetimes: HigherRankedLifetimes
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
             = ast::<HigherRankedLifetimes>().optional(),
         pub lhs: r#type::Type = ast::<r#type::Type>(),
         pub equals: Punctuation = '=',
@@ -74,7 +81,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TraitBound {
         pub not_keyword: Keyword = expect::Keyword::Not.optional(),
-        pub higher_rankded_lifetimes: HigherRankedLifetimes
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
             = ast::<HigherRankedLifetimes>().optional(),
         pub const_keyword: Keyword = expect::Keyword::Const.optional(),
         pub qualified_identifier: QualifiedIdentifier
@@ -95,7 +102,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MarkerBound {
         pub not_keyword: Keyword = expect::Keyword::Not.optional(),
-        pub higher_rankded_lifetimes: HigherRankedLifetimes
+        pub higher_ranked_lifetimes: HigherRankedLifetimes
             = ast::<HigherRankedLifetimes>().optional(),
         pub qualified_identifier: QualifiedIdentifier
             = ast::<QualifiedIdentifier>(),
@@ -114,7 +121,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct LifetimeOutlives {
-        pub operand: Lifetime = ast::<Lifetime>(),
+        pub operand: LifetimeParameter = ast::<LifetimeParameter>(),
         pub colon: Punctuation = ':',
         pub bounds: #[multi] Lifetime
             = ast::<Lifetime>().repeat_with_separator_at_least_once('+'),
@@ -122,6 +129,7 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Predicate {
         TraitTypeEquality(
             TraitTypeEquality = ast::<TraitTypeEquality>()
