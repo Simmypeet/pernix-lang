@@ -20,6 +20,8 @@ pub trait Parser {
 
     /// Optionally parse the given parser, if successful, the result of the
     /// parsing will be used, otherwise, skip this parser.
+    ///
+    /// Grammatically, this is equivalent to `self?`.
     fn optional(self) -> Optional<Self>
     where
         Self: Sized,
@@ -29,6 +31,8 @@ pub trait Parser {
 
     /// Repeats the given parser until it fails, creating a list (zero or more)
     /// of the successful trees.
+    ///
+    /// Grammatically, this is equivalent to `self*`.
     fn repeat(self) -> Repeat<Self>
     where
         Self: Sized,
@@ -41,6 +45,8 @@ pub trait Parser {
     ///
     /// In case of failure, the parser will try parsing the next valid sequence.
     /// and so on.
+    ///
+    /// Grammatically, this is equivalent to `self*`.
     fn repeat_all(self) -> RepeatAll<Self>
     where
         Self: Sized,
@@ -53,6 +59,8 @@ pub trait Parser {
     /// branch.
     ///
     /// This parser allows trailing separators
+    ///
+    /// Grammatically, this is equivalent to `(self (separator self)*)?`.
     fn repeat_all_with_separator<S: Parser>(
         self,
         separator: S,
@@ -66,6 +74,8 @@ pub trait Parser {
     /// Repeats the `self` parser with a `separator` parser in between. The
     /// parser will be ran until it fails. The parser will not allow trailing
     /// separators.
+    ///
+    /// Grammatically, this is equivalent to `(self (separator self)+)?`.
     fn repeat_with_separator<S: Parser>(
         self,
         separator: S,
@@ -74,6 +84,20 @@ pub trait Parser {
         Self: Sized,
     {
         RepeatWithSeparator(self, separator)
+    }
+
+    /// Similar to [`Parser::repeat_with_separator`], but requires at least one
+    /// successful parse of the `self` parser.
+    ///
+    /// Grammatically, this is equivalent to `self (separator self)*`.
+    fn repeat_with_separator_at_least_once<S: Parser>(
+        self,
+        separator: S,
+    ) -> RepeatWithSeparatorAtLeastOnce<Self, S>
+    where
+        Self: Sized,
+    {
+        RepeatWithSeparatorAtLeastOnce(self, separator)
     }
 
     /// Makes the new line significant for the parser and then invokes the
@@ -466,6 +490,50 @@ impl<T: Parser, S: Parser> Parser for RepeatWithSeparator<T, S> {
 }
 
 impl<T: Output<Extract = One>, S> Output for RepeatWithSeparator<T, S> {
+    type Extract = Multiple;
+    type Output<'a> = T::Output<'a>;
+
+    fn output<'a>(
+        &self,
+        node: &'a crate::concrete_tree::Node,
+    ) -> Option<Self::Output<'a>> {
+        T::output(&self.0, node)
+    }
+}
+
+/// See [`Parser::repeat_with_separator_at_least_once`] for more information.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RepeatWithSeparatorAtLeastOnce<T, S>(pub T, pub S);
+
+impl<T: Parser, S: Parser> Parser for RepeatWithSeparatorAtLeastOnce<T, S> {
+    fn parse(&self, state: &mut State) -> Result<(), Unexpected> {
+        let mut checkpoint = state.checkpoint();
+        let mut expect_separator = false;
+
+        if self.0.parse(state) == Err(Unexpected) {
+            state.restore(checkpoint);
+            return Err(Unexpected);
+        }
+
+        loop {
+            if expect_separator && self.1.parse(state) == Err(Unexpected) {
+                state.restore(checkpoint);
+                break;
+            }
+
+            self.0.parse(state)?;
+
+            expect_separator = true;
+            checkpoint = state.checkpoint();
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: Output<Extract = One>, S> Output
+    for RepeatWithSeparatorAtLeastOnce<T, S>
+{
     type Extract = Multiple;
     type Output<'a> = T::Output<'a>;
 
