@@ -8,6 +8,7 @@ use pernixc_parser::{
 use super::{
     constant::Constant,
     implements::Implements,
+    marker::Marker,
     r#enum::Enum,
     r#extern::{Extern, Function},
     r#struct::Struct,
@@ -114,6 +115,6 @@ abstract_tree::abstract_tree! {
         Enum(Enum = ast::<Enum>()),
         Constant(Constant = ast::<Constant>()),
         Extern(Extern = ast::<Extern>()),
-
+        Marker(Marker = ast::<Marker>()),
     }
 }
