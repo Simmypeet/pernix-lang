@@ -11,6 +11,7 @@ use crate::Passable;
 pub mod arbitrary;
 
 pub mod r#enum;
+pub mod function;
 pub mod generic_parameters;
 pub mod r#struct;
 pub mod where_clause;
