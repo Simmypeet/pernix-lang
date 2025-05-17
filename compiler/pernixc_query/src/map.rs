@@ -2,12 +2,13 @@
 
 use std::{any::TypeId, mem::ManuallyDrop};
 
-use dashmap::DashMap;
+use dashmap::{
+    mapref::one::{Ref, RefMut},
+    DashMap,
+};
 use fnv::FnvBuildHasher;
 
 use crate::Key;
-
-type Drop = fn(*mut ());
 
 /// A thread-safe concurrent map that stores multiple types of key-value pairs
 /// as long as the key implements the [`Key`] trait.
@@ -59,6 +60,34 @@ impl Map {
         // skipcq: RS-W1206
         casted_map.get(key).map(|x| x.clone())
     }
+
+    /// Retrieves a reference to a value from the map by its key and applies
+    /// a function to it. Returns `None` if the key does not exist.
+    pub fn inspect<K: Key, T>(
+        &self,
+        key: &K,
+        f: impl FnOnce(Ref<K, K::Value>) -> T,
+    ) -> Option<T> {
+        let inner = self.inner.get(&TypeId::of::<K>())?;
+
+        let casted_map = unsafe { inner.cast_map::<K>() };
+
+        casted_map.get(key).map(f)
+    }
+
+    /// Retrieves a mutable reference to a value from the map by its key and
+    /// applies a function to it. Returns `None` if the key does not exist.
+    pub fn inspect_mut<K: Key, T>(
+        &self,
+        key: &K,
+        f: impl FnOnce(RefMut<K, K::Value>) -> T,
+    ) -> Option<T> {
+        let inner = self.inner.get(&TypeId::of::<K>())?;
+
+        let casted_map = unsafe { inner.cast_map::<K>() };
+
+        casted_map.get_mut(key).map(f)
+    }
 }
 
 fn drop<K: Key>(ptr: *mut ()) {
@@ -69,6 +98,8 @@ fn drop<K: Key>(ptr: *mut ()) {
         ManuallyDrop::drop(&mut *map);
     }
 }
+
+type Drop = fn(*mut ());
 
 struct TransparentMap {
     drop_inst: Drop,
