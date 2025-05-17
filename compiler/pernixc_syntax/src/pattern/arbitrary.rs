@@ -101,7 +101,7 @@ impl<P: Debug + Arbitrary<Strategy = BoxedStrategy<P>> + 'static> Arbitrary
 pub enum Field<P> {
     Wildcard(Wildcard),
     Named(Named),
-    FieldAssociation(FieldAssociation<P>),
+    Association(FieldAssociation<P>),
 }
 
 impl<P: Debug + Arbitrary<Strategy = BoxedStrategy<P>> + 'static> Arbitrary
@@ -115,7 +115,7 @@ impl<P: Debug + Arbitrary<Strategy = BoxedStrategy<P>> + 'static> Arbitrary
             Wildcard::arbitrary().prop_map(Field::Wildcard),
             Named::arbitrary().prop_map(Field::Named),
             FieldAssociation::<P>::arbitrary_with(arg)
-                .prop_map(Field::FieldAssociation),
+                .prop_map(Field::Association),
         ]
         .boxed()
     }
@@ -137,7 +137,7 @@ where
                 left.assert(right, ())
             }
             (
-                Field::FieldAssociation(left),
+                Field::Association(left),
                 super::Field::FieldAssociation(right),
             ) => left.assert(right, ()),
 
