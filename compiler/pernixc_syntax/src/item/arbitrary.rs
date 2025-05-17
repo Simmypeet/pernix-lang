@@ -7,9 +7,41 @@ use proptest::{
 };
 
 use super::where_clause::arbitrary::WhereClause;
-use crate::arbitrary::{
-    write_indent_line_for_indent_display, IndentDisplay, Passable,
+use crate::{
+    arbitrary::{
+        write_indent_line_for_indent_display, IndentDisplay, Passable,
+    },
+    reference,
 };
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct TrailingWhereClause for super::TrailingWhereClause {
+        pub where_clause (WhereClause),
+    }
+}
+
+impl Arbitrary for TrailingWhereClause {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        WhereClause::arbitrary()
+            .prop_map(|where_clause| Self { where_clause })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for TrailingWhereClause {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        writeln!(f, ":")?;
+        write_indent_line_for_indent_display(f, &self.where_clause, indent + 1)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Body<T> {
