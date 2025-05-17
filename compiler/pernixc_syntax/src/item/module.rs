@@ -6,16 +6,14 @@ use pernixc_parser::{
 };
 
 use super::{
-    constant::Constant,
-    implements::Implements,
-    marker::Marker,
-    r#enum::Enum,
-    r#extern::{Extern, Function},
-    r#struct::Struct,
-    r#trait::Trait,
-    r#type::Type,
+    constant::Constant, function::Function, implements::Implements,
+    marker::Marker, r#enum::Enum, r#extern::Extern, r#struct::Struct,
+    r#trait::Trait, r#type::Type,
 };
 use crate::{AccessModifier, Identifier, Keyword, Passable, SimplePath};
+
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -52,7 +50,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct ImportItems {
-        pub import_items: #[multi] ImportItem
+        pub items: #[multi] ImportItem
             = ast::<ImportItem>().repeat_with_separator_at_least_once(','),
     }
 }
@@ -61,7 +59,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct ParenthesizedImportItems {
-        pub import_items: #[multi] ImportItem
+        pub items: #[multi] ImportItem
             = ast::<ImportItem>().repeat_all_with_separator(','),
     }
 }
@@ -79,7 +77,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Import {
-        pub from: From = ast::<From>(),
+        pub from: From = ast::<From>().optional(),
         pub import_keyword: Keyword = expect::Keyword::Import,
         pub items: ImportItemsKind = ast::<ImportItemsKind>(),
     }
@@ -104,6 +102,7 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Member {
         Module(Module = ast::<Module>()),
         Import(Import = ast::<Import>()),
@@ -118,3 +117,6 @@ abstract_tree::abstract_tree! {
         Marker(Marker = ast::<Marker>()),
     }
 }
+
+#[cfg(test)]
+mod test;
