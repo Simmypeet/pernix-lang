@@ -24,6 +24,7 @@ members = [
     "compiler/pernixc_target",
     "compiler/pernixc_diff",
     "compiler/pernixc_parser",
+    "compiler/pernixc_query",
     # "lsp/pernix_server",
 ]
 

@@ -1,0 +1,15 @@
+[package]
+name = "pernixc_query"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+dashmap = { workspace = true }
+fnv = { workspace = true }
+static_assertions = { workspace = true }
+
+[lints]
+workspace = true
