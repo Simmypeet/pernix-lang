@@ -15,6 +15,7 @@ pub mod r#enum;
 pub mod r#extern;
 pub mod function;
 pub mod generic_parameters;
+pub mod implements;
 pub mod r#struct;
 pub mod r#trait;
 pub mod r#type;

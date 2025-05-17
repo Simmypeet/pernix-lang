@@ -6,11 +6,9 @@ use pernixc_parser::{
 };
 
 use crate::{
-    item::{generic_parameters::GenericParameters, Body},
-    pattern::Irrefutable,
-    r#type::Type,
-    statement::Statement,
-    AccessModifier, Identifier, Keyword, Punctuation,
+    item::generic_parameters::GenericParameters, pattern::Irrefutable,
+    r#type::Type, statement::Statement, AccessModifier, Identifier, Keyword,
+    Punctuation,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -79,9 +77,11 @@ abstract_tree::abstract_tree! {
         pub unsafe_keyword: Keyword = expect::Keyword::Unsafe.optional(),
         pub const_keyword: Keyword = expect::Keyword::Const.optional(),
         pub signature: Signature = ast::<Signature>(),
-        pub body: Body<Statement> = ast::<Body<Statement>>(),
+        pub body: super::Body<Statement> = ast::<super::Body<Statement>>(),
     }
 }
+
+pub type Body = super::Body<Statement>;
 
 #[cfg(test)]
 mod test;
