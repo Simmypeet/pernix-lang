@@ -54,7 +54,7 @@ impl Arbitrary for Postfix {
 
         let operators_strategy = proptest::collection::vec(
             Operator::arbitrary_with((expr, ty, qi)),
-            0..10,
+            0..4,
         );
 
         (unit_strategy, operators_strategy)

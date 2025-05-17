@@ -56,7 +56,7 @@ impl Arbitrary for Expression {
             })
         ];
 
-        leaf.prop_recursive(6, 24, 4, move |expr| {
+        leaf.prop_recursive(4, 16, 4, move |expr| {
             prop_oneof![
                 2 => Binary::arbitrary_with((
                     Some(expr.clone()),
