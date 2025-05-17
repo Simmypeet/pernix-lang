@@ -3,7 +3,7 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy as _};
 
 use crate::{
     arbitrary::{AccessModifier, IndentDisplay},
-    expression::arbitrary::Expression,
+    expression::{arbitrary::Expression, terminator::arbitrary::Terminator},
     item::{
         arbitrary::TrailingWhereClause,
         generic_parameters::arbitrary::GenericParameters,
@@ -72,7 +72,38 @@ impl Arbitrary for Body {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            Expression::arbitrary(),
+            Expression::arbitrary().prop_filter(
+                "filter block appear last",
+                |x| !match x {
+                    Expression::Binary(binary) => {
+                        let node = binary
+                            .chain
+                            .last()
+                            .map_or_else(|| &binary.first, |x| &x.node);
+
+                        node.is_block()
+                    }
+                    Expression::Terminator(terminator) => {
+                        let binary = match terminator {
+                            Terminator::Return(a) => a.binary.as_ref(),
+                            Terminator::Continue(_) => None,
+                            Terminator::Express(a) => a.binary.as_ref(),
+                            Terminator::Break(a) => a.binary.as_ref(),
+                        };
+
+                        let Some(binary) = binary else {
+                            return true;
+                        };
+
+                        let node = binary
+                            .chain
+                            .last()
+                            .map_or_else(|| &binary.first, |x| &x.node);
+
+                        node.is_block()
+                    }
+                },
+            ),
             proptest::option::of(TrailingWhereClause::arbitrary()),
         )
             .prop_map(|(expression, trailing_where_clause)| Self {
