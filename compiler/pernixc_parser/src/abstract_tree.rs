@@ -58,7 +58,7 @@ macro_rules! field_extract {
             $field_type:ty
             $(: $field_attr:ident)?
         ),)*
-        where
+        where []
     ) => {
         $(
             $crate::abstract_tree::__field_extract!(
@@ -71,7 +71,7 @@ macro_rules! field_extract {
                     $field_type
                     $(: $field_attr)?
                 )
-                where
+                where []
             );
         )*
     };
@@ -112,7 +112,7 @@ macro_rules! field_extract {
             $field_type:ty
             $(: $field_attr:ident)?
         )
-        where $($generic_param:ident),*
+        where [$($generic_param:ident)*]
     ) => {
         /*
         IF YOU FOUND ERROR HERE: please make sure that the parser
@@ -342,7 +342,7 @@ macro_rules! abstract_tree {
                     ->
                     $field_type
                     $(: $field_attr)?
-                ),)?)* where $($($generic_param),*)?
+                ),)?)* where [ $($($generic_param)*)? ]
             );
 
             #[doc(hidden)]
