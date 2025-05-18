@@ -12,7 +12,7 @@ use pernixc_target::Global;
 /// automatically implement the [`Key`] trait for your type. The derive macro
 /// will also generate a unique type name for the key.
 ///
-/// ``` no_run
+/// ``` ignore
 /// #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
 /// #[value(MyValue)]
 /// pub struct MyKey;
