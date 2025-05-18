@@ -8,7 +8,7 @@ use dashmap::{
 };
 use fnv::FnvBuildHasher;
 
-use crate::Key;
+use crate::key::Key;
 
 /// A thread-safe concurrent map that stores multiple types of key-value pairs
 /// as long as the key implements the [`Key`] trait.

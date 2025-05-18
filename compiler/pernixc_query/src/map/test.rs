@@ -1,21 +1,18 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
-use super::Map;
-use crate::Key;
+use pernixc_query_derive::Key;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+use super::Map;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[value(i32)]
+#[pernixc_query(crate)]
 struct I32Key(i32);
 
-impl Key for I32Key {
-    type Value = i32;
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[value(i32)]
+#[pernixc_query(crate)]
 struct I64Key(i64);
-
-impl Key for I64Key {
-    type Value = i64;
-}
 
 #[test]
 fn basic() {
@@ -30,7 +27,9 @@ fn basic() {
     assert!(map.insert(I64Key(10), 10).is_none());
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[value(DropCheck)]
+#[pernixc_query(crate)]
 pub struct DropKey(i32);
 
 #[derive(Debug, Clone)]
@@ -40,10 +39,6 @@ impl Drop for DropCheck {
     fn drop(&mut self) {
         self.0.store(true, std::sync::atomic::Ordering::SeqCst);
     }
-}
-
-impl Key for DropKey {
-    type Value = DropCheck;
 }
 
 #[test]
@@ -69,4 +64,3 @@ fn drop() {
     assert!(second_check.load(std::sync::atomic::Ordering::SeqCst));
     assert!(!fake_check.load(std::sync::atomic::Ordering::SeqCst));
 }
-
