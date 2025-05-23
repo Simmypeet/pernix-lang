@@ -19,6 +19,7 @@ smallbox = { workspace = true }
 getset = { workspace = true }
 serde = { workspace = true }
 derive_more = { workspace = true }
+enum-as-inner = { workspace = true }
 
 
 [lints]

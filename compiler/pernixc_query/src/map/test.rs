@@ -35,6 +35,17 @@ pub struct DropKey(i32);
 #[derive(Debug, Clone, Default)]
 pub struct DropCheck(pub Arc<AtomicBool>);
 
+impl PartialEq for DropCheck {
+    fn eq(&self, other: &Self) -> bool {
+        let this = self.0.load(std::sync::atomic::Ordering::SeqCst);
+        let other = other.0.load(std::sync::atomic::Ordering::SeqCst);
+
+        this == other
+    }
+}
+
+impl Eq for DropCheck {}
+
 impl Drop for DropCheck {
     fn drop(&mut self) {
         self.0.store(true, std::sync::atomic::Ordering::SeqCst);

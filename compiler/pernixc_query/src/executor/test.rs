@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
-use super::{Executor, Registry};
-use crate::Key;
+use super::Executor;
+use crate::{Database, Key};
 
 #[derive(
     Key, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize,
@@ -16,31 +16,36 @@ struct Test;
 struct MyTestExecutor;
 
 impl Executor<Test> for MyTestExecutor {
-    fn execute(&self, Test: Test) -> String { "it works".to_string() }
+    fn execute(&self, _: &Database, Test: Test) -> String {
+        "it works".to_string()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct MySecondTestExecutor;
 
 impl Executor<Test> for MySecondTestExecutor {
-    fn execute(&self, Test: Test) -> String {
+    fn execute(&self, _: &Database, Test: Test) -> String {
         "it works for the second time".to_string()
     }
 }
 
 #[test]
 fn registry() {
-    let registry = Registry::default();
-    assert!(registry.register(Arc::new(MyTestExecutor)).is_none());
+    let mut db = Database::default();
+    assert!(db.register_executor(Arc::new(MyTestExecutor)).is_none());
 
-    let first_executor = registry.get::<Test>().unwrap();
-    assert_eq!(first_executor.execute(Test), "it works");
+    let first_executor = db.get_executor::<Test>().unwrap();
+    assert_eq!(first_executor.execute(&db, Test), "it works");
 
     let old_executor =
-        registry.register(Arc::new(MySecondTestExecutor)).unwrap();
+        db.register_executor(Arc::new(MySecondTestExecutor)).unwrap();
 
     assert!(Arc::ptr_eq(&old_executor, &first_executor));
 
-    let second_executor = registry.get::<Test>().unwrap();
-    assert_eq!(second_executor.execute(Test), "it works for the second time");
+    let second_executor = db.get_executor::<Test>().unwrap();
+    assert_eq!(
+        second_executor.execute(&db, Test),
+        "it works for the second time"
+    );
 }

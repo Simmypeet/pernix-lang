@@ -51,6 +51,7 @@ impl Map {
     }
 
     /// Checks if the map contains a key of the given type.
+    #[allow(unused)]
     pub fn contains_key<K: Key>(&self, key: &K) -> bool {
         let Some(inner) = self.inner.get(&TypeId::of::<K>()) else {
             return false;
@@ -74,6 +75,7 @@ impl Map {
 
     /// Retrieves a reference to a value from the map by its key and applies
     /// a function to it. Returns `None` if the key does not exist.
+    #[allow(unused)]
     pub fn inspect<K: Key, T>(
         &self,
         key: &K,
@@ -88,6 +90,7 @@ impl Map {
 
     /// Retrieves a mutable reference to a value from the map by its key and
     /// applies a function to it. Returns `None` if the key does not exist.
+    #[allow(unused)]
     pub fn inspect_mut<K: Key, T>(
         &self,
         key: &K,

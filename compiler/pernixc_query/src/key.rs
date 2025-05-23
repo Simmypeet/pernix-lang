@@ -5,6 +5,13 @@ use std::hash::Hash;
 use pernixc_arena::ID;
 use pernixc_target::Global;
 
+/// A tag struct used for signifying that a key is an input key.
+///
+/// An input key is a key that has the value explicitly set by the user and
+/// can be thought of the starting point of the whole query system.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Input;
+
 /// A trait representing a key that can be used to store and retrieve values
 /// inside a [`map::Map`].
 ///
@@ -19,7 +26,7 @@ use pernixc_target::Global;
 /// ```
 pub trait Key: 'static + Send + Sync + Eq + Clone + std::hash::Hash {
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Clone + Default;
+    type Value: 'static + Send + Sync + Clone + Default + Eq;
 
     /// Gets the stable unique type name of the key.
     fn unique_type_name() -> &'static str;

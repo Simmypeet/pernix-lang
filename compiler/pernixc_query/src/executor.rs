@@ -2,13 +2,16 @@
 
 use std::{
     any::{Any, TypeId},
+    collections::HashMap,
     sync::Arc,
 };
 
-use dashmap::DashMap;
 use parking_lot::MutexGuard;
 
-use crate::key::{Dynamic, Key};
+use crate::{
+    key::{Dynamic, Key},
+    Database,
+};
 
 /// Implements by the query executors to compute the value of the given key.
 pub trait Executor<K: Key>: Any + Send + Sync {
@@ -28,25 +31,26 @@ pub trait Executor<K: Key>: Any + Send + Sync {
     /// tracking and will lead to undefined behavior. It worths mentioning that
     /// the query system does distribute the work across multiple threads at
     /// very higher-level. So the executor should not worry about that.
-    fn execute(&self, key: K) -> K::Value;
+    fn execute(&self, db: &Database, key: K) -> K::Value;
 }
 
 /// Contains the [`Executor`] objects for each key type. This struct allows
 /// registering and retrieving executors for different query key types.
 #[derive(Debug, Default)]
 pub struct Registry {
-    executors_by_key_type_id: DashMap<TypeId, Entry>,
+    executors_by_key_type_id: HashMap<TypeId, Entry>,
 }
 
-impl Registry {
+impl Database {
     /// Registers a new executor for the given [`K`] key type. If an executor
     /// for the given key type already exists, it will be replaced with the new
     /// one and the old one will be returned.
-    pub fn register<K: Key, E: Executor<K>>(
-        &self,
+    pub fn register_executor<K: Key, E: Executor<K>>(
+        &mut self,
         executor: Arc<E>,
     ) -> Option<Arc<dyn Executor<K>>> {
-        self.executors_by_key_type_id
+        self.executor_registry
+            .executors_by_key_type_id
             .insert(TypeId::of::<K>(), Entry::new(executor))
             .map(Entry::downcast::<K>)
     }
@@ -54,8 +58,9 @@ impl Registry {
     /// Retrieves the executor for the given [`K`] key type. If no executor
     /// exists for the given key type, it will return `None`.
     #[must_use]
-    pub fn get<K: Key>(&self) -> Option<Arc<dyn Executor<K>>> {
-        self.executors_by_key_type_id
+    pub fn get_executor<K: Key>(&self) -> Option<Arc<dyn Executor<K>>> {
+        self.executor_registry
+            .executors_by_key_type_id
             .get(&TypeId::of::<K>())
             .map(|entry| entry.clone().downcast::<K>())
     }
@@ -64,7 +69,10 @@ impl Registry {
         &self,
         type_id: &TypeId,
     ) -> Option<InvokeQuery> {
-        self.executors_by_key_type_id.get(type_id).map(|entry| entry.invoke)
+        self.executor_registry
+            .executors_by_key_type_id
+            .get(type_id)
+            .map(|entry| entry.invoke)
     }
 }
 
