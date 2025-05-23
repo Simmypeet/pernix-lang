@@ -50,6 +50,17 @@ impl Map {
         casted_map.insert(key, value)
     }
 
+    /// Checks if the map contains a key of the given type.
+    pub fn contains_key<K: Key>(&self, key: &K) -> bool {
+        let Some(inner) = self.inner.get(&TypeId::of::<K>()) else {
+            return false;
+        };
+
+        let casted_map = unsafe { inner.cast_map::<K>() };
+
+        casted_map.contains_key(key)
+    }
+
     /// Retrieves a value from the map by its key. Returns `None` if the key
     /// does not exist.
     pub fn get<K: Key>(&self, key: &K) -> Option<K::Value> {

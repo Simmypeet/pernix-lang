@@ -6,8 +6,9 @@ use std::{
 };
 
 use dashmap::DashMap;
+use parking_lot::MutexGuard;
 
-use crate::key::Key;
+use crate::key::{Dynamic, Key};
 
 /// Implements by the query executors to compute the value of the given key.
 pub trait Executor<K: Key>: Any + Send + Sync {
@@ -58,12 +59,28 @@ impl Registry {
             .get(&TypeId::of::<K>())
             .map(|entry| entry.clone().downcast::<K>())
     }
+
+    pub(super) fn get_invoke_query(
+        &self,
+        type_id: &TypeId,
+    ) -> Option<InvokeQuery> {
+        self.executors_by_key_type_id.get(type_id).map(|entry| entry.invoke)
+    }
 }
+
+type ExecutorArcDowncast = fn(Arc<dyn Any + Send + Sync>, &mut dyn Any);
+type InvokeQuery =
+    for<'db, 'k> fn(
+        &'db super::Database,
+        &'k dyn Dynamic,
+        MutexGuard<'db, super::call_graph::CallGraph>,
+    ) -> MutexGuard<'db, super::call_graph::CallGraph>;
 
 #[derive(Clone)]
 struct Entry {
     executor: Arc<dyn Any + Send + Sync>,
-    downcast: fn(Arc<dyn Any + Send + Sync>, &mut dyn Any),
+    downcast: ExecutorArcDowncast,
+    invoke: InvokeQuery,
 }
 
 impl std::fmt::Debug for Entry {
@@ -76,6 +93,16 @@ impl std::fmt::Debug for Entry {
 
 impl Entry {
     fn new<K: Key, E: Executor<K>>(executor: Arc<E>) -> Self {
+        fn invoke<'db, K: Key>(
+            database: &'db super::Database,
+            key: &dyn Dynamic,
+            call_graph: MutexGuard<'db, super::call_graph::CallGraph>,
+        ) -> MutexGuard<'db, super::call_graph::CallGraph> {
+            let key = key.any().downcast_ref::<K>().unwrap();
+
+            database.query_internal(key, call_graph).1
+        }
+
         let downcast = |executor: Arc<dyn Any + Send + Sync>,
                         target: &mut dyn Any| {
             let target =
@@ -85,7 +112,8 @@ impl Entry {
             *target = Some(executor);
         };
 
-        Self { executor, downcast }
+        // skipcq: RS-W1026 false positive
+        Self { executor, downcast, invoke: invoke::<K> }
     }
 
     fn downcast<K: Key>(self) -> Arc<dyn Executor<K>> {

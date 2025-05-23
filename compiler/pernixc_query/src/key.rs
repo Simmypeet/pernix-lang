@@ -19,7 +19,7 @@ use pernixc_target::Global;
 /// ```
 pub trait Key: 'static + Send + Sync + Eq + Clone + std::hash::Hash {
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Clone;
+    type Value: 'static + Send + Sync + Clone + Default;
 
     /// Gets the stable unique type name of the key.
     fn unique_type_name() -> &'static str;
@@ -46,7 +46,7 @@ pub trait Dynamic {
     #[doc(hidden)]
     fn smallbox_clone(&self) -> SmallBox<dyn Dynamic>;
     #[doc(hidden)]
-    fn debug_name(&self) -> &'static str;
+    fn unique_type_name(&self) -> &'static str;
 }
 
 impl<K: Key> Dynamic for K {
@@ -67,13 +67,13 @@ impl<K: Key> Dynamic for K {
         smallbox::smallbox!(self.clone())
     }
 
-    fn debug_name(&self) -> &'static str { std::any::type_name::<Self>() }
+    fn unique_type_name(&self) -> &'static str { K::unique_type_name() }
 }
 
 impl std::fmt::Debug for dyn Dynamic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Dynamic")
-            .field(&self.debug_name())
+            .field(&self.unique_type_name())
             .finish_non_exhaustive()
     }
 }

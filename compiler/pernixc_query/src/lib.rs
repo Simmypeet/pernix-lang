@@ -17,9 +17,16 @@ mod map;
 #[derive(Debug, Default, Getters)]
 pub struct Database {
     call_graph: Mutex<call_graph::CallGraph>,
+
     /// The registry of executors allowing registering and retrieving executors
     /// for different query key types.
     #[get = "pub"]
     executor_registry: executor::Registry,
+
     map: Map,
+
+    version: usize,
 }
+
+#[cfg(test)]
+mod test;

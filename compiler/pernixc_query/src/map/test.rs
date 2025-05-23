@@ -32,7 +32,7 @@ fn basic() {
 #[pernixc_query(crate)]
 pub struct DropKey(i32);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DropCheck(pub Arc<AtomicBool>);
 
 impl Drop for DropCheck {

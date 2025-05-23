@@ -3,8 +3,7 @@
 
 use std::{collections::HashMap, sync::Arc, thread::ThreadId};
 
-use parking_lot::Condvar;
-use pernixc_abort::Abort;
+use parking_lot::{Condvar, MutexGuard};
 
 use crate::{
     key::{Dynamic, Key, SmallBox},
@@ -27,6 +26,8 @@ pub struct CallGraph {
     dependency_graph:
         HashMap<SmallBox<dyn Dynamic>, Vec<SmallBox<dyn Dynamic>>>,
 
+    version_infos: HashMap<SmallBox<dyn Dynamic>, VersionTracking>,
+
     cyclic_dependencies: Vec<CyclicDependency>,
 }
 
@@ -43,6 +44,23 @@ impl std::fmt::Debug for CallGraph {
     }
 }
 
+/// Stores the information about the version of a query result used to track
+/// the validity of the result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct VersionTracking {
+    /// The version when the value was computed.
+    computed_at_version: usize,
+
+    /// The latest version that the value was verified against its result from
+    /// the latest computation.
+    verfied_at_version: usize,
+
+    /// Whether the value was choosen by `Default` because of the cyclic
+    /// dependency error; this will mark the value as invalid and there will
+    /// always be an attempt to recompute the value
+    defaulted_by_cyclic_dependency: bool,
+}
+
 impl Database {
     /// Queries the value associated with the given key.
     ///
@@ -50,15 +68,91 @@ impl Database {
     ///
     /// If the key doesn't have a corresponding [`Executor`] registered in the
     /// database.
-    pub fn query<T: Dynamic + Key>(self, key: &T) -> Result<T::Value, Abort> {
+    pub fn query<T: Dynamic + Key>(self, key: &T) -> T::Value {
+        self.query_internal(key, self.call_graph.lock()).0
+    }
+
+    pub(super) fn query_internal<'a, T: Dynamic + Key>(
+        &'a self,
+        key: &T,
+        mut call_graph: MutexGuard<'a, CallGraph>,
+    ) -> (T::Value, MutexGuard<'a, CallGraph>) {
         let key_smallbox = key.smallbox_clone();
-        let mut call_graph = self.call_graph.lock();
 
         // query has already been computed return the result
-        if let Some(result) = self.map.get(key) {
-            return Ok(result);
+        let Some(result) = self.map.get(key) else {
+            // the value hasn't been computed yet, so we need to compute it
+            let (_, call_graph) =
+                self.fresh_query(key, &key_smallbox, call_graph);
+
+            return (self.map.get(key).unwrap(), call_graph);
+        };
+
+        // the result is already up to date
+        let version_info =
+            *call_graph.version_infos.get(&key_smallbox).unwrap();
+
+        if version_info.verfied_at_version == self.version {
+            return (result, call_graph);
         }
 
+        let inputs = call_graph
+            .dependency_graph
+            .get(&key_smallbox)
+            .unwrap()
+            .iter()
+            .map(|x| x.smallbox_clone())
+            .collect::<Vec<_>>();
+
+        let mut recompute = false;
+        for dep in inputs {
+            // run inputs verification for the input as well
+            let invoke_fn = self
+                .executor_registry
+                .get_invoke_query(&dep.any().type_id())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "no executor registered for key type `{}`",
+                        dep.unique_type_name()
+                    )
+                });
+
+            call_graph = invoke_fn(self, &*dep, call_graph);
+
+            // check if there's need to recompute the value
+            if !recompute {
+                let input_version_info =
+                    call_graph.version_infos.get(&dep).unwrap();
+
+                recompute |= (input_version_info.computed_at_version
+                    > version_info.verfied_at_version)
+                    || input_version_info.defaulted_by_cyclic_dependency;
+            }
+        }
+
+        if recompute {
+            // recompute the value
+            let (_, returned_call_graph) =
+                self.fresh_query(key, &key_smallbox, call_graph);
+
+            call_graph = returned_call_graph;
+        } else {
+            call_graph
+                .version_infos
+                .get_mut(&key_smallbox)
+                .unwrap()
+                .verfied_at_version = self.version;
+        }
+
+        (self.map.get(key).unwrap(), call_graph)
+    }
+
+    fn fresh_query<'a, T: Dynamic + Key>(
+        &'a self,
+        key: &T,
+        key_smallbox: &SmallBox<dyn Dynamic>,
+        mut call_graph: MutexGuard<'a, CallGraph>,
+    ) -> (bool, MutexGuard<'a, CallGraph>) {
         let executor = self.executor_registry.get::<T>().unwrap_or_else(|| {
             panic!(
                 "no executor registered for key type {}",
@@ -83,7 +177,21 @@ impl Database {
                         .cyclic_dependencies
                         .push(CyclicDependency { records_stack: stack });
 
-                    return Err(Abort);
+                    // insert a default value for the cyclic dependency
+                    self.map
+                        .insert(key.clone(), <T::Value as Default>::default());
+
+                    call_graph.version_infos.insert(
+                        key.smallbox_clone(),
+                        VersionTracking {
+                            computed_at_version: self.version,
+                            verfied_at_version: self.version,
+                            defaulted_by_cyclic_dependency: true,
+                        },
+                    );
+
+                    // signifying that the value was defaulted
+                    return (false, call_graph);
                 }
 
                 // follow the dependency chain
@@ -110,7 +218,7 @@ impl Database {
             .or_default()
             .push(key.smallbox_clone());
 
-        let sync = call_graph.condvars_by_record.get(&key_smallbox).cloned();
+        let sync = call_graph.condvars_by_record.get(key_smallbox).cloned();
 
         // there's an another thread that is computing the same record
         if let Some(sync) = sync {
@@ -123,6 +231,7 @@ impl Database {
                 .insert(key_smallbox.smallbox_clone(), sync.clone())
                 .is_none());
 
+            // skipcq: RS-E1021 false positive
             drop(call_graph); // release the context lock
 
             let value = executor.execute(key.clone());
@@ -131,10 +240,18 @@ impl Database {
             call_graph = self.call_graph.lock();
 
             assert!(self.map.insert(key.clone(), value).is_none());
+            call_graph.version_infos.insert(
+                key_smallbox.smallbox_clone(),
+                VersionTracking {
+                    computed_at_version: self.version,
+                    verfied_at_version: self.version,
+                    defaulted_by_cyclic_dependency: false,
+                },
+            );
 
             assert!(call_graph
                 .condvars_by_record
-                .remove(&key_smallbox)
+                .remove(key_smallbox)
                 .is_some());
 
             // notify the other threads that the component is computed
@@ -148,7 +265,7 @@ impl Database {
                 .unwrap()
                 .pop()
                 .unwrap()
-                == key_smallbox,
+                == *key_smallbox,
         );
 
         if let Some(called_from) = called_from {
@@ -158,6 +275,6 @@ impl Database {
                 .is_some());
         }
 
-        Ok(self.map.get(key).unwrap())
+        (true, call_graph)
     }
 }
