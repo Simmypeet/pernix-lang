@@ -13,6 +13,10 @@ use crate::{
     Database,
 };
 
+/// A unit struct for signaling cyclic dependencies in query execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CyclicError;
+
 /// Implements by the query executors to compute the value of the given key.
 pub trait Executor<K: Key>: Any + Send + Sync {
     /// Computes the result [`K::Value`] for the given [`K`] key.
@@ -31,7 +35,13 @@ pub trait Executor<K: Key>: Any + Send + Sync {
     /// tracking and will lead to undefined behavior. It worths mentioning that
     /// the query system does distribute the work across multiple threads at
     /// very higher-level. So the executor should not worry about that.
-    fn execute(&self, db: &Database, key: K) -> K::Value;
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(value)` on successful computation, or `Err(CyclicError)`
+    /// when the query is part of a strongly connected component (SCC) with
+    /// cyclic dependencies.
+    fn execute(&self, db: &Database, key: K) -> Result<K::Value, CyclicError>;
 }
 
 /// Contains the [`Executor`] objects for each key type. This struct allows

@@ -35,6 +35,16 @@ pub struct CallGraph {
     version_info_by_keys: HashMap<SmallBox<dyn Dynamic>, VersionInfo>,
 
     cyclic_dependencies: Vec<CyclicDependency>,
+    cyclic_queries: HashSet<SmallBox<dyn Dynamic>>,
+}
+
+impl CallGraph {
+    fn called_from(&self) -> Option<SmallBox<dyn Dynamic>> {
+        let current_thread_id = std::thread::current().id();
+        self.record_stacks_by_thread_id
+            .get(&current_thread_id)
+            .and_then(|x| x.last().map(|x| x.smallbox_clone()))
+    }
 }
 
 /// Stores the error information about a cyclic dependency in the call graph.
@@ -136,16 +146,59 @@ impl Database {
     ///
     /// If the key doesn't have a corresponding [`Executor`] registered in the
     /// database.
-    pub fn query<T: Dynamic + Key>(&self, key: &T) -> T::Value {
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(value)` for successful queries, or `Err(CyclicError)` for
+    /// queries that are part of a strongly connected component (SCC). Queries
+    /// outside the SCC that depend on cyclic queries will receive default
+    /// values.
+    pub fn query<T: Dynamic + Key>(
+        &self,
+        key: &T,
+    ) -> Result<T::Value, crate::executor::CyclicError> {
         self.query_internal(key, self.call_graph.lock()).0
     }
 
+    fn check_cyclic(
+        &self,
+        computed_successfully: bool,
+        called_from: Option<&SmallBox<dyn Dynamic>>,
+        call_graph: &mut MutexGuard<CallGraph>,
+    ) -> Result<(), crate::executor::CyclicError> {
+        let (Some(called_from), true) = (called_from, computed_successfully)
+        else {
+            return Ok(());
+        };
+
+        let Some(version_info) =
+            call_graph.version_info_by_keys.get(called_from)
+        else {
+            return Ok(());
+        };
+
+        if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) && version_info.verfied_at_version == self.version
+        {
+            return Err(crate::executor::CyclicError);
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
     pub(super) fn query_internal<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
         mut call_graph: MutexGuard<'a, CallGraph>,
-    ) -> (T::Value, MutexGuard<'a, CallGraph>) {
+    ) -> (
+        Result<T::Value, crate::executor::CyclicError>,
+        MutexGuard<'a, CallGraph>,
+    ) {
         let key_smallbox = key.smallbox_clone();
+
+        let called_from = call_graph.called_from();
 
         // query has already been computed return the result
         let Some(mut result) = self.map.get(key) else {
@@ -153,10 +206,22 @@ impl Database {
                 .store(true, std::sync::atomic::Ordering::SeqCst);
 
             // the value hasn't been computed yet, so we need to compute it
-            let (_, call_graph) =
-                self.fresh_query(key, &key_smallbox, call_graph);
+            let (computed_successfully, mut call_graph) = self.fresh_query(
+                key,
+                &key_smallbox,
+                called_from.as_ref(),
+                call_graph,
+            );
 
-            return (self.map.get(key).unwrap(), call_graph);
+            let Ok(()) = self.check_cyclic(
+                computed_successfully,
+                called_from.as_ref(),
+                &mut call_graph,
+            ) else {
+                return (Err(crate::executor::CyclicError), call_graph);
+            };
+
+            return (Ok(self.map.get(key).unwrap()), call_graph);
         };
 
         // the result is already up to date
@@ -164,12 +229,6 @@ impl Database {
             *call_graph.version_info_by_keys.get(&key_smallbox).unwrap();
 
         if version_info.kind == Kind::Input {
-            let current_thread_id = std::thread::current().id();
-            let called_from = call_graph
-                .record_stacks_by_thread_id
-                .get(&current_thread_id)
-                .and_then(|x| x.last().map(|x| x.smallbox_clone()));
-
             // add the dependency of the input
             if let Some(called_from) = &called_from {
                 call_graph
@@ -180,13 +239,13 @@ impl Database {
             }
 
             // the value is an `input` value, always returns as it.
-            return (result, call_graph);
+            return (Ok(result), call_graph);
         }
 
         self.last_was_query.store(true, std::sync::atomic::Ordering::SeqCst);
 
         if version_info.verfied_at_version == self.version {
-            return (result, call_graph);
+            return (Ok(result), call_graph);
         }
 
         let inputs = call_graph
@@ -230,8 +289,24 @@ impl Database {
 
         if recompute {
             // recompute the value
-            let (_, returned_call_graph) =
-                self.fresh_query(key, &key_smallbox, call_graph);
+            let (computed_successfully, mut returned_call_graph) = self
+                .fresh_query(
+                    key,
+                    &key_smallbox,
+                    called_from.as_ref(),
+                    call_graph,
+                );
+
+            let Ok(()) = self.check_cyclic(
+                computed_successfully,
+                called_from.as_ref(),
+                &mut returned_call_graph,
+            ) else {
+                return (
+                    Err(crate::executor::CyclicError),
+                    returned_call_graph,
+                );
+            };
 
             call_graph = returned_call_graph;
 
@@ -245,13 +320,15 @@ impl Database {
                 .verfied_at_version = self.version;
         }
 
-        (result, call_graph)
+        (Ok(result), call_graph)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn fresh_query<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
         key_smallbox: &SmallBox<dyn Dynamic>,
+        called_from: Option<&SmallBox<dyn Dynamic>>,
         mut call_graph: MutexGuard<'a, CallGraph>,
     ) -> (bool, MutexGuard<'a, CallGraph>) {
         call_graph
@@ -265,13 +342,9 @@ impl Database {
         });
 
         let current_thread_id = std::thread::current().id();
-        let called_from = call_graph
-            .record_stacks_by_thread_id
-            .get(&current_thread_id)
-            .and_then(|x| x.last().map(|x| x.smallbox_clone()));
 
         // check for cyclic dependencies
-        if let Some(called_from) = &called_from {
+        if let Some(called_from) = called_from {
             call_graph
                 .dependency_graph
                 .get_mut(called_from)
@@ -283,6 +356,34 @@ impl Database {
 
             loop {
                 if stack.last().unwrap() == called_from {
+                    for call in &stack {
+                        assert!(call_graph
+                            .cyclic_queries
+                            .insert(call.smallbox_clone()));
+
+                        match call_graph
+                            .version_info_by_keys
+                            .entry(call.smallbox_clone())
+                        {
+                            Entry::Occupied(occupied_entry) => {
+                                let version_info = occupied_entry.into_mut();
+                                version_info.verfied_at_version = self.version;
+                                version_info.kind = Kind::Derived {
+                                    defaulted_by_cyclic_dependency: true,
+                                };
+                            }
+                            Entry::Vacant(vacant_entry) => {
+                                vacant_entry.insert(VersionInfo {
+                                    updated_at_version: self.version,
+                                    verfied_at_version: self.version,
+                                    kind: Kind::Derived {
+                                        defaulted_by_cyclic_dependency: true,
+                                    },
+                                });
+                            }
+                        }
+                    }
+
                     call_graph
                         .cyclic_dependencies
                         .push(CyclicDependency { records_stack: stack });
@@ -333,12 +434,16 @@ impl Database {
         let sync = call_graph.condvars_by_record.get(key_smallbox).cloned();
 
         // there's an another thread that is computing the same record
-        if let Some(sync) = sync {
+        let succeeded = if let Some(sync) = sync {
             sync.wait(&mut call_graph);
+            true
         } else {
-            call_graph =
+            let (new_call_graph, ok) =
                 self.compute(key, key_smallbox, call_graph, &*executor);
-        }
+
+            call_graph = new_call_graph;
+            ok
+        };
 
         assert!(
             call_graph
@@ -353,20 +458,22 @@ impl Database {
         if let Some(called_from) = called_from {
             assert!(call_graph
                 .current_dependencies_by_dependant
-                .remove(&called_from)
+                .remove(called_from)
                 .is_some());
         }
 
-        (true, call_graph)
+        // Return whether the computation was successful (not cyclic)
+        (succeeded, call_graph)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn compute<'a, K: Key + Dynamic>(
         &'a self,
         key: &K,
         key_smallbox: &SmallBox<dyn Dynamic>,
         mut call_graph: MutexGuard<'a, CallGraph>,
         executor: &dyn Executor<K>,
-    ) -> MutexGuard<'a, CallGraph> {
+    ) -> (MutexGuard<'a, CallGraph>, bool) {
         // compute the component
         let sync = Arc::new(Condvar::new());
         assert!(call_graph
@@ -377,46 +484,134 @@ impl Database {
         // skipcq: RS-E1021 false positive
         drop(call_graph); // release the context lock
 
-        let value = executor.execute(self, key.clone());
+        let executor_result = executor.execute(self, key.clone());
+        let ok = executor_result.is_ok();
 
         // re-acquire the context lock
         call_graph = self.call_graph.lock();
 
-        let updated = self.map.entry(key.clone(), |entry| match entry {
-            dashmap::Entry::Occupied(mut occupied_entry) => {
-                let updated = *occupied_entry.get_mut() != value;
+        // Handle the executor result
+        match executor_result {
+            Ok(value) => {
+                // Successful computation - store the value normally
+                assert!(!call_graph.cyclic_queries.contains(key_smallbox));
 
-                if updated {
-                    occupied_entry.insert(value);
+                let updated =
+                    self.map.entry(key.clone(), |entry| match entry {
+                        dashmap::Entry::Occupied(mut occupied_entry) => {
+                            let updated = *occupied_entry.get_mut() != value;
+
+                            if updated {
+                                occupied_entry.insert(value);
+                            }
+
+                            updated
+                        }
+                        dashmap::Entry::Vacant(vacant_entry) => {
+                            vacant_entry.insert(value);
+
+                            false
+                        }
+                    });
+
+                match call_graph
+                    .version_info_by_keys
+                    .entry(key.smallbox_clone())
+                {
+                    Entry::Occupied(mut occupied_entry) => {
+                        // if the entry has been marked as cyclic, but somehow
+                        // it produced an Ok(value), this is the bug in the
+                        // executor
+                        if matches!(occupied_entry.get().kind, Kind::Derived {
+                            defaulted_by_cyclic_dependency: true
+                        }) && occupied_entry.get().verfied_at_version
+                            == self.version
+                        {
+                            panic!(
+                                "executor for `{}` produced a value, but it \
+                                 was marked as cyclic",
+                                key.unique_type_name()
+                            );
+                        }
+
+                        let version_info = occupied_entry.get_mut();
+                        version_info.verfied_at_version = self.version;
+                        version_info.kind = Kind::Derived {
+                            defaulted_by_cyclic_dependency: false,
+                        };
+
+                        if updated {
+                            version_info.updated_at_version = self.version;
+                        }
+                    }
+                    Entry::Vacant(vacant_entry) => {
+                        vacant_entry.insert(VersionInfo {
+                            updated_at_version: self.version,
+                            verfied_at_version: self.version,
+                            kind: Kind::Derived {
+                                defaulted_by_cyclic_dependency: false,
+                            },
+                        });
+                    }
                 }
-
-                updated
             }
-            dashmap::Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(value);
-
-                false
-            }
-        });
-
-        match call_graph.version_info_by_keys.entry(key.smallbox_clone()) {
-            Entry::Occupied(mut occupied_entry) => {
-                let version_info = occupied_entry.get_mut();
-                version_info.verfied_at_version = self.version;
-                version_info.kind =
-                    Kind::Derived { defaulted_by_cyclic_dependency: false };
-
-                if updated {
-                    version_info.updated_at_version = self.version;
-                }
-            }
-            Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(VersionInfo {
-                    updated_at_version: self.version,
-                    verfied_at_version: self.version,
-                    kind: Kind::Derived {
-                        defaulted_by_cyclic_dependency: false,
+            Err(_cyclic_error) => {
+                call_graph.version_info_by_keys.insert(
+                    key.smallbox_clone(),
+                    VersionInfo {
+                        updated_at_version: self.version,
+                        verfied_at_version: self.version,
+                        kind: Kind::Derived {
+                            defaulted_by_cyclic_dependency: true,
+                        },
                     },
+                );
+
+                match call_graph
+                    .version_info_by_keys
+                    .entry(key.smallbox_clone())
+                {
+                    Entry::Occupied(occupied_entry) => {
+                        let version_info = occupied_entry.into_mut();
+
+                        // must've been marked as cyclic before
+                        assert!(
+                            version_info.verfied_at_version == self.version
+                                && matches!(version_info.kind, Kind::Derived {
+                                    defaulted_by_cyclic_dependency: true
+                                })
+                        );
+
+                        version_info.verfied_at_version = self.version;
+                        version_info.updated_at_version = self.version;
+                        version_info.kind = Kind::Derived {
+                            defaulted_by_cyclic_dependency: true,
+                        };
+                    }
+                    Entry::Vacant(vacant_entry) => {
+                        vacant_entry.insert(VersionInfo {
+                            updated_at_version: self.version,
+                            verfied_at_version: self.version,
+                            kind: Kind::Derived {
+                                defaulted_by_cyclic_dependency: true,
+                            },
+                        });
+                    }
+                }
+
+                // Cyclic dependency detected - store default value and mark as
+                // cyclic
+                let default_value = <K::Value as Default>::default();
+
+                self.map.entry(key.clone(), |entry| match entry {
+                    dashmap::Entry::Occupied(mut occupied_entry) => {
+                        occupied_entry.insert(default_value);
+                        false
+                    }
+                    dashmap::Entry::Vacant(vacant_entry) => {
+                        vacant_entry.insert(default_value);
+                        false
+                    }
                 });
             }
         }
@@ -426,7 +621,7 @@ impl Database {
         // notify the other threads that the component is computed
         sync.notify_all();
 
-        call_graph
+        (call_graph, ok)
     }
 }
 

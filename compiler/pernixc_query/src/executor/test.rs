@@ -16,8 +16,12 @@ struct Test;
 struct MyTestExecutor;
 
 impl Executor<Test> for MyTestExecutor {
-    fn execute(&self, _: &Database, Test: Test) -> String {
-        "it works".to_string()
+    fn execute(
+        &self,
+        _: &Database,
+        Test: Test,
+    ) -> Result<String, super::CyclicError> {
+        Ok("it works".to_string())
     }
 }
 
@@ -25,8 +29,12 @@ impl Executor<Test> for MyTestExecutor {
 struct MySecondTestExecutor;
 
 impl Executor<Test> for MySecondTestExecutor {
-    fn execute(&self, _: &Database, Test: Test) -> String {
-        "it works for the second time".to_string()
+    fn execute(
+        &self,
+        _: &Database,
+        Test: Test,
+    ) -> Result<String, super::CyclicError> {
+        Ok("it works for the second time".to_string())
     }
 }
 
@@ -36,7 +44,7 @@ fn registry() {
     assert!(db.register_executor(Arc::new(MyTestExecutor)).is_none());
 
     let first_executor = db.get_executor::<Test>().unwrap();
-    assert_eq!(first_executor.execute(&db, Test), "it works");
+    assert_eq!(first_executor.execute(&db, Test), Ok("it works".to_string()));
 
     let old_executor =
         db.register_executor(Arc::new(MySecondTestExecutor)).unwrap();
@@ -46,6 +54,6 @@ fn registry() {
     let second_executor = db.get_executor::<Test>().unwrap();
     assert_eq!(
         second_executor.execute(&db, Test),
-        "it works for the second time"
+        Ok("it works for the second time".to_string())
     );
 }
