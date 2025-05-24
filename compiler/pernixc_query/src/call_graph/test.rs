@@ -1,3 +1,5 @@
+#![allow(clippy::similar_names)]
+
 use std::sync::{atomic::AtomicUsize, Arc};
 
 use pernixc_query_derive::Key;
@@ -53,7 +55,7 @@ impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
 }
 
 #[test]
-fn test_negate_variable() {
+fn negate_variable() {
     let mut db = Database::default();
 
     db.set_input(&Variable("a"), 100);
@@ -390,3 +392,323 @@ fn multi_layer_dependency_skipping() {
     assert_eq!(complex_executor.get_call_count(), 2); // NOT called
 }
 
+// Test to demonstrate how the incremental query system should handle
+// complex dependencies and potential cycles in practice
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct TypeCheckQuery(&'static str);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct DependencyQuery(&'static str);
+
+#[derive(Debug, Default)]
+pub struct TypeCheckExecutor {
+    pub call_count: AtomicUsize,
+}
+
+impl TypeCheckExecutor {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Executor<TypeCheckQuery> for TypeCheckExecutor {
+    fn execute(
+        &self,
+        db: &Database,
+        key: TypeCheckQuery,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Simulate type checking that depends on other type information
+        let base_value = db.query(&Variable(key.0))?;
+        let dependency_value = db.query(&DependencyQuery(key.0))?;
+
+        Ok(base_value + dependency_value)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct DependencyExecutor {
+    pub call_count: AtomicUsize,
+}
+
+impl DependencyExecutor {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Executor<DependencyQuery> for DependencyExecutor {
+    fn execute(
+        &self,
+        db: &Database,
+        key: DependencyQuery,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Simulate dependency resolution
+        let base_value = db.query(&Variable(key.0))?;
+        Ok(base_value * 2)
+    }
+}
+
+#[test]
+fn incremental_compilation_simulation() {
+    let mut db = Database::default();
+
+    // Set up input values (representing source code)
+    db.set_input(&Variable("module_a"), 10);
+    db.set_input(&Variable("module_b"), 20);
+
+    let type_check_executor = Arc::new(TypeCheckExecutor::default());
+    let dependency_executor = Arc::new(DependencyExecutor::default());
+
+    db.register_executor(Arc::clone(&type_check_executor));
+    db.register_executor(Arc::clone(&dependency_executor));
+
+    // First compilation: everything computed from scratch
+    let result_a = db.query(&TypeCheckQuery("module_a"));
+    let result_b = db.query(&TypeCheckQuery("module_b"));
+
+    assert_eq!(result_a, Ok(30)); // 10 + (10 * 2) = 30
+    assert_eq!(result_b, Ok(60)); // 20 + (20 * 2) = 60
+
+    // Both executors should have been called for both modules
+    assert_eq!(type_check_executor.get_call_count(), 2);
+    assert_eq!(dependency_executor.get_call_count(), 2);
+
+    // Simulate incremental change: only module_a changes
+    db.set_input(&Variable("module_a"), 15);
+
+    // Reset call counts to track incremental behavior
+    type_check_executor
+        .call_count
+        .store(0, std::sync::atomic::Ordering::SeqCst);
+    dependency_executor
+        .call_count
+        .store(0, std::sync::atomic::Ordering::SeqCst);
+
+    // Re-query: only module_a should be recomputed
+    let new_result_a = db.query(&TypeCheckQuery("module_a"));
+    let cached_result_b = db.query(&TypeCheckQuery("module_b"));
+
+    assert_eq!(new_result_a, Ok(45)); // 15 + (15 * 2) = 45
+    assert_eq!(cached_result_b, Ok(60)); // Same as before, should be cached
+
+    // Only module_a related computations should be called
+    assert_eq!(type_check_executor.get_call_count(), 1); // Only for module_a
+    assert_eq!(dependency_executor.get_call_count(), 1); // Only for module_a
+}
+
+// Test cases for cyclic dependency handling
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct CyclicQueryA;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct CyclicQueryB;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct DependentQuery;
+
+#[derive(Debug, Default)]
+pub struct CyclicExecutorA {
+    pub call_count: AtomicUsize,
+}
+
+impl CyclicExecutorA {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Executor<CyclicQueryA> for CyclicExecutorA {
+    fn execute(
+        &self,
+        db: &Database,
+        _key: CyclicQueryA,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // This creates a cycle: A depends on B, B depends on A
+        let b_value = db.query(&CyclicQueryB)?;
+        Ok(b_value + 10)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct CyclicExecutorB {
+    pub call_count: AtomicUsize,
+}
+
+impl CyclicExecutorB {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Executor<CyclicQueryB> for CyclicExecutorB {
+    fn execute(
+        &self,
+        db: &Database,
+        _key: CyclicQueryB,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // This completes the cycle: B depends on A, A depends on B
+        let a_value = db.query(&CyclicQueryA)?;
+        Ok(a_value + 20)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct DependentExecutor {
+    pub call_count: AtomicUsize,
+}
+
+impl DependentExecutor {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Executor<DependentQuery> for DependentExecutor {
+    fn execute(
+        &self,
+        db: &Database,
+        _key: DependentQuery,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // This query depends on the cyclic queries
+        let a_value = db.query(&CyclicQueryA)?;
+        let b_value = db.query(&CyclicQueryB)?;
+        Ok(a_value + b_value + 100)
+    }
+}
+
+#[test]
+fn cyclic_dependency_returns_default_values() {
+    let mut db = Database::default();
+
+    let executor_a = Arc::new(CyclicExecutorA::default());
+    let executor_b = Arc::new(CyclicExecutorB::default());
+
+    db.register_executor(Arc::clone(&executor_a));
+    db.register_executor(Arc::clone(&executor_b));
+
+    // When we query CyclicQueryA, it should detect the cycle A -> B -> A
+    // and return default values (0 for i32) without calling the executors
+    let result_a = db.query(&CyclicQueryA);
+    let result_b = db.query(&CyclicQueryB);
+
+    // Both should return default values (0 for i32)
+    assert_eq!(result_a, Ok(0));
+    assert_eq!(result_b, Ok(0));
+
+    // The executors will be called and increment their call counts,
+    // but they will receive CyclicError when trying to query their dependencies
+    // and return early without completing their computation
+
+    // Both executors should be called exactly once during cycle detection:
+    // A is called first, then B is called, then when B tries to call A again,
+    // the cycle is detected and CyclicError is returned without calling A again
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+}
+
+#[test]
+fn dependent_query_uses_cyclic_default_values() {
+    let mut db = Database::default();
+
+    let executor_a = Arc::new(CyclicExecutorA::default());
+    let executor_b = Arc::new(CyclicExecutorB::default());
+    let executor_dependent = Arc::new(DependentExecutor::default());
+
+    db.register_executor(Arc::clone(&executor_a));
+    db.register_executor(Arc::clone(&executor_b));
+    db.register_executor(Arc::clone(&executor_dependent));
+
+    // Query the dependent query, which depends on the cyclic queries
+    let result = db.query(&DependentQuery);
+
+    // DependentQuery should execute and use the default values from the cyclic
+    // queries Default values: CyclicQueryA = 0, CyclicQueryB = 0
+    // DependentQuery = 0 + 0 + 100 = 100
+    assert_eq!(result, Ok(100));
+
+    // When DependentQuery queries CyclicQueryA, the executor for CyclicQueryA
+    // will be called and try to query CyclicQueryB, which triggers cycle
+    // detection. Both cyclic executors will be called exactly once during
+    // cycle detection.
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+
+    // The dependent executor should have been called once
+    assert_eq!(executor_dependent.get_call_count(), 1);
+}
+
+#[test]
+fn comprehensive_cyclic_dependency_behavior() {
+    let mut db = Database::default();
+
+    let executor_a = Arc::new(CyclicExecutorA::default());
+    let executor_b = Arc::new(CyclicExecutorB::default());
+    let executor_dependent = Arc::new(DependentExecutor::default());
+
+    db.register_executor(Arc::clone(&executor_a));
+    db.register_executor(Arc::clone(&executor_b));
+    db.register_executor(Arc::clone(&executor_dependent));
+
+    // First, query CyclicQueryA directly to trigger cycle detection
+    let result_a = db.query(&CyclicQueryA);
+    assert_eq!(result_a, Ok(0)); // Should return default value
+
+    // Check call counts after first cycle detection
+    let initial_a_calls = executor_a.get_call_count();
+    let initial_b_calls = executor_b.get_call_count();
+
+    // Both executors should have been called exactly once during cycle
+    // detection
+    assert_eq!(initial_a_calls, 1);
+    assert_eq!(initial_b_calls, 1);
+
+    // Now query CyclicQueryB - it should return cached default value
+    let result_b = db.query(&CyclicQueryB);
+    assert_eq!(result_b, Ok(0)); // Should return default value
+
+    // Call counts shouldn't change because values are cached
+    assert_eq!(executor_a.get_call_count(), initial_a_calls);
+    assert_eq!(executor_b.get_call_count(), initial_b_calls);
+
+    // Now query DependentQuery - it should use the cached default values
+    let result_dependent = db.query(&DependentQuery);
+    assert_eq!(result_dependent, Ok(100)); // 0 + 0 + 100 = 100
+
+    // The dependent executor should be called once
+    assert_eq!(executor_dependent.get_call_count(), 1);
+
+    // The cyclic executors' call counts shouldn't change
+    assert_eq!(executor_a.get_call_count(), initial_a_calls);
+    assert_eq!(executor_b.get_call_count(), initial_b_calls);
+
+    // Query everything again - all should be cached
+    let result_a2 = db.query(&CyclicQueryA);
+    let result_b2 = db.query(&CyclicQueryB);
+    let result_dependent2 = db.query(&DependentQuery);
+
+    assert_eq!(result_a2, Ok(0));
+    assert_eq!(result_b2, Ok(0));
+    assert_eq!(result_dependent2, Ok(100));
+
+    // No additional executor calls should be made
+    assert_eq!(executor_a.get_call_count(), initial_a_calls);
+    assert_eq!(executor_b.get_call_count(), initial_b_calls);
+    assert_eq!(executor_dependent.get_call_count(), 1);
+}

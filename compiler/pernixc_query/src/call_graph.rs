@@ -35,7 +35,6 @@ pub struct CallGraph {
     version_info_by_keys: HashMap<SmallBox<dyn Dynamic>, VersionInfo>,
 
     cyclic_dependencies: Vec<CyclicDependency>,
-    cyclic_queries: HashSet<SmallBox<dyn Dynamic>>,
 }
 
 impl CallGraph {
@@ -166,7 +165,7 @@ impl Database {
         called_from: Option<&SmallBox<dyn Dynamic>>,
         call_graph: &mut MutexGuard<CallGraph>,
     ) -> Result<(), crate::executor::CyclicError> {
-        let (Some(called_from), true) = (called_from, computed_successfully)
+        let (Some(called_from), true) = (called_from, !computed_successfully)
         else {
             return Ok(());
         };
@@ -357,10 +356,6 @@ impl Database {
             loop {
                 if stack.last().unwrap() == called_from {
                     for call in &stack {
-                        assert!(call_graph
-                            .cyclic_queries
-                            .insert(call.smallbox_clone()));
-
                         match call_graph
                             .version_info_by_keys
                             .entry(call.smallbox_clone())
@@ -493,9 +488,6 @@ impl Database {
         // Handle the executor result
         match executor_result {
             Ok(value) => {
-                // Successful computation - store the value normally
-                assert!(!call_graph.cyclic_queries.contains(key_smallbox));
-
                 let updated =
                     self.map.entry(key.clone(), |entry| match entry {
                         dashmap::Entry::Occupied(mut occupied_entry) => {
