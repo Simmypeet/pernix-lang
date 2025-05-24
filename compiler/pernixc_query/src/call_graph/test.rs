@@ -624,10 +624,7 @@ impl Executor<DependentQuery> for ConditionalDependentExecutor {
         // This query depends on the conditional cyclic queries
         let a_value = db.query(&ConditionalCyclicQueryA)?;
         let b_value = db.query(&ConditionalCyclicQueryB)?;
-        println!(
-            "ConditionalDependentExecutor: A = {}, B = {}",
-            a_value, b_value
-        );
+
         Ok(a_value + b_value + 100)
     }
 }
@@ -937,7 +934,7 @@ fn conditional_cyclic_with_dependent_query() {
     db.register_executor(Arc::clone(&executor_dependent));
 
     // Phase 1: No cycle - dependent query should use computed values
-    println!("starting Phase 1");
+
     db.set_input(&CycleControlVariable, 2);
 
     let result_dependent = db.query(&DependentQuery);
@@ -952,7 +949,7 @@ fn conditional_cyclic_with_dependent_query() {
     assert_eq!(executor_dependent.get_call_count(), 1);
 
     // Phase 2: Create cycle - dependent query should use default values
-    println!("starting Phase 2");
+
     db.set_input(&CycleControlVariable, 1);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -972,22 +969,15 @@ fn conditional_cyclic_with_dependent_query() {
     assert_eq!(executor_dependent.get_call_count(), 1);
 
     // Phase 3: Break cycle again - dependent query should use computed values
-    println!("starting Phase 3");
+
     db.set_input(&CycleControlVariable, 4);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
-    executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+    executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst); // Query A and B to ensure they're computed
+    let _debug_a = db.query(&ConditionalCyclicQueryA);
+    let _debug_b = db.query(&ConditionalCyclicQueryB);
 
-    // Query A and B to ensure they're computed
-    println!("About to query A directly");
-    let debug_a = db.query(&ConditionalCyclicQueryA);
-    println!("About to query B directly");
-    let debug_b = db.query(&ConditionalCyclicQueryB);
-    println!("A = {:?}, B = {:?}", debug_a, debug_b);
-
-    println!("About to query DependentQuery");
     let result_dependent_normal = db.query(&DependentQuery);
-    println!("Dependent result: {:?}", result_dependent_normal);
 
     // DependentQuery = A + B + 100 = (4*100) + (4*200) + 100 = 400 + 800 + 100
     // = 1300

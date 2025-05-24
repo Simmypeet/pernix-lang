@@ -269,16 +269,6 @@ impl Database {
                 .map(|x| x.smallbox_clone())
                 .collect::<Vec<_>>();
 
-            println!(
-                "{} has {} input(s)",
-                key.unique_type_name(),
-                inputs.len()
-            );
-
-            for dep in &inputs {
-                println!("  - {}", dep.unique_type_name());
-            }
-
             let mut recompute = false;
             for dep in &inputs {
                 // run inputs verification for the input as well
@@ -314,12 +304,6 @@ impl Database {
 
             recompute
         };
-
-        println!(
-            "Final decision for `{}`: recompute = {}",
-            key.unique_type_name(),
-            recompute
-        );
 
         if recompute {
             // recompute the value
