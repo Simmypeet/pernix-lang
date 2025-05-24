@@ -593,6 +593,32 @@ impl Executor<DependentQuery> for DependentExecutor {
     }
 }
 
+// Executor for DependentQuery that depends on conditional cyclic queries
+#[derive(Debug, Default)]
+pub struct ConditionalDependentExecutor {
+    pub call_count: AtomicUsize,
+}
+
+impl ConditionalDependentExecutor {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl Executor<DependentQuery> for ConditionalDependentExecutor {
+    fn execute(
+        &self,
+        db: &Database,
+        _key: DependentQuery,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // This query depends on the conditional cyclic queries
+        let a_value = db.query(&ConditionalCyclicQueryA)?;
+        let b_value = db.query(&ConditionalCyclicQueryB)?;
+        Ok(a_value + b_value + 100)
+    }
+}
+
 #[test]
 fn cyclic_dependency_returns_default_values() {
     let mut db = Database::default();
@@ -710,5 +736,240 @@ fn comprehensive_cyclic_dependency_behavior() {
     // No additional executor calls should be made
     assert_eq!(executor_a.get_call_count(), initial_a_calls);
     assert_eq!(executor_b.get_call_count(), initial_b_calls);
+    assert_eq!(executor_dependent.get_call_count(), 1);
+}
+
+// Test cases for conditional cyclic dependency handling
+// These queries create cycles only when certain input conditions are met
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct ConditionalCyclicQueryA;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct ConditionalCyclicQueryB;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[pernixc_query(crate)]
+#[value(i32)]
+pub struct CycleControlVariable;
+
+#[derive(Debug, Default)]
+pub struct ConditionalCyclicExecutorA {
+    pub call_count: AtomicUsize,
+}
+
+impl ConditionalCyclicExecutorA {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn reset_call_count(&self) {
+        self.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl Executor<ConditionalCyclicQueryA> for ConditionalCyclicExecutorA {
+    fn execute(
+        &self,
+        db: &Database,
+        _key: ConditionalCyclicQueryA,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Read the control variable to determine whether to create a cycle
+        let control_value = db.query(&CycleControlVariable)?;
+
+        if control_value == 1 {
+            // When control_value is 1, create a cycle by querying B
+            let b_value = db.query(&ConditionalCyclicQueryB)?;
+            Ok(b_value + 10)
+        } else {
+            // When control_value is not 1, no cycle - just return a computed
+            // value
+            Ok(control_value * 100)
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ConditionalCyclicExecutorB {
+    pub call_count: AtomicUsize,
+}
+
+impl ConditionalCyclicExecutorB {
+    pub fn get_call_count(&self) -> usize {
+        self.call_count.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub fn reset_call_count(&self) {
+        self.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl Executor<ConditionalCyclicQueryB> for ConditionalCyclicExecutorB {
+    fn execute(
+        &self,
+        db: &Database,
+        _key: ConditionalCyclicQueryB,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Read the control variable to determine whether to create a cycle
+        let control_value = db.query(&CycleControlVariable)?;
+
+        if control_value == 1 {
+            // When control_value is 1, complete the cycle by querying A
+            let a_value = db.query(&ConditionalCyclicQueryA)?;
+            Ok(a_value + 20)
+        } else {
+            // When control_value is not 1, no cycle - just return a computed
+            // value
+            Ok(control_value * 200)
+        }
+    }
+}
+
+#[test]
+fn conditional_cyclic_dependency() {
+    let mut db = Database::default();
+
+    let executor_a = Arc::new(ConditionalCyclicExecutorA::default());
+    let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
+
+    db.register_executor(Arc::clone(&executor_a));
+    db.register_executor(Arc::clone(&executor_b));
+
+    // Phase 1: Set control value to create NO cycle (control_value != 1)
+    db.set_input(&CycleControlVariable, 5);
+
+    // Query both A and B - they should compute normal values without cycles
+    let result_a = db.query(&ConditionalCyclicQueryA);
+    let result_b = db.query(&ConditionalCyclicQueryB);
+
+    // Expected values: A = 5 * 100 = 500, B = 5 * 200 = 1000
+    assert_eq!(result_a, Ok(500));
+    assert_eq!(result_b, Ok(1000));
+
+    // Both executors should have been called once each
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+
+    // Phase 2: Change control value to CREATE a cycle (control_value == 1)
+    db.set_input(&CycleControlVariable, 1);
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Query A - this should trigger cycle detection and return default values
+    let result_a_cyclic = db.query(&ConditionalCyclicQueryA);
+    let result_b_cyclic = db.query(&ConditionalCyclicQueryB);
+
+    // Both should return default values (0 for i32) due to cycle detection
+    assert_eq!(result_a_cyclic, Ok(0));
+    assert_eq!(result_b_cyclic, Ok(0));
+
+    // Both executors should be called exactly once during cycle detection
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+
+    // Phase 3: Change control value back to break the cycle (control_value !=
+    // 1)
+    db.set_input(&CycleControlVariable, 3);
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Query both A and B - they should recompute and return normal values again
+    let result_a_normal = db.query(&ConditionalCyclicQueryA);
+    let result_b_normal = db.query(&ConditionalCyclicQueryB);
+
+    // Expected values: A = 3 * 100 = 300, B = 3 * 200 = 600
+    assert_eq!(result_a_normal, Ok(300));
+    assert_eq!(result_b_normal, Ok(600));
+
+    // Both executors should have been called once each for recomputation
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+
+    // Phase 4: Create cycle again with a different control value
+    // (control_value // == 1)
+    db.set_input(&CycleControlVariable, 1);
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Query A - cycle should be detected again and default values returned
+    let result_a_cyclic2 = db.query(&ConditionalCyclicQueryA);
+    let result_b_cyclic2 = db.query(&ConditionalCyclicQueryB);
+
+    // Both should return default values (0 for i32) due to cycle detection
+    assert_eq!(result_a_cyclic2, Ok(0));
+    assert_eq!(result_b_cyclic2, Ok(0));
+
+    // Both executors should be called exactly once during cycle detection
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+}
+
+#[test]
+fn conditional_cyclic_with_dependent_query() {
+    let mut db = Database::default();
+
+    let executor_a = Arc::new(ConditionalCyclicExecutorA::default());
+    let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
+    let executor_dependent = Arc::new(ConditionalDependentExecutor::default());
+
+    db.register_executor(Arc::clone(&executor_a));
+    db.register_executor(Arc::clone(&executor_b));
+    db.register_executor(Arc::clone(&executor_dependent));
+
+    // Phase 1: No cycle - dependent query should use computed values
+    db.set_input(&CycleControlVariable, 2);
+
+    let result_dependent = db.query(&DependentQuery);
+
+    // DependentQuery = A + B + 100 = (2*100) + (2*200) + 100 = 200 + 400 + 100
+    // = 700
+    assert_eq!(result_dependent, Ok(700));
+
+    // All executors should have been called
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+    assert_eq!(executor_dependent.get_call_count(), 1);
+
+    // Phase 2: Create cycle - dependent query should use default values
+    db.set_input(&CycleControlVariable, 1);
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Reset dependent executor call count to track new computation
+    executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+
+    let result_dependent_cyclic = db.query(&DependentQuery);
+
+    // DependentQuery should use default values: 0 + 0 + 100 = 100
+    assert_eq!(result_dependent_cyclic, Ok(100));
+
+    // Cyclic executors called once each during cycle detection
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+    // Dependent executor called once to compute with new (default) values
+    assert_eq!(executor_dependent.get_call_count(), 1);
+
+    // Phase 3: Break cycle again - dependent query should use computed values
+    db.set_input(&CycleControlVariable, 4);
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+    executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+
+    let result_dependent_normal = db.query(&DependentQuery);
+
+    // DependentQuery = A + B + 100 = (4*100) + (4*200) + 100 = 400 + 800 + 100
+    // = 1300
+    assert_eq!(result_dependent_normal, Ok(1300));
+
+    // All executors should have been called for recomputation
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
     assert_eq!(executor_dependent.get_call_count(), 1);
 }

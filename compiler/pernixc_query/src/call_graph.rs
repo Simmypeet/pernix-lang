@@ -247,44 +247,51 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        let inputs = call_graph
-            .dependency_graph
-            .get(&key_smallbox)
-            .unwrap()
-            .iter()
-            .map(|x| x.smallbox_clone())
-            .collect::<Vec<_>>();
+        let recompute = if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) {
+            true
+        } else {
+            let inputs = call_graph
+                .dependency_graph
+                .get(&key_smallbox)
+                .unwrap()
+                .iter()
+                .map(|x| x.smallbox_clone())
+                .collect::<Vec<_>>();
 
-        let mut recompute = false;
-        for dep in inputs {
-            // run inputs verification for the input as well
-            let is_input =
-                call_graph.version_info_by_keys.get(&dep).unwrap().kind
-                    == Kind::Input;
+            let mut recompute = false;
+            for dep in inputs {
+                // run inputs verification for the input as well
+                let is_input =
+                    call_graph.version_info_by_keys.get(&dep).unwrap().kind
+                        == Kind::Input;
 
-            if !is_input {
-                let invoke_fn = self
-                    .get_invoke_query(&dep.any().type_id())
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "no executor registered for key type `{}`",
-                            dep.unique_type_name()
-                        )
-                    });
+                if !is_input {
+                    let invoke_fn = self
+                        .get_invoke_query(&dep.any().type_id())
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "no executor registered for key type `{}`",
+                                dep.unique_type_name()
+                            )
+                        });
 
-                call_graph = invoke_fn(self, &*dep, call_graph);
+                    call_graph = invoke_fn(self, &*dep, call_graph);
+                }
+
+                // check if there's need to recompute the value
+                if !recompute {
+                    let input_version_info =
+                        call_graph.version_info_by_keys.get(&dep).unwrap();
+
+                    recompute |= input_version_info.updated_at_version
+                        > version_info.verfied_at_version;
+                }
             }
 
-            // check if there's need to recompute the value
-            if !recompute {
-                let input_version_info =
-                    call_graph.version_info_by_keys.get(&dep).unwrap();
-
-                recompute |= (input_version_info.updated_at_version
-                    > version_info.verfied_at_version)
-                    || input_version_info.kind.as_derived().is_some_and(|x| *x);
-            }
-        }
+            recompute
+        };
 
         if recompute {
             // recompute the value
