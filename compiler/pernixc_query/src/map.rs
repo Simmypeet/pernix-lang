@@ -88,6 +88,31 @@ impl Map {
         casted_map.get(key).map(f)
     }
 
+    /// Gets the entry for a key in the map and invokes a function with it.
+    pub fn entry<K: Key, O>(
+        &self,
+        key: K,
+        f: impl FnOnce(dashmap::Entry<K, K::Value>) -> O,
+    ) -> O {
+        let inner = self.inner.get(&TypeId::of::<K>()).map_or_else(
+            || {
+                assert!(self
+                    .inner
+                    .insert(TypeId::of::<K>(), TransparentMap::new::<K>())
+                    .is_none());
+
+                self.inner
+                    .get(&TypeId::of::<K>())
+                    .expect("Failed to get key-value pair")
+            },
+            |inner| inner,
+        );
+
+        let casted_map = unsafe { inner.cast_map::<K>() };
+
+        f(casted_map.entry(key))
+    }
+
     /// Retrieves a mutable reference to a value from the map by its key and
     /// applies a function to it. Returns `None` if the key does not exist.
     #[allow(unused)]

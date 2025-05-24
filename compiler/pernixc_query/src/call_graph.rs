@@ -382,15 +382,44 @@ impl Database {
         // re-acquire the context lock
         call_graph = self.call_graph.lock();
 
-        self.map.insert(key.clone(), value);
-        call_graph.version_info_by_keys.insert(
-            key_smallbox.smallbox_clone(),
-            VersionInfo {
-                updated_at_version: self.version,
-                verfied_at_version: self.version,
-                kind: Kind::Derived { defaulted_by_cyclic_dependency: false },
-            },
-        );
+        let updated = self.map.entry(key.clone(), |entry| match entry {
+            dashmap::Entry::Occupied(mut occupied_entry) => {
+                let updated = *occupied_entry.get_mut() != value;
+
+                if updated {
+                    occupied_entry.insert(value);
+                }
+
+                updated
+            }
+            dashmap::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(value);
+
+                false
+            }
+        });
+
+        match call_graph.version_info_by_keys.entry(key.smallbox_clone()) {
+            Entry::Occupied(mut occupied_entry) => {
+                let version_info = occupied_entry.get_mut();
+                version_info.verfied_at_version = self.version;
+                version_info.kind =
+                    Kind::Derived { defaulted_by_cyclic_dependency: false };
+
+                if updated {
+                    version_info.updated_at_version = self.version;
+                }
+            }
+            Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(VersionInfo {
+                    updated_at_version: self.version,
+                    verfied_at_version: self.version,
+                    kind: Kind::Derived {
+                        defaulted_by_cyclic_dependency: false,
+                    },
+                });
+            }
+        }
 
         assert!(call_graph.condvars_by_record.remove(key_smallbox).is_some());
 
