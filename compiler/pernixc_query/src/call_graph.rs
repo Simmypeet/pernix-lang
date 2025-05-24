@@ -2,7 +2,7 @@
 //! queries.
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     sync::Arc,
     thread::ThreadId,
 };
@@ -30,7 +30,7 @@ pub struct CallGraph {
         HashMap<SmallBox<dyn Dynamic>, SmallBox<dyn Dynamic>>,
 
     dependency_graph:
-        HashMap<SmallBox<dyn Dynamic>, Vec<SmallBox<dyn Dynamic>>>,
+        HashMap<SmallBox<dyn Dynamic>, HashSet<SmallBox<dyn Dynamic>>>,
 
     version_info_by_keys: HashMap<SmallBox<dyn Dynamic>, VersionInfo>,
 
@@ -176,7 +176,7 @@ impl Database {
                     .dependency_graph
                     .get_mut(called_from)
                     .unwrap()
-                    .push(key_smallbox);
+                    .insert(key_smallbox);
             }
 
             // the value is an `input` value, always returns as it.
@@ -254,7 +254,9 @@ impl Database {
         key_smallbox: &SmallBox<dyn Dynamic>,
         mut call_graph: MutexGuard<'a, CallGraph>,
     ) -> (bool, MutexGuard<'a, CallGraph>) {
-        call_graph.dependency_graph.insert(key.smallbox_clone(), vec![]);
+        call_graph
+            .dependency_graph
+            .insert(key.smallbox_clone(), HashSet::new());
         let executor = self.get_executor::<T>().unwrap_or_else(|| {
             panic!(
                 "no executor registered for key type {}",
@@ -274,7 +276,7 @@ impl Database {
                 .dependency_graph
                 .get_mut(called_from)
                 .unwrap()
-                .push(key.smallbox_clone());
+                .insert(key.smallbox_clone());
 
             // check if `target_record` can go to `called_from`
             let mut stack = vec![key.smallbox_clone()];
