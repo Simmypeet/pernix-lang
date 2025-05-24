@@ -244,6 +244,15 @@ impl Database {
         self.last_was_query.store(true, std::sync::atomic::Ordering::SeqCst);
 
         if version_info.verfied_at_version == self.version {
+            // add the dependency of the input
+            if let Some(called_from) = &called_from {
+                call_graph
+                    .dependency_graph
+                    .get_mut(called_from)
+                    .unwrap()
+                    .insert(key_smallbox);
+            }
+
             return (Ok(result), call_graph);
         }
 
@@ -260,11 +269,21 @@ impl Database {
                 .map(|x| x.smallbox_clone())
                 .collect::<Vec<_>>();
 
+            println!(
+                "{} has {} input(s)",
+                key.unique_type_name(),
+                inputs.len()
+            );
+
+            for dep in &inputs {
+                println!("  - {}", dep.unique_type_name());
+            }
+
             let mut recompute = false;
-            for dep in inputs {
+            for dep in &inputs {
                 // run inputs verification for the input as well
                 let is_input =
-                    call_graph.version_info_by_keys.get(&dep).unwrap().kind
+                    call_graph.version_info_by_keys.get(dep).unwrap().kind
                         == Kind::Input;
 
                 if !is_input {
@@ -277,21 +296,30 @@ impl Database {
                             )
                         });
 
-                    call_graph = invoke_fn(self, &*dep, call_graph);
+                    call_graph = invoke_fn(self, &**dep, call_graph);
                 }
 
                 // check if there's need to recompute the value
                 if !recompute {
                     let input_version_info =
-                        call_graph.version_info_by_keys.get(&dep).unwrap();
+                        call_graph.version_info_by_keys.get(dep).unwrap();
 
-                    recompute |= input_version_info.updated_at_version
+                    let should_recompute = input_version_info
+                        .updated_at_version
                         > version_info.verfied_at_version;
+
+                    recompute |= should_recompute;
                 }
             }
 
             recompute
         };
+
+        println!(
+            "Final decision for `{}`: recompute = {}",
+            key.unique_type_name(),
+            recompute
+        );
 
         if recompute {
             // recompute the value
@@ -339,7 +367,8 @@ impl Database {
     ) -> (bool, MutexGuard<'a, CallGraph>) {
         call_graph
             .dependency_graph
-            .insert(key.smallbox_clone(), HashSet::new());
+            .insert(key_smallbox.smallbox_clone(), HashSet::new());
+
         let executor = self.get_executor::<T>().unwrap_or_else(|| {
             panic!(
                 "no executor registered for key type {}",
@@ -518,21 +547,6 @@ impl Database {
                     .entry(key.smallbox_clone())
                 {
                     Entry::Occupied(mut occupied_entry) => {
-                        // if the entry has been marked as cyclic, but somehow
-                        // it produced an Ok(value), this is the bug in the
-                        // executor
-                        if matches!(occupied_entry.get().kind, Kind::Derived {
-                            defaulted_by_cyclic_dependency: true
-                        }) && occupied_entry.get().verfied_at_version
-                            == self.version
-                        {
-                            panic!(
-                                "executor for `{}` produced a value, but it \
-                                 was marked as cyclic",
-                                key.unique_type_name()
-                            );
-                        }
-
                         let version_info = occupied_entry.get_mut();
                         version_info.verfied_at_version = self.version;
                         version_info.kind = Kind::Derived {
