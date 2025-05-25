@@ -27,6 +27,10 @@ impl std::fmt::Debug for Map {
     }
 }
 
+/// A type alias for the [`DashMap`] that is used to store key-value pairs
+/// where the key is of type `K` and the value is of type `K::Value`.
+pub type TypedMap<K: Key> = DashMap<K, K::Value, FnvBuildHasher>;
+
 impl Map {
     /// Inserts a key-value pair into the map. If the key already exists,
     /// the value is updated and the old value is returned.
@@ -60,6 +64,11 @@ impl Map {
         let casted_map = unsafe { inner.cast_map::<K>() };
 
         casted_map.contains_key(key)
+    }
+
+    /// Checks if the map contains a key of the given type.
+    pub fn has_type_id(&self, type_id: TypeId) -> bool {
+        self.inner.contains_key(&type_id)
     }
 
     /// Retrieves a value from the map by its key. Returns `None` if the key
@@ -126,6 +135,27 @@ impl Map {
         let casted_map = unsafe { inner.cast_map::<K>() };
 
         casted_map.get_mut(key).map(f)
+    }
+
+    /// Retrieves a number of all unique types stored in the map.
+    pub fn type_lens(&self) -> usize { self.inner.len() }
+
+    /// Retrieves the underlying storage for a specific type `K` and applies
+    /// a function to it. If the type does not exist, the function is called
+    /// with `None`.
+    pub fn type_storage<K: Key, R>(
+        &self,
+        f: impl FnOnce(Option<&TypedMap<K>>) -> R,
+    ) -> R {
+        let inner = self.inner.get(&TypeId::of::<K>());
+
+        match inner {
+            Some(transparent_map) => {
+                let casted_map = unsafe { transparent_map.cast_map::<K>() };
+                f(Some(casted_map))
+            }
+            None => f(None),
+        }
     }
 }
 

@@ -18,8 +18,12 @@ static_assertions = { workspace = true }
 smallbox = { workspace = true }
 getset = { workspace = true }
 serde = { workspace = true }
+erased-serde = { workspace = true }
+serde_json = { workspace = true }
 derive_more = { workspace = true }
 enum-as-inner = { workspace = true }
+
+[dev-dependencies]
 
 
 [lints]

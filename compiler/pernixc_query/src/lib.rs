@@ -13,6 +13,7 @@ pub mod call_graph;
 pub mod executor;
 pub mod key;
 mod map;
+mod reflector;
 
 /// The central data structure for the Pernix compiler storing all the semantic
 /// information about the program.
