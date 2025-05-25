@@ -1,12 +1,22 @@
 use std::sync::Arc;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::Executor;
 use crate::{Database, Key};
 
 #[derive(
-    Key, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize,
+    Key,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
 )]
 #[value(String)]
 #[pernixc_query(crate)]

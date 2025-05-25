@@ -1,10 +1,23 @@
 use pernixc_arena::ID;
 use pernixc_query_derive::Key;
 use pernixc_target::{Global, TargetID};
+use serde::{Deserialize, Serialize};
 
 use crate::key::{Dynamic, SmallBox};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Key,
+    Serialize,
+    Deserialize,
+)]
 #[pernixc_query(crate)]
 #[value(())]
 struct Test(Global<ID<()>>);

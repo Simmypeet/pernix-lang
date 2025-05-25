@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use pernixc_arena::ID;
 use pernixc_target::Global;
+use serde::{Deserialize, Serialize};
 
 /// A tag struct used for signifying that a key is an input key.
 ///
@@ -24,9 +25,25 @@ pub struct Input;
 /// #[value(MyValue)]
 /// pub struct MyKey;
 /// ```
-pub trait Key: 'static + Send + Sync + Eq + Clone + std::hash::Hash {
+pub trait Key:
+    'static
+    + Send
+    + Sync
+    + Eq
+    + Clone
+    + std::hash::Hash
+    + Serialize
+    + for<'de> Deserialize<'de>
+{
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Clone + Default + Eq;
+    type Value: 'static
+        + Send
+        + Sync
+        + Clone
+        + Default
+        + Eq
+        + Serialize
+        + for<'de> Deserialize<'de>;
 
     /// Gets the stable unique type name of the key.
     fn unique_type_name() -> &'static str;
