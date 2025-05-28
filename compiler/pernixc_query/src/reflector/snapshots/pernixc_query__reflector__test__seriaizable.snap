@@ -1,0 +1,14 @@
+---
+source: compiler/pernixc_query/src/reflector/test.rs
+expression: map
+---
+{
+  "pernixc_query@0.1.0-beta.2::pernixc_query::reflector::test::NegateVariable": {
+    NegateVariable("x"): -32,
+    NegateVariable("y"): -64,
+  },
+  "pernixc_query@0.1.0-beta.2::pernixc_query::reflector::test::Variable": {
+    Variable("x"): 32,
+    Variable("y"): 64,
+  },
+}

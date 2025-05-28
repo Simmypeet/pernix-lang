@@ -24,6 +24,8 @@ derive_more = { workspace = true }
 enum-as-inner = { workspace = true }
 
 [dev-dependencies]
+ron = { workspace = true }
+insta = { workspace = true }
 
 
 [lints]

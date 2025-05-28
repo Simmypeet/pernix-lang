@@ -2,7 +2,7 @@ use std::{any::TypeId, collections::HashMap};
 
 use serde::{ser::SerializeMap, Serialize};
 
-use crate::{map::Map, Key};
+use crate::{map::Map, Database, Key};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Reflector {
@@ -17,14 +17,14 @@ struct SerializationMetadata {
     unique_type_name: &'static str,
 }
 
-impl Reflector {
+impl Database {
     /// Stores the serialization information allowing serialization of [`Map`]
     /// containing the given type `T`. When all the types are registered
     /// the map can be serialized using the [`Map::serializable`] method along
     /// with the reflector.
-    pub fn register<T: Key>(&mut self) {
+    pub fn register_reflector<T: Key>(&mut self) {
         let type_id = TypeId::of::<T>();
-        if self.serialization_meta_datas.contains_key(&type_id) {
+        if self.reflector.serialization_meta_datas.contains_key(&type_id) {
             return; // Already registered
         }
 
@@ -43,7 +43,7 @@ impl Reflector {
             unique_type_name: T::unique_type_name(),
         };
 
-        self.serialization_meta_datas.insert(type_id, metadata);
+        self.reflector.serialization_meta_datas.insert(type_id, metadata);
     }
 }
 

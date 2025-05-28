@@ -8,6 +8,7 @@ pub use key::Key;
 use map::Map;
 use parking_lot::Mutex;
 pub use pernixc_query_derive::Key;
+use reflector::Reflector;
 
 pub mod call_graph;
 pub mod executor;
@@ -24,6 +25,10 @@ pub struct Database {
     /// The registry of executors allowing registering and retrieving executors
     /// for different query key types.
     executor_registry: executor::Registry,
+
+    /// Used for serializing and deserializing the database.
+    #[get = "pub"]
+    reflector: Reflector,
 
     map: Map,
 

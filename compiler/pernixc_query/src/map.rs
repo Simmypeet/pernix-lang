@@ -29,7 +29,7 @@ impl std::fmt::Debug for Map {
 
 /// A type alias for the [`DashMap`] that is used to store key-value pairs
 /// where the key is of type `K` and the value is of type `K::Value`.
-pub type TypedMap<K: Key> = DashMap<K, K::Value, FnvBuildHasher>;
+pub type TypedMap<K> = DashMap<K, <K as Key>::Value, FnvBuildHasher>;
 
 impl Map {
     /// Inserts a key-value pair into the map. If the key already exists,
