@@ -2,9 +2,125 @@
 
 use proc_macro::TokenStream;
 
-/// This is a procedural macro that derives the `Key` trait for a struct or
-/// enum. It requires the `#[value(Type)]` attribute to be present on the type
-/// of the key.
+/// Derives the `Key` trait for structs and enums to be used in the query system.
+///
+/// This procedural macro automatically implements the `Key` trait, which allows
+/// types to be used as keys in the query database for storing and retrieving values.
+///
+/// # Required Attributes
+///
+/// ## `#[value(Type)]`
+/// 
+/// Specifies the value type associated with this key. This is a required attribute
+/// that defines what type of data this key will store in the database.
+///
+/// ```ignore
+/// #[derive(Key)]
+/// #[value(i32)]
+/// struct MyKey(String);
+/// ```
+///
+/// # Optional Attributes
+///
+/// ## `#[pernixc_query(path)]`
+///
+/// Specifies a custom path to the `pernixc_query` crate. This is useful when
+/// the crate is renamed or accessed through a different path. If not specified,
+/// defaults to `::pernixc_query`.
+///
+/// ```ignore
+/// #[derive(Key)]
+/// #[pernixc_query(crate)]
+/// #[value(String)]
+/// struct MyKey;
+/// ```
+///
+/// ## `#[merge(function)]`
+///
+/// Specifies a custom merge function to use instead of the default equality-based
+/// merge behavior. The function must have the signature:
+/// `fn(old: &mut ValueType, new: ValueType) -> Result<(), String>`
+///
+/// ```ignore
+/// fn custom_merge(old: &mut i32, new: i32) -> Result<(), String> {
+///     *old += new;
+///     Ok(())
+/// }
+///
+/// #[derive(Key)]
+/// #[value(i32)]
+/// #[merge(custom_merge)]
+/// struct AdditiveKey;
+/// ```
+///
+/// # Generated Implementation
+///
+/// The macro generates an implementation of the `Key` trait with:
+///
+/// - `type Value = <specified_type>` - The associated value type from the `#[value]` attribute
+/// - `unique_type_name()` - A stable, unique identifier combining package name, version, module path, and type name
+/// - `merge_value()` - Either the default equality-based merge or a custom function if `#[merge]` is specified
+///
+/// # Examples
+///
+/// ## Basic Usage
+///
+/// ```ignore
+/// use pernixc_query::Key;
+///
+/// #[derive(Debug, Clone, PartialEq, Eq, Hash, Key)]
+/// #[value(String)]
+/// struct UserName(u32);
+///
+/// // Can now be used as a key in the database
+/// let key = UserName(123);
+/// db.set_input(&key, "Alice".to_string());
+/// ```
+///
+/// ## With Custom Merge Function
+///
+/// ```ignore
+/// fn sum_merge(old: &mut i32, new: i32) -> Result<(), String> {
+///     *old += new;
+///     Ok(())
+/// }
+///
+/// #[derive(Debug, Clone, PartialEq, Eq, Hash, Key)]
+/// #[value(i32)]
+/// #[merge(sum_merge)]
+/// struct Counter(String);
+///
+/// // Multiple calls will sum the values
+/// db.set_input(&Counter("total".to_string()), 10);
+/// db.set_input(&Counter("total".to_string()), 5); // Result: 15
+/// ```
+///
+/// ## With Custom Crate Path
+///
+/// ```ignore
+/// use my_query_lib as query;
+///
+/// #[derive(Key)]
+/// #[pernixc_query(query)]
+/// #[value(Vec<String>)]
+/// struct Items;
+/// ```
+///
+/// # Requirements
+///
+/// Types deriving `Key` must also implement or derive:
+/// - `Clone` - For cloning key instances
+/// - `Eq` + `PartialEq` - For key equality comparison
+/// - `Hash` - For use as hash map keys
+/// - `Send + Sync` - For thread safety
+/// - `'static` - For type erasure support
+///
+/// The value type must implement:
+/// - `Clone` - For value cloning
+/// - `Default` - For default value creation
+/// - `Eq` + `PartialEq` - For merge conflict detection
+/// - `Send + Sync + 'static` - For thread safety and type erasure
+/// - `Serialize + Deserialize` - For database serialization
 #[proc_macro_derive(Key, attributes(value, pernixc_query, merge))]
 pub fn derive_key(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
