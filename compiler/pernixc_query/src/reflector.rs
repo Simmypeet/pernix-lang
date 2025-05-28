@@ -70,11 +70,17 @@ impl<'de, K: Key> Visitor<'de> for MapDeserializeHelper<'_, K> {
     {
         while let Some((key, value)) = map.next_entry::<K, K::Value>()? {
             self.map.entry(key, |entry| match entry {
-                dashmap::Entry::Occupied(occupied_entry) => todo!(),
+                dashmap::Entry::Occupied(mut occupied_entry) => {
+                    let existing_value = occupied_entry.get_mut();
+                    K::merge_value(existing_value, value)
+                        .map_err(serde::de::Error::custom)
+                }
                 dashmap::Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(value);
+
+                    Ok(())
                 }
-            });
+            })?;
         }
 
         Ok(())
@@ -209,10 +215,10 @@ impl Serialize for SerializableMap<'_> {
                 continue;
             }
 
-            map.serialize_entry(
-                ser_metadata.unique_type_name,
-                &TypedMapSer { ser_metadata, map: self.map },
-            )?;
+            map.serialize_entry(ser_metadata.unique_type_name, &TypedMapSer {
+                ser_metadata,
+                map: self.map,
+            })?;
 
             serialized_count += 1;
         }

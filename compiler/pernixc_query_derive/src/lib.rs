@@ -5,7 +5,7 @@ use proc_macro::TokenStream;
 /// This is a procedural macro that derives the `Key` trait for a struct or
 /// enum. It requires the `#[value(Type)]` attribute to be present on the type
 /// of the key.
-#[proc_macro_derive(Key, attributes(value, pernixc_query))]
+#[proc_macro_derive(Key, attributes(value, pernixc_query, merge))]
 pub fn derive_key(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let name = input.ident.clone();
@@ -52,6 +52,36 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
             syn::parse_quote!(::pernixc_query)
         },
     };
+
+    let merge_fn: Option<syn::Path> = match input
+            .attrs
+            .iter()
+            .find(|attr| attr.path().is_ident("merge")) {
+        Some(attr) => {
+            let Ok(value) = attr.parse_args::<syn::Path>() else {
+                return syn::Error::new_spanned(
+                    attr,
+                    "invalid `#[merge]` attribute on key type",
+                )
+                .to_compile_error()
+                .into();
+            };
+
+            Some(value)
+        },
+        None => {
+            None
+        },
+    };
+
+    let merge_fn = merge_fn.map(|x| {
+        quote::quote! {
+            fn merge_value(old: &mut Self::Value, new: Self::Value) -> Result<(), ::std::string::String> {
+                #x(old, new)
+            }
+        }
+    });
+     
     
     quote::quote! {
         impl #impl_generics #pernixc_query_crate::key::Key for #name #ty_generics #where_clause {
@@ -68,6 +98,8 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
                     stringify!(#name)
                 )
             }
+
+            #merge_fn
         }
     }.into()
 }
