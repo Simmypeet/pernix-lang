@@ -223,13 +223,14 @@ impl Database {
                 call_graph,
             );
 
-            let Ok(()) = self.check_cyclic(
+            if self.check_cyclic(
                 computed_successfully,
                 called_from.as_ref(),
                 &mut call_graph,
-            ) else {
+            ) != Ok(())
+            {
                 return (Err(crate::executor::CyclicError), call_graph);
-            };
+            }
 
             return (Ok(self.map.get(key).unwrap()), call_graph);
         };
@@ -326,16 +327,17 @@ impl Database {
                     call_graph,
                 );
 
-            let Ok(()) = self.check_cyclic(
+            if self.check_cyclic(
                 computed_successfully,
                 called_from.as_ref(),
                 &mut returned_call_graph,
-            ) else {
+            ) != Ok(())
+            {
                 return (
                     Err(crate::executor::CyclicError),
                     returned_call_graph,
                 );
-            };
+            }
 
             call_graph = returned_call_graph;
 
