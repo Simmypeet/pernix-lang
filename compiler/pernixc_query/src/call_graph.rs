@@ -37,6 +37,17 @@ pub struct CallGraph {
     cyclic_dependencies: Vec<CyclicDependency>,
 }
 
+/// A new type wrapper around [`SmallBox<dyn Dynamic>`] that allows it to be
+/// serializable and deserializable.
+#[derive(
+    Debug, PartialEq, Eq, Hash, derive_more::Deref, derive_more::DerefMut,
+)]
+pub(crate) struct DynamicBox(pub SmallBox<dyn Dynamic>);
+
+impl Clone for DynamicBox {
+    fn clone(&self) -> Self { Self(self.0.smallbox_clone()) }
+}
+
 impl CallGraph {
     fn called_from(&self) -> Option<SmallBox<dyn Dynamic>> {
         let current_thread_id = std::thread::current().id();

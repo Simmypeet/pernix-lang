@@ -91,7 +91,7 @@ pub trait Key:
     /// // Custom implementation for additive merging
     /// impl Key for AdditiveKey {
     ///     type Value = i32;
-    ///     
+    ///
     ///     fn merge_value(old: &mut Self::Value, new: Self::Value) -> Result<(), String> {
     ///         *old += new;
     ///         Ok(())
@@ -124,6 +124,7 @@ pub type SmallBox<T> = smallbox::SmallBox<T, Global<ID<()>>>;
 
 /// A trait allowing store multiple types of as a key in a hashmap. This is
 /// automatically implemented for all types that implement the [`Key`] trait.
+#[doc(hidden)]
 pub trait Dynamic {
     #[doc(hidden)]
     fn any(&self) -> &dyn std::any::Any;
@@ -138,7 +139,9 @@ pub trait Dynamic {
 }
 
 impl<K: Key> Dynamic for K {
-    fn any(&self) -> &dyn std::any::Any { self as &dyn std::any::Any }
+    fn any(&self) -> &dyn std::any::Any {
+        self as &dyn std::any::Any
+    }
 
     fn eq(&self, other: &dyn Dynamic) -> bool {
         other.any().downcast_ref::<Self>().is_some_and(|other| self.eq(other))
@@ -155,7 +158,9 @@ impl<K: Key> Dynamic for K {
         smallbox::smallbox!(self.clone())
     }
 
-    fn unique_type_name(&self) -> &'static str { K::unique_type_name() }
+    fn unique_type_name(&self) -> &'static str {
+        K::unique_type_name()
+    }
 }
 
 impl std::fmt::Debug for dyn Dynamic {
@@ -167,7 +172,9 @@ impl std::fmt::Debug for dyn Dynamic {
 }
 
 impl PartialEq for dyn Dynamic {
-    fn eq(&self, other: &Self) -> bool { Dynamic::eq(self, other) }
+    fn eq(&self, other: &Self) -> bool {
+        Dynamic::eq(self, other)
+    }
 }
 
 impl Eq for dyn Dynamic {}

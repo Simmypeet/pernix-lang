@@ -1,0 +1,8 @@
+---
+source: compiler/pernixc_query/src/reflector/test.rs
+expression: key
+---
+Dynamic(
+  unique_type_name: "pernixc_query@0.1.0-beta.2::pernixc_query::reflector::test::Variable",
+  value: Variable("test"),
+)

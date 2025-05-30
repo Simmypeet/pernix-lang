@@ -1,7 +1,8 @@
 use insta::{assert_ron_snapshot, Settings};
 use serde::{de::DeserializeSeed, Deserialize, Serialize};
+use smallbox::smallbox;
 
-use crate::Key;
+use crate::{call_graph::DynamicBox, Database, Key};
 
 // Basic equality-based merge (default behavior)
 #[derive(
@@ -434,4 +435,18 @@ fn merge_value_conditional_errors() {
             Some(100)
         );
     }
+}
+
+#[test]
+fn serialize_key() {
+    let key = DynamicBox(smallbox!(Variable("test".to_string())));
+
+    let mut database = Database::default();
+    database.register_reflector::<Variable>();
+
+    super::set_reflector(&mut database.reflector, || {
+        let mut settings = Settings::clone_current();
+        settings.set_sort_maps(true);
+        settings.bind(|| assert_ron_snapshot!(key));
+    });
 }

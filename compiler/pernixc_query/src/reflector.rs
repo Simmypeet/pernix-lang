@@ -1,12 +1,16 @@
-use std::{any::TypeId, collections::HashMap, marker::PhantomData};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    marker::PhantomData,
+};
 
 use serde::{
     de::{DeserializeSeed, Visitor},
-    ser::SerializeMap,
+    ser::{SerializeMap, SerializeStruct},
     Serialize,
 };
 
-use crate::{map::Map, Database, Key};
+use crate::{call_graph::DynamicBox, key::Dynamic, map::Map, Database, Key};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Reflector {
@@ -21,7 +25,9 @@ struct SerdeMetadata {
     de: DeserializationMetadata,
 }
 
-type SerializeFn = fn(&Map, &mut dyn FnMut(&dyn erased_serde::Serialize));
+type SerializeMapFn = fn(&Map, &mut dyn FnMut(&dyn erased_serde::Serialize));
+type SerializeBoxFn =
+    fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize));
 type DeserializeFn = fn(
     &Map,
     &mut dyn erased_serde::Deserializer,
@@ -29,7 +35,8 @@ type DeserializeFn = fn(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct SerializationMetadata {
-    serialize_entry: SerializeFn,
+    serialize_map: SerializeMapFn,
+    serialize_box: SerializeBoxFn,
     unique_type_name: &'static str,
 }
 
@@ -102,8 +109,19 @@ impl Database {
             return; // Already registered
         }
 
-        let serialize_entry = |map: &Map,
-                               serializer: &mut dyn FnMut(
+        let serialize_box = |key: &dyn Any,
+                             serializer: &mut dyn FnMut(
+            &dyn erased_serde::Serialize,
+        )| {
+            let key = key.downcast_ref::<T>().expect(
+                "Key type does not match the expected type for serialization",
+            );
+
+            serializer(key);
+        };
+
+        let serialize_map = |map: &Map,
+                             serializer: &mut dyn FnMut(
             &dyn erased_serde::Serialize,
         )| {
             map.type_storage::<T, _>(|x| {
@@ -122,7 +140,8 @@ impl Database {
 
         let serde_metadata = SerdeMetadata {
             ser: SerializationMetadata {
-                serialize_entry,
+                serialize_map,
+                serialize_box,
                 unique_type_name: T::unique_type_name(),
             },
             de: DeserializationMetadata { deserialize_entry },
@@ -190,7 +209,7 @@ impl Serialize for SerializableMap<'_> {
                 let mut result = None;
                 let mut serializer = Some(serializer);
 
-                (self.ser_metadata.serialize_entry)(self.map, &mut |x| {
+                (self.ser_metadata.serialize_map)(self.map, &mut |x| {
                     result = Some(erased_serde::serialize(
                         x,
                         serializer.take().unwrap(),
@@ -309,6 +328,90 @@ impl<'de> Visitor<'de> for DeserializableMap<'_> {
         }
 
         Ok(())
+    }
+}
+
+thread_local! {
+/// A reflector instance that allows DynamicBox to be serialized
+pub static REFLECTOR: std::cell::RefCell<Option<Reflector>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn set_reflector<T>(
+    reflector: &mut Reflector,
+    f: impl FnOnce() -> T,
+) -> T {
+    // temporarily take the current reflector, so that we can restore it
+    let current = REFLECTOR.with(|r| r.borrow_mut().take());
+
+    // replace the current reflector with the provided one
+    REFLECTOR.with_borrow_mut(|r| *r = Some(std::mem::take(reflector)));
+
+    // invoke the provided function
+    let result = f();
+
+    // restore the previous reflector
+    REFLECTOR.with_borrow_mut(|r| {
+        *reflector = r.take().expect("should be set");
+        *r = current;
+    });
+
+    result
+}
+
+impl Serialize for DynamicBox {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        struct Wrapper<'a> {
+            value: &'a dyn Dynamic,
+            serializer_box_fn: SerializeBoxFn,
+        }
+
+        impl Serialize for Wrapper<'_> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut result = None;
+                let mut serializer = Some(serializer);
+
+                (self.serializer_box_fn)(self.value.any(), &mut |x| {
+                    result = Some(erased_serde::serialize(
+                        x,
+                        serializer.take().unwrap(),
+                    ));
+                });
+
+                result.unwrap()
+            }
+        }
+
+        REFLECTOR.with(|r| {
+            let reflector = r.borrow();
+            let reflector = reflector.as_ref().expect("should've been set");
+            let entry = reflector
+                .serialization_metadata_by_type_id
+                .get(&self.0.any().type_id())
+                .ok_or_else(|| {
+                    serde::ser::Error::custom(format!(
+                        "No serialization metadata for type: {}",
+                        self.0.unique_type_name()
+                    ))
+                })?;
+
+            let mut struct_serializer =
+                serializer.serialize_struct("Dynamic", 2)?;
+
+            struct_serializer
+                .serialize_field("unique_type_name", self.unique_type_name())?;
+            struct_serializer.serialize_field("value", &Wrapper {
+                value: &*self.0,
+                serializer_box_fn: entry.serialize_box,
+            })?;
+
+            struct_serializer.end()
+        })
     }
 }
 
