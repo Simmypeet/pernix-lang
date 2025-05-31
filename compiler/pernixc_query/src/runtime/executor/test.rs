@@ -51,17 +51,24 @@ impl Executor<Test> for MySecondTestExecutor {
 #[test]
 fn registry() {
     let mut db = Database::default();
-    assert!(db.register_executor(Arc::new(MyTestExecutor)).is_none());
+    assert!(db
+        .runtime
+        .executor
+        .register_executor(Arc::new(MyTestExecutor))
+        .is_none());
 
-    let first_executor = db.get_executor::<Test>().unwrap();
+    let first_executor = db.runtime.executor.get_executor::<Test>().unwrap();
     assert_eq!(first_executor.execute(&db, Test), Ok("it works".to_string()));
 
-    let old_executor =
-        db.register_executor(Arc::new(MySecondTestExecutor)).unwrap();
+    let old_executor = db
+        .runtime
+        .executor
+        .register_executor(Arc::new(MySecondTestExecutor))
+        .unwrap();
 
     assert!(Arc::ptr_eq(&old_executor, &first_executor));
 
-    let second_executor = db.get_executor::<Test>().unwrap();
+    let second_executor = db.runtime.executor.get_executor::<Test>().unwrap();
     assert_eq!(
         second_executor.execute(&db, Test),
         Ok("it works for the second time".to_string())

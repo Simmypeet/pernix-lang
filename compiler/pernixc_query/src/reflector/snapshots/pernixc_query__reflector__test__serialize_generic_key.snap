@@ -1,8 +1,0 @@
----
-source: compiler/pernixc_query/src/reflector/test.rs
-expression: variable_key
----
-Dynamic(
-  stable_type_id: StableTypeID(1555374998423833173, 11011540099133906316),
-  value: GenericKey("test_variable", PhantomData),
-)

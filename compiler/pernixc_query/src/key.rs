@@ -302,6 +302,19 @@ pub trait Dynamic {
     fn type_name(&self) -> &'static str;
 }
 
+/// A new type wrapper around [`SmallBox<dyn Dynamic>`] that allows it to be
+/// serializable and deserializable.
+#[derive(
+    Debug, PartialEq, Eq, Hash, derive_more::Deref, derive_more::DerefMut,
+)]
+pub struct DynamicBox(pub SmallBox<dyn Dynamic>);
+
+impl Clone for DynamicBox {
+    fn clone(&self) -> Self {
+        Self(self.0.smallbox_clone())
+    }
+}
+
 impl<K: Key> Dynamic for K {
     fn any(&self) -> &dyn std::any::Any {
         self as &dyn std::any::Any

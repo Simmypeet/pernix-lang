@@ -9,6 +9,7 @@ use std::{
 use parking_lot::MutexGuard;
 
 use crate::{
+    call_graph::CallGraph,
     key::{Dynamic, Key},
     Database,
 };
@@ -51,7 +52,7 @@ pub struct Registry {
     executors_by_key_type_id: HashMap<TypeId, Entry>,
 }
 
-impl Database {
+impl Registry {
     /// Registers a new executor for the given [`K`] key type. If an executor
     /// for the given key type already exists, it will be replaced with the new
     /// one and the old one will be returned.
@@ -59,8 +60,7 @@ impl Database {
         &mut self,
         executor: Arc<E>,
     ) -> Option<Arc<dyn Executor<K>>> {
-        self.executor_registry
-            .executors_by_key_type_id
+        self.executors_by_key_type_id
             .insert(TypeId::of::<K>(), Entry::new(executor))
             .map(Entry::downcast::<K>)
     }
@@ -69,30 +69,25 @@ impl Database {
     /// exists for the given key type, it will return `None`.
     #[must_use]
     pub fn get_executor<K: Key>(&self) -> Option<Arc<dyn Executor<K>>> {
-        self.executor_registry
-            .executors_by_key_type_id
+        self.executors_by_key_type_id
             .get(&TypeId::of::<K>())
             .map(|entry| entry.clone().downcast::<K>())
     }
 
-    pub(super) fn get_invoke_query(
+    pub(crate) fn get_invoke_query(
         &self,
         type_id: &TypeId,
     ) -> Option<InvokeQuery> {
-        self.executor_registry
-            .executors_by_key_type_id
-            .get(type_id)
-            .map(|entry| entry.invoke)
+        self.executors_by_key_type_id.get(type_id).map(|entry| entry.invoke)
     }
 }
 
 type ExecutorArcDowncast = fn(Arc<dyn Any + Send + Sync>, &mut dyn Any);
-type InvokeQuery =
-    for<'db, 'k> fn(
-        &'db super::Database,
-        &'k dyn Dynamic,
-        MutexGuard<'db, super::call_graph::CallGraph>,
-    ) -> MutexGuard<'db, super::call_graph::CallGraph>;
+type InvokeQuery = for<'db, 'k> fn(
+    &'db Database,
+    &'k dyn Dynamic,
+    MutexGuard<'db, CallGraph>,
+) -> MutexGuard<'db, CallGraph>;
 
 #[derive(Clone)]
 struct Entry {
@@ -112,10 +107,10 @@ impl std::fmt::Debug for Entry {
 impl Entry {
     fn new<K: Key, E: Executor<K>>(executor: Arc<E>) -> Self {
         fn invoke<'db, K: Key>(
-            database: &'db super::Database,
+            database: &'db Database,
             key: &dyn Dynamic,
-            call_graph: MutexGuard<'db, super::call_graph::CallGraph>,
-        ) -> MutexGuard<'db, super::call_graph::CallGraph> {
+            call_graph: MutexGuard<'db, CallGraph>,
+        ) -> MutexGuard<'db, CallGraph> {
             let key = key.any().downcast_ref::<K>().unwrap();
 
             database.query_internal(key, call_graph).1

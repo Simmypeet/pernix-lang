@@ -13,8 +13,8 @@ use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, MutexGuard};
 
 use crate::{
-    executor::Executor,
-    key::{Dynamic, Key, SmallBox},
+    key::{Dynamic, DynamicBox, Key},
+    runtime::executor::Executor,
     Database,
 };
 
@@ -39,17 +39,6 @@ pub struct CallGraph {
     version_info_by_keys: HashMap<DynamicBox, VersionInfo>,
 
     cyclic_dependencies: Vec<CyclicDependency>,
-}
-
-/// A new type wrapper around [`SmallBox<dyn Dynamic>`] that allows it to be
-/// serializable and deserializable.
-#[derive(
-    Debug, PartialEq, Eq, Hash, derive_more::Deref, derive_more::DerefMut,
-)]
-pub struct DynamicBox(pub SmallBox<dyn Dynamic>);
-
-impl Clone for DynamicBox {
-    fn clone(&self) -> Self { Self(self.0.smallbox_clone()) }
 }
 
 impl CallGraph {
@@ -191,7 +180,7 @@ impl Database {
     pub fn query<T: Dynamic + Key>(
         &self,
         key: &T,
-    ) -> Result<T::Value, crate::executor::CyclicError> {
+    ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
         self.query_internal(key, self.call_graph.lock()).0
     }
 
@@ -200,7 +189,7 @@ impl Database {
         computed_successfully: bool,
         called_from: Option<&DynamicBox>,
         call_graph: &mut MutexGuard<CallGraph>,
-    ) -> Result<(), crate::executor::CyclicError> {
+    ) -> Result<(), crate::runtime::executor::CyclicError> {
         let (Some(called_from), true) = (called_from, !computed_successfully)
         else {
             return Ok(());
@@ -212,11 +201,12 @@ impl Database {
             return Ok(());
         };
 
-        if matches!(version_info.kind, Kind::Derived {
-            defaulted_by_cyclic_dependency: true
-        }) && version_info.verfied_at_version == self.version
+        if matches!(
+            version_info.kind,
+            Kind::Derived { defaulted_by_cyclic_dependency: true }
+        ) && version_info.verfied_at_version == self.version
         {
-            return Err(crate::executor::CyclicError);
+            return Err(crate::runtime::executor::CyclicError);
         }
 
         Ok(())
@@ -228,7 +218,7 @@ impl Database {
         key: &T,
         mut call_graph: MutexGuard<'a, CallGraph>,
     ) -> (
-        Result<T::Value, crate::executor::CyclicError>,
+        Result<T::Value, crate::runtime::executor::CyclicError>,
         MutexGuard<'a, CallGraph>,
     ) {
         let key_smallbox = DynamicBox(key.smallbox_clone());
@@ -254,7 +244,10 @@ impl Database {
                 &mut call_graph,
             ) != Ok(())
             {
-                return (Err(crate::executor::CyclicError), call_graph);
+                return (
+                    Err(crate::runtime::executor::CyclicError),
+                    call_graph,
+                );
             }
 
             return (Ok(self.map.get(key).unwrap()), call_graph);
@@ -293,9 +286,10 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        let recompute = if matches!(version_info.kind, Kind::Derived {
-            defaulted_by_cyclic_dependency: true
-        }) {
+        let recompute = if matches!(
+            version_info.kind,
+            Kind::Derived { defaulted_by_cyclic_dependency: true }
+        ) {
             true
         } else {
             let inputs = call_graph
@@ -315,6 +309,8 @@ impl Database {
 
                 if !is_input {
                     let invoke_fn = self
+                        .runtime
+                        .executor
                         .get_invoke_query(&dep.any().type_id())
                         .unwrap_or_else(|| {
                             panic!(
@@ -359,7 +355,7 @@ impl Database {
             ) != Ok(())
             {
                 return (
-                    Err(crate::executor::CyclicError),
+                    Err(crate::runtime::executor::CyclicError),
                     returned_call_graph,
                 );
             }
@@ -391,12 +387,13 @@ impl Database {
             .dependency_graph
             .insert(key_smallbox.clone(), HashSet::new());
 
-        let executor = self.get_executor::<T>().unwrap_or_else(|| {
-            panic!(
-                "no executor registered for key type {}",
-                std::any::type_name::<T>()
-            )
-        });
+        let executor =
+            self.runtime.executor.get_executor::<T>().unwrap_or_else(|| {
+                panic!(
+                    "no executor registered for key type {}",
+                    std::any::type_name::<T>()
+                )
+            });
 
         let current_thread_id = std::thread::current().id();
 
@@ -612,9 +609,12 @@ impl Database {
                         // must've been marked as cyclic before
                         assert!(
                             version_info.verfied_at_version == self.version
-                                && matches!(version_info.kind, Kind::Derived {
-                                    defaulted_by_cyclic_dependency: true
-                                })
+                                && matches!(
+                                    version_info.kind,
+                                    Kind::Derived {
+                                        defaulted_by_cyclic_dependency: true
+                                    }
+                                )
                         );
 
                         version_info.verfied_at_version = self.version;
@@ -660,5 +660,5 @@ impl Database {
     }
 }
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

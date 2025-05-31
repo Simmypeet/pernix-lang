@@ -1,8 +1,0 @@
----
-source: compiler/pernixc_query/src/reflector/test.rs
-expression: additive_key
----
-Dynamic(
-  stable_type_id: StableTypeID(3661463445494344314, 11915707378634352506),
-  value: GenericKey("test_additive", PhantomData),
-)

@@ -2,7 +2,7 @@ use insta::{assert_ron_snapshot, Settings};
 use serde::{de::DeserializeSeed, Deserialize, Serialize};
 use smallbox::smallbox;
 
-use crate::{call_graph::DynamicBox, Database, Key};
+use crate::{key::DynamicBox, map, Key};
 
 // Basic equality-based merge (default behavior)
 #[derive(
@@ -143,18 +143,19 @@ where
 }
 
 #[test]
-fn seriaizable() {
-    let mut db = crate::Database::default();
+fn serializable() {
+    let mut registry = super::Registry::default();
+    let map = map::Map::default();
 
-    db.register_reflector::<Variable>();
-    db.register_reflector::<NegateVariable>();
+    registry.register_reflector::<Variable>();
+    registry.register_reflector::<NegateVariable>();
 
-    db.set_input(&Variable("x".to_string()), 32);
-    db.set_input(&NegateVariable("x".to_string()), -32);
-    db.set_input(&Variable("y".to_string()), 64);
-    db.set_input(&NegateVariable("y".to_string()), -64);
+    map.insert(Variable("x".to_string()), 32);
+    map.insert(NegateVariable("x".to_string()), -32);
+    map.insert(Variable("y".to_string()), 64);
+    map.insert(NegateVariable("y".to_string()), -64);
 
-    let map = db.map.serializable(&db.reflector);
+    let map = map.serializable(&registry);
 
     let mut settings = Settings::clone_current();
     settings.set_sort_maps(true);
@@ -163,29 +164,32 @@ fn seriaizable() {
 
 #[test]
 fn deserializable() {
-    // Create a new database with the same reflector setup
-    let mut db = crate::Database::default();
-    db.register_reflector::<Variable>();
-    db.register_reflector::<NegateVariable>();
+    // Create a new registry and map with the same reflector setup
+    let mut registry = super::Registry::default();
+    let map = map::Map::default();
+
+    registry.register_reflector::<Variable>();
+    registry.register_reflector::<NegateVariable>();
 
     // Set up the original data
-    db.set_input(&Variable("x".to_string()), 32);
-    db.set_input(&NegateVariable("x".to_string()), -32);
-    db.set_input(&Variable("y".to_string()), 64);
-    db.set_input(&NegateVariable("y".to_string()), -64);
+    map.insert(Variable("x".to_string()), 32);
+    map.insert(NegateVariable("x".to_string()), -32);
+    map.insert(Variable("y".to_string()), 64);
+    map.insert(NegateVariable("y".to_string()), -64);
 
     // Serialize the map
-    let serializable_map = db.map.serializable(&db.reflector);
+    let serializable_map = map.serializable(&registry);
     let ron_string =
         ron::to_string(&serializable_map).expect("Failed to serialize to RON");
 
-    // Create a new empty database for deserialization
-    let mut target_db = crate::Database::default();
-    target_db.register_reflector::<Variable>();
-    target_db.register_reflector::<NegateVariable>();
+    // Create a new empty registry and map for deserialization
+    let mut target_registry = super::Registry::default();
+    let target_map = map::Map::default();
+    target_registry.register_reflector::<Variable>();
+    target_registry.register_reflector::<NegateVariable>();
 
     // Deserialize back into the target map
-    let deserializable_map = target_db.map.deserializable(&target_db.reflector);
+    let deserializable_map = target_map.deserializable(&target_registry);
     let mut deserializer = ron::Deserializer::from_str(&ron_string)
         .expect("Failed to create deserializer");
 
@@ -194,34 +198,38 @@ fn deserializable() {
         .expect("Failed to deserialize");
 
     // Verify the deserialized data matches the original
-    assert_eq!(target_db.map.get(&Variable("x".to_string())), Some(32));
-    assert_eq!(target_db.map.get(&NegateVariable("x".to_string())), Some(-32));
-    assert_eq!(target_db.map.get(&Variable("y".to_string())), Some(64));
-    assert_eq!(target_db.map.get(&NegateVariable("y".to_string())), Some(-64));
+    assert_eq!(target_map.get(&Variable("x".to_string())), Some(32));
+    assert_eq!(target_map.get(&NegateVariable("x".to_string())), Some(-32));
+    assert_eq!(target_map.get(&Variable("y".to_string())), Some(64));
+    assert_eq!(target_map.get(&NegateVariable("y".to_string())), Some(-64));
 }
 
 #[test]
 fn merge_value_basic_equality() {
     // Test basic case: default merge_value implementation with equality
-    let mut db = crate::Database::default();
-    db.register_reflector::<Variable>();
+    let mut registry = super::Registry::default();
+    let map = map::Map::default();
+
+    registry.register_reflector::<Variable>();
 
     // Set initial value
-    db.set_input(&Variable("test".to_string()), 42);
+    map.insert(Variable("test".to_string()), 42);
 
     // Test merging with the same value (should succeed)
     {
-        // Create a separate database with the same value to serialize from
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<Variable>();
-        source_db.set_input(&Variable("test".to_string()), 42); // Same value
+        // Create a separate registry and map with the same value to serialize
+        // from
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<Variable>();
+        source_map.insert(Variable("test".to_string()), 42); // Same value
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        // Deserialize into the target database - should succeed with same value
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        // Deserialize into the target map - should succeed with same value
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -229,24 +237,26 @@ fn merge_value_basic_equality() {
         assert!(result.is_ok(), "Should successfully merge identical values");
 
         // Value should remain unchanged
-        assert_eq!(db.map.get(&Variable("test".to_string())), Some(42));
+        assert_eq!(map.get(&Variable("test".to_string())), Some(42));
     }
 
     // Test merging with a different value (should fail with default equality
     // merge)
     {
-        // Create a separate database with a different value to serialize from
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<Variable>();
-        source_db.set_input(&Variable("test".to_string()), 100); // Different value
+        // Create a separate registry and map with a different value to
+        // serialize from
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<Variable>();
+        source_map.insert(Variable("test".to_string()), 100); // Different value
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        // Deserialize into the target database - should fail with different
+        // Deserialize into the target map - should fail with different
         // value
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -257,30 +267,33 @@ fn merge_value_basic_equality() {
         );
 
         // Original value should be preserved
-        assert_eq!(db.map.get(&Variable("test".to_string())), Some(42));
+        assert_eq!(map.get(&Variable("test".to_string())), Some(42));
     }
 }
 
 #[test]
 fn merge_value_custom_additive() {
     // Test alternative case: custom implementation (additive merge)
-    let mut db = crate::Database::default();
-    db.register_reflector::<AdditiveKey>();
+    let mut registry = super::Registry::default();
+    let map = map::Map::default();
+
+    registry.register_reflector::<AdditiveKey>();
 
     // Set initial value
-    db.set_input(&AdditiveKey("counter".to_string()), 10);
+    map.insert(AdditiveKey("counter".to_string()), 10);
 
     // Test first addition
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<AdditiveKey>();
-        source_db.set_input(&AdditiveKey("counter".to_string()), 5);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<AdditiveKey>();
+        source_map.insert(AdditiveKey("counter".to_string()), 5);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -288,20 +301,21 @@ fn merge_value_custom_additive() {
         assert!(result.is_ok(), "Should successfully perform additive merge");
 
         // Value should be added: 10 + 5 = 15
-        assert_eq!(db.map.get(&AdditiveKey("counter".to_string())), Some(15));
+        assert_eq!(map.get(&AdditiveKey("counter".to_string())), Some(15));
     }
 
     // Test second addition
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<AdditiveKey>();
-        source_db.set_input(&AdditiveKey("counter".to_string()), 25);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<AdditiveKey>();
+        source_map.insert(AdditiveKey("counter".to_string()), 25);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -312,20 +326,21 @@ fn merge_value_custom_additive() {
         );
 
         // Value should be added: 15 + 25 = 40
-        assert_eq!(db.map.get(&AdditiveKey("counter".to_string())), Some(40));
+        assert_eq!(map.get(&AdditiveKey("counter".to_string())), Some(40));
     }
 
     // Test with new key (should work as normal insertion)
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<AdditiveKey>();
-        source_db.set_input(&AdditiveKey("new_counter".to_string()), 100);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<AdditiveKey>();
+        source_map.insert(AdditiveKey("new_counter".to_string()), 100);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -333,35 +348,35 @@ fn merge_value_custom_additive() {
         assert!(result.is_ok(), "Should successfully insert new key");
 
         // New key should have its value
-        assert_eq!(
-            db.map.get(&AdditiveKey("new_counter".to_string())),
-            Some(100)
-        );
+        assert_eq!(map.get(&AdditiveKey("new_counter".to_string())), Some(100));
         // Original key should be unchanged
-        assert_eq!(db.map.get(&AdditiveKey("counter".to_string())), Some(40));
+        assert_eq!(map.get(&AdditiveKey("counter".to_string())), Some(40));
     }
 }
 
 #[test]
 fn merge_value_conditional_errors() {
     // Test exceptional case: Err(...) from merge function
-    let mut db = crate::Database::default();
-    db.register_reflector::<ConditionalMergeKey>();
+    let mut registry = super::Registry::default();
+    let map = map::Map::default();
+
+    registry.register_reflector::<ConditionalMergeKey>();
 
     // Set initial value
-    db.set_input(&ConditionalMergeKey("test".to_string()), 50);
+    map.insert(ConditionalMergeKey("test".to_string()), 50);
 
     // Test 1: Value too large (> 100) - should fail
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<ConditionalMergeKey>();
-        source_db.set_input(&ConditionalMergeKey("test".to_string()), 150);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_map.insert(ConditionalMergeKey("test".to_string()), 150);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -375,23 +390,21 @@ fn merge_value_conditional_errors() {
         );
 
         // Original value should be preserved
-        assert_eq!(
-            db.map.get(&ConditionalMergeKey("test".to_string())),
-            Some(50)
-        );
+        assert_eq!(map.get(&ConditionalMergeKey("test".to_string())), Some(50));
     }
 
     // Test 2: Smaller value (< existing) - should fail
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<ConditionalMergeKey>();
-        source_db.set_input(&ConditionalMergeKey("test".to_string()), 30);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_map.insert(ConditionalMergeKey("test".to_string()), 30);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -405,23 +418,21 @@ fn merge_value_conditional_errors() {
         );
 
         // Original value should be preserved
-        assert_eq!(
-            db.map.get(&ConditionalMergeKey("test".to_string())),
-            Some(50)
-        );
+        assert_eq!(map.get(&ConditionalMergeKey("test".to_string())), Some(50));
     }
 
     // Test 3: Same value - should succeed
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<ConditionalMergeKey>();
-        source_db.set_input(&ConditionalMergeKey("test".to_string()), 50);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_map.insert(ConditionalMergeKey("test".to_string()), 50);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -429,23 +440,21 @@ fn merge_value_conditional_errors() {
         assert!(result.is_ok(), "Should succeed with same value");
 
         // Value should remain unchanged
-        assert_eq!(
-            db.map.get(&ConditionalMergeKey("test".to_string())),
-            Some(50)
-        );
+        assert_eq!(map.get(&ConditionalMergeKey("test".to_string())), Some(50));
     }
 
     // Test 4: Larger value (but <= 100) - should succeed and update
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<ConditionalMergeKey>();
-        source_db.set_input(&ConditionalMergeKey("test".to_string()), 75);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_map.insert(ConditionalMergeKey("test".to_string()), 75);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -453,23 +462,21 @@ fn merge_value_conditional_errors() {
         assert!(result.is_ok(), "Should succeed with larger acceptable value");
 
         // Value should be updated to the larger value
-        assert_eq!(
-            db.map.get(&ConditionalMergeKey("test".to_string())),
-            Some(75)
-        );
+        assert_eq!(map.get(&ConditionalMergeKey("test".to_string())), Some(75));
     }
 
     // Test 5: Edge case - exactly 100 should succeed
     {
-        let mut source_db = crate::Database::default();
-        source_db.register_reflector::<ConditionalMergeKey>();
-        source_db.set_input(&ConditionalMergeKey("test".to_string()), 100);
+        let mut source_registry = super::Registry::default();
+        let source_map = map::Map::default();
+        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_map.insert(ConditionalMergeKey("test".to_string()), 100);
 
-        let serializable_map = source_db.map.serializable(&source_db.reflector);
+        let serializable_map = source_map.serializable(&source_registry);
         let ron_string =
             ron::to_string(&serializable_map).expect("Failed to serialize");
 
-        let deserializable_map = db.map.deserializable(&db.reflector);
+        let deserializable_map = map.deserializable(&registry);
         let mut deserializer = ron::Deserializer::from_str(&ron_string)
             .expect("Failed to create deserializer");
 
@@ -478,7 +485,7 @@ fn merge_value_conditional_errors() {
 
         // Value should be updated to 100
         assert_eq!(
-            db.map.get(&ConditionalMergeKey("test".to_string())),
+            map.get(&ConditionalMergeKey("test".to_string())),
             Some(100)
         );
     }
@@ -488,10 +495,10 @@ fn merge_value_conditional_errors() {
 fn serialize_key() {
     let key = DynamicBox(smallbox!(Variable("test".to_string())));
 
-    let mut database = Database::default();
-    database.register_reflector::<Variable>();
+    let mut registry = super::Registry::default();
+    registry.register_reflector::<Variable>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry, || {
         let mut settings = Settings::clone_current();
         settings.set_sort_maps(true);
         settings.bind(|| assert_ron_snapshot!(key));
@@ -502,10 +509,10 @@ fn serialize_key() {
 fn deserialize_dynamic_box() {
     let original_key = DynamicBox(smallbox!(Variable("test".to_string())));
 
-    let mut database = Database::default();
-    database.register_reflector::<Variable>();
+    let mut registry = super::Registry::default();
+    registry.register_reflector::<Variable>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry, || {
         // Serialize the DynamicBox to RON format
         let ron_string = ron::to_string(&original_key)
             .expect("Failed to serialize DynamicBox");
@@ -541,11 +548,11 @@ fn deserialize_dynamic_box_different_types() {
     let negate_key =
         DynamicBox(smallbox!(NegateVariable("test_negate".to_string())));
 
-    let mut database = Database::default();
-    database.register_reflector::<Variable>();
-    database.register_reflector::<NegateVariable>();
+    let mut registry = super::Registry::default();
+    registry.register_reflector::<Variable>();
+    registry.register_reflector::<NegateVariable>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry, || {
         // Test Variable deserialization
         let variable_ron = ron::to_string(&variable_key)
             .expect("Failed to serialize Variable");
@@ -578,13 +585,13 @@ fn deserialize_dynamic_box_roundtrip_multiple() {
         DynamicBox(smallbox!(ConditionalMergeKey("cond1".to_string()))),
     ];
 
-    let mut database = Database::default();
-    database.register_reflector::<Variable>();
-    database.register_reflector::<NegateVariable>();
-    database.register_reflector::<AdditiveKey>();
-    database.register_reflector::<ConditionalMergeKey>();
+    let mut registry = super::Registry::default();
+    registry.register_reflector::<Variable>();
+    registry.register_reflector::<NegateVariable>();
+    registry.register_reflector::<AdditiveKey>();
+    registry.register_reflector::<ConditionalMergeKey>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry, || {
         for (i, original_key) in keys.iter().enumerate() {
             let ron_string = ron::to_string(original_key)
                 .unwrap_or_else(|_| panic!("Failed to serialize key {i}"));
@@ -604,10 +611,10 @@ fn serialize_generic_key() {
         "test_variable".to_string()
     )));
 
-    let mut database = Database::default();
-    database.register_reflector::<GenericKey<Variable>>();
+    let mut registry = super::Registry::default();
+    registry.register_reflector::<GenericKey<Variable>>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry, || {
         let mut settings = Settings::clone_current();
         settings.set_sort_maps(true);
         settings.bind(|| assert_ron_snapshot!(variable_key));
@@ -618,9 +625,10 @@ fn serialize_generic_key() {
         "test_additive".to_string()
     )));
 
-    database.register_reflector::<GenericKey<AdditiveKey>>();
+    let mut registry2 = super::Registry::default();
+    registry2.register_reflector::<GenericKey<AdditiveKey>>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry2, || {
         let mut settings = Settings::clone_current();
         settings.set_sort_maps(true);
         settings.bind(|| assert_ron_snapshot!(additive_key));
@@ -634,10 +642,10 @@ fn deserialize_generic_key() {
         GenericKey::<Variable>::new("test_variable".to_string())
     ));
 
-    let mut database = Database::default();
-    database.register_reflector::<GenericKey<Variable>>();
+    let mut registry = super::Registry::default();
+    registry.register_reflector::<GenericKey<Variable>>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry, || {
         // Serialize the DynamicBox to RON format
         let ron_string = ron::to_string(&original_variable_key)
             .expect("Failed to serialize GenericKey<Variable>");
@@ -671,10 +679,10 @@ fn deserialize_generic_key() {
         GenericKey::<AdditiveKey>::new("test_additive".to_string())
     ));
 
-    let mut database = Database::default();
-    database.register_reflector::<GenericKey<AdditiveKey>>();
+    let mut registry2 = super::Registry::default();
+    registry2.register_reflector::<GenericKey<AdditiveKey>>();
 
-    super::set_reflector(&mut database.reflector, || {
+    super::set_reflector(&mut registry2, || {
         // Serialize the DynamicBox to RON format
         let ron_string = ron::to_string(&original_additive_key)
             .expect("Failed to serialize GenericKey<AdditiveKey>");

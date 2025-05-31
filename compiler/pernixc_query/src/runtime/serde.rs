@@ -1,3 +1,5 @@
+//! Contains the definition of the [`Serde`] struct.
+
 use std::{any::Any, collections::HashMap, marker::PhantomData};
 
 use enum_as_inner::EnumAsInner;
@@ -9,14 +11,15 @@ use serde::{
 use smallbox::smallbox;
 
 use crate::{
-    call_graph::DynamicBox,
-    key::{Dynamic, StableTypeID},
+    key::{Dynamic, DynamicBox, StableTypeID},
     map::Map,
-    Database, Key,
+    Key,
 };
 
+/// A struct enabling dynamic serialization and deserialization of
+/// [`Map`]s and [`DynamicBox`]es.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Reflector {
+pub struct Registry {
     serialization_metadata_by_type_id:
         HashMap<StableTypeID, SerializationMetadata>,
     deserialization_metadata_by_type_id:
@@ -107,14 +110,13 @@ impl<'de, K: Key> Visitor<'de> for MapDeserializeHelper<'_, K> {
     }
 }
 
-impl Database {
+impl Registry {
     /// Stores the serialization information allowing serialization of [`Map`]
     /// containing the given type `T`. When all the types are registered
     /// the map can be serialized using the [`Map::serializable`] method along
     /// with the reflector.
     pub fn register_reflector<T: Key>(&mut self) {
         if self
-            .reflector
             .serialization_metadata_by_type_id
             .contains_key(&T::STABLE_TYPE_ID)
         {
@@ -165,11 +167,9 @@ impl Database {
             de: DeserializationMetadata { deserialize_entry, deserialize_box },
         };
 
-        self.reflector
-            .serialization_metadata_by_type_id
+        self.serialization_metadata_by_type_id
             .insert(T::STABLE_TYPE_ID, serde_metadata.ser);
-        self.reflector
-            .deserialization_metadata_by_type_id
+        self.deserialization_metadata_by_type_id
             .insert(T::STABLE_TYPE_ID, serde_metadata.de);
     }
 }
@@ -181,11 +181,12 @@ impl Map {
     ///
     /// The provided reflector must have registered all the types that are
     /// expected to be serialized from this map.
+    #[must_use]
     pub const fn serializable<'a>(
         &'a self,
-        reflector: &'a Reflector,
+        reflector: &'a Registry,
     ) -> SerializableMap<'a> {
-        SerializableMap { reflector, map: self }
+        SerializableMap { serde: reflector, map: self }
     }
 
     /// Creates a deserializable view of the map using the provided reflector.
@@ -194,17 +195,20 @@ impl Map {
     ///
     /// The provided reflector must have registered all the types that are
     /// expected to be deserialized into this map.
+    #[must_use]
     pub const fn deserializable<'a>(
         &'a self,
-        reflector: &'a Reflector,
+        reflector: &'a Registry,
     ) -> DeserializableMap<'a> {
         DeserializableMap { reflector, map: self }
     }
 }
 
+/// A wrapper struct allowing serialization of [`Map`] with the provided
+/// reflector.
 #[derive(Debug, Clone, Copy)]
 pub struct SerializableMap<'a> {
-    reflector: &'a Reflector,
+    serde: &'a Registry,
     map: &'a Map,
 }
 
@@ -244,7 +248,7 @@ impl Serialize for SerializableMap<'_> {
         let mut serialized_count = 0;
 
         for (type_id, ser_metadata) in
-            &self.reflector.serialization_metadata_by_type_id
+            &self.serde.serialization_metadata_by_type_id
         {
             // skip if this serialization metadata is not applicable to the
             // current map.
@@ -252,10 +256,10 @@ impl Serialize for SerializableMap<'_> {
                 continue;
             }
 
-            map.serialize_entry(&type_id, &TypedMapSer {
-                ser_metadata,
-                map: self.map,
-            })?;
+            map.serialize_entry(
+                &type_id,
+                &TypedMapSer { ser_metadata, map: self.map },
+            )?;
 
             serialized_count += 1;
         }
@@ -274,7 +278,7 @@ impl Serialize for SerializableMap<'_> {
 /// [`Map`]
 #[derive(Debug, Clone, Copy)]
 pub struct DeserializableMap<'a> {
-    reflector: &'a Reflector,
+    reflector: &'a Registry,
     map: &'a Map,
 }
 
@@ -356,13 +360,11 @@ thread_local! {
 ///
 /// This is a little bit of a hack, but it allows us to avoid manually writing
 /// the serialization and deserialization logic for on the CallGraph struct.
-pub static REFLECTOR: std::cell::RefCell<Option<Reflector>> = const { std::cell::RefCell::new(None) };
+pub static REFLECTOR: std::cell::RefCell<Option<Registry>> = const { std::cell::RefCell::new(None) };
 }
 
-pub(crate) fn set_reflector<T>(
-    reflector: &mut Reflector,
-    f: impl FnOnce() -> T,
-) -> T {
+/// Sets the reflector to the current session allowing serialization of [`Dynamic`] happening in the `f` closure
+pub fn set_reflector<T>(reflector: &mut Registry, f: impl FnOnce() -> T) -> T {
     // temporarily take the current reflector, so that we can restore it
     let current = REFLECTOR.with(|r| r.borrow_mut().take());
 
@@ -428,10 +430,13 @@ impl Serialize for DynamicBox {
 
             struct_serializer
                 .serialize_field("stable_type_id", &self.stable_type_id())?;
-            struct_serializer.serialize_field("value", &Wrapper {
-                value: &*self.0,
-                serializer_box_fn: entry.serialize_box,
-            })?;
+            struct_serializer.serialize_field(
+                "value",
+                &Wrapper {
+                    value: &*self.0,
+                    serializer_box_fn: entry.serialize_box,
+                },
+            )?;
 
             struct_serializer.end()
         })

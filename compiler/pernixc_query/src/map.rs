@@ -67,6 +67,7 @@ impl Map {
     }
 
     /// Checks if the map contains a key of the given type.
+    #[must_use]
     pub fn has_type_id(&self, type_id: TypeId) -> bool {
         self.inner.contains_key(&type_id)
     }
@@ -138,7 +139,10 @@ impl Map {
     }
 
     /// Retrieves a number of all unique types stored in the map.
-    pub fn type_lens(&self) -> usize { self.inner.len() }
+    #[must_use]
+    pub fn type_lens(&self) -> usize {
+        self.inner.len()
+    }
 
     /// Retrieves the underlying storage for a specific type `K` and applies
     /// a function to it. If the type does not exist, the function is called

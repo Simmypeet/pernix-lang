@@ -1,8 +1,0 @@
----
-source: compiler/pernixc_query/src/reflector/test.rs
-expression: key
----
-Dynamic(
-  stable_type_id: StableTypeID(15673232390923485487, 7394888357388017924),
-  value: Variable("test"),
-)
