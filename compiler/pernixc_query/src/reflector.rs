@@ -252,10 +252,10 @@ impl Serialize for SerializableMap<'_> {
                 continue;
             }
 
-            map.serialize_entry(
-                &type_id,
-                &TypedMapSer { ser_metadata, map: self.map },
-            )?;
+            map.serialize_entry(&type_id, &TypedMapSer {
+                ser_metadata,
+                map: self.map,
+            })?;
 
             serialized_count += 1;
         }
@@ -334,7 +334,8 @@ impl<'de> Visitor<'de> for DeserializableMap<'_> {
                 .get(&stable_type_id)
                 .ok_or_else(|| {
                     serde::de::Error::custom(format!(
-                        "No deserialization metadata for type: stable type id {stable_type_id:?}"
+                        "No deserialization metadata for type: stable type id \
+                         {stable_type_id:?}"
                     ))
                 })?;
 
@@ -427,13 +428,10 @@ impl Serialize for DynamicBox {
 
             struct_serializer
                 .serialize_field("stable_type_id", &self.stable_type_id())?;
-            struct_serializer.serialize_field(
-                "value",
-                &Wrapper {
-                    value: &*self.0,
-                    serializer_box_fn: entry.serialize_box,
-                },
-            )?;
+            struct_serializer.serialize_field("value", &Wrapper {
+                value: &*self.0,
+                serializer_box_fn: entry.serialize_box,
+            })?;
 
             struct_serializer.end()
         })
@@ -441,12 +439,13 @@ impl Serialize for DynamicBox {
 }
 
 impl<'de> Deserialize<'de> for DynamicBox {
+    #[allow(clippy::too_many_lines)]
     fn deserialize<D: serde::Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Self, D::Error> {
         #[derive(EnumAsInner)]
         enum Field {
-            UniqueTypeName,
+            StableTypeID,
             Value,
             Ignore,
         }
@@ -468,7 +467,7 @@ impl<'de> Deserialize<'de> for DynamicBox {
                 E: serde::de::Error,
             {
                 match v {
-                    0 => Ok(Field::UniqueTypeName),
+                    0 => Ok(Field::StableTypeID),
                     1 => Ok(Field::Value),
                     _ => Ok(Field::Ignore),
                 }
@@ -479,7 +478,7 @@ impl<'de> Deserialize<'de> for DynamicBox {
                 E: serde::de::Error,
             {
                 match v {
-                    "unique_type_name" => Ok(Field::UniqueTypeName),
+                    "stable_type_id" => Ok(Field::StableTypeID),
                     "value" => Ok(Field::Value),
                     _ => Ok(Field::Ignore),
                 }
@@ -490,7 +489,7 @@ impl<'de> Deserialize<'de> for DynamicBox {
                 E: serde::de::Error,
             {
                 match v {
-                    b"unique_type_name" => Ok(Field::UniqueTypeName),
+                    b"stable_type_id" => Ok(Field::StableTypeID),
                     b"value" => Ok(Field::Value),
                     _ => Ok(Field::Ignore),
                 }
@@ -505,7 +504,24 @@ impl<'de> Deserialize<'de> for DynamicBox {
             }
         }
 
-        struct DynamicBoxVisitor(DeserializeBoxFn);
+        struct DynamicBoxDeserializeHelper(DeserializeBoxFn);
+
+        impl<'de> DeserializeSeed<'de> for DynamicBoxDeserializeHelper {
+            type Value = DynamicBox;
+
+            fn deserialize<D: serde::Deserializer<'de>>(
+                self,
+                deserializer: D,
+            ) -> Result<Self::Value, D::Error> {
+                use serde::de::Error;
+
+                let mut erased =
+                    <dyn erased_serde::Deserializer>::erase(deserializer);
+                (self.0)(&mut erased).map_err(D::Error::custom)
+            }
+        }
+
+        struct DynamicBoxVisitor;
 
         impl<'de> Visitor<'de> for DynamicBoxVisitor {
             type Value = DynamicBox;
@@ -521,23 +537,106 @@ impl<'de> Deserialize<'de> for DynamicBox {
                 self,
                 mut map: A,
             ) -> Result<Self::Value, A::Error> {
-                if map
+                if !map
                     .next_key::<Field>()?
                     .ok_or(serde::de::Error::custom(
-                        "Expected a `unique_type_name` field",
+                        "Expected a `stable_type_id` field",
                     ))?
-                    .is_unique_type_name()
+                    .is_stable_type_id()
                 {
                     return Err(serde::de::Error::custom(
-                        "Expected a `unique_type_name` field",
+                        "Expected a `stable_type_id` field",
                     ));
                 }
 
-                todo!()
+                let stable_type_id = map.next_value::<StableTypeID>()?;
+                let deserialize_box = REFLECTOR.with(|r| {
+                    let reflector = r.borrow();
+                    let reflector =
+                        reflector.as_ref().expect("should've been set");
+
+                    reflector
+                        .deserialization_metadata_by_type_id
+                        .get(&stable_type_id)
+                        .map(|x| x.deserialize_box)
+                        .ok_or_else(|| {
+                            serde::de::Error::custom(format!(
+                                "No deserialization metadata for type: stable \
+                                 type id {stable_type_id:?}"
+                            ))
+                        })
+                })?;
+
+                if !map.next_key::<Field>()?.is_some_and(|x| x.is_value()) {
+                    return Err(serde::de::Error::custom(
+                        "Expected a `value` field",
+                    ));
+                }
+
+                let value = map.next_value_seed(
+                    DynamicBoxDeserializeHelper(deserialize_box),
+                )?;
+
+                if map.next_key::<Field>()?.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "Expected no more fields after `value`",
+                    ));
+                }
+
+                Ok(value)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let stable_type_id =
+                    seq.next_element::<StableTypeID>()?.ok_or_else(|| {
+                        serde::de::Error::custom(
+                            "Expected a `stable_type_id` field",
+                        )
+                    })?;
+
+                let deserialize_box = REFLECTOR.with(|r| {
+                    let reflector = r.borrow();
+                    let reflector =
+                        reflector.as_ref().expect("should've been set");
+
+                    reflector
+                        .deserialization_metadata_by_type_id
+                        .get(&stable_type_id)
+                        .map(|x| x.deserialize_box)
+                        .ok_or_else(|| {
+                            serde::de::Error::custom(format!(
+                                "No deserialization metadata for type: stable \
+                                 type id {stable_type_id:?}"
+                            ))
+                        })
+                })?;
+
+                let value = seq
+                    .next_element_seed(DynamicBoxDeserializeHelper(
+                        deserialize_box,
+                    ))?
+                    .ok_or_else(|| {
+                        serde::de::Error::custom("Expected a `value` field")
+                    })?;
+
+                if seq.next_element::<Field>()?.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "Expected no more fields after `value`",
+                    ));
+                }
+
+                Ok(value)
             }
         }
 
-        todo!()
+        deserializer.deserialize_struct(
+            "DynamicBox",
+            &["stable_type_id", "value"],
+            DynamicBoxVisitor,
+        )
     }
 }
 

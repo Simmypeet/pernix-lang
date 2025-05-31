@@ -450,3 +450,102 @@ fn serialize_key() {
         settings.bind(|| assert_ron_snapshot!(key));
     });
 }
+
+#[test]
+fn deserialize_dynamic_box() {
+    let original_key = DynamicBox(smallbox!(Variable("test".to_string())));
+
+    let mut database = Database::default();
+    database.register_reflector::<Variable>();
+
+    super::set_reflector(&mut database.reflector, || {
+        // Serialize the DynamicBox to RON format
+        let ron_string = ron::to_string(&original_key)
+            .expect("Failed to serialize DynamicBox");
+
+        // Deserialize the RON string back to a DynamicBox
+        let deserialized_key: DynamicBox = ron::from_str(&ron_string)
+            .expect("Failed to deserialize DynamicBox");
+
+        // Verify that the deserialized key equals the original
+        assert_eq!(original_key, deserialized_key);
+
+        // Verify that the inner value is correct by downcasting
+        let original_variable = original_key
+            .0
+            .any()
+            .downcast_ref::<Variable>()
+            .expect("Original should be Variable");
+        let deserialized_variable = deserialized_key
+            .0
+            .any()
+            .downcast_ref::<Variable>()
+            .expect("Deserialized should be Variable");
+
+        assert_eq!(original_variable, deserialized_variable);
+        assert_eq!(original_variable.0, "test");
+        assert_eq!(deserialized_variable.0, "test");
+    });
+}
+
+#[test]
+fn deserialize_dynamic_box_different_types() {
+    let variable_key = DynamicBox(smallbox!(Variable("test_var".to_string())));
+    let negate_key =
+        DynamicBox(smallbox!(NegateVariable("test_negate".to_string())));
+
+    let mut database = Database::default();
+    database.register_reflector::<Variable>();
+    database.register_reflector::<NegateVariable>();
+
+    super::set_reflector(&mut database.reflector, || {
+        // Test Variable deserialization
+        let variable_ron = ron::to_string(&variable_key)
+            .expect("Failed to serialize Variable");
+        let deserialized_variable: DynamicBox = ron::from_str(&variable_ron)
+            .expect("Failed to deserialize Variable");
+        assert_eq!(variable_key, deserialized_variable);
+
+        // Test NegateVariable deserialization
+        let negate_ron = ron::to_string(&negate_key)
+            .expect("Failed to serialize NegateVariable");
+        let deserialized_negate: DynamicBox = ron::from_str(&negate_ron)
+            .expect("Failed to deserialize NegateVariable");
+        assert_eq!(negate_key, deserialized_negate);
+
+        // Verify the types are correctly preserved
+        assert!(variable_key.0.any().is::<Variable>());
+        assert!(deserialized_variable.0.any().is::<Variable>());
+        assert!(negate_key.0.any().is::<NegateVariable>());
+        assert!(deserialized_negate.0.any().is::<NegateVariable>());
+    });
+}
+
+#[test]
+fn deserialize_dynamic_box_roundtrip_multiple() {
+    // Test with multiple different key types in sequence
+    let keys = [
+        DynamicBox(smallbox!(Variable("var1".to_string()))),
+        DynamicBox(smallbox!(NegateVariable("neg1".to_string()))),
+        DynamicBox(smallbox!(AdditiveKey("add1".to_string()))),
+        DynamicBox(smallbox!(ConditionalMergeKey("cond1".to_string()))),
+    ];
+
+    let mut database = Database::default();
+    database.register_reflector::<Variable>();
+    database.register_reflector::<NegateVariable>();
+    database.register_reflector::<AdditiveKey>();
+    database.register_reflector::<ConditionalMergeKey>();
+
+    super::set_reflector(&mut database.reflector, || {
+        for (i, original_key) in keys.iter().enumerate() {
+            let ron_string = ron::to_string(original_key)
+                .unwrap_or_else(|_| panic!("Failed to serialize key {i}"));
+
+            let deserialized_key: DynamicBox = ron::from_str(&ron_string)
+                .unwrap_or_else(|_| panic!("Failed to deserialize key {i}"));
+
+            assert_eq!(*original_key, deserialized_key, "Mismatch at key {i}");
+        }
+    });
+}
