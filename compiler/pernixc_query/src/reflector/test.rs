@@ -13,6 +13,7 @@ use crate::{call_graph::DynamicBox, Database, Key};
     PartialOrd,
     Ord,
     Hash,
+    Default,
     Key,
     Serialize,
     Deserialize,
@@ -29,6 +30,7 @@ pub struct Variable(String);
     PartialOrd,
     Ord,
     Hash,
+    Default,
     Key,
     Serialize,
     Deserialize,
@@ -52,6 +54,7 @@ fn additive_merge(old: &mut i32, new: i32) -> Result<(), String> {
     PartialOrd,
     Ord,
     Hash,
+    Default,
     Key,
     Serialize,
     Deserialize,
@@ -94,6 +97,50 @@ fn conditional_merge(old: &mut i32, new: i32) -> Result<(), String> {
 #[value(i32)]
 #[merge(conditional_merge)]
 pub struct ConditionalMergeKey(String);
+
+// Generic key type for testing serialization with type parameters
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[pernixc_query(crate)]
+#[value(String)] // Use String as value type instead of T to avoid constraints
+pub struct GenericKey<T>(String, std::marker::PhantomData<T>)
+where
+    T: Clone
+        + std::fmt::Debug
+        + PartialEq
+        + Eq
+        + PartialOrd
+        + Ord
+        + std::hash::Hash
+        + serde::Serialize
+        + for<'a> serde::Deserialize<'a>
+        + Default;
+
+impl<T> GenericKey<T>
+where
+    T: Clone
+        + std::fmt::Debug
+        + PartialEq
+        + Eq
+        + PartialOrd
+        + Ord
+        + std::hash::Hash
+        + serde::Serialize
+        + for<'a> serde::Deserialize<'a>
+        + Default,
+{
+    fn new(name: String) -> Self { Self(name, std::marker::PhantomData) }
+}
 
 #[test]
 fn seriaizable() {
@@ -547,5 +594,112 @@ fn deserialize_dynamic_box_roundtrip_multiple() {
 
             assert_eq!(*original_key, deserialized_key, "Mismatch at key {i}");
         }
+    });
+}
+
+#[test]
+fn serialize_generic_key() {
+    // Test serialization of GenericKey with Variable type parameter
+    let variable_key = DynamicBox(smallbox!(GenericKey::<Variable>::new(
+        "test_variable".to_string()
+    )));
+
+    let mut database = Database::default();
+    database.register_reflector::<GenericKey<Variable>>();
+
+    super::set_reflector(&mut database.reflector, || {
+        let mut settings = Settings::clone_current();
+        settings.set_sort_maps(true);
+        settings.bind(|| assert_ron_snapshot!(variable_key));
+    });
+
+    // Test serialization of GenericKey with AdditiveKey type parameter
+    let additive_key = DynamicBox(smallbox!(GenericKey::<AdditiveKey>::new(
+        "test_additive".to_string()
+    )));
+
+    database.register_reflector::<GenericKey<AdditiveKey>>();
+
+    super::set_reflector(&mut database.reflector, || {
+        let mut settings = Settings::clone_current();
+        settings.set_sort_maps(true);
+        settings.bind(|| assert_ron_snapshot!(additive_key));
+    });
+}
+
+#[test]
+fn deserialize_generic_key() {
+    // Test with GenericKey<Variable>
+    let original_variable_key = DynamicBox(smallbox!(
+        GenericKey::<Variable>::new("test_variable".to_string())
+    ));
+
+    let mut database = Database::default();
+    database.register_reflector::<GenericKey<Variable>>();
+
+    super::set_reflector(&mut database.reflector, || {
+        // Serialize the DynamicBox to RON format
+        let ron_string = ron::to_string(&original_variable_key)
+            .expect("Failed to serialize GenericKey<Variable>");
+
+        // Deserialize the RON string back to a DynamicBox
+        let deserialized_key: DynamicBox = ron::from_str(&ron_string)
+            .expect("Failed to deserialize GenericKey<Variable>");
+
+        // Verify that the deserialized key equals the original
+        assert_eq!(original_variable_key, deserialized_key);
+
+        // Verify that the inner value is correct by downcasting
+        let original_generic = original_variable_key
+            .0
+            .any()
+            .downcast_ref::<GenericKey<Variable>>()
+            .expect("Original should be GenericKey<Variable>");
+        let deserialized_generic = deserialized_key
+            .0
+            .any()
+            .downcast_ref::<GenericKey<Variable>>()
+            .expect("Deserialized should be GenericKey<Variable>");
+
+        assert_eq!(original_generic, deserialized_generic);
+        assert_eq!(original_generic.0, "test_variable");
+        assert_eq!(deserialized_generic.0, "test_variable");
+    });
+
+    // Test with GenericKey<AdditiveKey>
+    let original_additive_key = DynamicBox(smallbox!(
+        GenericKey::<AdditiveKey>::new("test_additive".to_string())
+    ));
+
+    let mut database = Database::default();
+    database.register_reflector::<GenericKey<AdditiveKey>>();
+
+    super::set_reflector(&mut database.reflector, || {
+        // Serialize the DynamicBox to RON format
+        let ron_string = ron::to_string(&original_additive_key)
+            .expect("Failed to serialize GenericKey<AdditiveKey>");
+
+        // Deserialize the RON string back to a DynamicBox
+        let deserialized_key: DynamicBox = ron::from_str(&ron_string)
+            .expect("Failed to deserialize GenericKey<AdditiveKey>");
+
+        // Verify that the deserialized key equals the original
+        assert_eq!(original_additive_key, deserialized_key);
+
+        // Verify that the inner value is correct by downcasting
+        let original_generic = original_additive_key
+            .0
+            .any()
+            .downcast_ref::<GenericKey<AdditiveKey>>()
+            .expect("Original should be GenericKey<AdditiveKey>");
+        let deserialized_generic = deserialized_key
+            .0
+            .any()
+            .downcast_ref::<GenericKey<AdditiveKey>>()
+            .expect("Deserialized should be GenericKey<AdditiveKey>");
+
+        assert_eq!(original_generic, deserialized_generic);
+        assert_eq!(original_generic.0, "test_additive");
+        assert_eq!(deserialized_generic.0, "test_additive");
     });
 }
