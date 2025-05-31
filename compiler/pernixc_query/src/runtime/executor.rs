@@ -56,7 +56,7 @@ impl Registry {
     /// Registers a new executor for the given [`K`] key type. If an executor
     /// for the given key type already exists, it will be replaced with the new
     /// one and the old one will be returned.
-    pub fn register_executor<K: Key, E: Executor<K>>(
+    pub fn register<K: Key, E: Executor<K>>(
         &mut self,
         executor: Arc<E>,
     ) -> Option<Arc<dyn Executor<K>>> {
@@ -68,7 +68,7 @@ impl Registry {
     /// Retrieves the executor for the given [`K`] key type. If no executor
     /// exists for the given key type, it will return `None`.
     #[must_use]
-    pub fn get_executor<K: Key>(&self) -> Option<Arc<dyn Executor<K>>> {
+    pub fn get<K: Key>(&self) -> Option<Arc<dyn Executor<K>>> {
         self.executors_by_key_type_id
             .get(&TypeId::of::<K>())
             .map(|entry| entry.clone().downcast::<K>())

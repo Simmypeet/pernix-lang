@@ -1,4 +1,4 @@
-//! Contains the definition of the [`Serde`] struct.
+//! Contains the definition of the [`Registry`] struct.
 
 use std::{any::Any, collections::HashMap, marker::PhantomData};
 
@@ -115,7 +115,7 @@ impl Registry {
     /// containing the given type `T`. When all the types are registered
     /// the map can be serialized using the [`Map::serializable`] method along
     /// with the reflector.
-    pub fn register_reflector<T: Key>(&mut self) {
+    pub fn register<T: Key>(&mut self) {
         if self
             .serialization_metadata_by_type_id
             .contains_key(&T::STABLE_TYPE_ID)
@@ -256,10 +256,10 @@ impl Serialize for SerializableMap<'_> {
                 continue;
             }
 
-            map.serialize_entry(
-                &type_id,
-                &TypedMapSer { ser_metadata, map: self.map },
-            )?;
+            map.serialize_entry(&type_id, &TypedMapSer {
+                ser_metadata,
+                map: self.map,
+            })?;
 
             serialized_count += 1;
         }
@@ -363,7 +363,8 @@ thread_local! {
 pub static REFLECTOR: std::cell::RefCell<Option<Registry>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Sets the reflector to the current session allowing serialization of [`Dynamic`] happening in the `f` closure
+/// Sets the reflector to the current session allowing serialization of
+/// [`Dynamic`] happening in the `f` closure
 pub fn set_reflector<T>(reflector: &mut Registry, f: impl FnOnce() -> T) -> T {
     // temporarily take the current reflector, so that we can restore it
     let current = REFLECTOR.with(|r| r.borrow_mut().take());
@@ -430,13 +431,10 @@ impl Serialize for DynamicBox {
 
             struct_serializer
                 .serialize_field("stable_type_id", &self.stable_type_id())?;
-            struct_serializer.serialize_field(
-                "value",
-                &Wrapper {
-                    value: &*self.0,
-                    serializer_box_fn: entry.serialize_box,
-                },
-            )?;
+            struct_serializer.serialize_field("value", &Wrapper {
+                value: &*self.0,
+                serializer_box_fn: entry.serialize_box,
+            })?;
 
             struct_serializer.end()
         })

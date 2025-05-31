@@ -201,10 +201,9 @@ impl Database {
             return Ok(());
         };
 
-        if matches!(
-            version_info.kind,
-            Kind::Derived { defaulted_by_cyclic_dependency: true }
-        ) && version_info.verfied_at_version == self.version
+        if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) && version_info.verfied_at_version == self.version
         {
             return Err(crate::runtime::executor::CyclicError);
         }
@@ -286,10 +285,9 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        let recompute = if matches!(
-            version_info.kind,
-            Kind::Derived { defaulted_by_cyclic_dependency: true }
-        ) {
+        let recompute = if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) {
             true
         } else {
             let inputs = call_graph
@@ -387,13 +385,12 @@ impl Database {
             .dependency_graph
             .insert(key_smallbox.clone(), HashSet::new());
 
-        let executor =
-            self.runtime.executor.get_executor::<T>().unwrap_or_else(|| {
-                panic!(
-                    "no executor registered for key type {}",
-                    std::any::type_name::<T>()
-                )
-            });
+        let executor = self.runtime.executor.get::<T>().unwrap_or_else(|| {
+            panic!(
+                "no executor registered for key type {}",
+                std::any::type_name::<T>()
+            )
+        });
 
         let current_thread_id = std::thread::current().id();
 
@@ -609,12 +606,9 @@ impl Database {
                         // must've been marked as cyclic before
                         assert!(
                             version_info.verfied_at_version == self.version
-                                && matches!(
-                                    version_info.kind,
-                                    Kind::Derived {
-                                        defaulted_by_cyclic_dependency: true
-                                    }
-                                )
+                                && matches!(version_info.kind, Kind::Derived {
+                                    defaulted_by_cyclic_dependency: true
+                                })
                         );
 
                         version_info.verfied_at_version = self.version;
@@ -660,5 +654,5 @@ impl Database {
     }
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

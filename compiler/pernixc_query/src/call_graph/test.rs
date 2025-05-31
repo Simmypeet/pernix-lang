@@ -6,7 +6,7 @@ use pernixc_query_derive::Key;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    executor::{CyclicError, Executor},
+    runtime::executor::{CyclicError, Executor},
     Database,
 };
 
@@ -92,28 +92,28 @@ impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
 fn negate_variable() {
     let mut db = Database::default();
 
-    map.insert(&Variable("a".to_string()), 100);
-    map.insert(&Variable("b".to_string()), 200);
+    db.set_input(&Variable("a".to_string()), 100);
+    db.set_input(&Variable("b".to_string()), 200);
     assert_eq!(db.version(), 0);
 
-    db.register_executor(Arc::new(NegateVariableExecutor));
-    db.register_executor(Arc::new(SumNegatedVariableExecutor));
+    db.runtime.executor.register(Arc::new(NegateVariableExecutor));
+    db.runtime.executor.register(Arc::new(SumNegatedVariableExecutor));
 
     let value = db
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
 
     assert_eq!(value, Ok(-300));
 
-    map.insert(&Variable("a".to_string()), 200);
-    map.insert(&Variable("b".to_string()), 300);
+    db.set_input(&Variable("a".to_string()), 200);
+    db.set_input(&Variable("b".to_string()), 300);
     assert_eq!(db.version(), 1);
 
     let value = db
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
     assert_eq!(value, Ok(-500));
 
-    map.insert(&Variable("a".to_string()), -300);
-    map.insert(&Variable("b".to_string()), -300);
+    db.set_input(&Variable("a".to_string()), -300);
+    db.set_input(&Variable("b".to_string()), -300);
 
     assert_eq!(db.version(), 2);
     let value = db
@@ -169,7 +169,7 @@ fn skip_when_input_unchanged() {
     let mut db = Database::default();
 
     // Set initial input
-    map.insert(&Variable("x".to_string()), 42);
+    db.set_input(&Variable("x".to_string()), 42);
     assert_eq!(db.version(), 0);
 
     // Create tracked executor to count invocations
@@ -177,7 +177,7 @@ fn skip_when_input_unchanged() {
     let executor_arc = Arc::new(tracked_executor);
 
     // Register the tracked executor
-    db.register_executor(executor_arc.clone());
+    db.runtime.executor.register(executor_arc.clone());
 
     // First query - should compute and call executor
     let result1 = db.query(&TrackedComputation("x".to_string()));
@@ -191,7 +191,7 @@ fn skip_when_input_unchanged() {
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
     // Now change the input - should trigger recomputation
-    map.insert(&Variable("x".to_string()), 100);
+    db.set_input(&Variable("x".to_string()), 100);
     assert_eq!(db.version(), 1); // Version should increment
 
     // Query after input change - should compute and call executor again
@@ -297,8 +297,8 @@ fn skip_when_intermediate_result_unchanged() {
     let mut db = Database::default();
 
     // Set initial inputs - both positive values
-    map.insert(&Variable("x".to_string()), 400);
-    map.insert(&Variable("y".to_string()), 300);
+    db.set_input(&Variable("x".to_string()), 400);
+    db.set_input(&Variable("y".to_string()), 300);
     assert_eq!(db.version(), 0);
 
     // Create tracked executors to count invocations
@@ -306,8 +306,8 @@ fn skip_when_intermediate_result_unchanged() {
     let add_executor = Arc::new(TrackedAddTwoAbsExecutor::default());
 
     // Register the tracked executors
-    db.register_executor(abs_executor.clone());
-    db.register_executor(add_executor.clone());
+    db.runtime.executor.register(abs_executor.clone());
+    db.runtime.executor.register(add_executor.clone());
 
     // First query - should compute everything from scratch
     let result1 =
@@ -324,7 +324,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again
 
     // Change x from 400 to -400 (abs value stays the same)
-    map.insert(&Variable("x".to_string()), -400);
+    db.set_input(&Variable("x".to_string()), -400);
     assert_eq!(db.version(), 1); // Version should increment
 
     // Query after input change - abs executor should be called for x, but add
@@ -337,7 +337,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again because abs values are the same
 
     // Change y from 300 to -300 (abs value stays the same)
-    map.insert(&Variable("y".to_string()), -300);
+    db.set_input(&Variable("y".to_string()), -300);
     assert_eq!(db.version(), 2); // Version should increment again
 
     // Query after second input change - abs executor should be called for y,
@@ -349,7 +349,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // STILL not called because both abs values are the same
 
     // Now change x to a value that actually changes the abs result
-    map.insert(&Variable("x".to_string()), 500);
+    db.set_input(&Variable("x".to_string()), 500);
     assert_eq!(db.version(), 3); // Version should increment
 
     // Query after meaningful change - both executors should be called
@@ -451,7 +451,7 @@ fn multi_layer_dependency_skipping() {
     let mut db = Database::default();
 
     // Set initial input
-    map.insert(&Variable("z".to_string()), 5);
+    db.set_input(&Variable("z".to_string()), 5);
     assert_eq!(db.version(), 0);
 
     // Create tracked executors
@@ -460,9 +460,9 @@ fn multi_layer_dependency_skipping() {
     let complex_executor = Arc::new(TrackedComplexExecutor::default());
 
     // Register executors
-    db.register_executor(abs_executor.clone());
-    db.register_executor(square_executor.clone());
-    db.register_executor(complex_executor.clone());
+    db.runtime.executor.register(abs_executor.clone());
+    db.runtime.executor.register(square_executor.clone());
+    db.runtime.executor.register(complex_executor.clone());
 
     // First query - everything computed from scratch
     let result1 = db.query(&ComplexComputation("z".to_string()));
@@ -474,7 +474,7 @@ fn multi_layer_dependency_skipping() {
     // Change z from 5 to -5
     // abs(-5) = 5 (unchanged), but square(-5) = 25 (unchanged too!)
     // So the complex computation result should be the same: 5 + 25 = 30
-    map.insert(&Variable("z".to_string()), -5);
+    db.set_input(&Variable("z".to_string()), -5);
     assert_eq!(db.version(), 1);
 
     let result2 = db.query(&ComplexComputation("z".to_string()));
@@ -484,7 +484,7 @@ fn multi_layer_dependency_skipping() {
     assert_eq!(complex_executor.get_call_count(), 1); // NOT called because both dependencies are unchanged!
 
     // Change to a different value that actually changes the result
-    map.insert(&Variable("z".to_string()), 3);
+    db.set_input(&Variable("z".to_string()), 3);
     assert_eq!(db.version(), 2);
 
     let result3 = db.query(&ComplexComputation("z".to_string()));
@@ -592,14 +592,14 @@ fn incremental_compilation_simulation() {
     let mut db = Database::default();
 
     // Set up input values (representing source code)
-    map.insert(&Variable("module_a".to_string()), 10);
-    map.insert(&Variable("module_b".to_string()), 20);
+    db.set_input(&Variable("module_a".to_string()), 10);
+    db.set_input(&Variable("module_b".to_string()), 20);
 
     let type_check_executor = Arc::new(TypeCheckExecutor::default());
     let dependency_executor = Arc::new(DependencyExecutor::default());
 
-    db.register_executor(Arc::clone(&type_check_executor));
-    db.register_executor(Arc::clone(&dependency_executor));
+    db.runtime.executor.register(Arc::clone(&type_check_executor));
+    db.runtime.executor.register(Arc::clone(&dependency_executor));
 
     // First compilation: everything computed from scratch
     let result_a = db.query(&TypeCheckQuery("module_a".to_string()));
@@ -613,7 +613,7 @@ fn incremental_compilation_simulation() {
     assert_eq!(dependency_executor.get_call_count(), 2);
 
     // Simulate incremental change: only module_a changes
-    map.insert(&Variable("module_a".to_string()), 15);
+    db.set_input(&Variable("module_a".to_string()), 15);
 
     // Reset call counts to track incremental behavior
     type_check_executor
@@ -794,8 +794,8 @@ fn cyclic_dependency_returns_default_values() {
     let executor_a = Arc::new(CyclicExecutorA::default());
     let executor_b = Arc::new(CyclicExecutorB::default());
 
-    db.register_executor(Arc::clone(&executor_a));
-    db.register_executor(Arc::clone(&executor_b));
+    db.runtime.executor.register(Arc::clone(&executor_a));
+    db.runtime.executor.register(Arc::clone(&executor_b));
 
     // When we query CyclicQueryA, it should detect the cycle A -> B -> A
     // and return default values (0 for i32) without calling the executors
@@ -825,9 +825,9 @@ fn dependent_query_uses_cyclic_default_values() {
     let executor_b = Arc::new(CyclicExecutorB::default());
     let executor_dependent = Arc::new(DependentExecutor::default());
 
-    db.register_executor(Arc::clone(&executor_a));
-    db.register_executor(Arc::clone(&executor_b));
-    db.register_executor(Arc::clone(&executor_dependent));
+    db.runtime.executor.register(Arc::clone(&executor_a));
+    db.runtime.executor.register(Arc::clone(&executor_b));
+    db.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // Query the dependent query, which depends on the cyclic queries
     let result = db.query(&DependentQuery);
@@ -856,9 +856,9 @@ fn comprehensive_cyclic_dependency_behavior() {
     let executor_b = Arc::new(CyclicExecutorB::default());
     let executor_dependent = Arc::new(DependentExecutor::default());
 
-    db.register_executor(Arc::clone(&executor_a));
-    db.register_executor(Arc::clone(&executor_b));
-    db.register_executor(Arc::clone(&executor_dependent));
+    db.runtime.executor.register(Arc::clone(&executor_a));
+    db.runtime.executor.register(Arc::clone(&executor_b));
+    db.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // First, query CyclicQueryA directly to trigger cycle detection
     let result_a = db.query(&CyclicQueryA);
@@ -1043,11 +1043,11 @@ fn conditional_cyclic_dependency() {
     let executor_a = Arc::new(ConditionalCyclicExecutorA::default());
     let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
 
-    db.register_executor(Arc::clone(&executor_a));
-    db.register_executor(Arc::clone(&executor_b));
+    db.runtime.executor.register(Arc::clone(&executor_a));
+    db.runtime.executor.register(Arc::clone(&executor_b));
 
     // Phase 1: Set control value to create NO cycle (control_value != 1)
-    map.insert(&CycleControlVariable, 5);
+    db.set_input(&CycleControlVariable, 5);
 
     // Query both A and B - they should compute normal values without cycles
     let result_a = db.query(&ConditionalCyclicQueryA);
@@ -1062,7 +1062,7 @@ fn conditional_cyclic_dependency() {
     assert_eq!(executor_b.get_call_count(), 1);
 
     // Phase 2: Change control value to CREATE a cycle (control_value == 1)
-    map.insert(&CycleControlVariable, 1);
+    db.set_input(&CycleControlVariable, 1);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1080,7 +1080,7 @@ fn conditional_cyclic_dependency() {
 
     // Phase 3: Change control value back to break the cycle (control_value !=
     // 1)
-    map.insert(&CycleControlVariable, 3);
+    db.set_input(&CycleControlVariable, 3);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1098,7 +1098,7 @@ fn conditional_cyclic_dependency() {
 
     // Phase 4: Create cycle again with a different control value
     // (control_value // == 1)
-    map.insert(&CycleControlVariable, 1);
+    db.set_input(&CycleControlVariable, 1);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1123,13 +1123,13 @@ fn conditional_cyclic_with_dependent_query() {
     let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
     let executor_dependent = Arc::new(ConditionalDependentExecutor::default());
 
-    db.register_executor(Arc::clone(&executor_a));
-    db.register_executor(Arc::clone(&executor_b));
-    db.register_executor(Arc::clone(&executor_dependent));
+    db.runtime.executor.register(Arc::clone(&executor_a));
+    db.runtime.executor.register(Arc::clone(&executor_b));
+    db.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // Phase 1: No cycle - dependent query should use computed values
 
-    map.insert(&CycleControlVariable, 2);
+    db.set_input(&CycleControlVariable, 2);
 
     let result_dependent = db.query(&DependentQuery);
 
@@ -1144,7 +1144,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 2: Create cycle - dependent query should use default values
 
-    map.insert(&CycleControlVariable, 1);
+    db.set_input(&CycleControlVariable, 1);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1164,7 +1164,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 3: Break cycle again - dependent query should use computed values
 
-    map.insert(&CycleControlVariable, 4);
+    db.set_input(&CycleControlVariable, 4);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst); // Query A and B to ensure they're computed

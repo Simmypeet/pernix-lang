@@ -147,8 +147,8 @@ fn serializable() {
     let mut registry = super::Registry::default();
     let map = map::Map::default();
 
-    registry.register_reflector::<Variable>();
-    registry.register_reflector::<NegateVariable>();
+    registry.register::<Variable>();
+    registry.register::<NegateVariable>();
 
     map.insert(Variable("x".to_string()), 32);
     map.insert(NegateVariable("x".to_string()), -32);
@@ -168,8 +168,8 @@ fn deserializable() {
     let mut registry = super::Registry::default();
     let map = map::Map::default();
 
-    registry.register_reflector::<Variable>();
-    registry.register_reflector::<NegateVariable>();
+    registry.register::<Variable>();
+    registry.register::<NegateVariable>();
 
     // Set up the original data
     map.insert(Variable("x".to_string()), 32);
@@ -185,8 +185,8 @@ fn deserializable() {
     // Create a new empty registry and map for deserialization
     let mut target_registry = super::Registry::default();
     let target_map = map::Map::default();
-    target_registry.register_reflector::<Variable>();
-    target_registry.register_reflector::<NegateVariable>();
+    target_registry.register::<Variable>();
+    target_registry.register::<NegateVariable>();
 
     // Deserialize back into the target map
     let deserializable_map = target_map.deserializable(&target_registry);
@@ -210,7 +210,7 @@ fn merge_value_basic_equality() {
     let mut registry = super::Registry::default();
     let map = map::Map::default();
 
-    registry.register_reflector::<Variable>();
+    registry.register::<Variable>();
 
     // Set initial value
     map.insert(Variable("test".to_string()), 42);
@@ -221,7 +221,7 @@ fn merge_value_basic_equality() {
         // from
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<Variable>();
+        source_registry.register::<Variable>();
         source_map.insert(Variable("test".to_string()), 42); // Same value
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -247,7 +247,7 @@ fn merge_value_basic_equality() {
         // serialize from
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<Variable>();
+        source_registry.register::<Variable>();
         source_map.insert(Variable("test".to_string()), 100); // Different value
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -277,7 +277,7 @@ fn merge_value_custom_additive() {
     let mut registry = super::Registry::default();
     let map = map::Map::default();
 
-    registry.register_reflector::<AdditiveKey>();
+    registry.register::<AdditiveKey>();
 
     // Set initial value
     map.insert(AdditiveKey("counter".to_string()), 10);
@@ -286,7 +286,7 @@ fn merge_value_custom_additive() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<AdditiveKey>();
+        source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("counter".to_string()), 5);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -308,7 +308,7 @@ fn merge_value_custom_additive() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<AdditiveKey>();
+        source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("counter".to_string()), 25);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -333,7 +333,7 @@ fn merge_value_custom_additive() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<AdditiveKey>();
+        source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("new_counter".to_string()), 100);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -360,7 +360,7 @@ fn merge_value_conditional_errors() {
     let mut registry = super::Registry::default();
     let map = map::Map::default();
 
-    registry.register_reflector::<ConditionalMergeKey>();
+    registry.register::<ConditionalMergeKey>();
 
     // Set initial value
     map.insert(ConditionalMergeKey("test".to_string()), 50);
@@ -369,7 +369,7 @@ fn merge_value_conditional_errors() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 150);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -397,7 +397,7 @@ fn merge_value_conditional_errors() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 30);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -425,7 +425,7 @@ fn merge_value_conditional_errors() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 50);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -447,7 +447,7 @@ fn merge_value_conditional_errors() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 75);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -469,7 +469,7 @@ fn merge_value_conditional_errors() {
     {
         let mut source_registry = super::Registry::default();
         let source_map = map::Map::default();
-        source_registry.register_reflector::<ConditionalMergeKey>();
+        source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 100);
 
         let serializable_map = source_map.serializable(&source_registry);
@@ -496,7 +496,7 @@ fn serialize_key() {
     let key = DynamicBox(smallbox!(Variable("test".to_string())));
 
     let mut registry = super::Registry::default();
-    registry.register_reflector::<Variable>();
+    registry.register::<Variable>();
 
     super::set_reflector(&mut registry, || {
         let mut settings = Settings::clone_current();
@@ -510,7 +510,7 @@ fn deserialize_dynamic_box() {
     let original_key = DynamicBox(smallbox!(Variable("test".to_string())));
 
     let mut registry = super::Registry::default();
-    registry.register_reflector::<Variable>();
+    registry.register::<Variable>();
 
     super::set_reflector(&mut registry, || {
         // Serialize the DynamicBox to RON format
@@ -549,8 +549,8 @@ fn deserialize_dynamic_box_different_types() {
         DynamicBox(smallbox!(NegateVariable("test_negate".to_string())));
 
     let mut registry = super::Registry::default();
-    registry.register_reflector::<Variable>();
-    registry.register_reflector::<NegateVariable>();
+    registry.register::<Variable>();
+    registry.register::<NegateVariable>();
 
     super::set_reflector(&mut registry, || {
         // Test Variable deserialization
@@ -586,10 +586,10 @@ fn deserialize_dynamic_box_roundtrip_multiple() {
     ];
 
     let mut registry = super::Registry::default();
-    registry.register_reflector::<Variable>();
-    registry.register_reflector::<NegateVariable>();
-    registry.register_reflector::<AdditiveKey>();
-    registry.register_reflector::<ConditionalMergeKey>();
+    registry.register::<Variable>();
+    registry.register::<NegateVariable>();
+    registry.register::<AdditiveKey>();
+    registry.register::<ConditionalMergeKey>();
 
     super::set_reflector(&mut registry, || {
         for (i, original_key) in keys.iter().enumerate() {
@@ -612,7 +612,7 @@ fn serialize_generic_key() {
     )));
 
     let mut registry = super::Registry::default();
-    registry.register_reflector::<GenericKey<Variable>>();
+    registry.register::<GenericKey<Variable>>();
 
     super::set_reflector(&mut registry, || {
         let mut settings = Settings::clone_current();
@@ -626,7 +626,7 @@ fn serialize_generic_key() {
     )));
 
     let mut registry2 = super::Registry::default();
-    registry2.register_reflector::<GenericKey<AdditiveKey>>();
+    registry2.register::<GenericKey<AdditiveKey>>();
 
     super::set_reflector(&mut registry2, || {
         let mut settings = Settings::clone_current();
@@ -643,7 +643,7 @@ fn deserialize_generic_key() {
     ));
 
     let mut registry = super::Registry::default();
-    registry.register_reflector::<GenericKey<Variable>>();
+    registry.register::<GenericKey<Variable>>();
 
     super::set_reflector(&mut registry, || {
         // Serialize the DynamicBox to RON format
@@ -680,7 +680,7 @@ fn deserialize_generic_key() {
     ));
 
     let mut registry2 = super::Registry::default();
-    registry2.register_reflector::<GenericKey<AdditiveKey>>();
+    registry2.register::<GenericKey<AdditiveKey>>();
 
     super::set_reflector(&mut registry2, || {
         // Serialize the DynamicBox to RON format
