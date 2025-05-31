@@ -3,11 +3,11 @@ source: compiler/pernixc_query/src/reflector/test.rs
 expression: map
 ---
 {
-  "pernixc_query@0.1.0-beta.2::pernixc_query::reflector::test::NegateVariable": {
+  StableTypeID(2723828759413584880, 11875295742049678158): {
     NegateVariable("x"): -32,
     NegateVariable("y"): -64,
   },
-  "pernixc_query@0.1.0-beta.2::pernixc_query::reflector::test::Variable": {
+  StableTypeID(15673232390923485487, 7394888357388017924): {
     Variable("x"): 32,
     Variable("y"): 64,
   },

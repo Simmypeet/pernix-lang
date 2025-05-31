@@ -1,8 +1,4 @@
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-    marker::PhantomData,
-};
+use std::{any::Any, collections::HashMap, marker::PhantomData};
 
 use enum_as_inner::EnumAsInner;
 use serde::{
@@ -12,13 +8,19 @@ use serde::{
 };
 use smallbox::smallbox;
 
-use crate::{call_graph::DynamicBox, key::Dynamic, map::Map, Database, Key};
+use crate::{
+    call_graph::DynamicBox,
+    key::{Dynamic, StableTypeID},
+    map::Map,
+    Database, Key,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Reflector {
-    serialization_metadata_by_type_id: HashMap<TypeId, SerializationMetadata>,
+    serialization_metadata_by_type_id:
+        HashMap<StableTypeID, SerializationMetadata>,
     deserialization_metadata_by_type_id:
-        HashMap<&'static str, DeserializationMetadata>,
+        HashMap<StableTypeID, DeserializationMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -42,7 +44,8 @@ type DeserializeBoxFn = fn(
 struct SerializationMetadata {
     serialize_map: SerializeMapFn,
     serialize_box: SerializeBoxFn,
-    unique_type_name: &'static str,
+    stable_type_id: StableTypeID,
+    type_id: std::any::TypeId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -74,7 +77,11 @@ impl<'de, K: Key> Visitor<'de> for MapDeserializeHelper<'_, K> {
         &self,
         formatter: &mut std::fmt::Formatter,
     ) -> std::fmt::Result {
-        write!(formatter, "a map with keys of type {}", K::unique_type_name())
+        write!(
+            formatter,
+            "a map with keys of type {}",
+            std::any::type_name::<K>()
+        )
     }
 
     fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
@@ -106,11 +113,10 @@ impl Database {
     /// the map can be serialized using the [`Map::serializable`] method along
     /// with the reflector.
     pub fn register_reflector<T: Key>(&mut self) {
-        let type_id = TypeId::of::<T>();
         if self
             .reflector
             .serialization_metadata_by_type_id
-            .contains_key(&type_id)
+            .contains_key(&T::STABLE_TYPE_ID)
         {
             return; // Already registered
         }
@@ -153,17 +159,18 @@ impl Database {
             ser: SerializationMetadata {
                 serialize_map,
                 serialize_box,
-                unique_type_name: T::unique_type_name(),
+                stable_type_id: T::STABLE_TYPE_ID,
+                type_id: std::any::TypeId::of::<T>(),
             },
             de: DeserializationMetadata { deserialize_entry, deserialize_box },
         };
 
         self.reflector
             .serialization_metadata_by_type_id
-            .insert(type_id, serde_metadata.ser);
+            .insert(T::STABLE_TYPE_ID, serde_metadata.ser);
         self.reflector
             .deserialization_metadata_by_type_id
-            .insert(serde_metadata.ser.unique_type_name, serde_metadata.de);
+            .insert(T::STABLE_TYPE_ID, serde_metadata.de);
     }
 }
 
@@ -241,12 +248,12 @@ impl Serialize for SerializableMap<'_> {
         {
             // skip if this serialization metadata is not applicable to the
             // current map.
-            if !self.map.has_type_id(*type_id) {
+            if !self.map.has_type_id(ser_metadata.type_id) {
                 continue;
             }
 
             map.serialize_entry(
-                ser_metadata.unique_type_name,
+                &type_id,
                 &TypedMapSer { ser_metadata, map: self.map },
             )?;
 
@@ -320,14 +327,14 @@ impl<'de> Visitor<'de> for DeserializableMap<'_> {
             }
         }
 
-        while let Some(type_name) = map.next_key::<&str>()? {
+        while let Some(stable_type_id) = map.next_key::<StableTypeID>()? {
             let deserialization_metadata = self
                 .reflector
                 .deserialization_metadata_by_type_id
-                .get(type_name)
+                .get(&stable_type_id)
                 .ok_or_else(|| {
                     serde::de::Error::custom(format!(
-                        "No deserialization metadata for type: {type_name}"
+                        "No deserialization metadata for type: stable type id {stable_type_id:?}"
                     ))
                 })?;
 
@@ -407,11 +414,11 @@ impl Serialize for DynamicBox {
             let reflector = reflector.as_ref().expect("should've been set");
             let entry = reflector
                 .serialization_metadata_by_type_id
-                .get(&self.0.any().type_id())
+                .get(&self.0.stable_type_id())
                 .ok_or_else(|| {
                     serde::ser::Error::custom(format!(
                         "No serialization metadata for type: {}",
-                        self.0.unique_type_name()
+                        self.0.type_name()
                     ))
                 })?;
 
@@ -419,7 +426,7 @@ impl Serialize for DynamicBox {
                 serializer.serialize_struct("Dynamic", 2)?;
 
             struct_serializer
-                .serialize_field("unique_type_name", self.unique_type_name())?;
+                .serialize_field("stable_type_id", &self.stable_type_id())?;
             struct_serializer.serialize_field(
                 "value",
                 &Wrapper {

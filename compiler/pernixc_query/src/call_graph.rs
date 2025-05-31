@@ -45,7 +45,9 @@ pub struct CallGraph {
 pub(crate) struct DynamicBox(pub SmallBox<dyn Dynamic>);
 
 impl Clone for DynamicBox {
-    fn clone(&self) -> Self { Self(self.0.smallbox_clone()) }
+    fn clone(&self) -> Self {
+        Self(self.0.smallbox_clone())
+    }
 }
 
 impl CallGraph {
@@ -187,9 +189,10 @@ impl Database {
             return Ok(());
         };
 
-        if matches!(version_info.kind, Kind::Derived {
-            defaulted_by_cyclic_dependency: true
-        }) && version_info.verfied_at_version == self.version
+        if matches!(
+            version_info.kind,
+            Kind::Derived { defaulted_by_cyclic_dependency: true }
+        ) && version_info.verfied_at_version == self.version
         {
             return Err(crate::executor::CyclicError);
         }
@@ -268,9 +271,10 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        let recompute = if matches!(version_info.kind, Kind::Derived {
-            defaulted_by_cyclic_dependency: true
-        }) {
+        let recompute = if matches!(
+            version_info.kind,
+            Kind::Derived { defaulted_by_cyclic_dependency: true }
+        ) {
             true
         } else {
             let inputs = call_graph
@@ -294,7 +298,7 @@ impl Database {
                         .unwrap_or_else(|| {
                             panic!(
                                 "no executor registered for key type `{}`",
-                                dep.unique_type_name()
+                                dep.type_name()
                             )
                         });
 
@@ -587,9 +591,12 @@ impl Database {
                         // must've been marked as cyclic before
                         assert!(
                             version_info.verfied_at_version == self.version
-                                && matches!(version_info.kind, Kind::Derived {
-                                    defaulted_by_cyclic_dependency: true
-                                })
+                                && matches!(
+                                    version_info.kind,
+                                    Kind::Derived {
+                                        defaulted_by_cyclic_dependency: true
+                                    }
+                                )
                         );
 
                         version_info.verfied_at_version = self.version;
