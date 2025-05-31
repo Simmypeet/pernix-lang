@@ -4,11 +4,13 @@ use std::{
     marker::PhantomData,
 };
 
+use enum_as_inner::EnumAsInner;
 use serde::{
     de::{DeserializeSeed, Visitor},
     ser::{SerializeMap, SerializeStruct},
-    Serialize,
+    Deserialize, Serialize,
 };
+use smallbox::smallbox;
 
 use crate::{call_graph::DynamicBox, key::Dynamic, map::Map, Database, Key};
 
@@ -24,14 +26,17 @@ struct SerdeMetadata {
     ser: SerializationMetadata,
     de: DeserializationMetadata,
 }
-
 type SerializeMapFn = fn(&Map, &mut dyn FnMut(&dyn erased_serde::Serialize));
 type SerializeBoxFn =
     fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize));
-type DeserializeFn = fn(
+
+type DeserializeMapFn = fn(
     &Map,
     &mut dyn erased_serde::Deserializer,
 ) -> Result<(), erased_serde::Error>;
+type DeserializeBoxFn = fn(
+    &mut dyn erased_serde::Deserializer,
+) -> Result<DynamicBox, erased_serde::Error>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct SerializationMetadata {
@@ -42,7 +47,8 @@ struct SerializationMetadata {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct DeserializationMetadata {
-    deserialize_entry: DeserializeFn,
+    deserialize_entry: DeserializeMapFn,
+    deserialize_box: DeserializeBoxFn,
 }
 
 struct MapDeserializeHelper<'a, K> {
@@ -138,13 +144,18 @@ impl Database {
                 deserialize_helper.deserialize(deserializer)
             };
 
+        let deserialize_box =
+            |deserializer: &mut dyn erased_serde::Deserializer| {
+                Ok(DynamicBox(smallbox!(T::deserialize(deserializer)?)))
+            };
+
         let serde_metadata = SerdeMetadata {
             ser: SerializationMetadata {
                 serialize_map,
                 serialize_box,
                 unique_type_name: T::unique_type_name(),
             },
-            de: DeserializationMetadata { deserialize_entry },
+            de: DeserializationMetadata { deserialize_entry, deserialize_box },
         };
 
         self.reflector
@@ -234,10 +245,10 @@ impl Serialize for SerializableMap<'_> {
                 continue;
             }
 
-            map.serialize_entry(ser_metadata.unique_type_name, &TypedMapSer {
-                ser_metadata,
-                map: self.map,
-            })?;
+            map.serialize_entry(
+                ser_metadata.unique_type_name,
+                &TypedMapSer { ser_metadata, map: self.map },
+            )?;
 
             serialized_count += 1;
         }
@@ -287,7 +298,7 @@ impl<'de> Visitor<'de> for DeserializableMap<'_> {
     {
         struct DeserializeInnerMap<'a> {
             map: &'a Map,
-            deserializable_entry: DeserializeFn,
+            deserializable_entry: DeserializeMapFn,
         }
 
         impl<'de> DeserializeSeed<'de> for DeserializeInnerMap<'_> {
@@ -332,7 +343,11 @@ impl<'de> Visitor<'de> for DeserializableMap<'_> {
 }
 
 thread_local! {
-/// A reflector instance that allows DynamicBox to be serialized
+/// A thread-local state that holds a reflector instance allowing the
+/// [`DynamicBox`] to be serialized/deserialized.
+///
+/// This is a little bit of a hack, but it allows us to avoid manually writing
+/// the serialization and deserialization logic for on the CallGraph struct.
 pub static REFLECTOR: std::cell::RefCell<Option<Reflector>> = const { std::cell::RefCell::new(None) };
 }
 
@@ -405,13 +420,117 @@ impl Serialize for DynamicBox {
 
             struct_serializer
                 .serialize_field("unique_type_name", self.unique_type_name())?;
-            struct_serializer.serialize_field("value", &Wrapper {
-                value: &*self.0,
-                serializer_box_fn: entry.serialize_box,
-            })?;
+            struct_serializer.serialize_field(
+                "value",
+                &Wrapper {
+                    value: &*self.0,
+                    serializer_box_fn: entry.serialize_box,
+                },
+            )?;
 
             struct_serializer.end()
         })
+    }
+}
+
+impl<'de> Deserialize<'de> for DynamicBox {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
+        #[derive(EnumAsInner)]
+        enum Field {
+            UniqueTypeName,
+            Value,
+            Ignore,
+        }
+
+        struct FieldVisitor;
+
+        impl Visitor<'_> for FieldVisitor {
+            type Value = Field;
+
+            fn expecting(
+                &self,
+                formatter: &mut std::fmt::Formatter,
+            ) -> std::fmt::Result {
+                write!(formatter, "a field name")
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match v {
+                    0 => Ok(Field::UniqueTypeName),
+                    1 => Ok(Field::Value),
+                    _ => Ok(Field::Ignore),
+                }
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match v {
+                    "unique_type_name" => Ok(Field::UniqueTypeName),
+                    "value" => Ok(Field::Value),
+                    _ => Ok(Field::Ignore),
+                }
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                match v {
+                    b"unique_type_name" => Ok(Field::UniqueTypeName),
+                    b"value" => Ok(Field::Value),
+                    _ => Ok(Field::Ignore),
+                }
+            }
+        }
+
+        impl<'de> Deserialize<'de> for Field {
+            fn deserialize<D: serde::Deserializer<'de>>(
+                deserializer: D,
+            ) -> Result<Self, D::Error> {
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct DynamicBoxVisitor(DeserializeBoxFn);
+
+        impl<'de> Visitor<'de> for DynamicBoxVisitor {
+            type Value = DynamicBox;
+
+            fn expecting(
+                &self,
+                formatter: &mut std::fmt::Formatter,
+            ) -> std::fmt::Result {
+                write!(formatter, "a dynamic box")
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                if map
+                    .next_key::<Field>()?
+                    .ok_or(serde::de::Error::custom(
+                        "Expected a `unique_type_name` field",
+                    ))?
+                    .is_unique_type_name()
+                {
+                    return Err(serde::de::Error::custom(
+                        "Expected a `unique_type_name` field",
+                    ));
+                }
+
+                todo!()
+            }
+        }
+
+        todo!()
     }
 }
 
