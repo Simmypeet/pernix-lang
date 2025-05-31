@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)]
+
 //! Implements the [`CallGraph`] struct used to track the dependencies between
 //! queries.
 
@@ -17,22 +19,24 @@ use crate::{
 };
 
 /// Tracks the dependencies between queries and their execution order.
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[allow(clippy::mutable_key_type)]
 pub struct CallGraph {
     // emulating a call stack of particular thread
-    record_stacks_by_thread_id: HashMap<ThreadId, Vec<SmallBox<dyn Dynamic>>>,
+    #[serde(skip)] // ThreadId is not serializable
+    record_stacks_by_thread_id: HashMap<ThreadId, Vec<DynamicBox>>,
 
     // the condition variables used to notify the threads that are waiting for
     // the completion of a particular record
-    condvars_by_record: HashMap<SmallBox<dyn Dynamic>, Arc<Condvar>>,
+    #[serde(skip)] // Arc<Condvar> is not serializable
+    condvars_by_record: HashMap<DynamicBox, Arc<Condvar>>,
 
-    current_dependencies_by_dependant:
-        HashMap<SmallBox<dyn Dynamic>, SmallBox<dyn Dynamic>>,
+    #[serde(skip)]
+    current_dependencies_by_dependant: HashMap<DynamicBox, DynamicBox>,
 
-    dependency_graph:
-        HashMap<SmallBox<dyn Dynamic>, HashSet<SmallBox<dyn Dynamic>>>,
+    dependency_graph: HashMap<DynamicBox, HashSet<DynamicBox>>,
 
-    version_info_by_keys: HashMap<SmallBox<dyn Dynamic>, VersionInfo>,
+    version_info_by_keys: HashMap<DynamicBox, VersionInfo>,
 
     cyclic_dependencies: Vec<CyclicDependency>,
 }
@@ -42,28 +46,26 @@ pub struct CallGraph {
 #[derive(
     Debug, PartialEq, Eq, Hash, derive_more::Deref, derive_more::DerefMut,
 )]
-pub(crate) struct DynamicBox(pub SmallBox<dyn Dynamic>);
+pub struct DynamicBox(pub SmallBox<dyn Dynamic>);
 
 impl Clone for DynamicBox {
-    fn clone(&self) -> Self {
-        Self(self.0.smallbox_clone())
-    }
+    fn clone(&self) -> Self { Self(self.0.smallbox_clone()) }
 }
 
 impl CallGraph {
-    fn called_from(&self) -> Option<SmallBox<dyn Dynamic>> {
+    fn called_from(&self) -> Option<DynamicBox> {
         let current_thread_id = std::thread::current().id();
         self.record_stacks_by_thread_id
             .get(&current_thread_id)
-            .and_then(|x| x.last().map(|x| x.smallbox_clone()))
+            .and_then(|x| x.last().cloned())
     }
 }
 
 /// Stores the error information about a cyclic dependency in the call graph.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct CyclicDependency {
     /// The stack of records that caused the cyclic dependency.
-    pub records_stack: Vec<SmallBox<dyn Dynamic>>,
+    pub records_stack: Vec<DynamicBox>,
 }
 
 impl std::fmt::Debug for CallGraph {
@@ -74,7 +76,18 @@ impl std::fmt::Debug for CallGraph {
 
 /// Stores the information about the version of a query result used to track
 /// the validity of the result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct VersionInfo {
     /// The version when the value was computed.
     updated_at_version: usize,
@@ -88,7 +101,17 @@ pub struct VersionInfo {
 
 /// An enumeration storing the information about the value of a query.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 pub enum Kind {
     /// The value is an `input` value, explicitly set by the user.
@@ -131,7 +154,7 @@ impl Database {
             .call_graph
             .get_mut()
             .version_info_by_keys
-            .entry(key.smallbox_clone())
+            .entry(DynamicBox(key.smallbox_clone()))
         {
             Entry::Occupied(mut occupied_entry) => {
                 let value = occupied_entry.get_mut();
@@ -175,7 +198,7 @@ impl Database {
     fn check_cyclic(
         &self,
         computed_successfully: bool,
-        called_from: Option<&SmallBox<dyn Dynamic>>,
+        called_from: Option<&DynamicBox>,
         call_graph: &mut MutexGuard<CallGraph>,
     ) -> Result<(), crate::executor::CyclicError> {
         let (Some(called_from), true) = (called_from, !computed_successfully)
@@ -189,10 +212,9 @@ impl Database {
             return Ok(());
         };
 
-        if matches!(
-            version_info.kind,
-            Kind::Derived { defaulted_by_cyclic_dependency: true }
-        ) && version_info.verfied_at_version == self.version
+        if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) && version_info.verfied_at_version == self.version
         {
             return Err(crate::executor::CyclicError);
         }
@@ -209,7 +231,7 @@ impl Database {
         Result<T::Value, crate::executor::CyclicError>,
         MutexGuard<'a, CallGraph>,
     ) {
-        let key_smallbox = key.smallbox_clone();
+        let key_smallbox = DynamicBox(key.smallbox_clone());
 
         let called_from = call_graph.called_from();
 
@@ -271,10 +293,9 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        let recompute = if matches!(
-            version_info.kind,
-            Kind::Derived { defaulted_by_cyclic_dependency: true }
-        ) {
+        let recompute = if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) {
             true
         } else {
             let inputs = call_graph
@@ -282,7 +303,7 @@ impl Database {
                 .get(&key_smallbox)
                 .unwrap()
                 .iter()
-                .map(|x| x.smallbox_clone())
+                .map(|x| DynamicBox(x.smallbox_clone()))
                 .collect::<Vec<_>>();
 
             let mut recompute = false;
@@ -302,7 +323,7 @@ impl Database {
                             )
                         });
 
-                    call_graph = invoke_fn(self, &**dep, call_graph);
+                    call_graph = invoke_fn(self, &***dep, call_graph);
                 }
 
                 // check if there's need to recompute the value
@@ -362,13 +383,13 @@ impl Database {
     fn fresh_query<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
-        key_smallbox: &SmallBox<dyn Dynamic>,
-        called_from: Option<&SmallBox<dyn Dynamic>>,
+        key_smallbox: &DynamicBox,
+        called_from: Option<&DynamicBox>,
         mut call_graph: MutexGuard<'a, CallGraph>,
     ) -> (bool, MutexGuard<'a, CallGraph>) {
         call_graph
             .dependency_graph
-            .insert(key_smallbox.smallbox_clone(), HashSet::new());
+            .insert(key_smallbox.clone(), HashSet::new());
 
         let executor = self.get_executor::<T>().unwrap_or_else(|| {
             panic!(
@@ -385,17 +406,17 @@ impl Database {
                 .dependency_graph
                 .get_mut(called_from)
                 .unwrap()
-                .insert(key.smallbox_clone());
+                .insert(DynamicBox(key.smallbox_clone()));
 
             // check if `target_record` can go to `called_from`
-            let mut stack = vec![key.smallbox_clone()];
+            let mut stack = vec![DynamicBox(key.smallbox_clone())];
 
             loop {
                 if stack.last().unwrap() == called_from {
                     for call in &stack {
                         match call_graph
                             .version_info_by_keys
-                            .entry(call.smallbox_clone())
+                            .entry(call.clone())
                         {
                             Entry::Occupied(occupied_entry) => {
                                 let version_info = occupied_entry.into_mut();
@@ -425,7 +446,7 @@ impl Database {
                         .insert(key.clone(), <T::Value as Default>::default());
 
                     call_graph.version_info_by_keys.insert(
-                        key.smallbox_clone(),
+                        DynamicBox(key.smallbox_clone()),
                         VersionInfo {
                             updated_at_version: self.version,
                             verfied_at_version: self.version,
@@ -444,7 +465,7 @@ impl Database {
                     .current_dependencies_by_dependant
                     .get(stack.last().unwrap())
                 {
-                    stack.push(next.smallbox_clone());
+                    stack.push(next.clone());
                 } else {
                     break;
                 }
@@ -452,7 +473,7 @@ impl Database {
 
             assert!(call_graph
                 .current_dependencies_by_dependant
-                .insert(called_from.smallbox_clone(), key.smallbox_clone())
+                .insert(called_from.clone(), DynamicBox(key.smallbox_clone()))
                 .is_none());
         }
 
@@ -461,7 +482,7 @@ impl Database {
             .record_stacks_by_thread_id
             .entry(current_thread_id)
             .or_default()
-            .push(key.smallbox_clone());
+            .push(DynamicBox(key.smallbox_clone()));
 
         let sync = call_graph.condvars_by_record.get(key_smallbox).cloned();
 
@@ -502,7 +523,7 @@ impl Database {
     fn compute<'a, K: Key + Dynamic>(
         &'a self,
         key: &K,
-        key_smallbox: &SmallBox<dyn Dynamic>,
+        key_smallbox: &DynamicBox,
         mut call_graph: MutexGuard<'a, CallGraph>,
         executor: &dyn Executor<K>,
     ) -> (MutexGuard<'a, CallGraph>, bool) {
@@ -510,7 +531,7 @@ impl Database {
         let sync = Arc::new(Condvar::new());
         assert!(call_graph
             .condvars_by_record
-            .insert(key_smallbox.smallbox_clone(), sync.clone())
+            .insert(key_smallbox.clone(), sync.clone())
             .is_none());
 
         // skipcq: RS-E1021 false positive
@@ -545,7 +566,7 @@ impl Database {
 
                 match call_graph
                     .version_info_by_keys
-                    .entry(key.smallbox_clone())
+                    .entry(DynamicBox(key.smallbox_clone()))
                 {
                     Entry::Occupied(mut occupied_entry) => {
                         let version_info = occupied_entry.get_mut();
@@ -571,7 +592,7 @@ impl Database {
             }
             Err(_cyclic_error) => {
                 call_graph.version_info_by_keys.insert(
-                    key.smallbox_clone(),
+                    DynamicBox(key.smallbox_clone()),
                     VersionInfo {
                         updated_at_version: self.version,
                         verfied_at_version: self.version,
@@ -583,7 +604,7 @@ impl Database {
 
                 match call_graph
                     .version_info_by_keys
-                    .entry(key.smallbox_clone())
+                    .entry(DynamicBox(key.smallbox_clone()))
                 {
                     Entry::Occupied(occupied_entry) => {
                         let version_info = occupied_entry.into_mut();
@@ -591,12 +612,9 @@ impl Database {
                         // must've been marked as cyclic before
                         assert!(
                             version_info.verfied_at_version == self.version
-                                && matches!(
-                                    version_info.kind,
-                                    Kind::Derived {
-                                        defaulted_by_cyclic_dependency: true
-                                    }
-                                )
+                                && matches!(version_info.kind, Kind::Derived {
+                                    defaulted_by_cyclic_dependency: true
+                                })
                         );
 
                         version_info.verfied_at_version = self.version;
