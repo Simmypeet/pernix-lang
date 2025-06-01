@@ -389,6 +389,17 @@ impl<'de> DeserializeSeed<'de> for &Map {
     }
 }
 
+impl<'de> Deserialize<'de> for Map {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let map = Self::default();
+        (&map).deserialize(deserializer)?;
+        Ok(map)
+    }
+}
+
 impl<'de> Visitor<'de> for &Map {
     type Value = ();
 
