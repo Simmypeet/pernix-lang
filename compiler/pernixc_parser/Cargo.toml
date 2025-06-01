@@ -13,6 +13,7 @@ pernixc_source_file = { path = "../pernixc_source_file" }
 pernixc_target = { path = "../pernixc_target" }
 pernixc_handler = { path = "../pernixc_handler" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
+pernixc_stable_type_id = { path = "../pernixc_stable_type_id" }
 getset = { workspace = true }
 static_assertions = { workspace = true }
 paste = { workspace = true }

@@ -14,7 +14,7 @@ use pernixc_handler::Handler;
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
 use crate::{
@@ -100,7 +100,16 @@ pub struct Indentation {
 /// Specifiying the position in the branch (begin or end) that will be used for
 /// calculating the relative offset of the token.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
 )]
 pub enum OffsetMode {
     /// Relative to the start byte of the branch.
@@ -113,7 +122,16 @@ pub enum OffsetMode {
 /// A relative location in the source code that is relative to a branch in the
 /// token tree.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
 )]
 pub struct RelativeLocation {
     /// The byte offset from the branch.

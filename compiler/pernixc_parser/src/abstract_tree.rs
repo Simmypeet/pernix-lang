@@ -2,6 +2,11 @@
 
 #[doc(hidden)]
 pub use std as __std;
+use std::marker::PhantomData;
+
+#[doc(hidden)]
+pub use pernixc_stable_type_id as __stable_type_id;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     cache, error, expect,
@@ -152,7 +157,7 @@ pub use field_extract as __field_extract;
 ///
 /// Rarely implemented directly, consider using the [`abstract_tree!`] macro
 /// to generate a struct or enum that implements this trait.
-pub trait AbstractTree: 'static + Sized + FromNode {
+pub trait AbstractTree: 'static + Sized + FromNode + Identifiable {
     /// Creates a parser for the syntax tree.
     ///
     /// # Note
@@ -267,6 +272,7 @@ macro_rules! abstract_tree {
         }
     } => {
         $( #[$struct_meta] )*
+        #[derive($crate::abstract_tree::__stable_type_id::Identifiable)]
         $struct_vis
         struct
         $struct_name
@@ -380,7 +386,7 @@ macro_rules! abstract_tree {
                 >
             ) -> Option<Self> {
                 tree.ast_info.is_some_and(|x|
-                    $crate::abstract_tree::__std::any::TypeId::of::<Self>()
+                    <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
                         == x.ast_type_id
                 )
                 .then_some(Self(
@@ -414,7 +420,7 @@ macro_rules! abstract_tree {
                 ) -> Option<Self> {
                     node.as_branch().and_then(|branch| {
                         branch.ast_info.is_some_and(|x|
-                            $crate::abstract_tree::__std::any::TypeId::of::<Self>()
+                            <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
                                 == x.ast_type_id
                         )
                         .then(|| Self(
@@ -488,6 +494,7 @@ macro_rules! abstract_tree {
         }
     } => {
         $( #[$enum_meta] )*
+        #[derive($crate::abstract_tree::__stable_type_id::Identifiable)]
         $enum_vis
         enum
         $enum_name
@@ -521,7 +528,7 @@ macro_rules! abstract_tree {
                 ) -> Option<Self> {
                     let branch = node.as_branch().and_then(|branch| {
                         branch.ast_info.is_some_and(|x|
-                            $crate::abstract_tree::__std::any::TypeId::of::<Self>()
+                            <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
                                 == x.ast_type_id
                         )
                         .then(|| branch.clone())
@@ -578,6 +585,52 @@ macro_rules! abstract_tree {
 }
 
 pub use abstract_tree;
+use pernixc_stable_type_id::Identifiable;
+
+/// A tagging type
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct First;
+
+/// A tagging type
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct Second;
+
+/// A tagging type
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct Third;
 
 /// A helper struct that allows you to tag multiple trees with the same type
 /// in a single [`abstract_tree!`] macro.
@@ -597,38 +650,41 @@ pub use abstract_tree;
     PartialOrd,
     Ord,
     Hash,
+    Identifiable,
     derive_more::Deref,
     derive_more::DerefMut,
     serde::Serialize,
     serde::Deserialize,
 )]
-pub struct Tag<T, const N: usize>(pub T);
+pub struct Tag<T, U>(
+    #[deref]
+    #[deref_mut]
+    pub T,
+    pub PhantomData<U>,
+);
 
-impl<T: AbstractTree, const N: usize> AbstractTree for Tag<T, N> {
+impl<T: AbstractTree, U: Identifiable + 'static> AbstractTree for Tag<T, U> {
     fn parser() -> impl Parser { parser::ast::<T>() }
 
     fn step_into_fragment() -> Option<expect::Fragment> { None }
 }
 
-impl<T: AbstractTree, const N: usize> FromNode for Tag<T, N> {
+impl<T: AbstractTree, U: Identifiable> FromNode for Tag<T, U> {
     fn from_node(node: &crate::concrete_tree::Node) -> Option<Self> {
         node.as_branch().and_then(|branch| {
             branch
                 .ast_info
-                .is_some_and(|x| {
-                    x.ast_type_id == std::any::TypeId::of::<Self>()
-                })
+                .is_some_and(|x| x.ast_type_id == Self::STABLE_TYPE_ID)
                 .then(|| {
-                    branch
-                        .nodes
-                        .first()
-                        .and_then(|node| T::from_node(node).map(Self))
+                    branch.nodes.first().and_then(|node| {
+                        T::from_node(node).map(|x| Self(x, PhantomData))
+                    })
                 })?
         })
     }
 }
 
-impl<T: AbstractTree, const N: usize> Tag<T, N> {
+impl<T, U> Tag<T, U> {
     /// Gets the inner tree of this tag.
     pub fn into_innter(self) -> T { self.0 }
 }

@@ -1,4 +1,5 @@
 use insta::{assert_ron_snapshot, Settings};
+use pernixc_stable_type_id::Identifiable;
 use serde::{de::DeserializeSeed, Deserialize, Serialize};
 use smallbox::smallbox;
 
@@ -15,6 +16,7 @@ use crate::{database::map, key::DynamicBox, Key};
     Hash,
     Default,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -32,6 +34,7 @@ pub struct Variable(String);
     Hash,
     Default,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -56,6 +59,7 @@ fn additive_merge(old: &mut i32, new: i32) -> Result<bool, String> {
     Hash,
     Default,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -90,6 +94,7 @@ fn conditional_merge(old: &mut i32, new: i32) -> Result<bool, String> {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -110,6 +115,7 @@ pub struct ConditionalMergeKey(String);
     Key,
     Serialize,
     Deserialize,
+    Identifiable,
 )]
 #[pernixc_query(crate)]
 #[value(String)] // Use String as value type instead of T to avoid constraints
@@ -124,7 +130,11 @@ where
         + std::hash::Hash
         + serde::Serialize
         + for<'a> serde::Deserialize<'a>
-        + Default;
+        + Identifiable
+        + Send
+        + Sync
+        + Default
+        + 'static;
 
 impl<T> GenericKey<T>
 where
@@ -137,7 +147,10 @@ where
         + std::hash::Hash
         + serde::Serialize
         + for<'a> serde::Deserialize<'a>
-        + Default,
+        + Default
+        + Send
+        + Sync
+        + Identifiable,
 {
     fn new(name: String) -> Self { Self(name, std::marker::PhantomData) }
 }

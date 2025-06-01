@@ -3,6 +3,7 @@
 use std::sync::{atomic::AtomicUsize, Arc};
 
 use pernixc_query_derive::Key;
+use pernixc_stable_type_id::Identifiable;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,6 +20,7 @@ use crate::{
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -35,6 +37,7 @@ pub struct Variable(String);
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -64,6 +67,7 @@ impl Executor<NegateVariable> for NegateVariableExecutor {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -131,6 +135,7 @@ fn negate_variable() {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -214,6 +219,7 @@ fn skip_when_input_unchanged() {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -256,6 +262,7 @@ impl Executor<AbsVariable> for TrackedAbsExecutor {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -376,6 +383,7 @@ fn skip_when_intermediate_result_unchanged() {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -415,6 +423,7 @@ impl Executor<SquareVariable> for TrackedSquareExecutor {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -512,6 +521,7 @@ fn multi_layer_dependency_skipping() {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -528,6 +538,7 @@ pub struct TypeCheckQuery(String);
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -655,6 +666,7 @@ fn incremental_compilation_simulation() {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -672,6 +684,7 @@ pub struct CyclicQueryA;
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -689,6 +702,7 @@ pub struct CyclicQueryB;
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -928,6 +942,7 @@ fn comprehensive_cyclic_dependency_behavior() {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -945,6 +960,7 @@ pub struct ConditionalCyclicQueryA;
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -962,6 +978,7 @@ pub struct ConditionalCyclicQueryB;
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]

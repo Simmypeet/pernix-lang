@@ -436,7 +436,7 @@ impl<'a, 'cache> State<'a, 'cache> {
 
             // start the event
             self.events.push(Event::NewNode(AstInfo {
-                ast_type_id: std::any::TypeId::of::<A>(),
+                ast_type_id: A::STABLE_TYPE_ID,
                 step_into_fragment: Some(branch_id),
             }));
 
@@ -466,7 +466,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         } else {
             // no step into fragment, just start the event
             self.events.push(Event::NewNode(AstInfo {
-                ast_type_id: std::any::TypeId::of::<A>(),
+                ast_type_id: A::STABLE_TYPE_ID,
                 step_into_fragment: None,
             }));
 
@@ -649,7 +649,7 @@ impl<'a, 'cache> State<'a, 'cache> {
             .into_new_node()
             .expect("should be a new node event");
 
-        assert_eq!(first.ast_type_id, std::any::TypeId::of::<A>());
+        assert_eq!(first.ast_type_id, A::STABLE_TYPE_ID);
 
         let tree =
             Self::finalize_ast_node(self.tree, first, &mut events, &mut cursor);

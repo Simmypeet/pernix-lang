@@ -16,6 +16,7 @@ pernixc_handler = { path = "../pernixc_handler" }
 pernixc_arena = { path = "../pernixc_arena" }
 pernixc_target = { path = "../pernixc_target" }
 codespan-reporting = { workspace = true }
+pernixc_query_base = { path = "../pernixc_query_base" }
 # pernixc_syntax = { path = "../pernixc_syntax" }
 # pernixc_semantic = { path = "../pernixc_semantic" }
 # pernixc_builder = { path = "../pernixc_builder" }

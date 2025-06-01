@@ -132,7 +132,7 @@ use proc_macro::TokenStream;
 pub fn derive_key(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let name = input.ident.clone();
-    let mut generics = input.generics;
+    let generics = input.generics;
 
     let Some(value_attr) =
         input.attrs.iter().find(|attr| attr.path().is_ident("value"))
@@ -201,7 +201,8 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         }
     });
 
-    // should not have lifetime or constant parameters, only type parameters are allowed
+    // should not have lifetime or constant parameters, only type parameters are
+    // allowed
     if let Some(lt_param) = generics.lifetimes().next() {
         return syn::Error::new_spanned(
             lt_param,
@@ -219,65 +220,11 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         .into();
     }
 
-    let stable_type_id_computation = if generics.params.is_empty() {
-        quote::quote! {
-            {
-                let unique_type_name = concat!(
-                    env!("CARGO_PKG_NAME"),
-                    "@",
-                    env!("CARGO_PKG_VERSION"),
-                    "::",
-                    module_path!(),
-                    "::",
-                    stringify!(#name)
-                );
-                #pernixc_query_crate::key::StableTypeID::from_unique_type_name(
-                    unique_type_name
-                )
-            }
-        }
-    } else {
-        for ty_param in generics.type_params_mut() {
-            ty_param
-                .bounds
-                .push(syn::parse_quote!(#pernixc_query_crate::key::Key));
-        }
-
-        let type_params = generics.type_params().map(|x| &x.ident);
-
-        quote::quote! {
-            {
-                let unique_type_name = concat!(
-                    env!("CARGO_PKG_NAME"),
-                    "@",
-                    env!("CARGO_PKG_VERSION"),
-                    "::",
-                    module_path!(),
-                    "::",
-                    stringify!(#name),
-                );
-                let mut hash = #pernixc_query_crate::key::StableTypeID::from_unique_type_name(
-                    unique_type_name
-                );
-
-                #(
-                    hash = <#type_params as #pernixc_query_crate::key::Key>::STABLE_TYPE_ID
-                        .combine(hash);
-                )*
-
-                hash
-            }
-        }
-    };
-
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     quote::quote! {
         impl #impl_generics #pernixc_query_crate::key::Key for #name #ty_generics #where_clause {
             type Value = #value_type;
-
-            const STABLE_TYPE_ID: #pernixc_query_crate::key::StableTypeID
-                = #stable_type_id_computation;
 
             #merge_fn
         }

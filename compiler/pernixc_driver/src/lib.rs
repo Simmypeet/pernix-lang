@@ -128,6 +128,33 @@ fn create_root_source_file(
     Some(TargetID::Local.make_global(id))
 }
 
+/// The input to the compiler.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
+pub struct Input {
+    /// The input file to compile.
+    ///
+    /// This file is the root source file of the compilation; the module will
+    /// stem from this file.
+    pub file: PathBuf,
+
+    /// The name of the target; if not specified, the target name will be
+    /// inferred from the file name.
+    #[clap(short = 't', long = "target")]
+    pub target_name: Option<String>,
+
+    /// The paths to the `plib` library to link to the target.
+    #[clap(short = 'l', long = "link")]
+    pub library_paths: Vec<PathBuf>,
+
+    /// The path to the incremental compilation data.
+    #[clap(long = "inc")]
+    pub incremental_path: Option<PathBuf>,
+
+    /// Whether to show the progress of the compilation.
+    #[clap(long)]
+    pub show_progress: bool,
+}
+
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines)]

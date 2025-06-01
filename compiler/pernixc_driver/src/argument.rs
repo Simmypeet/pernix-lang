@@ -5,29 +5,6 @@ use std::path::PathBuf;
 use clap::{builder::styling, Args, Subcommand};
 use enum_as_inner::EnumAsInner;
 
-/// The input to the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
-pub struct Input {
-    /// The input file to compile.
-    ///
-    /// This file is the root source file of the compilation; the module will
-    /// stem from this file.
-    pub file: PathBuf,
-
-    /// The name of the target; if not specified, the target name will be
-    /// inferred from the file name.
-    #[clap(short = 't', long = "target")]
-    pub target_name: Option<String>,
-
-    /// The paths to the `plib` library to link to the target.
-    #[clap(short = 'l', long = "link")]
-    pub library_paths: Vec<PathBuf>,
-
-    /// Whether to show the progress of the compilation.
-    #[clap(long)]
-    pub show_progress: bool,
-}
-
 /// The output of the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Output {

@@ -20,7 +20,7 @@ use proptest::{
 };
 
 use crate::{
-    abstract_tree::{abstract_tree, AbstractTree, Tag},
+    abstract_tree::{abstract_tree, AbstractTree, First, Second, Tag},
     expect::{self, Expected},
     parser::{ast, Parser as _},
 };
@@ -123,8 +123,8 @@ fn basic_sequence_missing_semicolon() {
 abstract_tree! {
     #[derive(Debug)]
     struct TwoBasicSequences {
-        first: Tag<BasicSequence, 1> = ast::<Tag<BasicSequence, 1>>(),
-        second: Tag<BasicSequence, 2> = ast::<Tag<BasicSequence, 2>>(), }
+        first: Tag<BasicSequence, First> = ast::<Tag<BasicSequence, First>>(),
+        second: Tag<BasicSequence, Second> = ast::<Tag<BasicSequence, Second>>(), }
 }
 
 #[test]

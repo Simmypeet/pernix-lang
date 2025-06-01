@@ -11,6 +11,7 @@ pernixc_arena = { path = "../pernixc_arena" }
 pernixc_target = { path = "../pernixc_target" }
 pernixc_abort = { path = "../pernixc_abort" }
 pernixc_query_derive = { path = "../pernixc_query_derive" }
+pernixc_stable_type_id = { path = "../pernixc_stable_type_id" }
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
 fnv = { workspace = true }

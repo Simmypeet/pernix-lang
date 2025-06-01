@@ -1,6 +1,7 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
 use pernixc_query_derive::Key;
+use pernixc_stable_type_id::Identifiable;
 use serde::{Deserialize, Serialize};
 
 use super::Map;
@@ -15,6 +16,7 @@ use super::Map;
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -32,6 +34,7 @@ struct I32Key(i32);
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -62,6 +65,7 @@ fn basic() {
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]

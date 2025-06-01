@@ -1,5 +1,6 @@
 use pernixc_arena::ID;
 use pernixc_query_derive::Key;
+use pernixc_stable_type_id::Identifiable;
 use pernixc_target::{Global, TargetID};
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,7 @@ use crate::key::{Dynamic, SmallBox};
     Ord,
     Hash,
     Key,
+    Identifiable,
     Serialize,
     Deserialize,
 )]

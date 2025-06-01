@@ -3,6 +3,7 @@
 use std::{any::Any, collections::HashMap, marker::PhantomData};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_stable_type_id::StableTypeID;
 use serde::{
     de::{DeserializeSeed, Visitor},
     ser::{SerializeMap, SerializeStruct},
@@ -12,7 +13,7 @@ use smallbox::{smallbox, SmallBox};
 
 use crate::{
     database::map::{Map, TypedMap},
-    key::{Dynamic, DynamicBox, StableTypeID},
+    key::{Dynamic, DynamicBox},
     Key,
 };
 
