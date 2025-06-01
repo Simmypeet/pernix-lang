@@ -1,8 +1,0 @@
----
-source: compiler/pernixc_query/src/runtime/serde/test.rs
-expression: additive_key
----
-Dynamic(
-  stable_type_id: StableTypeID(3101973315232166826, 16343338697501894811),
-  value: GenericKey("test_additive", PhantomData),
-)

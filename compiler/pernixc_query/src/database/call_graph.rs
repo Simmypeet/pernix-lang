@@ -11,6 +11,11 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, MutexGuard};
+use serde::{
+    de::DeserializeSeed,
+    ser::{SerializeMap, SerializeSeq, SerializeStruct},
+    Deserialize, Serialize,
+};
 
 use super::Database;
 use crate::{
@@ -20,19 +25,16 @@ use crate::{
 };
 
 /// Tracks the dependencies between queries and their execution order.
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(Default)]
 #[allow(clippy::mutable_key_type)]
 pub struct CallGraph {
     // emulating a call stack of particular thread
-    #[serde(skip)] // ThreadId is not serializable
     record_stacks_by_thread_id: HashMap<ThreadId, Vec<DynamicBox>>,
 
     // the condition variables used to notify the threads that are waiting for
     // the completion of a particular record
-    #[serde(skip)] // Arc<Condvar> is not serializable
     condvars_by_record: HashMap<DynamicBox, Arc<Condvar>>,
 
-    #[serde(skip)]
     current_dependencies_by_dependant: HashMap<DynamicBox, DynamicBox>,
 
     dependency_graph: HashMap<DynamicBox, HashSet<DynamicBox>>,
@@ -49,8 +51,612 @@ impl CallGraph {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SerializableCallGraph<'a> {
+    pub(super) call_graph: &'a CallGraph,
+    pub(super) serde: &'a crate::serde::Serde,
+}
+
+impl Serialize for SerializableCallGraph<'_> {
+    #[allow(clippy::too_many_lines)]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Debug, Clone, Copy)]
+        struct SerializableDependencyGraph<'a> {
+            dependency_graph: &'a HashMap<DynamicBox, HashSet<DynamicBox>>,
+            serde: &'a crate::serde::Serde,
+        }
+
+        impl Serialize for SerializableDependencyGraph<'_> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut map = serializer
+                    .serialize_map(Some(self.dependency_graph.len()))?;
+                for (key, dependencies) in self.dependency_graph {
+                    #[derive(Debug)]
+                    struct SerializableDependencies<'a> {
+                        dependencies: &'a HashSet<DynamicBox>,
+                        serde: &'a crate::serde::Serde,
+                    }
+
+                    impl Serialize for SerializableDependencies<'_> {
+                        fn serialize<S>(
+                            &self,
+                            serializer: S,
+                        ) -> Result<S::Ok, S::Error>
+                        where
+                            S: serde::Serializer,
+                        {
+                            let mut seq = serializer
+                                .serialize_seq(Some(self.dependencies.len()))?;
+                            for dep in self.dependencies {
+                                seq.serialize_element(
+                                    &dep.serializable(self.serde),
+                                )?;
+                            }
+                            seq.end()
+                        }
+                    }
+
+                    let serializable_key = key.serializable(self.serde);
+
+                    map.serialize_entry(
+                        &serializable_key,
+                        &SerializableDependencies {
+                            dependencies,
+                            serde: self.serde,
+                        },
+                    )?;
+                }
+                map.end()
+            }
+        }
+
+        #[derive(Debug, Clone, Copy)]
+        struct SerializableVersionInfoMap<'a> {
+            version_info_by_keys: &'a HashMap<DynamicBox, VersionInfo>,
+            serde: &'a crate::serde::Serde,
+        }
+
+        impl Serialize for SerializableVersionInfoMap<'_> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut map = serializer
+                    .serialize_map(Some(self.version_info_by_keys.len()))?;
+                for (key, version_info) in self.version_info_by_keys {
+                    let serializable_key = key.serializable(self.serde);
+                    map.serialize_entry(&serializable_key, version_info)?;
+                }
+                map.end()
+            }
+        }
+
+        #[derive(Debug, Clone, Copy)]
+        struct SerializableCyclicDependencies<'a> {
+            cyclic_dependencies: &'a [CyclicDependency],
+            serde: &'a crate::serde::Serde,
+        }
+
+        impl Serialize for SerializableCyclicDependencies<'_> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut seq = serializer
+                    .serialize_seq(Some(self.cyclic_dependencies.len()))?;
+                for cyclic_dependency in self.cyclic_dependencies {
+                    seq.serialize_element(&SerializableCyclicDependency {
+                        cyclic_dependency,
+                        serde: self.serde,
+                    })?;
+                }
+                seq.end()
+            }
+        }
+
+        let mut state = serializer.serialize_struct("CallGraph", 3)?;
+
+        state.serialize_field(
+            "dependency_graph",
+            &SerializableDependencyGraph {
+                dependency_graph: &self.call_graph.dependency_graph,
+                serde: self.serde,
+            },
+        )?;
+
+        state.serialize_field(
+            "version_info_by_keys",
+            &SerializableVersionInfoMap {
+                version_info_by_keys: &self.call_graph.version_info_by_keys,
+                serde: self.serde,
+            },
+        )?;
+
+        state.serialize_field(
+            "cyclic_dependencies",
+            &SerializableCyclicDependencies {
+                cyclic_dependencies: &self.call_graph.cyclic_dependencies,
+                serde: self.serde,
+            },
+        )?;
+
+        state.end()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct DeserializableCallGraph<'a>(pub &'a crate::serde::Serde);
+
+impl<'de> DeserializeSeed<'de> for DeserializableCallGraph<'_> {
+    type Value = CallGraph;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_struct(
+            "CallGraph",
+            &[
+                "dependency_graph",
+                "version_info_by_keys",
+                "cyclic_dependencies",
+            ],
+            CallGraphVisitor { serde: self.0 },
+        )
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize,
+)]
+#[serde(field_identifier)]
+enum CallGraphField {
+    #[serde(rename = "dependency_graph")]
+    DependencyGraph,
+    #[serde(rename = "version_info_by_keys")]
+    VersionInfoByKeys,
+    #[serde(rename = "cyclic_dependencies")]
+    CyclicDependencies,
+}
+
+struct CallGraphVisitor<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> serde::de::Visitor<'de> for CallGraphVisitor<'_> {
+    type Value = CallGraph;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "struct CallGraph")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let mut dependency_graph = None;
+        let mut version_info_by_keys = None;
+        let mut cyclic_dependencies = None;
+
+        while let Some(key) = map.next_key()? {
+            match key {
+                CallGraphField::DependencyGraph => {
+                    if dependency_graph.is_some() {
+                        return Err(serde::de::Error::duplicate_field(
+                            "dependency_graph",
+                        ));
+                    }
+                    dependency_graph = Some(map.next_value_seed(
+                        DeserializableDependencyGraph { serde: self.serde },
+                    )?);
+                }
+                CallGraphField::VersionInfoByKeys => {
+                    if version_info_by_keys.is_some() {
+                        return Err(serde::de::Error::duplicate_field(
+                            "version_info_by_keys",
+                        ));
+                    }
+                    version_info_by_keys = Some(map.next_value_seed(
+                        DeserializableVersionInfoMap { serde: self.serde },
+                    )?);
+                }
+                CallGraphField::CyclicDependencies => {
+                    if cyclic_dependencies.is_some() {
+                        return Err(serde::de::Error::duplicate_field(
+                            "cyclic_dependencies",
+                        ));
+                    }
+                    cyclic_dependencies = Some(map.next_value_seed(
+                        DeserializableCyclicDependencies { serde: self.serde },
+                    )?);
+                }
+            }
+        }
+
+        let dependency_graph = dependency_graph.ok_or_else(|| {
+            serde::de::Error::missing_field("dependency_graph")
+        })?;
+        let version_info_by_keys = version_info_by_keys.ok_or_else(|| {
+            serde::de::Error::missing_field("version_info_by_keys")
+        })?;
+        let cyclic_dependencies = cyclic_dependencies.ok_or_else(|| {
+            serde::de::Error::missing_field("cyclic_dependencies")
+        })?;
+
+        Ok(CallGraph {
+            record_stacks_by_thread_id: HashMap::new(),
+            condvars_by_record: HashMap::new(),
+            current_dependencies_by_dependant: HashMap::new(),
+            dependency_graph,
+            version_info_by_keys,
+            cyclic_dependencies,
+        })
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let dependency_graph = seq
+            .next_element_seed(DeserializableDependencyGraph {
+                serde: self.serde,
+            })?
+            .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+
+        let version_info_by_keys = seq
+            .next_element_seed(DeserializableVersionInfoMap {
+                serde: self.serde,
+            })?
+            .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+
+        let cyclic_dependencies = seq
+            .next_element_seed(DeserializableCyclicDependencies {
+                serde: self.serde,
+            })?
+            .ok_or_else(|| serde::de::Error::invalid_length(2, &self))?;
+
+        Ok(CallGraph {
+            record_stacks_by_thread_id: HashMap::new(),
+            condvars_by_record: HashMap::new(),
+            current_dependencies_by_dependant: HashMap::new(),
+            dependency_graph,
+            version_info_by_keys,
+            cyclic_dependencies,
+        })
+    }
+}
+
+// Helper struct for deserializing dependency graph
+struct DeserializableDependencyGraph<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> DeserializeSeed<'de> for DeserializableDependencyGraph<'_> {
+    type Value = HashMap<DynamicBox, HashSet<DynamicBox>>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer
+            .deserialize_map(DependencyGraphVisitor { serde: self.serde })
+    }
+}
+
+struct DependencyGraphVisitor<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> serde::de::Visitor<'de> for DependencyGraphVisitor<'_> {
+    type Value = HashMap<DynamicBox, HashSet<DynamicBox>>;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "a map representing dependency graph")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let mut dependency_graph = HashMap::new();
+
+        while let Some(key) =
+            map.next_key_seed(&self.serde.dynamic_box_deserializer())?
+        {
+            let dependencies =
+                map.next_value_seed(DeserializableDependencies {
+                    serde: self.serde,
+                })?;
+            dependency_graph.insert(key, dependencies);
+        }
+
+        Ok(dependency_graph)
+    }
+}
+
+// Helper struct for deserializing dependency sets
+struct DeserializableDependencies<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> DeserializeSeed<'de> for DeserializableDependencies<'_> {
+    type Value = HashSet<DynamicBox>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(DependenciesVisitor { serde: self.serde })
+    }
+}
+
+struct DependenciesVisitor<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> serde::de::Visitor<'de> for DependenciesVisitor<'_> {
+    type Value = HashSet<DynamicBox>;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "a sequence of dependencies")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut dependencies = HashSet::new();
+
+        while let Some(dep) =
+            seq.next_element_seed(&self.serde.dynamic_box_deserializer())?
+        {
+            dependencies.insert(dep);
+        }
+
+        Ok(dependencies)
+    }
+}
+
+// Helper struct for deserializing version info map
+struct DeserializableVersionInfoMap<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> DeserializeSeed<'de> for DeserializableVersionInfoMap<'_> {
+    type Value = HashMap<DynamicBox, VersionInfo>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer
+            .deserialize_map(VersionInfoMapVisitor { serde: self.serde })
+    }
+}
+
+struct VersionInfoMapVisitor<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> serde::de::Visitor<'de> for VersionInfoMapVisitor<'_> {
+    type Value = HashMap<DynamicBox, VersionInfo>;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "a map representing version info")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let mut version_info_map = HashMap::new();
+
+        while let Some(key) =
+            map.next_key_seed(&self.serde.dynamic_box_deserializer())?
+        {
+            let version_info: VersionInfo = map.next_value()?;
+            version_info_map.insert(key, version_info);
+        }
+
+        Ok(version_info_map)
+    }
+}
+
+// Helper struct for deserializing cyclic dependencies
+struct DeserializableCyclicDependencies<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> DeserializeSeed<'de> for DeserializableCyclicDependencies<'_> {
+    type Value = Vec<CyclicDependency>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer
+            .deserialize_seq(CyclicDependenciesVisitor { serde: self.serde })
+    }
+}
+
+struct CyclicDependenciesVisitor<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> serde::de::Visitor<'de> for CyclicDependenciesVisitor<'_> {
+    type Value = Vec<CyclicDependency>;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "a sequence of cyclic dependencies")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut cyclic_dependencies = Vec::new();
+
+        while let Some(cyclic_dep) =
+            seq.next_element_seed(DeserializableCyclicDependency {
+                serde: self.serde,
+            })?
+        {
+            cyclic_dependencies.push(cyclic_dep);
+        }
+
+        Ok(cyclic_dependencies)
+    }
+}
+
+// Helper struct for deserializing individual cyclic dependency
+struct DeserializableCyclicDependency<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> DeserializeSeed<'de> for DeserializableCyclicDependency<'_> {
+    type Value = CyclicDependency;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_struct(
+            "CyclicDependency",
+            &["records_stack"],
+            CyclicDependencyVisitor { serde: self.serde },
+        )
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize,
+)]
+#[serde(field_identifier)]
+enum CyclicDependencyField {
+    #[serde(rename = "records_stack")]
+    RecordsStack,
+}
+
+struct CyclicDependencyVisitor<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> serde::de::Visitor<'de> for CyclicDependencyVisitor<'_> {
+    type Value = CyclicDependency;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "struct CyclicDependency")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        let mut records_stack = None;
+
+        while let Some(key) = map.next_key::<CyclicDependencyField>()? {
+            match key {
+                CyclicDependencyField::RecordsStack => {
+                    if records_stack.is_some() {
+                        return Err(serde::de::Error::duplicate_field(
+                            "records_stack",
+                        ));
+                    }
+                    records_stack = Some(map.next_value_seed(
+                        DeserializableRecordsStack { serde: self.serde },
+                    )?);
+                }
+            }
+        }
+
+        let records_stack = records_stack
+            .ok_or_else(|| serde::de::Error::missing_field("records_stack"))?;
+
+        Ok(CyclicDependency { records_stack })
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let records_stack = seq
+            .next_element_seed(DeserializableRecordsStack {
+                serde: self.serde,
+            })?
+            .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+
+        Ok(CyclicDependency { records_stack })
+    }
+}
+
+// Helper struct for deserializing records stack
+struct DeserializableRecordsStack<'a> {
+    serde: &'a crate::serde::Serde,
+}
+
+impl<'de> DeserializeSeed<'de> for DeserializableRecordsStack<'_> {
+    type Value = Vec<DynamicBox>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for DeserializableRecordsStack<'_> {
+    type Value = Vec<DynamicBox>;
+
+    fn expecting(
+        &self,
+        formatter: &mut std::fmt::Formatter,
+    ) -> std::fmt::Result {
+        write!(formatter, "a sequence of records")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut records_stack = Vec::new();
+
+        while let Some(record) =
+            seq.next_element_seed(&self.serde.dynamic_box_deserializer())?
+        {
+            records_stack.push(record);
+        }
+
+        Ok(records_stack)
+    }
+}
+
 /// Stores the error information about a cyclic dependency in the call graph.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct CyclicDependency {
     /// The stack of records that caused the cyclic dependency.
     pub records_stack: Vec<DynamicBox>,
@@ -59,6 +665,45 @@ pub struct CyclicDependency {
 impl std::fmt::Debug for CallGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CallGraph").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct SerializableCyclicDependency<'a> {
+    pub(super) cyclic_dependency: &'a CyclicDependency,
+    pub(super) serde: &'a crate::serde::Serde,
+}
+
+impl Serialize for SerializableCyclicDependency<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Debug, Clone, Copy)]
+        pub(super) struct SerializableDynamicBoxSeq<'a> {
+            pub(super) seq: &'a [DynamicBox],
+            pub(super) serde: &'a crate::serde::Serde,
+        }
+
+        impl Serialize for SerializableDynamicBoxSeq<'_> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                let mut seq = serializer.serialize_seq(Some(self.seq.len()))?;
+                for item in self.seq {
+                    seq.serialize_element(&item.serializable(self.serde))?;
+                }
+                seq.end()
+            }
+        }
+
+        let mut state = serializer.serialize_struct("CyclicDependency", 1)?;
+        state.serialize_field("records_stack", &SerializableDynamicBoxSeq {
+            seq: &self.cyclic_dependency.records_stack,
+            serde: self.serde,
+        })?;
+        state.end()
     }
 }
 

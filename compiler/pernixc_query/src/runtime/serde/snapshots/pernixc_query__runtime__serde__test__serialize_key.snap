@@ -1,8 +1,0 @@
----
-source: compiler/pernixc_query/src/runtime/serde/test.rs
-expression: key
----
-Dynamic(
-  stable_type_id: StableTypeID(3281288483243185678, 11654414737195299132),
-  value: Variable("test"),
-)

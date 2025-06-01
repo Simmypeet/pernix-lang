@@ -8,6 +8,7 @@ pub use pernixc_query_derive::Key;
 pub mod database;
 pub mod key;
 pub mod runtime;
+pub mod serde;
 
 /// The central data structure for the Pernix compiler storing all the semantic
 /// information about the program.

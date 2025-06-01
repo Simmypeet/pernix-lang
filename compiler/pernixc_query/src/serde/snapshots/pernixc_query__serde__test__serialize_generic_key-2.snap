@@ -1,0 +1,8 @@
+---
+source: compiler/pernixc_query/src/serde/test.rs
+expression: additive_key.serializable(&registry2)
+---
+Dynamic(
+  stable_type_id: StableTypeID(1202021881746144328, 213088068402255765),
+  value: GenericKey("test_additive", PhantomData),
+)
