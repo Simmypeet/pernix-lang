@@ -127,13 +127,6 @@ impl Database {
         value: K::Value,
         overwrite: bool,
     ) -> Result<(), String> {
-        // bump the version for the new input setting
-        if *self.last_was_query.get_mut() {
-            self.version += 1;
-        }
-
-        *self.last_was_query.get_mut() = false;
-
         let invalidate = self.map.entry(key.clone(), |entry| match entry {
             dashmap::Entry::Occupied(mut occupied_entry) => {
                 if overwrite {
@@ -169,6 +162,12 @@ impl Database {
 
                 // update the version info if invalidated
                 if invalidate {
+                    // bump the version for the new input setting
+                    if *self.last_was_query.get_mut() {
+                        self.version += 1;
+                        *self.last_was_query.get_mut() = false;
+                    }
+
                     value.updated_at_version = self.version;
                 }
             }

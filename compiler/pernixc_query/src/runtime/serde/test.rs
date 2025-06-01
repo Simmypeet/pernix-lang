@@ -2,7 +2,10 @@ use insta::{assert_ron_snapshot, Settings};
 use serde::{de::DeserializeSeed, Deserialize, Serialize};
 use smallbox::smallbox;
 
-use crate::{database::map::Map, key::DynamicBox, Key};
+use crate::{
+    database::map::Map, key::DynamicBox, runtime::serde::set_serde_registry,
+    Key,
+};
 
 // Basic equality-based merge (default behavior)
 #[derive(
@@ -155,11 +158,10 @@ fn serializable() {
     map.insert(Variable("y".to_string()), 64);
     map.insert(NegateVariable("y".to_string()), -64);
 
-    let map = map.serializable(&registry);
-
     let mut settings = Settings::clone_current();
     settings.set_sort_maps(true);
-    settings.bind(|| assert_ron_snapshot!(map));
+    settings
+        .bind(|| set_serde_registry(&registry, || assert_ron_snapshot!(map)));
 }
 
 #[test]
@@ -178,9 +180,9 @@ fn deserializable() {
     map.insert(NegateVariable("y".to_string()), -64);
 
     // Serialize the map
-    let serializable_map = map.serializable(&registry);
-    let ron_string =
-        ron::to_string(&serializable_map).expect("Failed to serialize to RON");
+    let ron_string = set_serde_registry(&registry, || {
+        ron::to_string(&map).expect("Failed to serialize to RON")
+    });
 
     // Create a new empty registry and map for deserialization
     let mut target_registry = super::Registry::default();
@@ -189,13 +191,14 @@ fn deserializable() {
     target_registry.register::<NegateVariable>();
 
     // Deserialize back into the target map
-    let deserializable_map = target_map.deserializable(&target_registry);
-    let mut deserializer = ron::Deserializer::from_str(&ron_string)
-        .expect("Failed to create deserializer");
+    set_serde_registry(&target_registry, || {
+        let mut deserializer = ron::Deserializer::from_str(&ron_string)
+            .expect("Failed to create deserializer");
 
-    deserializable_map
-        .deserialize(&mut deserializer)
-        .expect("Failed to deserialize");
+        target_map
+            .deserialize(&mut deserializer)
+            .expect("Failed to deserialize");
+    });
 
     // Verify the deserialized data matches the original
     assert_eq!(target_map.get(&Variable("x".to_string())), Some(32));
@@ -224,17 +227,21 @@ fn merge_value_basic_equality() {
         source_registry.register::<Variable>();
         source_map.insert(Variable("test".to_string()), 42); // Same value
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
         // Deserialize into the target map - should succeed with same value
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
-        assert!(result.is_ok(), "Should successfully merge identical values");
+            let result = map.deserialize(&mut deserializer);
+            assert!(
+                result.is_ok(),
+                "Should successfully merge identical values"
+            );
+        });
 
         // Value should remain unchanged
         assert_eq!(map.get(&Variable("test".to_string())), Some(42));
@@ -250,17 +257,18 @@ fn merge_value_basic_equality() {
         source_registry.register::<Variable>();
         source_map.insert(Variable("test".to_string()), 100); // Different value
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
         // Deserialize into the target map - should fail with different
         // value
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(
             result.is_err(),
             "Should fail to merge different values with default equality merge"
@@ -289,15 +297,16 @@ fn merge_value_custom_additive() {
         source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("counter".to_string()), 5);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(result.is_ok(), "Should successfully perform additive merge");
 
         // Value should be added: 10 + 5 = 15
@@ -311,15 +320,16 @@ fn merge_value_custom_additive() {
         source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("counter".to_string()), 25);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(
             result.is_ok(),
             "Should successfully perform second additive merge"
@@ -336,15 +346,16 @@ fn merge_value_custom_additive() {
         source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("new_counter".to_string()), 100);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(result.is_ok(), "Should successfully insert new key");
 
         // New key should have its value
@@ -372,15 +383,16 @@ fn merge_value_conditional_errors() {
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 150);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(result.is_err(), "Should fail with value too large error");
 
         let error_msg = result.unwrap_err().to_string();
@@ -400,15 +412,16 @@ fn merge_value_conditional_errors() {
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 30);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(result.is_err(), "Should fail with smaller value error");
 
         let error_msg = result.unwrap_err().to_string();
@@ -428,15 +441,16 @@ fn merge_value_conditional_errors() {
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 50);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(result.is_ok(), "Should succeed with same value");
 
         // Value should remain unchanged
@@ -450,15 +464,16 @@ fn merge_value_conditional_errors() {
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 75);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(result.is_ok(), "Should succeed with larger acceptable value");
 
         // Value should be updated to the larger value
@@ -472,15 +487,16 @@ fn merge_value_conditional_errors() {
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 100);
 
-        let serializable_map = source_map.serializable(&source_registry);
-        let ron_string =
-            ron::to_string(&serializable_map).expect("Failed to serialize");
+        let ron_string = set_serde_registry(&source_registry, || {
+            ron::to_string(&source_map).expect("Failed to serialize")
+        });
 
-        let deserializable_map = map.deserializable(&registry);
-        let mut deserializer = ron::Deserializer::from_str(&ron_string)
-            .expect("Failed to create deserializer");
+        let result = set_serde_registry(&registry, || {
+            let mut deserializer = ron::Deserializer::from_str(&ron_string)
+                .expect("Failed to create deserializer");
 
-        let result = deserializable_map.deserialize(&mut deserializer);
+            map.deserialize(&mut deserializer)
+        });
         assert!(result.is_ok(), "Should succeed with value exactly 100");
 
         // Value should be updated to 100
@@ -498,7 +514,7 @@ fn serialize_key() {
     let mut registry = super::Registry::default();
     registry.register::<Variable>();
 
-    super::set_reflector(&mut registry, || {
+    super::set_serde_registry(&registry, || {
         let mut settings = Settings::clone_current();
         settings.set_sort_maps(true);
         settings.bind(|| assert_ron_snapshot!(key));
@@ -512,7 +528,7 @@ fn deserialize_dynamic_box() {
     let mut registry = super::Registry::default();
     registry.register::<Variable>();
 
-    super::set_reflector(&mut registry, || {
+    super::set_serde_registry(&registry, || {
         // Serialize the DynamicBox to RON format
         let ron_string = ron::to_string(&original_key)
             .expect("Failed to serialize DynamicBox");
@@ -552,7 +568,7 @@ fn deserialize_dynamic_box_different_types() {
     registry.register::<Variable>();
     registry.register::<NegateVariable>();
 
-    super::set_reflector(&mut registry, || {
+    super::set_serde_registry(&registry, || {
         // Test Variable deserialization
         let variable_ron = ron::to_string(&variable_key)
             .expect("Failed to serialize Variable");
@@ -591,7 +607,7 @@ fn deserialize_dynamic_box_roundtrip_multiple() {
     registry.register::<AdditiveKey>();
     registry.register::<ConditionalMergeKey>();
 
-    super::set_reflector(&mut registry, || {
+    super::set_serde_registry(&registry, || {
         for (i, original_key) in keys.iter().enumerate() {
             let ron_string = ron::to_string(original_key)
                 .unwrap_or_else(|_| panic!("Failed to serialize key {i}"));
@@ -614,7 +630,7 @@ fn serialize_generic_key() {
     let mut registry = super::Registry::default();
     registry.register::<GenericKey<Variable>>();
 
-    super::set_reflector(&mut registry, || {
+    super::set_serde_registry(&registry, || {
         let mut settings = Settings::clone_current();
         settings.set_sort_maps(true);
         settings.bind(|| assert_ron_snapshot!(variable_key));
@@ -628,7 +644,7 @@ fn serialize_generic_key() {
     let mut registry2 = super::Registry::default();
     registry2.register::<GenericKey<AdditiveKey>>();
 
-    super::set_reflector(&mut registry2, || {
+    super::set_serde_registry(&registry2, || {
         let mut settings = Settings::clone_current();
         settings.set_sort_maps(true);
         settings.bind(|| assert_ron_snapshot!(additive_key));
@@ -645,7 +661,7 @@ fn deserialize_generic_key() {
     let mut registry = super::Registry::default();
     registry.register::<GenericKey<Variable>>();
 
-    super::set_reflector(&mut registry, || {
+    super::set_serde_registry(&registry, || {
         // Serialize the DynamicBox to RON format
         let ron_string = ron::to_string(&original_variable_key)
             .expect("Failed to serialize GenericKey<Variable>");
@@ -682,7 +698,7 @@ fn deserialize_generic_key() {
     let mut registry2 = super::Registry::default();
     registry2.register::<GenericKey<AdditiveKey>>();
 
-    super::set_reflector(&mut registry2, || {
+    super::set_serde_registry(&registry2, || {
         // Serialize the DynamicBox to RON format
         let ron_string = ron::to_string(&original_additive_key)
             .expect("Failed to serialize GenericKey<AdditiveKey>");
@@ -731,9 +747,9 @@ fn serialization_filtering() {
     map.insert(Variable("include_also".to_string()), 200);
 
     // Serialize the map
-    let serializable_map = map.serializable(&registry);
-    let ron_string =
-        ron::to_string(&serializable_map).expect("Failed to serialize");
+    let ron_string = set_serde_registry(&registry, || {
+        ron::to_string(&map).expect("Failed to serialize")
+    });
 
     // The serialized string should only contain the items that passed the
     // filter
@@ -755,13 +771,14 @@ fn serialization_filtering() {
     let target_map = Map::default();
     target_registry.register::<Variable>(); // Regular registration for deserialization
 
-    let deserializable_map = target_map.deserializable(&target_registry);
-    let mut deserializer = ron::Deserializer::from_str(&ron_string)
-        .expect("Failed to create deserializer");
+    set_serde_registry(&target_registry, || {
+        let mut deserializer = ron::Deserializer::from_str(&ron_string)
+            .expect("Failed to create deserializer");
 
-    deserializable_map
-        .deserialize(&mut deserializer)
-        .expect("Failed to deserialize");
+        target_map
+            .deserialize(&mut deserializer)
+            .expect("Failed to deserialize");
+    });
 
     // Only the filtered items should be present in the deserialized map
     assert_eq!(target_map.get(&Variable("include_me".to_string())), Some(42));
@@ -795,9 +812,9 @@ fn serialization_filtering_multiple_types() {
     map.insert(AdditiveKey("longer_name".to_string()), 50); // Should be included (len > 5)
 
     // Serialize with filters applied
-    let serializable_map = map.serializable(&registry);
-    let ron_string =
-        ron::to_string(&serializable_map).expect("Failed to serialize");
+    let ron_string = set_serde_registry(&registry, || {
+        ron::to_string(&map).expect("Failed to serialize")
+    });
 
     // Check that only filtered items are present
     assert!(ron_string.contains("var1"), "Should include var1");
@@ -812,13 +829,14 @@ fn serialization_filtering_multiple_types() {
     target_registry.register::<Variable>();
     target_registry.register::<AdditiveKey>();
 
-    let deserializable_map = target_map.deserializable(&target_registry);
-    let mut deserializer = ron::Deserializer::from_str(&ron_string)
-        .expect("Failed to create deserializer");
+    set_serde_registry(&target_registry, || {
+        let mut deserializer = ron::Deserializer::from_str(&ron_string)
+            .expect("Failed to create deserializer");
 
-    deserializable_map
-        .deserialize(&mut deserializer)
-        .expect("Failed to deserialize");
+        target_map
+            .deserialize(&mut deserializer)
+            .expect("Failed to deserialize");
+    });
 
     // Verify only filtered items were deserialized
     assert_eq!(target_map.get(&Variable("var1".to_string())), Some(10));

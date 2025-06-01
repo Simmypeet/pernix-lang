@@ -1,6 +1,6 @@
 //! Contains the definition of the [`Registry`] struct.
 
-use std::{any::Any, collections::HashMap, marker::PhantomData};
+use std::{any::Any, cell::RefCell, collections::HashMap, marker::PhantomData};
 
 use enum_as_inner::EnumAsInner;
 use serde::{
@@ -307,45 +307,7 @@ impl Registry {
     }
 }
 
-impl Map {
-    /// Creates a serializable view of the map using the provided reflector.
-    ///
-    /// # Preconditions
-    ///
-    /// The provided reflector must have registered all the types that are
-    /// expected to be serialized from this map.
-    #[must_use]
-    pub const fn serializable<'a>(
-        &'a self,
-        reflector: &'a Registry,
-    ) -> SerializableMap<'a> {
-        SerializableMap { serde: reflector, map: self }
-    }
-
-    /// Creates a deserializable view of the map using the provided reflector.
-    ///
-    /// # Preconditions
-    ///
-    /// The provided reflector must have registered all the types that are
-    /// expected to be deserialized into this map.
-    #[must_use]
-    pub const fn deserializable<'a>(
-        &'a self,
-        reflector: &'a Registry,
-    ) -> DeserializableMap<'a> {
-        DeserializableMap { reflector, map: self }
-    }
-}
-
-/// A wrapper struct allowing serialization of [`Map`] with the provided
-/// reflector.
-#[derive(Debug, Clone, Copy)]
-pub struct SerializableMap<'a> {
-    serde: &'a Registry,
-    map: &'a Map,
-}
-
-impl Serialize for SerializableMap<'_> {
+impl Serialize for Map {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -379,47 +341,44 @@ impl Serialize for SerializableMap<'_> {
             }
         }
 
-        let in_map_count = self.map.type_lens();
-        let mut map = serializer.serialize_map(Some(self.map.type_lens()))?;
+        REFLECTOR.with_borrow(|x| {
+            let reflector = x.as_ref().expect("should be set");
 
-        let mut serialized_count = 0;
+            let in_map_count = self.type_lens();
+            let mut map = serializer.serialize_map(Some(self.type_lens()))?;
 
-        for (type_id, ser_metadata) in
-            &self.serde.serialization_metadata_by_type_id
-        {
-            // skip if this serialization metadata is not applicable to the
-            // current map.
-            if !self.map.has_type_id(ser_metadata.type_id) {
-                continue;
+            let mut serialized_count = 0;
+
+            for (type_id, ser_metadata) in
+                &reflector.serialization_metadata_by_type_id
+            {
+                // skip if this serialization metadata is not applicable to the
+                // current map.
+                if !self.has_type_id(ser_metadata.type_id) {
+                    continue;
+                }
+
+                map.serialize_entry(&type_id, &TypedMapSer {
+                    ser_metadata,
+                    map: self,
+                })?;
+
+                serialized_count += 1;
             }
 
-            map.serialize_entry(&type_id, &TypedMapSer {
-                ser_metadata,
-                map: self.map,
-            })?;
+            if serialized_count != in_map_count {
+                return Err(serde::ser::Error::custom(format!(
+                    "Expected {in_map_count} entries, but got \
+                     {serialized_count}"
+                )));
+            }
 
-            serialized_count += 1;
-        }
-
-        if serialized_count != in_map_count {
-            return Err(serde::ser::Error::custom(format!(
-                "Expected {in_map_count} entries, but got {serialized_count}"
-            )));
-        }
-
-        map.end()
+            map.end()
+        })
     }
 }
 
-/// Implements [`DeserializeSeed`], allowing incremental deserialization of
-/// [`Map`]
-#[derive(Debug, Clone, Copy)]
-pub struct DeserializableMap<'a> {
-    reflector: &'a Registry,
-    map: &'a Map,
-}
-
-impl<'de> DeserializeSeed<'de> for DeserializableMap<'_> {
+impl<'de> DeserializeSeed<'de> for &Map {
     type Value = ();
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -430,7 +389,7 @@ impl<'de> DeserializeSeed<'de> for DeserializableMap<'_> {
     }
 }
 
-impl<'de> Visitor<'de> for DeserializableMap<'_> {
+impl<'de> Visitor<'de> for &Map {
     type Value = ();
 
     fn expecting(
@@ -468,26 +427,30 @@ impl<'de> Visitor<'de> for DeserializableMap<'_> {
             }
         }
 
-        while let Some(stable_type_id) = map.next_key::<StableTypeID>()? {
-            let deserialization_metadata = self
-                .reflector
-                .deserialization_metadata_by_type_id
-                .get(&stable_type_id)
-                .ok_or_else(|| {
-                    serde::de::Error::custom(format!(
-                        "No deserialization metadata for type: stable type id \
-                         {stable_type_id:?}"
-                    ))
+        REFLECTOR.with_borrow(|r| {
+            let reflector = r.as_ref().expect("should've been set");
+
+            while let Some(stable_type_id) = map.next_key::<StableTypeID>()? {
+                let deserialization_metadata = reflector
+                    .deserialization_metadata_by_type_id
+                    .get(&stable_type_id)
+                    .ok_or_else(|| {
+                        serde::de::Error::custom(format!(
+                            "No deserialization metadata for type: stable \
+                             type id {stable_type_id:?}"
+                        ))
+                    })?;
+
+                let deserialize_entry =
+                    deserialization_metadata.deserialize_entry;
+                map.next_value_seed(DeserializeInnerMap {
+                    map: self,
+                    deserializable_entry: deserialize_entry,
                 })?;
+            }
 
-            let deserialize_entry = deserialization_metadata.deserialize_entry;
-            map.next_value_seed(DeserializeInnerMap {
-                map: self.map,
-                deserializable_entry: deserialize_entry,
-            })?;
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -497,24 +460,33 @@ thread_local! {
 ///
 /// This is a little bit of a hack, but it allows us to avoid manually writing
 /// the serialization and deserialization logic for on the CallGraph struct.
-pub static REFLECTOR: std::cell::RefCell<Option<Registry>> = const { std::cell::RefCell::new(None) };
+ static REFLECTOR: RefCell<Option<&'static Registry>> = const { RefCell::new(None) };
 }
 
 /// Sets the reflector to the current session allowing serialization of
 /// [`Dynamic`] happening in the `f` closure
-pub fn set_reflector<T>(reflector: &mut Registry, f: impl FnOnce() -> T) -> T {
+pub(crate) fn set_serde_registry<T>(
+    reflector: &Registry,
+    f: impl FnOnce() -> T,
+) -> T {
     // temporarily take the current reflector, so that we can restore it
     let current = REFLECTOR.with(|r| r.borrow_mut().take());
 
     // replace the current reflector with the provided one
-    REFLECTOR.with_borrow_mut(|r| *r = Some(std::mem::take(reflector)));
+    // SAFETY: we guarantee that the reflector is only used within the scope of
+    //         function `f`, so it is safe to transmute it to a static
+    //         reference.
+    REFLECTOR.with_borrow_mut(|x| {
+        *x = Some(unsafe {
+            std::mem::transmute::<&Registry, &'static Registry>(reflector)
+        });
+    });
 
     // invoke the provided function
     let result = f();
 
     // restore the previous reflector
     REFLECTOR.with_borrow_mut(|r| {
-        *reflector = r.take().expect("should be set");
         *r = current;
     });
 
