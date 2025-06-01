@@ -120,7 +120,12 @@ impl Database {
     /// the version of the database will be bumped up by one. This is to
     /// indicate that the input value has changed and all the derived values
     /// need to reflect this change.
-    pub fn set_input<K: Key + Dynamic>(&mut self, key: &K, value: K::Value) {
+    pub fn set_input<K: Key + Dynamic>(
+        &mut self,
+        key: &K,
+        value: K::Value,
+        overwrite: bool,
+    ) -> Result<(), String> {
         // bump the version for the new input setting
         if *self.last_was_query.get_mut() {
             self.version += 1;
@@ -128,13 +133,27 @@ impl Database {
 
         *self.last_was_query.get_mut() = false;
 
-        let mut invalidate = false;
-        if let Some(old_value) = self.map.get(key) {
-            invalidate = old_value != value;
-        }
+        let invalidate = self.map.entry(key.clone(), |entry| match entry {
+            dashmap::Entry::Occupied(mut occupied_entry) => {
+                if overwrite {
+                    let old_value = occupied_entry.get();
 
-        // insert the value into the map
-        self.map.insert(key.clone(), value);
+                    if *old_value == value {
+                        Ok(false)
+                    } else {
+                        occupied_entry.insert(value);
+                        Ok(true)
+                    }
+                } else {
+                    K::merge_value(occupied_entry.get_mut(), value).map(|x| !x)
+                }
+            }
+
+            dashmap::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(value);
+                Ok(false)
+            }
+        })?;
 
         // set the input value
         match self
@@ -160,6 +179,8 @@ impl Database {
                 });
             }
         }
+
+        Ok(())
     }
 
     /// Queries the value associated with the given key.
@@ -199,9 +220,10 @@ impl Database {
             return Ok(());
         };
 
-        if matches!(version_info.kind, Kind::Derived {
-            defaulted_by_cyclic_dependency: true
-        }) && version_info.verfied_at_version == self.version
+        if matches!(
+            version_info.kind,
+            Kind::Derived { defaulted_by_cyclic_dependency: true }
+        ) && version_info.verfied_at_version == self.version
         {
             return Err(crate::runtime::executor::CyclicError);
         }
@@ -283,9 +305,10 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        let recompute = if matches!(version_info.kind, Kind::Derived {
-            defaulted_by_cyclic_dependency: true
-        }) {
+        let recompute = if matches!(
+            version_info.kind,
+            Kind::Derived { defaulted_by_cyclic_dependency: true }
+        ) {
             true
         } else {
             let inputs = call_graph
@@ -604,9 +627,12 @@ impl Database {
                         // must've been marked as cyclic before
                         assert!(
                             version_info.verfied_at_version == self.version
-                                && matches!(version_info.kind, Kind::Derived {
-                                    defaulted_by_cyclic_dependency: true
-                                })
+                                && matches!(
+                                    version_info.kind,
+                                    Kind::Derived {
+                                        defaulted_by_cyclic_dependency: true
+                                    }
+                                )
                         );
 
                         version_info.verfied_at_version = self.version;

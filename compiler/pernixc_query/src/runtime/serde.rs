@@ -104,7 +104,9 @@ impl<'de, K: Key> Visitor<'de> for MapDeserializeHelper<'_, K> {
                 dashmap::Entry::Occupied(mut occupied_entry) => {
                     let existing_value = occupied_entry.get_mut();
                     K::merge_value(existing_value, value)
-                        .map_err(serde::de::Error::custom)
+                        .map_err(serde::de::Error::custom)?;
+
+                    Ok(())
                 }
                 dashmap::Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(value);
@@ -391,10 +393,10 @@ impl Serialize for SerializableMap<'_> {
                 continue;
             }
 
-            map.serialize_entry(&type_id, &TypedMapSer {
-                ser_metadata,
-                map: self.map,
-            })?;
+            map.serialize_entry(
+                &type_id,
+                &TypedMapSer { ser_metadata, map: self.map },
+            )?;
 
             serialized_count += 1;
         }
@@ -566,10 +568,13 @@ impl Serialize for DynamicBox {
 
             struct_serializer
                 .serialize_field("stable_type_id", &self.stable_type_id())?;
-            struct_serializer.serialize_field("value", &Wrapper {
-                value: &*self.0,
-                serializer_box_fn: entry.serialize_box,
-            })?;
+            struct_serializer.serialize_field(
+                "value",
+                &Wrapper {
+                    value: &*self.0,
+                    serializer_box_fn: entry.serialize_box,
+                },
+            )?;
 
             struct_serializer.end()
         })

@@ -92,8 +92,8 @@ impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
 fn negate_variable() {
     let mut db = Database::default();
 
-    db.set_input(&Variable("a".to_string()), 100);
-    db.set_input(&Variable("b".to_string()), 200);
+    db.set_input(&Variable("a".to_string()), 100, true).unwrap();
+    db.set_input(&Variable("b".to_string()), 200, true).unwrap();
     assert_eq!(db.version(), 0);
 
     db.runtime.executor.register(Arc::new(NegateVariableExecutor));
@@ -104,16 +104,16 @@ fn negate_variable() {
 
     assert_eq!(value, Ok(-300));
 
-    db.set_input(&Variable("a".to_string()), 200);
-    db.set_input(&Variable("b".to_string()), 300);
+    db.set_input(&Variable("a".to_string()), 200, true).unwrap();
+    db.set_input(&Variable("b".to_string()), 300, true).unwrap();
     assert_eq!(db.version(), 1);
 
     let value = db
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
     assert_eq!(value, Ok(-500));
 
-    db.set_input(&Variable("a".to_string()), -300);
-    db.set_input(&Variable("b".to_string()), -300);
+    db.set_input(&Variable("a".to_string()), -300, true).unwrap();
+    db.set_input(&Variable("b".to_string()), -300, true).unwrap();
 
     assert_eq!(db.version(), 2);
     let value = db
@@ -169,7 +169,7 @@ fn skip_when_input_unchanged() {
     let mut db = Database::default();
 
     // Set initial input
-    db.set_input(&Variable("x".to_string()), 42);
+    db.set_input(&Variable("x".to_string()), 42, true).unwrap();
     assert_eq!(db.version(), 0);
 
     // Create tracked executor to count invocations
@@ -191,7 +191,7 @@ fn skip_when_input_unchanged() {
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
     // Now change the input - should trigger recomputation
-    db.set_input(&Variable("x".to_string()), 100);
+    db.set_input(&Variable("x".to_string()), 100, true).unwrap();
     assert_eq!(db.version(), 1); // Version should increment
 
     // Query after input change - should compute and call executor again
@@ -297,8 +297,8 @@ fn skip_when_intermediate_result_unchanged() {
     let mut db = Database::default();
 
     // Set initial inputs - both positive values
-    db.set_input(&Variable("x".to_string()), 400);
-    db.set_input(&Variable("y".to_string()), 300);
+    db.set_input(&Variable("x".to_string()), 400, true).unwrap();
+    db.set_input(&Variable("y".to_string()), 300, true).unwrap();
     assert_eq!(db.version(), 0);
 
     // Create tracked executors to count invocations
@@ -324,7 +324,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again
 
     // Change x from 400 to -400 (abs value stays the same)
-    db.set_input(&Variable("x".to_string()), -400);
+    db.set_input(&Variable("x".to_string()), -400, true).unwrap();
     assert_eq!(db.version(), 1); // Version should increment
 
     // Query after input change - abs executor should be called for x, but add
@@ -337,7 +337,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again because abs values are the same
 
     // Change y from 300 to -300 (abs value stays the same)
-    db.set_input(&Variable("y".to_string()), -300);
+    db.set_input(&Variable("y".to_string()), -300, true).unwrap();
     assert_eq!(db.version(), 2); // Version should increment again
 
     // Query after second input change - abs executor should be called for y,
@@ -349,7 +349,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // STILL not called because both abs values are the same
 
     // Now change x to a value that actually changes the abs result
-    db.set_input(&Variable("x".to_string()), 500);
+    db.set_input(&Variable("x".to_string()), 500, true).unwrap();
     assert_eq!(db.version(), 3); // Version should increment
 
     // Query after meaningful change - both executors should be called
@@ -451,7 +451,7 @@ fn multi_layer_dependency_skipping() {
     let mut db = Database::default();
 
     // Set initial input
-    db.set_input(&Variable("z".to_string()), 5);
+    db.set_input(&Variable("z".to_string()), 5, true).unwrap();
     assert_eq!(db.version(), 0);
 
     // Create tracked executors
@@ -474,7 +474,7 @@ fn multi_layer_dependency_skipping() {
     // Change z from 5 to -5
     // abs(-5) = 5 (unchanged), but square(-5) = 25 (unchanged too!)
     // So the complex computation result should be the same: 5 + 25 = 30
-    db.set_input(&Variable("z".to_string()), -5);
+    db.set_input(&Variable("z".to_string()), -5, true).unwrap();
     assert_eq!(db.version(), 1);
 
     let result2 = db.query(&ComplexComputation("z".to_string()));
@@ -484,7 +484,7 @@ fn multi_layer_dependency_skipping() {
     assert_eq!(complex_executor.get_call_count(), 1); // NOT called because both dependencies are unchanged!
 
     // Change to a different value that actually changes the result
-    db.set_input(&Variable("z".to_string()), 3);
+    db.set_input(&Variable("z".to_string()), 3, true).unwrap();
     assert_eq!(db.version(), 2);
 
     let result3 = db.query(&ComplexComputation("z".to_string()));
@@ -592,8 +592,8 @@ fn incremental_compilation_simulation() {
     let mut db = Database::default();
 
     // Set up input values (representing source code)
-    db.set_input(&Variable("module_a".to_string()), 10);
-    db.set_input(&Variable("module_b".to_string()), 20);
+    db.set_input(&Variable("module_a".to_string()), 10, true).unwrap();
+    db.set_input(&Variable("module_b".to_string()), 20, true).unwrap();
 
     let type_check_executor = Arc::new(TypeCheckExecutor::default());
     let dependency_executor = Arc::new(DependencyExecutor::default());
@@ -613,7 +613,7 @@ fn incremental_compilation_simulation() {
     assert_eq!(dependency_executor.get_call_count(), 2);
 
     // Simulate incremental change: only module_a changes
-    db.set_input(&Variable("module_a".to_string()), 15);
+    db.set_input(&Variable("module_a".to_string()), 15, true).unwrap();
 
     // Reset call counts to track incremental behavior
     type_check_executor
@@ -1047,7 +1047,7 @@ fn conditional_cyclic_dependency() {
     db.runtime.executor.register(Arc::clone(&executor_b));
 
     // Phase 1: Set control value to create NO cycle (control_value != 1)
-    db.set_input(&CycleControlVariable, 5);
+    db.set_input(&CycleControlVariable, 5, true).unwrap();
 
     // Query both A and B - they should compute normal values without cycles
     let result_a = db.query(&ConditionalCyclicQueryA);
@@ -1062,7 +1062,7 @@ fn conditional_cyclic_dependency() {
     assert_eq!(executor_b.get_call_count(), 1);
 
     // Phase 2: Change control value to CREATE a cycle (control_value == 1)
-    db.set_input(&CycleControlVariable, 1);
+    db.set_input(&CycleControlVariable, 1, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1080,7 +1080,7 @@ fn conditional_cyclic_dependency() {
 
     // Phase 3: Change control value back to break the cycle (control_value !=
     // 1)
-    db.set_input(&CycleControlVariable, 3);
+    db.set_input(&CycleControlVariable, 3, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1098,7 +1098,7 @@ fn conditional_cyclic_dependency() {
 
     // Phase 4: Create cycle again with a different control value
     // (control_value // == 1)
-    db.set_input(&CycleControlVariable, 1);
+    db.set_input(&CycleControlVariable, 1, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1129,7 +1129,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 1: No cycle - dependent query should use computed values
 
-    db.set_input(&CycleControlVariable, 2);
+    db.set_input(&CycleControlVariable, 2, true).unwrap();
 
     let result_dependent = db.query(&DependentQuery);
 
@@ -1144,7 +1144,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 2: Create cycle - dependent query should use default values
 
-    db.set_input(&CycleControlVariable, 1);
+    db.set_input(&CycleControlVariable, 1, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1164,7 +1164,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 3: Break cycle again - dependent query should use computed values
 
-    db.set_input(&CycleControlVariable, 4);
+    db.set_input(&CycleControlVariable, 4, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst); // Query A and B to ensure they're computed

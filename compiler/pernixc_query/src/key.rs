@@ -263,9 +263,9 @@ pub trait Key:
     fn merge_value(
         old: &mut Self::Value,
         new: Self::Value,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         if old == &new {
-            Ok(())
+            Ok(true)
         } else {
             Err(format!(
                 "Encountered an incompatible value for key {}",

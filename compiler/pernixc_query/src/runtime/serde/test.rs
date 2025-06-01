@@ -41,9 +41,9 @@ pub struct NegateVariable(String);
 
 // Custom merge function - additive
 #[allow(clippy::unnecessary_wraps)]
-fn additive_merge(old: &mut i32, new: i32) -> Result<(), String> {
+fn additive_merge(old: &mut i32, new: i32) -> Result<bool, String> {
     *old += new;
-    Ok(())
+    Ok(false)
 }
 
 #[derive(
@@ -65,14 +65,14 @@ fn additive_merge(old: &mut i32, new: i32) -> Result<(), String> {
 pub struct AdditiveKey(String);
 
 // Custom merge function that can fail
-fn conditional_merge(old: &mut i32, new: i32) -> Result<(), String> {
+fn conditional_merge(old: &mut i32, new: i32) -> Result<bool, String> {
     if new > 100 {
         Err("Value too large for merge".to_string())
     } else if new == *old {
-        Ok(()) // Allow same values
+        Ok(true) // Allow same values
     } else if new > *old {
         *old = new; // Accept larger values
-        Ok(())
+        Ok(false)
     } else {
         Err(format!(
             "Cannot merge {} into {} (new value must be >= old value)",
@@ -139,7 +139,9 @@ where
         + for<'a> serde::Deserialize<'a>
         + Default,
 {
-    fn new(name: String) -> Self { Self(name, std::marker::PhantomData) }
+    fn new(name: String) -> Self {
+        Self(name, std::marker::PhantomData)
+    }
 }
 
 #[test]
