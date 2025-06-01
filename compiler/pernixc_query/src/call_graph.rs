@@ -35,9 +35,7 @@ pub struct CallGraph {
     current_dependencies_by_dependant: HashMap<DynamicBox, DynamicBox>,
 
     dependency_graph: HashMap<DynamicBox, HashSet<DynamicBox>>,
-
     version_info_by_keys: HashMap<DynamicBox, VersionInfo>,
-
     cyclic_dependencies: Vec<CyclicDependency>,
 }
 

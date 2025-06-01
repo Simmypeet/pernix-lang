@@ -8,17 +8,17 @@ use serde::{
     ser::{SerializeMap, SerializeStruct},
     Deserialize, Serialize,
 };
-use smallbox::smallbox;
+use smallbox::{smallbox, SmallBox};
 
 use crate::{
     key::{Dynamic, DynamicBox, StableTypeID},
-    map::Map,
+    map::{Map, TypedMap},
     Key,
 };
 
 /// A struct enabling dynamic serialization and deserialization of
 /// [`Map`]s and [`DynamicBox`]es.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Default)]
 pub struct Registry {
     serialization_metadata_by_type_id:
         HashMap<StableTypeID, SerializationMetadata>,
@@ -26,12 +26,16 @@ pub struct Registry {
         HashMap<StableTypeID, DeserializationMetadata>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug)]
 struct SerdeMetadata {
     ser: SerializationMetadata,
     de: DeserializationMetadata,
 }
-type SerializeMapFn = fn(&Map, &mut dyn FnMut(&dyn erased_serde::Serialize));
+type SerializeMapFn = fn(
+    &Map,
+    Option<&(FilterObjectBox, FilterObjectFn)>,
+    &mut dyn FnMut(&dyn erased_serde::Serialize),
+);
 type SerializeBoxFn =
     fn(&dyn Any, &mut dyn FnMut(&dyn erased_serde::Serialize));
 
@@ -43,12 +47,16 @@ type DeserializeBoxFn = fn(
     &mut dyn erased_serde::Deserializer,
 ) -> Result<DynamicBox, erased_serde::Error>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+type FilterObjectBox = SmallBox<dyn Any, fn() -> ()>;
+type FilterObjectFn = fn(&dyn Any, &dyn Any) -> bool;
+
+#[derive(Debug)]
 struct SerializationMetadata {
     serialize_map: SerializeMapFn,
     serialize_box: SerializeBoxFn,
-    stable_type_id: StableTypeID,
     type_id: std::any::TypeId,
+
+    filter_object: Option<(FilterObjectBox, FilterObjectFn)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -110,6 +118,34 @@ impl<'de, K: Key> Visitor<'de> for MapDeserializeHelper<'_, K> {
     }
 }
 
+struct SerializeTypeMap<'a, K: Key> {
+    typed_map: &'a TypedMap<K>,
+    filter_object: Option<&'a (FilterObjectBox, FilterObjectFn)>,
+}
+
+impl<K: Key> Serialize for SerializeTypeMap<'_, K> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(self.typed_map.len()))?;
+
+        for a in self.typed_map {
+            if let Some((filter_object, filter_fn)) =
+                self.filter_object.as_ref()
+            {
+                if !filter_fn(a.key().any(), filter_object) {
+                    continue; // skip this serialization entry
+                }
+            }
+
+            map.serialize_entry(a.key(), a.value())?;
+        }
+
+        map.end()
+    }
+}
+
 impl Registry {
     /// Stores the serialization information allowing serialization of [`Map`]
     /// containing the given type `T`. When all the types are registered
@@ -120,7 +156,11 @@ impl Registry {
             .serialization_metadata_by_type_id
             .contains_key(&T::STABLE_TYPE_ID)
         {
-            return; // Already registered
+            panic!(
+                "Type {} is already registered for serialization, use \
+                 overwrite method to register it again",
+                std::any::type_name::<T>()
+            );
         }
 
         let serialize_box = |key: &dyn Any,
@@ -135,12 +175,17 @@ impl Registry {
         };
 
         let serialize_map = |map: &Map,
+                             filter_object: Option<&(
+            FilterObjectBox,
+            FilterObjectFn,
+        )>,
                              serializer: &mut dyn FnMut(
             &dyn erased_serde::Serialize,
         )| {
             map.type_storage::<T, _>(|x| {
                 let typed_map = x.unwrap();
-                serializer(typed_map);
+
+                serializer(&SerializeTypeMap { typed_map, filter_object });
             });
         };
 
@@ -161,8 +206,94 @@ impl Registry {
             ser: SerializationMetadata {
                 serialize_map,
                 serialize_box,
-                stable_type_id: T::STABLE_TYPE_ID,
                 type_id: std::any::TypeId::of::<T>(),
+                filter_object: None,
+            },
+            de: DeserializationMetadata { deserialize_entry, deserialize_box },
+        };
+
+        self.serialization_metadata_by_type_id
+            .insert(T::STABLE_TYPE_ID, serde_metadata.ser);
+        self.deserialization_metadata_by_type_id
+            .insert(T::STABLE_TYPE_ID, serde_metadata.de);
+    }
+
+    /// Stores the serialization information allowing serialization of [`Map`]
+    /// containing the given type `T`. When all the types are registered
+    /// the map can be serialized using the [`Map::serializable`] method along
+    /// with the reflector.
+    pub fn register_with_filter<T: Key, F: Fn(&T) -> bool + Any>(
+        &mut self,
+        filter_object: F,
+    ) {
+        if self
+            .serialization_metadata_by_type_id
+            .contains_key(&T::STABLE_TYPE_ID)
+        {
+            panic!(
+                "Type {} is already registered for serialization, use \
+                 overwrite method to register it again",
+                std::any::type_name::<T>()
+            );
+        }
+
+        let serialize_box = |key: &dyn Any,
+                             serializer: &mut dyn FnMut(
+            &dyn erased_serde::Serialize,
+        )| {
+            let key = key.downcast_ref::<T>().expect(
+                "Key type does not match the expected type for serialization",
+            );
+
+            serializer(key);
+        };
+
+        let serialize_map = |map: &Map,
+                             filter_object: Option<&(
+            FilterObjectBox,
+            FilterObjectFn,
+        )>,
+                             serializer: &mut dyn FnMut(
+            &dyn erased_serde::Serialize,
+        )| {
+            map.type_storage::<T, _>(|x| {
+                let typed_map = x.unwrap();
+
+                serializer(&SerializeTypeMap { typed_map, filter_object });
+            });
+        };
+
+        let deserialize_entry =
+            |map: &Map, deserializer: &mut dyn erased_serde::Deserializer| {
+                let deserialize_helper =
+                    MapDeserializeHelper { map, _phantom: PhantomData::<T> };
+
+                deserialize_helper.deserialize(deserializer)
+            };
+
+        let deserialize_box =
+            |deserializer: &mut dyn erased_serde::Deserializer| {
+                Ok(DynamicBox(smallbox!(T::deserialize(deserializer)?)))
+            };
+
+        let filter_key_fn = |key: &dyn Any, filter_fn: &dyn Any| {
+            let filter_fn = filter_fn
+                .downcast_ref::<F>()
+                .expect("Filter function does not match the expected type");
+
+            let key = key.downcast_ref::<T>().expect(
+                "Key type does not match the expected type for filtering",
+            );
+
+            filter_fn(key)
+        };
+
+        let serde_metadata = SerdeMetadata {
+            ser: SerializationMetadata {
+                serialize_map,
+                serialize_box,
+                type_id: std::any::TypeId::of::<T>(),
+                filter_object: Some((smallbox!(filter_object), filter_key_fn)),
             },
             de: DeserializationMetadata { deserialize_entry, deserialize_box },
         };
@@ -231,12 +362,16 @@ impl Serialize for SerializableMap<'_> {
                 let mut result = None;
                 let mut serializer = Some(serializer);
 
-                (self.ser_metadata.serialize_map)(self.map, &mut |x| {
-                    result = Some(erased_serde::serialize(
-                        x,
-                        serializer.take().unwrap(),
-                    ));
-                });
+                (self.ser_metadata.serialize_map)(
+                    self.map,
+                    self.ser_metadata.filter_object.as_ref(),
+                    &mut |x| {
+                        result = Some(erased_serde::serialize(
+                            x,
+                            serializer.take().unwrap(),
+                        ));
+                    },
+                );
 
                 result.unwrap()
             }
