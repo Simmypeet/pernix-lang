@@ -140,9 +140,7 @@ impl Map {
 
     /// Retrieves a number of all unique types stored in the map.
     #[must_use]
-    pub fn type_lens(&self) -> usize {
-        self.inner.len()
-    }
+    pub fn type_lens(&self) -> usize { self.inner.len() }
 
     /// Retrieves the underlying storage for a specific type `K` and applies
     /// a function to it. If the type does not exist, the function is called

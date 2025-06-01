@@ -11,8 +11,8 @@ use serde::{
 use smallbox::{smallbox, SmallBox};
 
 use crate::{
+    database::map::{Map, TypedMap},
     key::{Dynamic, DynamicBox, StableTypeID},
-    map::{Map, TypedMap},
     Key,
 };
 
@@ -393,10 +393,10 @@ impl Serialize for SerializableMap<'_> {
                 continue;
             }
 
-            map.serialize_entry(
-                &type_id,
-                &TypedMapSer { ser_metadata, map: self.map },
-            )?;
+            map.serialize_entry(&type_id, &TypedMapSer {
+                ser_metadata,
+                map: self.map,
+            })?;
 
             serialized_count += 1;
         }
@@ -568,13 +568,10 @@ impl Serialize for DynamicBox {
 
             struct_serializer
                 .serialize_field("stable_type_id", &self.stable_type_id())?;
-            struct_serializer.serialize_field(
-                "value",
-                &Wrapper {
-                    value: &*self.0,
-                    serializer_box_fn: entry.serialize_box,
-                },
-            )?;
+            struct_serializer.serialize_field("value", &Wrapper {
+                value: &*self.0,
+                serializer_box_fn: entry.serialize_box,
+            })?;
 
             struct_serializer.end()
         })

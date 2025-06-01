@@ -2,7 +2,7 @@ use insta::{assert_ron_snapshot, Settings};
 use serde::{de::DeserializeSeed, Deserialize, Serialize};
 use smallbox::smallbox;
 
-use crate::{key::DynamicBox, map, Key};
+use crate::{database::map::Map, key::DynamicBox, Key};
 
 // Basic equality-based merge (default behavior)
 #[derive(
@@ -139,15 +139,13 @@ where
         + for<'a> serde::Deserialize<'a>
         + Default,
 {
-    fn new(name: String) -> Self {
-        Self(name, std::marker::PhantomData)
-    }
+    fn new(name: String) -> Self { Self(name, std::marker::PhantomData) }
 }
 
 #[test]
 fn serializable() {
     let mut registry = super::Registry::default();
-    let map = map::Map::default();
+    let map = Map::default();
 
     registry.register::<Variable>();
     registry.register::<NegateVariable>();
@@ -168,7 +166,7 @@ fn serializable() {
 fn deserializable() {
     // Create a new registry and map with the same reflector setup
     let mut registry = super::Registry::default();
-    let map = map::Map::default();
+    let map = Map::default();
 
     registry.register::<Variable>();
     registry.register::<NegateVariable>();
@@ -186,7 +184,7 @@ fn deserializable() {
 
     // Create a new empty registry and map for deserialization
     let mut target_registry = super::Registry::default();
-    let target_map = map::Map::default();
+    let target_map = Map::default();
     target_registry.register::<Variable>();
     target_registry.register::<NegateVariable>();
 
@@ -210,7 +208,7 @@ fn deserializable() {
 fn merge_value_basic_equality() {
     // Test basic case: default merge_value implementation with equality
     let mut registry = super::Registry::default();
-    let map = map::Map::default();
+    let map = Map::default();
 
     registry.register::<Variable>();
 
@@ -222,7 +220,7 @@ fn merge_value_basic_equality() {
         // Create a separate registry and map with the same value to serialize
         // from
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<Variable>();
         source_map.insert(Variable("test".to_string()), 42); // Same value
 
@@ -248,7 +246,7 @@ fn merge_value_basic_equality() {
         // Create a separate registry and map with a different value to
         // serialize from
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<Variable>();
         source_map.insert(Variable("test".to_string()), 100); // Different value
 
@@ -277,7 +275,7 @@ fn merge_value_basic_equality() {
 fn merge_value_custom_additive() {
     // Test alternative case: custom implementation (additive merge)
     let mut registry = super::Registry::default();
-    let map = map::Map::default();
+    let map = Map::default();
 
     registry.register::<AdditiveKey>();
 
@@ -287,7 +285,7 @@ fn merge_value_custom_additive() {
     // Test first addition
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("counter".to_string()), 5);
 
@@ -309,7 +307,7 @@ fn merge_value_custom_additive() {
     // Test second addition
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("counter".to_string()), 25);
 
@@ -334,7 +332,7 @@ fn merge_value_custom_additive() {
     // Test with new key (should work as normal insertion)
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<AdditiveKey>();
         source_map.insert(AdditiveKey("new_counter".to_string()), 100);
 
@@ -360,7 +358,7 @@ fn merge_value_custom_additive() {
 fn merge_value_conditional_errors() {
     // Test exceptional case: Err(...) from merge function
     let mut registry = super::Registry::default();
-    let map = map::Map::default();
+    let map = Map::default();
 
     registry.register::<ConditionalMergeKey>();
 
@@ -370,7 +368,7 @@ fn merge_value_conditional_errors() {
     // Test 1: Value too large (> 100) - should fail
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 150);
 
@@ -398,7 +396,7 @@ fn merge_value_conditional_errors() {
     // Test 2: Smaller value (< existing) - should fail
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 30);
 
@@ -426,7 +424,7 @@ fn merge_value_conditional_errors() {
     // Test 3: Same value - should succeed
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 50);
 
@@ -448,7 +446,7 @@ fn merge_value_conditional_errors() {
     // Test 4: Larger value (but <= 100) - should succeed and update
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 75);
 
@@ -470,7 +468,7 @@ fn merge_value_conditional_errors() {
     // Test 5: Edge case - exactly 100 should succeed
     {
         let mut source_registry = super::Registry::default();
-        let source_map = map::Map::default();
+        let source_map = Map::default();
         source_registry.register::<ConditionalMergeKey>();
         source_map.insert(ConditionalMergeKey("test".to_string()), 100);
 
@@ -719,7 +717,7 @@ fn serialization_filtering() {
     // Test that registry filters work properly to exclude certain keys from
     // serialization
     let mut registry = super::Registry::default();
-    let map = map::Map::default();
+    let map = Map::default();
 
     // Register Variable with a filter that only allows keys starting with
     // "include_"
@@ -754,7 +752,7 @@ fn serialization_filtering() {
 
     // Verify deserialization only contains the filtered items
     let mut target_registry = super::Registry::default();
-    let target_map = map::Map::default();
+    let target_map = Map::default();
     target_registry.register::<Variable>(); // Regular registration for deserialization
 
     let deserializable_map = target_map.deserializable(&target_registry);
@@ -778,7 +776,7 @@ fn serialization_filtering() {
 fn serialization_filtering_multiple_types() {
     // Test filtering with multiple key types having different filters
     let mut registry = super::Registry::default();
-    let map = map::Map::default();
+    let map = Map::default();
 
     // Register Variable with filter for names containing "var"
     registry.register_with_filter::<Variable, _>(|var| var.0.contains("var"));
@@ -810,7 +808,7 @@ fn serialization_filtering_multiple_types() {
 
     // Verify deserialization
     let mut target_registry = super::Registry::default();
-    let target_map = map::Map::default();
+    let target_map = Map::default();
     target_registry.register::<Variable>();
     target_registry.register::<AdditiveKey>();
 

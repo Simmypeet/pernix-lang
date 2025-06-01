@@ -9,9 +9,9 @@ use std::{
 use parking_lot::MutexGuard;
 
 use crate::{
-    call_graph::CallGraph,
+    database::call_graph::CallGraph,
     key::{Dynamic, Key},
-    Database,
+    Engine,
 };
 
 /// A unit struct for signaling cyclic dependencies in query execution.
@@ -42,7 +42,7 @@ pub trait Executor<K: Key>: Any + Send + Sync {
     /// Returns `Ok(value)` on successful computation, or `Err(CyclicError)`
     /// when the query is part of a strongly connected component (SCC) with
     /// cyclic dependencies.
-    fn execute(&self, db: &Database, key: K) -> Result<K::Value, CyclicError>;
+    fn execute(&self, db: &Engine, key: K) -> Result<K::Value, CyclicError>;
 }
 
 /// Contains the [`Executor`] objects for each key type. This struct allows
@@ -84,7 +84,7 @@ impl Registry {
 
 type ExecutorArcDowncast = fn(Arc<dyn Any + Send + Sync>, &mut dyn Any);
 type InvokeQuery = for<'db, 'k> fn(
-    &'db Database,
+    &'db Engine,
     &'k dyn Dynamic,
     MutexGuard<'db, CallGraph>,
 ) -> MutexGuard<'db, CallGraph>;
@@ -107,13 +107,13 @@ impl std::fmt::Debug for Entry {
 impl Entry {
     fn new<K: Key, E: Executor<K>>(executor: Arc<E>) -> Self {
         fn invoke<'db, K: Key>(
-            database: &'db Database,
+            engine: &'db Engine,
             key: &dyn Dynamic,
             call_graph: MutexGuard<'db, CallGraph>,
         ) -> MutexGuard<'db, CallGraph> {
             let key = key.any().downcast_ref::<K>().unwrap();
 
-            database.query_internal(key, call_graph).1
+            engine.query_internal(key, call_graph).1
         }
 
         let downcast = |executor: Arc<dyn Any + Send + Sync>,

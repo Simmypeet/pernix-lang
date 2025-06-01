@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use super::Executor;
-use crate::{Database, Key};
+use crate::{Engine, Key};
 
 #[derive(
     Key,
@@ -28,7 +28,7 @@ struct MyTestExecutor;
 impl Executor<Test> for MyTestExecutor {
     fn execute(
         &self,
-        _: &Database,
+        _: &Engine,
         Test: Test,
     ) -> Result<String, super::CyclicError> {
         Ok("it works".to_string())
@@ -41,7 +41,7 @@ struct MySecondTestExecutor;
 impl Executor<Test> for MySecondTestExecutor {
     fn execute(
         &self,
-        _: &Database,
+        _: &Engine,
         Test: Test,
     ) -> Result<String, super::CyclicError> {
         Ok("it works for the second time".to_string())
@@ -50,7 +50,7 @@ impl Executor<Test> for MySecondTestExecutor {
 
 #[test]
 fn registry() {
-    let mut db = Database::default();
+    let mut db = Engine::default();
     assert!(db.runtime.executor.register(Arc::new(MyTestExecutor)).is_none());
 
     let first_executor = db.runtime.executor.get::<Test>().unwrap();

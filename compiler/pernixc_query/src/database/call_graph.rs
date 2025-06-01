@@ -12,10 +12,11 @@ use std::{
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, MutexGuard};
 
+use super::Database;
 use crate::{
     key::{Dynamic, DynamicBox, Key},
     runtime::executor::Executor,
-    Database,
+    Engine,
 };
 
 /// Tracks the dependencies between queries and their execution order.
@@ -182,7 +183,9 @@ impl Database {
 
         Ok(())
     }
+}
 
+impl Engine {
     /// Queries the value associated with the given key.
     ///
     /// # Panics
@@ -200,7 +203,7 @@ impl Database {
         &self,
         key: &T,
     ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
-        self.query_internal(key, self.call_graph.lock()).0
+        self.query_internal(key, self.database.call_graph.lock()).0
     }
 
     fn check_cyclic(
@@ -220,10 +223,9 @@ impl Database {
             return Ok(());
         };
 
-        if matches!(
-            version_info.kind,
-            Kind::Derived { defaulted_by_cyclic_dependency: true }
-        ) && version_info.verfied_at_version == self.version
+        if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) && version_info.verfied_at_version == self.database.version
         {
             return Err(crate::runtime::executor::CyclicError);
         }
@@ -232,7 +234,7 @@ impl Database {
     }
 
     #[allow(clippy::too_many_lines)]
-    pub(super) fn query_internal<'a, T: Dynamic + Key>(
+    pub(crate) fn query_internal<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
         mut call_graph: MutexGuard<'a, CallGraph>,
@@ -245,8 +247,9 @@ impl Database {
         let called_from = call_graph.called_from();
 
         // query has already been computed return the result
-        let Some(mut result) = self.map.get(key) else {
-            self.last_was_query
+        let Some(mut result) = self.database.map.get(key) else {
+            self.database
+                .last_was_query
                 .store(true, std::sync::atomic::Ordering::SeqCst);
 
             // the value hasn't been computed yet, so we need to compute it
@@ -269,7 +272,7 @@ impl Database {
                 );
             }
 
-            return (Ok(self.map.get(key).unwrap()), call_graph);
+            return (Ok(self.database.map.get(key).unwrap()), call_graph);
         };
 
         // the result is already up to date
@@ -290,9 +293,11 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        self.last_was_query.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.database
+            .last_was_query
+            .store(true, std::sync::atomic::Ordering::SeqCst);
 
-        if version_info.verfied_at_version == self.version {
+        if version_info.verfied_at_version == self.database.version {
             // add the dependency of the input
             if let Some(called_from) = &called_from {
                 call_graph
@@ -305,10 +310,9 @@ impl Database {
             return (Ok(result), call_graph);
         }
 
-        let recompute = if matches!(
-            version_info.kind,
-            Kind::Derived { defaulted_by_cyclic_dependency: true }
-        ) {
+        let recompute = if matches!(version_info.kind, Kind::Derived {
+            defaulted_by_cyclic_dependency: true
+        }) {
             true
         } else {
             let inputs = call_graph
@@ -382,13 +386,13 @@ impl Database {
             call_graph = returned_call_graph;
 
             // update the result, as it might have been changed
-            result = self.map.get(key).unwrap();
+            result = self.database.map.get(key).unwrap();
         } else {
             call_graph
                 .version_info_by_keys
                 .get_mut(&key_smallbox)
                 .unwrap()
-                .verfied_at_version = self.version;
+                .verfied_at_version = self.database.version;
         }
 
         (Ok(result), call_graph)
@@ -435,15 +439,16 @@ impl Database {
                         {
                             Entry::Occupied(occupied_entry) => {
                                 let version_info = occupied_entry.into_mut();
-                                version_info.verfied_at_version = self.version;
+                                version_info.verfied_at_version =
+                                    self.database.version;
                                 version_info.kind = Kind::Derived {
                                     defaulted_by_cyclic_dependency: true,
                                 };
                             }
                             Entry::Vacant(vacant_entry) => {
                                 vacant_entry.insert(VersionInfo {
-                                    updated_at_version: self.version,
-                                    verfied_at_version: self.version,
+                                    updated_at_version: self.database.version,
+                                    verfied_at_version: self.database.version,
                                     kind: Kind::Derived {
                                         defaulted_by_cyclic_dependency: true,
                                     },
@@ -457,14 +462,15 @@ impl Database {
                         .push(CyclicDependency { records_stack: stack });
 
                     // insert a default value for the cyclic dependency
-                    self.map
+                    self.database
+                        .map
                         .insert(key.clone(), <T::Value as Default>::default());
 
                     call_graph.version_info_by_keys.insert(
                         DynamicBox(key.smallbox_clone()),
                         VersionInfo {
-                            updated_at_version: self.version,
-                            verfied_at_version: self.version,
+                            updated_at_version: self.database.version,
+                            verfied_at_version: self.database.version,
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: true,
                             },
@@ -556,13 +562,13 @@ impl Database {
         let ok = executor_result.is_ok();
 
         // re-acquire the context lock
-        call_graph = self.call_graph.lock();
+        call_graph = self.database.call_graph.lock();
 
         // Handle the executor result
         match executor_result {
             Ok(value) => {
                 let updated =
-                    self.map.entry(key.clone(), |entry| match entry {
+                    self.database.map.entry(key.clone(), |entry| match entry {
                         dashmap::Entry::Occupied(mut occupied_entry) => {
                             let updated = *occupied_entry.get_mut() != value;
 
@@ -585,19 +591,20 @@ impl Database {
                 {
                     Entry::Occupied(mut occupied_entry) => {
                         let version_info = occupied_entry.get_mut();
-                        version_info.verfied_at_version = self.version;
+                        version_info.verfied_at_version = self.database.version;
                         version_info.kind = Kind::Derived {
                             defaulted_by_cyclic_dependency: false,
                         };
 
                         if updated {
-                            version_info.updated_at_version = self.version;
+                            version_info.updated_at_version =
+                                self.database.version;
                         }
                     }
                     Entry::Vacant(vacant_entry) => {
                         vacant_entry.insert(VersionInfo {
-                            updated_at_version: self.version,
-                            verfied_at_version: self.version,
+                            updated_at_version: self.database.version,
+                            verfied_at_version: self.database.version,
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: false,
                             },
@@ -609,8 +616,8 @@ impl Database {
                 call_graph.version_info_by_keys.insert(
                     DynamicBox(key.smallbox_clone()),
                     VersionInfo {
-                        updated_at_version: self.version,
-                        verfied_at_version: self.version,
+                        updated_at_version: self.database.version,
+                        verfied_at_version: self.database.version,
                         kind: Kind::Derived {
                             defaulted_by_cyclic_dependency: true,
                         },
@@ -626,25 +633,23 @@ impl Database {
 
                         // must've been marked as cyclic before
                         assert!(
-                            version_info.verfied_at_version == self.version
-                                && matches!(
-                                    version_info.kind,
-                                    Kind::Derived {
-                                        defaulted_by_cyclic_dependency: true
-                                    }
-                                )
+                            version_info.verfied_at_version
+                                == self.database.version
+                                && matches!(version_info.kind, Kind::Derived {
+                                    defaulted_by_cyclic_dependency: true
+                                })
                         );
 
-                        version_info.verfied_at_version = self.version;
-                        version_info.updated_at_version = self.version;
+                        version_info.verfied_at_version = self.database.version;
+                        version_info.updated_at_version = self.database.version;
                         version_info.kind = Kind::Derived {
                             defaulted_by_cyclic_dependency: true,
                         };
                     }
                     Entry::Vacant(vacant_entry) => {
                         vacant_entry.insert(VersionInfo {
-                            updated_at_version: self.version,
-                            verfied_at_version: self.version,
+                            updated_at_version: self.database.version,
+                            verfied_at_version: self.database.version,
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: true,
                             },
@@ -656,7 +661,7 @@ impl Database {
                 // cyclic
                 let default_value = <K::Value as Default>::default();
 
-                self.map.entry(key.clone(), |entry| match entry {
+                self.database.map.entry(key.clone(), |entry| match entry {
                     dashmap::Entry::Occupied(mut occupied_entry) => {
                         occupied_entry.insert(default_value);
                         false

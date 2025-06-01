@@ -80,7 +80,7 @@ use proc_macro::TokenStream;
 ///
 /// // Can now be used as a key in the database
 /// let key = UserName(123);
-/// db.set_input(&key, "Alice".to_string());
+/// map.insert(&key, "Alice".to_string());
 /// ```
 ///
 /// ## With Custom Merge Function
@@ -97,8 +97,8 @@ use proc_macro::TokenStream;
 /// struct Counter(String);
 ///
 /// // Multiple calls will sum the values
-/// db.set_input(&Counter("total".to_string()), 10);
-/// db.set_input(&Counter("total".to_string()), 5); // Result: 15
+/// map.insert(&Counter("total".to_string()), 10);
+/// map.insert(&Counter("total".to_string()), 5); // Result: 15
 /// ```
 ///
 /// ## With Custom Crate Path
@@ -195,7 +195,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 
     let merge_fn = merge_fn.map(|x| {
         quote::quote! {
-            fn merge_value(old: &mut Self::Value, new: Self::Value) -> Result<(), ::std::string::String> {
+            fn merge_value(old: &mut Self::Value, new: Self::Value) -> Result<bool, ::std::string::String> {
                 #x(old, new)
             }
         }

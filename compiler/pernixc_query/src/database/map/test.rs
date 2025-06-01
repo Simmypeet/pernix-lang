@@ -125,6 +125,7 @@ fn drop() {
 
     assert!(Arc::ptr_eq(&fake_check_replace.0, &fake_check));
 
+    // skipcq: RS-E1011 false positive
     std::mem::drop(map);
 
     assert!(first_check.load(std::sync::atomic::Ordering::SeqCst));

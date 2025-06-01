@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     runtime::executor::{CyclicError, Executor},
-    Database,
+    Engine,
 };
 
 #[derive(
@@ -48,10 +48,10 @@ pub struct NegateVariableExecutor;
 impl Executor<NegateVariable> for NegateVariableExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: NegateVariable,
     ) -> Result<i32, CyclicError> {
-        Ok(-db.query(&Variable(key.0))?)
+        Ok(-engine.query(&Variable(key.0))?)
     }
 }
 
@@ -80,43 +80,43 @@ pub struct SumNegatedVariableExecutor;
 impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: SumNegatedVariable,
     ) -> Result<i32, CyclicError> {
-        Ok(db.query(&NegateVariable(key.a.clone()))?
-            + db.query(&NegateVariable(key.b))?)
+        Ok(engine.query(&NegateVariable(key.a.clone()))?
+            + engine.query(&NegateVariable(key.b))?)
     }
 }
 
 #[test]
 fn negate_variable() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
-    db.set_input(&Variable("a".to_string()), 100, true).unwrap();
-    db.set_input(&Variable("b".to_string()), 200, true).unwrap();
-    assert_eq!(db.version(), 0);
+    engine.database.set_input(&Variable("a".to_string()), 100, true).unwrap();
+    engine.database.set_input(&Variable("b".to_string()), 200, true).unwrap();
+    assert_eq!(engine.database.version(), 0);
 
-    db.runtime.executor.register(Arc::new(NegateVariableExecutor));
-    db.runtime.executor.register(Arc::new(SumNegatedVariableExecutor));
+    engine.runtime.executor.register(Arc::new(NegateVariableExecutor));
+    engine.runtime.executor.register(Arc::new(SumNegatedVariableExecutor));
 
-    let value = db
+    let value = engine
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
 
     assert_eq!(value, Ok(-300));
 
-    db.set_input(&Variable("a".to_string()), 200, true).unwrap();
-    db.set_input(&Variable("b".to_string()), 300, true).unwrap();
-    assert_eq!(db.version(), 1);
+    engine.database.set_input(&Variable("a".to_string()), 200, true).unwrap();
+    engine.database.set_input(&Variable("b".to_string()), 300, true).unwrap();
+    assert_eq!(engine.database.version(), 1);
 
-    let value = db
+    let value = engine
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
     assert_eq!(value, Ok(-500));
 
-    db.set_input(&Variable("a".to_string()), -300, true).unwrap();
-    db.set_input(&Variable("b".to_string()), -300, true).unwrap();
+    engine.database.set_input(&Variable("a".to_string()), -300, true).unwrap();
+    engine.database.set_input(&Variable("b".to_string()), -300, true).unwrap();
 
-    assert_eq!(db.version(), 2);
-    let value = db
+    assert_eq!(engine.database.version(), 2);
+    let value = engine
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
 
     assert_eq!(value, Ok(600)); // -(-300) + -(-300) = 300 + 300 = 600
@@ -152,55 +152,55 @@ impl TrackedExecutor {
 impl Executor<TrackedComputation> for TrackedExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: TrackedComputation,
     ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Perform computation based on input variable
-        let input_value = db.query(&Variable(key.0))?;
+        let input_value = engine.query(&Variable(key.0))?;
         Ok(input_value * 2)
     }
 }
 
 #[test]
 fn skip_when_input_unchanged() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     // Set initial input
-    db.set_input(&Variable("x".to_string()), 42, true).unwrap();
-    assert_eq!(db.version(), 0);
+    engine.database.set_input(&Variable("x".to_string()), 42, true).unwrap();
+    assert_eq!(engine.database.version(), 0);
 
     // Create tracked executor to count invocations
     let tracked_executor = TrackedExecutor::default();
     let executor_arc = Arc::new(tracked_executor);
 
     // Register the tracked executor
-    db.runtime.executor.register(executor_arc.clone());
+    engine.runtime.executor.register(executor_arc.clone());
 
     // First query - should compute and call executor
-    let result1 = db.query(&TrackedComputation("x".to_string()));
+    let result1 = engine.query(&TrackedComputation("x".to_string()));
     assert_eq!(result1, Ok(84)); // 42 * 2
     assert_eq!(executor_arc.get_call_count(), 1);
 
     // Second query with same input - should skip computation and return cached
     // result
-    let result2 = db.query(&TrackedComputation("x".to_string()));
+    let result2 = engine.query(&TrackedComputation("x".to_string()));
     assert_eq!(result2, Ok(84)); // Same result
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
     // Now change the input - should trigger recomputation
-    db.set_input(&Variable("x".to_string()), 100, true).unwrap();
-    assert_eq!(db.version(), 1); // Version should increment
+    engine.database.set_input(&Variable("x".to_string()), 100, true).unwrap();
+    assert_eq!(engine.database.version(), 1); // Version should increment
 
     // Query after input change - should compute and call executor again
-    let result4 = db.query(&TrackedComputation("x".to_string()));
+    let result4 = engine.query(&TrackedComputation("x".to_string()));
     assert_eq!(result4, Ok(200)); // 100 * 2
     assert_eq!(executor_arc.get_call_count(), 2); // Executor called again
 
     // Query again with unchanged input - should skip computation again
-    let result5 = db.query(&TrackedComputation("x".to_string()));
+    let result5 = engine.query(&TrackedComputation("x".to_string()));
     assert_eq!(result5, Ok(200)); // Same result
     assert_eq!(executor_arc.get_call_count(), 2); // Executor NOT called again
 }
@@ -235,14 +235,14 @@ impl TrackedAbsExecutor {
 impl Executor<AbsVariable> for TrackedAbsExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: AbsVariable,
     ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Compute absolute value
-        let input_value = db.query(&Variable(key.0))?;
+        let input_value = engine.query(&Variable(key.0))?;
         Ok(input_value.abs())
     }
 }
@@ -280,88 +280,88 @@ impl TrackedAddTwoAbsExecutor {
 impl Executor<AddTwoAbsVariable> for TrackedAddTwoAbsExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: AddTwoAbsVariable,
     ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Compute sum of absolute values
-        Ok(db.query(&AbsVariable(key.x.clone()))?
-            + db.query(&AbsVariable(key.y))?)
+        Ok(engine.query(&AbsVariable(key.x.clone()))?
+            + engine.query(&AbsVariable(key.y))?)
     }
 }
 
 #[test]
 fn skip_when_intermediate_result_unchanged() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     // Set initial inputs - both positive values
-    db.set_input(&Variable("x".to_string()), 400, true).unwrap();
-    db.set_input(&Variable("y".to_string()), 300, true).unwrap();
-    assert_eq!(db.version(), 0);
+    engine.database.set_input(&Variable("x".to_string()), 400, true).unwrap();
+    engine.database.set_input(&Variable("y".to_string()), 300, true).unwrap();
+    assert_eq!(engine.database.version(), 0);
 
     // Create tracked executors to count invocations
     let abs_executor = Arc::new(TrackedAbsExecutor::default());
     let add_executor = Arc::new(TrackedAddTwoAbsExecutor::default());
 
     // Register the tracked executors
-    db.runtime.executor.register(abs_executor.clone());
-    db.runtime.executor.register(add_executor.clone());
+    engine.runtime.executor.register(abs_executor.clone());
+    engine.runtime.executor.register(add_executor.clone());
 
     // First query - should compute everything from scratch
-    let result1 =
-        db.query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
+    let result1 = engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result1, Ok(700)); // abs(400) + abs(300) = 400 + 300 = 700
     assert_eq!(abs_executor.get_call_count(), 2); // Called for both x and y
     assert_eq!(add_executor.get_call_count(), 1); // Called once
 
     // Query again with same inputs - should skip all computation
-    let result2 =
-        db.query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
+    let result2 = engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result2, Ok(700)); // Same result
     assert_eq!(abs_executor.get_call_count(), 2); // NOT called again
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again
 
     // Change x from 400 to -400 (abs value stays the same)
-    db.set_input(&Variable("x".to_string()), -400, true).unwrap();
-    assert_eq!(db.version(), 1); // Version should increment
+    engine.database.set_input(&Variable("x".to_string()), -400, true).unwrap();
+    assert_eq!(engine.database.version(), 1); // Version should increment
 
     // Query after input change - abs executor should be called for x, but add
     // executor should be skipped because the result of abs(x) hasn't
     // changed
-    let result3 =
-        db.query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
+    let result3 = engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result3, Ok(700)); // abs(-400) + abs(300) = 400 + 300 = 700 (same result!)
     assert_eq!(abs_executor.get_call_count(), 3); // Called again for x only
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again because abs values are the same
 
     // Change y from 300 to -300 (abs value stays the same)
-    db.set_input(&Variable("y".to_string()), -300, true).unwrap();
-    assert_eq!(db.version(), 2); // Version should increment again
+    engine.database.set_input(&Variable("y".to_string()), -300, true).unwrap();
+    assert_eq!(engine.database.version(), 2); // Version should increment again
 
     // Query after second input change - abs executor should be called for y,
     // but add executor still skipped
-    let result4 =
-        db.query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
+    let result4 = engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result4, Ok(700)); // abs(-400) + abs(-300) = 400 + 300 = 700 (still same result!)
     assert_eq!(abs_executor.get_call_count(), 4); // Called again for y only
     assert_eq!(add_executor.get_call_count(), 1); // STILL not called because both abs values are the same
 
     // Now change x to a value that actually changes the abs result
-    db.set_input(&Variable("x".to_string()), 500, true).unwrap();
-    assert_eq!(db.version(), 3); // Version should increment
+    engine.database.set_input(&Variable("x".to_string()), 500, true).unwrap();
+    assert_eq!(engine.database.version(), 3); // Version should increment
 
     // Query after meaningful change - both executors should be called
-    let result5 =
-        db.query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
+    let result5 = engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result5, Ok(800)); // abs(500) + abs(-300) = 500 + 300 = 800
     assert_eq!(abs_executor.get_call_count(), 5); // Called for x
     assert_eq!(add_executor.get_call_count(), 2); // Finally called again because abs(x) changed
 
     // Query again - should skip everything
-    let result6 =
-        db.query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
+    let result6 = engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result6, Ok(800)); // Same result
     assert_eq!(abs_executor.get_call_count(), 5); // NOT called
     assert_eq!(add_executor.get_call_count(), 2); // NOT called
@@ -397,11 +397,11 @@ impl TrackedSquareExecutor {
 impl Executor<SquareVariable> for TrackedSquareExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: SquareVariable,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let input_value = db.query(&Variable(key.0))?;
+        let input_value = engine.query(&Variable(key.0))?;
         Ok(input_value * input_value)
     }
 }
@@ -436,23 +436,23 @@ impl TrackedComplexExecutor {
 impl Executor<ComplexComputation> for TrackedComplexExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: ComplexComputation,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // Complex computation: abs(x) + square(x)
-        Ok(db.query(&AbsVariable(key.0.clone()))?
-            + db.query(&SquareVariable(key.0))?)
+        Ok(engine.query(&AbsVariable(key.0.clone()))?
+            + engine.query(&SquareVariable(key.0))?)
     }
 }
 
 #[test]
 fn multi_layer_dependency_skipping() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     // Set initial input
-    db.set_input(&Variable("z".to_string()), 5, true).unwrap();
-    assert_eq!(db.version(), 0);
+    engine.database.set_input(&Variable("z".to_string()), 5, true).unwrap();
+    assert_eq!(engine.database.version(), 0);
 
     // Create tracked executors
     let abs_executor = Arc::new(TrackedAbsExecutor::default());
@@ -460,12 +460,12 @@ fn multi_layer_dependency_skipping() {
     let complex_executor = Arc::new(TrackedComplexExecutor::default());
 
     // Register executors
-    db.runtime.executor.register(abs_executor.clone());
-    db.runtime.executor.register(square_executor.clone());
-    db.runtime.executor.register(complex_executor.clone());
+    engine.runtime.executor.register(abs_executor.clone());
+    engine.runtime.executor.register(square_executor.clone());
+    engine.runtime.executor.register(complex_executor.clone());
 
     // First query - everything computed from scratch
-    let result1 = db.query(&ComplexComputation("z".to_string()));
+    let result1 = engine.query(&ComplexComputation("z".to_string()));
     assert_eq!(result1, Ok(30)); // abs(5) + square(5) = 5 + 25 = 30
     assert_eq!(abs_executor.get_call_count(), 1);
     assert_eq!(square_executor.get_call_count(), 1);
@@ -474,27 +474,27 @@ fn multi_layer_dependency_skipping() {
     // Change z from 5 to -5
     // abs(-5) = 5 (unchanged), but square(-5) = 25 (unchanged too!)
     // So the complex computation result should be the same: 5 + 25 = 30
-    db.set_input(&Variable("z".to_string()), -5, true).unwrap();
-    assert_eq!(db.version(), 1);
+    engine.database.set_input(&Variable("z".to_string()), -5, true).unwrap();
+    assert_eq!(engine.database.version(), 1);
 
-    let result2 = db.query(&ComplexComputation("z".to_string()));
+    let result2 = engine.query(&ComplexComputation("z".to_string()));
     assert_eq!(result2, Ok(30)); // abs(-5) + square(-5) = 5 + 25 = 30 (same!)
     assert_eq!(abs_executor.get_call_count(), 2); // Called for abs(-5)
     assert_eq!(square_executor.get_call_count(), 2); // Called for square(-5)
     assert_eq!(complex_executor.get_call_count(), 1); // NOT called because both dependencies are unchanged!
 
     // Change to a different value that actually changes the result
-    db.set_input(&Variable("z".to_string()), 3, true).unwrap();
-    assert_eq!(db.version(), 2);
+    engine.database.set_input(&Variable("z".to_string()), 3, true).unwrap();
+    assert_eq!(engine.database.version(), 2);
 
-    let result3 = db.query(&ComplexComputation("z".to_string()));
+    let result3 = engine.query(&ComplexComputation("z".to_string()));
     assert_eq!(result3, Ok(12)); // abs(3) + square(3) = 3 + 9 = 12
     assert_eq!(abs_executor.get_call_count(), 3); // Called for abs(3)
     assert_eq!(square_executor.get_call_count(), 3); // Called for square(3)
     assert_eq!(complex_executor.get_call_count(), 2); // Called because dependencies changed
 
     // Query again - everything should be cached
-    let result4 = db.query(&ComplexComputation("z".to_string()));
+    let result4 = engine.query(&ComplexComputation("z".to_string()));
     assert_eq!(result4, Ok(12)); // Same result
     assert_eq!(abs_executor.get_call_count(), 3); // NOT called
     assert_eq!(square_executor.get_call_count(), 3); // NOT called
@@ -549,14 +549,14 @@ impl TypeCheckExecutor {
 impl Executor<TypeCheckQuery> for TypeCheckExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: TypeCheckQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Simulate type checking that depends on other type information
-        let base_value = db.query(&Variable(key.0.clone()))?;
-        let dependency_value = db.query(&DependencyQuery(key.0))?;
+        let base_value = engine.query(&Variable(key.0.clone()))?;
+        let dependency_value = engine.query(&DependencyQuery(key.0))?;
 
         Ok(base_value + dependency_value)
     }
@@ -576,34 +576,40 @@ impl DependencyExecutor {
 impl Executor<DependencyQuery> for DependencyExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         key: DependencyQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Simulate dependency resolution
-        let base_value = db.query(&Variable(key.0))?;
+        let base_value = engine.query(&Variable(key.0))?;
         Ok(base_value * 2)
     }
 }
 
 #[test]
 fn incremental_compilation_simulation() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     // Set up input values (representing source code)
-    db.set_input(&Variable("module_a".to_string()), 10, true).unwrap();
-    db.set_input(&Variable("module_b".to_string()), 20, true).unwrap();
+    engine
+        .database
+        .set_input(&Variable("module_a".to_string()), 10, true)
+        .unwrap();
+    engine
+        .database
+        .set_input(&Variable("module_b".to_string()), 20, true)
+        .unwrap();
 
     let type_check_executor = Arc::new(TypeCheckExecutor::default());
     let dependency_executor = Arc::new(DependencyExecutor::default());
 
-    db.runtime.executor.register(Arc::clone(&type_check_executor));
-    db.runtime.executor.register(Arc::clone(&dependency_executor));
+    engine.runtime.executor.register(Arc::clone(&type_check_executor));
+    engine.runtime.executor.register(Arc::clone(&dependency_executor));
 
     // First compilation: everything computed from scratch
-    let result_a = db.query(&TypeCheckQuery("module_a".to_string()));
-    let result_b = db.query(&TypeCheckQuery("module_b".to_string()));
+    let result_a = engine.query(&TypeCheckQuery("module_a".to_string()));
+    let result_b = engine.query(&TypeCheckQuery("module_b".to_string()));
 
     assert_eq!(result_a, Ok(30)); // 10 + (10 * 2) = 30
     assert_eq!(result_b, Ok(60)); // 20 + (20 * 2) = 60
@@ -613,7 +619,10 @@ fn incremental_compilation_simulation() {
     assert_eq!(dependency_executor.get_call_count(), 2);
 
     // Simulate incremental change: only module_a changes
-    db.set_input(&Variable("module_a".to_string()), 15, true).unwrap();
+    engine
+        .database
+        .set_input(&Variable("module_a".to_string()), 15, true)
+        .unwrap();
 
     // Reset call counts to track incremental behavior
     type_check_executor
@@ -624,8 +633,8 @@ fn incremental_compilation_simulation() {
         .store(0, std::sync::atomic::Ordering::SeqCst);
 
     // Re-query: only module_a should be recomputed
-    let new_result_a = db.query(&TypeCheckQuery("module_a".to_string()));
-    let cached_result_b = db.query(&TypeCheckQuery("module_b".to_string()));
+    let new_result_a = engine.query(&TypeCheckQuery("module_a".to_string()));
+    let cached_result_b = engine.query(&TypeCheckQuery("module_b".to_string()));
 
     assert_eq!(new_result_a, Ok(45)); // 15 + (15 * 2) = 45
     assert_eq!(cached_result_b, Ok(60)); // Same as before, should be cached
@@ -701,12 +710,12 @@ impl CyclicExecutorA {
 impl Executor<CyclicQueryA> for CyclicExecutorA {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         _key: CyclicQueryA,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This creates a cycle: A depends on B, B depends on A
-        let b_value = db.query(&CyclicQueryB)?;
+        let b_value = engine.query(&CyclicQueryB)?;
         Ok(b_value + 10)
     }
 }
@@ -725,12 +734,12 @@ impl CyclicExecutorB {
 impl Executor<CyclicQueryB> for CyclicExecutorB {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         _key: CyclicQueryB,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This completes the cycle: B depends on A, A depends on B
-        let a_value = db.query(&CyclicQueryA)?;
+        let a_value = engine.query(&CyclicQueryA)?;
         Ok(a_value + 20)
     }
 }
@@ -749,13 +758,13 @@ impl DependentExecutor {
 impl Executor<DependentQuery> for DependentExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         _key: DependentQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This query depends on the cyclic queries
-        let a_value = db.query(&CyclicQueryA)?;
-        let b_value = db.query(&CyclicQueryB)?;
+        let a_value = engine.query(&CyclicQueryA)?;
+        let b_value = engine.query(&CyclicQueryB)?;
         Ok(a_value + b_value + 100)
     }
 }
@@ -775,13 +784,13 @@ impl ConditionalDependentExecutor {
 impl Executor<DependentQuery> for ConditionalDependentExecutor {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         _key: DependentQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This query depends on the conditional cyclic queries
-        let a_value = db.query(&ConditionalCyclicQueryA)?;
-        let b_value = db.query(&ConditionalCyclicQueryB)?;
+        let a_value = engine.query(&ConditionalCyclicQueryA)?;
+        let b_value = engine.query(&ConditionalCyclicQueryB)?;
 
         Ok(a_value + b_value + 100)
     }
@@ -789,18 +798,18 @@ impl Executor<DependentQuery> for ConditionalDependentExecutor {
 
 #[test]
 fn cyclic_dependency_returns_default_values() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     let executor_a = Arc::new(CyclicExecutorA::default());
     let executor_b = Arc::new(CyclicExecutorB::default());
 
-    db.runtime.executor.register(Arc::clone(&executor_a));
-    db.runtime.executor.register(Arc::clone(&executor_b));
+    engine.runtime.executor.register(Arc::clone(&executor_a));
+    engine.runtime.executor.register(Arc::clone(&executor_b));
 
     // When we query CyclicQueryA, it should detect the cycle A -> B -> A
     // and return default values (0 for i32) without calling the executors
-    let result_a = db.query(&CyclicQueryA);
-    let result_b = db.query(&CyclicQueryB);
+    let result_a = engine.query(&CyclicQueryA);
+    let result_b = engine.query(&CyclicQueryB);
 
     // Both should return default values (0 for i32)
     assert_eq!(result_a, Ok(0));
@@ -819,18 +828,18 @@ fn cyclic_dependency_returns_default_values() {
 
 #[test]
 fn dependent_query_uses_cyclic_default_values() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     let executor_a = Arc::new(CyclicExecutorA::default());
     let executor_b = Arc::new(CyclicExecutorB::default());
     let executor_dependent = Arc::new(DependentExecutor::default());
 
-    db.runtime.executor.register(Arc::clone(&executor_a));
-    db.runtime.executor.register(Arc::clone(&executor_b));
-    db.runtime.executor.register(Arc::clone(&executor_dependent));
+    engine.runtime.executor.register(Arc::clone(&executor_a));
+    engine.runtime.executor.register(Arc::clone(&executor_b));
+    engine.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // Query the dependent query, which depends on the cyclic queries
-    let result = db.query(&DependentQuery);
+    let result = engine.query(&DependentQuery);
 
     // DependentQuery should execute and use the default values from the cyclic
     // queries Default values: CyclicQueryA = 0, CyclicQueryB = 0
@@ -850,18 +859,18 @@ fn dependent_query_uses_cyclic_default_values() {
 
 #[test]
 fn comprehensive_cyclic_dependency_behavior() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     let executor_a = Arc::new(CyclicExecutorA::default());
     let executor_b = Arc::new(CyclicExecutorB::default());
     let executor_dependent = Arc::new(DependentExecutor::default());
 
-    db.runtime.executor.register(Arc::clone(&executor_a));
-    db.runtime.executor.register(Arc::clone(&executor_b));
-    db.runtime.executor.register(Arc::clone(&executor_dependent));
+    engine.runtime.executor.register(Arc::clone(&executor_a));
+    engine.runtime.executor.register(Arc::clone(&executor_b));
+    engine.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // First, query CyclicQueryA directly to trigger cycle detection
-    let result_a = db.query(&CyclicQueryA);
+    let result_a = engine.query(&CyclicQueryA);
     assert_eq!(result_a, Ok(0)); // Should return default value
 
     // Check call counts after first cycle detection
@@ -874,7 +883,7 @@ fn comprehensive_cyclic_dependency_behavior() {
     assert_eq!(initial_b_calls, 1);
 
     // Now query CyclicQueryB - it should return cached default value
-    let result_b = db.query(&CyclicQueryB);
+    let result_b = engine.query(&CyclicQueryB);
     assert_eq!(result_b, Ok(0)); // Should return default value
 
     // Call counts shouldn't change because values are cached
@@ -882,7 +891,7 @@ fn comprehensive_cyclic_dependency_behavior() {
     assert_eq!(executor_b.get_call_count(), initial_b_calls);
 
     // Now query DependentQuery - it should use the cached default values
-    let result_dependent = db.query(&DependentQuery);
+    let result_dependent = engine.query(&DependentQuery);
     assert_eq!(result_dependent, Ok(100)); // 0 + 0 + 100 = 100
 
     // The dependent executor should be called once
@@ -893,9 +902,9 @@ fn comprehensive_cyclic_dependency_behavior() {
     assert_eq!(executor_b.get_call_count(), initial_b_calls);
 
     // Query everything again - all should be cached
-    let result_a2 = db.query(&CyclicQueryA);
-    let result_b2 = db.query(&CyclicQueryB);
-    let result_dependent2 = db.query(&DependentQuery);
+    let result_a2 = engine.query(&CyclicQueryA);
+    let result_b2 = engine.query(&CyclicQueryB);
+    let result_dependent2 = engine.query(&DependentQuery);
 
     assert_eq!(result_a2, Ok(0));
     assert_eq!(result_b2, Ok(0));
@@ -978,17 +987,17 @@ impl ConditionalCyclicExecutorA {
 impl Executor<ConditionalCyclicQueryA> for ConditionalCyclicExecutorA {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         _key: ConditionalCyclicQueryA,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Read the control variable to determine whether to create a cycle
-        let control_value = db.query(&CycleControlVariable)?;
+        let control_value = engine.query(&CycleControlVariable)?;
 
         if control_value == 1 {
             // When control_value is 1, create a cycle by querying B
-            let b_value = db.query(&ConditionalCyclicQueryB)?;
+            let b_value = engine.query(&ConditionalCyclicQueryB)?;
             Ok(b_value + 10)
         } else {
             // When control_value is not 1, no cycle - just return a computed
@@ -1016,17 +1025,17 @@ impl ConditionalCyclicExecutorB {
 impl Executor<ConditionalCyclicQueryB> for ConditionalCyclicExecutorB {
     fn execute(
         &self,
-        db: &Database,
+        engine: &Engine,
         _key: ConditionalCyclicQueryB,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Read the control variable to determine whether to create a cycle
-        let control_value = db.query(&CycleControlVariable)?;
+        let control_value = engine.query(&CycleControlVariable)?;
 
         if control_value == 1 {
             // When control_value is 1, complete the cycle by querying A
-            let a_value = db.query(&ConditionalCyclicQueryA)?;
+            let a_value = engine.query(&ConditionalCyclicQueryA)?;
             Ok(a_value + 20)
         } else {
             // When control_value is not 1, no cycle - just return a computed
@@ -1038,20 +1047,20 @@ impl Executor<ConditionalCyclicQueryB> for ConditionalCyclicExecutorB {
 
 #[test]
 fn conditional_cyclic_dependency() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     let executor_a = Arc::new(ConditionalCyclicExecutorA::default());
     let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
 
-    db.runtime.executor.register(Arc::clone(&executor_a));
-    db.runtime.executor.register(Arc::clone(&executor_b));
+    engine.runtime.executor.register(Arc::clone(&executor_a));
+    engine.runtime.executor.register(Arc::clone(&executor_b));
 
     // Phase 1: Set control value to create NO cycle (control_value != 1)
-    db.set_input(&CycleControlVariable, 5, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 5, true).unwrap();
 
     // Query both A and B - they should compute normal values without cycles
-    let result_a = db.query(&ConditionalCyclicQueryA);
-    let result_b = db.query(&ConditionalCyclicQueryB);
+    let result_a = engine.query(&ConditionalCyclicQueryA);
+    let result_b = engine.query(&ConditionalCyclicQueryB);
 
     // Expected values: A = 5 * 100 = 500, B = 5 * 200 = 1000
     assert_eq!(result_a, Ok(500));
@@ -1062,13 +1071,13 @@ fn conditional_cyclic_dependency() {
     assert_eq!(executor_b.get_call_count(), 1);
 
     // Phase 2: Change control value to CREATE a cycle (control_value == 1)
-    db.set_input(&CycleControlVariable, 1, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 1, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
     // Query A - this should trigger cycle detection and return default values
-    let result_a_cyclic = db.query(&ConditionalCyclicQueryA);
-    let result_b_cyclic = db.query(&ConditionalCyclicQueryB);
+    let result_a_cyclic = engine.query(&ConditionalCyclicQueryA);
+    let result_b_cyclic = engine.query(&ConditionalCyclicQueryB);
 
     // Both should return default values (0 for i32) due to cycle detection
     assert_eq!(result_a_cyclic, Ok(0));
@@ -1080,13 +1089,13 @@ fn conditional_cyclic_dependency() {
 
     // Phase 3: Change control value back to break the cycle (control_value !=
     // 1)
-    db.set_input(&CycleControlVariable, 3, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 3, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
     // Query both A and B - they should recompute and return normal values again
-    let result_a_normal = db.query(&ConditionalCyclicQueryA);
-    let result_b_normal = db.query(&ConditionalCyclicQueryB);
+    let result_a_normal = engine.query(&ConditionalCyclicQueryA);
+    let result_b_normal = engine.query(&ConditionalCyclicQueryB);
 
     // Expected values: A = 3 * 100 = 300, B = 3 * 200 = 600
     assert_eq!(result_a_normal, Ok(300));
@@ -1098,13 +1107,13 @@ fn conditional_cyclic_dependency() {
 
     // Phase 4: Create cycle again with a different control value
     // (control_value // == 1)
-    db.set_input(&CycleControlVariable, 1, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 1, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
     // Query A - cycle should be detected again and default values returned
-    let result_a_cyclic2 = db.query(&ConditionalCyclicQueryA);
-    let result_b_cyclic2 = db.query(&ConditionalCyclicQueryB);
+    let result_a_cyclic2 = engine.query(&ConditionalCyclicQueryA);
+    let result_b_cyclic2 = engine.query(&ConditionalCyclicQueryB);
 
     // Both should return default values (0 for i32) due to cycle detection
     assert_eq!(result_a_cyclic2, Ok(0));
@@ -1117,21 +1126,21 @@ fn conditional_cyclic_dependency() {
 
 #[test]
 fn conditional_cyclic_with_dependent_query() {
-    let mut db = Database::default();
+    let mut engine = Engine::default();
 
     let executor_a = Arc::new(ConditionalCyclicExecutorA::default());
     let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
     let executor_dependent = Arc::new(ConditionalDependentExecutor::default());
 
-    db.runtime.executor.register(Arc::clone(&executor_a));
-    db.runtime.executor.register(Arc::clone(&executor_b));
-    db.runtime.executor.register(Arc::clone(&executor_dependent));
+    engine.runtime.executor.register(Arc::clone(&executor_a));
+    engine.runtime.executor.register(Arc::clone(&executor_b));
+    engine.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // Phase 1: No cycle - dependent query should use computed values
 
-    db.set_input(&CycleControlVariable, 2, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 2, true).unwrap();
 
-    let result_dependent = db.query(&DependentQuery);
+    let result_dependent = engine.query(&DependentQuery);
 
     // DependentQuery = A + B + 100 = (2*100) + (2*200) + 100 = 200 + 400 + 100
     // = 700
@@ -1144,14 +1153,14 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 2: Create cycle - dependent query should use default values
 
-    db.set_input(&CycleControlVariable, 1, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 1, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
     // Reset dependent executor call count to track new computation
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
-    let result_dependent_cyclic = db.query(&DependentQuery);
+    let result_dependent_cyclic = engine.query(&DependentQuery);
 
     // DependentQuery should use default values: 0 + 0 + 100 = 100
     assert_eq!(result_dependent_cyclic, Ok(100));
@@ -1164,14 +1173,14 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 3: Break cycle again - dependent query should use computed values
 
-    db.set_input(&CycleControlVariable, 4, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 4, true).unwrap();
     executor_a.reset_call_count();
     executor_b.reset_call_count();
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst); // Query A and B to ensure they're computed
-    let _debug_a = db.query(&ConditionalCyclicQueryA);
-    let _debug_b = db.query(&ConditionalCyclicQueryB);
+    let _debug_a = engine.query(&ConditionalCyclicQueryA);
+    let _debug_b = engine.query(&ConditionalCyclicQueryB);
 
-    let result_dependent_normal = db.query(&DependentQuery);
+    let result_dependent_normal = engine.query(&DependentQuery);
 
     // DependentQuery = A + B + 100 = (4*100) + (4*200) + 100 = 400 + 800 + 100
     // = 1300
