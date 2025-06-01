@@ -287,7 +287,8 @@ impl Serialize for SerializableMap<'_> {
 
         if serialized_count != in_map_count {
             return Err(serde::ser::Error::custom(format!(
-                "Expected {in_map_count} entries, but got {serialized_count}"
+                "Expected {in_map_count} entries, but got {serialized_count}; \
+                 make sure all types are registered for serialization",
             )));
         }
 

@@ -1191,3 +1191,158 @@ fn conditional_cyclic_with_dependent_query() {
     assert_eq!(executor_b.get_call_count(), 1);
     assert_eq!(executor_dependent.get_call_count(), 1);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn database_serialization_deserialization() {
+    use ron::ser::PrettyConfig;
+
+    // Step 1: Set up original engine with input data and executors
+    let mut original_engine = Engine::default();
+
+    // Set up input variables
+    original_engine
+        .database
+        .set_input(&Variable("x".to_string()), 100, true)
+        .unwrap();
+    original_engine
+        .database
+        .set_input(&Variable("y".to_string()), 200, true)
+        .unwrap();
+    original_engine
+        .database
+        .set_input(&Variable("z".to_string()), 300, true)
+        .unwrap();
+
+    // Register executors
+    let tracked_executor = Arc::new(TrackedExecutor::default());
+    let abs_executor = Arc::new(TrackedAbsExecutor::default());
+    let add_executor = Arc::new(TrackedAddTwoAbsExecutor::default());
+
+    original_engine.runtime.executor.register(tracked_executor.clone());
+    original_engine.runtime.executor.register(abs_executor.clone());
+    original_engine.runtime.executor.register(add_executor.clone());
+
+    // Step 2: Perform queries to populate the database with computed values
+    let result1 =
+        original_engine.query(&TrackedComputation("x".to_string())).unwrap();
+    let result2 = original_engine.query(&AbsVariable("y".to_string())).unwrap();
+    let result3 = original_engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "z".to_string() })
+        .unwrap();
+
+    // Verify initial results
+    assert_eq!(result1, 200); // 100 * 2
+    assert_eq!(result2, 200); // abs(200)
+    assert_eq!(result3, 400); // abs(100) + abs(300) = 100 + 300
+
+    // Verify executors were called
+    assert_eq!(tracked_executor.get_call_count(), 1);
+    assert_eq!(abs_executor.get_call_count(), 3); // Called for y, x, and z
+    assert_eq!(add_executor.get_call_count(), 1);
+
+    // Step 3: Serialize the database state
+    let mut serde_config = crate::serde::Serde::default();
+
+    // Register all Key types used in this test
+    serde_config.register::<Variable>();
+    serde_config.register::<TrackedComputation>();
+    serde_config.register::<AbsVariable>();
+    serde_config.register::<AddTwoAbsVariable>();
+
+    let serializable_database =
+        original_engine.database.serializable(&serde_config);
+
+    let serialized_data = ron::ser::to_string_pretty(
+        &serializable_database,
+        PrettyConfig::default(),
+    )
+    .expect("Failed to serialize database");
+
+    // Step 4: Create a new engine instance
+    let mut new_engine = Engine::default();
+
+    // Register the same executors to the new engine
+    let new_tracked_executor = Arc::new(TrackedExecutor::default());
+    let new_abs_executor = Arc::new(TrackedAbsExecutor::default());
+    let new_add_executor = Arc::new(TrackedAddTwoAbsExecutor::default());
+
+    new_engine.runtime.executor.register(new_tracked_executor.clone());
+    new_engine.runtime.executor.register(new_abs_executor.clone());
+    new_engine.runtime.executor.register(new_add_executor.clone());
+
+    // Step 5: Deserialize the saved state into the new engine
+    let database_deserializer =
+        crate::database::DatabaseDeserializer(&serde_config);
+    let mut deserializer = ron::de::Deserializer::from_str(&serialized_data)
+        .expect("Failed to create deserializer");
+
+    new_engine.database = serde::de::DeserializeSeed::deserialize(
+        database_deserializer,
+        &mut deserializer,
+    )
+    .expect("Failed to deserialize database");
+
+    // Step 6: Verify that queries return the same results without recomputation
+    let new_result1 =
+        new_engine.query(&TrackedComputation("x".to_string())).unwrap();
+    let new_result2 = new_engine.query(&AbsVariable("y".to_string())).unwrap();
+    let new_result3 = new_engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "z".to_string() })
+        .unwrap();
+
+    // Results should be identical
+    assert_eq!(new_result1, result1);
+    assert_eq!(new_result2, result2);
+    assert_eq!(new_result3, result3);
+
+    // Executors should NOT have been called (values should be cached)
+    assert_eq!(new_tracked_executor.get_call_count(), 0);
+    assert_eq!(new_abs_executor.get_call_count(), 0);
+    assert_eq!(new_add_executor.get_call_count(), 0);
+
+    // Step 7: Test that incremental updates work correctly after
+    // deserialization Change input and verify that only affected
+    // computations are re-executed
+    //
+    // Version is incremented
+    new_engine
+        .database
+        .set_input(&Variable("x".to_string()), 150, true)
+        .unwrap();
+
+    // Query again - should trigger recomputation for affected queries only
+    let updated_result1 =
+        new_engine.query(&TrackedComputation("x".to_string())).unwrap();
+    let updated_result2 =
+        new_engine.query(&AbsVariable("y".to_string())).unwrap();
+    let updated_result3 = new_engine
+        .query(&AddTwoAbsVariable { x: "x".to_string(), y: "z".to_string() })
+        .unwrap();
+
+    // Verify updated results
+    assert_eq!(updated_result1, 300); // 150 * 2
+    assert_eq!(updated_result2, 200); // abs(200) - unchanged
+    assert_eq!(updated_result3, 450); // abs(150) + abs(300) = 150 + 300
+
+    // Verify correct incremental recomputation:
+    // - TrackedExecutor should be called once for x
+    // - AbsExecutor should be called once for x (y is unchanged)
+    // - AddExecutor should be called once due to x change
+    assert_eq!(new_tracked_executor.get_call_count(), 1);
+    assert_eq!(new_abs_executor.get_call_count(), 1); // Only for x
+    assert_eq!(new_add_executor.get_call_count(), 1);
+
+    // Step 8: Test adding completely new queries after deserialization
+    new_engine
+        .database
+        .set_input(&Variable("w".to_string()), 50, true)
+        .unwrap();
+
+    let new_query_result =
+        new_engine.query(&TrackedComputation("w".to_string())).unwrap();
+    assert_eq!(new_query_result, 100); // 50 * 2
+
+    // TrackedExecutor should be called one more time for the new variable
+    assert_eq!(new_tracked_executor.get_call_count(), 2);
+}
