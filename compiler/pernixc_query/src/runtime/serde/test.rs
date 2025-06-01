@@ -711,3 +711,122 @@ fn deserialize_generic_key() {
         assert_eq!(deserialized_generic.0, "test_additive");
     });
 }
+
+#[test]
+fn serialization_filtering() {
+    // Test that registry filters work properly to exclude certain keys from
+    // serialization
+    let mut registry = super::Registry::default();
+    let map = map::Map::default();
+
+    // Register Variable with a filter that only allows keys starting with
+    // "include_"
+    registry.register_with_filter::<Variable, _>(|var| {
+        var.0.starts_with("include_")
+    });
+
+    // Insert both filtered and non-filtered items
+    map.insert(Variable("include_me".to_string()), 42);
+    map.insert(Variable("exclude_me".to_string()), 100);
+    map.insert(Variable("include_also".to_string()), 200);
+
+    // Serialize the map
+    let serializable_map = map.serializable(&registry);
+    let ron_string =
+        ron::to_string(&serializable_map).expect("Failed to serialize");
+
+    // The serialized string should only contain the items that passed the
+    // filter
+    assert!(
+        ron_string.contains("include_me"),
+        "Should contain filtered key 'include_me'"
+    );
+    assert!(
+        ron_string.contains("include_also"),
+        "Should contain filtered key 'include_also'"
+    );
+    assert!(
+        !ron_string.contains("exclude_me"),
+        "Should not contain excluded key 'exclude_me'"
+    );
+
+    // Verify deserialization only contains the filtered items
+    let mut target_registry = super::Registry::default();
+    let target_map = map::Map::default();
+    target_registry.register::<Variable>(); // Regular registration for deserialization
+
+    let deserializable_map = target_map.deserializable(&target_registry);
+    let mut deserializer = ron::Deserializer::from_str(&ron_string)
+        .expect("Failed to create deserializer");
+
+    deserializable_map
+        .deserialize(&mut deserializer)
+        .expect("Failed to deserialize");
+
+    // Only the filtered items should be present in the deserialized map
+    assert_eq!(target_map.get(&Variable("include_me".to_string())), Some(42));
+    assert_eq!(
+        target_map.get(&Variable("include_also".to_string())),
+        Some(200)
+    );
+    assert_eq!(target_map.get(&Variable("exclude_me".to_string())), None);
+}
+
+#[test]
+fn serialization_filtering_multiple_types() {
+    // Test filtering with multiple key types having different filters
+    let mut registry = super::Registry::default();
+    let map = map::Map::default();
+
+    // Register Variable with filter for names containing "var"
+    registry.register_with_filter::<Variable, _>(|var| var.0.contains("var"));
+
+    // Register AdditiveKey with filter for values > 50 when accessed from map
+    // Note: Since the filter is on the key, not value, we'll filter by name
+    // length > 5
+    registry.register_with_filter::<AdditiveKey, _>(|key| key.0.len() > 5);
+
+    // Insert test data
+    map.insert(Variable("var1".to_string()), 10); // Should be included (contains "var")
+    map.insert(Variable("test".to_string()), 20); // Should be excluded (no "var")
+    map.insert(Variable("variable".to_string()), 30); // Should be included (contains "var")
+
+    map.insert(AdditiveKey("short".to_string()), 40); // Should be excluded (len <= 5)
+    map.insert(AdditiveKey("longer_name".to_string()), 50); // Should be included (len > 5)
+
+    // Serialize with filters applied
+    let serializable_map = map.serializable(&registry);
+    let ron_string =
+        ron::to_string(&serializable_map).expect("Failed to serialize");
+
+    // Check that only filtered items are present
+    assert!(ron_string.contains("var1"), "Should include var1");
+    assert!(ron_string.contains("variable"), "Should include variable");
+    assert!(!ron_string.contains("test"), "Should exclude test");
+    assert!(ron_string.contains("longer_name"), "Should include longer_name");
+    assert!(!ron_string.contains("short"), "Should exclude short");
+
+    // Verify deserialization
+    let mut target_registry = super::Registry::default();
+    let target_map = map::Map::default();
+    target_registry.register::<Variable>();
+    target_registry.register::<AdditiveKey>();
+
+    let deserializable_map = target_map.deserializable(&target_registry);
+    let mut deserializer = ron::Deserializer::from_str(&ron_string)
+        .expect("Failed to create deserializer");
+
+    deserializable_map
+        .deserialize(&mut deserializer)
+        .expect("Failed to deserialize");
+
+    // Verify only filtered items were deserialized
+    assert_eq!(target_map.get(&Variable("var1".to_string())), Some(10));
+    assert_eq!(target_map.get(&Variable("variable".to_string())), Some(30));
+    assert_eq!(target_map.get(&Variable("test".to_string())), None);
+    assert_eq!(
+        target_map.get(&AdditiveKey("longer_name".to_string())),
+        Some(50)
+    );
+    assert_eq!(target_map.get(&AdditiveKey("short".to_string())), None);
+}

@@ -134,7 +134,7 @@ impl<K: Key> Serialize for SerializeTypeMap<'_, K> {
             if let Some((filter_object, filter_fn)) =
                 self.filter_object.as_ref()
             {
-                if !filter_fn(a.key().any(), filter_object) {
+                if !filter_fn(a.key().any(), &**filter_object) {
                     continue; // skip this serialization entry
                 }
             }
