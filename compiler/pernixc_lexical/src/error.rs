@@ -5,7 +5,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
-use pernixc_source_file::{AbsoluteSpan, SourceMap};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, SourceMap};
 
 use crate::tree::DelimiterKind;
 
@@ -20,9 +20,9 @@ pub struct UndelimitedDelimiter {
 }
 
 impl Report<&SourceMap> for UndelimitedDelimiter {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.opening_span,
             message: "found an undelimited delimiter".to_string(),
@@ -53,9 +53,9 @@ pub struct UnterminatedStringLiteral {
 }
 
 impl Report<&SourceMap> for UnterminatedStringLiteral {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.span,
             label: Some("need to be closed with a double quote".to_string()),
@@ -75,9 +75,9 @@ pub struct InvalidEscapeSequence {
 }
 
 impl Report<&SourceMap> for InvalidEscapeSequence {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.span,
             message: "found an invalid escape sequence".to_string(),
@@ -113,9 +113,9 @@ pub struct InvalidIndentation {
 }
 
 impl Report<&SourceMap> for InvalidIndentation {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.span,
             message: "the token is in an invalid indentation level".to_string(),
@@ -148,9 +148,9 @@ pub struct ExpectIndentation {
 }
 
 impl Report<&SourceMap> for ExpectIndentation {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.span,
             message: "expect an indentation".to_string(),
@@ -188,9 +188,9 @@ pub struct InvalidNewIndentationLevel {
 }
 
 impl Report<&SourceMap> for InvalidNewIndentationLevel {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.span,
             message: "found an invalid new indentation level".to_string(),
@@ -224,9 +224,9 @@ pub struct UnexpectedClosingDelimiter {
 }
 
 impl Report<&SourceMap> for UnexpectedClosingDelimiter {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.span,
             message: "found an unexpected closing delimiter".to_string(),
@@ -259,9 +259,9 @@ pub struct MismatchedClosingDelimiter {
 }
 
 impl Report<&SourceMap> for MismatchedClosingDelimiter {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: self.span,
             message: "found a mismatched closing delimiter".to_string(),
@@ -328,9 +328,9 @@ impl Error {
 }
 
 impl Report<&SourceMap> for Error {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Span> {
+    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
         match self {
             Self::UndelimitedDelimiter(err) => err.report(source_map),
             Self::UnterminatedStringLiteral(err) => err.report(source_map),

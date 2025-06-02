@@ -228,87 +228,13 @@ use proc_macro::TokenStream;
 /// function calls or allocations.
 #[proc_macro_derive(Identifiable)]
 #[allow(clippy::too_many_lines)]
-pub fn derive_key(input: TokenStream) -> TokenStream {
+pub fn derive_identifiable(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let name = input.ident.clone();
-    let mut generics = input.generics;
+    let generics = input.generics;
 
-    // should not have lifetime or constant parameters, only type parameters are
-    // allowed
-    if let Some(lt_param) = generics.lifetimes().next() {
-        return syn::Error::new_spanned(
-            lt_param,
-            "lifetime parameters are not allowed in key types",
-        )
-        .to_compile_error()
-        .into();
-    }
-    if let Some(const_param) = generics.const_params().next() {
-        return syn::Error::new_spanned(
-            const_param,
-            "constant parameters are not allowed in key types",
-        )
-        .to_compile_error()
-        .into();
-    }
-
-    let stable_type_id_computation = if generics.params.is_empty() {
-        quote::quote! {
-            {
-                let unique_type_name = concat!(
-                    env!("CARGO_PKG_NAME"),
-                    "@",
-                    env!("CARGO_PKG_VERSION"),
-                    "::",
-                    module_path!(),
-                    "::",
-                    stringify!(#name)
-                );
-                pernixc_stable_type_id::StableTypeID::from_unique_type_name(
-                    unique_type_name
-                )
-            }
-        }
-    } else {
-        for ty_param in generics.type_params_mut() {
-            ty_param
-                .bounds
-                .push(syn::parse_quote!(pernixc_stable_type_id::Identifiable));
-        }
-
-        let type_params = generics.type_params().map(|x| &x.ident);
-
-        quote::quote! {
-            {
-                let unique_type_name = concat!(
-                    env!("CARGO_PKG_NAME"),
-                    "@",
-                    env!("CARGO_PKG_VERSION"),
-                    "::",
-                    module_path!(),
-                    "::",
-                    stringify!(#name),
-                );
-                let mut hash = pernixc_stable_type_id::StableTypeID::from_unique_type_name(
-                    unique_type_name
-                );
-
-                #(
-                    hash = <#type_params as pernixc_stable_type_id::Identifiable>::STABLE_TYPE_ID
-                        .combine(hash);
-                )*
-
-                hash
-            }
-        }
-    };
-
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    quote::quote! {
-        impl #impl_generics pernixc_stable_type_id::Identifiable for #name #ty_generics #where_clause {
-            const STABLE_TYPE_ID: pernixc_stable_type_id::StableTypeID
-                = #stable_type_id_computation;
-        }
-    }.into()
+    pernixc_identifiable_derive_lib::implements_identifiable(
+        &name, generics, None,
+    )
+    .into()
 }

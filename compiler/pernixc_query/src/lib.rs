@@ -4,6 +4,7 @@
 use getset::{CopyGetters, Getters};
 pub use key::Key;
 pub use pernixc_query_derive::Key;
+pub use pernixc_stable_type_id::Identifiable;
 
 pub mod database;
 pub mod key;

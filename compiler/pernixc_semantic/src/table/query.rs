@@ -272,7 +272,7 @@ impl Table {
             assert!(context
                 .condvars_by_record
                 .insert(current_record, sync.clone())
-                .is_none(),);
+                .is_none());
 
             drop(context); // release the context lock
 

@@ -207,12 +207,12 @@ impl Arbitrary for Signature {
 
 reference! {
     #[derive(Debug, Clone)]
-    pub struct InlineBody for super::InlineBody {
+    pub struct Content for super::Content {
         pub members (Vec<Passable<Member>>),
     }
 }
 
-impl Arbitrary for InlineBody {
+impl Arbitrary for Content {
     type Parameters = Option<BoxedStrategy<Module>>;
     type Strategy = BoxedStrategy<Self>;
 
@@ -229,6 +229,37 @@ impl Arbitrary for InlineBody {
     }
 }
 
+impl IndentDisplay for Content {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        for member in &self.members {
+            write_indent_line_for_indent_display(f, member, indent)?;
+        }
+        Ok(())
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct InlineBody for super::InlineBody {
+        pub content (Content),
+    }
+}
+
+impl Arbitrary for InlineBody {
+    type Parameters = Option<BoxedStrategy<Module>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(arg: Self::Parameters) -> Self::Strategy {
+        Content::arbitrary_with(arg)
+            .prop_map(|content| Self { content })
+            .boxed()
+    }
+}
+
 impl IndentDisplay for InlineBody {
     fn indent_fmt(
         &self,
@@ -236,10 +267,7 @@ impl IndentDisplay for InlineBody {
         indent: usize,
     ) -> std::fmt::Result {
         writeln!(f, ":")?;
-        for member in &self.members {
-            write_indent_line_for_indent_display(f, member, indent + 1)?;
-        }
-        Ok(())
+        self.content.indent_fmt(f, indent + 1)
     }
 }
 

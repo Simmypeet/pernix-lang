@@ -4,6 +4,7 @@ use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser as _},
 };
+use serde::{Deserialize, Serialize};
 
 use super::{
     constant::Constant, function::Function, implements::Implements,
@@ -87,8 +88,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Indentation}
     pub struct InlineBody {
-        pub members: #[multi] Passable<Member>
-            = ast::<Passable<Member>>().line().repeat_all(),
+        pub content: Content = ast::<Content>(),
     }
 }
 
@@ -98,6 +98,25 @@ abstract_tree::abstract_tree! {
         pub access_modifier: AccessModifier = ast::<AccessModifier>(),
         pub signature: Signature = ast::<Signature>(),
         pub inline_body: InlineBody = ast::<InlineBody>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        Default,
+    )]
+    pub struct Content {
+        pub members: #[multi] Passable<Member>
+            = ast::<Passable<Member>>().line().repeat_all(),
     }
 }
 

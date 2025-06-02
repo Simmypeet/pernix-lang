@@ -42,7 +42,8 @@ pub trait Executor<K: Key>: Any + Send + Sync {
     /// Returns `Ok(value)` on successful computation, or `Err(CyclicError)`
     /// when the query is part of a strongly connected component (SCC) with
     /// cyclic dependencies.
-    fn execute(&self, db: &Engine, key: K) -> Result<K::Value, CyclicError>;
+    fn execute(&self, engine: &Engine, key: K)
+        -> Result<K::Value, CyclicError>;
 }
 
 /// Contains the [`Executor`] objects for each key type. This struct allows

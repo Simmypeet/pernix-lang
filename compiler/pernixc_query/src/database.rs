@@ -9,6 +9,8 @@ use serde::{
     de::DeserializeSeed, ser::SerializeStruct, Deserialize, Serialize,
 };
 
+use crate::Key;
+
 pub mod call_graph;
 pub mod map;
 
@@ -82,10 +84,28 @@ impl Serialize for SerializableDatabase<'_> {
     }
 }
 
+impl Database {
+    /// Checks if the database contains a key.
+    pub fn contains_key<K: Key>(&self, key: &K) -> bool {
+        self.map.contains_key(key)
+    }
+}
+
 /// A deserializer for the `Database` struct that uses a registry for dynamic
 /// type handling.
 #[derive(Debug, Clone, Copy)]
 pub struct DatabaseDeserializer<'a>(pub &'a crate::serde::Serde);
+
+impl crate::serde::Serde {
+    /// Creates a new deserializer for the `Database` struct.
+    ///
+    /// This method returns a `DatabaseDeserializer` that can be used to
+    /// deserialize a `Database` instance from a serde-compatible format.
+    #[must_use]
+    pub const fn database_deserializer(&self) -> DatabaseDeserializer<'_> {
+        DatabaseDeserializer(self)
+    }
+}
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize,

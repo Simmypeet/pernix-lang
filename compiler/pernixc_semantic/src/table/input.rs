@@ -112,7 +112,8 @@ impl Representation {
             .as_nanos();
 
         let mut target_id = {
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            let mut hasher =
+                std::collections::hash_map::DefaultHasher::default();
             name.hash(&mut hasher);
             instant.hash(&mut hasher);
             TargetID(hasher.finish())
@@ -123,7 +124,8 @@ impl Representation {
             || target_id == TargetID::CORE
         {
             instant += 1;
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            let mut hasher =
+                std::collections::hash_map::DefaultHasher::default();
             name.hash(&mut hasher);
             instant.hash(&mut hasher);
             target_id = TargetID(hasher.finish());

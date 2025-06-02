@@ -11,7 +11,7 @@ use pernixc_lexical::{
         ROOT_BRANCH_ID,
     },
 };
-use pernixc_source_file::{AbsoluteSpan, GlobalSourceID, Span};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
 
 use crate::{
     expect::{self, Expected},
@@ -206,6 +206,7 @@ fn found_string(
                 }
             }
         }
+
         (false, _) => found_node_string(
             &branch.nodes[at.node_index],
             token_tree,
@@ -215,12 +216,12 @@ fn found_string(
 }
 
 impl Report<(&pernixc_lexical::tree::Tree, GlobalSourceID)> for Error {
-    type Span = AbsoluteSpan;
+    type Location = ByteIndex;
 
     fn report(
         &self,
         (token_tree, source_id): (&pernixc_lexical::tree::Tree, GlobalSourceID),
-    ) -> pernixc_diagnostic::Diagnostic<Self::Span> {
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         let expected_string = self
             .expecteds
             .iter()

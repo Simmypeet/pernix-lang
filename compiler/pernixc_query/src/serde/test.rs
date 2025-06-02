@@ -16,7 +16,6 @@ use crate::{database::map, key::DynamicBox, Key};
     Hash,
     Default,
     Key,
-    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -34,7 +33,6 @@ pub struct Variable(String);
     Hash,
     Default,
     Key,
-    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -59,7 +57,6 @@ fn additive_merge(old: &mut i32, new: i32) -> Result<bool, String> {
     Hash,
     Default,
     Key,
-    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -94,7 +91,6 @@ fn conditional_merge(old: &mut i32, new: i32) -> Result<bool, String> {
     Ord,
     Hash,
     Key,
-    Identifiable,
     Serialize,
     Deserialize,
 )]
@@ -115,7 +111,6 @@ pub struct ConditionalMergeKey(String);
     Key,
     Serialize,
     Deserialize,
-    Identifiable,
 )]
 #[pernixc_query(crate)]
 #[value(String)] // Use String as value type instead of T to avoid constraints

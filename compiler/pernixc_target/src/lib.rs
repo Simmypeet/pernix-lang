@@ -12,11 +12,13 @@ use serde::{Deserialize, Serialize};
     PartialOrd,
     Ord,
     Hash,
+    Default,
     Serialize,
     Deserialize,
 )]
 pub enum TargetID {
     /// Representing a target that is being compiled at the moment.
+    #[default]
     Local,
 
     /// Representing a `core` target.
@@ -46,6 +48,7 @@ impl TargetID {
     PartialOrd,
     Ord,
     Hash,
+    Default,
     Serialize,
     Deserialize,
 )]

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use pernixc_stable_type_id::Identifiable;
 use serde::{Deserialize, Serialize};
 
 use super::Executor;
@@ -16,7 +15,6 @@ use crate::{Engine, Key};
     PartialOrd,
     Ord,
     Hash,
-    Identifiable,
     Serialize,
     Deserialize,
 )]

@@ -201,24 +201,15 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         }
     });
 
-    // should not have lifetime or constant parameters, only type parameters are
-    // allowed
-    if let Some(lt_param) = generics.lifetimes().next() {
-        return syn::Error::new_spanned(
-            lt_param,
-            "lifetime parameters are not allowed in key types",
-        )
-        .to_compile_error()
-        .into();
-    }
-    if let Some(const_param) = generics.const_params().next() {
-        return syn::Error::new_spanned(
-            const_param,
-            "constant parameters are not allowed in key types",
-        )
-        .to_compile_error()
-        .into();
-    }
+    let identifiable_path: syn::Path =
+        syn::parse_quote!(#pernixc_query_crate::Identifiable);
+
+    let impl_identifiable =
+        pernixc_identifiable_derive_lib::implements_identifiable(
+            &name,
+            generics.clone(),
+            Some(&identifiable_path),
+        );
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -228,5 +219,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 
             #merge_fn
         }
+
+        #impl_identifiable
     }.into()
 }

@@ -1,18 +1,32 @@
 //! Contains the definition of the [`Diagnostic`] struct and related types.
 
+use pernixc_source_file::Span;
+use serde::{Deserialize, Serialize};
+
 /// Implement this trait for a type that can report a diagnostic.
 ///
 /// This trait is typically implemented by error and warning types.
 pub trait Report<Param> {
     /// The type of the span used to represent the location of the diagnostic.
-    type Span;
+    type Location;
 
     /// Creates a diagnostic.
-    fn report(&self, parameter: Param) -> Diagnostic<Self::Span>;
+    fn report(&self, parameter: Param) -> Diagnostic<Self::Location>;
 }
 
 /// Enumeration of the severity levels of a diagnostic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+)]
 pub enum Severity {
     /// An error that prevents the program from compiling.
     Error,
@@ -27,10 +41,12 @@ pub enum Severity {
 
 /// A struct containing all the information required to display the diagnostic
 /// to the user.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Diagnostic<S> {
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub struct Diagnostic<L> {
     /// The span location where the diagnostic occurred.
-    pub span: S,
+    pub span: Span<L>,
 
     /// The message to display to the user.
     pub message: String,
@@ -50,14 +66,16 @@ pub struct Diagnostic<S> {
     ///
     /// For example, for unimplemented methods, this could be a list of
     /// methods that need to be implemented.
-    pub related: Vec<Related<S>>,
+    pub related: Vec<Related<L>>,
 }
 
 /// The related information that is displayed alongside the main [`Diagnostic`].
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Related<S> {
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub struct Related<L> {
     /// The span location to display the message.
-    pub span: S,
+    pub span: Span<L>,
 
     /// The message to display to the user.
     pub message: String,

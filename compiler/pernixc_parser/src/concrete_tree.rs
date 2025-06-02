@@ -62,7 +62,7 @@ pub struct AstInfo {
 
 /// A typeless concrete syntax tree built by the parser.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Default, Deserialize,
 )]
 pub struct Tree {
     /// The info of where which AST created this tree.
