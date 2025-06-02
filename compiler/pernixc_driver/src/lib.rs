@@ -1,19 +1,16 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{fs::File, process::ExitCode};
+use std::{fs::File, io::BufWriter, path::PathBuf, process::ExitCode};
 
 use argument::Arguments;
+use clap::Args;
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     term::termcolor::{self, ColorChoice, StandardStream},
 };
-use pernixc_diagnostic::Report;
-use pernixc_handler::Storage;
-use pernixc_lexical::error::Error;
-use pernixc_source_file::{
-    AbsoluteSpan, GlobalSourceID, SourceFile, SourceMap,
-};
+use pernixc_source_file::{ByteIndex, GlobalSourceID, SourceFile, SourceMap};
 use pernixc_target::TargetID;
+use postcard::ser_flavors::io::WriteFlavor;
 use term::get_coonfig;
 
 pub mod argument;
@@ -41,7 +38,7 @@ impl ReportTerm {
 }
 
 fn pernix_diagnostic_to_codespan_diagnostic(
-    diagostic: pernixc_diagnostic::Diagnostic<AbsoluteSpan>,
+    diagostic: pernixc_diagnostic::Diagnostic<ByteIndex>,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
     let result = match diagostic.severity {
         pernixc_diagnostic::Severity::Error => {
@@ -165,24 +162,93 @@ pub fn run(argument: &Arguments) -> ExitCode {
     };
     let mut source_map = SourceMap::new();
 
-    let Some(source_id) =
+    let Some(root_source_id) =
         create_root_source_file(argument, &mut source_map, &mut report_term)
     else {
         return ExitCode::FAILURE;
     };
 
-    let storage = Storage::<Error>::new();
-    let _stream = pernixc_lexical::tree::Tree::from_source(
-        source_map[source_id].content(),
-        source_id,
-        &storage,
-    );
+    let mut query_runtime = pernixc_query::runtime::Runtime::default();
+    let mut serde = pernixc_query::serde::Serde::default();
 
-    for diag in storage.into_vec() {
-        let msg = diag.report(&source_map);
-        let msg = pernix_diagnostic_to_codespan_diagnostic(msg);
+    pernixc_query_base::register_runtime(&mut query_runtime, &mut serde);
 
-        report_term.report(&mut source_map, &msg);
+    let target_name =
+        argument.command.input().target_name.clone().unwrap_or_else(|| {
+            source_map[root_source_id]
+                .full_path()
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        });
+
+    let database = match pernixc_query_base::start_query_database(
+        &mut source_map,
+        root_source_id,
+        argument.command.input().library_paths.iter().map(PathBuf::as_path),
+        &target_name,
+        argument
+            .command
+            .input()
+            .incremental_path
+            .as_ref()
+            .map(|x| (x.as_path(), &serde)),
+    ) {
+        Ok(database) => database,
+        Err(error) => {
+            let msg = match error {
+                pernixc_query_base::Error::OpenIncrementalFileIO(error) => {
+                    Diagnostic::error().with_message(format!(
+                        "Failed to open incremental file: {error}"
+                    ))
+                }
+                pernixc_query_base::Error::IncrementalFileDeserialize(
+                    error_kind,
+                ) => Diagnostic::error().with_message(format!(
+                    "Failed to load (deserialize) incremental file: \
+                     {error_kind}"
+                )),
+                pernixc_query_base::Error::ReadIncrementalFileIO(error) => {
+                    Diagnostic::error().with_message(format!(
+                        "Failed to read incremental file: {error}"
+                    ))
+                }
+            };
+
+            report_term.report(&mut source_map, &msg);
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if let Some(incremental_path) =
+        argument.command.input().incremental_path.as_ref()
+    {
+        let incremental_file = match File::create(incremental_path) {
+            Ok(file) => file,
+            Err(error) => {
+                let msg = Diagnostic::error().with_message(format!(
+                    "Failed to create incremental file: {error}"
+                ));
+                report_term.report(&mut source_map, &msg);
+                return ExitCode::FAILURE;
+            }
+        };
+        let serializable_database = database.database.serializable(&serde);
+
+        let writer = BufWriter::new(incremental_file);
+        let flavor = WriteFlavor::new(writer);
+
+        // Serialize using postcard and write to file
+        if let Err(error) =
+            postcard::serialize_with_flavor(&serializable_database, flavor)
+        {
+            let msg = Diagnostic::error().with_message(format!(
+                "Failed to serialize incremental file: {error}"
+            ));
+            report_term.report(&mut source_map, &msg);
+            return ExitCode::FAILURE;
+        }
     }
 
     ExitCode::SUCCESS

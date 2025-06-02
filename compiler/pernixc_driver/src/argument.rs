@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use clap::{builder::styling, Args, Subcommand};
 use enum_as_inner::EnumAsInner;
 
+use crate::Input;
+
 /// The output of the compiler.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
 pub struct Output {

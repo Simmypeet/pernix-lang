@@ -1,17 +1,129 @@
 //! Crate responsible for starting and setting up the query engine for the
-//! compilation proccess.
+//! compilation process.
 
-use std::path::Path;
+use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
 
+use module::SyntaxExecutor;
 use pernixc_query::database::Database;
 use pernixc_source_file::{GlobalSourceID, SourceMap};
+use pernixc_target::TargetID;
+use serde::de::DeserializeSeed;
 
+pub mod module;
+pub mod symbol;
+
+/// A fatal error that aborts the compilation process.
+#[derive(Debug, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum Error {
+    #[error(transparent)]
+    OpenIncrementalFileIO(std::io::Error),
+    #[error(transparent)]
+    ReadIncrementalFileIO(std::io::Error),
+    #[error(transparent)]
+    IncrementalFileDeserialize(postcard::Error),
+}
+
+/// The result of calling [`start_query_database`].
+#[derive(Debug)]
+pub struct Start {
+    /// The database where all the query inputs are set-up and is ready for
+    /// querying.
+    pub database: Database,
+
+    /// A map of token trees by their source ID, which is used to later
+    /// retrieve the absolute location
+    pub token_trees_by_source_id:
+        HashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
+}
+
+fn read_file_buffer(
+    file: &mut std::fs::File,
+) -> Result<Vec<u8>, std::io::Error> {
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    Ok(buffer)
+}
+
+/// Setup the query database for the compilation process.
+///
+/// This will initialize the query database with the initial syntax tree and
+/// module structure
 pub fn start_query_database<'l>(
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
-    library_paths: impl IntoIterator<Item = &'l Path>,
+    _library_paths: impl IntoIterator<Item = &'l Path>,
+    target_name: &str,
     incremental_path: Option<(&Path, &pernixc_query::serde::Serde)>,
-) -> Database {
-    let root_file = &source_map[root_source_id];
-    todo!()
+) -> Result<Start, Error> {
+    let mut token_trees_by_source_id = HashMap::new();
+
+    // load the incremental file (if any)
+    let incremental_file = if let Some((incremental_path, _)) = incremental_path
+    {
+        match std::fs::File::open(incremental_path) {
+            Ok(file) => Some(file),
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    None
+                } else {
+                    return Err(Error::OpenIncrementalFileIO(err));
+                }
+            }
+        }
+    } else {
+        None
+    };
+
+    // create a fresh database or load the incremental file
+    let mut database = incremental_file.map_or_else(
+        || Ok(Database::default()),
+        |mut file| {
+            let buffer = read_file_buffer(&mut file)
+                .map_err(Error::ReadIncrementalFileIO)?;
+
+            let mut deserializer = postcard::Deserializer::from_flavor(
+                postcard::de_flavors::Slice::new(&buffer),
+            );
+
+            incremental_path
+                .unwrap()
+                .1
+                .database_deserializer()
+                .deserialize(&mut deserializer)
+                .map_err(Error::IncrementalFileDeserialize)
+        },
+    )?;
+
+    let (parse, token_tree) =
+        module::Parse::from_source_id(root_source_id, source_map);
+
+    database.set_input(&module::ParseKey(root_source_id), parse, true).unwrap();
+    database
+        .set_input(
+            &symbol::KindKey(TargetID::Local.make_global(symbol::generate_id(
+                &database,
+                std::iter::once(target_name),
+                TargetID::Local,
+            ))),
+            symbol::Kind::Module,
+            true,
+        )
+        .unwrap();
+
+    token_trees_by_source_id.insert(root_source_id, token_tree);
+
+    Ok(Start { database, token_trees_by_source_id })
+}
+
+/// Registers all the necessary runtime information for the query engine.
+pub fn register_runtime(
+    query_runtime: &mut pernixc_query::runtime::Runtime,
+    serde: &mut pernixc_query::serde::Serde,
+) {
+    query_runtime.executor.register(Arc::new(SyntaxExecutor));
+
+    serde.register::<module::ParseKey>();
+    serde.register::<module::SyntaxKey>();
+    serde.register::<symbol::KindKey>();
 }

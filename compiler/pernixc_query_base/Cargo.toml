@@ -7,9 +7,19 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-clap = { workspace = true }
 pernixc_query = { path = "../pernixc_query" }
 pernixc_source_file = { path = "../pernixc_source_file" }
+pernixc_handler = { path = "../pernixc_handler" }
+pernixc_lexical = { path = "../pernixc_lexical" }
+pernixc_stable_type_id = { path = "../pernixc_stable_type_id" }
+pernixc_syntax = { path = "../pernixc_syntax" }
+pernixc_parser = { path = "../pernixc_parser" }
+pernixc_target = { path = "../pernixc_target" }
+pernixc_diagnostic = { path = "../pernixc_diagnostic" }
+fnv = { workspace = true }
+postcard = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
 
 [lints]
 workspace = true
