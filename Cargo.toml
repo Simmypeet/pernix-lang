@@ -107,7 +107,7 @@ version = "0.1.0-beta.2"
 authors = ["Simmypeet"]
 description = "The Pernix Programming Language Compiler"
 edition = "2021"
-rust-version = "1.83.0"
+rust-version = "1.86.0"
 
 [workspace.lints.rust]
 missing_docs = "deny"
