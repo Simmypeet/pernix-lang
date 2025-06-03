@@ -55,7 +55,8 @@ impl Input<ID<super::Branch>, (usize, &SourceMap, &Tree)> for &Indentation {
                         };
 
                         let indent_size = whitespace_span.map_or(0, |x| {
-                            let source_file = &source_map[x.source_id];
+                            let source_file =
+                                &source_map.get(x.source_id).unwrap();
                             let abs_span =
                                 x.to_absolute_span(source_file, tree);
 
@@ -106,7 +107,7 @@ impl Input<ID<super::Branch>, (usize, &SourceMap, &Tree)> for &Indentation {
                     };
 
                     let indent_size = whitespace_span.map_or(0, |x| {
-                        let source_file = &source_map[x.source_id];
+                        let source_file = &source_map.get(x.source_id).unwrap();
                         let abs_span = x.to_absolute_span(source_file, tree);
 
                         let source = &source_file.content()[abs_span.range()];
@@ -598,10 +599,10 @@ impl Nodes {
         let mut changed = false;
 
         while i < self.len() {
-            let Node::Fragment(Fragment::Indentation(_)) = &self[i] else {
+            if !matches!(&self[i], Node::Fragment(Fragment::Indentation(_))) {
                 i += 1;
                 continue;
-            };
+            }
 
             let Some(next) = self.get(i + 1) else {
                 break;

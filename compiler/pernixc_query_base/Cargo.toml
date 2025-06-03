@@ -16,6 +16,10 @@ pernixc_syntax = { path = "../pernixc_syntax" }
 pernixc_parser = { path = "../pernixc_parser" }
 pernixc_target = { path = "../pernixc_target" }
 pernixc_diagnostic = { path = "../pernixc_diagnostic" }
+rayon = { workspace = true }
+parking_lot = { workspace = true }
+enum-as-inner = { workspace = true }
+dashmap = { workspace = true }
 fnv = { workspace = true }
 postcard = { workspace = true }
 thiserror = { workspace = true }

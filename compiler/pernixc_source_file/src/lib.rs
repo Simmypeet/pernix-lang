@@ -3,18 +3,21 @@
 use core::str;
 use std::{
     cmp::Ordering,
-    collections::HashMap,
     fmt::Debug,
     fs::File,
     hash::{Hash, Hasher},
     io::Read,
-    ops::{Index, IndexMut, Range},
+    ops::Range,
     path::PathBuf,
 };
 
+use dashmap::{
+    mapref::one::{MappedRef, Ref, RefMut},
+    DashMap,
+};
 use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
-use pernixc_arena::{Arena, ID};
+use pernixc_arena::ID;
 use pernixc_target::{Global, TargetID};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -84,6 +87,10 @@ impl SourceFile {
     #[must_use]
     #[allow(clippy::missing_const_for_fn)]
     pub fn content(&self) -> &str { &self.content }
+
+    /// Gets the content of the source file as a string.
+    #[must_use]
+    pub const fn content_string(&self) -> &String { &self.content }
 
     /// Translates a location to a byte index.
     #[must_use]
@@ -561,27 +568,26 @@ fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {
 }
 
 /// A map of source files, accessing through the [`GlobalSourceID`].
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SourceMap {
-    maps_by_target_id: HashMap<TargetID, Arena<SourceFile>>,
+    source_files_by_id: DashMap<GlobalSourceID, SourceFile>,
 }
 
 impl SourceMap {
     /// Creates a new empty [`SourceMap`].
     #[must_use]
-    pub fn new() -> Self { Self { maps_by_target_id: HashMap::new() } }
+    pub fn new() -> Self { Self { source_files_by_id: DashMap::new() } }
 
     /// Registers a source file in the map. If the source file is already
     /// registered, it returns the `Err(ID)` of the existing source file.
     /// If the source file is not registered, it returns the `Ok(ID)` of the
     /// newly registered source file.
+    #[must_use]
     pub fn register(
-        &mut self,
+        &self,
         target_id: TargetID,
         source: SourceFile,
     ) -> LocalSourceID {
-        let local_map = self.maps_by_target_id.entry(target_id).or_default();
-
         let patb = &source.full_path;
         let mut hasher = FnvHasher::default();
         patb.hash(&mut hasher);
@@ -597,7 +603,10 @@ impl SourceMap {
                 let candidate_branch_id = ID::new(final_hasher.finish());
 
                 // avoid hash collision
-                if !local_map.contains_id(candidate_branch_id) {
+                if !self
+                    .source_files_by_id
+                    .contains_key(&target_id.make_global(candidate_branch_id))
+                {
                     return candidate_branch_id;
                 }
 
@@ -608,56 +617,60 @@ impl SourceMap {
         let hash = finalize_hash(hasher);
 
         // insert the source file into the map
-        local_map.insert_with_id(hash, source).unwrap();
+        self.source_files_by_id
+            .insert(target_id.make_global(hash), source)
+            .unwrap();
 
         hash
     }
 
     /// Gets the source file by its ID.
     #[must_use]
-    pub fn get(&self, id: GlobalSourceID) -> Option<&SourceFile> {
-        self.maps_by_target_id.get(&id.target_id).and_then(|x| x.get(id.id))
+    pub fn get(
+        &self,
+        id: GlobalSourceID,
+    ) -> Option<Ref<GlobalSourceID, SourceFile>> {
+        self.source_files_by_id.get(&id)
     }
 
     /// Gets the source file by its ID.
     #[must_use]
-    pub fn get_mut(&mut self, id: GlobalSourceID) -> Option<&mut SourceFile> {
-        self.maps_by_target_id
-            .get_mut(&id.target_id)
-            .and_then(|x| x.get_mut(id.id))
+    pub fn get_mut(
+        &self,
+        id: GlobalSourceID,
+    ) -> Option<RefMut<GlobalSourceID, SourceFile>> {
+        self.source_files_by_id.get_mut(&id)
     }
 }
 
-impl Index<GlobalSourceID> for SourceMap {
-    type Output = SourceFile;
+/// A wrapper around [`MappedRef`] that implements [`std::fmt::Display`]
+/// allowing it to be used as a [`codespan_reporting::files::Name`].
+#[derive(Debug)]
+pub struct DisplayPathBuf<'a>(
+    pub MappedRef<'a, GlobalSourceID, SourceFile, PathBuf>,
+);
 
-    fn index(&self, id: GlobalSourceID) -> &Self::Output {
-        self.get(id).unwrap()
-    }
-}
-
-impl IndexMut<GlobalSourceID> for SourceMap {
-    fn index_mut(&mut self, id: GlobalSourceID) -> &mut Self::Output {
-        self.get_mut(id).unwrap()
+impl std::fmt::Display for DisplayPathBuf<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0.display(), f)
     }
 }
 
 impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
     type FileId = GlobalSourceID;
-    type Name = std::path::Display<'a>;
-    type Source = &'a str;
+    type Name = DisplayPathBuf<'a>;
+    type Source = MappedRef<'a, GlobalSourceID, SourceFile, String>;
 
     fn name(
         &'a self,
         id: Self::FileId,
     ) -> Result<Self::Name, codespan_reporting::files::Error> {
         let source = self
-            .maps_by_target_id
-            .get(&id.target_id)
-            .and_then(|x| x.get(id.id))
+            .source_files_by_id
+            .get(&id)
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
-        Ok(source.full_path.display())
+        Ok(DisplayPathBuf(source.map(|x| x.full_path())))
     }
 
     fn source(
@@ -665,12 +678,11 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
         id: Self::FileId,
     ) -> Result<Self::Source, codespan_reporting::files::Error> {
         let source = self
-            .maps_by_target_id
-            .get(&id.target_id)
-            .and_then(|x| x.get(id.id))
+            .source_files_by_id
+            .get(&id)
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
-        Ok(source.content())
+        Ok(source.map(|x| x.content_string()))
     }
 
     fn line_index(
@@ -679,9 +691,8 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
         byte_index: usize,
     ) -> Result<usize, codespan_reporting::files::Error> {
         let source = self
-            .maps_by_target_id
-            .get(&id.target_id)
-            .and_then(|x| x.get(id.id))
+            .source_files_by_id
+            .get(&id)
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
         if byte_index == source.content().len() {
@@ -708,9 +719,8 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
         line_index: usize,
     ) -> Result<Range<usize>, codespan_reporting::files::Error> {
         let source = self
-            .maps_by_target_id
-            .get(&id.target_id)
-            .and_then(|x| x.get(id.id))
+            .source_files_by_id
+            .get(&id)
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
         if line_index == source.lines.len() {

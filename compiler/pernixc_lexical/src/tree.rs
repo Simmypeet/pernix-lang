@@ -9,6 +9,7 @@ use dashmap::DashMap;
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use fnv::FnvHasher;
+use getset::CopyGetters;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
 use pernixc_source_file::{
@@ -212,10 +213,14 @@ pub const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 ///
 /// This is useful for easy traversal of the tree and for incremental
 /// compilation compatibility.
-#[derive(Debug, Clone, Deref, Serialize)]
+#[derive(Debug, Clone, Deref, Serialize, CopyGetters)]
 pub struct Tree {
     #[deref]
     arena: Arena<Branch>,
+
+    /// The source ID of the source code that this tree is built from.
+    #[get_copy = "pub"]
+    source_id: GlobalSourceID,
 
     #[serde(skip)]
     end_location_cache: DashMap<ID<Branch>, ByteIndex>,
@@ -238,6 +243,7 @@ impl Tree {
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
             tree: Self {
+                source_id,
                 arena: Arena::new(),
                 end_location_cache: DashMap::new(),
             },

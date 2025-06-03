@@ -3,10 +3,8 @@
 
 use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
 
-use module::SyntaxExecutor;
 use pernixc_query::database::Database;
 use pernixc_source_file::{GlobalSourceID, SourceMap};
-use pernixc_target::TargetID;
 use serde::de::DeserializeSeed;
 
 pub mod module;
@@ -95,24 +93,6 @@ pub fn start_query_database<'l>(
         },
     )?;
 
-    let (parse, token_tree) =
-        module::Parse::from_source_id(root_source_id, source_map);
-
-    database.set_input(&module::ParseKey(root_source_id), parse, true).unwrap();
-    database
-        .set_input(
-            &symbol::KindKey(TargetID::Local.make_global(symbol::generate_id(
-                &database,
-                std::iter::once(target_name),
-                TargetID::Local,
-            ))),
-            symbol::Kind::Module,
-            true,
-        )
-        .unwrap();
-
-    token_trees_by_source_id.insert(root_source_id, token_tree);
-
     Ok(Start { database, token_trees_by_source_id })
 }
 
@@ -121,9 +101,7 @@ pub fn register_runtime(
     query_runtime: &mut pernixc_query::runtime::Runtime,
     serde: &mut pernixc_query::serde::Serde,
 ) {
-    query_runtime.executor.register(Arc::new(SyntaxExecutor));
+    todo!();
 
-    serde.register::<module::ParseKey>();
-    serde.register::<module::SyntaxKey>();
     serde.register::<symbol::KindKey>();
 }

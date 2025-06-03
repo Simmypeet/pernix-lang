@@ -236,9 +236,8 @@ impl Report<(&pernixc_lexical::tree::Tree, GlobalSourceID)> for Error {
             format!("unexpected {found_string}, expected {expected_string}");
 
         Diagnostic {
-            span: found_span,
+            span: Some((found_span, None)),
             message,
-            label: None,
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
             related: Vec::default(),

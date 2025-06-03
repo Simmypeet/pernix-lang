@@ -5,7 +5,11 @@ use std::sync::Arc;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
-use pernixc_lexical::{token, tree::RelativeLocation};
+use pernixc_lexical::{
+    token,
+    tree::{OffsetMode, RelativeLocation, RelativeSpan},
+};
+use pernixc_source_file::{GlobalSourceID, Span};
 use pernixc_stable_type_id::StableTypeID;
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +37,31 @@ pub enum Node {
     Branch(Arc<Tree>),
 
     /// A fragment of the tree that isn't stepped into.
-    SkipFragment(ID<pernixc_lexical::tree::Branch>),
+    SkipFragment(ID<pernixc_lexical::tree::Branch>, GlobalSourceID),
+}
+
+impl Node {
+    /// Retrieves the [`RelativeSpan`] of the node.
+    #[must_use]
+    pub fn span(&self) -> Option<RelativeSpan> {
+        match self {
+            Self::Leaf(token) => Some(token.span),
+            Self::Branch(tree) => tree.span(),
+            Self::SkipFragment(id, source_id) => Some(RelativeSpan {
+                start: RelativeLocation {
+                    offset: 0,
+                    mode: OffsetMode::Start,
+                    relative_to: *id,
+                },
+                end: RelativeLocation {
+                    offset: 0,
+                    mode: OffsetMode::End,
+                    relative_to: *id,
+                },
+                source_id: *source_id,
+            }),
+        }
+    }
 }
 
 /// The information used by the [`Tree`] to determine which AST created
@@ -57,12 +85,22 @@ pub struct AstInfo {
     pub ast_type_id: StableTypeID,
 
     /// The id of the branch that this node steps into before start parsing.
-    pub step_into_fragment: Option<ID<pernixc_lexical::tree::Branch>>,
+    pub step_into_fragment:
+        Option<(ID<pernixc_lexical::tree::Branch>, GlobalSourceID)>,
 }
 
 /// A typeless concrete syntax tree built by the parser.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Default, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Default,
+    Deserialize,
 )]
 pub struct Tree {
     /// The info of where which AST created this tree.
@@ -73,4 +111,40 @@ pub struct Tree {
 
     /// List of nodes this tree contains.
     pub nodes: Vec<Node>,
+}
+
+impl Tree {
+    /// Obtains the [`RelativeSpan`] of the tree.
+    #[must_use]
+    pub fn span(&self) -> Option<RelativeSpan> {
+        if let Some(step_into_fragment) =
+            self.ast_info.as_ref().and_then(|x| x.step_into_fragment)
+        {
+            return Some(Span {
+                start: RelativeLocation {
+                    offset: 0,
+                    mode: OffsetMode::Start,
+                    relative_to: step_into_fragment.0,
+                },
+                end: RelativeLocation {
+                    offset: 0,
+                    mode: OffsetMode::End,
+                    relative_to: step_into_fragment.0,
+                },
+                source_id: step_into_fragment.1,
+            });
+        }
+
+        let first = self.nodes.first()?;
+        let last = self.nodes.last()?;
+
+        let first_span = first.span()?;
+        let last_span = last.span()?;
+
+        Some(Span {
+            start: first_span.start,
+            end: last_span.end,
+            source_id: first_span.source_id,
+        })
+    }
 }

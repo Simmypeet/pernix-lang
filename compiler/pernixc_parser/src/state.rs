@@ -437,7 +437,7 @@ impl<'a, 'cache> State<'a, 'cache> {
             // start the event
             self.events.push(Event::NewNode(AstInfo {
                 ast_type_id: A::STABLE_TYPE_ID,
-                step_into_fragment: Some(branch_id),
+                step_into_fragment: Some((branch_id, self.tree.source_id())),
             }));
 
             let mut state = State {
@@ -678,7 +678,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 assert!(
                     tree[cursor.branch_id].nodes[cursor.node_index]
                         .as_branch()
-                        .is_some_and(|x| *x == step_into_fragment),
+                        .is_some_and(|x| *x == step_into_fragment.0),
                     "mismatched step into fragment node"
                 );
 
@@ -686,7 +686,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                 let current_node_index = cursor.node_index;
 
                 cursor.node_index = 0;
-                cursor.branch_id = step_into_fragment;
+                cursor.branch_id = step_into_fragment.0;
 
                 // step pass the fragment
                 Some(Cursor {
@@ -737,7 +737,10 @@ impl<'a, 'cache> State<'a, 'cache> {
                                     concrete_tree::Node::Leaf(token.clone())
                                 }
                                 pernixc_lexical::tree::Node::Branch(id) => {
-                                    concrete_tree::Node::SkipFragment(*id)
+                                    concrete_tree::Node::SkipFragment(
+                                        *id,
+                                        tree.source_id(),
+                                    )
                                 }
                             }),
                     );
@@ -756,7 +759,10 @@ impl<'a, 'cache> State<'a, 'cache> {
                                     concrete_tree::Node::Leaf(token.clone())
                                 }
                                 pernixc_lexical::tree::Node::Branch(id) => {
-                                    concrete_tree::Node::SkipFragment(*id)
+                                    concrete_tree::Node::SkipFragment(
+                                        *id,
+                                        tree.source_id(),
+                                    )
                                 }
                             }),
                     );
@@ -777,7 +783,10 @@ impl<'a, 'cache> State<'a, 'cache> {
                                         concrete_tree::Node::Leaf(token.clone())
                                     }
                                     pernixc_lexical::tree::Node::Branch(id) => {
-                                        concrete_tree::Node::SkipFragment(*id)
+                                        concrete_tree::Node::SkipFragment(
+                                            *id,
+                                            tree.source_id(),
+                                        )
                                     }
                                 })
                                 .collect();

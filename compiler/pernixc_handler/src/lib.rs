@@ -6,6 +6,12 @@ use derive_more::{Deref, DerefMut};
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Represents a trait responsible for handling diagnostics in the compiler.
+///
+/// This trait is helpful for collecting diagnostics during the compilation.
+/// It's often passed around as an additional parameter to various functions
+/// where diagnostics need to be reported. This pattern aims to be a more
+/// ergonomic alternative to returning a tuple of `(T, Vec<Diagnostic>)`
+/// counterpart.
 pub trait Handler<T>: Send + Sync {
     /// Receives an error and handles it.
     fn receive(&self, error: T);

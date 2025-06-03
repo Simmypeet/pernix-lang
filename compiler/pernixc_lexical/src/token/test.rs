@@ -19,7 +19,7 @@ fn tokenize(
     (super::Token<Kind, ByteIndex>, SourceMap),
     proptest::test_runner::TestCaseError,
 > {
-    let mut source_map = SourceMap::new();
+    let source_map = SourceMap::new();
     let source_file = SourceFile::new(source, "test".into());
 
     let id = source_map.register(TargetID::Local, source_file);
@@ -27,8 +27,9 @@ fn tokenize(
 
     let error_storage: Storage<Error> = Storage::new();
 
+    let source_file = source_map.get_mut(id).unwrap();
     let mut tokenizer =
-        Tokenizer::new(source_map[id].content(), id, &error_storage);
+        Tokenizer::new(source_file.content(), id, &error_storage);
 
     let token = tokenizer
         .next()
@@ -42,6 +43,9 @@ fn tokenize(
         "{:?}",
         error_storage.as_vec()
     );
+
+    // skipcq: RS-E1011
+    drop(source_file);
 
     Ok((token, source_map))
 }

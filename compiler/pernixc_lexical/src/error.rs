@@ -24,16 +24,17 @@ impl Report<&SourceMap> for UndelimitedDelimiter {
 
     fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.opening_span,
-            message: "found an undelimited delimiter".to_string(),
-            label: Some(format!(
-                "need to be cloesd with `{}` pair",
-                match self.delimiter {
+            span: Some((
+                self.opening_span,
+                Some(format!("need to be cloesd with `{}` pair", match self
+                    .delimiter
+                {
                     DelimiterKind::Parenthesis => ')',
                     DelimiterKind::Brace => '}',
                     DelimiterKind::Bracket => ']',
-                }
+                })),
             )),
+            message: "found an undelimited delimiter".to_string(),
             severity: Severity::Error,
             help_message: Some(
                 "this delimiter is not closed by its corresponding closing \
@@ -57,8 +58,10 @@ impl Report<&SourceMap> for UnterminatedStringLiteral {
 
     fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.span,
-            label: Some("need to be closed with a double quote".to_string()),
+            span: Some((
+                self.span,
+                Some("need to be closed with a double quote".to_string()),
+            )),
             message: "found an unterminated string literal".to_string(),
             severity: Severity::Error,
             help_message: None,
@@ -79,9 +82,8 @@ impl Report<&SourceMap> for InvalidEscapeSequence {
 
     fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.span,
+            span: Some((self.span, None)),
             message: "found an invalid escape sequence".to_string(),
-            label: None,
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
@@ -117,9 +119,11 @@ impl Report<&SourceMap> for InvalidIndentation {
 
     fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.span,
+            span: Some((
+                self.span,
+                Some(format!("found {} space(s)", self.found_indentation)),
+            )),
             message: "the token is in an invalid indentation level".to_string(),
-            label: Some(format!("found {} space(s)", self.found_indentation,)),
             severity: Severity::Error,
             help_message: None,
             related: self
@@ -152,16 +156,20 @@ impl Report<&SourceMap> for ExpectIndentation {
 
     fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.span,
-            message: "expect an indentation".to_string(),
-            label: Some(format!(
-                "`{}` is not indented",
-                &source_map[self.span.source_id].content()[self.span.range()]
+            span: Some((
+                self.span,
+                Some(format!(
+                    "`{}` is not indented",
+                    &source_map.get(self.span.source_id).unwrap().content()
+                        [self.span.range()]
+                )),
             )),
+            message: "expect an indentation".to_string(),
             severity: Severity::Error,
             help_message: Some(format!(
                 "add spaces before `{}` to indent",
-                &source_map[self.span.source_id].content()[self.span.range()]
+                &source_map.get(self.span.source_id).unwrap().content()
+                    [self.span.range()]
             )),
             related: vec![Related {
                 span: self.indentation_start,
@@ -192,13 +200,15 @@ impl Report<&SourceMap> for InvalidNewIndentationLevel {
 
     fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.span,
-            message: "found an invalid new indentation level".to_string(),
-            label: Some(format!(
-                "found {} space(s), but the previous indentation level is {} \
-                 space(s)",
-                self.found_indentation, self.latest_indentation
+            span: Some((
+                self.span,
+                Some(format!(
+                    "found {} space(s), but the previous indentation level is \
+                     {} space(s)",
+                    self.found_indentation, self.latest_indentation
+                )),
             )),
+            message: "found an invalid new indentation level".to_string(),
             severity: Severity::Error,
             help_message: Some(
                 "must be deeper than the previous indentation level"
@@ -228,13 +238,16 @@ impl Report<&SourceMap> for UnexpectedClosingDelimiter {
 
     fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.span,
-            message: "found an unexpected closing delimiter".to_string(),
-            label: Some(format!(
-                "this closing delimiter `{}` does not have a corresponding \
-                 opening delimiter",
-                &source_map[self.span.source_id].content()[self.span.range()]
+            span: Some((
+                self.span,
+                Some(format!(
+                    "this closing delimiter `{}` does not have a \
+                     corresponding opening delimiter",
+                    &source_map.get(self.span.source_id).unwrap().content()
+                        [self.span.range()]
+                )),
             )),
+            message: "found an unexpected closing delimiter".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
@@ -263,15 +276,20 @@ impl Report<&SourceMap> for MismatchedClosingDelimiter {
 
     fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: self.span,
-            message: "found a mismatched closing delimiter".to_string(),
-            label: Some(format!(
-                "this closing delimiter `{}` does not match the opening \
-                 delimiter `{}`",
-                &source_map[self.span.source_id].content()[self.span.range()],
-                &source_map[self.opening_span.source_id].content()
-                    [self.opening_span.range()]
+            span: Some((
+                self.span,
+                Some(format!(
+                    "this closing delimiter `{}` does not match the opening \
+                     delimiter `{}`",
+                    &source_map.get(self.span.source_id).unwrap().content()
+                        [self.span.range()],
+                    &source_map
+                        .get(self.opening_span.source_id)
+                        .unwrap()
+                        .content()[self.opening_span.range()]
+                )),
             )),
+            message: "found a mismatched closing delimiter".to_string(),
             severity: Severity::Error,
             help_message: Some(format!(
                 "replace with `{}` instead",
@@ -285,8 +303,10 @@ impl Report<&SourceMap> for MismatchedClosingDelimiter {
                 span: self.opening_span,
                 message: format!(
                     "has an opening delimiter `{}`",
-                    &source_map[self.opening_span.source_id].content()
-                        [self.opening_span.range()]
+                    &source_map
+                        .get(self.opening_span.source_id)
+                        .unwrap()
+                        .content()[self.opening_span.range()]
                 ),
             }],
         }

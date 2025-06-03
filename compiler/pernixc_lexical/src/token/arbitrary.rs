@@ -51,10 +51,10 @@ impl<L: Location<C> + std::fmt::Debug, C: Clone>
         output: &Span<L>,
         (source_map, location_context): (&SourceMap, C),
     ) -> proptest::test_runner::TestCaseResult {
-        let source_file = &source_map[output.source_id];
+        let source_file = source_map.get(output.source_id).unwrap();
 
         let absolute_span =
-            output.to_absolute_span(source_file, location_context);
+            output.to_absolute_span(&source_file, location_context);
         let prior_insignificant_source =
             &source_file.content()[absolute_span.range()];
 
@@ -127,7 +127,7 @@ where
             output.prior_insignificant.as_ref().map(|x| x.source_id)
         );
 
-        let source_file = &source_map[output.span.source_id];
+        let source_file = &source_map.get(output.span.source_id).unwrap();
 
         let absolute_span =
             output.span.to_absolute_span(source_file, location_context.clone());

@@ -5,7 +5,15 @@ use serde::{Deserialize, Serialize};
 
 /// Implement this trait for a type that can report a diagnostic.
 ///
-/// This trait is typically implemented by error and warning types.
+/// This trait is typically implemented by structs or enums that encodes the
+/// error or warning conditions that can occur during the compilation process.
+///
+/// The reason for having an intermediate structs/enums instead of emitting
+/// [`Diagnostic`] directly is to make the errors and warnings generation more
+/// decoupled from the outside context. This will be seen greatly useful when
+/// working with the incremental compilation, where the context outside may
+/// change between compilation runs, but the structs/enums that implement this
+/// trait will remain the same.
 pub trait Report<Param> {
     /// The type of the span used to represent the location of the diagnostic.
     type Location;
@@ -46,14 +54,10 @@ pub enum Severity {
 )]
 pub struct Diagnostic<L> {
     /// The span location where the diagnostic occurred.
-    pub span: Span<L>,
+    pub span: Option<(Span<L>, Option<String>)>,
 
     /// The message to display to the user.
     pub message: String,
-
-    /// The label to display to the user. This is typically a short message
-    /// that highlights the problem.
-    pub label: Option<String>,
 
     /// The severity of the diagnostic.
     pub severity: Severity,

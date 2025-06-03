@@ -23,7 +23,8 @@ pub fn parse_token_tree(
         TargetID::Local,
         SourceFile::new(source_code.to_string(), "test".into()),
     );
-    let source = &source_map[TargetID::Local.make_global(source_id)];
+    let source =
+        source_map.get(TargetID::Local.make_global(source_id)).unwrap();
 
     let tree = pernixc_lexical::tree::Tree::from_source(
         source.content(),
