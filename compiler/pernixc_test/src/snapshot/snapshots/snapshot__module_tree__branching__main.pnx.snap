@@ -1,0 +1,8 @@
+---
+source: compiler/pernixc_test/src/snapshot/mod.rs
+expression: assert_string
+---
+stderr:
+
+
+stdout:

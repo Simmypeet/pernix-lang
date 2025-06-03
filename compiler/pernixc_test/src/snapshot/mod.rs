@@ -22,18 +22,16 @@ fn main() {
 
     let mut paniced = false;
     visit_dirs(&scandir, &mut |file_path: &Path| {
-        let error = std::panic::catch_unwind(|| {
+        let result = std::panic::catch_unwind(|| {
             let relative_to_scandir = file_path.strip_prefix(&scandir).unwrap();
 
             // for each file that has the `main.pnx` name, run the test
             test(relative_to_scandir);
         });
 
-        if let Err(err) = error {
-            eprintln!("Error in file {}: {:?}", file_path.display(), err);
+        if result.is_err() {
+            paniced = true;
         }
-
-        paniced = true;
     })
     .unwrap();
 

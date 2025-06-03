@@ -1,0 +1,6 @@
+public module sub1
+public module sub2
+
+
+public function main():
+    pass

@@ -614,7 +614,6 @@ impl SourceMap {
             }
         };
 
-        drop(finalize_hash);
         let hash = finalize_hash(hasher);
 
         // insert the source file into the map
