@@ -133,6 +133,7 @@ impl<'a, 'cache> State<'a, 'cache> {
                     branch_id: pernixc_lexical::tree::ROOT_BRANCH_ID,
                     node_index: 0,
                 },
+                source_id: tree.source_id(),
             },
             cache,
         }
@@ -623,6 +624,7 @@ impl<'a, 'cache> State<'a, 'cache> {
         Some(Error {
             expecteds: std::mem::take(&mut self.current_error.expecteds),
             at: self.current_error.at,
+            source_id: self.tree.source_id(),
         })
     }
 

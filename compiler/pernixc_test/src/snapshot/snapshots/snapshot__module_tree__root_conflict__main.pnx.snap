@@ -1,0 +1,16 @@
+---
+source: compiler/pernixc_test/src/snapshot/mod.rs
+expression: assert_string
+---
+stderr:
+error: the submodule of the root source file ends up pointing to the root source file itself
+  ╭─ module_tree/root_conflict/main.pnx:3:15
+  │
+3 │ public module main
+  │               ^^^^ this ends up loading the file `module_tree/root_conflict/main.pnx`, which is the current module itself
+  │
+  = consider renaming the submodule name to avoid this conflict
+
+
+
+stdout:

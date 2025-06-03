@@ -1,0 +1,121 @@
+#![allow(missing_docs)]
+
+use std::{
+    io::BufRead,
+    path::{Path, PathBuf},
+};
+
+use clap::Parser;
+use insta::assert_snapshot;
+use pernixc_driver::{
+    argument::{Arguments, Check, Command},
+    Input,
+};
+
+#[test]
+#[allow(clippy::manual_assert)]
+fn main() {
+    let scandir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("snapshot");
+
+    std::env::set_current_dir(&scandir).unwrap();
+
+    let mut paniced = false;
+    visit_dirs(&scandir, &mut |file_path: &Path| {
+        let error = std::panic::catch_unwind(|| {
+            let relative_to_scandir = file_path.strip_prefix(&scandir).unwrap();
+
+            // for each file that has the `main.pnx` name, run the test
+            test(relative_to_scandir);
+        });
+
+        if let Err(err) = error {
+            eprintln!("Error in file {}: {:?}", file_path.display(), err);
+        }
+
+        paniced = true;
+    })
+    .unwrap();
+
+    if paniced {
+        panic!("Some tests panicked, check the output above for details.");
+    }
+}
+
+// one possible implementation of walking a directory only visiting files
+fn visit_dirs(dir: &Path, cb: &mut dyn FnMut(&Path)) -> std::io::Result<()> {
+    if dir.is_dir() {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                visit_dirs(&path, cb)?;
+            } else if let Some(path) = entry.file_name().to_str() {
+                if path == "main.pnx" {
+                    cb(&entry.path());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn test(file_path: &Path) {
+    let mut err_writer =
+        codespan_reporting::term::termcolor::NoColor::new(Vec::new());
+    let mut out_writer =
+        codespan_reporting::term::termcolor::NoColor::new(Vec::new());
+
+    let file = std::fs::File::open(file_path).unwrap();
+    let buf_reader = std::io::BufReader::new(file);
+
+    // read for the custom cli interface starting with `##` comment
+    let arguments = buf_reader.lines().next().map(|x| x.unwrap()).map_or_else(
+        || Arguments {
+            command: Command::Check(Check {
+                input: Input {
+                    file: file_path.to_path_buf(),
+                    target_name: None,
+                    library_paths: Vec::new(),
+                    incremental_path: None,
+                    show_progress: false,
+                },
+            }),
+        },
+        |mut first_line| {
+            if first_line.starts_with("##") {
+                // replace the `{}` with the file path (if any) first_line =
+                first_line = first_line
+                    .replace("{}", file_path.to_string_lossy().as_ref());
+
+                first_line.strip_prefix("##").unwrap();
+
+                Arguments::parse_from(first_line.split_whitespace())
+            } else {
+                Arguments {
+                    command: Command::Check(Check {
+                        input: Input {
+                            file: file_path.to_path_buf(),
+                            target_name: None,
+                            library_paths: Vec::new(),
+                            incremental_path: None,
+                            show_progress: false,
+                        },
+                    }),
+                }
+            }
+        },
+    );
+
+    let _ = pernixc_driver::run(&arguments, &mut err_writer, &mut out_writer);
+
+    let stderr_string =
+        String::from_utf8(err_writer.into_inner()).unwrap().replace('\r', "");
+    let stout_string =
+        String::from_utf8(out_writer.into_inner()).unwrap().replace('\r', "");
+
+    let assert_string =
+        format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}");
+
+    assert_snapshot!(file_path.to_string_lossy().to_string(), assert_string);
+}

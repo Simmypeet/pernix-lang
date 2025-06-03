@@ -8,16 +8,17 @@ use std::{
 use dashmap::DashMap;
 use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
+use pernixc_handler::Storage;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_parser::abstract_tree::AbstractTree;
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap, Span};
 use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
-use rayon::iter::{ParallelBridge, ParallelIterator};
 
 /// An enumeration of all the errors that can occur during the module tree
 /// parsing.
-#[derive(Debug, EnumAsInner)]
+#[derive(Debug, EnumAsInner, derive_more::From)]
+#[allow(missing_docs)]
 pub enum Error {
     Lexical(pernixc_lexical::error::Error),
     Syntax(pernixc_parser::error::Error),
@@ -28,13 +29,16 @@ pub enum Error {
 
 /// The submodule of the root source file ends up pointing to the root source
 /// file itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RootSubmoduleConflict {
     /// The root source file.
     pub root: GlobalSourceID,
 
     /// The submodule that points to the root source file.
     pub submodule_span: Span<RelativeLocation>,
+
+    /// The path to the source file where the redefinition occurred.
+    pub load_path: PathBuf,
 }
 
 impl Report<()> for RootSubmoduleConflict {
@@ -46,7 +50,14 @@ impl Report<()> for RootSubmoduleConflict {
             message: "the submodule of the root source file ends up pointing \
                       to the root source file itself"
                 .to_string(),
-            span: Some((self.submodule_span.clone(), None)),
+            span: Some((
+                self.submodule_span,
+                Some(format!(
+                    "this ends up loading the file `{}`, which is the current \
+                     module itself",
+                    self.load_path.display()
+                )),
+            )),
             help_message: Some(
                 "consider renaming the submodule name to avoid this conflict"
                     .to_string(),
@@ -74,7 +85,7 @@ impl Report<()> for SourceFileLoadFail {
 
     fn report(&self, (): ()) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((self.submodule.clone(), None)),
+            span: Some((self.submodule, None)),
             message: "failed to load the source file for the submodule"
                 .to_string(),
             severity: Severity::Error,
@@ -89,7 +100,7 @@ impl Report<()> for SourceFileLoadFail {
 }
 
 /// A module with the given name already exists.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ModuleRedefinition {
     /// The span of the existing module.
     pub existing_module_span: Option<Span<RelativeLocation>>,
@@ -132,17 +143,33 @@ impl Report<()> for ModuleRedefinition {
     }
 }
 
-#[derive(Debug, Clone)]
+/// The result of parsing the module tree syntax.
+#[derive(Debug)]
 pub struct Parse {
+    /// The root of the module tree.
     pub tree: Tree,
-    pub token_trees_by_source_id: pernixc_lexical::tree::Tree,
+
+    /// All of the token trees that were parsed from the source files,
+    pub token_trees_by_source_id:
+        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
+
+    /// All of the errors that occurred during the parsing.
+    pub errors: Vec<Error>,
 }
 
+/// The tree strucutre of the compilation module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tree {
+    /// The signature of the module, if it exists.
     pub signature: Option<pernixc_syntax::item::module::Signature>,
+
+    /// The access modifier of the module, if it exists.
     pub access_modifier: Option<pernixc_syntax::AccessModifier>,
+
+    /// The content of the module, which contains the members and other
     pub content: pernixc_syntax::item::module::Content,
+
+    /// The submodules of the module, indexed by their names.
     pub submodules_by_name: HashMap<String, Self>,
 }
 
@@ -163,6 +190,8 @@ enum Input {
     },
 }
 
+/// A supertrait for all the handlers that are required to parse the module
+/// tree syntax.
 pub trait Handler:
     pernixc_handler::Handler<pernixc_parser::error::Error>
     + pernixc_handler::Handler<pernixc_lexical::error::Error>
@@ -183,11 +212,11 @@ impl<
 }
 
 impl Tree {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn parse_submodule(
         source_map: &pernixc_source_file::SourceMap,
         submodule_current_directory: &Path,
-        member: Passable<pernixc_syntax::item::module::Member>,
+        submodule: pernixc_syntax::item::module::Module,
         current_module_name: &str,
         is_root: bool,
         token_trees_by_source_id: &DashMap<
@@ -197,8 +226,6 @@ impl Tree {
         in_source_id: GlobalSourceID,
         handler: &dyn Handler,
     ) -> Option<(String, Self)> {
-        let line = member.into_line().ok()?;
-        let submodule = line.into_module().ok()?;
         let signature = submodule.signature()?;
 
         let ident_span_rel = signature.identifier()?.span;
@@ -234,7 +261,11 @@ impl Tree {
                 handler.receive(RootSubmoduleConflict {
                     root: ident_span_abs.source_id,
                     submodule_span: ident_span_rel,
+                    load_path: submodule_current_directory
+                        .join(&submodule_name)
+                        .with_extension("pnx"),
                 });
+                return None;
             }
 
             let mut source_file_path =
@@ -356,83 +387,89 @@ impl Tree {
             current_directory.join(&current_module_name)
         };
 
-        let module_trees_by_name = content
-            .members()
-            .par_bridge()
-            .filter_map(|item| {
-                Self::parse_submodule(
-                    source_map,
-                    &submodule_current_directory,
-                    item,
-                    &current_module_name,
-                    is_root,
-                    token_trees_by_source_id,
-                    source_file,
-                    handler,
-                )
-            })
-            .collect::<Vec<_>>();
+        std::thread::scope(|scope| {
+            let mut scope_handles = Vec::new();
 
-        let mut submodules_by_name = HashMap::<String, Self>::default();
+            for member in content.members() {
+                let Passable::Line(
+                    pernixc_syntax::item::module::Member::Module(submodule),
+                ) = member
+                else {
+                    continue;
+                };
 
-        for (name, module_tree) in module_trees_by_name {
-            match submodules_by_name.entry(name) {
-                Entry::Occupied(occupied_entry) => {
-                    handler.receive(ModuleRedefinition {
-                        existing_module_span: module_tree
-                            .signature
-                            .and_then(|x| x.inner_tree().span()),
-                        redefinition_submodule_span: occupied_entry
-                            .get()
-                            .signature
-                            .as_ref()
-                            .and_then(|x| x.inner_tree().span()),
-                    });
-                }
-                Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(module_tree);
+                scope_handles.push(scope.spawn(|| {
+                    Self::parse_submodule(
+                        source_map,
+                        &submodule_current_directory,
+                        submodule,
+                        &current_module_name,
+                        is_root,
+                        token_trees_by_source_id,
+                        source_file,
+                        handler,
+                    )
+                }));
+            }
+
+            let mut submodules_by_name = HashMap::<String, Self>::default();
+
+            for (name, module_tree) in
+                scope_handles.into_iter().filter_map(|x| x.join().unwrap())
+            {
+                match submodules_by_name.entry(name) {
+                    Entry::Occupied(occupied_entry) => {
+                        handler.receive(ModuleRedefinition {
+                            existing_module_span: occupied_entry
+                                .get()
+                                .signature
+                                .as_ref()
+                                .and_then(|x| x.inner_tree().span()),
+                            redefinition_submodule_span: module_tree
+                                .signature
+                                .and_then(|x| x.inner_tree().span()),
+                        });
+                    }
+                    Entry::Vacant(vacant_entry) => {
+                        vacant_entry.insert(module_tree);
+                    }
                 }
             }
-        }
 
-        Self { signature, access_modifier, content, submodules_by_name }
+            Self { signature, access_modifier, content, submodules_by_name }
+        })
     }
+}
 
-    /// Parses the whole module tree for the target program from the given root
-    /// source file.
-    pub fn parse(
-        source_id: GlobalSourceID,
-        source_map: &SourceMap,
-        handler: &dyn Handler,
-    ) -> Self {
-        let token_trees_by_source_id = DashMap::new();
+/// Parses the whole module tree for the target program from the given root
+/// source file.
+#[must_use]
+pub fn parse(source_id: GlobalSourceID, source_map: &SourceMap) -> Parse {
+    let token_trees_by_source_id = DashMap::new();
+    let storage = Storage::<Error>::default();
 
-        Self::parse_input(
+    let path = source_map
+        .get(source_id)
+        .unwrap()
+        .full_path()
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .to_path_buf();
+
+    Parse {
+        tree: Tree::parse_input(
             Input::File {
                 source_id,
                 access_modifier: None,
                 root: true,
                 signature: None,
             },
-            source_map
-                .get(source_id)
-                .unwrap()
-                .full_path()
-                .parent()
-                .unwrap_or_else(|| Path::new("")),
+            &path,
             source_map,
             &token_trees_by_source_id,
-            handler,
-        )
+            &storage,
+        ),
+        token_trees_by_source_id,
+        errors: storage.into_vec(),
     }
-}
-
-/// Parses the syntax of a module from its source ID and source map,
-/// returning the parsed syntax and the associated token tree.
-#[must_use]
-pub fn from_source_id(
-    source_id: GlobalSourceID,
-    source_map: &pernixc_source_file::SourceMap,
-) -> (Parse, pernixc_lexical::tree::Tree) {
-    todo!()
 }

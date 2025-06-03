@@ -1,0 +1,7 @@
+public module submodule
+public module submodule:
+    pass
+
+
+public function main():
+    pass

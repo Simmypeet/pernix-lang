@@ -1,0 +1,6 @@
+## check {} --target=main 
+
+public module main
+
+public function main():
+    pass

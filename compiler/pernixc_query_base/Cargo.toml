@@ -24,6 +24,7 @@ fnv = { workspace = true }
 postcard = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+derive_more = { workspace = true }
 
 [lints]
 workspace = true

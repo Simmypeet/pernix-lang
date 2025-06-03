@@ -6,9 +6,14 @@ use argument::Arguments;
 use clap::Args;
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
-    term::termcolor::{self, ColorChoice, StandardStream},
+    term::termcolor::WriteColor,
 };
-use pernixc_source_file::{ByteIndex, GlobalSourceID, SourceFile, SourceMap};
+use dashmap::DashMap;
+use pernixc_diagnostic::Report;
+use pernixc_lexical::tree::RelativeLocation;
+use pernixc_source_file::{
+    ByteIndex, GlobalSourceID, Location, SourceFile, SourceMap,
+};
 use pernixc_target::TargetID;
 use postcard::ser_flavors::io::WriteFlavor;
 use term::get_coonfig;
@@ -16,20 +21,19 @@ use term::get_coonfig;
 pub mod argument;
 pub mod term;
 
-struct ReportTerm {
+struct ReportTerm<'a> {
     config: codespan_reporting::term::Config,
-    stderr: termcolor::StandardStream,
+    err_writer: &'a mut dyn WriteColor,
 }
 
-impl ReportTerm {
+impl ReportTerm<'_> {
     fn report(
         &mut self,
         source_map: &mut SourceMap,
         diagnostic: &Diagnostic<GlobalSourceID>,
     ) {
-        let mut writer = self.stderr.lock();
         let _ = codespan_reporting::term::emit(
-            &mut writer,
+            self.err_writer,
             &self.config,
             source_map,
             diagnostic,
@@ -40,7 +44,7 @@ impl ReportTerm {
 fn pernix_diagnostic_to_codespan_diagnostic(
     diagostic: pernixc_diagnostic::Diagnostic<ByteIndex>,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
-    let result = match diagostic.severity {
+    let mut result = match diagostic.severity {
         pernixc_diagnostic::Severity::Error => {
             codespan_reporting::diagnostic::Diagnostic::error()
         }
@@ -51,26 +55,93 @@ fn pernix_diagnostic_to_codespan_diagnostic(
             codespan_reporting::diagnostic::Diagnostic::note()
         }
     }
-    .with_message(diagostic.message)
-    .with_labels(
-        std::iter::once({
-            let mut primary = Label::primary(
-                diagostic.span.source_id,
-                diagostic.span.range(),
-            );
+    .with_message(diagostic.message);
 
-            if let Some(label_message) = diagostic.label {
-                primary = primary.with_message(label_message);
-            }
+    if let Some((span, label)) = diagostic.span {
+        result = result.with_labels(
+            std::iter::once({
+                let mut primary = Label::primary(span.source_id, span.range());
 
-            primary
-        })
-        .chain(diagostic.related.into_iter().map(|x| {
-            Label::secondary(x.span.source_id, x.span.range())
-                .with_message(x.message)
-        }))
-        .collect(),
-    );
+                if let Some(label_message) = label {
+                    primary = primary.with_message(label_message);
+                }
+
+                primary
+            })
+            .chain(diagostic.related.into_iter().map(|x| {
+                Label::secondary(x.span.source_id, x.span.range())
+                    .with_message(x.message)
+            }))
+            .collect(),
+        );
+    }
+
+    if let Some(msg) = diagostic.help_message {
+        result.with_notes(vec![msg])
+    } else {
+        result
+    }
+}
+
+fn rel_pernix_diagnostic_to_codespan_diagnostic(
+    diagostic: pernixc_diagnostic::Diagnostic<RelativeLocation>,
+    source_map: &SourceMap,
+    token_trees_by_source_id: &DashMap<
+        GlobalSourceID,
+        pernixc_lexical::tree::Tree,
+    >,
+) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
+    let mut result = match diagostic.severity {
+        pernixc_diagnostic::Severity::Error => {
+            codespan_reporting::diagnostic::Diagnostic::error()
+        }
+        pernixc_diagnostic::Severity::Warning => {
+            codespan_reporting::diagnostic::Diagnostic::warning()
+        }
+        pernixc_diagnostic::Severity::Info => {
+            codespan_reporting::diagnostic::Diagnostic::note()
+        }
+    }
+    .with_message(diagostic.message);
+
+    if let Some((span, label)) = diagostic.span {
+        result = result.with_labels(
+            std::iter::once({
+                let token_tree = token_trees_by_source_id
+                    .get(&span.source_id)
+                    .expect("Source ID not found in token trees");
+
+                let source_file = source_map.get(span.source_id).unwrap();
+                let begin =
+                    span.start.to_absolute_index(&source_file, &token_tree);
+                let end = span.end.to_absolute_index(&source_file, &token_tree);
+
+                let mut primary = Label::primary(span.source_id, begin..end);
+
+                if let Some(label_message) = label {
+                    primary = primary.with_message(label_message);
+                }
+
+                primary
+            })
+            .chain(diagostic.related.into_iter().map(|x| {
+                let token_tree = token_trees_by_source_id
+                    .get(&x.span.source_id)
+                    .expect("Source ID not found in token trees");
+
+                let source_file = source_map.get(x.span.source_id).unwrap();
+
+                let begin =
+                    x.span.start.to_absolute_index(&source_file, &token_tree);
+                let end =
+                    x.span.end.to_absolute_index(&source_file, &token_tree);
+
+                Label::secondary(x.span.source_id, begin..end)
+                    .with_message(x.message)
+            }))
+            .collect(),
+        );
+    }
 
     if let Some(msg) = diagostic.help_message {
         result.with_notes(vec![msg])
@@ -155,11 +226,12 @@ pub struct Input {
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines)]
-pub fn run(argument: &Arguments) -> ExitCode {
-    let mut report_term = ReportTerm {
-        config: get_coonfig(),
-        stderr: StandardStream::stderr(ColorChoice::Always),
-    };
+pub fn run(
+    argument: &Arguments,
+    err_writer: &mut dyn WriteColor,
+    _out_writer: &mut dyn WriteColor,
+) -> ExitCode {
+    let mut report_term = ReportTerm { config: get_coonfig(), err_writer };
     let mut source_map = SourceMap::new();
 
     let Some(root_source_id) =
@@ -175,7 +247,9 @@ pub fn run(argument: &Arguments) -> ExitCode {
 
     let target_name =
         argument.command.input().target_name.clone().unwrap_or_else(|| {
-            source_map[root_source_id]
+            source_map
+                .get(root_source_id)
+                .unwrap()
                 .full_path()
                 .file_stem()
                 .unwrap()
@@ -220,6 +294,52 @@ pub fn run(argument: &Arguments) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    for diagnostic in database.module_parsing_errors {
+        let codespan_reporting = match diagnostic {
+            pernixc_query_base::module::Error::Lexical(error) => {
+                pernix_diagnostic_to_codespan_diagnostic(
+                    error.report(&source_map),
+                )
+            }
+
+            pernixc_query_base::module::Error::Syntax(error) => {
+                pernix_diagnostic_to_codespan_diagnostic(
+                    error.report(
+                        &database
+                            .token_trees_by_source_id
+                            .get(&error.source_id)
+                            .unwrap(),
+                    ),
+                )
+            }
+
+            pernixc_query_base::module::Error::RootSubmoduleConflict(
+                root_submodule_conflict,
+            ) => rel_pernix_diagnostic_to_codespan_diagnostic(
+                root_submodule_conflict.report(()),
+                &source_map,
+                &database.token_trees_by_source_id,
+            ),
+
+            pernixc_query_base::module::Error::SourceFileLoadFail(
+                source_file_load_fail,
+            ) => rel_pernix_diagnostic_to_codespan_diagnostic(
+                source_file_load_fail.report(()),
+                &source_map,
+                &database.token_trees_by_source_id,
+            ),
+            pernixc_query_base::module::Error::ModuleRedefinition(
+                module_redefinition,
+            ) => rel_pernix_diagnostic_to_codespan_diagnostic(
+                module_redefinition.report(()),
+                &source_map,
+                &database.token_trees_by_source_id,
+            ),
+        };
+
+        report_term.report(&mut source_map, &codespan_reporting);
+    }
 
     if let Some(incremental_path) =
         argument.command.input().incremental_path.as_ref()

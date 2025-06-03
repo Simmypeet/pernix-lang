@@ -36,6 +36,10 @@ impl<T: ?Sized> ID<T> {
 unsafe impl<T> Send for ID<T> {}
 unsafe impl<T> Sync for ID<T> {}
 
+impl<T> Default for ID<T> {
+    fn default() -> Self { Self { index: 0, _marker: PhantomData } }
+}
+
 impl<T> Debug for ID<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "ID({})", self.index)

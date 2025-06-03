@@ -1,8 +1,9 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
 
-use std::{collections::HashMap, io::Read, path::Path, sync::Arc};
+use std::{io::Read, path::Path};
 
+use dashmap::DashMap;
 use pernixc_query::database::Database;
 use pernixc_source_file::{GlobalSourceID, SourceMap};
 use serde::de::DeserializeSeed;
@@ -32,7 +33,10 @@ pub struct Start {
     /// A map of token trees by their source ID, which is used to later
     /// retrieve the absolute location
     pub token_trees_by_source_id:
-        HashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
+        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
+
+    /// The list of errors encountered while parsing the module tree.
+    pub module_parsing_errors: Vec<module::Error>,
 }
 
 fn read_file_buffer(
@@ -54,8 +58,6 @@ pub fn start_query_database<'l>(
     target_name: &str,
     incremental_path: Option<(&Path, &pernixc_query::serde::Serde)>,
 ) -> Result<Start, Error> {
-    let mut token_trees_by_source_id = HashMap::new();
-
     // load the incremental file (if any)
     let incremental_file = if let Some((incremental_path, _)) = incremental_path
     {
@@ -74,7 +76,7 @@ pub fn start_query_database<'l>(
     };
 
     // create a fresh database or load the incremental file
-    let mut database = incremental_file.map_or_else(
+    let database = incremental_file.map_or_else(
         || Ok(Database::default()),
         |mut file| {
             let buffer = read_file_buffer(&mut file)
@@ -93,7 +95,13 @@ pub fn start_query_database<'l>(
         },
     )?;
 
-    Ok(Start { database, token_trees_by_source_id })
+    let parse = module::parse(root_source_id, source_map);
+
+    Ok(Start {
+        database,
+        token_trees_by_source_id: parse.token_trees_by_source_id,
+        module_parsing_errors: parse.errors,
+    })
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -101,7 +109,5 @@ pub fn register_runtime(
     query_runtime: &mut pernixc_query::runtime::Runtime,
     serde: &mut pernixc_query::serde::Serde,
 ) {
-    todo!();
-
     serde.register::<symbol::KindKey>();
 }

@@ -76,11 +76,14 @@ impl Template {
             table.add_component(test_function_id, ElidedLifetimes::default())
         );
         assert!(table.add_component(test_function_id, WhereClause::default()));
-        assert!(table.add_component(test_function_id, FunctionSignature {
-            parameters: Arena::default(),
-            parameter_order: Vec::new(),
-            return_type: ty,
-        }));
+        assert!(table.add_component(
+            test_function_id,
+            FunctionSignature {
+                parameters: Arena::default(),
+                parameter_order: Vec::new(),
+                return_type: ty,
+            }
+        ));
         assert!(table.add_component(
             test_function_id,
             Parent(Some(test_root_module_id.id))

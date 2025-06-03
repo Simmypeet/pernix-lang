@@ -48,7 +48,9 @@ pub enum Expected<M: term::Model> {
 pub struct Model;
 
 impl<T> From<Never> for InferenceVariable<T> {
-    fn from(value: Never) -> Self { match value {} }
+    fn from(value: Never) -> Self {
+        match value {}
+    }
 }
 
 /// The newtype wrapper over the [`Erased`] type.
@@ -76,15 +78,21 @@ impl<M: term::Model<LifetimeInference = NewTypeErased>> From<NewTypeErased>
 }
 
 impl From<Erased> for NewTypeErased {
-    fn from(_: Erased) -> Self { Self }
+    fn from(_: Erased) -> Self {
+        Self
+    }
 }
 
 impl From<NewTypeErased> for Erased {
-    fn from(_: NewTypeErased) -> Self { Self }
+    fn from(_: NewTypeErased) -> Self {
+        Self
+    }
 }
 
 impl From<Never> for NewTypeErased {
-    fn from(value: Never) -> Self { match value {} }
+    fn from(value: Never) -> Self {
+        match value {}
+    }
 }
 
 impl term::Model for Model {
@@ -150,19 +158,25 @@ impl<T> std::fmt::Debug for InferenceVariable<T> {
 }
 
 impl<T> Clone for InferenceVariable<T> {
-    fn clone(&self) -> Self { *self }
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<T> Copy for InferenceVariable<T> {}
 
 impl<T> PartialEq for InferenceVariable<T> {
-    fn eq(&self, other: &Self) -> bool { self.id == other.id }
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 impl<T> Eq for InferenceVariable<T> {}
 
 impl<T> std::hash::Hash for InferenceVariable<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) { self.id.hash(state); }
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 impl<T> PartialOrd for InferenceVariable<T> {
@@ -172,7 +186,9 @@ impl<T> PartialOrd for InferenceVariable<T> {
 }
 
 impl<T> Ord for InferenceVariable<T> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.id.cmp(&other.id) }
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
 }
 
 impl<T> InferenceVariable<T> {
@@ -189,7 +205,9 @@ impl<T> InferenceVariable<T> {
 }
 
 impl<T> std::default::Default for InferenceVariable<T> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// A constraint used for restricting the possible value of an inference.
@@ -546,9 +564,13 @@ pub struct CombineConstraintError<C> {
 }
 
 impl<T> Constraint<T> for model::NoConstraint {
-    fn satisfies(&self, _: &T) -> bool { true }
+    fn satisfies(&self, _: &T) -> bool {
+        true
+    }
 
-    fn combine(&self, _: &Self) -> Option<Self> { Some(Self) }
+    fn combine(&self, _: &Self) -> Option<Self> {
+        Some(Self)
+    }
 }
 
 #[derive(
@@ -1193,11 +1215,15 @@ enum InferenceOrConstraint<ID, C> {
 struct IntermediaryModel;
 
 impl<ID, C> From<Never> for InferenceOrConstraint<ID, C> {
-    fn from(value: Never) -> Self { match value {} }
+    fn from(value: Never) -> Self {
+        match value {}
+    }
 }
 
 impl From<InferenceVariable<Lifetime<Model>>> for model::NoConstraint {
-    fn from(_: InferenceVariable<Lifetime<Model>>) -> Self { Self }
+    fn from(_: InferenceVariable<Lifetime<Model>>) -> Self {
+        Self
+    }
 }
 
 impl From<InferenceVariable<Type<Model>>>
@@ -1340,7 +1366,9 @@ impl Normalizer<IntermediaryModel> for ConstraintNormalizer<'_> {
 impl TryFrom<NewTypeErased> for model::NoConstraint {
     type Error = pernixc_type_system::Error;
 
-    fn try_from(_: NewTypeErased) -> Result<Self, Self::Error> { Ok(Self) }
+    fn try_from(_: NewTypeErased) -> Result<Self, Self::Error> {
+        Ok(Self)
+    }
 }
 
 impl TryFrom<InferenceOrConstraint<InferenceVariable<Type<Model>>, Self>>

@@ -614,12 +614,14 @@ impl SourceMap {
             }
         };
 
+        drop(finalize_hash);
         let hash = finalize_hash(hasher);
 
         // insert the source file into the map
-        self.source_files_by_id
+        assert!(self
+            .source_files_by_id
             .insert(target_id.make_global(hash), source)
-            .unwrap();
+            .is_none());
 
         hash
     }

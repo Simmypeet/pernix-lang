@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    # tidy-alphabetical-start
     "compiler/pernixc_lexical",
     "compiler/pernixc_test_input",
     "compiler/pernixc_arena",
@@ -17,7 +18,7 @@ members = [
     # "compiler/pernixc_memory_checker",
     # "compiler/pernixc_borrow_checker",
     # "compiler/pernixc_abort",
-    # "compiler/pernixc_test",
+    "compiler/pernixc_test",
     # "compiler/pernixc_codegen",
     # "compiler/pernixc_bind",
     # "compiler/pernixc_type_of",
@@ -31,6 +32,7 @@ members = [
     "compiler/pernixc_identifiable_derive",
     "compiler/pernixc_identifiable_derive_lib",
     # "lsp/pernix_server",
+    # tidy-alphabetical-end
 ]
 
 [workspace.dependencies]

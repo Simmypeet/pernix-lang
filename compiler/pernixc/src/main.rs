@@ -23,7 +23,20 @@ fn main() -> ExitCode {
     #[cfg(not(debug_assertions))]
     setup_panic();
 
-    pernixc_driver::run(&Arguments::parse())
+    let stderr = codespan_reporting::term::termcolor::StandardStream::stderr(
+        termcolor::ColorChoice::Always,
+    );
+    let stdout = codespan_reporting::term::termcolor::StandardStream::stdout(
+        termcolor::ColorChoice::Always,
+    );
+
+    let result = pernixc_driver::run(
+        &Arguments::parse(),
+        &mut stderr.lock(),
+        &mut stdout.lock(),
+    );
+
+    result
 }
 
 /// The struct capturing the information about an ICE (Internal Compiler Error)

@@ -27,6 +27,9 @@ pub struct Error {
 
     /// The cursor position where the error occurred.
     pub at: Cursor,
+
+    /// The source ID of the token tree where the error occurred.
+    pub source_id: GlobalSourceID,
 }
 
 fn found_node_string(
@@ -215,12 +218,12 @@ fn found_string(
     }
 }
 
-impl Report<(&pernixc_lexical::tree::Tree, GlobalSourceID)> for Error {
+impl Report<&pernixc_lexical::tree::Tree> for Error {
     type Location = ByteIndex;
 
     fn report(
         &self,
-        (token_tree, source_id): (&pernixc_lexical::tree::Tree, GlobalSourceID),
+        token_tree: &pernixc_lexical::tree::Tree,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         let expected_string = self
             .expecteds
@@ -230,7 +233,7 @@ impl Report<(&pernixc_lexical::tree::Tree, GlobalSourceID)> for Error {
             .join(", ");
 
         let (found_string, found_span) =
-            found_string(token_tree, source_id, &self.at);
+            found_string(token_tree, self.source_id, &self.at);
 
         let message =
             format!("unexpected {found_string}, expected {expected_string}");
