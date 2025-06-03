@@ -107,13 +107,22 @@ fn test(file_path: &Path) {
 
     let _ = pernixc_driver::run(&arguments, &mut err_writer, &mut out_writer);
 
-    let stderr_string =
-        String::from_utf8(err_writer.into_inner()).unwrap().replace('\r', "");
-    let stout_string =
-        String::from_utf8(out_writer.into_inner()).unwrap().replace('\r', "");
+    let stderr_string = String::from_utf8(err_writer.into_inner()).unwrap();
+    let stout_string = String::from_utf8(out_writer.into_inner()).unwrap();
+
+    let mut settings = insta::Settings::clone_current();
+
+    // Convert windows paths to Unix Paths.
+    settings.add_filter(r"\\\\?([\w\d.])", "/$1");
+    // Convert crlf to lf.
+    settings.add_filter(r"\r\n", "\n");
+    settings.set_snapshot_path(file_path.parent().unwrap());
+    settings.set_prepend_module_to_snapshot(false);
+    settings.remove_snapshot_suffix();
+    let _guard = settings.bind_to_scope();
 
     let assert_string =
         format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}");
 
-    assert_snapshot!(file_path.to_string_lossy().to_string(), assert_string);
+    assert_snapshot!("snapshot", assert_string);
 }
