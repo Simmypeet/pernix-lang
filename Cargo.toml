@@ -96,7 +96,7 @@ smallbox = { version = "0.8.6" }
 quote = { version = "1.0.28", features = ["proc-macro"] }
 proc-macro2 = { version = "1.0.28", features = ["proc-macro"] }
 syn = { version = "2.0.101", features = ["full"] }
-insta = { version = "1.43.0", features = ["ron"] }
+insta = { version = "1.43.0", features = ["ron", "filters"] }
 postcard = { version = "1.1.1", features = ["use-std"] }
 
 [patch.crates-io]
