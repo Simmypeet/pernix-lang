@@ -9,7 +9,7 @@ error: failed to load the source file for the submodule
 1 │ public module notFound
   │               ^^^^^^^^
   │
-  = failed to load the source file for the submodule at `module_tree/not_found/notFound.pnx`: No such file or directory (os error 2)
+  = failed to load the source file for the submodule at `module_tree/not_found/notFound.pnx`: general IO error (os error 2)
 
 
 

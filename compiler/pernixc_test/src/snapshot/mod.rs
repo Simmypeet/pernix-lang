@@ -20,23 +20,36 @@ fn main() {
 
     std::env::set_current_dir(&scandir).unwrap();
 
-    let mut paniced = false;
+    let mut passed = Vec::new();
+    let mut failed = Vec::new();
     visit_dirs(&scandir, &mut |file_path: &Path| {
+        let relative_to_scandir = file_path.strip_prefix(&scandir).unwrap();
         let result = std::panic::catch_unwind(|| {
-            let relative_to_scandir = file_path.strip_prefix(&scandir).unwrap();
-
             // for each file that has the `main.pnx` name, run the test
             test(relative_to_scandir);
         });
 
         if result.is_err() {
-            paniced = true;
+            failed.push(relative_to_scandir.to_path_buf());
+        } else {
+            passed.push(relative_to_scandir.to_path_buf());
         }
     })
     .unwrap();
 
-    if paniced {
-        panic!("Some tests panicked, check the output above for details.");
+    println!("Passed tests: {}", passed.len());
+    for file in &passed {
+        println!("  - {}", file.display());
+    }
+
+    if failed.is_empty() {
+        println!("All tests passed!");
+    } else {
+        println!("Failed tests: {}", failed.len());
+        for file in &failed {
+            println!("  - {}", file.display());
+        }
+        panic!("Some tests failed, see the output above for details.");
     }
 }
 
@@ -116,6 +129,12 @@ fn test(file_path: &Path) {
     settings.add_filter(r"\\\\?([\w\d.])", "/$1");
     // Convert crlf to lf.
     settings.add_filter(r"\r\n", "\n");
+    // Replace the IO error message with a generic one.
+    settings.add_filter(
+        r": [^(\r\n]*\(os error (\d+)\)",
+        ": general IO error (os error $1)",
+    );
+
     settings.set_snapshot_path(file_path.parent().unwrap());
     settings.set_prepend_module_to_snapshot(false);
     settings.remove_snapshot_suffix();
