@@ -23,6 +23,7 @@ insta = { workspace = true }
 codespan-reporting = { workspace = true }
 pernixc_driver = { path = "../pernixc_driver" }
 clap = { workspace = true }
+termcolor = { workspace = true }
 
 # [[test]]
 # name = "memory_checker"

@@ -1,8 +1,9 @@
 #![allow(missing_docs)]
 
 use std::{
-    io::BufRead,
+    io::{BufRead, Write},
     path::{Path, PathBuf},
+    process::ExitCode,
 };
 
 use clap::Parser;
@@ -11,10 +12,11 @@ use pernixc_driver::{
     argument::{Arguments, Check, Command},
     Input,
 };
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 #[test]
 #[allow(clippy::manual_assert)]
-fn main() {
+fn main() -> ExitCode {
     let scandir =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("snapshot");
 
@@ -22,8 +24,18 @@ fn main() {
 
     let mut passed = Vec::new();
     let mut failed = Vec::new();
+    let mut stdout = StandardStream::stdout(ColorChoice::Always);
+
     visit_dirs(&scandir, &mut |file_path: &Path| {
         let relative_to_scandir = file_path.strip_prefix(&scandir).unwrap();
+
+        // Print which test is currently running
+        stdout.set_color(ColorSpec::new().set_fg(Some(Color::Cyan))).unwrap();
+        write!(&mut stdout, "🧪 Running test: ").unwrap();
+        stdout.reset().unwrap();
+        writeln!(&mut stdout, "{}", relative_to_scandir.display()).unwrap();
+        stdout.flush().unwrap();
+
         let result = std::panic::catch_unwind(|| {
             // for each file that has the `main.pnx` name, run the test
             test(relative_to_scandir);
@@ -37,19 +49,64 @@ fn main() {
     })
     .unwrap();
 
-    println!("Passed tests: {}", passed.len());
+    let mut stdout = StandardStream::stdout(ColorChoice::Always);
+
+    // Print passed tests
+    stdout
+        .set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))
+        .unwrap();
+    write!(&mut stdout, "✓ Passed tests: ").unwrap();
+    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+    writeln!(&mut stdout, "{}", passed.len()).unwrap();
+    stdout.reset().unwrap();
+
     for file in &passed {
-        println!("  - {}", file.display());
+        stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+        write!(&mut stdout, "  ✓ ").unwrap();
+        stdout.reset().unwrap();
+        writeln!(&mut stdout, "{}", file.display()).unwrap();
     }
 
+    writeln!(&mut stdout).unwrap();
     if failed.is_empty() {
-        println!("All tests passed!");
+        stdout
+            .set_color(
+                ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true),
+            )
+            .unwrap();
+        writeln!(&mut stdout, "🎉 All tests passed!").unwrap();
+        stdout.reset().unwrap();
+        ExitCode::SUCCESS
     } else {
-        println!("Failed tests: {}", failed.len());
+        stdout
+            .set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))
+            .unwrap();
+        write!(&mut stdout, "✗ Failed tests: ").unwrap();
+        stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
+        writeln!(&mut stdout, "{}", failed.len()).unwrap();
+        stdout.reset().unwrap();
+
         for file in &failed {
-            println!("  - {}", file.display());
+            stdout
+                .set_color(ColorSpec::new().set_fg(Some(Color::Red)))
+                .unwrap();
+            write!(&mut stdout, "  ✗ ").unwrap();
+            stdout.reset().unwrap();
+            writeln!(&mut stdout, "{}", file.display()).unwrap();
         }
-        panic!("Some tests failed, see the output above for details.");
+
+        writeln!(&mut stdout).unwrap();
+        stdout
+            .set_color(ColorSpec::new().set_fg(Some(Color::Red)).set_bold(true))
+            .unwrap();
+        writeln!(
+            &mut stdout,
+            "❌ Some tests failed, see the output above for details."
+        )
+        .unwrap();
+        stdout.reset().unwrap();
+
+        ExitCode::FAILURE
     }
 }
 
