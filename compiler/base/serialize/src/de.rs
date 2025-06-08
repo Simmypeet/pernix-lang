@@ -173,8 +173,6 @@ pub trait StructAccess {
     ///
     /// * `next` - A closure that receives the field information and access
     ///
-    /// # Returns
-    ///
     /// Returns the result of the closure, or an error if deserialization fails.
     fn next_field<R>(
         &mut self,
@@ -185,6 +183,22 @@ pub trait StructAccess {
     ) -> Result<R, <Self::Parent as Deserializer>::Error>;
 }
 
+/// A trait for accessing a specific value during map deserialization.
+///
+/// This trait represents access to a single map value that can be deserialized
+/// on demand after the key has been examined.
+pub trait ValueAccess {
+    /// The parent deserializer type that created this value access.
+    type Parent: Deserializer;
+
+    /// Deserialize the value.
+    ///
+    /// Returns the deserialized value, or an error if deserialization fails.
+    fn deserialize<V: Deserialize<Self::Parent>>(
+        self,
+    ) -> Result<V, <Self::Parent as Deserializer>::Error>;
+}
+
 /// A trait for deserializing maps (dictionaries, hash tables, etc.).
 ///
 /// Maps are collections of key-value pairs where keys and values
@@ -193,14 +207,30 @@ pub trait MapAccess {
     /// The parent deserializer type that created this map access.
     type Parent: Deserializer;
 
-    /// Deserialize the next key-value pair in the map.
+    /// The type used for accessing individual values after key examination.
+    type ValueAccess: ValueAccess<Parent = Self::Parent>;
+
+    /// Process the next entry in the map.
     ///
-    /// Returns `Ok(Some((key, value)))` if there is a next entry,
-    /// `Ok(None)` if the map is finished, or an error if
-    /// deserialization fails.
-    fn next_entry<K: Deserialize<Self::Parent>, V: Deserialize<Self::Parent>>(
+    /// This method allows examining the next entry's key and accessing
+    /// its value through the provided closure. The closure receives
+    /// `Some((key, value_access))` if there is a next entry,
+    /// or `None` if all entries have been consumed.
+    ///
+    /// # Arguments
+    ///
+    /// * `next` - A closure that receives the key and value access
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn next_entry<K: Deserialize<Self::Parent>, R>(
         &mut self,
-    ) -> Result<Option<(K, V)>, <Self::Parent as Deserializer>::Error>;
+        next: impl FnOnce(
+            Option<(K, Self::ValueAccess)>,
+        )
+            -> Result<R, <Self::Parent as Deserializer>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
 
     /// Get the size hint for the remaining entries.
     ///
@@ -646,8 +676,20 @@ where
             BH::default(),
         );
 
-        while let Some((key, value)) = map_access.next_entry()? {
-            map.insert(key, value);
+        loop {
+            let done = map_access.next_entry(|entry| {
+                if let Some((key, value_access)) = entry {
+                    let value = value_access.deserialize()?;
+                    map.insert(key, value);
+                    Ok(false) // Continue
+                } else {
+                    Ok(true) // Done
+                }
+            })?;
+
+            if done {
+                break;
+            }
         }
 
         Ok(map)
@@ -664,8 +706,20 @@ where
         let mut map_access = deserializer.expect_map()?;
         let mut map = Self::new();
 
-        while let Some((key, value)) = map_access.next_entry()? {
-            map.insert(key, value);
+        loop {
+            let done = map_access.next_entry(|entry| {
+                if let Some((key, value_access)) = entry {
+                    let value = value_access.deserialize()?;
+                    map.insert(key, value);
+                    Ok(false) // Continue
+                } else {
+                    Ok(true) // Done
+                }
+            })?;
+
+            if done {
+                break;
+            }
         }
 
         Ok(map)
