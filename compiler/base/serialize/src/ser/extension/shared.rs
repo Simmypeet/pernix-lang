@@ -4,7 +4,7 @@
 //! that tracks memory pointers and serializes shared pointers only once
 //! on first encounter, with subsequent encounters serialized as references.
 
-use std::{collections::HashMap, rc::Rc, sync::Arc};
+use std::{collections::HashSet, rc::Rc, sync::Arc};
 
 use crate::ser::{Serialize, Serializer, StructVariant};
 
@@ -13,7 +13,7 @@ use crate::ser::{Serialize, Serializer, StructVariant};
 /// This trait allows serializers to track `Arc<T>` and `Rc<T>` pointers
 /// and avoid duplicate serialization of the same shared data.
 pub trait SharedPointerExtension {
-    /// Check if an Arc pointer has been seen before.
+    /// Register an Arc pointer and return whether it's the first encounter.
     ///
     /// # Arguments
     ///
@@ -21,22 +21,11 @@ pub trait SharedPointerExtension {
     ///
     /// # Returns
     ///
-    /// `Some(id)` if the pointer was seen before, `None` if it's the first
-    /// time.
-    fn check_arc_pointer(&mut self, ptr: *const ()) -> Option<usize>;
+    /// `true` if this is the first time the pointer is encountered,
+    /// `false` if it has been seen before.
+    fn register_arc_pointer(&mut self, ptr: *const ()) -> bool;
 
-    /// Register a new Arc pointer and return its unique ID.
-    ///
-    /// # Arguments
-    ///
-    /// * `ptr` - Raw pointer to the Arc's data
-    ///
-    /// # Returns
-    ///
-    /// Unique ID assigned to this pointer.
-    fn register_arc_pointer(&mut self, ptr: *const ()) -> usize;
-
-    /// Check if an Rc pointer has been seen before.
+    /// Register an Rc pointer and return whether it's the first encounter.
     ///
     /// # Arguments
     ///
@@ -44,59 +33,29 @@ pub trait SharedPointerExtension {
     ///
     /// # Returns
     ///
-    /// `Some(id)` if the pointer was seen before, `None` if it's the first
-    /// time.
-    fn check_rc_pointer(&mut self, ptr: *const ()) -> Option<usize>;
-
-    /// Register a new Rc pointer and return its unique ID.
-    ///
-    /// # Arguments
-    ///
-    /// * `ptr` - Raw pointer to the Rc's data
-    ///
-    /// # Returns
-    ///
-    /// Unique ID assigned to this pointer.
-    fn register_rc_pointer(&mut self, ptr: *const ()) -> usize;
+    /// `true` if this is the first time the pointer is encountered,
+    /// `false` if it has been seen before.
+    fn register_rc_pointer(&mut self, ptr: *const ()) -> bool;
 }
 
-/// Default implementation of shared pointer tracking using hash maps.
+/// Default implementation of shared pointer tracking using hash sets.
 ///
-/// This struct maintains separate tracking for Arc and Rc pointers,
-/// assigning unique sequential IDs to each new pointer encountered.
+/// This struct maintains separate tracking for Arc and Rc pointers.
 #[derive(Debug, Default)]
 pub struct DefaultSharedPointerTracker {
-    /// Map from Arc pointer addresses to their assigned IDs
-    arc_pointers: HashMap<*const (), usize>,
-    /// Map from Rc pointer addresses to their assigned IDs
-    rc_pointers: HashMap<*const (), usize>,
-    /// Next ID to assign to an Arc pointer
-    next_arc_id: usize,
-    /// Next ID to assign to an Rc pointer
-    next_rc_id: usize,
+    /// Set of Arc pointer addresses that have been seen
+    arc_pointers: HashSet<*const ()>,
+    /// Set of Rc pointer addresses that have been seen
+    rc_pointers: HashSet<*const ()>,
 }
 
 impl SharedPointerExtension for DefaultSharedPointerTracker {
-    fn check_arc_pointer(&mut self, ptr: *const ()) -> Option<usize> {
-        self.arc_pointers.get(&ptr).copied()
+    fn register_arc_pointer(&mut self, ptr: *const ()) -> bool {
+        self.arc_pointers.insert(ptr)
     }
 
-    fn register_arc_pointer(&mut self, ptr: *const ()) -> usize {
-        let id = self.next_arc_id;
-        self.arc_pointers.insert(ptr, id);
-        self.next_arc_id += 1;
-        id
-    }
-
-    fn check_rc_pointer(&mut self, ptr: *const ()) -> Option<usize> {
-        self.rc_pointers.get(&ptr).copied()
-    }
-
-    fn register_rc_pointer(&mut self, ptr: *const ()) -> usize {
-        let id = self.next_rc_id;
-        self.rc_pointers.insert(ptr, id);
-        self.next_rc_id += 1;
-        id
+    fn register_rc_pointer(&mut self, ptr: *const ()) -> bool {
+        self.rc_pointers.insert(ptr)
     }
 }
 
@@ -110,20 +69,8 @@ where
         let ptr = Self::as_ptr(self).cast::<()>();
         let extension = serializer.extension();
 
-        if extension.check_arc_pointer(ptr).is_some() {
-            // Subsequent encounter - serialize as reference
-            serializer.emit_struct_variant(
-                "Arc",
-                "Reference",
-                1,
-                1,
-                |struct_variant| {
-                    struct_variant.serialize_field("pointer", &(ptr as usize))
-                },
-            )
-        } else {
-            // First encounter - register and serialize full value
-            extension.register_arc_pointer(ptr);
+        if extension.register_arc_pointer(ptr) {
+            // First encounter - serialize full value
             serializer.emit_struct_variant(
                 "Arc",
                 "Owned",
@@ -133,6 +80,17 @@ where
                     struct_variant
                         .serialize_field("pointer", &(ptr as usize))?;
                     struct_variant.serialize_field("value", &**self)
+                },
+            )
+        } else {
+            // Subsequent encounter - serialize as reference
+            serializer.emit_struct_variant(
+                "Arc",
+                "Reference",
+                1,
+                1,
+                |struct_variant| {
+                    struct_variant.serialize_field("pointer", &(ptr as usize))
                 },
             )
         }
@@ -149,20 +107,8 @@ where
         let ptr = Self::as_ptr(self).cast::<()>();
         let extension = serializer.extension();
 
-        if extension.check_rc_pointer(ptr).is_some() {
-            // Subsequent encounter - serialize as reference
-            serializer.emit_struct_variant(
-                "Rc",
-                "Reference",
-                1,
-                1,
-                |struct_variant| {
-                    struct_variant.serialize_field("pointer", &(ptr as usize))
-                },
-            )
-        } else {
-            // First encounter - register and serialize full value
-            extension.register_rc_pointer(ptr);
+        if extension.register_rc_pointer(ptr) {
+            // First encounter - serialize full value
             serializer.emit_struct_variant(
                 "Rc",
                 "Owned",
@@ -172,6 +118,17 @@ where
                     struct_variant
                         .serialize_field("pointer", &(ptr as usize))?;
                     struct_variant.serialize_field("value", &**self)
+                },
+            )
+        } else {
+            // Subsequent encounter - serialize as reference
+            serializer.emit_struct_variant(
+                "Rc",
+                "Reference",
+                1,
+                1,
+                |struct_variant| {
+                    struct_variant.serialize_field("pointer", &(ptr as usize))
                 },
             )
         }
@@ -189,22 +146,16 @@ mod tests {
         let ptr1 = 0x1000 as *const ();
         let ptr2 = 0x2000 as *const ();
 
-        // First encounter should return None and register
-        assert_eq!(tracker.check_arc_pointer(ptr1), None);
-        let id1 = tracker.register_arc_pointer(ptr1);
-        assert_eq!(id1, 0);
+        // First encounter should return true (is first time)
+        assert!(tracker.register_arc_pointer(ptr1));
 
-        // Second encounter should return the ID
-        assert_eq!(tracker.check_arc_pointer(ptr1), Some(0));
+        // Second encounter should return false (not first time)
+        assert!(!tracker.register_arc_pointer(ptr1));
 
-        // Different pointer should get different ID
-        assert_eq!(tracker.check_arc_pointer(ptr2), None);
-        let id2 = tracker.register_arc_pointer(ptr2);
-        assert_eq!(id2, 1);
+        // Different pointer should return true (is first time)
+        assert!(tracker.register_arc_pointer(ptr2));
 
         // Rc pointers should be tracked separately
-        assert_eq!(tracker.check_rc_pointer(ptr1), None);
-        let rc_id1 = tracker.register_rc_pointer(ptr1);
-        assert_eq!(rc_id1, 0);
+        assert!(tracker.register_rc_pointer(ptr1));
     }
 }
