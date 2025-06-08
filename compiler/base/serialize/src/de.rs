@@ -1,26 +1,28 @@
 //! Custom deserialization framework for the Pernix compiler.
 //!
 //! This module provides a custom deserialization framework similar to standard
-//! serde, but simplified without a visitor pattern and with an extension 
-//! mechanism for easier customization and state passing. The framework is 
-//! designed to handle complex deserialization scenarios where additional 
+//! serde, but simplified without a visitor pattern and with an extension
+//! mechanism for easier customization and state passing. The framework is
+//! designed to handle complex deserialization scenarios where additional
 //! context or state needs to be maintained during deserialization.
 //!
 //! ## Key Traits
 //!
 //! - [`Deserializer`] - The main trait for types that can deserialize Rust data
 //!   structures
-//! - [`Deserialize`] - Trait for types that can be deserialized using a deserializer
-//! - [`SeqAccess`], [`TupleAccess`], [`TupleStructAccess`], [`StructAccess`], [`MapAccess`] - Compound data
-//!   structure deserializers
-//! - [`TupleVariantAccess`], [`StructVariantAccess`] - Enum variant deserializers
+//! - [`Deserialize`] - Trait for types that can be deserialized using a
+//!   deserializer
+//! - [`SeqAccess`], [`TupleAccess`], [`TupleStructAccess`], [`StructAccess`],
+//!   [`MapAccess`] - Compound data structure deserializers
+//! - [`TupleVariantAccess`], [`StructVariantAccess`] - Enum variant
+//!   deserializers
 //!
 //! ## Extension Mechanism
 //!
 //! The [`Deserializer::Extension`] associated type allows for specialized
-//! deserialization behavior. Extensions can maintain state across deserialization
-//! operations and provide custom handling for specific types like shared
-//! pointers.
+//! deserialization behavior. Extensions can maintain state across
+//! deserialization operations and provide custom handling for specific types
+//! like shared pointers.
 
 /// Extension mechanism for custom deserialization behavior.
 pub mod extension;
@@ -40,15 +42,11 @@ pub enum Identifier {
 impl Identifier {
     /// Creates an identifier from an index.
     #[inline]
-    pub const fn from_index(index: u32) -> Self {
-        Self::Index(index)
-    }
+    pub const fn from_index(index: u32) -> Self { Self::Index(index) }
 
     /// Creates an identifier from a name.
     #[inline]
-    pub const fn from_name(name: &'static str) -> Self {
-        Self::Name(name)
-    }
+    pub const fn from_name(name: &'static str) -> Self { Self::Name(name) }
 
     /// Returns the index if this identifier is an index.
     #[inline]
@@ -70,15 +68,11 @@ impl Identifier {
 }
 
 impl From<u32> for Identifier {
-    fn from(index: u32) -> Self {
-        Self::Index(index)
-    }
+    fn from(index: u32) -> Self { Self::Index(index) }
 }
 
 impl From<&'static str> for Identifier {
-    fn from(name: &'static str) -> Self {
-        Self::Name(name)
-    }
+    fn from(name: &'static str) -> Self { Self::Name(name) }
 }
 
 /// A trait for deserializing sequences (arrays, vectors, etc.).
@@ -117,7 +111,8 @@ pub trait TupleAccess {
 
     /// Deserialize the next element in the tuple.
     ///
-    /// Returns `Ok(element)` if successful, or an error if deserialization fails.
+    /// Returns `Ok(element)` if successful, or an error if deserialization
+    /// fails.
     fn next_element<T: Deserialize<Self::Parent>>(
         &mut self,
     ) -> Result<T, <Self::Parent as Deserializer>::Error>;
@@ -139,6 +134,23 @@ pub trait TupleStructAccess {
     ) -> Result<T, <Self::Parent as Deserializer>::Error>;
 }
 
+/// A trait for accessing a specific field during struct deserialization.
+///
+/// This trait represents access to a single field that can be deserialized
+/// on demand.
+pub trait FieldAccess {
+    /// The parent deserializer type that created this field access.
+    type Parent: Deserializer;
+
+    /// Deserialize the field value.
+    ///
+    /// Returns the deserialized field value, or an error if deserialization
+    /// fails.
+    fn deserialize<T: Deserialize<Self::Parent>>(
+        self,
+    ) -> Result<T, <Self::Parent as Deserializer>::Error>;
+}
+
 /// A trait for deserializing structs with named fields.
 ///
 /// This trait handles the deserialization of structures where each field
@@ -147,24 +159,30 @@ pub trait StructAccess {
     /// The parent deserializer type that created this struct access.
     type Parent: Deserializer;
 
-    /// Deserialize the next field in the struct.
-    ///
-    /// Returns `Ok(Some((field_identifier, field_value)))` if there is a next field,
-    /// `Ok(None)` if all fields have been read, or an error if
-    /// deserialization fails.
-    fn next_field<T: Deserialize<Self::Parent>>(
-        &mut self,
-    ) -> Result<Option<(Identifier, T)>, <Self::Parent as Deserializer>::Error>;
+    /// The type used for accessing individual fields.
+    type FieldAccess: FieldAccess<Parent = Self::Parent>;
 
-    /// Deserialize a field by identifier.
+    /// Process the next field in the struct.
     ///
-    /// Returns `Ok(Some(field_value))` if the field exists,
-    /// `Ok(None)` if the field doesn't exist, or an error if
-    /// deserialization fails.
-    fn field<T: Deserialize<Self::Parent>>(
+    /// This method allows examining the next field's identifier and accessing
+    /// its value through the provided closure. The closure receives
+    /// `Some((field_identifier, field_access))` if there is a next field,
+    /// or `None` if all fields have been consumed.
+    ///
+    /// # Arguments
+    ///
+    /// * `next` - A closure that receives the field information and access
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn next_field<R>(
         &mut self,
-        identifier: Identifier,
-    ) -> Result<Option<T>, <Self::Parent as Deserializer>::Error>;
+        next: impl FnOnce(
+            Option<(Identifier, Self::FieldAccess)>,
+        )
+            -> Result<R, <Self::Parent as Deserializer>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
 }
 
 /// A trait for deserializing maps (dictionaries, hash tables, etc.).
@@ -215,28 +233,34 @@ pub trait StructVariantAccess {
     /// The parent deserializer type that created this struct variant access.
     type Parent: Deserializer;
 
-    /// Deserialize the next field in the struct variant.
-    ///
-    /// Returns `Ok(Some((field_identifier, field_value)))` if there is a next field,
-    /// `Ok(None)` if all fields have been read, or an error if
-    /// deserialization fails.
-    fn next_field<T: Deserialize<Self::Parent>>(
-        &mut self,
-    ) -> Result<Option<(Identifier, T)>, <Self::Parent as Deserializer>::Error>;
+    /// The type used for accessing individual fields.
+    type FieldAccess: FieldAccess<Parent = Self::Parent>;
 
-    /// Deserialize a field by identifier.
+    /// Process the next field in the struct variant.
     ///
-    /// Returns `Ok(Some(field_value))` if the field exists,
-    /// `Ok(None)` if the field doesn't exist, or an error if
-    /// deserialization fails.
-    fn field<T: Deserialize<Self::Parent>>(
+    /// This method allows examining the next field's identifier and accessing
+    /// its value through the provided closure. The closure receives
+    /// `Some((field_identifier, field_access))` if there is a next field,
+    /// or `None` if all fields have been consumed.
+    ///
+    /// # Arguments
+    ///
+    /// * `next` - A closure that receives the field information and access
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn next_field<R>(
         &mut self,
-        identifier: Identifier,
-    ) -> Result<Option<T>, <Self::Parent as Deserializer>::Error>;
+        next: impl FnOnce(
+            Option<(Identifier, Self::FieldAccess)>,
+        )
+            -> Result<R, <Self::Parent as Deserializer>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
 }
 
-/// The main deserializer trait that defines the interface for deserializing Rust
-/// data structures.
+/// The main deserializer trait that defines the interface for deserializing
+/// Rust data structures.
 ///
 /// This trait provides methods for deserializing primitive types, collections,
 /// and complex data structures. It includes an extension mechanism for
@@ -248,8 +272,8 @@ pub trait Deserializer {
     /// An extension object that can be used as an additional context for
     /// specialized deserialization of certain types.
     ///
-    /// The [`Deserialize`] type can add more trait bounds to this type to access
-    /// additional extended functionality.
+    /// The [`Deserialize`] type can add more trait bounds to this type to
+    /// access additional extended functionality.
     type Extension;
 
     /// The type used for deserializing sequences.
@@ -328,7 +352,9 @@ pub trait Deserializer {
     ///
     /// Returns `Ok(Some(value))` if the option contains a value,
     /// `Ok(None)` if the option is None, or an error if deserialization fails.
-    fn expect_option<T: Deserialize<Self>>(&mut self) -> Result<Option<T>, Self::Error>;
+    fn expect_option<T: Deserialize<Self>>(
+        &mut self,
+    ) -> Result<Option<T>, Self::Error>;
 
     /// Get a mutable reference to the extension object for customized
     /// deserialization.
@@ -348,7 +374,10 @@ pub trait Deserializer {
     ///
     /// Returns a `TupleAccess` object that can be used to deserialize
     /// the tuple elements.
-    fn expect_tuple(&mut self, len: usize) -> Result<Self::TupleAccess, Self::Error>;
+    fn expect_tuple(
+        &mut self,
+        len: usize,
+    ) -> Result<Self::TupleAccess, Self::Error>;
 
     /// Deserialize a tuple struct.
     ///
@@ -370,7 +399,10 @@ pub trait Deserializer {
     /// # Arguments
     ///
     /// * `name` - The name of the unit struct type
-    fn expect_unit_struct(&mut self, name: &'static str) -> Result<(), Self::Error>;
+    fn expect_unit_struct(
+        &mut self,
+        name: &'static str,
+    ) -> Result<(), Self::Error>;
 
     /// Deserialize a struct.
     ///
@@ -425,7 +457,10 @@ pub trait Deserializer {
     ///
     /// Returns a `TupleVariantAccess` object that can be used to deserialize
     /// the variant fields.
-    fn expect_tuple_variant(&mut self, len: usize) -> Result<Self::TupleVariantAccess, Self::Error>;
+    fn expect_tuple_variant(
+        &mut self,
+        len: usize,
+    ) -> Result<Self::TupleVariantAccess, Self::Error>;
 
     /// Deserialize a struct variant (enum variant with named fields).
     ///
@@ -557,11 +592,11 @@ where
         let mut seq = deserializer.expect_seq()?;
         let (lower, upper) = seq.size_hint();
         let mut vec = Self::with_capacity(upper.unwrap_or(lower));
-        
+
         while let Some(element) = seq.next_element()? {
             vec.push(element);
         }
-        
+
         Ok(vec)
     }
 }
@@ -574,19 +609,20 @@ where
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         let mut seq = deserializer.expect_seq()?;
         let mut vec = Vec::with_capacity(N);
-        
+
         // Collect exactly N elements
         for _ in 0..N {
             match seq.next_element()? {
                 Some(element) => vec.push(element),
                 None => {
-                    // If we can't get enough elements, we'll just use what we have
-                    // and pad with default values or handle gracefully based on context
+                    // If we can't get enough elements, we'll just use what we
+                    // have and pad with default values or
+                    // handle gracefully based on context
                     break;
                 }
             }
         }
-        
+
         // Try to convert Vec to array if we have exactly N elements
         vec.try_into().map_err(|_| {
             // This shouldn't happen if we collected exactly N elements
@@ -605,12 +641,15 @@ where
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         let mut map_access = deserializer.expect_map()?;
         let (lower, upper) = map_access.size_hint();
-        let mut map = Self::with_capacity_and_hasher(upper.unwrap_or(lower), BH::default());
-        
+        let mut map = Self::with_capacity_and_hasher(
+            upper.unwrap_or(lower),
+            BH::default(),
+        );
+
         while let Some((key, value)) = map_access.next_entry()? {
             map.insert(key, value);
         }
-        
+
         Ok(map)
     }
 }
@@ -624,11 +663,11 @@ where
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         let mut map_access = deserializer.expect_map()?;
         let mut map = Self::new();
-        
+
         while let Some((key, value)) = map_access.next_entry()? {
             map.insert(key, value);
         }
-        
+
         Ok(map)
     }
 }
@@ -642,12 +681,15 @@ where
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         let mut seq = deserializer.expect_seq()?;
         let (lower, upper) = seq.size_hint();
-        let mut hash_set = Self::with_capacity_and_hasher(upper.unwrap_or(lower), BH::default());
-        
+        let mut hash_set = Self::with_capacity_and_hasher(
+            upper.unwrap_or(lower),
+            BH::default(),
+        );
+
         while let Some(element) = seq.next_element()? {
             hash_set.insert(element);
         }
-        
+
         Ok(hash_set)
     }
 }
@@ -660,11 +702,11 @@ where
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         let mut seq = deserializer.expect_seq()?;
         let mut btree_set = Self::new();
-        
+
         while let Some(element) = seq.next_element()? {
             btree_set.insert(element);
         }
-        
+
         Ok(btree_set)
     }
 }
@@ -678,11 +720,11 @@ where
         let mut seq = deserializer.expect_seq()?;
         let (lower, upper) = seq.size_hint();
         let mut deque = Self::with_capacity(upper.unwrap_or(lower));
-        
+
         while let Some(element) = seq.next_element()? {
             deque.push_back(element);
         }
-        
+
         Ok(deque)
     }
 }
@@ -695,11 +737,11 @@ where
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         let mut seq = deserializer.expect_seq()?;
         let mut list = Self::new();
-        
+
         while let Some(element) = seq.next_element()? {
             list.push_back(element);
         }
-        
+
         Ok(list)
     }
 }
@@ -725,12 +767,10 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        const VARIANTS: &[Identifier] = &[
-            Identifier::Name("Ok"),
-            Identifier::Name("Err")
-        ];
+        const VARIANTS: &[Identifier] =
+            &[Identifier::Name("Ok"), Identifier::Name("Err")];
         let variant_id = deserializer.expect_enum("Result", VARIANTS)?;
-        
+
         match variant_id {
             Identifier::Name("Ok") | Identifier::Index(0) => {
                 let mut tuple = deserializer.expect_tuple_variant(1)?;
