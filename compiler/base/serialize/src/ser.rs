@@ -793,7 +793,7 @@ where
         match self {
             Ok(value) => {
                 serializer.emit_tuple_variant("Result", "Ok", 0, 1, |variant| {
-                    variant.serialize_field(value)
+                    TupleVariant::serialize_field(variant, value)
                 })
             }
             Err(error) => serializer.emit_tuple_variant(
@@ -801,7 +801,7 @@ where
                 "Err",
                 1,
                 1,
-                |variant| variant.serialize_field(error),
+                |variant| TupleVariant::serialize_field(variant, error),
             ),
         }
     }
