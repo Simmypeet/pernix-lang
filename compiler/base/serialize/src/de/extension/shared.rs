@@ -8,7 +8,8 @@ use std::{collections::HashMap, rc::Rc, sync::Arc};
 
 use crate::de::{Deserialize, Deserializer};
 
-/// Extension trait for deserializers that support shared pointer reconstruction.
+/// Extension trait for deserializers that support shared pointer
+/// reconstruction.
 ///
 /// This trait allows deserializers to track `Arc<T>` and `Rc<T>` pointers
 /// and reconstruct shared references when the same pointer address is
@@ -96,29 +97,35 @@ where
     T: Deserialize<D> + 'static,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let (variant, index) = deserializer.expect_enum("Arc", &["Owned", "Reference"])?;
-        
+        let (variant, index) =
+            deserializer.expect_enum("Arc", &["Owned", "Reference"])?;
+
         match (variant, index) {
             ("Owned", 0) => {
-                let mut struct_access = deserializer.expect_struct_variant(&["pointer", "value"])?;
-                
+                let mut struct_access = deserializer
+                    .expect_struct_variant(&["pointer", "value"])?;
+
                 // Get the pointer address
-                let pointer: usize = struct_access.field("pointer")?.unwrap_or_default();
-                
+                let pointer: usize =
+                    struct_access.field("pointer")?.unwrap_or_default();
+
                 // Deserialize the value
-                let value: T = struct_access.field("value")?.unwrap_or_else(|| {
-                    // This needs proper error handling
-                    panic!("Missing value field in Arc::Owned variant")
-                });
-                
+                let value: T =
+                    struct_access.field("value")?.unwrap_or_else(|| {
+                        // This needs proper error handling
+                        panic!("Missing value field in Arc::Owned variant")
+                    });
+
                 let arc = Arc::new(value);
                 deserializer.extension().store_arc(pointer, arc.clone());
                 Ok(arc)
             }
             ("Reference", 1) => {
-                let mut struct_access = deserializer.expect_struct_variant(&["pointer"])?;
-                let pointer: usize = struct_access.field("pointer")?.unwrap_or_default();
-                
+                let mut struct_access =
+                    deserializer.expect_struct_variant(&["pointer"])?;
+                let pointer: usize =
+                    struct_access.field("pointer")?.unwrap_or_default();
+
                 deserializer.extension().get_arc(pointer).ok_or_else(|| {
                     // This needs proper error handling
                     panic!("Referenced Arc pointer not found: {}", pointer)
@@ -139,29 +146,35 @@ where
     T: Deserialize<D> + 'static,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let (variant, index) = deserializer.expect_enum("Rc", &["Owned", "Reference"])?;
-        
+        let (variant, index) =
+            deserializer.expect_enum("Rc", &["Owned", "Reference"])?;
+
         match (variant, index) {
             ("Owned", 0) => {
-                let mut struct_access = deserializer.expect_struct_variant(&["pointer", "value"])?;
-                
+                let mut struct_access = deserializer
+                    .expect_struct_variant(&["pointer", "value"])?;
+
                 // Get the pointer address
-                let pointer: usize = struct_access.field("pointer")?.unwrap_or_default();
-                
+                let pointer: usize =
+                    struct_access.field("pointer")?.unwrap_or_default();
+
                 // Deserialize the value
-                let value: T = struct_access.field("value")?.unwrap_or_else(|| {
-                    // This needs proper error handling
-                    panic!("Missing value field in Rc::Owned variant")
-                });
-                
+                let value: T =
+                    struct_access.field("value")?.unwrap_or_else(|| {
+                        // This needs proper error handling
+                        panic!("Missing value field in Rc::Owned variant")
+                    });
+
                 let rc = Rc::new(value);
                 deserializer.extension().store_rc(pointer, rc.clone());
                 Ok(rc)
             }
             ("Reference", 1) => {
-                let mut struct_access = deserializer.expect_struct_variant(&["pointer"])?;
-                let pointer: usize = struct_access.field("pointer")?.unwrap_or_default();
-                
+                let mut struct_access =
+                    deserializer.expect_struct_variant(&["pointer"])?;
+                let pointer: usize =
+                    struct_access.field("pointer")?.unwrap_or_default();
+
                 deserializer.extension().get_rc(pointer).ok_or_else(|| {
                     // This needs proper error handling
                     panic!("Referenced Rc pointer not found: {}", pointer)

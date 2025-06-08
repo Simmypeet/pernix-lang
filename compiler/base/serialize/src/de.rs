@@ -24,14 +24,14 @@
 //! deserialization operations and provide custom handling for specific types
 //! like shared pointers.
 
-/// Extension mechanism for custom deserialization behavior.
-pub mod extension;
+// Extension mechanism for custom deserialization behavior.
+// pub mod extension;
 
 /// An identifier for fields or enum variants.
 ///
 /// This enum allows identification by either a numeric index or a string name,
 /// providing flexibility for different serialization formats.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Identifier {
     /// Identification by numeric index (0-based).
     Index(u32),
@@ -42,14 +42,17 @@ pub enum Identifier {
 impl Identifier {
     /// Creates an identifier from an index.
     #[inline]
+    #[must_use]
     pub const fn from_index(index: u32) -> Self { Self::Index(index) }
 
     /// Creates an identifier from a name.
     #[inline]
+    #[must_use]
     pub const fn from_name(name: &'static str) -> Self { Self::Name(name) }
 
     /// Returns the index if this identifier is an index.
     #[inline]
+    #[must_use]
     pub const fn as_index(&self) -> Option<u32> {
         match self {
             Self::Index(index) => Some(*index),
@@ -59,6 +62,7 @@ impl Identifier {
 
     /// Returns the name if this identifier is a name.
     #[inline]
+    #[must_use]
     pub const fn as_name(&self) -> Option<&'static str> {
         match self {
             Self::Index(_) => None,
@@ -160,7 +164,7 @@ pub trait StructAccess {
     type Parent: Deserializer;
 
     /// The type used for accessing individual fields.
-    type FieldAccess: FieldAccess<Parent = Self::Parent>;
+    type FieldAccess<'s>: FieldAccess<Parent = Self::Parent>;
 
     /// Process the next field in the struct.
     ///
@@ -174,10 +178,10 @@ pub trait StructAccess {
     /// * `next` - A closure that receives the field information and access
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<R>(
-        &mut self,
+    fn next_field<'s, R>(
+        &'s mut self,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess)>,
+            Option<(Identifier, Self::FieldAccess<'s>)>,
         )
             -> Result<R, <Self::Parent as Deserializer>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer>::Error>;
@@ -208,7 +212,7 @@ pub trait MapAccess {
     type Parent: Deserializer;
 
     /// The type used for accessing individual values after key examination.
-    type ValueAccess: ValueAccess<Parent = Self::Parent>;
+    type ValueAccess<'s>: ValueAccess<Parent = Self::Parent>;
 
     /// Process the next entry in the map.
     ///
@@ -224,10 +228,10 @@ pub trait MapAccess {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_entry<K: Deserialize<Self::Parent>, R>(
-        &mut self,
+    fn next_entry<'s, K: Deserialize<Self::Parent>, R>(
+        &'s mut self,
         next: impl FnOnce(
-            Option<(K, Self::ValueAccess)>,
+            Option<(K, Self::ValueAccess<'s>)>,
         )
             -> Result<R, <Self::Parent as Deserializer>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer>::Error>;
@@ -289,6 +293,63 @@ pub trait StructVariantAccess {
     ) -> Result<R, <Self::Parent as Deserializer>::Error>;
 }
 
+/// A trait for deserializing enums.
+///
+/// This trait provides access to the enum variant identifier and allows
+/// deserializing the variant content through specific variant access methods.
+pub trait EnumAccess {
+    /// The parent deserializer type that created this enum access.
+    type Parent: Deserializer;
+
+    /// The type used for deserializing tuple variants.
+    type TupleVariantAccess: TupleVariantAccess<Parent = Self::Parent>;
+
+    /// The type used for deserializing struct variants.
+    type StructVariantAccess: StructVariantAccess<Parent = Self::Parent>;
+
+    /// Deserialize a unit variant (enum variant with no fields).
+    ///
+    /// This should be called when the variant is determined to be a unit
+    /// variant.
+    fn unit_variant(self) -> Result<(), <Self::Parent as Deserializer>::Error>;
+
+    /// Deserialize a tuple variant (enum variant with unnamed fields).
+    ///
+    /// # Arguments
+    ///
+    /// * `len` - The expected number of fields in the tuple variant
+    /// * `f` - A closure that processes the tuple variant access
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn tuple_variant<R>(
+        self,
+        len: usize,
+        f: impl FnOnce(
+            Self::TupleVariantAccess,
+        ) -> Result<R, <Self::Parent as Deserializer>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
+
+    /// Deserialize a struct variant (enum variant with named fields).
+    ///
+    /// # Arguments
+    ///
+    /// * `fields` - The expected field identifiers
+    /// * `f` - A closure that processes the struct variant access
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn struct_variant<R>(
+        self,
+        fields: &'static [Identifier],
+        f: impl FnOnce(
+            Self::StructVariantAccess,
+        ) -> Result<R, <Self::Parent as Deserializer>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
+}
+
 /// The main deserializer trait that defines the interface for deserializing
 /// Rust data structures.
 ///
@@ -307,25 +368,28 @@ pub trait Deserializer {
     type Extension;
 
     /// The type used for deserializing sequences.
-    type SeqAccess: SeqAccess<Parent = Self>;
+    type SeqAccess<'s>: SeqAccess<Parent = Self>;
 
     /// The type used for deserializing tuples.
-    type TupleAccess: TupleAccess<Parent = Self>;
+    type TupleAccess<'s>: TupleAccess<Parent = Self>;
 
     /// The type used for deserializing tuple structs.
-    type TupleStructAccess: TupleStructAccess<Parent = Self>;
+    type TupleStructAccess<'s>: TupleStructAccess<Parent = Self>;
 
     /// The type used for deserializing structs.
-    type StructAccess: StructAccess<Parent = Self>;
+    type StructAccess<'s>: StructAccess<Parent = Self>;
 
     /// The type used for deserializing maps.
-    type MapAccess: MapAccess<Parent = Self>;
+    type MapAccess<'s>: MapAccess<Parent = Self>;
 
     /// The type used for deserializing tuple variants.
-    type TupleVariantAccess: TupleVariantAccess<Parent = Self>;
+    type TupleVariantAccess<'s>: TupleVariantAccess<Parent = Self>;
 
     /// The type used for deserializing struct variants.
-    type StructVariantAccess: StructVariantAccess<Parent = Self>;
+    type StructVariantAccess<'s>: StructVariantAccess<Parent = Self>;
+
+    /// The type used for deserializing enums.
+    type EnumAccess<'s>: EnumAccess<Parent = Self>;
 
     /// Deserialize an i8 value.
     fn expect_i8(&mut self) -> Result<i8, Self::Error>;
@@ -392,22 +456,33 @@ pub trait Deserializer {
 
     /// Deserialize a sequence (array, vector, etc.).
     ///
-    /// Returns a `SeqAccess` object that can be used to deserialize
-    /// the sequence elements.
-    fn expect_seq(&mut self) -> Result<Self::SeqAccess, Self::Error>;
+    /// # Arguments
+    ///
+    /// * `f` - A closure that processes the sequence access
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn expect_seq<'s, R>(
+        &'s mut self,
+        f: impl FnOnce(Self::SeqAccess<'s>) -> Result<R, Self::Error>,
+    ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple.
     ///
     /// # Arguments
     ///
     /// * `len` - The expected number of elements in the tuple
+    /// * `f` - A closure that processes the tuple access
     ///
-    /// Returns a `TupleAccess` object that can be used to deserialize
-    /// the tuple elements.
-    fn expect_tuple(
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn expect_tuple<'s, R>(
         &mut self,
         len: usize,
-    ) -> Result<Self::TupleAccess, Self::Error>;
+        f: impl FnOnce(Self::TupleAccess<'s>) -> Result<R, Self::Error>,
+    ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple struct.
     ///
@@ -415,14 +490,17 @@ pub trait Deserializer {
     ///
     /// * `name` - The name of the tuple struct type
     /// * `len` - The expected number of fields in the tuple struct
+    /// * `f` - A closure that processes the tuple struct access
     ///
-    /// Returns a `TupleStructAccess` object that can be used to deserialize
-    /// the tuple struct fields.
-    fn expect_tuple_struct(
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn expect_tuple_struct<'s, R>(
         &mut self,
         name: &'static str,
         len: usize,
-    ) -> Result<Self::TupleStructAccess, Self::Error>;
+        f: impl FnOnce(Self::TupleStructAccess<'s>) -> Result<R, Self::Error>,
+    ) -> Result<R, Self::Error>;
 
     /// Deserialize a unit struct (struct with no fields).
     ///
@@ -440,20 +518,31 @@ pub trait Deserializer {
     ///
     /// * `name` - The name of the struct type
     /// * `fields` - The expected field identifiers
+    /// * `f` - A closure that processes the struct access
     ///
-    /// Returns a `StructAccess` object that can be used to deserialize
-    /// the struct fields.
-    fn expect_struct(
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn expect_struct<'s, R>(
         &mut self,
         name: &'static str,
         fields: &'static [Identifier],
-    ) -> Result<Self::StructAccess, Self::Error>;
+        f: impl FnOnce(Self::StructAccess<'s>) -> Result<R, Self::Error>,
+    ) -> Result<R, Self::Error>;
 
     /// Deserialize a map (dictionary, hash table, etc.).
     ///
-    /// Returns a `MapAccess` object that can be used to deserialize
-    /// the map entries.
-    fn expect_map(&mut self) -> Result<Self::MapAccess, Self::Error>;
+    /// # Arguments
+    ///
+    /// * `f` - A closure that processes the map access
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn expect_map<'s, R>(
+        &mut self,
+        f: impl FnOnce(Self::MapAccess<'s>) -> Result<R, Self::Error>,
+    ) -> Result<R, Self::Error>;
 
     /// Deserialize an enum.
     ///
@@ -461,52 +550,17 @@ pub trait Deserializer {
     ///
     /// * `name` - The name of the enum type
     /// * `variants` - The expected variant identifiers
+    /// * `f` - A closure that processes the enum access
     ///
-    /// Returns `Ok(variant_identifier)` containing the
-    /// variant information, or an error if deserialization fails.
-    fn expect_enum(
-        &mut self,
+    /// # Returns
+    ///
+    /// Returns the result of the closure, or an error if deserialization fails.
+    fn expect_enum<'s, R>(
+        &'s mut self,
         name: &'static str,
         variants: &'static [Identifier],
-    ) -> Result<Identifier, Self::Error>;
-
-    /// Deserialize a unit variant (enum variant with no fields).
-    ///
-    /// This should be called after `expect_enum` when the variant
-    /// is determined to be a unit variant.
-    fn expect_unit_variant(&mut self) -> Result<(), Self::Error>;
-
-    /// Deserialize a tuple variant (enum variant with unnamed fields).
-    ///
-    /// # Arguments
-    ///
-    /// * `len` - The expected number of fields in the tuple variant
-    ///
-    /// This should be called after `expect_enum` when the variant
-    /// is determined to be a tuple variant.
-    ///
-    /// Returns a `TupleVariantAccess` object that can be used to deserialize
-    /// the variant fields.
-    fn expect_tuple_variant(
-        &mut self,
-        len: usize,
-    ) -> Result<Self::TupleVariantAccess, Self::Error>;
-
-    /// Deserialize a struct variant (enum variant with named fields).
-    ///
-    /// # Arguments
-    ///
-    /// * `fields` - The expected field identifiers
-    ///
-    /// This should be called after `expect_enum` when the variant
-    /// is determined to be a struct variant.
-    ///
-    /// Returns a `StructVariantAccess` object that can be used to deserialize
-    /// the variant fields.
-    fn expect_struct_variant(
-        &mut self,
-        fields: &'static [Identifier],
-    ) -> Result<Self::StructVariantAccess, Self::Error>;
+        f: impl FnOnce(Identifier, Self::EnumAccess<'s>) -> Result<R, Self::Error>,
+    ) -> Result<R, Self::Error>;
 }
 
 /// A trait for types that can be deserialized using a [`Deserializer`].
@@ -619,15 +673,16 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut seq = deserializer.expect_seq()?;
-        let (lower, upper) = seq.size_hint();
-        let mut vec = Self::with_capacity(upper.unwrap_or(lower));
+        deserializer.expect_seq(|mut seq| {
+            let (lower, upper) = seq.size_hint();
+            let mut vec = Self::with_capacity(upper.unwrap_or(lower));
 
-        while let Some(element) = seq.next_element()? {
-            vec.push(element);
-        }
+            while let Some(element) = seq.next_element()? {
+                vec.push(element);
+            }
 
-        Ok(vec)
+            Ok(vec)
+        })
     }
 }
 
@@ -637,26 +692,14 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut seq = deserializer.expect_seq()?;
-        let mut vec = Vec::with_capacity(N);
-
-        // Collect exactly N elements
-        for _ in 0..N {
-            match seq.next_element()? {
-                Some(element) => vec.push(element),
-                None => {
-                    // If we can't get enough elements, we'll just use what we
-                    // have and pad with default values or
-                    // handle gracefully based on context
-                    break;
-                }
+        deserializer.expect_tuple(N, |mut tuple| {
+            let mut result = Vec::with_capacity(N);
+            for _ in 0..N {
+                result.push(tuple.next_element()?);
             }
-        }
-
-        // Try to convert Vec to array if we have exactly N elements
-        vec.try_into().map_err(|_| {
-            // This shouldn't happen if we collected exactly N elements
-            panic!("Array conversion failed - internal error")
+            // Convert Vec to array - this uses unsafe but is safe due to length
+            // check
+            result.try_into().map_err(|_| panic!("Array length mismatch"))
         })
     }
 }
@@ -669,30 +712,31 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut map_access = deserializer.expect_map()?;
-        let (lower, upper) = map_access.size_hint();
-        let mut map = Self::with_capacity_and_hasher(
-            upper.unwrap_or(lower),
-            BH::default(),
-        );
+        deserializer.expect_map(|mut map_access| {
+            let (lower, upper) = map_access.size_hint();
+            let mut map = Self::with_capacity_and_hasher(
+                upper.unwrap_or(lower),
+                BH::default(),
+            );
 
-        loop {
-            let done = map_access.next_entry(|entry| {
-                if let Some((key, value_access)) = entry {
-                    let value = value_access.deserialize()?;
-                    map.insert(key, value);
-                    Ok(false) // Continue
-                } else {
-                    Ok(true) // Done
+            loop {
+                let done = map_access.next_entry(|entry| {
+                    if let Some((key, value_access)) = entry {
+                        let value = value_access.deserialize()?;
+                        map.insert(key, value);
+                        Ok(false) // Continue
+                    } else {
+                        Ok(true) // Done
+                    }
+                })?;
+
+                if done {
+                    break;
                 }
-            })?;
-
-            if done {
-                break;
             }
-        }
 
-        Ok(map)
+            Ok(map)
+        })
     }
 }
 
@@ -703,26 +747,27 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut map_access = deserializer.expect_map()?;
-        let mut map = Self::new();
+        deserializer.expect_map(|mut map_access| {
+            let mut map = Self::new();
 
-        loop {
-            let done = map_access.next_entry(|entry| {
-                if let Some((key, value_access)) = entry {
-                    let value = value_access.deserialize()?;
-                    map.insert(key, value);
-                    Ok(false) // Continue
-                } else {
-                    Ok(true) // Done
+            loop {
+                let done = map_access.next_entry(|entry| {
+                    if let Some((key, value_access)) = entry {
+                        let value = value_access.deserialize()?;
+                        map.insert(key, value);
+                        Ok(false) // Continue
+                    } else {
+                        Ok(true) // Done
+                    }
+                })?;
+
+                if done {
+                    break;
                 }
-            })?;
-
-            if done {
-                break;
             }
-        }
 
-        Ok(map)
+            Ok(map)
+        })
     }
 }
 
@@ -733,18 +778,19 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut seq = deserializer.expect_seq()?;
-        let (lower, upper) = seq.size_hint();
-        let mut hash_set = Self::with_capacity_and_hasher(
-            upper.unwrap_or(lower),
-            BH::default(),
-        );
+        deserializer.expect_seq(|mut seq| {
+            let (lower, upper) = seq.size_hint();
+            let mut hash_set = Self::with_capacity_and_hasher(
+                upper.unwrap_or(lower),
+                BH::default(),
+            );
 
-        while let Some(element) = seq.next_element()? {
-            hash_set.insert(element);
-        }
+            while let Some(element) = seq.next_element()? {
+                hash_set.insert(element);
+            }
 
-        Ok(hash_set)
+            Ok(hash_set)
+        })
     }
 }
 
@@ -754,14 +800,15 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut seq = deserializer.expect_seq()?;
-        let mut btree_set = Self::new();
+        deserializer.expect_seq(|mut seq| {
+            let mut btree_set = Self::new();
 
-        while let Some(element) = seq.next_element()? {
-            btree_set.insert(element);
-        }
+            while let Some(element) = seq.next_element()? {
+                btree_set.insert(element);
+            }
 
-        Ok(btree_set)
+            Ok(btree_set)
+        })
     }
 }
 
@@ -771,15 +818,16 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut seq = deserializer.expect_seq()?;
-        let (lower, upper) = seq.size_hint();
-        let mut deque = Self::with_capacity(upper.unwrap_or(lower));
+        deserializer.expect_seq(|mut seq| {
+            let (lower, upper) = seq.size_hint();
+            let mut deque = Self::with_capacity(upper.unwrap_or(lower));
 
-        while let Some(element) = seq.next_element()? {
-            deque.push_back(element);
-        }
+            while let Some(element) = seq.next_element()? {
+                deque.push_back(element);
+            }
 
-        Ok(deque)
+            Ok(deque)
+        })
     }
 }
 
@@ -789,14 +837,15 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let mut seq = deserializer.expect_seq()?;
-        let mut list = Self::new();
+        deserializer.expect_seq(|mut seq| {
+            let mut list = Self::new();
 
-        while let Some(element) = seq.next_element()? {
-            list.push_back(element);
-        }
+            while let Some(element) = seq.next_element()? {
+                list.push_back(element);
+            }
 
-        Ok(list)
+            Ok(list)
+        })
     }
 }
 
@@ -823,24 +872,30 @@ where
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         const VARIANTS: &[Identifier] =
             &[Identifier::Name("Ok"), Identifier::Name("Err")];
-        let variant_id = deserializer.expect_enum("Result", VARIANTS)?;
 
-        match variant_id {
-            Identifier::Name("Ok") | Identifier::Index(0) => {
-                let mut tuple = deserializer.expect_tuple_variant(1)?;
-                let value = tuple.next_field()?;
-                Ok(Ok(value))
-            }
-            Identifier::Name("Err") | Identifier::Index(1) => {
-                let mut tuple = deserializer.expect_tuple_variant(1)?;
-                let error = tuple.next_field()?;
-                Ok(Err(error))
-            }
-            _ => {
-                // Unknown variant - this indicates corrupted or invalid data
-                panic!("Unknown Result variant: {:?}", variant_id)
-            }
-        }
+        deserializer.expect_enum(
+            "Result",
+            VARIANTS,
+            |identifier, enum_access| {
+                match identifier {
+                    Identifier::Name("Ok") | Identifier::Index(0) => {
+                        enum_access.tuple_variant(1, |mut tuple| {
+                            Ok(Ok(tuple.next_field::<T>()?))
+                        })
+                    }
+                    Identifier::Name("Err") | Identifier::Index(1) => {
+                        enum_access.tuple_variant(1, |mut tuple| {
+                            Ok(Err(tuple.next_field::<E>()?))
+                        })
+                    }
+                    variant_id => {
+                        // Unknown variant - this indicates corrupted or invalid
+                        // data
+                        panic!("Unknown Result variant: {variant_id:?}")
+                    }
+                }
+            },
+        )
     }
 }
 
@@ -866,12 +921,13 @@ macro_rules! impl_deserialize_tuple {
                 D: Deserializer,
             {
                 fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-                    let mut tuple = deserializer.expect_tuple($len)?;
-                    Ok((
-                        $(
-                            tuple.next_element::<$T>()?,
-                        )*
-                    ))
+                    deserializer.expect_tuple($len, |mut tuple| {
+                        Ok((
+                            $(
+                                tuple.next_element::<$T>()?,
+                            )+
+                        ))
+                    })
                 }
             }
         )*
@@ -937,7 +993,6 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_tuple_struct("PhantomData", 1)?;
-        Ok(Self)
+        deserializer.expect_tuple_struct("PhantomData", 1, |_| Ok(Self))
     }
 }

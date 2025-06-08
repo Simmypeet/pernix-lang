@@ -76,7 +76,7 @@ where
                 "Owned",
                 0,
                 2,
-                |struct_variant| {
+                |mut struct_variant| {
                     struct_variant
                         .serialize_field("pointer", &(ptr as usize))?;
                     struct_variant.serialize_field("value", &**self)
@@ -89,7 +89,7 @@ where
                 "Reference",
                 1,
                 1,
-                |struct_variant| {
+                |mut struct_variant| {
                     struct_variant.serialize_field("pointer", &(ptr as usize))
                 },
             )
@@ -114,7 +114,7 @@ where
                 "Owned",
                 0,
                 2,
-                |struct_variant| {
+                |mut struct_variant| {
                     struct_variant
                         .serialize_field("pointer", &(ptr as usize))?;
                     struct_variant.serialize_field("value", &**self)
@@ -127,7 +127,7 @@ where
                 "Reference",
                 1,
                 1,
-                |struct_variant| {
+                |mut struct_variant| {
                     struct_variant.serialize_field("pointer", &(ptr as usize))
                 },
             )

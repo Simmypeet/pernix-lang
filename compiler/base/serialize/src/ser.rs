@@ -301,25 +301,25 @@ pub trait Serializer {
     type Extension;
 
     /// The type used for serializing sequences.
-    type Seq: Seq<Parent = Self>;
+    type Seq<'s>: Seq<Parent = Self>;
 
     /// The type used for serializing tuples.
-    type Tuple: Tuple<Parent = Self>;
+    type Tuple<'s>: Tuple<Parent = Self>;
 
     /// The type used for serializing tuple structs.
-    type TupleStruct: TupleStruct<Parent = Self>;
+    type TupleStruct<'s>: TupleStruct<Parent = Self>;
 
     /// The type used for serializing structs.
-    type Struct: Struct<Parent = Self>;
+    type Struct<'s>: Struct<Parent = Self>;
 
     /// The type used for serializing maps.
-    type Map: Map<Parent = Self>;
+    type Map<'s>: Map<Parent = Self>;
 
     /// The type used for serializing tuple variants.
-    type TupleVariant: TupleVariant<Parent = Self>;
+    type TupleVariant<'s>: TupleVariant<Parent = Self>;
 
     /// The type used for serializing struct variants.
-    type StructVariant: StructVariant<Parent = Self>;
+    type StructVariant<'s>: StructVariant<Parent = Self>;
 
     /// Serialize an i8 value.
     fn emit_i8(&mut self, value: i8) -> Result<(), Self::Error>;
@@ -395,10 +395,10 @@ pub trait Serializer {
     ///
     /// * `len` - The number of elements in the sequence
     /// * `f` - A closure that serializes the sequence elements
-    fn emit_seq(
-        &mut self,
+    fn emit_seq<'s>(
+        &'s mut self,
         len: usize,
-        f: impl FnOnce(&mut Self::Seq) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Seq<'s>) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a tuple.
@@ -407,10 +407,10 @@ pub trait Serializer {
     ///
     /// * `len` - The number of elements in the tuple
     /// * `f` - A closure that serializes the tuple elements
-    fn emit_tuple(
-        &mut self,
+    fn emit_tuple<'s>(
+        &'s mut self,
         len: usize,
-        f: impl FnOnce(&mut Self::Tuple) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Tuple<'s>) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a tuple struct.
@@ -420,11 +420,11 @@ pub trait Serializer {
     /// * `name` - The name of the tuple struct type
     /// * `len` - The number of fields in the tuple struct
     /// * `f` - A closure that serializes the tuple struct fields
-    fn emit_tuple_struct(
-        &mut self,
+    fn emit_tuple_struct<'s>(
+        &'s mut self,
         name: &'static str,
         len: usize,
-        f: impl FnOnce(&mut Self::TupleStruct) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::TupleStruct<'s>) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a unit struct (struct with no fields).
@@ -455,10 +455,10 @@ pub trait Serializer {
     ///
     /// * `len` - The number of key-value pairs in the map
     /// * `f` - A closure that serializes the map entries
-    fn emit_map(
-        &mut self,
+    fn emit_map<'s>(
+        &'s mut self,
         len: usize,
-        f: impl FnOnce(&mut Self::Map) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Map<'s>) -> Result<(), Self::Error>,
     );
 
     /// Serialize a struct.
@@ -468,11 +468,11 @@ pub trait Serializer {
     /// * `name` - The name of the struct type
     /// * `len` - The number of fields in the struct
     /// * `f` - A closure that serializes the struct fields
-    fn emit_struct(
-        &mut self,
+    fn emit_struct<'s>(
+        &'s mut self,
         name: &'static str,
         len: usize,
-        f: impl FnOnce(&mut Self::Struct) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Struct<'s>) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a tuple variant (enum variant with unnamed fields).
@@ -484,13 +484,13 @@ pub trait Serializer {
     /// * `index` - The index of the variant within the enum
     /// * `len` - The number of fields in the tuple variant
     /// * `f` - A closure that serializes the variant fields
-    fn emit_tuple_variant(
-        &mut self,
+    fn emit_tuple_variant<'s>(
+        &'s mut self,
         name: &'static str,
         variant: &'static str,
         index: u32,
         len: usize,
-        f: impl FnOnce(&mut Self::TupleVariant) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::TupleVariant<'s>) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a struct variant (enum variant with named fields).
@@ -502,13 +502,13 @@ pub trait Serializer {
     /// * `index` - The index of the variant within the enum
     /// * `len` - The number of fields in the struct variant
     /// * `f` - A closure that serializes the variant fields
-    fn emit_struct_variant(
-        &mut self,
+    fn emit_struct_variant<'s>(
+        &'s mut self,
         name: &'static str,
         variant: &'static str,
         index: u32,
         len: usize,
-        f: impl FnOnce(&mut Self::StructVariant) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::StructVariant<'s>) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 }
 
@@ -631,7 +631,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_seq(self.len(), |seq| {
+        serializer.emit_seq(self.len(), |mut seq| {
             for item in self {
                 seq.serialize_element(item)?;
             }
@@ -646,7 +646,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_seq(self.len(), |seq| {
+        serializer.emit_seq(self.len(), |mut seq| {
             for item in self {
                 seq.serialize_element(item)?;
             }
@@ -661,7 +661,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_seq(N, |seq| {
+        serializer.emit_seq(N, |mut seq| {
             for item in self {
                 seq.serialize_element(item)?;
             }
@@ -678,7 +678,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_map(self.len(), |map| {
+        serializer.emit_map(self.len(), |mut map| {
             for (key, value) in self {
                 map.serialize_entry(key, value)?;
             }
@@ -695,7 +695,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_map(self.len(), |map| {
+        serializer.emit_map(self.len(), |mut map| {
             for (key, value) in self {
                 map.serialize_entry(key, value)?;
             }
@@ -712,7 +712,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_seq(self.len(), |seq| {
+        serializer.emit_seq(self.len(), |mut seq| {
             for item in self {
                 seq.serialize_element(item)?;
             }
@@ -727,7 +727,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_seq(self.len(), |seq| {
+        serializer.emit_seq(self.len(), |mut seq| {
             for item in self {
                 seq.serialize_element(item)?;
             }
@@ -742,7 +742,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_seq(self.len(), |seq| {
+        serializer.emit_seq(self.len(), |mut seq| {
             for item in self {
                 seq.serialize_element(item)?;
             }
@@ -757,7 +757,7 @@ where
     S: Serializer,
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        serializer.emit_seq(self.len(), |seq| {
+        serializer.emit_seq(self.len(), |mut seq| {
             for item in self {
                 seq.serialize_element(item)?;
             }
@@ -791,17 +791,23 @@ where
 {
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
         match self {
-            Ok(value) => {
-                serializer.emit_tuple_variant("Result", "Ok", 0, 1, |variant| {
-                    TupleVariant::serialize_field(variant, value)
-                })
-            }
+            Ok(value) => serializer.emit_tuple_variant(
+                "Result",
+                "Ok",
+                0,
+                1,
+                |mut variant| {
+                    TupleVariant::serialize_field(&mut variant, value)
+                },
+            ),
             Err(error) => serializer.emit_tuple_variant(
                 "Result",
                 "Err",
                 1,
                 1,
-                |variant| TupleVariant::serialize_field(variant, error),
+                |mut variant| {
+                    TupleVariant::serialize_field(&mut variant, error)
+                },
             ),
         }
     }
@@ -829,7 +835,7 @@ macro_rules! impl_serialize_tuple {
                 S: Serializer,
             {
                 fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-                    serializer.emit_tuple($len, |tuple| {
+                    serializer.emit_tuple($len, |mut tuple| {
                         $(
                             tuple.serialize_element(&self.$idx)?;
                         )*
