@@ -1,60 +1,29 @@
-//! Serialization traits and interfaces for the Pernix compiler.
+//! Custom serialization framework for the Pernix compiler.
 //!
-//! This module provides a custom serialization framework similar to serde, but
-//! with additional extension capabilities for specialized serialization
-//! contexts. The framework is designed to be flexible and extensible, allowing
-//! serializers to carry additional state and context through the
-//! [`Serializer::Extension`] associated type.
+//! This module provides a custom serialization framework similar to standard
+//! serde, but with an extension mechanism for easier customization and state
+//! passing. The framework is designed to handle complex serialization scenarios
+//! where additional context or state needs to be maintained during
+//! serialization.
 //!
-//! # Overview
+//! ## Key Traits
 //!
-//! The serialization framework consists of several key traits:
+//! - [`Serializer`] - The main trait for types that can serialize Rust data
+//!   structures
+//! - [`Serialize`] - Trait for types that can be serialized using a serializer
+//! - [`Seq`], [`Tuple`], [`TupleStruct`], [`Struct`], [`Map`] - Compound data
+//!   structure serializers
+//! - [`TupleVariant`], [`StructVariant`] - Enum variant serializers
 //!
-//! - [`Serializer`] - The main trait that defines the serialization interface
-//! - [`Serialize`] - Trait for types that can be serialized
-//! - Compound serialization traits for different data structures:
-//!   - [`Seq`] - For sequences like arrays and vectors
-//!   - [`Tuple`] - For tuples
-//!   - [`TupleStruct`] - For tuple structs
-//!   - [`Struct`] - For structs with named fields
-//!   - [`Map`] - For key-value collections
-//!   - [`TupleVariant`] - For enum tuple variants
-//!   - [`StructVariant`] - For enum struct variants
+//! ## Extension Mechanism
 //!
-//! # Extension Mechanism
-//!
-//! Unlike standard serde, this framework includes an extension mechanism via
-//! the [`Serializer::Extension`] associated type. This allows serializers to
-//! carry additional context or state that can be accessed during serialization
-//! for specialized behavior.
-//!
-//! # Example Usage
-//!
-//! ```rust,ignore
-//! use crate::ser::{Serializer, Serialize};
-//!
-//! // Define a custom serializer
-//! struct MySerializer {
-//!     // serializer state
-//! }
-//!
-//! impl Serializer for MySerializer {
-//!     type Error = MyError;
-//!     type Extension = MyExtension;
-//!     // ... other associated types and methods
-//! }
-//!
-//! // Implement Serialize for custom types
-//! impl<S: Serializer> Serialize<S> for MyStruct {
-//!     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-//!         // Use serializer methods to serialize self
-//!         serializer.emit_struct("MyStruct", 2, |s| {
-//!             s.serialize_field("field1", &self.field1)?;
-//!             s.serialize_field("field2", &self.field2)
-//!         })
-//!     }
-//! }
-//! ```
+//! The [`Serializer::Extension`] associated type allows for specialized
+//! serialization behavior. Extensions can maintain state across serialization
+//! operations and provide custom handling for specific types like shared
+//! pointers.
+
+/// Extension mechanism for custom serialization behavior.
+pub mod extension;
 
 /// A trait for serializing sequences (arrays, vectors, etc.).
 ///
@@ -559,4 +528,395 @@ pub trait Serialize<S: ?Sized + Serializer> {
     ///
     /// Returns an error if the value cannot be serialized.
     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error>;
+}
+
+// =============================================================================
+// Primitive Type Implementations
+// =============================================================================
+
+macro_rules! impl_serialize_integer {
+    ($($ty:ty => $method:ident),*) => {
+        $(
+            impl<S> Serialize<S> for $ty
+            where
+                S: Serializer,
+            {
+                fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+                    serializer.$method(*self)
+                }
+            }
+        )*
+    };
+}
+
+impl_serialize_integer! {
+    i8 => emit_i8,
+    i16 => emit_i16,
+    i32 => emit_i32,
+    i64 => emit_i64,
+    u8 => emit_u8,
+    u16 => emit_u16,
+    u32 => emit_u32,
+    u64 => emit_u64,
+    isize => emit_isize,
+    usize => emit_usize
+}
+
+impl<S> Serialize<S> for f32
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_f32(*self)
+    }
+}
+
+impl<S> Serialize<S> for f64
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_f64(*self)
+    }
+}
+
+impl<S> Serialize<S> for bool
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_bool(*self)
+    }
+}
+
+impl<S> Serialize<S> for char
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_char(*self)
+    }
+}
+
+impl<S> Serialize<S> for str
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_str(self)
+    }
+}
+
+impl<S> Serialize<S> for String
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_str(self)
+    }
+}
+
+// =============================================================================
+// Collection Implementations
+// =============================================================================
+
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
+    hash::BuildHasher,
+};
+
+impl<T, S> Serialize<S> for Vec<T>
+where
+    T: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_seq(self.len(), |seq| {
+            for item in self {
+                seq.serialize_element(item)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<T, S> Serialize<S> for [T]
+where
+    T: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_seq(self.len(), |seq| {
+            for item in self {
+                seq.serialize_element(item)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<T, const N: usize, S> Serialize<S> for [T; N]
+where
+    T: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_seq(N, |seq| {
+            for item in self {
+                seq.serialize_element(item)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<K, V, BH, S> Serialize<S> for HashMap<K, V, BH>
+where
+    K: Serialize<S>,
+    V: Serialize<S>,
+    BH: BuildHasher,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_map(self.len(), |map| {
+            for (key, value) in self {
+                map.serialize_entry(key, value)?;
+            }
+            Ok(())
+        });
+        Ok(())
+    }
+}
+
+impl<K, V, S> Serialize<S> for BTreeMap<K, V>
+where
+    K: Serialize<S>,
+    V: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_map(self.len(), |map| {
+            for (key, value) in self {
+                map.serialize_entry(key, value)?;
+            }
+            Ok(())
+        });
+        Ok(())
+    }
+}
+
+impl<T, BH, S> Serialize<S> for HashSet<T, BH>
+where
+    T: Serialize<S>,
+    BH: BuildHasher,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_seq(self.len(), |seq| {
+            for item in self {
+                seq.serialize_element(item)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<T, S> Serialize<S> for BTreeSet<T>
+where
+    T: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_seq(self.len(), |seq| {
+            for item in self {
+                seq.serialize_element(item)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<T, S> Serialize<S> for VecDeque<T>
+where
+    T: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_seq(self.len(), |seq| {
+            for item in self {
+                seq.serialize_element(item)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<T, S> Serialize<S> for LinkedList<T>
+where
+    T: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_seq(self.len(), |seq| {
+            for item in self {
+                seq.serialize_element(item)?;
+            }
+            Ok(())
+        })
+    }
+}
+
+// =============================================================================
+// Option and Result Implementations
+// =============================================================================
+
+impl<T, S> Serialize<S> for Option<T>
+where
+    T: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        match self {
+            Some(value) => serializer.emit_some(value),
+            None => serializer.emit_none(),
+        }
+    }
+}
+
+impl<T, E, S> Serialize<S> for Result<T, E>
+where
+    T: Serialize<S>,
+    E: Serialize<S>,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        match self {
+            Ok(value) => {
+                serializer.emit_tuple_variant("Result", "Ok", 0, 1, |variant| {
+                    variant.serialize_field(value)
+                })
+            }
+            Err(error) => serializer.emit_tuple_variant(
+                "Result",
+                "Err",
+                1,
+                1,
+                |variant| variant.serialize_field(error),
+            ),
+        }
+    }
+}
+
+// =============================================================================
+// Tuple Implementations
+// =============================================================================
+
+impl<S> Serialize<S> for ()
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_unit()
+    }
+}
+
+macro_rules! impl_serialize_tuple {
+    ($($len:expr => ($($idx:tt $T:ident),+)),*) => {
+        $(
+            impl<$($T,)* S> Serialize<S> for ($($T,)*)
+            where
+                $($T: Serialize<S>,)*
+                S: Serializer,
+            {
+                fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+                    serializer.emit_tuple($len, |tuple| {
+                        $(
+                            tuple.serialize_element(&self.$idx)?;
+                        )*
+                        Ok(())
+                    })
+                }
+            }
+        )*
+    };
+}
+
+impl_serialize_tuple! {
+    1 => (0 T0),
+    2 => (0 T0, 1 T1),
+    3 => (0 T0, 1 T1, 2 T2),
+    4 => (0 T0, 1 T1, 2 T2, 3 T3),
+    5 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4),
+    6 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5),
+    7 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6),
+    8 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7),
+    9 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8),
+    10 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8, 9 T9),
+    11 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8, 9 T9, 10 T10),
+    12 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8, 9 T9, 10 T10, 11 T11),
+    13 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8, 9 T9, 10 T10, 11 T11, 12 T12),
+    14 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8, 9 T9, 10 T10, 11 T11, 12 T12, 13 T13),
+    15 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8, 9 T9, 10 T10, 11 T11, 12 T12, 13 T13, 14 T14),
+    16 => (0 T0, 1 T1, 2 T2, 3 T3, 4 T4, 5 T5, 6 T6, 7 T7, 8 T8, 9 T9, 10 T10, 11 T11, 12 T12, 13 T13, 14 T14, 15 T15)
+}
+
+// =============================================================================
+// Reference and Smart Pointer Implementations
+// =============================================================================
+
+impl<T, S> Serialize<S> for &T
+where
+    T: Serialize<S> + ?Sized,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        (**self).serialize(serializer)
+    }
+}
+
+impl<T, S> Serialize<S> for &mut T
+where
+    T: Serialize<S> + ?Sized,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        (**self).serialize(serializer)
+    }
+}
+
+use std::{borrow::Cow, boxed::Box};
+
+impl<T, S> Serialize<S> for Box<T>
+where
+    T: Serialize<S> + ?Sized,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        (**self).serialize(serializer)
+    }
+}
+
+impl<T, S> Serialize<S> for Cow<'_, T>
+where
+    T: Serialize<S> + ToOwned + ?Sized,
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        (**self).serialize(serializer)
+    }
+}
+
+// =============================================================================
+// Additional Standard Library Types
+// =============================================================================
+
+use std::marker::PhantomData;
+
+impl<T, S> Serialize<S> for PhantomData<T>
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_tuple_struct("PhantomData", 1, |_| Ok(()))
+    }
 }
