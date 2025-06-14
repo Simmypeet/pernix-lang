@@ -12,6 +12,7 @@
 //!   structures
 //! - [`Deserialize`] - Trait for types that can be deserialized using a
 //!   deserializer
+//! - [`Error`] - Trait for deserialization error types
 //! - [`SeqAccess`], [`TupleAccess`], [`TupleStructAccess`], [`StructAccess`],
 //!   [`MapAccess`] - Compound data structure deserializers
 //! - [`TupleVariantAccess`], [`StructVariantAccess`] - Enum variant
@@ -23,6 +24,53 @@
 //! deserialization behavior. Extensions can maintain state across
 //! deserialization operations and provide custom handling for specific types
 //! like shared pointers.
+
+use std::fmt::Display;
+
+/// Trait used by `Deserialize` implementations to generically construct
+/// errors belonging to the `Deserializer` against which they are
+/// currently running.
+///
+/// This trait follows the same pattern as serde's Error trait, allowing
+/// deserialization implementations to create custom errors without depending
+/// on specific error types.
+///
+/// # Example
+///
+/// ```no_run
+/// # use pernixc_serializer::de::{self, Deserialize, Deserializer};
+/// #
+/// struct MyType {
+///     data: String,
+/// }
+///
+/// impl<D> Deserialize<D> for MyType
+/// where
+///     D: Deserializer,
+///     D::Error: de::Error,
+/// {
+///     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+///         let data = String::deserialize(deserializer)?;
+///         if data.is_empty() {
+///             return Err(de::Error::custom("data cannot be empty"));
+///         }
+///         Ok(MyType { data })
+///     }
+/// }
+/// ```
+pub trait Error: Sized + std::error::Error {
+    /// Create a custom error with a message.
+    ///
+    /// The message should not be capitalized and should not end with a
+    /// period.
+    ///
+    /// # Arguments
+    ///
+    /// * `msg` - A message describing the error
+    fn custom<T>(msg: T) -> Self
+    where
+        T: Display;
+}
 
 /// An identifier for fields or enum variants.
 ///

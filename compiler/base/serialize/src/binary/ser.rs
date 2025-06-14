@@ -441,5 +441,14 @@ impl<W: Write + 'static> BinarySerializer<W, ()> {
     pub fn new(writer: W) -> Self { Self::with_extension(writer, ()) }
 }
 
+impl crate::ser::Error for io::Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        io::Error::new(io::ErrorKind::Other, msg.to_string())
+    }
+}
+
 #[cfg(test)]
 mod test;

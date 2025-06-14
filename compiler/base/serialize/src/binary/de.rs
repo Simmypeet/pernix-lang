@@ -578,5 +578,14 @@ impl<R: Read + 'static, E: 'static> Deserializer for BinaryDeserializer<R, E> {
     }
 }
 
+impl crate::de::Error for io::Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: std::fmt::Display,
+    {
+        io::Error::new(io::ErrorKind::Other, msg.to_string())
+    }
+}
+
 #[cfg(test)]
 mod test;

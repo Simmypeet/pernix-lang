@@ -11,6 +11,7 @@
 //! - [`Serializer`] - The main trait for types that can serialize Rust data
 //!   structures
 //! - [`Serialize`] - Trait for types that can be serialized using a serializer
+//! - [`Error`] - Trait for serialization error types
 //! - [`Seq`], [`Tuple`], [`TupleStruct`], [`Struct`], [`Map`] - Compound data
 //!   structure serializers
 //! - [`TupleVariant`], [`StructVariant`] - Enum variant serializers
@@ -21,6 +22,52 @@
 //! serialization behavior. Extensions can maintain state across serialization
 //! operations and provide custom handling for specific types like shared
 //! pointers.
+
+use std::fmt::Display;
+
+/// Trait used by `Serialize` implementations to generically construct
+/// errors belonging to the `Serializer` against which they are
+/// currently running.
+///
+/// This trait follows the same pattern as serde's Error trait, allowing
+/// serialization implementations to create custom errors without depending
+/// on specific error types.
+///
+/// # Example
+///
+/// ```no_run
+/// # use pernixc_serializer::ser::{self, Serialize, Serializer};
+/// #
+/// struct MyType {
+///     data: String,
+/// }
+///
+/// impl<S> Serialize<S> for MyType
+/// where
+///     S: Serializer,
+///     S::Error: ser::Error,
+/// {
+///     fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+///         if self.data.is_empty() {
+///             return Err(ser::Error::custom("data cannot be empty"));
+///         }
+///         self.data.serialize(serializer)
+///     }
+/// }
+/// ```
+pub trait Error: Sized + std::error::Error {
+    /// Create a custom error with a message.
+    ///
+    /// The message should not be capitalized and should not end with a
+    /// period.
+    ///
+    /// # Arguments
+    ///
+    /// * `msg` - A message describing the error
+    fn custom<T>(msg: T) -> Self
+    where
+        T: Display;
+}
 
 /// A trait for serializing sequences (arrays, vectors, etc.).
 ///
