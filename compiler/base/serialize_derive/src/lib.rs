@@ -464,10 +464,21 @@ fn expand_deserialize_enum(
     }
 }
 
+/// Generates code for deserializing a struct with named fields or an enum struct variant.
+/// The `wrapper` closure allows customizing how the field processing logic is wrapped.
 #[allow(clippy::too_many_lines)]
-fn deserialize_named_fields(name: &Ident, fields: &FieldsNamed) -> proc_macro2::TokenStream {
-    let struct_name_str = name.to_string();
-    
+fn generate_named_fields_deserialize<F>(
+    fields: &FieldsNamed,
+    constructor: &proc_macro2::TokenStream,
+    access_trait: &str,
+    wrapper: F,
+) -> proc_macro2::TokenStream
+where
+    F: FnOnce(
+        Vec<proc_macro2::TokenStream>, // field_names
+        Vec<proc_macro2::TokenStream>, // field processing logic
+    ) -> proc_macro2::TokenStream,
+{
     let field_names: Vec<_> = fields.named.iter().map(|field| {
         let field_name_str = field.ident.as_ref().unwrap().to_string();
         quote! { #field_name_str }
@@ -516,7 +527,7 @@ fn deserialize_named_fields(name: &Ident, fields: &FieldsNamed) -> proc_macro2::
         }
     }).collect();
     
-    // Check for missing fields and construct the struct
+    // Check for missing fields and construct the final value
     let missing_field_checks: Vec<_> = field_vars.iter().map(|(field_name, _var_name, found_name)| {
         let field_name_str = field_name.to_string();
         quote! {
@@ -532,60 +543,82 @@ fn deserialize_named_fields(name: &Ident, fields: &FieldsNamed) -> proc_macro2::
         quote! { #field_name: #var_name.unwrap() }
     }).collect();
 
-    quote! {
-        ::pernixc_serialize::__internal::Deserializer::expect_struct(
-            deserializer,
-            #struct_name_str,
-            &[#(#field_names),*],
-            |mut struct_access| {
-                #(#field_initializations)*
-                
-                // Process all fields from the input
-                loop {
-                    let should_continue = ::pernixc_serialize::__internal::StructAccess::next_field(
-                        &mut struct_access,
-                        |field_opt| {
-                            match field_opt {
-                                Some((field_identifier, field_access)) => {
-                                    let result = match field_identifier {
-                                        #(#field_match_arms)*
-                                        ::pernixc_serialize::__internal::Identifier::Index(idx) => {
-                                            Err(::pernixc_serialize::__internal::DeError::unknown_field(
-                                                ::pernixc_serialize::__internal::Identifier::Index(idx)
-                                            ))
-                                        }
-                                        ::pernixc_serialize::__internal::Identifier::Name(name) => {
-                                            Err(::pernixc_serialize::__internal::DeError::unknown_field(
-                                                ::pernixc_serialize::__internal::Identifier::Name(name)
-                                            ))
-                                        }
-                                    };
-                                    result?;
-                                    Ok(true) // Continue processing
-                                }
-                                None => {
-                                    // No more fields
-                                    Ok(false)
-                                }
+    let access_trait_ident = Ident::new(access_trait, proc_macro2::Span::call_site());
+    let field_processing_logic = vec![
+        quote! { #(#field_initializations)* },
+        quote! {
+            // Process all fields from the input
+            loop {
+                let should_continue = ::pernixc_serialize::__internal::#access_trait_ident::next_field(
+                    &mut access,
+                    |field_opt| {
+                        match field_opt {
+                            Some((field_identifier, field_access)) => {
+                                let result = match field_identifier {
+                                    #(#field_match_arms)*
+                                    ::pernixc_serialize::__internal::Identifier::Index(idx) => {
+                                        Err(::pernixc_serialize::__internal::DeError::unknown_field(
+                                            ::pernixc_serialize::__internal::Identifier::Index(idx)
+                                        ))
+                                    }
+                                    ::pernixc_serialize::__internal::Identifier::Name(name) => {
+                                        Err(::pernixc_serialize::__internal::DeError::unknown_field(
+                                            ::pernixc_serialize::__internal::Identifier::Name(name)
+                                        ))
+                                    }
+                                };
+                                result?;
+                                Ok(true) // Continue processing
+                            }
+                            None => {
+                                // No more fields
+                                Ok(false)
                             }
                         }
-                    )?;
-                    
-                    if !should_continue {
-                        break;
                     }
+                )?;
+                
+                if !should_continue {
+                    break;
                 }
-                
-                // Check for missing required fields
-                #(#missing_field_checks)*
-                
-                // Construct the struct
-                Ok(#name {
-                    #(#field_construction),*
-                })
             }
-        )
-    }
+        },
+        quote! {
+            // Check for missing required fields
+            #(#missing_field_checks)*
+            
+            // Construct the final value
+            Ok(#constructor {
+                #(#field_construction),*
+            })
+        },
+    ];
+
+    wrapper(field_names, field_processing_logic)
+}
+
+fn deserialize_named_fields(name: &Ident, fields: &FieldsNamed) -> proc_macro2::TokenStream {
+    let struct_name_str = name.to_string();
+    let constructor = quote! { #name };
+    
+    generate_named_fields_deserialize(
+        fields,
+        &constructor,
+        "StructAccess",
+        |field_names, field_processing_logic| {
+            quote! {
+                ::pernixc_serialize::__internal::Deserializer::expect_struct(
+                    deserializer,
+                    #struct_name_str,
+                    &[#(#field_names),*],
+                    |mut struct_access| {
+                        let mut access = struct_access;
+                        #(#field_processing_logic)*
+                    }
+                )
+            }
+        }
+    )
 }
 
 fn deserialize_unnamed_fields(name: &Ident, fields: &FieldsUnnamed) -> proc_macro2::TokenStream {
@@ -691,124 +724,27 @@ fn deserialize_enum_variants(
             }
 
             Fields::Named(fields) => {
-                let _field_count = fields.named.len();
-                let field_names: Vec<_> = fields.named.iter().map(|field| {
-                    let field_name_str = field.ident.as_ref().unwrap().to_string();
-                    quote! { #field_name_str }
-                }).collect();
+                let constructor = quote! { #enum_name::#variant_name };
                 
-                // Generate field variables and tracking for each field
-                let field_vars: Vec<_> = fields.named.iter().map(|field| {
-                    let field_name = field.ident.as_ref().unwrap();
-                    let var_name = Ident::new(&format!("__{field_name}_value"), field_name.span());
-                    let found_name = Ident::new(&format!("__{field_name}_found"), field_name.span());
-                    (field_name, var_name, found_name)
-                }).collect();
-                
-                // Initialize field variables and tracking flags
-                let field_initializations: Vec<_> = field_vars.iter().map(|(_field_name, var_name, found_name)| {
-                    quote! {
-                        let mut #var_name: Option<_> = None;
-                        let mut #found_name = false;
-                    }
-                }).collect();
-                
-                // Generate match arms for known fields
-                let field_match_arms: Vec<_> = field_vars.iter().enumerate().map(|(field_index, (field_name, var_name, found_name))| {
-                    let field_name_str = field_name.to_string();
-                    let Ok(field_index_lit) = u32::try_from(field_index) else {
-                        return syn::Error::new_spanned(
-                            field_name,
-                            "Struct has too many fields to deserialize",
-                        )
-                        .into_compile_error();
-                    };
-
-                    quote! {
-                        ::pernixc_serialize::__internal::Identifier::Name(#field_name_str) |
-                        ::pernixc_serialize::__internal::Identifier::Index(#field_index_lit) => {
-                            if #found_name {
-                                Err(::pernixc_serialize::__internal::DeError::duplicated_field(
-                                    ::pernixc_serialize::__internal::Identifier::Name(#field_name_str)
-                                ))
-                            } else {
-                                #found_name = true;
-                                #var_name = Some(::pernixc_serialize::__internal::FieldAccess::deserialize(field_access)?);
-                                Ok(())
-                            }
-                        }
-                    }
-                }).collect();
-                
-                // Check for missing fields and construct the struct
-                let missing_field_checks: Vec<_> = field_vars.iter().map(|(field_name, _var_name, found_name)| {
-                    let field_name_str = field_name.to_string();
-                    quote! {
-                        if !#found_name {
-                            return Err(::pernixc_serialize::__internal::DeError::missing_field(
-                                ::pernixc_serialize::__internal::Identifier::Name(#field_name_str)
-                            ));
-                        }
-                    }
-                }).collect();
-                
-                let field_construction: Vec<_> = field_vars.iter().map(|(field_name, var_name, _found_name)| {
-                    quote! { #field_name: #var_name.unwrap() }
-                }).collect();
-                
-                quote! {
-                    #variant_arm => {
-                        ::pernixc_serialize::__internal::EnumAccess::struct_variant(
-                            enum_access,
-                            &[#(#field_names),*],
-                            |mut struct_variant_access| {
-                                #(#field_initializations)*
-                                
-                                // Process all fields from the input
-                                loop {
-                                    let should_continue = ::pernixc_serialize::__internal::StructVariantAccess::next_field(
-                                        &mut struct_variant_access,
-                                        |field_opt| {
-                                            match field_opt {
-                                                Some((field_identifier, field_access)) => {
-                                                    let result = match field_identifier {
-                                                        #(#field_match_arms)*
-                                                        ::pernixc_serialize::__internal::Identifier::Index(idx) => {
-                                                            Err(::pernixc_serialize::__internal::DeError::unknown_field(
-                                                                ::pernixc_serialize::__internal::Identifier::Index(idx)
-                                                            ))
-                                                        }
-                                                        ::pernixc_serialize::__internal::Identifier::Name(name) => {
-                                                            Err(::pernixc_serialize::__internal::DeError::unknown_field(
-                                                                ::pernixc_serialize::__internal::Identifier::Name(name)
-                                                            ))
-                                                        }
-                                                    };
-                                                    result?;
-                                                    Ok(true) // Continue processing
-                                                }
-                                                None => {
-                                                    // No more fields
-                                                    Ok(false)
-                                                }
-                                            }
-                                        }
-                                    )?;
-                                    
-                                    if !should_continue {
-                                        break;
+                generate_named_fields_deserialize(
+                    fields,
+                    &constructor,
+                    "StructVariantAccess",
+                    |field_names, field_processing_logic| {
+                        quote! {
+                            #variant_arm => {
+                                ::pernixc_serialize::__internal::EnumAccess::struct_variant(
+                                    enum_access,
+                                    &[#(#field_names),*],
+                                    |mut struct_variant_access| {
+                                        let mut access = struct_variant_access;
+                                        #(#field_processing_logic)*
                                     }
-                                }
-                                
-                                // Check for missing required fields
-                                #(#missing_field_checks)*
-                                
-                                // Construct the struct variant
-                                Ok(#enum_name::#variant_name { #(#field_construction),* })
+                                )
                             }
-                        )
+                        }
                     }
-                }
+                )
             }
         }
     });
