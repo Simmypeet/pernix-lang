@@ -70,6 +70,42 @@ pub trait Error: Sized + std::error::Error {
     fn custom<T>(msg: T) -> Self
     where
         T: Display;
+
+    /// Create an error for when a field appears multiple times in a struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `field` - The identifier of the duplicated field
+    fn duplicated_field(field: Identifier) -> Self {
+        Self::custom(format!("duplicated field `{}`", field))
+    }
+
+    /// Create an error for when a required field is missing from a struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `field` - The identifier of the missing field
+    fn missing_field(field: Identifier) -> Self {
+        Self::custom(format!("missing field `{}`", field))
+    }
+
+    /// Create an error for when an unknown field is encountered in a struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `field` - The identifier of the unknown field
+    fn unknown_field(field: Identifier) -> Self {
+        Self::custom(format!("unknown field `{}`", field))
+    }
+
+    /// Create an error for when an unknown enum variant is encountered.
+    ///
+    /// # Arguments
+    ///
+    /// * `variant` - The identifier of the unknown variant
+    fn unknown_enum_variant(variant: Identifier) -> Self {
+        Self::custom(format!("unknown enum variant `{}`", variant))
+    }
 }
 
 /// An identifier for fields or enum variants.
@@ -1080,5 +1116,14 @@ where
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         deserializer.expect_tuple_struct("PhantomData", 1, |_| Ok(Self))
+    }
+}
+
+impl std::fmt::Display for Identifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Index(index) => write!(f, "{}", index),
+            Self::Name(name) => write!(f, "{}", name),
+        }
     }
 }
