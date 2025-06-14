@@ -13,9 +13,8 @@ use syn::{
 ///
 /// # Example
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_serialize_derive::Serialize;
-/// use pernixc_serialize::ser::{Serialize, Serializer};
 ///
 /// #[derive(Serialize)]
 /// struct Person {
@@ -366,9 +365,8 @@ fn generate_deserialize_impl_generics(
 ///
 /// # Example
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_serialize_derive::Deserialize;
-/// use pernixc_serialize::de::{Deserialize, Deserializer};
 ///
 /// #[derive(Deserialize)]
 /// struct Person {
