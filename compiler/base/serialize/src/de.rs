@@ -38,7 +38,7 @@ use std::fmt::Display;
 /// # Example
 ///
 /// ```no_run
-/// # use pernixc_serializer::de::{self, Deserialize, Deserializer};
+/// # use pernixc_serialize::de::{self, Deserialize, Deserializer};
 /// #
 /// struct MyType {
 ///     data: String,

@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_serializer"
+name = "pernixc_serialize"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -7,3 +7,4 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+pernixc_serialize_derive = { path = "../serialize_derive" }

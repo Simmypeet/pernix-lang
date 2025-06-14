@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```rust
-//! use pernixc_serializer::{binary::ser::BinarySerializer, ser::Serialize};
+//! use pernixc_serialize::{binary::ser::BinarySerializer, ser::Serialize};
 //!
 //! let mut buffer = Vec::new();
 //! let mut serializer = BinarySerializer::new(buffer);

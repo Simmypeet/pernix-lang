@@ -1,0 +1,18 @@
+[lib]
+proc-macro = true
+
+[package]
+name = "pernixc_serialize_derive"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+syn = { workspace = true }
+
+[lints]
+workspace = true
