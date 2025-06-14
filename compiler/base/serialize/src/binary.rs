@@ -1,6 +1,7 @@
 //! Binary serialization module for compact, efficient serialization.
 //!
-//! This module provides a binary serializer that outputs a compact binary
-//! format suitable for efficient storage and transmission.
+//! This module provides binary serializer and deserializer that use a compact
+//! binary format suitable for efficient storage and transmission.
 
+pub mod de;
 pub mod ser;

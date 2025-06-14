@@ -265,7 +265,7 @@ pub trait StructVariantAccess {
     type Parent: Deserializer;
 
     /// The type used for accessing individual fields.
-    type FieldAccess: FieldAccess<Parent = Self::Parent>;
+    type FieldAccess<'s>: FieldAccess<Parent = Self::Parent>;
 
     /// Process the next field in the struct variant.
     ///
@@ -281,10 +281,10 @@ pub trait StructVariantAccess {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<R>(
-        &mut self,
+    fn next_field<'s, R>(
+        &'s mut self,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess)>,
+            Option<(Identifier, Self::FieldAccess<'s>)>,
         )
             -> Result<R, <Self::Parent as Deserializer>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer>::Error>;
@@ -476,7 +476,7 @@ pub trait Deserializer {
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
     fn expect_tuple<'s, R>(
-        &mut self,
+        &'s mut self,
         len: usize,
         f: impl FnOnce(Self::TupleAccess<'s>) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
@@ -493,7 +493,7 @@ pub trait Deserializer {
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
     fn expect_tuple_struct<'s, R>(
-        &mut self,
+        &'s mut self,
         name: &'static str,
         len: usize,
         f: impl FnOnce(Self::TupleStructAccess<'s>) -> Result<R, Self::Error>,
@@ -521,7 +521,7 @@ pub trait Deserializer {
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
     fn expect_struct<'s, R>(
-        &mut self,
+        &'s mut self,
         name: &'static str,
         fields: &'static [&'static str],
         f: impl FnOnce(Self::StructAccess<'s>) -> Result<R, Self::Error>,
@@ -537,7 +537,7 @@ pub trait Deserializer {
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
     fn expect_map<'s, R>(
-        &mut self,
+        &'s mut self,
         f: impl FnOnce(Self::MapAccess<'s>) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
@@ -876,12 +876,12 @@ where
                 match identifier {
                     Identifier::Name("Ok") | Identifier::Index(0) => {
                         enum_access.tuple_variant(1, |mut tuple| {
-                            Ok(Ok(tuple.next_field::<T>()?))
+                            Ok(Ok(TupleVariantAccess::next_field(&mut tuple)?))
                         })
                     }
                     Identifier::Name("Err") | Identifier::Index(1) => {
                         enum_access.tuple_variant(1, |mut tuple| {
-                            Ok(Err(tuple.next_field::<E>()?))
+                            Ok(Err(TupleVariantAccess::next_field(&mut tuple)?))
                         })
                     }
                     variant_id => {
