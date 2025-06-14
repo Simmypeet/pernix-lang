@@ -335,7 +335,7 @@ pub trait StructVariant {
 /// customization and state passing.
 pub trait Serializer {
     /// The error type returned by serialization operations.
-    type Error;
+    type Error: Error;
 
     /// An extension object that can be used as an additional context for
     /// specialized serialization of certain types.

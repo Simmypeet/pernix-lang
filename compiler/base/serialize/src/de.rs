@@ -403,7 +403,7 @@ pub trait EnumAccess {
 /// customization and state passing.
 pub trait Deserializer {
     /// The error type returned by deserialization operations.
-    type Error;
+    type Error: Error;
 
     /// An extension object that can be used as an additional context for
     /// specialized deserialization of certain types.
@@ -758,7 +758,9 @@ where
                                 element.assume_init_read();
                             }
                         }
-                        panic!("Array deserialization: not enough elements")
+                        return Err(D::Error::custom(
+                            "array deserialization: not enough elements",
+                        ));
                     }
                     Err(e) => {
                         // Error during deserialization, clean up and propagate
@@ -973,7 +975,9 @@ where
                     variant_id => {
                         // Unknown variant - this indicates corrupted or invalid
                         // data
-                        panic!("Unknown Result variant: {variant_id:?}")
+                        Err(D::Error::custom(format!(
+                            "unknown Result variant: {variant_id:?}"
+                        )))
                     }
                 }
             },

@@ -297,11 +297,9 @@ fn array_error_handling() {
     let mut deserializer = BinaryDeserializer::new(cursor);
 
     // Try to deserialize as an array of 3 elements - should panic
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        <[u32; 3]>::deserialize(&mut deserializer)
-    }));
+    let result = <[u32; 3]>::deserialize(&mut deserializer);
 
-    // Should have panicked due to insufficient elements
+    // Should have returned an error due to insufficient elements
     assert!(result.is_err());
 }
 
@@ -403,30 +401,30 @@ fn array_drop_behavior_with_shared_counter() {
         let cursor = std::io::Cursor::new(buffer);
         let mut deserializer = BinaryDeserializer::new(cursor);
 
-        let before_panic = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+        let before_error = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
 
-        let result =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                <[GlobalDropCounter; 3]>::deserialize(&mut deserializer)
-            }));
+        let result = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer);
 
-        assert!(result.is_err(), "Should panic due to insufficient elements");
+        assert!(
+            result.is_err(),
+            "Should return error due to insufficient elements"
+        );
 
-        let after_panic = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+        let after_error = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
 
         // The 2 successfully created elements during deserialization should
-        // have been dropped during the panic cleanup
+        // have been dropped during the error cleanup
         assert_eq!(
-            after_panic - before_panic,
+            after_error - before_error,
             2,
-            "Should have 2 drops from cleanup during panic"
+            "Should have 2 drops from cleanup during error"
         );
 
         // Drop the original partial vector
         drop(partial_vec);
         let after_original_drop = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
         assert_eq!(
-            after_original_drop - after_panic,
+            after_original_drop - after_error,
             2,
             "Original partial vec should cause 2 more drops"
         );
