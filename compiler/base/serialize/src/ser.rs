@@ -22,9 +22,6 @@
 //! operations and provide custom handling for specific types like shared
 //! pointers.
 
-/// Extension mechanism for custom serialization behavior.
-pub mod extension;
-
 /// A trait for serializing sequences (arrays, vectors, etc.).
 ///
 /// This trait is used to serialize ordered collections of elements where
@@ -399,7 +396,9 @@ pub trait Serializer {
         &'s mut self,
         len: usize,
         f: impl FnOnce(Self::Seq<'s>) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        Self::Seq<'s>: 's;
 
     /// Serialize a tuple.
     ///
@@ -411,7 +410,9 @@ pub trait Serializer {
         &'s mut self,
         len: usize,
         f: impl FnOnce(Self::Tuple<'s>) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        Self::Tuple<'s>: 's;
 
     /// Serialize a tuple struct.
     ///
@@ -425,7 +426,9 @@ pub trait Serializer {
         name: &'static str,
         len: usize,
         f: impl FnOnce(Self::TupleStruct<'s>) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        Self::TupleStruct<'s>: 's;
 
     /// Serialize a unit struct (struct with no fields).
     ///
@@ -459,7 +462,9 @@ pub trait Serializer {
         &'s mut self,
         len: usize,
         f: impl FnOnce(Self::Map<'s>) -> Result<(), Self::Error>,
-    );
+    ) -> Result<(), Self::Error>
+    where
+        Self::Map<'s>: 's;
 
     /// Serialize a struct.
     ///
@@ -473,7 +478,9 @@ pub trait Serializer {
         name: &'static str,
         len: usize,
         f: impl FnOnce(Self::Struct<'s>) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        Self::Struct<'s>: 's;
 
     /// Serialize a tuple variant (enum variant with unnamed fields).
     ///
@@ -491,7 +498,9 @@ pub trait Serializer {
         index: u32,
         len: usize,
         f: impl FnOnce(Self::TupleVariant<'s>) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        Self::TupleVariant<'s>: 's;
 
     /// Serialize a struct variant (enum variant with named fields).
     ///
@@ -509,7 +518,9 @@ pub trait Serializer {
         index: u32,
         len: usize,
         f: impl FnOnce(Self::StructVariant<'s>) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), Self::Error>
+    where
+        Self::StructVariant<'s>: 's;
 }
 
 /// A trait for types that can be serialized using a [`Serializer`].
@@ -683,8 +694,7 @@ where
                 map.serialize_entry(key, value)?;
             }
             Ok(())
-        });
-        Ok(())
+        })
     }
 }
 
@@ -700,8 +710,7 @@ where
                 map.serialize_entry(key, value)?;
             }
             Ok(())
-        });
-        Ok(())
+        })
     }
 }
 

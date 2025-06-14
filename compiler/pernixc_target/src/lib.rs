@@ -1,5 +1,6 @@
 //! This crate contains the information about the target of the compilation.
 
+use derive_new::new;
 use serde::{Deserialize, Serialize};
 
 /// Represents an identifier for a target.
@@ -51,11 +52,12 @@ impl TargetID {
     Default,
     Serialize,
     Deserialize,
+    new,
 )]
 pub struct Global<ID> {
-    /// The identifier to the local entity defined within the target.
-    pub id: ID,
-
     /// The identifier to the target that the entity is defined in.
     pub target_id: TargetID,
+
+    /// The identifier to the local entity defined within the target.
+    pub id: ID,
 }

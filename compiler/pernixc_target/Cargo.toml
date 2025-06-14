@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 serde = { workspace = true }
 derive_more = { workspace = true }
+derive-new = { workspace = true }
 
 [lints]
 workspace = true

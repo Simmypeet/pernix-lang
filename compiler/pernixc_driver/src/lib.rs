@@ -9,6 +9,7 @@ use codespan_reporting::{
     term::termcolor::WriteColor,
 };
 use dashmap::DashMap;
+use fnv::FnvBuildHasher;
 use pernixc_diagnostic::Report;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_source_file::{
@@ -89,6 +90,7 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
     token_trees_by_source_id: &DashMap<
         GlobalSourceID,
         pernixc_lexical::tree::Tree,
+        FnvBuildHasher,
     >,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
     let mut result = match diagostic.severity {

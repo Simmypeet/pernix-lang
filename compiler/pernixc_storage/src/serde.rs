@@ -318,10 +318,13 @@ impl<ID, P: Ptr, T, E: Display + 'static> Reflector<ID, P, T, E> {
             merger_fn(source, value).map_err(erased_serde::Error::custom)
         }
 
-        self.register_type_internal::<C>(tag, CollisionHandling::Merge {
-            merger_fn: merger as _,
-            final_merger_fn: final_inplace_merger_fn::<C, E>,
-        })
+        self.register_type_internal::<C>(
+            tag,
+            CollisionHandling::Merge {
+                merger_fn: merger as _,
+                final_merger_fn: final_inplace_merger_fn::<C, E>,
+            },
+        )
     }
 
     #[must_use]

@@ -18,22 +18,17 @@ pernixc_target = { path = "../pernixc_target" }
 codespan-reporting = { workspace = true }
 pernixc_query_base = { path = "../pernixc_query_base" }
 pernixc_query = { path = "../pernixc_query" }
-# pernixc_syntax = { path = "../pernixc_syntax" }
-# pernixc_semantic = { path = "../pernixc_semantic" }
-# pernixc_builder = { path = "../pernixc_builder" }
-# pernixc_codegen = { path = "../pernixc_codegen" }
-# pernixc_storage = { path = "../pernixc_storage" }
 pernixc_lexical = { path = "../pernixc_lexical" }
 dashmap = { workspace = true }
 derive_more = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }
-bincode = { workspace = true }
 indicatif = { workspace = true }
 parking_lot = { workspace = true }
 inkwell = { workspace = true }
 enum-as-inner = { workspace = true }
 postcard = { workspace = true }
+fnv = { workspace = true }
 
 [lints]
 workspace = true

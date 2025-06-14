@@ -3,8 +3,21 @@
 
 use getset::{CopyGetters, Getters};
 pub use key::Key;
-pub use pernixc_query_derive::Key;
+pub use pernixc_query_derive::{Key, Value};
 pub use pernixc_stable_type_id::Identifiable;
+
+#[doc(hidden)]
+pub mod __internal {
+    pub use std::result::Result;
+
+    pub use pernixc_query_derive::{Key, Value};
+    pub use serde::{Deserialize, Serialize};
+
+    pub use crate::key::Key;
+}
+
+// so that this crate can use derive macro
+extern crate self as pernixc_query;
 
 pub mod database;
 pub mod key;

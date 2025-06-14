@@ -204,8 +204,9 @@ impl Target {
                         module::Body::parse.parse_syntax(&tree, handler);
 
                     (
-                        module_content
-                            .unwrap_or(module::Body { members: Vec::new() }),
+                        module_content.unwrap_or_else(|| module::Body {
+                            members: Vec::new(),
+                        }),
                         Some((access_modifier.is_none(), source_file.clone())),
                         source_file
                             .full_path()

@@ -4,12 +4,22 @@
 use std::{io::Read, path::Path};
 
 use dashmap::DashMap;
+use fnv::FnvBuildHasher;
 use pernixc_query::database::Database;
 use pernixc_source_file::{GlobalSourceID, SourceMap};
 use serde::de::DeserializeSeed;
 
+pub mod accessibility;
+pub mod implemented;
+pub mod implements;
+pub mod kind;
+pub mod member;
 pub mod module;
+pub mod name;
+pub mod parent;
 pub mod symbol;
+pub mod target;
+pub mod import;
 
 /// A fatal error that aborts the compilation process.
 #[derive(Debug, thiserror::Error)]
@@ -33,10 +43,26 @@ pub struct Start {
     /// A map of token trees by their source ID, which is used to later
     /// retrieve the absolute location
     pub token_trees_by_source_id:
-        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
+        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree, FnvBuildHasher>,
 
     /// The list of errors encountered while parsing the module tree.
     pub module_parsing_errors: Vec<module::Error>,
+}
+
+/// Describes the relationship between two symbols in the hierarchy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HierarchyRelationship {
+    /// The first symbol is the parent of the second symbol.
+    Parent,
+
+    /// The first symbol is the child of the second symbol.
+    Child,
+
+    /// Both symbols are two equivalent symbols.
+    Equivalent,
+
+    /// Both symbols are defined in different hierarchy scope.
+    Unrelated,
 }
 
 fn read_file_buffer(
@@ -109,5 +135,5 @@ pub fn register_runtime(
     query_runtime: &mut pernixc_query::runtime::Runtime,
     serde: &mut pernixc_query::serde::Serde,
 ) {
-    serde.register::<symbol::KindKey>();
+    todo!()
 }

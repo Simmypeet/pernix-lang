@@ -1,12 +1,13 @@
 //! Module syntax query system for the Pernix compiler.
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::hash_map::Entry,
     path::{Path, PathBuf},
 };
 
 use dashmap::DashMap;
 use enum_as_inner::EnumAsInner;
+use fnv::{FnvBuildHasher, FnvHashMap};
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_handler::Storage;
 use pernixc_lexical::tree::RelativeLocation;
@@ -151,7 +152,7 @@ pub struct Parse {
 
     /// All of the token trees that were parsed from the source files,
     pub token_trees_by_source_id:
-        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
+        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree, FnvBuildHasher>,
 
     /// All of the errors that occurred during the parsing.
     pub errors: Vec<Error>,
@@ -170,7 +171,7 @@ pub struct Tree {
     pub content: pernixc_syntax::item::module::Content,
 
     /// The submodules of the module, indexed by their names.
-    pub submodules_by_name: HashMap<String, Self>,
+    pub submodules_by_name: FnvHashMap<String, Self>,
 }
 
 #[derive(Debug, Clone)]
@@ -222,6 +223,7 @@ impl Tree {
         token_trees_by_source_id: &DashMap<
             GlobalSourceID,
             pernixc_lexical::tree::Tree,
+            FnvBuildHasher,
         >,
         in_source_id: GlobalSourceID,
         handler: &dyn Handler,
@@ -318,6 +320,7 @@ impl Tree {
         token_trees_by_source_id: &DashMap<
             GlobalSourceID,
             pernixc_lexical::tree::Tree,
+            FnvBuildHasher,
         >,
         handler: &dyn Handler,
     ) -> Self {
@@ -412,7 +415,7 @@ impl Tree {
                 }));
             }
 
-            let mut submodules_by_name = HashMap::<String, Self>::default();
+            let mut submodules_by_name = FnvHashMap::<String, Self>::default();
 
             for (name, module_tree) in
                 scope_handles.into_iter().filter_map(|x| x.join().unwrap())
@@ -445,7 +448,7 @@ impl Tree {
 /// source file.
 #[must_use]
 pub fn parse(source_id: GlobalSourceID, source_map: &SourceMap) -> Parse {
-    let token_trees_by_source_id = DashMap::new();
+    let token_trees_by_source_id = DashMap::default();
     let storage = Storage::<Error>::default();
 
     let path = source_map

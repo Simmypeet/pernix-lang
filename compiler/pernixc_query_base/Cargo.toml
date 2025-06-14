@@ -25,6 +25,7 @@ postcard = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 derive_more = { workspace = true }
+extend = { workspace = true }
 
 [lints]
 workspace = true
