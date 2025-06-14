@@ -1668,3 +1668,176 @@ fn extension_attribute_tuple_struct() {
 
     assert_eq!(original, deserialized);
 }
+
+#[test]
+fn ser_extension_attribute() {
+    // Test that #[serde(ser_extension(...))] applies bounds only to
+    // serialization
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    #[serde(ser_extension(Clone + Send + Sync + 'static))]
+    struct SerExtensionTest {
+        data: String,
+        number: u32,
+    }
+
+    let original =
+        SerExtensionTest { data: "test_data".to_string(), number: 123 };
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        SerExtensionTest::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original, deserialized);
+}
+
+#[test]
+fn de_extension_attribute() {
+    // Test that #[serde(de_extension(...))] applies bounds only to
+    // deserialization
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    #[serde(de_extension(Clone + Send + Sync + 'static))]
+    struct DeExtensionTest {
+        data: String,
+        number: u32,
+    }
+
+    let original =
+        DeExtensionTest { data: "test_data".to_string(), number: 456 };
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = DeExtensionTest::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original, deserialized);
+}
+
+#[test]
+fn mixed_extension_attributes() {
+    // Test that multiple extension attributes can be combined
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    #[serde(extension(Clone + 'static))]
+    #[serde(ser_extension(Send + 'static))]
+    #[serde(de_extension(Sync + 'static))]
+    struct MixedExtensionTest {
+        value: i32,
+    }
+
+    let original = MixedExtensionTest { value: 789 };
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        MixedExtensionTest::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original, deserialized);
+}
+
+#[test]
+fn separate_extension_attributes_enum() {
+    // Test that ser_extension and de_extension work with enums
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[serde(ser_extension(Send + Sync))]
+    #[serde(de_extension(Clone + 'static))]
+    enum ExtensionEnum {
+        Variant1(String),
+        Variant2 { value: u32 },
+        Variant3,
+    }
+
+    let test_cases = vec![
+        ExtensionEnum::Variant1("test".to_string()),
+        ExtensionEnum::Variant2 { value: 42 },
+        ExtensionEnum::Variant3,
+    ];
+
+    for original in test_cases {
+        let bytes = serialize_to_bytes(&original);
+        let mut deserializer =
+            BinaryDeserializer::new(std::io::Cursor::new(bytes));
+        let deserialized =
+            ExtensionEnum::deserialize(&mut deserializer).unwrap();
+
+        assert_eq!(original, deserialized);
+    }
+}
+
+#[test]
+fn shared_pointer_extension_ser_only() {
+    // Test that ser_extension works with the shared pointer extension
+    use std::sync::Arc;
+
+    use crate::extension::shared_pointer::{
+        SharedPointerSerialize, SharedPointerTracker,
+    };
+
+    #[derive(Serialize, Debug, PartialEq)]
+    #[serde(ser_extension(SharedPointerSerialize))]
+    struct SerOnlySharedTest {
+        shared_data: Arc<String>,
+        other_data: u32,
+    }
+
+    let shared_data = Arc::new("shared_content".to_string());
+    let test_data =
+        SerOnlySharedTest { shared_data: shared_data.clone(), other_data: 42 };
+
+    // Serialize with shared pointer tracking
+    let tracker = SharedPointerTracker::new();
+    let buffer = Vec::new();
+    let mut serializer =
+        crate::binary::ser::BinarySerializer::with_extension(buffer, tracker);
+    test_data.serialize(&mut serializer).unwrap();
+    let (buffer, _) = serializer.into_parts();
+
+    // Verify that something was actually serialized
+    assert!(!buffer.is_empty());
+}
+
+#[test]
+fn shared_pointer_extension_combined() {
+    // Test that multiple extension attributes work together including shared
+    // pointer support
+    use std::sync::Arc;
+
+    use crate::extension::shared_pointer::{
+        SharedPointerDeserialize, SharedPointerSerialize, SharedPointerStore,
+        SharedPointerTracker,
+    };
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[serde(ser_extension(SharedPointerSerialize))]
+    #[serde(de_extension(SharedPointerDeserialize))]
+    struct CombinedExtensionTest {
+        shared_data: Arc<String>,
+        regular_data: String,
+    }
+
+    let shared_data = Arc::new("shared_content".to_string());
+    let original = CombinedExtensionTest {
+        shared_data: shared_data.clone(),
+        regular_data: "regular_content".to_string(),
+    };
+
+    // Serialize with shared pointer tracking
+    let tracker = SharedPointerTracker::new();
+    let buffer = Vec::new();
+    let mut serializer =
+        crate::binary::ser::BinarySerializer::with_extension(buffer, tracker);
+    original.serialize(&mut serializer).unwrap();
+    let (buffer, _) = serializer.into_parts();
+
+    // Deserialize with shared pointer reconstruction
+    let store = SharedPointerStore::new();
+    let cursor = std::io::Cursor::new(buffer);
+    let mut deserializer =
+        crate::binary::de::BinaryDeserializer::with_extension(cursor, store);
+    let deserialized =
+        CombinedExtensionTest::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original, deserialized);
+}

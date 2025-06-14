@@ -30,7 +30,7 @@
 //! ## `#[serde(extension(T + U + 'static))]`
 //!
 //! The `#[serde(extension(...))]` attribute can be applied to structs and enums to add
-//! additional bounds to the serializer/deserializer's `Extension` associated type.
+//! additional bounds to both the serializer and deserializer's `Extension` associated type.
 //!
 //! ### Behavior
 //! - Adds `__S::Extension: T + U + 'static` to the `where` clause for `Serialize` implementations
@@ -38,20 +38,57 @@
 //! - The bounds can be any valid trait bounds, type bounds, or lifetime bounds
 //! - Multiple bounds can be specified using `+` syntax
 //!
+//! ## `#[serde(ser_extension(T + U + 'static))]`
+//!
+//! The `#[serde(ser_extension(...))]` attribute can be applied to structs and enums to add
+//! additional bounds only to the serializer's `Extension` associated type.
+//!
+//! ### Behavior
+//! - Adds `__S::Extension: T + U + 'static` to the `where` clause for `Serialize` implementations only
+//! - Does not affect `Deserialize` implementations
+//! - The bounds can be any valid trait bounds, type bounds, or lifetime bounds
+//! - Multiple bounds can be specified using `+` syntax
+//!
+//! ## `#[serde(de_extension(T + U + 'static))]`
+//!
+//! The `#[serde(de_extension(...))]` attribute can be applied to structs and enums to add
+//! additional bounds only to the deserializer's `Extension` associated type.
+//!
+//! ### Behavior
+//! - Adds `__D::Extension: T + U + 'static` to the `where` clause for `Deserialize` implementations only
+//! - Does not affect `Serialize` implementations
+//! - The bounds can be any valid trait bounds, type bounds, or lifetime bounds
+//! - Multiple bounds can be specified using `+` syntax
+//!
 //! ### Use Cases
 //! - **Extension trait requirements**: When serialization/deserialization requires specific capabilities from the extension
 //! - **Custom serialization behavior**: Enabling custom logic based on extension capabilities
 //! - **Type safety**: Ensuring the extension provides required functionality
+//! - **Asymmetric requirements**: When serialization and deserialization have different extension requirements
 //!
 //! ### Example
 //!
 //! ```ignore
 //! use pernixc_serialize_derive::{Serialize, Deserialize};
 //!
-//! // Extension must implement Clone + Debug + Send + 'static
+//! // Extension must implement Clone + Debug + Send + 'static for both serialization and deserialization
 //! #[derive(Serialize, Deserialize)]
 //! #[serde(extension(Clone + Debug + Send + 'static))]
 //! struct ExtensionUser {
+//!     data: String,
+//! }
+//!
+//! // Extension must implement Clone + Debug + Send + 'static only for serialization
+//! #[derive(Serialize, Deserialize)]
+//! #[serde(ser_extension(Clone + Debug + Send + 'static))]
+//! struct SerExtensionUser {
+//!     data: String,
+//! }
+//!
+//! // Extension must implement Clone + Debug + Send + 'static only for deserialization
+//! #[derive(Serialize, Deserialize)]
+//! #[serde(de_extension(Clone + Debug + Send + 'static))] 
+//! struct DeExtensionUser {
 //!     data: String,
 //! }
 //! ```
@@ -98,6 +135,43 @@ use syn::{
     Field
 };
 
+/// Container for extension bounds parsed from attributes
+#[derive(Debug, Default)]
+struct ExtensionBounds {
+    /// Bounds for both serialization and deserialization (from `#[serde(extension(...))]`)
+    both: Option<proc_macro2::TokenStream>,
+    /// Bounds only for serialization (from `#[serde(ser_extension(...))]`)
+    serialize_only: Option<proc_macro2::TokenStream>,
+    /// Bounds only for deserialization (from `#[serde(de_extension(...))]`)
+    deserialize_only: Option<proc_macro2::TokenStream>,
+}
+
+impl ExtensionBounds {
+    /// Get the effective bounds for serialization
+    fn serialize_bounds(&self) -> Option<proc_macro2::TokenStream> {
+        match (&self.both, &self.serialize_only) {
+            (Some(both), Some(ser_only)) => {
+                Some(quote! { #both + #ser_only })
+            }
+            (Some(both), None) => Some(both.clone()),
+            (None, Some(ser_only)) => Some(ser_only.clone()),
+            (None, None) => None,
+        }
+    }
+
+    /// Get the effective bounds for deserialization
+    fn deserialize_bounds(&self) -> Option<proc_macro2::TokenStream> {
+        match (&self.both, &self.deserialize_only) {
+            (Some(both), Some(de_only)) => {
+                Some(quote! { #both + #de_only })
+            }
+            (Some(both), None) => Some(both.clone()),
+            (None, Some(de_only)) => Some(de_only.clone()),
+            (None, None) => None,
+        }
+    }
+}
+
 /// Automatically derive the Serialize trait for structs and enums.
 ///
 /// This macro generates an implementation of the `Serialize` trait that
@@ -120,13 +194,24 @@ use syn::{
 ///
 /// ## `#[serde(extension(T + U + 'static))]`
 ///
-/// Container-level attribute that adds bounds to the serializer's `Extension` associated type.
+/// Container-level attribute that adds bounds to both the serializer and deserializer's `Extension` associated type.
+/// The bounds are added to the `where` clause as `__S::Extension: T + U + 'static` and `__D::Extension: T + U + 'static`.
+///
+/// ## `#[serde(ser_extension(T + U + 'static))]`
+///
+/// Container-level attribute that adds bounds only to the serializer's `Extension` associated type.
 /// The bounds are added to the `where` clause as `__S::Extension: T + U + 'static`.
 ///
+/// ## `#[serde(de_extension(T + U + 'static))]`
+///
+/// Container-level attribute that adds bounds only to the deserializer's `Extension` associated type.
+/// The bounds are added to the `where` clause as `__D::Extension: T + U + 'static`.
+///
 /// This is useful for:
-/// - Requiring specific capabilities from the serializer extension
+/// - Requiring specific capabilities from the serializer/deserializer extension
 /// - Enabling custom serialization behavior based on extension traits
 /// - Ensuring type safety for extension-dependent serialization logic
+/// - Asymmetric requirements when serialization and deserialization have different extension needs
 ///
 /// # Examples
 ///
@@ -164,6 +249,19 @@ use syn::{
 /// #[derive(Serialize)]
 /// #[serde(extension(Clone + Debug + Send))]
 /// struct ExtensionUser {
+///     data: String,
+/// }
+/// // Generated impl will include: where __S::Extension: Clone + Debug + Send
+/// ```
+///
+/// ## Struct with serialize-only extension bounds
+///
+/// ```ignore
+/// use pernixc_serialize_derive::Serialize;
+///
+/// #[derive(Serialize)]
+/// #[serde(ser_extension(Clone + Debug + Send))]
+/// struct SerExtensionUser {
 ///     data: String,
 /// }
 /// // Generated impl will include: where __S::Extension: Clone + Debug + Send
@@ -225,10 +323,10 @@ fn expand_serialize(input: &DeriveInput) -> Result<proc_macro2::TokenStream, syn
     
     match &input.data {
         Data::Struct(data_struct) => {
-            Ok(expand_serialize_struct(name, generics, &data_struct.fields, extension_bounds))
+            Ok(expand_serialize_struct(name, generics, &data_struct.fields, extension_bounds.serialize_bounds()))
         }
         Data::Enum(data_enum) => {
-            Ok(expand_serialize_enum(name, generics, data_enum, extension_bounds))
+            Ok(expand_serialize_enum(name, generics, data_enum, extension_bounds.serialize_bounds()))
         }
         Data::Union(_) => {
             Err(syn::Error::new_spanned(
@@ -595,13 +693,24 @@ fn generate_deserialize_impl_generics(
 ///
 /// ## `#[serde(extension(T + U + 'static))]`
 ///
-/// Container-level attribute that adds bounds to the deserializer's `Extension` associated type.
+/// Container-level attribute that adds bounds to both the serializer and deserializer's `Extension` associated type.
+/// The bounds are added to the `where` clause as `__S::Extension: T + U + 'static` and `__D::Extension: T + U + 'static`.
+///
+/// ## `#[serde(ser_extension(T + U + 'static))]`
+///
+/// Container-level attribute that adds bounds only to the serializer's `Extension` associated type.
+/// The bounds are added to the `where` clause as `__S::Extension: T + U + 'static`.
+///
+/// ## `#[serde(de_extension(T + U + 'static))]`
+///
+/// Container-level attribute that adds bounds only to the deserializer's `Extension` associated type.
 /// The bounds are added to the `where` clause as `__D::Extension: T + U + 'static`.
 ///
 /// This is useful for:
 /// - Requiring specific capabilities from the deserializer extension
-/// - Enabling custom deserialization behavior based on extension traits
+/// - Enabling custom deserialization behavior based on extension traits  
 /// - Ensuring type safety for extension-dependent deserialization logic
+/// - Asymmetric requirements when serialization and deserialization have different extension needs
 ///
 /// # Examples
 ///
@@ -639,6 +748,19 @@ fn generate_deserialize_impl_generics(
 /// #[derive(Deserialize)]
 /// #[serde(extension(Clone + Debug + Send))]
 /// struct ExtensionUser {
+///     data: String,  
+/// }
+/// // Generated impl will include: where __D::Extension: Clone + Debug + Send
+/// ```
+///
+/// ## Struct with deserialize-only extension bounds
+///
+/// ```ignore
+/// use pernixc_serialize_derive::Deserialize;
+///
+/// #[derive(Deserialize)]
+/// #[serde(de_extension(Clone + Debug + Send))]
+/// struct DeExtensionUser {
 ///     data: String,
 /// }
 /// // Generated impl will include: where __D::Extension: Clone + Debug + Send
@@ -716,10 +838,10 @@ fn expand_deserialize(input: &DeriveInput) -> Result<proc_macro2::TokenStream, s
     
     match &input.data {
         Data::Struct(data_struct) => {
-            Ok(expand_deserialize_struct(name, generics, &data_struct.fields, extension_bounds))
+            Ok(expand_deserialize_struct(name, generics, &data_struct.fields, extension_bounds.deserialize_bounds()))
         }
         Data::Enum(data_enum) => {
-            Ok(expand_deserialize_enum(name, generics, data_enum, extension_bounds))
+            Ok(expand_deserialize_enum(name, generics, data_enum, extension_bounds.deserialize_bounds()))
         }
         Data::Union(_) => {
             Err(syn::Error::new_spanned(
@@ -1215,16 +1337,26 @@ fn count_non_skipped_unnamed_fields(fields: &FieldsUnnamed) -> usize {
 ///
 /// For an attribute like `#[serde(extension(Clone + Debug + 'static))]`, this returns
 /// the token stream `Clone + Debug + 'static`.
-fn extract_serde_extension_bounds(attrs: &[syn::Attribute]) -> Option<proc_macro2::TokenStream> {
+fn extract_serde_extension_bounds(attrs: &[syn::Attribute]) -> ExtensionBounds {
+    let mut bounds = ExtensionBounds::default();
+    
     for attr in attrs {
         if attr.path().is_ident("serde") {
-            let mut extension_bounds = None;
-            
             let parse_result = attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("extension") {
                     let content;
                     syn::parenthesized!(content in meta.input);
-                    extension_bounds = Some(content.parse::<proc_macro2::TokenStream>()?);
+                    bounds.both = Some(content.parse::<proc_macro2::TokenStream>()?);
+                    Ok(())
+                } else if meta.path.is_ident("ser_extension") {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    bounds.serialize_only = Some(content.parse::<proc_macro2::TokenStream>()?);
+                    Ok(())
+                } else if meta.path.is_ident("de_extension") {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    bounds.deserialize_only = Some(content.parse::<proc_macro2::TokenStream>()?);
                     Ok(())
                 } else {
                     // Skip other serde attributes like "skip"
@@ -1240,11 +1372,11 @@ fn extract_serde_extension_bounds(attrs: &[syn::Attribute]) -> Option<proc_macro
                 }
             });
             
-            if parse_result.is_ok() && extension_bounds.is_some() {
-                return extension_bounds;
-            }
+            // Continue parsing other attributes even if this one fails
+            let _ = parse_result;
         }
     }
-    None
+    
+    bounds
 }
 
