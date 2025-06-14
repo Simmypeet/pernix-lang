@@ -29,7 +29,7 @@ where
 }
 
 #[test]
-fn test_primitives() {
+fn primitives() {
     // Test various primitive types
     assert_eq!(round_trip(&42u8).unwrap(), 42u8);
     assert_eq!(round_trip(&42u16).unwrap(), 42u16);
@@ -51,14 +51,14 @@ fn test_primitives() {
 }
 
 #[test]
-fn test_char() {
+fn char() {
     assert_eq!(round_trip(&'a').unwrap(), 'a');
     assert_eq!(round_trip(&'🦀').unwrap(), '🦀');
     assert_eq!(round_trip(&'\0').unwrap(), '\0');
 }
 
 #[test]
-fn test_strings() {
+fn strings() {
     assert_eq!(round_trip(&"hello".to_string()).unwrap(), "hello".to_string());
     assert_eq!(round_trip(&String::new()).unwrap(), String::new());
     assert_eq!(round_trip(&"🦀🔥".to_string()).unwrap(), "🦀🔥".to_string());
@@ -71,7 +71,7 @@ fn test_strings() {
 }
 
 #[test]
-fn test_option() {
+fn option() {
     assert_eq!(round_trip(&Some(42u32)).unwrap(), Some(42u32));
     assert_eq!(round_trip(&None::<u32>).unwrap(), None::<u32>);
     assert_eq!(
@@ -81,7 +81,7 @@ fn test_option() {
 }
 
 #[test]
-fn test_result() {
+fn result() {
     assert_eq!(
         round_trip(&Ok::<u32, String>(42)).unwrap(),
         Ok::<u32, String>(42)
@@ -93,7 +93,7 @@ fn test_result() {
 }
 
 #[test]
-fn test_sequences() {
+fn sequences() {
     // Test Vec
     assert_eq!(round_trip(&vec![1, 2, 3, 4]).unwrap(), vec![1, 2, 3, 4]);
     assert_eq!(round_trip(&Vec::<u32>::new()).unwrap(), Vec::<u32>::new());
@@ -111,7 +111,7 @@ fn test_sequences() {
 }
 
 #[test]
-fn test_maps() {
+fn maps() {
     let mut map = HashMap::new();
     map.insert("key1".to_string(), 42u32);
     map.insert("key2".to_string(), 84u32);
@@ -125,7 +125,7 @@ fn test_maps() {
 }
 
 #[test]
-fn test_varint_encoding() {
+fn varint_encoding() {
     // Test values that require different varint sizes
     assert_eq!(round_trip(&0u64).unwrap(), 0u64);
     assert_eq!(round_trip(&127u64).unwrap(), 127u64);
@@ -142,7 +142,7 @@ fn test_varint_encoding() {
 }
 
 #[test]
-fn test_floating_point_special_values() {
+fn floating_point_special_values() {
     // Test special floating point values
     assert_eq!(round_trip(&f32::INFINITY).unwrap(), f32::INFINITY);
     assert_eq!(round_trip(&f32::NEG_INFINITY).unwrap(), f32::NEG_INFINITY);
@@ -160,7 +160,7 @@ fn test_floating_point_special_values() {
 }
 
 #[test]
-fn test_complex_nested_structures() {
+fn complex_nested_structures() {
     // Test deeply nested structures
     let complex = vec![
         Some(HashMap::from([
@@ -175,7 +175,7 @@ fn test_complex_nested_structures() {
 }
 
 #[test]
-fn test_large_sequences() {
+fn large_sequences() {
     // Test large sequences to ensure varint length encoding works
     let large_vec: Vec<u32> = (0..10000).collect();
     assert_eq!(round_trip(&large_vec).unwrap(), large_vec);
@@ -188,7 +188,7 @@ fn test_large_sequences() {
 }
 
 #[test]
-fn test_empty_collections() {
+fn empty_collections() {
     // Test empty collections
     assert_eq!(round_trip(&Vec::<u32>::new()).unwrap(), Vec::<u32>::new());
     assert_eq!(
@@ -199,7 +199,7 @@ fn test_empty_collections() {
 }
 
 #[test]
-fn test_extension_field_access() {
+fn extension_field_access() {
     let buffer = Vec::new();
     let mut deserializer =
         BinaryDeserializer::with_extension(std::io::Cursor::new(buffer), 42u32);
@@ -214,7 +214,7 @@ fn test_extension_field_access() {
 }
 
 #[test]
-fn test_reader_access() {
+fn reader_access() {
     let data = vec![1, 2, 3, 4];
     let cursor = std::io::Cursor::new(data);
     let mut deserializer = BinaryDeserializer::new(cursor);
@@ -226,7 +226,7 @@ fn test_reader_access() {
 }
 
 #[test]
-fn test_error_handling() {
+fn error_handling() {
     // Test deserializing from empty buffer
     let cursor = std::io::Cursor::new(Vec::new());
     let mut deserializer = BinaryDeserializer::new(cursor);
@@ -243,7 +243,7 @@ fn test_error_handling() {
 }
 
 #[test]
-fn test_bool_invalid_values() {
+fn bool_invalid_values() {
     // Test that invalid bool values are rejected
     let cursor = std::io::Cursor::new(vec![2u8]); // Invalid bool value
     let mut deserializer = BinaryDeserializer::new(cursor);
@@ -253,7 +253,7 @@ fn test_bool_invalid_values() {
 }
 
 #[test]
-fn test_string_with_invalid_utf8() {
+fn string_with_invalid_utf8() {
     // Create a buffer with invalid UTF-8
     let buffer = Vec::new();
     let mut serializer = BinarySerializer::new(buffer);
@@ -274,7 +274,7 @@ fn test_string_with_invalid_utf8() {
 }
 
 #[test]
-fn test_char_invalid_unicode() {
+fn char_invalid_unicode() {
     // Test that invalid Unicode code points are rejected
     let cursor = std::io::Cursor::new(vec![0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8]); // Invalid Unicode
     let mut deserializer = BinaryDeserializer::new(cursor);
@@ -284,7 +284,7 @@ fn test_char_invalid_unicode() {
 }
 
 #[test]
-fn test_array_error_handling() {
+fn array_error_handling() {
     // Test array deserialization with insufficient elements
     let buffer = Vec::new();
     let mut serializer = BinarySerializer::new(buffer);
@@ -303,4 +303,138 @@ fn test_array_error_handling() {
 
     // Should have panicked due to insufficient elements
     assert!(result.is_err());
+}
+
+#[test]
+fn array_drop_behavior_with_shared_counter() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Global drop counter that all instances share
+    static GLOBAL_DROP_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    // Custom type that tracks drops globally
+    #[derive(Debug, Clone, PartialEq)]
+    struct GlobalDropCounter {
+        id: usize,
+    }
+
+    impl GlobalDropCounter {
+        fn new(id: usize) -> Self { Self { id } }
+    }
+
+    impl Drop for GlobalDropCounter {
+        fn drop(&mut self) { GLOBAL_DROP_COUNT.fetch_add(1, Ordering::SeqCst); }
+    }
+
+    // Implement Serialize for GlobalDropCounter
+    impl Serialize<BinarySerializer<Vec<u8>, ()>> for GlobalDropCounter {
+        fn serialize(
+            &self,
+            serializer: &mut BinarySerializer<Vec<u8>, ()>,
+        ) -> Result<
+            (),
+            <BinarySerializer<Vec<u8>, ()> as crate::ser::Serializer>::Error,
+        > {
+            self.id.serialize(serializer)
+        }
+    }
+
+    // Implement Deserialize for GlobalDropCounter
+    impl Deserialize<BinaryDeserializer<std::io::Cursor<Vec<u8>>, ()>>
+        for GlobalDropCounter
+    {
+        fn deserialize(deserializer: &mut BinaryDeserializer<std::io::Cursor<Vec<u8>>, ()>) -> Result<Self, <BinaryDeserializer<std::io::Cursor<Vec<u8>>, ()> as crate::de::Deserializer>::Error>{
+            let id = usize::deserialize(deserializer)?;
+            Ok(GlobalDropCounter::new(id))
+        }
+    }
+
+    // Reset global counter
+    GLOBAL_DROP_COUNT.store(0, Ordering::SeqCst);
+
+    // Test 1: Happy path
+    {
+        let initial_count = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+
+        // Create and serialize an array
+        {
+            let original_array = [
+                GlobalDropCounter::new(0),
+                GlobalDropCounter::new(1),
+                GlobalDropCounter::new(2),
+            ];
+
+            let buffer = Vec::new();
+            let mut serializer = BinarySerializer::new(buffer);
+            original_array.serialize(&mut serializer).unwrap();
+            let buffer = serializer.into_inner();
+
+            // Deserialize the array
+            let cursor = std::io::Cursor::new(buffer);
+            let mut deserializer = BinaryDeserializer::new(cursor);
+            let _ = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer)
+                .unwrap();
+
+            // Arrays automatically drop when going out of scope
+        } // original_array and deserialized_array drop here
+
+        let final_count = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+        assert_eq!(
+            final_count - initial_count,
+            6,
+            "Total should be 6 drops (3 original + 3 deserialized)"
+        );
+    }
+
+    // Test 2: Error path with proper cleanup
+    {
+        let initial_count = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+
+        // Create a vector with only 2 elements
+        let partial_vec =
+            vec![GlobalDropCounter::new(10), GlobalDropCounter::new(11)];
+
+        let buffer = Vec::new();
+        let mut serializer = BinarySerializer::new(buffer);
+        partial_vec.serialize(&mut serializer).unwrap();
+        let buffer = serializer.into_inner();
+
+        // Try to deserialize as an array of 3 elements
+        let cursor = std::io::Cursor::new(buffer);
+        let mut deserializer = BinaryDeserializer::new(cursor);
+
+        let before_panic = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                <[GlobalDropCounter; 3]>::deserialize(&mut deserializer)
+            }));
+
+        assert!(result.is_err(), "Should panic due to insufficient elements");
+
+        let after_panic = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+
+        // The 2 successfully created elements during deserialization should
+        // have been dropped during the panic cleanup
+        assert_eq!(
+            after_panic - before_panic,
+            2,
+            "Should have 2 drops from cleanup during panic"
+        );
+
+        // Drop the original partial vector
+        drop(partial_vec);
+        let after_original_drop = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
+        assert_eq!(
+            after_original_drop - after_panic,
+            2,
+            "Original partial vec should cause 2 more drops"
+        );
+
+        assert_eq!(
+            after_original_drop - initial_count,
+            4,
+            "Total should be 4 drops (2 from cleanup + 2 from original)"
+        );
+    }
 }
