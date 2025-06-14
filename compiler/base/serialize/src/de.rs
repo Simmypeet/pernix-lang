@@ -24,9 +24,6 @@
 //! deserialization operations and provide custom handling for specific types
 //! like shared pointers.
 
-// Extension mechanism for custom deserialization behavior.
-// pub mod extension;
-
 /// An identifier for fields or enum variants.
 ///
 /// This enum allows identification by either a numeric index or a string name,
@@ -343,7 +340,7 @@ pub trait EnumAccess {
     /// Returns the result of the closure, or an error if deserialization fails.
     fn struct_variant<R>(
         self,
-        fields: &'static [Identifier],
+        fields: &'static [&'static str],
         f: impl FnOnce(
             Self::StructVariantAccess,
         ) -> Result<R, <Self::Parent as Deserializer>::Error>,
@@ -526,7 +523,7 @@ pub trait Deserializer {
     fn expect_struct<'s, R>(
         &mut self,
         name: &'static str,
-        fields: &'static [Identifier],
+        fields: &'static [&'static str],
         f: impl FnOnce(Self::StructAccess<'s>) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
@@ -558,7 +555,7 @@ pub trait Deserializer {
     fn expect_enum<'s, R>(
         &'s mut self,
         name: &'static str,
-        variants: &'static [Identifier],
+        variants: &'static [&'static str],
         f: impl FnOnce(Identifier, Self::EnumAccess<'s>) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 }
@@ -870,8 +867,7 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        const VARIANTS: &[Identifier] =
-            &[Identifier::Name("Ok"), Identifier::Name("Err")];
+        const VARIANTS: &[&str] = &["Ok", "Err"];
 
         deserializer.expect_enum(
             "Result",
