@@ -484,24 +484,22 @@ where
         quote! { #field_name_str }
     }).collect();
     
-    // Generate field variables and tracking for each field
+    // Generate field variables for each field
     let field_vars: Vec<_> = fields.named.iter().map(|field| {
         let field_name = field.ident.as_ref().unwrap();
         let var_name = Ident::new(&format!("__{field_name}_value"), field_name.span());
-        let found_name = Ident::new(&format!("__{field_name}_found"), field_name.span());
-        (field_name, var_name, found_name)
+        (field_name, var_name)
     }).collect();
     
-    // Initialize field variables and tracking flags
-    let field_initializations: Vec<_> = field_vars.iter().map(|(_field_name, var_name, found_name)| {
+    // Initialize field variables
+    let field_initializations: Vec<_> = field_vars.iter().map(|(_field_name, var_name)| {
         quote! {
             let mut #var_name: Option<_> = None;
-            let mut #found_name = false;
         }
     }).collect();
     
     // Generate match arms for known fields
-    let field_match_arms: Vec<_> = field_vars.iter().enumerate().map(|(index, (field_name, var_name, found_name))| {
+    let field_match_arms: Vec<_> = field_vars.iter().enumerate().map(|(index, (field_name, var_name))| {
         let field_name_str = field_name.to_string();
         let Ok(field_index) = u32::try_from(index) else {
             return syn::Error::new_spanned(
@@ -514,12 +512,11 @@ where
         quote! {
             ::pernixc_serialize::__internal::Identifier::Name(#field_name_str) |
             ::pernixc_serialize::__internal::Identifier::Index(#field_index) => {
-                if #found_name {
+                if #var_name.is_some() {
                     Err(::pernixc_serialize::__internal::DeError::duplicated_field(
                         ::pernixc_serialize::__internal::Identifier::Name(#field_name_str)
                     ))
                 } else {
-                    #found_name = true;
                     #var_name = Some(::pernixc_serialize::__internal::FieldAccess::deserialize(field_access)?);
                     Ok(())
                 }
@@ -527,20 +524,17 @@ where
         }
     }).collect();
     
-    // Check for missing fields and construct the final value
-    let missing_field_checks: Vec<_> = field_vars.iter().map(|(field_name, _var_name, found_name)| {
+    // Check for missing fields and construct the final value using pattern matching
+    let field_construction: Vec<_> = field_vars.iter().map(|(field_name, var_name)| {
         let field_name_str = field_name.to_string();
-        quote! {
-            if !#found_name {
-                return Err(::pernixc_serialize::__internal::DeError::missing_field(
+        quote! { 
+            #field_name: match #var_name {
+                Some(value) => value,
+                None => return Err(::pernixc_serialize::__internal::DeError::missing_field(
                     ::pernixc_serialize::__internal::Identifier::Name(#field_name_str)
-                ));
+                )),
             }
         }
-    }).collect();
-    
-    let field_construction: Vec<_> = field_vars.iter().map(|(field_name, var_name, _found_name)| {
-        quote! { #field_name: #var_name.unwrap() }
     }).collect();
 
     let access_trait_ident = Ident::new(access_trait, proc_macro2::Span::call_site());
@@ -584,10 +578,7 @@ where
             }
         },
         quote! {
-            // Check for missing required fields
-            #(#missing_field_checks)*
-            
-            // Construct the final value
+            // Construct the final value (missing fields are handled in the pattern matching)
             Ok(#constructor {
                 #(#field_construction),*
             })
