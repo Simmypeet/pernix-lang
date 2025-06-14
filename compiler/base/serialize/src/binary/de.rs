@@ -420,15 +420,27 @@ impl<R: Read + 'static, E: 'static> Deserializer for BinaryDeserializer<R, E> {
     }
 
     fn expect_isize(&mut self) -> Result<isize, Self::Error> {
-        // Read as i64 and convert
-        let value = self.expect_i64()?;
-        Ok(value as isize)
+        #[cfg(target_pointer_width = "64")]
+        let mut buf = [0u8; 8];
+
+        #[cfg(target_pointer_width = "32")]
+        let mut buf = [0u8; 4];
+
+        self.read_bytes(&mut buf)?;
+
+        Ok(isize::from_le_bytes(buf))
     }
 
     fn expect_usize(&mut self) -> Result<usize, Self::Error> {
-        // Read as u64 and convert
-        let value = self.read_varint()?;
-        Ok(value as usize)
+        #[cfg(target_pointer_width = "64")]
+        let mut buf = [0u8; 8];
+
+        #[cfg(target_pointer_width = "32")]
+        let mut buf = [0u8; 4];
+
+        self.read_bytes(&mut buf)?;
+
+        Ok(usize::from_le_bytes(buf))
     }
 
     fn expect_f32(&mut self) -> Result<f32, Self::Error> {
