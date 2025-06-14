@@ -564,7 +564,7 @@ fn deserialize_unnamed_fields(name: &Ident, fields: &FieldsUnnamed) -> proc_macr
     let field_deserializations: Vec<_> = (0..field_count).map(|i| {
         let field_name = Ident::new(&format!("field_{i}"), name.span());
         quote! {
-            let #field_name = ::pernixc_serialize::__internal::TupleStructAccess::next_element(
+            let #field_name = ::pernixc_serialize::__internal::TupleStructAccess::next_field(
                 &mut tuple_struct_access
             )?;
         }
@@ -634,7 +634,7 @@ fn deserialize_enum_variants(
                 let field_deserializations: Vec<_> = (0..field_count).map(|i| {
                     let field_name = Ident::new(&format!("field_{i}"), variant_name.span());
                     quote! {
-                        let #field_name = ::pernixc_serialize::__internal::TupleVariantAccess::next_element(
+                        let #field_name = ::pernixc_serialize::__internal::TupleVariantAccess::next_field(
                             &mut tuple_variant_access
                         )?;
                     }
@@ -647,9 +647,8 @@ fn deserialize_enum_variants(
                 
                 quote! {
                     #variant_arm => {
-                        ::pernixc_serialize::__internal::EnumAccess::variant_tuple(
+                        ::pernixc_serialize::__internal::EnumAccess::tuple_variant(
                             enum_access,
-                            #variant_name_str,
                             #field_count,
                             |mut tuple_variant_access| {
                                 #(#field_deserializations)*
@@ -684,11 +683,19 @@ fn deserialize_enum_variants(
                 }).collect();
                 
                 // Generate match arms for known fields
-                let field_match_arms: Vec<_> = field_vars.iter().map(|(field_name, var_name, found_name)| {
+                let field_match_arms: Vec<_> = field_vars.iter().enumerate().map(|(field_index, (field_name, var_name, found_name))| {
                     let field_name_str = field_name.to_string();
+                    let Ok(field_index_lit) = u32::try_from(field_index) else {
+                        return syn::Error::new_spanned(
+                            field_name,
+                            "Struct has too many fields to deserialize",
+                        )
+                        .into_compile_error();
+                    };
 
                     quote! {
-                        #variant_arm => {
+                        ::pernixc_serialize::__internal::Identifier::Name(#field_name_str) |
+                        ::pernixc_serialize::__internal::Identifier::Index(#field_index_lit) => {
                             if #found_name {
                                 Err(::pernixc_serialize::__internal::DeError::duplicated_field(
                                     ::pernixc_serialize::__internal::Identifier::Name(#field_name_str)
@@ -719,10 +726,9 @@ fn deserialize_enum_variants(
                 }).collect();
                 
                 quote! {
-                    #variant_index => {
-                        ::pernixc_serialize::__internal::EnumAccess::variant_struct(
+                    #variant_arm => {
+                        ::pernixc_serialize::__internal::EnumAccess::struct_variant(
                             enum_access,
-                            #variant_name_str,
                             &[#(#field_names),*],
                             |mut struct_variant_access| {
                                 #(#field_initializations)*

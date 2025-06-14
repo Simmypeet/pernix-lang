@@ -28,4 +28,5 @@ pub mod binary;
 pub mod de;
 pub mod ser;
 
+#[cfg(test)]
 mod derive_test;

@@ -497,13 +497,13 @@ fn nested_generic_bounds() {
 
 // Test structs with Deserialize for error handling tests
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-struct TestStruct {
+struct SimpleStruct {
     name: String,
     value: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-enum TestEnum {
+enum SimpleEnum {
     Unit,
 }
 
@@ -522,39 +522,39 @@ fn manual_deserialize_test() {
 
 // Error handling tests for struct deserialization
 #[test]
-fn test_struct_round_trip() {
-    let test_struct = TestStruct { name: "test".to_string(), value: 42 };
+fn struct_round_trip() {
+    let test_struct = SimpleStruct { name: "test".to_string(), value: 42 };
 
     let bytes = serialize_to_bytes(&test_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = TestStruct::deserialize(&mut deserializer).unwrap();
+    let deserialized = SimpleStruct::deserialize(&mut deserializer).unwrap();
 
     assert_eq!(test_struct, deserialized);
 }
 
 #[test]
-fn test_enum_round_trip() {
+fn enum_round_trip() {
     // Temporarily disabled due to enum derive issues
     /*
     // Test unit variant
-    let enum_unit = TestEnum::Unit;
+    let enum_unit = SimpleEnum::Unit;
     let bytes = serialize_to_bytes(&enum_unit);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = TestEnum::deserialize(&mut deserializer).unwrap();
+    let deserialized = SimpleEnum::deserialize(&mut deserializer).unwrap();
     assert_eq!(enum_unit, deserialized);
 
     // Test tuple variant
-    let enum_tuple = TestEnum::Tuple(123);
+    let enum_tuple = SimpleEnum::Tuple(123);
     let bytes = serialize_to_bytes(&enum_tuple);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = TestEnum::deserialize(&mut deserializer).unwrap();
+    let deserialized = SimpleEnum::deserialize(&mut deserializer).unwrap();
     assert_eq!(enum_tuple, deserialized);
 
     // Test struct variant
-    let enum_struct = TestEnum::Struct { field: "hello".to_string() };
+    let enum_struct = SimpleEnum::Struct { field: "hello".to_string() };
     let bytes = serialize_to_bytes(&enum_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = TestEnum::deserialize(&mut deserializer).unwrap();
+    let deserialized = SimpleEnum::deserialize(&mut deserializer).unwrap();
     assert_eq!(enum_struct, deserialized);
     */
 }
@@ -563,3 +563,285 @@ fn test_enum_round_trip() {
 // requires manual construction of invalid binary data or a custom deserializer
 // that injects errors. For now, we verify that the generated code compiles
 // and the round-trip tests pass, which exercises the happy path.
+
+// Additional comprehensive tests to prevent field index bugs
+#[test]
+fn multi_field_struct_round_trip() {
+    // Test a struct with multiple fields to ensure field indices are correct
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct MultiFieldStruct {
+        field_a: String,
+        field_b: i32,
+        field_c: bool,
+    }
+
+    let test_struct = MultiFieldStruct {
+        field_a: "hello".to_string(),
+        field_b: 42,
+        field_c: true,
+    };
+
+    let bytes = serialize_to_bytes(&test_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        MultiFieldStruct::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(test_struct, deserialized);
+}
+
+#[test]
+fn single_field_struct() {
+    // Edge case: single field struct
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct SingleField {
+        value: String,
+    }
+
+    let test_struct = SingleField { value: "single".to_string() };
+
+    let bytes = serialize_to_bytes(&test_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = SingleField::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(test_struct, deserialized);
+}
+
+#[test]
+fn comprehensive_round_trip_all_forms() {
+    // Test all possible struct and enum forms to ensure complete coverage
+
+    // Unit struct
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct UnitStruct;
+
+    // Tuple struct
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct TupleStruct(String, i32, bool);
+
+    // Named fields struct
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct FieldsStruct {
+        name: String,
+        value: i32,
+        active: bool,
+    }
+
+    // Enum with all variant types
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum ComprehensiveEnum {
+        // Unit variant
+        Unit,
+        // Tuple variant
+        Tuple(String, i32),
+        // Struct variant
+        Struct { field_a: String, field_b: i32, field_c: bool },
+    }
+
+    // Test unit struct
+    let unit_struct = UnitStruct;
+    let bytes = serialize_to_bytes(&unit_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = UnitStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(unit_struct, deserialized);
+
+    // Test tuple struct
+    let tuple_struct = TupleStruct("hello".to_string(), 42, true);
+    let bytes = serialize_to_bytes(&tuple_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = TupleStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(tuple_struct, deserialized);
+
+    // Test fields struct
+    let fields_struct =
+        FieldsStruct { name: "test".to_string(), value: -123, active: false };
+    let bytes = serialize_to_bytes(&fields_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = FieldsStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(fields_struct, deserialized);
+
+    // Test enum unit variant
+    let enum_unit = ComprehensiveEnum::Unit;
+    let bytes = serialize_to_bytes(&enum_unit);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComprehensiveEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(enum_unit, deserialized);
+
+    // Test enum tuple variant
+    let enum_tuple = ComprehensiveEnum::Tuple("world".to_string(), 456);
+    let bytes = serialize_to_bytes(&enum_tuple);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComprehensiveEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(enum_tuple, deserialized);
+
+    // Test enum struct variant
+    let enum_struct = ComprehensiveEnum::Struct {
+        field_a: "struct_variant".to_string(),
+        field_b: 789,
+        field_c: true,
+    };
+    let bytes = serialize_to_bytes(&enum_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComprehensiveEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(enum_struct, deserialized);
+}
+
+#[test]
+fn complex_nested_forms() {
+    // Test complex nested structures to ensure deep serialization works
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct InnerStruct {
+        value: i32,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum InnerEnum {
+        Variant { data: String },
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct OuterStruct {
+        inner_struct: InnerStruct,
+        inner_enum: InnerEnum,
+        vec_data: Vec<String>,
+        optional: Option<i32>,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum OuterEnum {
+        Complex { nested_struct: OuterStruct, tuple_data: (String, i32, bool) },
+        Simple(Vec<InnerStruct>),
+    }
+
+    // Test nested complex enum
+    let complex_data = OuterEnum::Complex {
+        nested_struct: OuterStruct {
+            inner_struct: InnerStruct { value: 100 },
+            inner_enum: InnerEnum::Variant { data: "nested".to_string() },
+            vec_data: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            optional: Some(200),
+        },
+        tuple_data: ("tuple".to_string(), 300, false),
+    };
+
+    let bytes = serialize_to_bytes(&complex_data);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = OuterEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(complex_data, deserialized);
+
+    // Test simple variant with vector
+    let simple_data = OuterEnum::Simple(vec![
+        InnerStruct { value: 1 },
+        InnerStruct { value: 2 },
+        InnerStruct { value: 3 },
+    ]);
+
+    let bytes = serialize_to_bytes(&simple_data);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = OuterEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(simple_data, deserialized);
+}
+
+#[test]
+fn edge_cases() {
+    // Test edge cases that might reveal field index issues
+
+    // Struct with many fields to test field index calculation
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct ManyFieldsStruct {
+        field_0: u8,
+        field_1: u16,
+        field_2: u32,
+        field_3: u64,
+        field_4: i8,
+        field_5: i16,
+        field_6: i32,
+        field_7: i64,
+        field_8: f32,
+        field_9: f64,
+        field_10: bool,
+        field_11: String,
+        field_12: Vec<u8>,
+        field_13: Option<i32>,
+    }
+
+    let many_fields = ManyFieldsStruct {
+        field_0: 0,
+        field_1: 1,
+        field_2: 2,
+        field_3: 3,
+        field_4: 4,
+        field_5: 5,
+        field_6: 6,
+        field_7: 7,
+        field_8: 8.0,
+        field_9: 9.0,
+        field_10: true,
+        field_11: "eleven".to_string(),
+        field_12: vec![1, 2, 3],
+        field_13: Some(13),
+    };
+
+    let bytes = serialize_to_bytes(&many_fields);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ManyFieldsStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(many_fields, deserialized);
+
+    // Enum with many struct variants to test variant field index calculation
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum ManyVariantsEnum {
+        Variant0 {
+            a: i32,
+            b: String,
+        },
+        Variant1 {
+            x: f64,
+            y: bool,
+            z: Vec<u8>,
+        },
+        Variant2 {
+            first: String,
+            second: i32,
+            third: bool,
+            fourth: f64,
+            fifth: Option<String>,
+        },
+    }
+
+    // Test each variant
+    let variant0 =
+        ManyVariantsEnum::Variant0 { a: 100, b: "test0".to_string() };
+    let bytes = serialize_to_bytes(&variant0);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ManyVariantsEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(variant0, deserialized);
+
+    let variant1 = ManyVariantsEnum::Variant1 {
+        x: 123.456,
+        y: false,
+        z: vec![10, 20, 30],
+    };
+    let bytes = serialize_to_bytes(&variant1);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ManyVariantsEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(variant1, deserialized);
+
+    let variant2 = ManyVariantsEnum::Variant2 {
+        first: "first".to_string(),
+        second: 200,
+        third: true,
+        fourth: 456.789,
+        fifth: Some("fifth".to_string()),
+    };
+    let bytes = serialize_to_bytes(&variant2);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ManyVariantsEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(variant2, deserialized);
+}

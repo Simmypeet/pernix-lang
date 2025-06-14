@@ -161,6 +161,7 @@ impl<R: Read + 'static, E: 'static> FieldAccess
 pub struct BinaryStructAccess<'a, R, E> {
     deserializer: &'a mut BinaryDeserializer<R, E>,
     fields_remaining: usize,
+    total_fields: usize,
 }
 
 impl<R: Read + 'static, E: 'static> StructAccess
@@ -179,11 +180,13 @@ impl<R: Read + 'static, E: 'static> StructAccess
         if self.fields_remaining == 0 {
             next(None)
         } else {
-            self.fields_remaining -= 1;
             let field_access =
                 BinaryFieldAccess { deserializer: self.deserializer };
             // In binary format, we use indices for field identification
-            let index = self.fields_remaining;
+            // Calculate the current field index based on how many fields we've
+            // processed
+            let index = self.total_fields - self.fields_remaining;
+            self.fields_remaining -= 1;
             next(Some((Identifier::from_index(index as u32), field_access)))
         }
     }
@@ -256,6 +259,7 @@ impl<R: Read + 'static, E: 'static> TupleVariantAccess
 pub struct BinaryStructVariantAccess<'a, R, E> {
     deserializer: &'a mut BinaryDeserializer<R, E>,
     remaining: usize,
+    total_fields: usize,
 }
 
 impl<R: Read + 'static, E: 'static> StructVariantAccess
@@ -278,7 +282,8 @@ impl<R: Read + 'static, E: 'static> StructVariantAccess
             let field_access =
                 BinaryFieldAccess { deserializer: self.deserializer };
             // In binary format, we use indices for field identification
-            let index = self.remaining;
+            // Calculate the correct index: total_fields - remaining - 1
+            let index = self.total_fields - self.remaining - 1;
             next(Some((Identifier::from_index(index as u32), field_access)))
         }
     }
@@ -323,6 +328,7 @@ impl<'s, R: Read + 'static, E: 'static> EnumAccess
         let struct_access = BinaryStructVariantAccess {
             deserializer: self.deserializer,
             remaining: fields.len(),
+            total_fields: fields.len(),
         };
         f(struct_access)
     }
@@ -553,6 +559,7 @@ impl<R: Read + 'static, E: 'static> Deserializer for BinaryDeserializer<R, E> {
         let struct_access = BinaryStructAccess {
             deserializer: self,
             fields_remaining: fields.len(),
+            total_fields: fields.len(),
         };
         f(struct_access)
     }
