@@ -1284,3 +1284,349 @@ fn recursive_generic_roundtrip() {
         RecursiveGeneric::deserialize(&mut deserializer).unwrap();
     assert_eq!(nested_nodes, deserialized);
 }
+
+// Test struct with serde(skip) attribute
+#[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+struct StructWithSkip {
+    name: String,
+    #[serde(skip)]
+    skipped_field: i32,
+    age: u32,
+}
+
+// Test tuple struct with serde(skip) attribute
+#[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+struct TupleWithSkip(String, #[serde(skip)] i32, u32);
+
+// Test enum with serde(skip) in variant fields
+#[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+enum EnumWithSkip {
+    Named {
+        name: String,
+        #[serde(skip)]
+        _skipped: i32,
+        value: u32,
+    },
+    Tuple(String, #[serde(skip)] i32, u32),
+    #[default]
+    Unit,
+}
+
+#[test]
+fn struct_with_skip_round_trip() {
+    let original = StructWithSkip {
+        name: "test".to_string(),
+        skipped_field: 999, // This should be ignored during serialization
+        age: 25,
+    };
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = StructWithSkip::deserialize(&mut deserializer).unwrap();
+
+    // The deserialized struct should have the skipped field set to default (0)
+    let expected = StructWithSkip {
+        name: "test".to_string(),
+        skipped_field: 0, // Default value for i32
+        age: 25,
+    };
+
+    assert_eq!(expected, deserialized);
+    assert_ne!(original, deserialized); // Original and deserialized should
+                                        // differ due to skipped field
+}
+
+#[test]
+fn test_tuple_with_skip_round_trip() {
+    let original = TupleWithSkip("test".to_string(), 999, 25);
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = TupleWithSkip::deserialize(&mut deserializer).unwrap();
+
+    // The deserialized tuple should have the skipped field (middle) set to
+    // default (0)
+    let expected = TupleWithSkip("test".to_string(), 0, 25);
+
+    assert_eq!(expected, deserialized);
+    assert_ne!(original, deserialized);
+}
+
+#[test]
+fn enum_with_skip_round_trip() {
+    // Test named variant with skip
+    let original_named = EnumWithSkip::Named {
+        name: "test".to_string(),
+        _skipped: 999,
+        value: 42,
+    };
+
+    let bytes = serialize_to_bytes(&original_named);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized_named =
+        EnumWithSkip::deserialize(&mut deserializer).unwrap();
+
+    let expected_named = EnumWithSkip::Named {
+        name: "test".to_string(),
+        _skipped: 0, // Default value
+        value: 42,
+    };
+
+    assert_eq!(expected_named, deserialized_named);
+
+    // Test tuple variant with skip
+    let original_tuple = EnumWithSkip::Tuple("test".to_string(), 999, 42);
+
+    let bytes = serialize_to_bytes(&original_tuple);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized_tuple =
+        EnumWithSkip::deserialize(&mut deserializer).unwrap();
+
+    let expected_tuple = EnumWithSkip::Tuple("test".to_string(), 0, 42);
+
+    assert_eq!(expected_tuple, deserialized_tuple);
+
+    // Test unit variant (no skip fields)
+    let original_unit = EnumWithSkip::Unit;
+
+    let bytes = serialize_to_bytes(&original_unit);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized_unit =
+        EnumWithSkip::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original_unit, deserialized_unit);
+}
+
+#[test]
+fn multiple_skip_fields() {
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    struct MultipleSkip {
+        keep1: String,
+        #[serde(skip)]
+        skip1: i32,
+        keep2: u32,
+        #[serde(skip)]
+        skip2: f64,
+        keep3: bool,
+    }
+
+    let original = MultipleSkip {
+        keep1: "hello".to_string(),
+        skip1: 999,
+        keep2: 42,
+        skip2: 1.23,
+        keep3: true,
+    };
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = MultipleSkip::deserialize(&mut deserializer).unwrap();
+
+    let expected = MultipleSkip {
+        keep1: "hello".to_string(),
+        skip1: 0, // Default i32
+        keep2: 42,
+        skip2: 0.0, // Default f64
+        keep3: true,
+    };
+
+    assert_eq!(expected, deserialized);
+}
+
+#[test]
+fn all_fields_skipped() {
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    struct AllSkipped {
+        #[serde(skip)]
+        field1: i32,
+        #[serde(skip)]
+        field2: String,
+    }
+
+    let original =
+        AllSkipped { field1: 999, field2: "should be ignored".to_string() };
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = AllSkipped::deserialize(&mut deserializer).unwrap();
+
+    let expected = AllSkipped::default();
+
+    assert_eq!(expected, deserialized);
+}
+
+#[test]
+fn skip_fields_binary_buffer_inspection() {
+    // Test that skipped fields don't contribute any bytes to the serialized
+    // output
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    struct WithSkip {
+        keep1: u32,
+        #[serde(skip)]
+        skip1: i32,
+        keep2: String,
+        #[serde(skip)]
+        skip2: f64,
+        keep3: bool,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    struct WithoutSkip {
+        keep1: u32,
+        keep2: String,
+        keep3: bool,
+    }
+
+    let with_skip = WithSkip {
+        keep1: 42,
+        skip1: 999, // This should not appear in serialized bytes
+        keep2: "hello".to_string(),
+        skip2: 123.456, // This should not appear in serialized bytes
+        keep3: true,
+    };
+
+    let without_skip =
+        WithoutSkip { keep1: 42, keep2: "hello".to_string(), keep3: true };
+
+    // Serialize both structs
+    let bytes_with_skip = serialize_to_bytes(&with_skip);
+    let bytes_without_skip = serialize_to_bytes(&without_skip);
+
+    // The serialized bytes should be identical since skipped fields are not
+    // written
+    assert_eq!(
+        bytes_with_skip, bytes_without_skip,
+        "Skipped fields should not contribute to serialized output"
+    );
+
+    // Additional verification: the buffer should not contain the skipped values
+    // The integer 999 should not appear in the binary representation
+    // (we need to be careful about false positives, but 999 as i32 has a
+    // specific byte pattern)
+    let skip1_bytes = 999i32.to_le_bytes();
+    let contains_skip1 = bytes_with_skip
+        .windows(skip1_bytes.len())
+        .any(|window| window == skip1_bytes);
+    assert!(
+        !contains_skip1,
+        "Skipped i32 field value should not appear in binary output"
+    );
+
+    // The float 123.456 should not appear in the binary representation
+    let skip2_bytes = 123.456f64.to_le_bytes();
+    let contains_skip2 = bytes_with_skip
+        .windows(skip2_bytes.len())
+        .any(|window| window == skip2_bytes);
+    assert!(
+        !contains_skip2,
+        "Skipped f64 field value should not appear in binary output"
+    );
+
+    // Verify deserialization works correctly
+    let mut deserializer =
+        BinaryDeserializer::new(std::io::Cursor::new(bytes_with_skip));
+    let deserialized = WithSkip::deserialize(&mut deserializer).unwrap();
+
+    let expected = WithSkip {
+        keep1: 42,
+        skip1: 0, // Default value
+        keep2: "hello".to_string(),
+        skip2: 0.0, // Default value
+        keep3: true,
+    };
+
+    assert_eq!(expected, deserialized);
+}
+
+#[test]
+fn enum_skip_fields_binary_buffer_inspection() {
+    // Test that skipped fields in enum variants don't contribute bytes to
+    // serialized output
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    enum EnumWithSkip {
+        Variant {
+            keep: u32,
+            #[serde(skip)]
+            _skip: i64,
+        },
+        #[default]
+        Default,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    enum EnumWithoutSkip {
+        Variant {
+            keep: u32,
+        },
+        #[default]
+        Default,
+    }
+
+    let with_skip = EnumWithSkip::Variant {
+        keep: 123,
+        _skip: 987654321, /* This large value should not appear in serialized
+                           * bytes */
+    };
+
+    let without_skip = EnumWithoutSkip::Variant { keep: 123 };
+
+    let bytes_with_skip = serialize_to_bytes(&with_skip);
+    let bytes_without_skip = serialize_to_bytes(&without_skip);
+
+    // The serialized bytes should be identical since skipped fields are not
+    // written
+    assert_eq!(
+        bytes_with_skip, bytes_without_skip,
+        "Skipped enum fields should not contribute to serialized output"
+    );
+
+    // Verify the large skipped value doesn't appear in the binary
+    let skip_bytes = 987654321i64.to_le_bytes();
+    let contains_skip = bytes_with_skip
+        .windows(skip_bytes.len())
+        .any(|window| window == skip_bytes);
+    assert!(
+        !contains_skip,
+        "Skipped enum field value should not appear in binary output"
+    );
+}
+
+#[test]
+fn tuple_struct_skip_fields_binary_buffer_inspection() {
+    // Test that skipped fields in tuple structs don't contribute bytes
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    struct TupleWithSkip(u16, #[serde(skip)] i128, String);
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+    struct TupleWithoutSkip(u16, String);
+
+    let with_skip = TupleWithSkip(
+        555,
+        -999999999999999999, // Large negative value that should not appear
+        "test".to_string(),
+    );
+
+    let without_skip = TupleWithoutSkip(555, "test".to_string());
+
+    let bytes_with_skip = serialize_to_bytes(&with_skip);
+    let bytes_without_skip = serialize_to_bytes(&without_skip);
+
+    // Should be identical
+    assert_eq!(
+        bytes_with_skip, bytes_without_skip,
+        "Skipped tuple fields should not contribute to serialized output"
+    );
+
+    // Verify the large skipped value doesn't appear
+    let skip_bytes = (-999999999999999999i128).to_le_bytes();
+    let contains_skip = bytes_with_skip
+        .windows(skip_bytes.len())
+        .any(|window| window == skip_bytes);
+    assert!(
+        !contains_skip,
+        "Skipped tuple field value should not appear in binary output"
+    );
+}

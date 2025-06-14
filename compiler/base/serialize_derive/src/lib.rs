@@ -1,9 +1,70 @@
 //! Procedural macros for automatic serialization trait implementations.
+//! 
+//! This crate provides derive macros for automatically implementing the `Serialize` 
+//! and `Deserialize` traits on structs and enums.
+//!
+//! # Supported Attributes
+//!
+//! ## `#[serde(skip)]`
+//!
+//! The `#[serde(skip)]` attribute can be applied to fields in structs, tuple structs,
+//! and enum variants to exclude them from serialization and deserialization.
+//!
+//! ### Serialization Behavior
+//! - Fields marked with `#[serde(skip)]` are completely omitted from the serialized output
+//! - No bytes are written for these fields
+//! - The serialized data is identical to a structure without the skipped fields
+//!
+//! ### Deserialization Behavior  
+//! - Skipped fields are not read from the input stream
+//! - They are initialized with their `Default` value
+//! - The containing type must implement `Default` when using skipped fields
+//! - No bytes are consumed from the input for skipped fields
+//!
+//! ### Use Cases
+//! - **Runtime-only data**: Caches, computed values, temporary state
+//! - **Version compatibility**: Fields added in newer versions that shouldn't break older readers
+//! - **Non-serializable types**: Fields containing types that can't or shouldn't be serialized
+//! - **Performance optimization**: Avoiding serialization of expensive-to-serialize data
+//!
+//! ### Example
+//!
+//! ```ignore
+//! use pernixc_serialize_derive::{Serialize, Deserialize};
+//!
+//! #[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
+//! struct UserSession {
+//!     user_id: u64,
+//!     username: String,
+//!     #[serde(skip)]
+//!     auth_token: String,        // Runtime-only, not persisted
+//!     #[serde(skip)]
+//!     last_activity: u64,        // Computed field, reset on load
+//! }
+//!
+//! let session = UserSession {
+//!     user_id: 123,
+//!     username: "alice".to_string(),
+//!     auth_token: "secret-token".to_string(),
+//!     last_activity: 1640995200,
+//! };
+//!
+//! // Serialize - only user_id and username are written
+//! let bytes = serialize(&session);
+//!
+//! // Deserialize - auth_token and last_activity get default values
+//! let restored: UserSession = deserialize(&bytes);
+//! assert_eq!(restored.user_id, 123);
+//! assert_eq!(restored.username, "alice");
+//! assert_eq!(restored.auth_token, "");  // Default String
+//! assert_eq!(restored.last_activity, 0);  // Default u64
+//! ```
 
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{
-    parse_macro_input, Data, DataEnum, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Generics, Ident, Index,  Variant
+    parse_macro_input, Data, DataEnum, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Generics, Ident, Index, Variant, 
+    Field
 };
 
 /// Automatically derive the Serialize trait for structs and enums.
@@ -11,7 +72,24 @@ use syn::{
 /// This macro generates an implementation of the `Serialize` trait that
 /// serializes all fields of a struct or all variants of an enum.
 ///
-/// # Example
+/// # Attributes
+///
+/// ## `#[serde(skip)]`
+///
+/// Fields marked with `#[serde(skip)]` are completely omitted from serialization.
+/// This means:
+/// - The field's value is not written to the serialized output
+/// - No bytes are contributed to the binary representation
+/// - The field can contain any value without affecting the serialized data
+///
+/// This is useful for:
+/// - Runtime-only data that shouldn't be persisted
+/// - Computed or cached values that can be regenerated
+/// - Fields that would cause serialization issues (e.g., non-serializable types)
+///
+/// # Examples
+///
+/// ## Basic struct serialization
 ///
 /// ```ignore
 /// use pernixc_serialize_derive::Serialize;
@@ -21,14 +99,61 @@ use syn::{
 ///     name: String,
 ///     age: u32,
 /// }
+/// ```
+///
+/// ## Struct with skipped field
+///
+/// ```ignore
+/// use pernixc_serialize_derive::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Cache {
+///     id: u64,
+///     data: String,
+///     #[serde(skip)]
+///     computed_hash: u64,  // Not serialized
+/// }
+/// ```
+///
+/// ## Generic struct
+///
+/// ```ignore
+/// use pernixc_serialize_derive::Serialize;
 ///
 /// #[derive(Serialize)]
 /// struct Point<T> {
 ///     x: T,
 ///     y: T,
+///     #[serde(skip)]
+///     cached_distance: f64,  // Not serialized
 /// }
 /// ```
-#[proc_macro_derive(Serialize)]
+///
+/// ## Enum with skipped fields
+///
+/// ```ignore
+/// use pernixc_serialize_derive::Serialize;
+///
+/// #[derive(Serialize)]
+/// enum Message {
+///     Text {
+///         content: String,
+///         #[serde(skip)]
+///         word_count: usize,  // Not serialized
+///     },
+///     Image(Vec<u8>),
+/// }
+/// ```
+///
+/// ## Tuple struct with skipped field
+///
+/// ```ignore
+/// use pernixc_serialize_derive::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct Coordinates(f64, f64, #[serde(skip)] String);  // Third field not serialized
+/// ```
+#[proc_macro_derive(Serialize, attributes(serde))]
 pub fn derive_serialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     
@@ -88,18 +213,22 @@ fn expand_serialize_struct(
 
 fn serialize_named_fields(name: &Ident, fields: &FieldsNamed) -> proc_macro2::TokenStream {
     let struct_name_str = name.to_string();
-    let field_count = fields.named.len();
+    let field_count = count_non_skipped_fields(fields);
     
-    let field_serializations = fields.named.iter().map(|field| {
-        let field_name = field.ident.as_ref().unwrap();
-        let field_name_str = field_name.to_string();
-        
-        quote! {
-            pernixc_serialize::__internal::Struct::serialize_field(
-                &mut struct_serializer,
-                #field_name_str,
-                &self.#field_name
-            )?;
+    let field_serializations = fields.named.iter().filter_map(|field| {
+        if has_serde_skip_attr(field) {
+            None // Skip this field
+        } else {
+            let field_name = field.ident.as_ref().unwrap();
+            let field_name_str = field_name.to_string();
+            
+            Some(quote! {
+                pernixc_serialize::__internal::Struct::serialize_field(
+                    &mut struct_serializer,
+                    #field_name_str,
+                    &self.#field_name
+                )?;
+            })
         }
     });
 
@@ -118,16 +247,20 @@ fn serialize_named_fields(name: &Ident, fields: &FieldsNamed) -> proc_macro2::To
 
 fn serialize_unnamed_fields(name: &Ident, fields: &FieldsUnnamed) -> proc_macro2::TokenStream {
     let struct_name_str = name.to_string();
-    let field_count = fields.unnamed.len();
+    let field_count = count_non_skipped_unnamed_fields(fields);
     
-    let field_serializations = fields.unnamed.iter().enumerate().map(|(i, _field)| {
-        let index = Index::from(i);
-        
-        quote! {
-            pernixc_serialize::__internal::TupleStruct::serialize_field(
-                &mut tuple_struct_serializer,
-                &self.#index
-            )?;
+    let field_serializations = fields.unnamed.iter().enumerate().filter_map(|(i, field)| {
+        if has_serde_skip_attr(field) {
+            None // Skip this field
+        } else {
+            let index = Index::from(i);
+            
+            Some(quote! {
+                pernixc_serialize::__internal::TupleStruct::serialize_field(
+                    &mut tuple_struct_serializer,
+                    &self.#index
+                )?;
+            })
         }
     });
 
@@ -208,21 +341,27 @@ fn serialize_enum_variants(
             }
             Fields::Unnamed(fields) => {
                 // Tuple variant: MyEnum::Variant(T1, T2, ...)
-                let field_count = fields.unnamed.len();
-                let field_bindings: Vec<_> = (0..field_count)
+                let total_field_count = fields.unnamed.len();
+                let non_skipped_fields: Vec<_> = fields.unnamed.iter().enumerate()
+                    .filter(|(_, field)| !has_serde_skip_attr(field))
+                    .collect();
+                let field_count = non_skipped_fields.len();
+                
+                let all_field_bindings: Vec<_> = (0..total_field_count)
                     .map(|i| {
                         Ident::new(&format!("__field_{i}"), variant_name.span())
                     })
                     .collect();
                 
-                let field_serializations = field_bindings.iter().map(|field_name| {
+                let field_serializations = non_skipped_fields.iter().map(|(i, _)| {
+                    let field_name = &all_field_bindings[*i];
                     quote! {
                         tuple_variant.serialize_field(#field_name)?;
                     }
                 });
                 
                 quote! {
-                    #enum_name::#variant_name(#(#field_bindings),*) => {
+                    #enum_name::#variant_name(#(#all_field_bindings),*) => {
                         use pernixc_serialize::__internal::TupleVariant;
                         
                         serializer.emit_tuple_variant(
@@ -240,18 +379,22 @@ fn serialize_enum_variants(
             }
             Fields::Named(fields) => {
                 // Struct variant: MyEnum::Variant { field1: T1, field2: T2, ... }
-                let field_count = fields.named.len();
+                let field_count = count_non_skipped_fields(fields);
                 let field_bindings = fields.named.iter().map(|field| {
                     let field_name = field.ident.as_ref().unwrap();
                     field_name
                 });
                 
-                let field_serializations = fields.named.iter().map(|field| {
-                    let field_name = field.ident.as_ref().unwrap();
-                    let field_name_str = field_name.to_string();
-                    
-                    quote! {
-                        struct_variant.serialize_field(#field_name_str, #field_name)?;
+                let field_serializations = fields.named.iter().filter_map(|field| {
+                    if has_serde_skip_attr(field) {
+                        None // Skip this field
+                    } else {
+                        let field_name = field.ident.as_ref().unwrap();
+                        let field_name_str = field_name.to_string();
+                        
+                        Some(quote! {
+                            struct_variant.serialize_field(#field_name_str, #field_name)?;
+                        })
                     }
                 });
                 
@@ -363,7 +506,27 @@ fn generate_deserialize_impl_generics(
 /// This macro generates an implementation of the `Deserialize` trait that
 /// deserializes all fields of a struct or all variants of an enum.
 ///
-/// # Example
+/// # Attributes
+///
+/// ## `#[serde(skip)]`
+///
+/// Fields marked with `#[serde(skip)]` are not read from the serialized data during 
+/// deserialization. Instead, they are filled with their `Default` value. This means:
+/// - The field's value is not read from the input stream
+/// - The field is initialized using `Default::default()`
+/// - The type must implement the `Default` trait
+/// - No bytes are consumed from the input for this field
+///
+/// This is useful for:
+/// - Runtime-only data that should be reset to a default state
+/// - Computed or cached values that need to be recalculated
+/// - Fields that were added later and don't exist in older serialized data
+///
+/// **Important**: The struct/enum must implement `Default` when using skipped fields.
+///
+/// # Examples
+///
+/// ## Basic struct deserialization
 ///
 /// ```ignore
 /// use pernixc_serialize_derive::Deserialize;
@@ -373,14 +536,74 @@ fn generate_deserialize_impl_generics(
 ///     name: String,
 ///     age: u32,
 /// }
+/// ```
 ///
-/// #[derive(Deserialize)]
-/// struct Point<T> {
-///     x: T,
-///     y: T,
+/// ## Struct with skipped field
+///
+/// ```ignore
+/// use pernixc_serialize_derive::{Serialize, Deserialize};
+///
+/// #[derive(Serialize, Deserialize, Default)]
+/// struct Cache {
+///     id: u64,
+///     data: String,
+///     #[serde(skip)]
+///     computed_hash: u64,  // Will be 0 after deserialization
 /// }
 /// ```
-#[proc_macro_derive(Deserialize)]
+///
+/// ## Generic struct with Default
+///
+/// ```ignore
+/// use pernixc_serialize_derive::{Serialize, Deserialize};
+///
+/// #[derive(Serialize, Deserialize, Default)]
+/// struct Point<T: Default> {
+///     x: T,
+///     y: T,
+///     #[serde(skip)]
+///     cached_distance: f64,  // Will be 0.0 after deserialization
+/// }
+/// ```
+///
+/// ## Enum with skipped fields
+///
+/// ```ignore
+/// use pernixc_serialize_derive::{Serialize, Deserialize};
+///
+/// #[derive(Serialize, Deserialize, Default)]
+/// enum Message {
+///     #[default]
+///     Empty,
+///     Text {
+///         content: String,
+///         #[serde(skip)]
+///         word_count: usize,  // Will be 0 after deserialization
+///     },
+///     Image(Vec<u8>),
+/// }
+/// ```
+///
+/// ## Round-trip compatibility
+///
+/// ```ignore
+/// use pernixc_serialize_derive::{Serialize, Deserialize};
+///
+/// #[derive(Serialize, Deserialize, Default, PartialEq, Debug)]
+/// struct Data {
+///     value: i32,
+///     #[serde(skip)]
+///     temp: String,  // Skipped in both directions
+/// }
+///
+/// let original = Data { value: 42, temp: "ignored".to_string() };
+/// let bytes = serialize(&original);
+/// let deserialized: Data = deserialize(&bytes);
+/// 
+/// // deserialized.value == 42
+/// // deserialized.temp == String::default() (empty string)
+/// ```
+#[proc_macro_derive(Deserialize, attributes(serde))]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     
@@ -477,27 +700,35 @@ where
         Vec<proc_macro2::TokenStream>, // field processing logic
     ) -> proc_macro2::TokenStream,
 {
-    let field_names: Vec<_> = fields.named.iter().map(|field| {
-        let field_name_str = field.ident.as_ref().unwrap().to_string();
-        quote! { #field_name_str }
-    }).collect();
+    let field_names: Vec<_> = fields.named.iter()
+        .filter(|field| !has_serde_skip_attr(field))
+        .map(|field| {
+            let field_name_str = field.ident.as_ref().unwrap().to_string();
+            quote! { #field_name_str }
+        }).collect();
     
-    // Generate field variables for each field
-    let field_vars: Vec<_> = fields.named.iter().map(|field| {
+    // Generate field variables for each field (including skipped ones for construction)
+    let all_field_vars: Vec<_> = fields.named.iter().map(|field| {
         let field_name = field.ident.as_ref().unwrap();
         let var_name = Ident::new(&format!("__{field_name}_value"), field_name.span());
-        (field_name, var_name)
+        (field_name, var_name, has_serde_skip_attr(field))
     }).collect();
     
-    // Initialize field variables
-    let field_initializations: Vec<_> = field_vars.iter().map(|(_field_name, var_name)| {
+    // Only process non-skipped fields for deserialization
+    let non_skipped_field_vars: Vec<_> = all_field_vars.iter()
+        .filter(|(_, _, is_skipped)| !*is_skipped)
+        .map(|(field_name, var_name, _)| (*field_name, var_name))
+        .collect();
+    
+    // Initialize field variables (only for non-skipped fields)
+    let field_initializations: Vec<_> = non_skipped_field_vars.iter().map(|(_field_name, var_name)| {
         quote! {
             let mut #var_name: Option<_> = None;
         }
     }).collect();
     
-    // Generate match arms for known fields
-    let field_match_arms: Vec<_> = field_vars.iter().enumerate().map(|(index, (field_name, var_name))| {
+    // Generate match arms for known fields (only non-skipped)
+    let field_match_arms: Vec<_> = non_skipped_field_vars.iter().enumerate().map(|(index, (field_name, var_name))| {
         let field_name_str = field_name.to_string();
         let Ok(field_index) = u32::try_from(index) else {
             return syn::Error::new_spanned(
@@ -523,14 +754,22 @@ where
     }).collect();
     
     // Check for missing fields and construct the final value using pattern matching
-    let field_construction: Vec<_> = field_vars.iter().map(|(field_name, var_name)| {
-        let field_name_str = field_name.to_string();
-        quote! { 
-            #field_name: match #var_name {
-                Some(value) => value,
-                None => return Err(::pernixc_serialize::__internal::DeError::missing_field(
-                    ::pernixc_serialize::__internal::Identifier::Name(#field_name_str)
-                )),
+    let field_construction: Vec<_> = all_field_vars.iter().map(|(field_name, var_name, is_skipped)| {
+        if *is_skipped {
+            // For skipped fields, use default value
+            quote! { 
+                #field_name: std::default::Default::default()
+            }
+        } else {
+            // For non-skipped fields, check if they were provided
+            let field_name_str = field_name.to_string();
+            quote! { 
+                #field_name: match #var_name {
+                    Some(value) => value,
+                    None => return Err(::pernixc_serialize::__internal::DeError::missing_field(
+                        ::pernixc_serialize::__internal::Identifier::Name(#field_name_str)
+                    )),
+                }
             }
         }
     }).collect();
@@ -621,14 +860,18 @@ fn generate_unnamed_fields_deserialize<F>(
 ) -> proc_macro2::TokenStream
 where
     F: FnOnce(
-        usize, // field_count
+        usize, // field_count (only non-skipped fields)
         Vec<proc_macro2::TokenStream>, // field_deserializations
         Vec<proc_macro2::TokenStream>, // field_construction
     ) -> proc_macro2::TokenStream,
 {
-    let field_count = fields.unnamed.len();
+    let total_field_count = fields.unnamed.len();
+    let non_skipped_fields: Vec<_> = fields.unnamed.iter().enumerate()
+        .filter(|(_, field)| !has_serde_skip_attr(field))
+        .collect();
+    let non_skipped_count = non_skipped_fields.len();
     
-    let field_deserializations: Vec<_> = (0..field_count).map(|i| {
+    let field_deserializations: Vec<_> = non_skipped_fields.iter().map(|(i, _)| {
         let field_name = Ident::new(&format!("field_{i}"), span);
         let access_trait_ident = Ident::new(access_trait, proc_macro2::Span::call_site());
         let access_var_ident = Ident::new(access_var, proc_macro2::Span::call_site());
@@ -639,12 +882,20 @@ where
         }
     }).collect();
     
-    let field_construction: Vec<_> = (0..field_count).map(|i| {
-        let field_name = Ident::new(&format!("field_{i}"), span);
-        quote! { #field_name }
+    // Generate construction arguments for all fields (including defaults for skipped ones)
+    let field_construction: Vec<_> = (0..total_field_count).map(|i| {
+        let field = &fields.unnamed[i];
+        if has_serde_skip_attr(field) {
+            // Use default value for skipped fields
+            quote! { std::default::Default::default() }
+        } else {
+            // Use deserialized value for non-skipped fields
+            let field_name = Ident::new(&format!("field_{i}"), span);
+            quote! { #field_name }
+        }
     }).collect();
 
-    wrapper(field_count, field_deserializations, field_construction)
+    wrapper(non_skipped_count, field_deserializations, field_construction)
 }
 
 fn deserialize_unnamed_fields(name: &Ident, fields: &FieldsUnnamed) -> proc_macro2::TokenStream {
@@ -778,5 +1029,73 @@ fn deserialize_enum_variants(
             }
         )
     }
+}
+
+/// Helper function to check if a field has the `#[serde(skip)]` attribute.
+///
+/// This function parses field attributes to determine if a field should be 
+/// skipped during serialization and deserialization. It looks for the 
+/// `#[serde(skip)]` attribute on struct fields, tuple struct fields, and 
+/// enum variant fields.
+///
+/// # Arguments
+///
+/// * `field` - The field to check for the skip attribute
+///
+/// # Returns
+///
+/// `true` if the field has `#[serde(skip)]`, `false` otherwise
+///
+/// # Examples
+///
+/// This is used internally by the derive macros to identify fields like:
+/// ```ignore
+/// struct Example {
+///     normal_field: i32,
+///     #[serde(skip)]  // This field will return true
+///     skipped_field: String,
+/// }
+/// ```
+fn has_serde_skip_attr(field: &Field) -> bool {
+    field.attrs.iter().any(|attr| {
+        if attr.path().is_ident("serde") {
+            if let Ok(list) = attr.meta.require_list() {
+                return list.tokens.to_string().contains("skip");
+            }
+        }
+        false
+    })
+}
+
+/// Helper function to get field count excluding skipped fields.
+///
+/// This counts only the fields that will actually be serialized/deserialized,
+/// excluding any fields marked with `#[serde(skip)]`.
+///
+/// # Arguments
+///
+/// * `fields` - The named fields to count
+///
+/// # Returns
+///
+/// The number of fields that are not marked with `#[serde(skip)]`
+fn count_non_skipped_fields(fields: &FieldsNamed) -> usize {
+    fields.named.iter().filter(|field| !has_serde_skip_attr(field)).count()
+}
+
+/// Helper function to get unnamed field count excluding skipped fields.
+///
+/// This counts only the tuple struct fields that will actually be serialized/deserialized,
+/// excluding any fields marked with `#[serde(skip)]`.
+///
+/// # Arguments
+///
+/// * `fields` - The unnamed fields to count
+///
+/// # Returns
+///
+/// The number of fields that are not marked with `#[serde(skip)]`
+fn count_non_skipped_unnamed_fields(fields: &FieldsUnnamed) -> usize {
+    fields.unnamed.iter().filter(|field| !has_serde_skip_attr(field)).count()
 }
 
