@@ -1630,3 +1630,41 @@ fn tuple_struct_skip_fields_binary_buffer_inspection() {
         "Skipped tuple field value should not appear in binary output"
     );
 }
+
+#[test]
+fn extension_attribute_with_generics() {
+    // Test that #[serde(extension(...))] works with generic types
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[serde(extension(Clone + Send + Sync + 'static))]
+    struct GenericExtension<T> {
+        data: T,
+        count: usize,
+    }
+
+    let original = GenericExtension { data: vec![1, 2, 3], count: 3 };
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        GenericExtension::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original, deserialized);
+}
+
+#[test]
+fn extension_attribute_tuple_struct() {
+    // Test that #[serde(extension(...))] works with tuple structs
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[serde(extension(Clone + Send + Sync + 'static))]
+    struct ExtensionTuple(String, u32, Vec<u8>);
+
+    let original = ExtensionTuple("data".to_string(), 42, vec![1, 2, 3, 4]);
+
+    let bytes = serialize_to_bytes(&original);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = ExtensionTuple::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original, deserialized);
+}
