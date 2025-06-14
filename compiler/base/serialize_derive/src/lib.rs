@@ -1,10 +1,9 @@
 //! Procedural macros for automatic serialization trait implementations.
 
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
-    parse_macro_input, Data, DataEnum, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, 
-    Generics, Ident, Index, Variant,
+    parse_macro_input, Data, DataEnum, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Generics, Ident, Index, Variant
 };
 
 /// Automatically derive the Serialize trait for structs and enums.
@@ -71,36 +70,15 @@ fn expand_serialize_struct(
         Fields::Unit => serialize_unit_struct(name),
     };
 
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
-    
-    // Add bounds for all generic types to implement Serialize
-    let bounds: Vec<_> = generics.type_params().map(|param| {
-        let param_ident = &param.ident;
-        quote! {
-            #param_ident: ::pernixc_serialize::__internal::Serialize<__S>
-        }
-    }).collect();
-
-    let additional_bounds = if bounds.is_empty() {
-        quote! {}
-    } else {
-        quote! { , #(#bounds),* }
-    };
-
-    // Properly format the generics - avoid extra comma when impl_generics is empty
-    let mut generic_list = vec![];
-    for type_param in generics.type_params() {
-        generic_list.push(quote! { #type_param });
-    }
+    let (_, ty_generics, _) = generics.split_for_impl();
+    let (generic_list, bounds) = generate_serialize_impl_generics(generics);
 
     quote! {
         impl<
-            __S, #(#generic_list),*
+            #(#generic_list),*
         > ::pernixc_serialize::__internal::Serialize<__S> for #name #ty_generics
         where
-            __S: ::pernixc_serialize::__internal::Serializer
-            #additional_bounds
-            #where_clause
+            #(#bounds),*
         {
             fn serialize(&self, serializer: &mut __S) -> Result<(), __S::Error> {
                 #serialize_body
@@ -185,36 +163,15 @@ fn expand_serialize_enum(
 ) -> proc_macro2::TokenStream {
     let serialize_body = serialize_enum_variants(name, &data_enum.variants);
 
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
-    
-    // Add bounds for all generic types to implement Serialize
-    let bounds: Vec<_> = generics.type_params().map(|param| {
-        let param_ident = &param.ident;
-        quote! {
-            #param_ident: pernixc_serialize::__internal::Serialize<__S>
-        }
-    }).collect();
-
-    let additional_bounds = if bounds.is_empty() {
-        quote! {}
-    } else {
-        quote! { , #(#bounds),* }
-    };
-
-
-    let mut generic_list = vec![];
-    for type_param in generics.type_params() {
-        generic_list.push(quote! { #type_param });
-    }
+    let (_, ty_generics, _) = generics.split_for_impl();
+    let (generic_list, bounds) = generate_serialize_impl_generics(generics);
     
     quote! {
         impl<
-            __S, #(#generic_list),*
-        > pernixc_serialize::__internal::Serialize<__S> for #name #ty_generics
+            #(#generic_list),*
+        > ::pernixc_serialize::__internal::Serialize<__S> for #name #ty_generics
         where
-            __S: pernixc_serialize::__internal::Serializer
-            #additional_bounds
-            #where_clause
+            #(#bounds),*
         {
             fn serialize(&self, serializer: &mut __S) -> Result<(), __S::Error> {
                 #serialize_body
@@ -324,5 +281,50 @@ fn serialize_enum_variants(
             #(#variant_arms)*
         }
     }
+}
+
+/// Helper function to generate impl generics and where clause for Serialize implementations.
+/// Returns (`generic_list`, `bounds`) where:
+/// - `generic_list`: List of generic parameters for the impl block
+/// - `bounds`: List of where clause predicates
+fn generate_serialize_impl_generics(
+    generics: &Generics,
+) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
+    let mut generic_list = Vec::new();
+    let mut bounds = Vec::new();
+
+    // Add lifetimes first
+    for lt in generics.lifetimes() {
+        generic_list.push(quote! { #lt });
+    }
+
+    // Add the serializer type parameter
+    generic_list.push(quote! { __S });
+    bounds.push(quote! {
+        __S: ::pernixc_serialize::__internal::Serializer
+    });
+
+    // Add type parameters
+    for type_param in generics.type_params() {
+        generic_list.push(quote! { #type_param });
+        let param_ident = &type_param.ident;
+        bounds.push(quote! {
+            #param_ident: ::pernixc_serialize::__internal::Serialize<__S>
+        });
+    }
+
+    // Add const parameters
+    for const_param in generics.const_params() {
+        generic_list.push(quote! { #const_param });
+    }
+
+    // Add existing where clause predicates
+    if let Some(where_clause) = &generics.where_clause {
+        for predicate in &where_clause.predicates {
+            bounds.push(predicate.into_token_stream());
+        }
+    }
+
+    (generic_list, bounds)
 }
 
