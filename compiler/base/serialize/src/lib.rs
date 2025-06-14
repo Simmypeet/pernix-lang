@@ -26,6 +26,7 @@ pub mod __internal {
 
 pub mod binary;
 pub mod de;
+pub mod extension;
 pub mod ser;
 
 #[cfg(test)]
