@@ -532,38 +532,6 @@ fn struct_round_trip() {
     assert_eq!(test_struct, deserialized);
 }
 
-#[test]
-fn enum_round_trip() {
-    // Temporarily disabled due to enum derive issues
-    /*
-    // Test unit variant
-    let enum_unit = SimpleEnum::Unit;
-    let bytes = serialize_to_bytes(&enum_unit);
-    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = SimpleEnum::deserialize(&mut deserializer).unwrap();
-    assert_eq!(enum_unit, deserialized);
-
-    // Test tuple variant
-    let enum_tuple = SimpleEnum::Tuple(123);
-    let bytes = serialize_to_bytes(&enum_tuple);
-    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = SimpleEnum::deserialize(&mut deserializer).unwrap();
-    assert_eq!(enum_tuple, deserialized);
-
-    // Test struct variant
-    let enum_struct = SimpleEnum::Struct { field: "hello".to_string() };
-    let bytes = serialize_to_bytes(&enum_struct);
-    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = SimpleEnum::deserialize(&mut deserializer).unwrap();
-    assert_eq!(enum_struct, deserialized);
-    */
-}
-
-// Note: Testing missing fields, duplicated fields, and unknown fields
-// requires manual construction of invalid binary data or a custom deserializer
-// that injects errors. For now, we verify that the generated code compiles
-// and the round-trip tests pass, which exercises the happy path.
-
 // Additional comprehensive tests to prevent field index bugs
 #[test]
 fn multi_field_struct_round_trip() {
@@ -1119,16 +1087,6 @@ fn higher_order_trait_bounds_roundtrip() {
         transformer: F,
         input: String,
         output: String,
-    }
-
-    // Use a simple closure that implements the required traits
-    #[derive(Clone, PartialEq)]
-    struct SimpleTransformer;
-
-    impl SimpleTransformer {
-        fn transform(&self, input: &str) -> String {
-            format!("transformed_{}", input)
-        }
     }
 
     // Since we can't easily serialize closures, we'll test with a simple struct
