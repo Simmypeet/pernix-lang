@@ -450,13 +450,25 @@ impl<R: Read + 'static, E: 'static> Deserializer for BinaryDeserializer<R, E> {
     }
 
     fn expect_char(&mut self) -> Result<char, Self::Error> {
-        let code_point = self.expect_u32()?;
-        char::from_u32(code_point).ok_or_else(|| {
+        // Read UTF-8 bytes with varint length prefix (matching serializer
+        // format)
+        let len = self.read_varint()? as usize;
+        let mut buf = vec![0u8; len];
+        self.read_bytes(&mut buf)?;
+        let s = std::str::from_utf8(&buf).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid Unicode code point: {}", code_point),
+                format!("Invalid UTF-8: {}", e),
             )
-        })
+        })?;
+        let mut chars = s.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => Ok(c),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid char: string must contain exactly one character",
+            )),
+        }
     }
 
     fn expect_string(&mut self) -> Result<String, Self::Error> {

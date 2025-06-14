@@ -689,14 +689,52 @@ where
     D: Deserializer,
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_tuple(N, |mut tuple| {
-            let mut result = Vec::with_capacity(N);
-            for _ in 0..N {
-                result.push(tuple.next_element()?);
+        use std::mem::{ManuallyDrop, MaybeUninit};
+
+        deserializer.expect_seq(|mut seq| {
+            // Create an uninitialized array
+            let mut array: [MaybeUninit<T>; N] =
+                unsafe { MaybeUninit::uninit().assume_init() };
+
+            // Deserialize each element with proper error handling
+            for i in 0..N {
+                match seq.next_element() {
+                    Ok(Some(element)) => {
+                        array[i] = MaybeUninit::new(element);
+                    }
+                    Ok(None) => {
+                        // Not enough elements, clean up and return error
+                        // Drop any successfully initialized elements
+                        for element in &mut array[..i] {
+                            unsafe {
+                                element.assume_init_read();
+                            }
+                        }
+                        panic!("Array deserialization: not enough elements")
+                    }
+                    Err(e) => {
+                        // Error during deserialization, clean up and propagate
+                        // Drop any successfully initialized elements
+                        for element in &mut array[..i] {
+                            unsafe {
+                                element.assume_init_read();
+                            }
+                        }
+                        return Err(e);
+                    }
+                }
             }
-            // Convert Vec to array - this uses unsafe but is safe due to length
-            // check
-            result.try_into().map_err(|_| panic!("Array length mismatch"))
+
+            // All elements successfully initialized, convert to final array
+            // This is safe because we've initialized all N elements
+            let result = unsafe {
+                (&array as *const [MaybeUninit<T>; N] as *const [T; N]).read()
+            };
+
+            // Prevent double-drop of the MaybeUninit array
+            let _ = ManuallyDrop::new(array);
+
+            Ok(result)
         })
     }
 }

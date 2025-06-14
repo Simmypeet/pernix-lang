@@ -104,7 +104,10 @@ fn test_sequences() {
 
     // Test tuples
     assert_eq!(round_trip(&(1, 2)).unwrap(), (1, 2));
-    assert_eq!(round_trip(&(1, "hello".to_string(), 2.5)).unwrap(), (1, "hello".to_string(), 2.5));
+    assert_eq!(
+        round_trip(&(1, "hello".to_string(), 2.5)).unwrap(),
+        (1, "hello".to_string(), 2.5)
+    );
 }
 
 #[test]
@@ -198,12 +201,13 @@ fn test_empty_collections() {
 #[test]
 fn test_extension_field_access() {
     let buffer = Vec::new();
-    let mut deserializer = BinaryDeserializer::with_extension(std::io::Cursor::new(buffer), 42u32);
-    
+    let mut deserializer =
+        BinaryDeserializer::with_extension(std::io::Cursor::new(buffer), 42u32);
+
     // Test getter through trait method
     use crate::de::Deserializer;
     assert_eq!(*deserializer.extension(), 42u32);
-    
+
     // Test mutable access through trait method
     *deserializer.extension() = 200u32;
     assert_eq!(*deserializer.extension(), 200u32);
@@ -214,7 +218,7 @@ fn test_reader_access() {
     let data = vec![1, 2, 3, 4];
     let cursor = std::io::Cursor::new(data);
     let mut deserializer = BinaryDeserializer::new(cursor);
-    
+
     // Read directly from the reader to test access
     let mut byte = [0u8; 1];
     deserializer.reader_mut().read_exact(&mut byte).unwrap();
@@ -226,14 +230,14 @@ fn test_error_handling() {
     // Test deserializing from empty buffer
     let cursor = std::io::Cursor::new(Vec::new());
     let mut deserializer = BinaryDeserializer::new(cursor);
-    
+
     let result = u32::deserialize(&mut deserializer);
     assert!(result.is_err());
-    
+
     // Test deserializing incomplete data
     let cursor = std::io::Cursor::new(vec![1, 2]); // Only 2 bytes for a u32
     let mut deserializer = BinaryDeserializer::new(cursor);
-    
+
     let result = u32::deserialize(&mut deserializer);
     assert!(result.is_err());
 }
@@ -243,7 +247,7 @@ fn test_bool_invalid_values() {
     // Test that invalid bool values are rejected
     let cursor = std::io::Cursor::new(vec![2u8]); // Invalid bool value
     let mut deserializer = BinaryDeserializer::new(cursor);
-    
+
     let result = bool::deserialize(&mut deserializer);
     assert!(result.is_err());
 }
@@ -253,18 +257,18 @@ fn test_string_with_invalid_utf8() {
     // Create a buffer with invalid UTF-8
     let buffer = Vec::new();
     let mut serializer = BinarySerializer::new(buffer);
-    
+
     // Serialize a valid string first to get the length encoding
     "hello".serialize(&mut serializer).unwrap();
-    
+
     // Now manually corrupt the buffer to have invalid UTF-8
     let mut buffer = serializer.into_inner();
     let len = buffer.len();
     buffer[len - 1] = 0xFF; // Invalid UTF-8 byte
-    
+
     let cursor = std::io::Cursor::new(buffer);
     let mut deserializer = BinaryDeserializer::new(cursor);
-    
+
     let result = String::deserialize(&mut deserializer);
     assert!(result.is_err());
 }
@@ -274,7 +278,29 @@ fn test_char_invalid_unicode() {
     // Test that invalid Unicode code points are rejected
     let cursor = std::io::Cursor::new(vec![0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8]); // Invalid Unicode
     let mut deserializer = BinaryDeserializer::new(cursor);
-    
+
     let result = char::deserialize(&mut deserializer);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_array_error_handling() {
+    // Test array deserialization with insufficient elements
+    let buffer = Vec::new();
+    let mut serializer = BinarySerializer::new(buffer);
+
+    // Serialize a vector with only 2 elements
+    vec![1u32, 2u32].serialize(&mut serializer).unwrap();
+    let buffer = serializer.into_inner();
+
+    let cursor = std::io::Cursor::new(buffer);
+    let mut deserializer = BinaryDeserializer::new(cursor);
+
+    // Try to deserialize as an array of 3 elements - should panic
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        <[u32; 3]>::deserialize(&mut deserializer)
+    }));
+
+    // Should have panicked due to insufficient elements
     assert!(result.is_err());
 }
