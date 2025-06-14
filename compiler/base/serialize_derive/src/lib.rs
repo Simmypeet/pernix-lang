@@ -612,35 +612,65 @@ fn deserialize_named_fields(name: &Ident, fields: &FieldsNamed) -> proc_macro2::
     )
 }
 
-fn deserialize_unnamed_fields(name: &Ident, fields: &FieldsUnnamed) -> proc_macro2::TokenStream {
-    let struct_name_str = name.to_string();
+/// Generates code for deserializing a tuple struct or tuple enum variant.
+/// The `wrapper` closure allows customizing how the field processing logic is wrapped.
+fn generate_unnamed_fields_deserialize<F>(
+    fields: &FieldsUnnamed,
+    access_trait: &str,
+    access_var: &str,
+    span: proc_macro2::Span,
+    wrapper: F,
+) -> proc_macro2::TokenStream
+where
+    F: FnOnce(
+        usize, // field_count
+        Vec<proc_macro2::TokenStream>, // field_deserializations
+        Vec<proc_macro2::TokenStream>, // field_construction
+    ) -> proc_macro2::TokenStream,
+{
     let field_count = fields.unnamed.len();
     
     let field_deserializations: Vec<_> = (0..field_count).map(|i| {
-        let field_name = Ident::new(&format!("field_{i}"), name.span());
+        let field_name = Ident::new(&format!("field_{i}"), span);
+        let access_trait_ident = Ident::new(access_trait, proc_macro2::Span::call_site());
+        let access_var_ident = Ident::new(access_var, proc_macro2::Span::call_site());
         quote! {
-            let #field_name = ::pernixc_serialize::__internal::TupleStructAccess::next_field(
-                &mut tuple_struct_access
+            let #field_name = ::pernixc_serialize::__internal::#access_trait_ident::next_field(
+                &mut #access_var_ident
             )?;
         }
     }).collect();
     
     let field_construction: Vec<_> = (0..field_count).map(|i| {
-        let field_name = Ident::new(&format!("field_{i}"), name.span());
+        let field_name = Ident::new(&format!("field_{i}"), span);
         quote! { #field_name }
     }).collect();
 
-    quote! {
-        ::pernixc_serialize::__internal::Deserializer::expect_tuple_struct(
-            deserializer,
-            #struct_name_str,
-            #field_count,
-            |mut tuple_struct_access| {
-                #(#field_deserializations)*
-                Ok(#name(#(#field_construction),*))
+    wrapper(field_count, field_deserializations, field_construction)
+}
+
+fn deserialize_unnamed_fields(name: &Ident, fields: &FieldsUnnamed) -> proc_macro2::TokenStream {
+    let struct_name_str = name.to_string();
+    
+    generate_unnamed_fields_deserialize(
+        fields,
+        "TupleStructAccess",
+        "tuple_struct_access",
+        name.span(),
+        |field_count, field_deserializations, field_construction| {
+            quote! {
+                ::pernixc_serialize::__internal::Deserializer::expect_tuple_struct(
+                    deserializer,
+                    #struct_name_str,
+                    #field_count,
+                    |mut tuple_struct_access| {
+                        #(#field_deserializations)*
+                        Ok(#name(#(#field_construction),*))
+                    }
+                )
             }
-        )
-    }
+        }
+    )
 }
 
 fn deserialize_unit_struct(name: &Ident) -> proc_macro2::TokenStream {
@@ -685,33 +715,26 @@ fn deserialize_enum_variants(
             }
 
             Fields::Unnamed(fields) => {
-                let field_count = fields.unnamed.len();
-                let field_deserializations: Vec<_> = (0..field_count).map(|i| {
-                    let field_name = Ident::new(&format!("field_{i}"), variant_name.span());
-                    quote! {
-                        let #field_name = ::pernixc_serialize::__internal::TupleVariantAccess::next_field(
-                            &mut tuple_variant_access
-                        )?;
-                    }
-                }).collect();
-                
-                let field_construction: Vec<_> = (0..field_count).map(|i| {
-                    let field_name = Ident::new(&format!("field_{i}"), variant_name.span());
-                    quote! { #field_name }
-                }).collect();
-                
-                quote! {
-                    #variant_arm => {
-                        ::pernixc_serialize::__internal::EnumAccess::tuple_variant(
-                            enum_access,
-                            #field_count,
-                            |mut tuple_variant_access| {
-                                #(#field_deserializations)*
-                                Ok(#enum_name::#variant_name(#(#field_construction),*))
+                generate_unnamed_fields_deserialize(
+                    fields,
+                    "TupleVariantAccess",
+                    "tuple_variant_access",
+                    variant_name.span(),
+                    |field_count, field_deserializations, field_construction| {
+                        quote! {
+                            #variant_arm => {
+                                ::pernixc_serialize::__internal::EnumAccess::tuple_variant(
+                                    enum_access,
+                                    #field_count,
+                                    |mut tuple_variant_access| {
+                                        #(#field_deserializations)*
+                                        Ok(#enum_name::#variant_name(#(#field_construction),*))
+                                    }
+                                )
                             }
-                        )
+                        }
                     }
-                }
+                )
             }
 
             Fields::Named(fields) => {
