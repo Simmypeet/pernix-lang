@@ -287,33 +287,36 @@ fn serialize_enum_variants(
 /// Returns (`generic_list`, `bounds`) where:
 /// - `generic_list`: List of generic parameters for the impl block
 /// - `bounds`: List of where clause predicates
-fn generate_serialize_impl_generics(
+fn generate_impl_generics(
     generics: &Generics,
+    param_name: &str,
+    param_bound: proc_macro2::TokenStream,
+    type_bound_template: fn(&syn::Ident, &str) -> proc_macro2::TokenStream,
 ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
     let mut generic_list = Vec::new();
     let mut bounds = Vec::new();
 
+    let param_ident = syn::Ident::new(param_name, proc_macro2::Span::call_site());
+
+    // Always use consistent order: lifetimes, __D or __S, type parameters, const parameters
+    
     // Add lifetimes first
     for lt in generics.lifetimes() {
         generic_list.push(quote! { #lt });
     }
-
-    // Add the serializer type parameter
-    generic_list.push(quote! { __S });
-    bounds.push(quote! {
-        __S: ::pernixc_serialize::__internal::Serializer
-    });
-
-    // Add type parameters
+    
+    // Add the serializer/deserializer type parameter second
+    generic_list.push(quote! { #param_ident });
+    bounds.push(param_bound);
+    
+    // Add type parameters third
     for type_param in generics.type_params() {
         generic_list.push(quote! { #type_param });
-        let param_ident = &type_param.ident;
-        bounds.push(quote! {
-            #param_ident: ::pernixc_serialize::__internal::Serialize<__S>
-        });
+        let param_ident_ref = &type_param.ident;
+        bounds.push(type_bound_template(param_ident_ref, param_name));
     }
 
-    // Add const parameters
+    // Add const parameters last
     for const_param in generics.const_params() {
         generic_list.push(quote! { #const_param });
     }
@@ -326,6 +329,34 @@ fn generate_serialize_impl_generics(
     }
 
     (generic_list, bounds)
+}
+
+fn generate_serialize_impl_generics(
+    generics: &Generics,
+) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
+    generate_impl_generics(
+        generics,
+        "__S",
+        quote! { __S: ::pernixc_serialize::__internal::Serializer },
+        |param_ident, param_name| {
+            let param_token = syn::Ident::new(param_name, proc_macro2::Span::call_site());
+            quote! { #param_ident: ::pernixc_serialize::__internal::Serialize<#param_token> }
+        },
+    )
+}
+
+fn generate_deserialize_impl_generics(
+    generics: &Generics,
+) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
+    generate_impl_generics(
+        generics,
+        "__D",
+        quote! { __D: ::pernixc_serialize::__internal::Deserializer },
+        |param_ident, param_name| {
+            let param_token = syn::Ident::new(param_name, proc_macro2::Span::call_site());
+            quote! { #param_ident: ::pernixc_serialize::__internal::Deserialize<#param_token> }
+        },
+    )
 }
 
 /// Automatically derive the Deserialize trait for structs and enums.
@@ -799,42 +830,5 @@ fn deserialize_enum_variants(
             }
         )
     }
-}
-
-fn generate_deserialize_impl_generics(
-    generics: &Generics,
-) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
-    let mut generic_list = Vec::new();
-    let mut bounds = Vec::new();
-
-    // Add the deserializer type parameter
-    generic_list.push(quote! { __D });
-    bounds.push(quote! { __D: ::pernixc_serialize::__internal::Deserializer });
-
-    // Add type parameters from the struct/enum
-    for type_param in generics.type_params() {
-        let param_name = &type_param.ident;
-        generic_list.push(quote! { #type_param });
-        bounds.push(quote! { #param_name: ::pernixc_serialize::__internal::Deserialize<__D> });
-    }
-
-    // Add lifetime parameters
-    for lifetime in generics.lifetimes() {
-        generic_list.push(quote! { #lifetime });
-    }
-
-    // Add const parameters  
-    for const_param in generics.const_params() {
-        generic_list.push(quote! { #const_param });
-    }
-
-    // Add existing where clause predicates
-    if let Some(where_clause) = &generics.where_clause {
-        for predicate in &where_clause.predicates {
-            bounds.push(predicate.into_token_stream());
-        }
-    }
-
-    (generic_list, bounds)
 }
 
