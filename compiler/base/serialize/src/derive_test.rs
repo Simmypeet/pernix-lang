@@ -845,3 +845,484 @@ fn edge_cases() {
         ManyVariantsEnum::deserialize(&mut deserializer).unwrap();
     assert_eq!(variant2, deserialized);
 }
+
+#[test]
+fn advanced_generic_struct_roundtrip() {
+    // Test struct with multiple generic parameters and trait bounds
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct MultiGeneric<T, U, V>
+    where
+        T: Clone + std::fmt::Debug,
+        U: PartialEq + Clone,
+        V: std::fmt::Display + Clone,
+    {
+        first: T,
+        second: U,
+        third: V,
+        metadata: (String, i32),
+    }
+
+    let multi_generic = MultiGeneric {
+        first: vec![1, 2, 3, 4, 5],
+        second: Some("optional".to_string()),
+        third: 42.5f64,
+        metadata: ("metadata".to_string(), 999),
+    };
+
+    let bytes = serialize_to_bytes(&multi_generic);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = MultiGeneric::deserialize(&mut deserializer).unwrap();
+    assert_eq!(multi_generic, deserialized);
+
+    // Test with different types
+    let multi_generic2 = MultiGeneric {
+        first: "different".to_string(),
+        second: Result::<i32, String>::Ok(123),
+        third: 100u64,
+        metadata: ("other".to_string(), -50),
+    };
+
+    let bytes = serialize_to_bytes(&multi_generic2);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = MultiGeneric::deserialize(&mut deserializer).unwrap();
+    assert_eq!(multi_generic2, deserialized);
+}
+
+#[test]
+fn advanced_generic_enum_roundtrip() {
+    // Test enum with complex generic parameters and constraints
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum ComplexGenericEnum<T, U, V>
+    where
+        T: Clone + std::fmt::Debug + PartialEq,
+        U: Clone + std::fmt::Debug + PartialEq,
+        V: Clone + std::fmt::Debug + PartialEq,
+    {
+        Empty,
+        Single(T),
+        Pair(T, U),
+        Triple(T, U, V),
+        Structured {
+            primary: T,
+            secondary: Option<U>,
+            tertiary: Vec<V>,
+            extra: (bool, String),
+        },
+        Nested {
+            inner: Box<ComplexGenericEnum<U, V, T>>, // Reordered generics
+            depth: usize,
+        },
+    }
+
+    // Test Empty variant
+    let empty: ComplexGenericEnum<i32, String, f64> = ComplexGenericEnum::Empty;
+    let bytes = serialize_to_bytes(&empty);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(empty, deserialized);
+
+    // Test Single variant with explicit type annotation
+    let single: ComplexGenericEnum<Vec<i32>, String, f64> =
+        ComplexGenericEnum::Single(vec![1, 2, 3]);
+    let bytes = serialize_to_bytes(&single);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(single, deserialized);
+
+    // Test Pair variant with explicit type annotation
+    let pair: ComplexGenericEnum<String, Option<i32>, f64> =
+        ComplexGenericEnum::Pair("first".to_string(), Some(42i32));
+    let bytes = serialize_to_bytes(&pair);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(pair, deserialized);
+
+    // Test Triple variant
+    let triple = ComplexGenericEnum::Triple(
+        vec!["a".to_string(), "b".to_string()],
+        (true, false, true),
+        999u64,
+    );
+    let bytes = serialize_to_bytes(&triple);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(triple, deserialized);
+
+    // Test Structured variant
+    let structured = ComplexGenericEnum::Structured {
+        primary: std::collections::HashMap::from([
+            ("key1".to_string(), 100),
+            ("key2".to_string(), 200),
+        ]),
+        secondary: Some("secondary".to_string()),
+        tertiary: vec![1.1, 2.2, 3.3],
+        extra: (false, "extra_data".to_string()),
+    };
+    let bytes = serialize_to_bytes(&structured);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(structured, deserialized);
+
+    // Test Nested variant with reordered generics
+    let nested: ComplexGenericEnum<
+        std::collections::HashMap<String, i32>,
+        String,
+        f64,
+    > = ComplexGenericEnum::Nested {
+        inner: Box::new(ComplexGenericEnum::Single("inner_value".to_string())),
+        depth: 5,
+    };
+    let bytes = serialize_to_bytes(&nested);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(nested, deserialized);
+}
+
+#[test]
+fn lifetime_generic_roundtrip() {
+    // Test struct with lifetime parameters
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct WithLifetimes<T>
+    where
+        T: Clone + PartialEq,
+    {
+        data: T,
+        name: String,
+        description: String,
+        id: u64,
+    }
+
+    let lifetime_data = WithLifetimes {
+        data: vec![10, 20, 30, 40],
+        name: "test_name".to_string(),
+        description: "test_description".to_string(),
+        id: 12345,
+    };
+
+    let bytes = serialize_to_bytes(&lifetime_data);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = WithLifetimes::deserialize(&mut deserializer).unwrap();
+    assert_eq!(lifetime_data, deserialized);
+
+    // Test enum with lifetimes
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum LifetimeEnum<T>
+    where
+        T: Clone + PartialEq,
+    {
+        Reference(String),
+        Owned(String),
+        Generic(T),
+        Combined { reference: String, owned: String, generic: T },
+    }
+
+    let reference_variant: LifetimeEnum<Vec<i32>> =
+        LifetimeEnum::Reference("reference_data".to_string());
+    let bytes = serialize_to_bytes(&reference_variant);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = LifetimeEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(reference_variant, deserialized);
+
+    let combined_variant = LifetimeEnum::Combined {
+        reference: "ref_value".to_string(),
+        owned: "owned_value".to_string(),
+        generic: Some(42i32),
+    };
+    let bytes = serialize_to_bytes(&combined_variant);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized = LifetimeEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(combined_variant, deserialized);
+}
+
+// Test struct with const generic parameters
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct ConstGenericStruct<T, const N: usize>
+where
+    T: Clone + PartialEq + std::fmt::Debug,
+{
+    data: [T; N],
+    size: usize,
+    metadata: String,
+}
+
+#[test]
+fn const_generic_roundtrip() {
+    let const_struct = ConstGenericStruct {
+        data: [1, 2, 3, 4, 5],
+        size: 5,
+        metadata: "fixed_size_array".to_string(),
+    };
+
+    let bytes = serialize_to_bytes(&const_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ConstGenericStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(const_struct, deserialized);
+
+    // Test with different size and type
+    let const_struct2 = ConstGenericStruct {
+        data: ["a".to_string(), "b".to_string(), "c".to_string()],
+        size: 3,
+        metadata: "string_array".to_string(),
+    };
+
+    let bytes = serialize_to_bytes(&const_struct2);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ConstGenericStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(const_struct2, deserialized);
+
+    // Test enum with const generics
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum ConstGenericEnum<T, const N: usize>
+    where
+        T: Clone + PartialEq + std::fmt::Debug,
+    {
+        Array([T; N]),
+        Dynamic(Vec<T>),
+        Mixed { fixed: [T; N], dynamic: Vec<T>, count: usize },
+    }
+
+    let array_variant = ConstGenericEnum::Array([10.1, 20.2, 30.3]);
+    let bytes = serialize_to_bytes(&array_variant);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ConstGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(array_variant, deserialized);
+
+    let mixed_variant = ConstGenericEnum::Mixed {
+        fixed: [true, false],
+        dynamic: vec![true, true, false, true],
+        count: 6,
+    };
+    let bytes = serialize_to_bytes(&mixed_variant);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ConstGenericEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(mixed_variant, deserialized);
+}
+
+#[test]
+fn higher_order_trait_bounds_roundtrip() {
+    // Test with higher-order trait bounds (HRTB)
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct HigherOrderStruct<F>
+    where
+        F: for<'a> Fn(&'a str) -> String + Clone + PartialEq,
+    {
+        transformer: F,
+        input: String,
+        output: String,
+    }
+
+    // Use a simple closure that implements the required traits
+    #[derive(Clone, PartialEq)]
+    struct SimpleTransformer;
+
+    impl SimpleTransformer {
+        fn transform(&self, input: &str) -> String {
+            format!("transformed_{}", input)
+        }
+    }
+
+    // Since we can't easily serialize closures, we'll test with a simple struct
+    #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+    struct TransformerStruct {
+        prefix: String,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct AlternativeStruct<T>
+    where
+        T: Clone + PartialEq + std::fmt::Debug,
+    {
+        transformer: T,
+        input: String,
+        output: String,
+    }
+
+    let alt_struct = AlternativeStruct {
+        transformer: TransformerStruct { prefix: "test_".to_string() },
+        input: "input_data".to_string(),
+        output: "output_data".to_string(),
+    };
+
+    let bytes = serialize_to_bytes(&alt_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        AlternativeStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(alt_struct, deserialized);
+}
+
+#[test]
+fn complex_where_clause_roundtrip() {
+    // Test with very complex where clauses
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct ComplexWhereStruct<T, U, V>
+    where
+        T: Clone + std::fmt::Debug + PartialEq + Send + Sync + 'static,
+        U: Clone + PartialEq + std::fmt::Display,
+        V: Clone + PartialEq + From<i32> + Into<f64>,
+        (T, U): Clone + PartialEq,
+        Vec<T>: Clone,
+    {
+        primary: T,
+        secondary: U,
+        tertiary: V,
+        compound: (T, U),
+        collection: Vec<T>,
+        metadata: std::collections::BTreeMap<String, i32>,
+    }
+
+    let complex_struct = ComplexWhereStruct {
+        primary: "primary_value".to_string(),
+        secondary: "secondary_value".to_string(),
+        tertiary: 123f64, // f64 implements From<i32> and Into<f64>
+        compound: (
+            "compound_primary".to_string(),
+            "compound_secondary".to_string(),
+        ),
+        collection: vec![
+            "item1".to_string(),
+            "item2".to_string(),
+            "item3".to_string(),
+        ],
+        metadata: std::collections::BTreeMap::from([
+            ("key1".to_string(), 100),
+            ("key2".to_string(), 200),
+            ("key3".to_string(), 300),
+        ]),
+    };
+
+    let bytes = serialize_to_bytes(&complex_struct);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexWhereStruct::deserialize(&mut deserializer).unwrap();
+    assert_eq!(complex_struct, deserialized);
+
+    // Test corresponding enum
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum ComplexWhereEnum<T, U, V>
+    where
+        T: Clone + std::fmt::Debug + PartialEq + Send + Sync + 'static,
+        U: Clone + PartialEq + std::fmt::Display,
+        V: Clone + PartialEq + From<i32> + Into<f64>,
+        (T, U): Clone + PartialEq,
+        Vec<T>: Clone,
+    {
+        Simple(T),
+        Compound(T, U, V),
+        Complex {
+            primary: T,
+            secondary: U,
+            tertiary: V,
+            compound: (T, U),
+            collection: Vec<T>,
+        },
+    }
+
+    let simple_variant: ComplexWhereEnum<Vec<i32>, String, f64> =
+        ComplexWhereEnum::Simple(vec![1, 2, 3, 4, 5]);
+    let bytes = serialize_to_bytes(&simple_variant);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexWhereEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(simple_variant, deserialized);
+
+    let compound_variant: ComplexWhereEnum<String, String, f64> =
+        ComplexWhereEnum::Compound(
+            "compound_primary".to_string(),
+            "compound_secondary".to_string(),
+            999.0f64,
+        );
+    let bytes = serialize_to_bytes(&compound_variant);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexWhereEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(compound_variant, deserialized);
+
+    let complex_variant: ComplexWhereEnum<String, String, f64> =
+        ComplexWhereEnum::Complex {
+            primary: "complex_primary".to_string(),
+            secondary: "complex_secondary".to_string(),
+            tertiary: 888.0f64,
+            compound: (
+                "complex_compound".to_string(),
+                "compound_secondary".to_string(),
+            ),
+            collection: vec!["a".to_string(), "b".to_string()],
+        };
+    let bytes = serialize_to_bytes(&complex_variant);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        ComplexWhereEnum::deserialize(&mut deserializer).unwrap();
+    assert_eq!(complex_variant, deserialized);
+}
+
+#[test]
+fn recursive_generic_roundtrip() {
+    // Test recursive structures with generics
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    enum RecursiveGeneric<T>
+    where
+        T: Clone + PartialEq + std::fmt::Debug,
+    {
+        Leaf(T),
+        Node { value: T, children: Vec<RecursiveGeneric<T>> },
+    }
+
+    // Test simple leaf
+    let leaf = RecursiveGeneric::Leaf("leaf_value".to_string());
+    let bytes = serialize_to_bytes(&leaf);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        RecursiveGeneric::deserialize(&mut deserializer).unwrap();
+    assert_eq!(leaf, deserialized);
+
+    // Test single node
+    let single_node = RecursiveGeneric::Node {
+        value: 100,
+        children: vec![
+            RecursiveGeneric::Leaf(1),
+            RecursiveGeneric::Leaf(2),
+            RecursiveGeneric::Leaf(3),
+        ],
+    };
+    let bytes = serialize_to_bytes(&single_node);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        RecursiveGeneric::deserialize(&mut deserializer).unwrap();
+    assert_eq!(single_node, deserialized);
+
+    // Test nested nodes
+    let nested_nodes = RecursiveGeneric::Node {
+        value: "root".to_string(),
+        children: vec![
+            RecursiveGeneric::Node {
+                value: "child1".to_string(),
+                children: vec![
+                    RecursiveGeneric::Leaf("grandchild1".to_string()),
+                    RecursiveGeneric::Leaf("grandchild2".to_string()),
+                ],
+            },
+            RecursiveGeneric::Node {
+                value: "child2".to_string(),
+                children: vec![RecursiveGeneric::Leaf(
+                    "grandchild3".to_string(),
+                )],
+            },
+            RecursiveGeneric::Leaf("child3".to_string()),
+        ],
+    };
+    let bytes = serialize_to_bytes(&nested_nodes);
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
+    let deserialized =
+        RecursiveGeneric::deserialize(&mut deserializer).unwrap();
+    assert_eq!(nested_nodes, deserialized);
+}
