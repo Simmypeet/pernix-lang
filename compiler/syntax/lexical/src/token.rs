@@ -10,8 +10,8 @@ use std::{
 use bimap::BiHashMap;
 use flexstr::ToFlex;
 use pernixc_handler::Handler;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     error::{self, InvalidEscapeSequence},

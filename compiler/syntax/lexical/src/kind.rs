@@ -10,7 +10,7 @@ use std::{
 use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{Deserialize, Serialize};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;

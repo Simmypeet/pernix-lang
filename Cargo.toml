@@ -11,6 +11,7 @@ members = [
     "compiler/base/diagnostic",
     "compiler/base/handler",
     "compiler/base/test_input",
+    "compiler/syntax/lexical",
     # tidy-alphabetical-end
 ]
 

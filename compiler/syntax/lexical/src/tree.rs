@@ -5,17 +5,17 @@ use std::{
     ops::Range,
 };
 
-use dashmap::DashMap;
 use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use fnv::FnvHasher;
 use getset::CopyGetters;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
+use pernixc_hash::DashMap;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
 };
-use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
 use crate::{
@@ -44,6 +44,7 @@ pub mod arbitrary;
     Hash,
     EnumIter,
     Serialize,
+    Deserialize,
 )]
 pub enum DelimiterKind {
     /// A parenthesis: `(`.
@@ -245,7 +246,7 @@ impl Tree {
             tree: Self {
                 source_id,
                 arena: Arena::new(),
-                end_location_cache: DashMap::new(),
+                end_location_cache: DashMap::default(),
             },
         };
 
