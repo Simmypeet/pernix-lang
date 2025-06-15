@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 pernixc_serialize_derive = { path = "../serialize_derive" }
 dashmap = { workspace = true }
+flexstr = { workspace = true }
 
 [dev-dependencies]
 pernixc_serialize_derive = { path = "../serialize_derive" }

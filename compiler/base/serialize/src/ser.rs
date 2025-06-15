@@ -667,7 +667,7 @@ where
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::{BuildHasher, Hash},
-    ops::Range,
+    ops::{Deref, Range},
 };
 
 impl<T, S> Serialize<S> for Vec<T>
@@ -984,6 +984,7 @@ where
 use std::path::Path;
 
 use dashmap::DashMap;
+use flexstr::FlexStr;
 
 impl<S> Serialize<S> for Path
 where
@@ -1027,5 +1028,20 @@ impl<
 
             Ok(())
         })
+    }
+}
+
+impl<
+        S: Serializer,
+        const SIZE: usize,
+        const PAD1: usize,
+        const PAD2: usize,
+        HEAP,
+    > Serialize<S> for FlexStr<SIZE, PAD1, PAD2, HEAP>
+where
+    HEAP: Deref<Target = str>,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.emit_str(self)
     }
 }

@@ -24,13 +24,14 @@ use crate::de::{
 pub struct BinaryDeserializer<R, E = ()> {
     reader: R,
     extension: E,
+    buffer: Vec<u8>,
 }
 
 impl<R: Read + 'static, E: 'static> BinaryDeserializer<R, E> {
     /// Create a new binary deserializer that reads from the given reader with
     /// the specified extension.
     pub fn with_extension(reader: R, extension: E) -> Self {
-        Self { reader, extension }
+        Self { reader, extension, buffer: Vec::new() }
     }
 
     /// Consume the deserializer and return the underlying reader and extension.
@@ -594,6 +595,21 @@ impl<R: Read + 'static, E: 'static> Deserializer for BinaryDeserializer<R, E> {
         let variant_index = self.read_varint()?;
         let enum_access = BinaryEnumAccess { deserializer: self };
         f(Identifier::from_index(variant_index as u32), enum_access)
+    }
+
+    fn expect_str(&mut self) -> Result<&str, Self::Error> {
+        let len = self.read_varint()? as usize;
+
+        if len > self.buffer.len() {
+            self.buffer.resize(len, 0);
+        }
+
+        self.reader.read_exact(&mut self.buffer[..len])?;
+
+        let s = std::str::from_utf8(&self.buffer[..len])
+            .map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x))?;
+
+        Ok(s)
     }
 }
 

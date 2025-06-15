@@ -514,6 +514,9 @@ pub trait Deserializer {
     /// Deserialize a character value.
     fn expect_char(&mut self) -> Result<char, Self::Error>;
 
+    /// Deserialze a string slice.
+    fn expect_str(&mut self) -> Result<&str, Self::Error>;
+
     /// Deserialize a string value.
     fn expect_string(&mut self) -> Result<String, Self::Error>;
 
@@ -1132,6 +1135,7 @@ impl std::fmt::Display for Identifier {
 use std::path::PathBuf;
 
 use dashmap::DashMap;
+use flexstr::FlexStr;
 
 impl<D> Deserialize<D> for PathBuf
 where
@@ -1235,5 +1239,22 @@ impl<
 
             Ok(map)
         })
+    }
+}
+
+impl<
+        D: Deserializer,
+        const SIZE: usize,
+        const PAD1: usize,
+        const PAD2: usize,
+        HEAP,
+    > Deserialize<D> for FlexStr<SIZE, PAD1, PAD2, HEAP>
+where
+    HEAP: for<'a> From<&'a str>,
+{
+    fn deserialize(
+        deserializer: &mut D,
+    ) -> Result<Self, <D as Deserializer>::Error> {
+        Ok(deserializer.expect_str()?.into())
     }
 }
