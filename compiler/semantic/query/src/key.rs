@@ -3,7 +3,6 @@
 use std::hash::Hash;
 
 use pernixc_arena::ID;
-use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::{Identifiable, StableTypeID};
 use pernixc_target::Global;
 
