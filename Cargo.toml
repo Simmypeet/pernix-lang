@@ -17,6 +17,7 @@ members = [
 
     "compiler/syntax/lexical",
     "compiler/syntax/parser",
+    "compiler/syntax/syntax",
     # "compiler/syntax/parser",
     # tidy-alphabetical-end
 ]

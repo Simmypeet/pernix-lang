@@ -4,7 +4,10 @@ use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser as _},
 };
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 
 use super::{
     constant::Constant, function::Function, implements::Implements,
@@ -113,6 +116,10 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize,
         Default,
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
     )]
     pub struct Content {
         pub members: #[multi] Passable<Member>
