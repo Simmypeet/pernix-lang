@@ -258,7 +258,7 @@ pub trait Map<E> {
     ) -> Result<(), <Self::Parent as Serializer<E>>::Error>;
 }
 
-/// A trait for serializing tuple variants of enums.
+/// A trait for serellizing tuple variants of enums.
 ///
 /// Tuple variants are enum variants that contain unnamed fields,
 /// similar to tuple structs but within an enum context.
@@ -442,11 +442,11 @@ pub trait Serializer<E> {
     ///
     /// * `len` - The number of elements in the sequence
     /// * `f` - A closure that serializes the sequence elements
-    fn emit_seq<'s, 'e>(
-        &'s mut self,
+    fn emit_seq<'e>(
+        &mut self,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Seq<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Seq<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a tuple.
@@ -455,11 +455,11 @@ pub trait Serializer<E> {
     ///
     /// * `len` - The number of elements in the tuple
     /// * `f` - A closure that serializes the tuple elements
-    fn emit_tuple<'s, 'e>(
-        &'s mut self,
+    fn emit_tuple<'e>(
+        &mut self,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Tuple<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Tuple<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a tuple struct.
@@ -469,12 +469,12 @@ pub trait Serializer<E> {
     /// * `name` - The name of the tuple struct type
     /// * `len` - The number of fields in the tuple struct
     /// * `f` - A closure that serializes the tuple struct fields
-    fn emit_tuple_struct<'s, 'e>(
-        &'s mut self,
+    fn emit_tuple_struct<'e>(
+        &mut self,
         name: &'static str,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::TupleStruct<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::TupleStruct<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a unit struct (struct with no fields).
@@ -505,11 +505,11 @@ pub trait Serializer<E> {
     ///
     /// * `len` - The number of key-value pairs in the map
     /// * `f` - A closure that serializes the map entries
-    fn emit_map<'s, 'e>(
-        &'s mut self,
+    fn emit_map<'e>(
+        &mut self,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Map<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Map<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a struct.
@@ -519,12 +519,12 @@ pub trait Serializer<E> {
     /// * `name` - The name of the struct type
     /// * `len` - The number of fields in the struct
     /// * `f` - A closure that serializes the struct fields
-    fn emit_struct<'s, 'e>(
-        &'s mut self,
+    fn emit_struct<'e>(
+        &mut self,
         name: &'static str,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Struct<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Struct<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a tuple variant (enum variant with unnamed fields).
@@ -536,14 +536,14 @@ pub trait Serializer<E> {
     /// * `index` - The index of the variant within the enum
     /// * `len` - The number of fields in the tuple variant
     /// * `f` - A closure that serializes the variant fields
-    fn emit_tuple_variant<'s, 'e>(
-        &'s mut self,
+    fn emit_tuple_variant<'e>(
+        &mut self,
         name: &'static str,
         variant: &'static str,
         index: u32,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::TupleVariant<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::TupleVariant<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
 
     /// Serialize a struct variant (enum variant with named fields).
@@ -555,15 +555,15 @@ pub trait Serializer<E> {
     /// * `index` - The index of the variant within the enum
     /// * `len` - The number of fields in the struct variant
     /// * `f` - A closure that serializes the variant fields
-    fn emit_struct_variant<'s, 'e>(
-        &'s mut self,
+    fn emit_struct_variant<'e>(
+        &mut self,
         name: &'static str,
         variant: &'static str,
         index: u32,
         len: usize,
         extension: &'e mut E,
         f: impl FnOnce(
-            Self::StructVariant<'s>,
+            Self::StructVariant<'_>,
             &'e mut E,
         ) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;

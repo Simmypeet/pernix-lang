@@ -330,34 +330,34 @@ impl<W: Write + 'static, E> Serializer<E> for BinarySerializer<W> {
         value.serialize(self, extension)
     }
 
-    fn emit_seq<'s, 'e>(
-        &'s mut self,
+    fn emit_seq<'e>(
+        &mut self,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Seq<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Seq<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         self.write_varint(len as u64)?;
         let seq = BinarySeq { serializer: self };
         f(seq, extension)
     }
 
-    fn emit_tuple<'s, 'e>(
-        &'s mut self,
+    fn emit_tuple<'e>(
+        &mut self,
         _len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Tuple<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Tuple<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         // Tuples have fixed size, so no need to write length
         let tuple = BinaryTuple { serializer: self };
         f(tuple, extension)
     }
 
-    fn emit_tuple_struct<'s, 'e>(
-        &'s mut self,
+    fn emit_tuple_struct<'e>(
+        &mut self,
         _name: &'static str,
         _len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::TupleStruct<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::TupleStruct<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         // Tuple structs have fixed size, so no need to write length or name
         let tuple_struct = BinaryTupleStruct { serializer: self };
@@ -381,52 +381,52 @@ impl<W: Write + 'static, E> Serializer<E> for BinarySerializer<W> {
         self.write_varint(index as u64)
     }
 
-    fn emit_map<'s, 'e>(
-        &'s mut self,
+    fn emit_map<'e>(
+        &mut self,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Map<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Map<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         self.write_varint(len as u64)?;
         let map = BinaryMap { serializer: self };
         f(map, extension)
     }
 
-    fn emit_struct<'s, 'e>(
-        &'s mut self,
+    fn emit_struct<'e>(
+        &mut self,
         _name: &'static str,
         _len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::Struct<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::Struct<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         // Structs have fixed fields, so no need to write length or name
         let struct_ser = BinaryStruct { serializer: self };
         f(struct_ser, extension)
     }
 
-    fn emit_tuple_variant<'s, 'e>(
-        &'s mut self,
+    fn emit_tuple_variant<'e>(
+        &mut self,
         _name: &'static str,
         _variant: &'static str,
         index: u32,
         _len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::TupleVariant<'s>, &'e mut E) -> Result<(), Self::Error>,
+        f: impl FnOnce(Self::TupleVariant<'_>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         self.write_varint(index as u64)?;
         let tuple_variant = BinaryTupleVariant { serializer: self };
         f(tuple_variant, extension)
     }
 
-    fn emit_struct_variant<'s, 'e>(
-        &'s mut self,
+    fn emit_struct_variant<'e>(
+        &mut self,
         _name: &'static str,
         _variant: &'static str,
         index: u32,
         _len: usize,
         extension: &'e mut E,
         f: impl FnOnce(
-            Self::StructVariant<'s>,
+            Self::StructVariant<'_>,
             &'e mut E,
         ) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
