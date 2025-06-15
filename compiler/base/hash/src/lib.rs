@@ -10,7 +10,7 @@ pub type HashMap<T, V> = std::collections::HashMap<T, V, fnv::FnvBuildHasher>;
 pub type HashSet<T> = std::collections::HashSet<T, fnv::FnvBuildHasher>;
 
 /// A type alias for a dash map that uses the `fnv` hash function.
-pub type DasMap<T, V> = dashmap::DashMap<T, V, fnv::FnvBuildHasher>;
+pub type DashMap<T, V> = dashmap::DashMap<T, V, fnv::FnvBuildHasher>;
 
 /// A type alias for a dash set that uses the `fnv` hash function.
-pub type DasSet<T> = dashmap::DashSet<T, fnv::FnvBuildHasher>;
+pub type DashSet<T> = dashmap::DashSet<T, fnv::FnvBuildHasher>;
