@@ -57,7 +57,16 @@ pub enum DelimiterKind {
 
 /// The represents how the token nodes are structured in a fragment.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, EnumAsInner,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumAsInner,
 )]
 pub enum FragmentKind {
     /// The token nodes are enclosed by a pair of delimiters.
@@ -69,7 +78,9 @@ pub enum FragmentKind {
 
 /// Represents a delimiter pair such as `( ... )`, `{ ... }`, or `[ ... ]`
 /// delimiters.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Delimiter {
     /// The opening delimiter.
     pub open: Punctuation<RelativeLocation>,
@@ -83,7 +94,9 @@ pub struct Delimiter {
 
 /// The token stream is grouped by having the same indentation level. The
 /// indentation group is started by a colon followed by a newline character.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Indentation {
     /// The indentation level of the group (in space or tab characters count,
     /// not how many levels deep).
@@ -152,7 +165,16 @@ pub type RelativeSpan = Span<RelativeLocation>;
 
 /// A tree node used for representing a particular token in the source code.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, EnumAsInner,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Node {
@@ -161,7 +183,9 @@ pub enum Node {
 }
 
 /// Represents a branch that has a [`FragmentKind`] as its kind.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct FragmentBranch {
     /// The kind of fragment this branch represents.
     pub fragment_kind: FragmentKind,
@@ -175,7 +199,16 @@ pub struct FragmentBranch {
 
 /// Represents the kind of branch in the token tree.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, EnumAsInner,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    EnumAsInner,
 )]
 #[allow(missing_docs, clippy::large_enum_variant)]
 pub enum BranchKind {
@@ -186,7 +219,9 @@ pub enum BranchKind {
 }
 
 /// Represents a branch node in the token tree.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
 pub struct Branch {
     /// The kind of branch this is.
     pub kind: BranchKind,
@@ -214,7 +249,7 @@ pub const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 ///
 /// This is useful for easy traversal of the tree and for incremental
 /// compilation compatibility.
-#[derive(Debug, Clone, Deref, Serialize, CopyGetters)]
+#[derive(Debug, Clone, Deref, Serialize, Deserialize, CopyGetters)]
 pub struct Tree {
     #[deref]
     arena: Arena<Branch>,
