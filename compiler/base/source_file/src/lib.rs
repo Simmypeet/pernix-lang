@@ -18,8 +18,8 @@ use dashmap::{
 use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_target::{Global, TargetID};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Represents an error that occurs when loading/creating a source file.
