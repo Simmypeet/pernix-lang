@@ -266,11 +266,11 @@ pub trait StructAccess<E> {
     /// * `next` - A closure that receives the field information and access
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<'s, 'e, R>(
-        &'s mut self,
+    fn next_field<'e, R>(
+        &mut self,
         extension: &'e mut E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'s>, &'e mut E)>,
+            Option<(Identifier, Self::FieldAccess<'_>, &'e mut E)>,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -318,11 +318,11 @@ pub trait MapAccess<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_entry<'s, 'e, K: Deserialize<Self::Parent, E>, R>(
-        &'s mut self,
+    fn next_entry<'e, K: Deserialize<Self::Parent, E>, R>(
+        &mut self,
         extension: &'e mut E,
         next: impl FnOnce(
-            Option<(K, Self::ValueAccess<'s>, &'e mut E)>,
+            Option<(K, Self::ValueAccess<'_>, &'e mut E)>,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -376,11 +376,11 @@ pub trait StructVariantAccess<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<'s, 'e, R>(
-        &'s mut self,
+    fn next_field<'e, R>(
+        &mut self,
         extension: &'e mut E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'s>, &'e mut E)>,
+            Option<(Identifier, Self::FieldAccess<'_>, &'e mut E)>,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -557,10 +557,10 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_seq<'s, 'e, R>(
-        &'s mut self,
+    fn expect_seq<'e, R>(
+        &mut self,
         extension: &'e mut E,
-        f: impl FnOnce(Self::SeqAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
+        f: impl FnOnce(Self::SeqAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple.
@@ -573,11 +573,11 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_tuple<'s, 'e, R>(
-        &'s mut self,
+    fn expect_tuple<'e, R>(
+        &mut self,
         len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::TupleAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
+        f: impl FnOnce(Self::TupleAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple struct.
@@ -591,13 +591,13 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_tuple_struct<'s, 'e, R>(
-        &'s mut self,
+    fn expect_tuple_struct<'e, R>(
+        &mut self,
         name: &'static str,
         len: usize,
         extension: &'e mut E,
         f: impl FnOnce(
-            Self::TupleStructAccess<'s>,
+            Self::TupleStructAccess<'_>,
             &'e mut E,
         ) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
@@ -623,12 +623,12 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_struct<'s, 'e, R>(
-        &'s mut self,
+    fn expect_struct<'e, R>(
+        &mut self,
         name: &'static str,
         fields: &'static [&'static str],
         extension: &'e mut E,
-        f: impl FnOnce(Self::StructAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
+        f: impl FnOnce(Self::StructAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a map (dictionary, hash table, etc.).
@@ -640,10 +640,10 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_map<'s, 'e, R>(
-        &'s mut self,
+    fn expect_map<'e, R>(
+        &mut self,
         extension: &'e mut E,
-        f: impl FnOnce(Self::MapAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
+        f: impl FnOnce(Self::MapAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize an enum.
@@ -657,14 +657,14 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_enum<'s, 'e, R>(
-        &'s mut self,
+    fn expect_enum<'e, R>(
+        &mut self,
         name: &'static str,
         variants: &'static [&'static str],
         extension: &'e mut E,
         f: impl FnOnce(
             Identifier,
-            Self::EnumAccess<'s>,
+            Self::EnumAccess<'_>,
             &'e mut E,
         ) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;

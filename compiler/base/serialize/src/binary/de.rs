@@ -165,11 +165,11 @@ impl<R: Read + 'static, E> StructAccess<E> for BinaryStructAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
     type FieldAccess<'s> = BinaryFieldAccess<'s, R>;
 
-    fn next_field<'s, 'e, Ret>(
-        &'s mut self,
+    fn next_field<'e, Ret>(
+        &mut self,
         extension: &'e mut E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'s>, &'e mut E)>,
+            Option<(Identifier, Self::FieldAccess<'_>, &'e mut E)>,
         )
             -> Result<Ret, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<Ret, <Self::Parent as Deserializer<E>>::Error> {
@@ -216,11 +216,11 @@ impl<R: Read + 'static, E> MapAccess<E> for BinaryMapAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
     type ValueAccess<'s> = BinaryValueAccess<'s, R>;
 
-    fn next_entry<'s, 'e, K: Deserialize<Self::Parent, E>, Ret>(
-        &'s mut self,
+    fn next_entry<'e, K: Deserialize<Self::Parent, E>, Ret>(
+        &mut self,
         extension: &'e mut E,
         next: impl FnOnce(
-            Option<(K, Self::ValueAccess<'s>, &'e mut E)>,
+            Option<(K, Self::ValueAccess<'_>, &'e mut E)>,
         )
             -> Result<Ret, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<Ret, <Self::Parent as Deserializer<E>>::Error> {
@@ -269,11 +269,11 @@ impl<R: Read + 'static, E> StructVariantAccess<E>
     type Parent = BinaryDeserializer<R>;
     type FieldAccess<'s> = BinaryFieldAccess<'s, R>;
 
-    fn next_field<'s, 'e, Ret>(
-        &'s mut self,
+    fn next_field<'e, Ret>(
+        &mut self,
         extension: &'e mut E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'s>, &'e mut E)>,
+            Option<(Identifier, Self::FieldAccess<'_>, &'e mut E)>,
         )
             -> Result<Ret, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<Ret, <Self::Parent as Deserializer<E>>::Error> {
@@ -513,33 +513,33 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         }
     }
 
-    fn expect_seq<'s, 'e, Ret>(
-        &'s mut self,
+    fn expect_seq<'e, Ret>(
+        &mut self,
         extension: &'e mut E,
-        f: impl FnOnce(Self::SeqAccess<'s>, &'e mut E) -> Result<Ret, Self::Error>,
+        f: impl FnOnce(Self::SeqAccess<'_>, &'e mut E) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
         let len = self.read_varint()? as usize;
         let seq_access = BinarySeqAccess { deserializer: self, remaining: len };
         f(seq_access, extension)
     }
 
-    fn expect_tuple<'s, 'e, Ret>(
-        &'s mut self,
+    fn expect_tuple<'e, Ret>(
+        &mut self,
         _len: usize,
         extension: &'e mut E,
-        f: impl FnOnce(Self::TupleAccess<'s>, &'e mut E) -> Result<Ret, Self::Error>,
+        f: impl FnOnce(Self::TupleAccess<'_>, &'e mut E) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
         let tuple_access = BinaryTupleAccess { deserializer: self };
         f(tuple_access, extension)
     }
 
-    fn expect_tuple_struct<'s, 'e, Ret>(
-        &'s mut self,
+    fn expect_tuple_struct<'e, Ret>(
+        &mut self,
         _name: &'static str,
         _len: usize,
         extension: &'e mut E,
         f: impl FnOnce(
-            Self::TupleStructAccess<'s>,
+            Self::TupleStructAccess<'_>,
             &'e mut E,
         ) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
@@ -555,13 +555,13 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         Ok(())
     }
 
-    fn expect_struct<'s, 'e, Ret>(
-        &'s mut self,
+    fn expect_struct<'e, Ret>(
+        &mut self,
         _name: &'static str,
         fields: &'static [&'static str],
         extension: &'e mut E,
         f: impl FnOnce(
-            Self::StructAccess<'s>,
+            Self::StructAccess<'_>,
             &'e mut E,
         ) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
@@ -573,24 +573,24 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         f(struct_access, extension)
     }
 
-    fn expect_map<'s, 'e, Ret>(
-        &'s mut self,
+    fn expect_map<'e, Ret>(
+        &mut self,
         extension: &'e mut E,
-        f: impl FnOnce(Self::MapAccess<'s>, &'e mut E) -> Result<Ret, Self::Error>,
+        f: impl FnOnce(Self::MapAccess<'_>, &'e mut E) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
         let len = self.read_varint()? as usize;
         let map_access = BinaryMapAccess { deserializer: self, remaining: len };
         f(map_access, extension)
     }
 
-    fn expect_enum<'s, 'e, Ret>(
-        &'s mut self,
+    fn expect_enum<'e, Ret>(
+        &mut self,
         _name: &'static str,
         _variants: &'static [&'static str],
         extension: &'e mut E,
         f: impl FnOnce(
             Identifier,
-            Self::EnumAccess<'s>,
+            Self::EnumAccess<'_>,
             &'e mut E,
         ) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
