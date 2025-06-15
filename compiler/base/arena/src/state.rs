@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-use fnv::FnvHashMap;
+use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 
 use crate::ID;
@@ -18,18 +18,14 @@ pub trait State<T> {
     fn explict_insert_with_id(
         &mut self,
         id: &Self::ID,
-        items: &FnvHashMap<Self::ID, T>,
+        items: &HashMap<Self::ID, T>,
     );
 }
 
 /// A trait for generating unique IDs for items in the [`crate::Arena`].
 pub trait Generator<T>: State<T> {
     /// Generates a new ID for an item in the [`crate::Arena`].
-    fn next_id(
-        &mut self,
-        items: &FnvHashMap<Self::ID, T>,
-        value: &T,
-    ) -> Self::ID;
+    fn next_id(&mut self, items: &HashMap<Self::ID, T>, value: &T) -> Self::ID;
 }
 
 /// A trait for rebinding an [`crate::Arena`]'s state to a different arena type.
@@ -71,7 +67,7 @@ impl<T> State<T> for Default {
     fn explict_insert_with_id(
         &mut self,
         _: &Self::ID,
-        _: &FnvHashMap<Self::ID, T>,
+        _: &HashMap<Self::ID, T>,
     ) {
         // No-op for default state
     }
@@ -107,14 +103,14 @@ impl<T> State<T> for Serial {
     fn explict_insert_with_id(
         &mut self,
         id: &Self::ID,
-        _: &FnvHashMap<Self::ID, T>,
+        _: &HashMap<Self::ID, T>,
     ) {
         self.0 = std::cmp::max(self.0, id.index);
     }
 }
 
 impl<T> Generator<T> for Serial {
-    fn next_id(&mut self, _: &FnvHashMap<Self::ID, T>, _: &T) -> Self::ID {
+    fn next_id(&mut self, _: &HashMap<Self::ID, T>, _: &T) -> Self::ID {
         let next_id = self.0;
         self.0 += 1;
 
@@ -155,7 +151,7 @@ impl<T, V> State<T> for Hash<V> {
     fn explict_insert_with_id(
         &mut self,
         _: &Self::ID,
-        _: &FnvHashMap<Self::ID, T>,
+        _: &HashMap<Self::ID, T>,
     ) {
     }
 }
@@ -163,11 +159,7 @@ impl<T, V> State<T> for Hash<V> {
 impl<T: std::hash::Hash, V: std::hash::Hasher + std::default::Default>
     Generator<T> for Hash<V>
 {
-    fn next_id(
-        &mut self,
-        items: &FnvHashMap<Self::ID, T>,
-        value: &T,
-    ) -> Self::ID {
+    fn next_id(&mut self, items: &HashMap<Self::ID, T>, value: &T) -> Self::ID {
         let mut hasher = V::default();
         value.hash(&mut hasher);
         let mut hash = hasher.finish();
@@ -214,7 +206,7 @@ impl<T, F, V> State<T> for PartialHash<F, V> {
     fn explict_insert_with_id(
         &mut self,
         _: &Self::ID,
-        _: &FnvHashMap<Self::ID, T>,
+        _: &HashMap<Self::ID, T>,
     ) {
     }
 }
@@ -226,11 +218,7 @@ impl<
         V: std::hash::Hasher + std::default::Default,
     > Generator<T> for PartialHash<F, V>
 {
-    fn next_id(
-        &mut self,
-        items: &FnvHashMap<Self::ID, T>,
-        value: &T,
-    ) -> Self::ID {
+    fn next_id(&mut self, items: &HashMap<Self::ID, T>, value: &T) -> Self::ID {
         let mapper = F::default();
         let part = mapper(value);
 

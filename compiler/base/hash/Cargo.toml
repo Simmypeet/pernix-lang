@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_arena"
+name = "pernixc_hash"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
@@ -7,11 +7,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-pernixc_serialize = { path = "../serialize" }
-pernixc_hash = { path = "../hash" }
-derive_more = { workspace = true }
-proptest = { workspace = true }
 fnv = { workspace = true }
+dashmap = { workspace = true }
 
 [lints]
 workspace = true

@@ -11,7 +11,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use fnv::FnvHashMap;
+use pernixc_hash::HashMap;
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
@@ -105,13 +105,13 @@ impl<D: Deserializer, T> Deserialize<D> for ID<T> {
 #[serde(de_bound(G: Deserialize<__D>, G::ID: Deserialize<__D>, T: Deserialize<__D>))]
 pub struct Arena<T, G: State<T> = state::Default> {
     generator: G,
-    items: FnvHashMap<G::ID, T>,
+    items: HashMap<G::ID, T>,
 }
 
 // skipcq: RS-W1111 this doesn't require G::ID to be `Default`
 impl<T, G: State<T> + Default> Default for Arena<T, G> {
     fn default() -> Self {
-        Self { items: FnvHashMap::default(), generator: G::default() }
+        Self { items: HashMap::default(), generator: G::default() }
     }
 }
 
@@ -128,7 +128,7 @@ impl<T, G: State<T>> Arena<T, G> {
     /// Creates a new empty [`Arena`] with the given ID generator.
     #[must_use]
     pub fn new_with(generator: G) -> Self {
-        Self { items: FnvHashMap::default(), generator }
+        Self { items: HashMap::default(), generator }
     }
 
     /// Returns the number of items in the [`Arena`].
