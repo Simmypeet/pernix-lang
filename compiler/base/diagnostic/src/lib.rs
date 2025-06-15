@@ -1,7 +1,7 @@
 //! Contains the definition of the [`Diagnostic`] struct and related types.
 
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::Span;
-use serde::{Deserialize, Serialize};
 
 /// Implement this trait for a type that can report a diagnostic.
 ///
