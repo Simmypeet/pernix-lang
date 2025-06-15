@@ -1,7 +1,7 @@
 //! This crate contains the information about the target of the compilation.
 
 use derive_new::new;
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{Deserialize, Serialize};
 
 /// Represents an identifier for a target.
 #[derive(

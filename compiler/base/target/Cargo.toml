@@ -7,7 +7,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-serde = { workspace = true }
+pernixc_serialize = { path = "../serialize" }
 derive_more = { workspace = true }
 derive-new = { workspace = true }
 
