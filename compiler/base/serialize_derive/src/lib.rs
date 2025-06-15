@@ -60,6 +60,28 @@
 //! - The bounds can be any valid trait bounds, type bounds, or lifetime bounds
 //! - Multiple bounds can be specified using `+` syntax
 //!
+//! ## `#[serde(ser_bound(T: Clone + Copy + 'static))]`
+//!
+//! The `#[serde(ser_bound(...))]` attribute can be applied to structs and enums to add
+//! additional generic bounds to the `where` clause for `Serialize` implementations only.
+//!
+//! ### Behavior
+//! - Adds the specified bounds directly to the `where` clause for `Serialize` implementations
+//! - Does not affect `Deserialize` implementations
+//! - The bounds can reference generic type parameters and add any valid trait bounds
+//! - Multiple bounds can be specified using `+` syntax
+//!
+//! ## `#[serde(de_bound(T: Clone + Copy + 'static))]`
+//!
+//! The `#[serde(de_bound(...))]` attribute can be applied to structs and enums to add
+//! additional generic bounds to the `where` clause for `Deserialize` implementations only.
+//!
+//! ### Behavior
+//! - Adds the specified bounds directly to the `where` clause for `Deserialize` implementations
+//! - Does not affect `Serialize` implementations
+//! - The bounds can reference generic type parameters and add any valid trait bounds
+//! - Multiple bounds can be specified using `+` syntax
+//!
 //! ### Use Cases
 //! - **Extension trait requirements**: When serialization/deserialization requires specific capabilities from the extension
 //! - **Custom serialization behavior**: Enabling custom logic based on extension capabilities
@@ -90,6 +112,14 @@
 //! #[serde(de_extension(Clone + Debug + Send + 'static))] 
 //! struct DeExtensionUser {
 //!     data: String,
+//! }
+//!
+//! // Generic bounds example - T must be Clone + Copy + 'static for serialization
+//! #[derive(Serialize, Deserialize)]
+//! #[serde(ser_bound(T: Clone + Copy + 'static))]
+//! #[serde(de_bound(T: Clone + Default + 'static))]
+//! struct GenericBoundUser<T> {
+//!     data: T,
 //! }
 //! ```
 //!
@@ -144,6 +174,10 @@ struct ExtensionBounds {
     serialize_only: Option<proc_macro2::TokenStream>,
     /// Bounds only for deserialization (from `#[serde(de_extension(...))]`)
     deserialize_only: Option<proc_macro2::TokenStream>,
+    /// Generic bounds for serialization (from `#[serde(ser_bound(...))]`)
+    serialize_bound: Option<proc_macro2::TokenStream>,
+    /// Generic bounds for deserialization (from `#[serde(de_bound(...))]`)
+    deserialize_bound: Option<proc_macro2::TokenStream>,
 }
 
 impl ExtensionBounds {
@@ -169,6 +203,16 @@ impl ExtensionBounds {
             (None, Some(de_only)) => Some(de_only.clone()),
             (None, None) => None,
         }
+    }
+
+    /// Get the generic bounds for serialization
+    fn serialize_generic_bounds(&self) -> Option<proc_macro2::TokenStream> {
+        self.serialize_bound.clone()
+    }
+
+    /// Get the generic bounds for deserialization
+    fn deserialize_generic_bounds(&self) -> Option<proc_macro2::TokenStream> {
+        self.deserialize_bound.clone()
     }
 }
 
@@ -207,11 +251,22 @@ impl ExtensionBounds {
 /// Container-level attribute that adds bounds only to the deserializer's `Extension` associated type.
 /// The bounds are added to the `where` clause as `__D::Extension: T + U + 'static`.
 ///
+/// ## `#[serde(ser_bound(T: Clone + Copy + 'static))]`
+///
+/// Container-level attribute that adds additional generic bounds to the `where` clause for `Serialize` implementations only.
+/// The bounds are added directly to the `where` clause and can reference generic type parameters.
+///
+/// ## `#[serde(de_bound(T: Clone + Copy + 'static))]`
+///
+/// Container-level attribute that adds additional generic bounds to the `where` clause for `Deserialize` implementations only.
+/// The bounds are added directly to the `where` clause and can reference generic type parameters.
+///
 /// This is useful for:
 /// - Requiring specific capabilities from the serializer/deserializer extension
 /// - Enabling custom serialization behavior based on extension traits
 /// - Ensuring type safety for extension-dependent serialization logic
 /// - Asymmetric requirements when serialization and deserialization have different extension needs
+/// - Adding custom bounds for generic type parameters in serialization/deserialization
 ///
 /// # Examples
 ///
@@ -265,6 +320,19 @@ impl ExtensionBounds {
 ///     data: String,
 /// }
 /// // Generated impl will include: where __S::Extension: Clone + Debug + Send
+/// ```
+///
+/// ## Struct with generic bounds
+///
+/// ```ignore
+/// use pernixc_serialize_derive::Serialize;
+///
+/// #[derive(Serialize)]
+/// #[serde(ser_bound(T: Clone + Copy + 'static))]
+/// struct Container<T> {
+///     data: T,
+/// }
+/// // Generated impl will include: where T: Clone + Copy + 'static
 /// ```
 ///
 /// ## Generic struct
@@ -323,10 +391,10 @@ fn expand_serialize(input: &DeriveInput) -> Result<proc_macro2::TokenStream, syn
     
     match &input.data {
         Data::Struct(data_struct) => {
-            Ok(expand_serialize_struct(name, generics, &data_struct.fields, extension_bounds.serialize_bounds()))
+            Ok(expand_serialize_struct(name, generics, &data_struct.fields, extension_bounds.serialize_bounds(), extension_bounds.serialize_generic_bounds()))
         }
         Data::Enum(data_enum) => {
-            Ok(expand_serialize_enum(name, generics, data_enum, extension_bounds.serialize_bounds()))
+            Ok(expand_serialize_enum(name, generics, data_enum, extension_bounds.serialize_bounds(), extension_bounds.serialize_generic_bounds()))
         }
         Data::Union(_) => {
             Err(syn::Error::new_spanned(
@@ -342,6 +410,7 @@ fn expand_serialize_struct(
     generics: &Generics,
     fields: &Fields,
     extension_bounds: Option<proc_macro2::TokenStream>,
+    generic_bounds: Option<proc_macro2::TokenStream>,
 ) -> proc_macro2::TokenStream {
     let serialize_body = match fields {
         Fields::Named(fields) => serialize_named_fields(name, fields),
@@ -350,7 +419,7 @@ fn expand_serialize_struct(
     };
 
     let (_, ty_generics, _) = generics.split_for_impl();
-    let (generic_list, bounds) = generate_serialize_impl_generics(generics, extension_bounds);
+    let (generic_list, bounds) = generate_serialize_impl_generics(generics, extension_bounds, generic_bounds);
 
     quote! {
         impl<
@@ -448,11 +517,12 @@ fn expand_serialize_enum(
     generics: &Generics,
     data_enum: &DataEnum,
     extension_bounds: Option<proc_macro2::TokenStream>,
+    generic_bounds: Option<proc_macro2::TokenStream>,
 ) -> proc_macro2::TokenStream {
     let serialize_body = serialize_enum_variants(name, &data_enum.variants);
 
     let (_, ty_generics, _) = generics.split_for_impl();
-    let (generic_list, bounds) = generate_serialize_impl_generics(generics, extension_bounds);
+    let (generic_list, bounds) = generate_serialize_impl_generics(generics, extension_bounds, generic_bounds);
     
     quote! {
         impl<
@@ -591,6 +661,7 @@ fn generate_impl_generics(
     param_bound: proc_macro2::TokenStream,
     type_bound_template: fn(&syn::Ident, &str) -> proc_macro2::TokenStream,
     extension_bounds: Option<proc_macro2::TokenStream>,
+    generic_bounds: Option<proc_macro2::TokenStream>,
 ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
     let mut generic_list = Vec::new();
     let mut bounds = Vec::new();
@@ -617,8 +688,12 @@ fn generate_impl_generics(
     // Add type parameters third
     for type_param in generics.type_params() {
         generic_list.push(quote! { #type_param });
-        let param_ident_ref = &type_param.ident;
-        bounds.push(type_bound_template(param_ident_ref, param_name));
+        
+        // Only generate implicit Serialize/Deserialize bounds if no explicit generic bounds are provided
+        if generic_bounds.is_none() {
+            let param_ident_ref = &type_param.ident;
+            bounds.push(type_bound_template(param_ident_ref, param_name));
+        }
     }
 
     // Add const parameters last
@@ -633,12 +708,18 @@ fn generate_impl_generics(
         }
     }
 
+    // Add generic bounds if specified (these replace the implicit bounds)
+    if let Some(gen_bounds) = generic_bounds {
+        bounds.push(gen_bounds);
+    }
+
     (generic_list, bounds)
 }
 
 fn generate_serialize_impl_generics(
     generics: &Generics,
     extension_bounds: Option<proc_macro2::TokenStream>,
+    generic_bounds: Option<proc_macro2::TokenStream>,
 ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
     generate_impl_generics(
         generics,
@@ -649,12 +730,14 @@ fn generate_serialize_impl_generics(
             quote! { #param_ident: ::pernixc_serialize::__internal::Serialize<#param_token> }
         },
         extension_bounds,
+        generic_bounds,
     )
 }
 
 fn generate_deserialize_impl_generics(
     generics: &Generics,
     extension_bounds: Option<proc_macro2::TokenStream>,
+    generic_bounds: Option<proc_macro2::TokenStream>,
 ) -> (Vec<proc_macro2::TokenStream>, Vec<proc_macro2::TokenStream>) {
     generate_impl_generics(
         generics,
@@ -665,6 +748,7 @@ fn generate_deserialize_impl_generics(
             quote! { #param_ident: ::pernixc_serialize::__internal::Deserialize<#param_token> }
         },
         extension_bounds,
+        generic_bounds,
     )
 }
 
@@ -705,6 +789,16 @@ fn generate_deserialize_impl_generics(
 ///
 /// Container-level attribute that adds bounds only to the deserializer's `Extension` associated type.
 /// The bounds are added to the `where` clause as `__D::Extension: T + U + 'static`.
+///
+/// ## `#[serde(ser_bound(T: Clone + Copy + 'static))]`
+///
+/// Container-level attribute that adds additional generic bounds to the `where` clause for `Serialize` implementations only.
+/// The bounds are added directly to the `where` clause and can reference generic type parameters.
+///
+/// ## `#[serde(de_bound(T: Clone + Copy + 'static))]`
+///
+/// Container-level attribute that adds additional generic bounds to the `where` clause for `Deserialize` implementations only.
+/// The bounds are added directly to the `where` clause and can reference generic type parameters.
 ///
 /// This is useful for:
 /// - Requiring specific capabilities from the deserializer extension
@@ -838,10 +932,10 @@ fn expand_deserialize(input: &DeriveInput) -> Result<proc_macro2::TokenStream, s
     
     match &input.data {
         Data::Struct(data_struct) => {
-            Ok(expand_deserialize_struct(name, generics, &data_struct.fields, extension_bounds.deserialize_bounds()))
+            Ok(expand_deserialize_struct(name, generics, &data_struct.fields, extension_bounds.deserialize_bounds(), extension_bounds.deserialize_generic_bounds()))
         }
         Data::Enum(data_enum) => {
-            Ok(expand_deserialize_enum(name, generics, data_enum, extension_bounds.deserialize_bounds()))
+            Ok(expand_deserialize_enum(name, generics, data_enum, extension_bounds.deserialize_bounds(), extension_bounds.deserialize_generic_bounds()))
         }
         Data::Union(_) => {
             Err(syn::Error::new_spanned(
@@ -857,6 +951,7 @@ fn expand_deserialize_struct(
     generics: &Generics,
     fields: &Fields,
     extension_bounds: Option<proc_macro2::TokenStream>,
+    generic_bounds: Option<proc_macro2::TokenStream>,
 ) -> proc_macro2::TokenStream {
     let deserialize_body = match fields {
         Fields::Named(fields) => deserialize_named_fields(name, fields),
@@ -865,7 +960,7 @@ fn expand_deserialize_struct(
     };
 
     let (_, ty_generics, _) = generics.split_for_impl();
-    let (generic_list, bounds) = generate_deserialize_impl_generics(generics, extension_bounds);
+    let (generic_list, bounds) = generate_deserialize_impl_generics(generics, extension_bounds, generic_bounds);
 
     quote! {
         impl<
@@ -886,11 +981,12 @@ fn expand_deserialize_enum(
     generics: &Generics,
     data_enum: &DataEnum,
     extension_bounds: Option<proc_macro2::TokenStream>,
+    generic_bounds: Option<proc_macro2::TokenStream>,
 ) -> proc_macro2::TokenStream {
     let deserialize_body = deserialize_enum_variants(name, &data_enum.variants);
 
     let (_, ty_generics, _) = generics.split_for_impl();
-    let (generic_list, bounds) = generate_deserialize_impl_generics(generics, extension_bounds);
+    let (generic_list, bounds) = generate_deserialize_impl_generics(generics, extension_bounds, generic_bounds);
 
     quote! {
         impl<
@@ -1357,6 +1453,16 @@ fn extract_serde_extension_bounds(attrs: &[syn::Attribute]) -> ExtensionBounds {
                     let content;
                     syn::parenthesized!(content in meta.input);
                     bounds.deserialize_only = Some(content.parse::<proc_macro2::TokenStream>()?);
+                    Ok(())
+                } else if meta.path.is_ident("ser_bound") {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    bounds.serialize_bound = Some(content.parse::<proc_macro2::TokenStream>()?);
+                    Ok(())
+                } else if meta.path.is_ident("de_bound") {
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    bounds.deserialize_bound = Some(content.parse::<proc_macro2::TokenStream>()?);
                     Ok(())
                 } else {
                     // Skip other serde attributes like "skip"

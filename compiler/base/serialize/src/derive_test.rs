@@ -1841,3 +1841,116 @@ fn shared_pointer_extension_combined() {
 
     assert_eq!(original, deserialized);
 }
+
+#[test]
+fn ser_bound_and_de_bound_attributes() {
+    // Test that ser_bound and de_bound work correctly and override default bounds
+    
+    // A type that implements Clone + Copy but not the usual Serialize/Deserialize
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct CustomData(i32);
+    
+    // Custom implementations that satisfy our bounds
+    impl<S: crate::ser::Serializer> crate::ser::Serialize<S> for CustomData {
+        fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+            self.0.serialize(serializer)
+        }
+    }
+    
+    impl<D: crate::de::Deserializer> crate::de::Deserialize<D> for CustomData {
+        fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+            Ok(CustomData(i32::deserialize(deserializer)?))
+        }
+    }
+    
+    // Use explicit bounds instead of auto-generated ones
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    #[serde(ser_bound(T: Clone + Copy + crate::ser::Serialize<__S>))]
+    #[serde(de_bound(T: Clone + Copy + crate::de::Deserialize<__D>))]
+    struct BoundedGeneric<T> {
+        data: T,
+        value: i32,
+    }
+    
+    let original = BoundedGeneric {
+        data: CustomData(42),
+        value: 100,
+    };
+    
+    // Test serialization
+    let buffer = Vec::new();
+    let mut serializer = crate::binary::ser::BinarySerializer::new(buffer);
+    original.serialize(&mut serializer).unwrap();
+    let buffer = serializer.into_inner();
+    
+    // Test deserialization
+    let cursor = std::io::Cursor::new(buffer);
+    let mut deserializer = crate::binary::de::BinaryDeserializer::new(cursor);
+    let deserialized = BoundedGeneric::<CustomData>::deserialize(&mut deserializer).unwrap();
+    
+    assert_eq!(original, deserialized);
+}
+
+#[test]  
+fn ser_bound_only() {
+    // Test that ser_bound works independently
+    
+    #[derive(Debug, PartialEq)]
+    struct SerializeOnly(String);
+    
+    impl<S: crate::ser::Serializer> crate::ser::Serialize<S> for SerializeOnly {
+        fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+            self.0.serialize(serializer)
+        }
+    }
+    
+    #[derive(Serialize, Debug, PartialEq)]
+    #[serde(ser_bound(T: crate::ser::Serialize<__S>))]
+    struct SerBoundOnly<T> {
+        data: T,
+    }
+    
+    let original = SerBoundOnly {
+        data: SerializeOnly("test".to_string()),
+    };
+    
+    // Test serialization works
+    let buffer = Vec::new();
+    let mut serializer = crate::binary::ser::BinarySerializer::new(buffer);
+    original.serialize(&mut serializer).unwrap();
+    let _buffer = serializer.into_inner();
+    
+    // This should compile successfully, demonstrating that our custom ser_bound works
+}
+
+#[test]
+fn de_bound_only() {
+    // Test that de_bound works independently
+    
+    #[derive(Debug, PartialEq)]
+    struct DeserializeOnly(String);
+    
+    impl<D: crate::de::Deserializer> crate::de::Deserialize<D> for DeserializeOnly {
+        fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+            Ok(DeserializeOnly(String::deserialize(deserializer)?))
+        }
+    }
+    
+    #[derive(Deserialize, Debug, PartialEq)]
+    #[serde(de_bound(T: crate::de::Deserialize<__D>))]
+    struct DeBoundOnly<T> {
+        data: T,
+    }
+    
+    // Test deserialization works with minimal data
+    let data = vec![4u8, b't', b'e', b's', b't']; // String "test" serialized
+    let cursor = std::io::Cursor::new(data);
+    let mut deserializer = crate::binary::de::BinaryDeserializer::new(cursor);
+    let result = DeBoundOnly::<DeserializeOnly>::deserialize(&mut deserializer).unwrap();
+    
+    let expected = DeBoundOnly {
+        data: DeserializeOnly("test".to_string()),
+    };
+    
+    assert_eq!(result, expected);
+}
