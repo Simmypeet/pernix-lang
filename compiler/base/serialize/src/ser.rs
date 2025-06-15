@@ -968,3 +968,28 @@ where
         serializer.emit_tuple_struct("PhantomData", 1, |_| Ok(()))
     }
 }
+
+use std::path::PathBuf;
+
+impl<S> Serialize<S> for PathBuf
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        self.as_path().serialize(serializer)
+    }
+}
+
+use std::path::Path;
+
+impl<S> Serialize<S> for Path
+where
+    S: Serializer,
+{
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+        match self.to_str() {
+            Some(s) => s.serialize(serializer),
+            None => Err(S::Error::custom("Path contains invalid UTF-8")),
+        }
+    }
+}

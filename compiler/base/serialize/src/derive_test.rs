@@ -1952,3 +1952,23 @@ fn de_bound_only() {
 
     assert_eq!(result, expected);
 }
+
+#[test]
+fn pathbuf_round_trip() {
+    use std::path::PathBuf;
+
+    let original_path = PathBuf::from("/usr/bin/rustc");
+
+    // Test serialization
+    let buffer = Vec::new();
+    let mut serializer = crate::binary::ser::BinarySerializer::new(buffer);
+    original_path.serialize(&mut serializer).unwrap();
+    let buffer = serializer.into_inner();
+
+    // Test deserialization
+    let cursor = std::io::Cursor::new(buffer);
+    let mut deserializer = crate::binary::de::BinaryDeserializer::new(cursor);
+    let deserialized_path = PathBuf::deserialize(&mut deserializer).unwrap();
+
+    assert_eq!(original_path, deserialized_path);
+}

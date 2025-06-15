@@ -1127,3 +1127,14 @@ impl std::fmt::Display for Identifier {
         }
     }
 }
+
+use std::path::PathBuf;
+
+impl<D> Deserialize<D> for PathBuf
+where
+    D: Deserializer,
+{
+    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+        Ok(PathBuf::from(String::deserialize(deserializer)?))
+    }
+}
