@@ -38,17 +38,18 @@
 //! let data = vec![arc1, arc2];
 //!
 //! // Serialize with shared pointer tracking
-//! let tracker = SharedPointerTracker::new();
+//! let mut tracker = SharedPointerTracker::new();
 //! let buffer = Vec::new();
-//! let mut serializer = BinarySerializer::with_extension(buffer, tracker);
-//! data.serialize(&mut serializer).unwrap();
-//! let (buffer, _) = serializer.into_parts();
+//! let mut serializer = BinarySerializer::new(buffer);
+//! data.serialize(&mut serializer, &mut tracker).unwrap();
+//! let buffer = serializer.into_inner();
 //!
 //! // Deserialize with shared pointer reconstruction
-//! let store = SharedPointerStore::new();
+//! let mut store = SharedPointerStore::new();
 //! let cursor = Cursor::new(buffer);
-//! let mut deserializer = BinaryDeserializer::with_extension(cursor, store);
-//! let result: Vec<Arc<String>> = Vec::deserialize(&mut deserializer).unwrap();
+//! let mut deserializer = BinaryDeserializer::new(cursor);
+//! let result: Vec<Arc<String>> =
+//!     Vec::deserialize(&mut deserializer, &mut store).unwrap();
 //!
 //! // Verify sharing is preserved
 //! assert!(Arc::ptr_eq(&result[0], &result[1]));
@@ -265,16 +266,20 @@ impl SharedPointerDeserialize for SharedPointerExtension {
 // as "Owned" and subsequent encounters as "Reference". This guarantees that
 // during deserialization, owned variants are always processed before their
 // corresponding reference variants.
-impl<T, S> Serialize<S> for Arc<T>
+impl<T, S, E> Serialize<S, E> for Arc<T>
 where
-    T: Serialize<S>,
-    S: Serializer,
-    S::Extension: SharedPointerSerialize,
+    T: Serialize<S, E>,
+    S: Serializer<E>,
+    E: SharedPointerSerialize + ?Sized,
 {
-    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        extension: &mut E,
+    ) -> Result<(), S::Error> {
         let pointer = Arc::as_ptr(self) as usize;
 
-        if serializer.extension().register_arc(self) {
+        if extension.register_arc(self) {
             // First time seeing this Arc - serialize as Owned variant (tuple
             // variant)
             serializer.emit_tuple_variant(
@@ -282,9 +287,10 @@ where
                 "Owned",
                 0,
                 2,
-                |mut variant| {
-                    variant.serialize_field(&pointer)?;
-                    variant.serialize_field(self.as_ref())?;
+                extension,
+                |mut variant, extension| {
+                    variant.serialize_field(&pointer, extension)?;
+                    variant.serialize_field(self.as_ref(), extension)?;
                     Ok(())
                 },
             )
@@ -296,8 +302,9 @@ where
                 "Reference",
                 1,
                 1,
-                |mut variant| {
-                    variant.serialize_field(&pointer)?;
+                extension,
+                |mut variant, extension| {
+                    variant.serialize_field(&pointer, extension)?;
                     Ok(())
                 },
             )
@@ -312,16 +319,20 @@ where
 // as "Owned" and subsequent encounters as "Reference". This guarantees that
 // during deserialization, owned variants are always processed before their
 // corresponding reference variants.
-impl<T, S> Serialize<S> for Rc<T>
+impl<T, S, E> Serialize<S, E> for Rc<T>
 where
-    T: Serialize<S>,
-    S: Serializer,
-    S::Extension: SharedPointerSerialize,
+    T: Serialize<S, E>,
+    S: Serializer<E>,
+    E: SharedPointerSerialize,
 {
-    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        extension: &mut E,
+    ) -> Result<(), S::Error> {
         let pointer = Rc::as_ptr(self) as usize;
 
-        if serializer.extension().register_rc(self) {
+        if extension.register_rc(self) {
             // First time seeing this Rc - serialize as Owned variant (tuple
             // variant)
             serializer.emit_tuple_variant(
@@ -329,9 +340,10 @@ where
                 "Owned",
                 0,
                 2,
-                |mut variant| {
-                    variant.serialize_field(&pointer)?;
-                    variant.serialize_field(self.as_ref())?;
+                extension,
+                |mut variant, extension| {
+                    variant.serialize_field(&pointer, extension)?;
+                    variant.serialize_field(self.as_ref(), extension)?;
                     Ok(())
                 },
             )
@@ -343,8 +355,9 @@ where
                 "Reference",
                 1,
                 1,
-                |mut variant| {
-                    variant.serialize_field(&pointer)?;
+                extension,
+                |mut variant, extension| {
+                    variant.serialize_field(&pointer, extension)?;
                     Ok(())
                 },
             )
@@ -353,105 +366,124 @@ where
 }
 
 // Implement Deserialize for Arc<T> when extension supports shared pointers
-impl<T, D> Deserialize<D> for Arc<T>
+impl<T, D, E> Deserialize<D, E> for Arc<T>
 where
-    T: Deserialize<D> + 'static + Send + Sync,
-    D: Deserializer,
-    D::Extension: SharedPointerDeserialize,
+    T: Deserialize<D, E> + 'static + Send + Sync,
+    D: Deserializer<E>,
+    E: SharedPointerDeserialize,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let result =
-            deserializer.expect_enum(
-                "ArcSerialize",
-                &["Owned", "Reference"],
-                |variant, enum_access| match variant {
-                    crate::de::Identifier::Name("Owned")
-                    | crate::de::Identifier::Index(0) => enum_access
-                        .tuple_variant(2, |mut tuple_access| {
-                            let pointer: usize = tuple_access.next_field()?;
-                            let value: T = tuple_access.next_field()?;
-                            Ok((pointer, Some(value)))
-                        }),
-                    crate::de::Identifier::Name("Reference")
-                    | crate::de::Identifier::Index(1) => enum_access
-                        .tuple_variant(1, |mut tuple_access| {
-                            let pointer: usize = tuple_access.next_field()?;
-                            Ok((pointer, None))
-                        }),
-                    _ => {
-                        use crate::de::Error;
-                        Err(D::Error::custom("Unknown ArcSerialize variant"))
-                    }
-                },
-            )?;
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        let result = deserializer.expect_enum(
+            "ArcSerialize",
+            &["Owned", "Reference"],
+            extension,
+            |variant, enum_access, extension| match variant {
+                crate::de::Identifier::Name("Owned")
+                | crate::de::Identifier::Index(0) => enum_access.tuple_variant(
+                    2,
+                    extension,
+                    |mut tuple_access, extension| {
+                        let pointer: usize =
+                            tuple_access.next_field(extension)?;
+                        let value: T = tuple_access.next_field(extension)?;
+
+                        Ok((pointer, Some(value)))
+                    },
+                ),
+                crate::de::Identifier::Name("Reference")
+                | crate::de::Identifier::Index(1) => enum_access.tuple_variant(
+                    1,
+                    extension,
+                    |mut tuple_access, extension| {
+                        let pointer: usize =
+                            tuple_access.next_field(extension)?;
+                        Ok((pointer, None))
+                    },
+                ),
+                _ => {
+                    use crate::de::Error;
+                    Err(D::Error::custom("Unknown ArcSerialize variant"))
+                }
+            },
+        )?;
 
         match result {
             (pointer, Some(value)) => {
                 let arc = Arc::new(value);
-                deserializer.extension().store_arc(pointer, arc.clone());
+                extension.store_arc(pointer, arc.clone());
                 Ok(arc)
             }
-            (pointer, None) => {
-                deserializer.extension().get_arc(pointer).ok_or_else(|| {
-                    use crate::de::Error;
-                    D::Error::custom(format!(
-                        "Arc reference not found for pointer {:#x}",
-                        pointer
-                    ))
-                })
-            }
+            (pointer, None) => extension.get_arc(pointer).ok_or_else(|| {
+                use crate::de::Error;
+                D::Error::custom(format!(
+                    "Arc reference not found for pointer {:#x}",
+                    pointer
+                ))
+            }),
         }
     }
 }
 
 // Implement Deserialize for Rc<T> when extension supports shared pointers
-impl<T, D> Deserialize<D> for Rc<T>
+impl<T, D, E> Deserialize<D, E> for Rc<T>
 where
-    T: Deserialize<D> + 'static,
-    D: Deserializer,
-    D::Extension: SharedPointerDeserialize,
+    T: Deserialize<D, E> + 'static,
+    D: Deserializer<E>,
+    E: SharedPointerDeserialize,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let result =
-            deserializer.expect_enum(
-                "RcSerialize",
-                &["Owned", "Reference"],
-                |variant, enum_access| match variant {
-                    crate::de::Identifier::Name("Owned")
-                    | crate::de::Identifier::Index(0) => enum_access
-                        .tuple_variant(2, |mut tuple_access| {
-                            let pointer: usize = tuple_access.next_field()?;
-                            let value: T = tuple_access.next_field()?;
-                            Ok((pointer, Some(value)))
-                        }),
-                    crate::de::Identifier::Name("Reference")
-                    | crate::de::Identifier::Index(1) => enum_access
-                        .tuple_variant(1, |mut tuple_access| {
-                            let pointer: usize = tuple_access.next_field()?;
-                            Ok((pointer, None))
-                        }),
-                    _ => {
-                        use crate::de::Error;
-                        Err(D::Error::custom("Unknown RcSerialize variant"))
-                    }
-                },
-            )?;
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        let result = deserializer.expect_enum(
+            "RcSerialize",
+            &["Owned", "Reference"],
+            extension,
+            |variant, enum_access, extension| match variant {
+                crate::de::Identifier::Name("Owned")
+                | crate::de::Identifier::Index(0) => enum_access.tuple_variant(
+                    2,
+                    extension,
+                    |mut tuple_access, extension| {
+                        let pointer: usize =
+                            tuple_access.next_field(extension)?;
+                        let value: T = tuple_access.next_field(extension)?;
+                        Ok((pointer, Some(value)))
+                    },
+                ),
+                crate::de::Identifier::Name("Reference")
+                | crate::de::Identifier::Index(1) => enum_access.tuple_variant(
+                    1,
+                    extension,
+                    |mut tuple_access, extension| {
+                        let pointer: usize =
+                            tuple_access.next_field(extension)?;
+                        Ok((pointer, None))
+                    },
+                ),
+                _ => {
+                    use crate::de::Error;
+                    Err(D::Error::custom("Unknown RcSerialize variant"))
+                }
+            },
+        )?;
 
         match result {
             (pointer, Some(value)) => {
                 let rc = Rc::new(value);
-                deserializer.extension().store_rc(pointer, rc.clone());
+                extension.store_rc(pointer, rc.clone());
                 Ok(rc)
             }
-            (pointer, None) => {
-                deserializer.extension().get_rc(pointer).ok_or_else(|| {
-                    use crate::de::Error;
-                    D::Error::custom(format!(
-                        "Rc reference not found for pointer {:#x}",
-                        pointer
-                    ))
-                })
-            }
+            (pointer, None) => extension.get_rc(pointer).ok_or_else(|| {
+                use crate::de::Error;
+                D::Error::custom(format!(
+                    "Rc reference not found for pointer {:#x}",
+                    pointer
+                ))
+            }),
         }
     }
 }

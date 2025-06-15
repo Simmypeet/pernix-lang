@@ -50,12 +50,12 @@ use std::fmt::Display;
 ///     fn serialize(
 ///         &self,
 ///         serializer: &mut S,
-///         _: &mut E,
+///         extension: &mut E,
 ///     ) -> Result<(), S::Error> {
 ///         if self.data.is_empty() {
 ///             return Err(ser::Error::custom("data cannot be empty"));
 ///         }
-///         self.data.serialize(serializer)
+///         self.data.serialize(serializer, extension)
 ///     }
 /// }
 /// ```

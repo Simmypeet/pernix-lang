@@ -41,8 +41,8 @@ fn arc_shared_serialization() {
     use crate::binary::{de::BinaryDeserializer, ser::BinarySerializer};
 
     // Create a shared pointer extension
-    let tracker = SharedPointerTracker::new();
-    let store = SharedPointerStore::new();
+    let mut tracker = SharedPointerTracker::new();
+    let mut store = SharedPointerStore::new();
 
     // Create two Arc instances that share the same data
     let arc1 = Arc::new(String::from("shared_data"));
@@ -53,16 +53,15 @@ fn arc_shared_serialization() {
 
     // Serialize
     let buffer = Vec::new();
-    let mut serializer = BinarySerializer::with_extension(buffer, tracker);
-    data.serialize(&mut serializer).unwrap();
-    let (buffer, _tracker) = serializer.into_parts();
+    let mut serializer = BinarySerializer::new(buffer);
+    data.serialize(&mut serializer, &mut tracker).unwrap();
+    let buffer = serializer.into_inner();
 
     // Deserialize
     let cursor = Cursor::new(buffer);
-    let mut deserializer =
-        BinaryDeserializer::with_extension(cursor, store);
+    let mut deserializer = BinaryDeserializer::new(cursor);
     let deserialized: Vec<Arc<String>> =
-        Vec::deserialize(&mut deserializer).unwrap();
+        Vec::deserialize(&mut deserializer, &mut store).unwrap();
 
     // Verify the data is correct
     assert_eq!(deserialized.len(), 3);
@@ -83,8 +82,8 @@ fn rc_shared_serialization() {
     use crate::binary::{de::BinaryDeserializer, ser::BinarySerializer};
 
     // Create a shared pointer extension
-    let tracker = SharedPointerTracker::new();
-    let store = SharedPointerStore::new();
+    let mut tracker = SharedPointerTracker::new();
+    let mut store = SharedPointerStore::new();
 
     // Create two Rc instances that share the same data
     let rc1 = Rc::new(42u32);
@@ -95,16 +94,15 @@ fn rc_shared_serialization() {
 
     // Serialize
     let buffer = Vec::new();
-    let mut serializer = BinarySerializer::with_extension(buffer, tracker);
-    data.serialize(&mut serializer).unwrap();
-    let (buffer, _tracker) = serializer.into_parts();
+    let mut serializer = BinarySerializer::new(buffer);
+    data.serialize(&mut serializer, &mut tracker).unwrap();
+    let buffer = serializer.into_inner();
 
     // Deserialize
     let cursor = Cursor::new(buffer);
-    let mut deserializer =
-        BinaryDeserializer::with_extension(cursor, store);
+    let mut deserializer = BinaryDeserializer::new(cursor);
     let deserialized: Vec<Rc<u32>> =
-        Vec::deserialize(&mut deserializer).unwrap();
+        Vec::deserialize(&mut deserializer, &mut store).unwrap();
 
     // Verify the data is correct
     assert_eq!(deserialized.len(), 3);

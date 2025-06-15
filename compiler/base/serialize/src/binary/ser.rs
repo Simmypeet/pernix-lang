@@ -13,7 +13,7 @@
 //! let mut serializer = BinarySerializer::new(buffer);
 //!
 //! // Serialize a primitive value
-//! 42u32.serialize(&mut serializer).unwrap();
+//! 42u32.serialize(&mut serializer, &mut ()).unwrap();
 //! let buffer = serializer.into_inner();
 //! assert_eq!(buffer, 42u32.to_le_bytes());
 //! ```

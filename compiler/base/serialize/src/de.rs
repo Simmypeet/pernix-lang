@@ -53,7 +53,7 @@ use std::fmt::Display;
 ///         deserializer: &mut D,
 ///         extension: &mut E,
 ///     ) -> Result<Self, D::Error> {
-///         let data = String::deserialize(deserializer)?;
+///         let data = String::deserialize(deserializer, extension)?;
 ///         if data.is_empty() {
 ///             return Err(de::Error::custom("data cannot be empty"));
 ///         }
@@ -1056,15 +1056,15 @@ where
     }
 }
 
-impl<T, E, D> Deserialize<D, E> for Result<T, E>
+impl<T, E, D, Ext: ?Sized> Deserialize<D, Ext> for Result<T, E>
 where
-    T: Deserialize<D, E>,
-    E: Deserialize<D, E>,
-    D: Deserializer<E>,
+    T: Deserialize<D, Ext>,
+    E: Deserialize<D, Ext>,
+    D: Deserializer<Ext>,
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &mut Ext,
     ) -> Result<Self, D::Error> {
         const VARIANTS: &[&str] = &["Ok", "Err"];
 
