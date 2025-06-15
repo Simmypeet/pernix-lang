@@ -667,6 +667,8 @@ where
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::BuildHasher,
+    ops::Range,
+    range::RangeInclusive,
 };
 
 impl<T, S> Serialize<S> for Vec<T>
@@ -991,5 +993,17 @@ where
             Some(s) => s.serialize(serializer),
             None => Err(S::Error::custom("Path contains invalid UTF-8")),
         }
+    }
+}
+
+impl<S: Serializer, T: Serialize<S>> Serialize<S> for Range<T> {
+    fn serialize(
+        &self,
+        serializer: &mut S,
+    ) -> Result<(), <S as Serializer>::Error> {
+        serializer.emit_struct("Range", 2, |mut s| {
+            s.serialize_field("start", &self.start)?;
+            s.serialize_field("end", &self.end)
+        })
     }
 }

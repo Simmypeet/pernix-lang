@@ -746,6 +746,7 @@ where
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::BuildHasher,
+    ops::Range,
 };
 
 impl<T, D> Deserialize<D> for Vec<T>
@@ -1136,5 +1137,63 @@ where
 {
     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         Ok(PathBuf::from(String::deserialize(deserializer)?))
+    }
+}
+
+impl<D: Deserializer, T: Deserialize<D>> Deserialize<D> for Range<T> {
+    fn deserialize(
+        deserializer: &mut D,
+    ) -> Result<Self, <D as Deserializer>::Error> {
+        deserializer.expect_struct("Range", &["start", "end"], |mut x| {
+            let mut start = None;
+            let mut end = None;
+
+            loop {
+                let should_continue =
+                    StructAccess::next_field(&mut x, |field| {
+                        let Some((ident, access)) = field else {
+                            return Ok(false);
+                        };
+
+                        match ident {
+                            Identifier::Name("start")
+                            | Identifier::Index(0) => {
+                                if start.is_some() {
+                                    return Err(D::Error::duplicated_field(
+                                        Identifier::Name("start"),
+                                    ));
+                                }
+                                start = Some(access.deserialize()?);
+                            }
+                            Identifier::Name("end") | Identifier::Index(1) => {
+                                if end.is_some() {
+                                    return Err(D::Error::duplicated_field(
+                                        Identifier::Name("end"),
+                                    ));
+                                }
+                                end = Some(access.deserialize()?);
+                            }
+                            _ => {
+                                return Err(D::Error::unknown_field(ident));
+                            }
+                        }
+
+                        Ok(true)
+                    })?;
+
+                if !should_continue {
+                    break;
+                }
+            }
+
+            Ok(Range {
+                start: start.ok_or_else(|| {
+                    D::Error::missing_field(Identifier::Name("start"))
+                })?,
+                end: end.ok_or_else(|| {
+                    D::Error::missing_field(Identifier::Name("end"))
+                })?,
+            })
+        })
     }
 }
