@@ -4,9 +4,9 @@
 pub use std as __std;
 use std::marker::PhantomData;
 
+use pernixc_serialize::{Deserialize, Serialize};
 #[doc(hidden)]
 pub use pernixc_stable_type_id as __stable_type_id;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     cache, error, expect,
@@ -651,10 +651,10 @@ pub struct Third;
     Ord,
     Hash,
     Identifiable,
+    Serialize,
+    Deserialize,
     derive_more::Deref,
     derive_more::DerefMut,
-    serde::Serialize,
-    serde::Deserialize,
 )]
 pub struct Tag<T, U>(
     #[deref]

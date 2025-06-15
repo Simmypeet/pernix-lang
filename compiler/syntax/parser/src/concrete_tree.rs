@@ -9,9 +9,12 @@ use pernixc_lexical::{
     token,
     tree::{OffsetMode, RelativeLocation, RelativeSpan},
 };
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 use pernixc_source_file::{GlobalSourceID, Span};
 use pernixc_stable_type_id::StableTypeID;
-use serde::{Deserialize, Serialize};
 
 /// An enumeration of the different types of nodes that can be found in
 /// the concrete syntax tree.
@@ -26,6 +29,10 @@ use serde::{Deserialize, Serialize};
     Serialize,
     Deserialize,
     EnumAsInner,
+)]
+#[serde(
+    ser_extension(SharedPointerSerialize),
+    de_extension(SharedPointerDeserialize)
 )]
 #[allow(clippy::large_enum_variant)]
 pub enum Node {
@@ -99,8 +106,12 @@ pub struct AstInfo {
     Ord,
     Hash,
     Serialize,
-    Default,
     Deserialize,
+    Default,
+)]
+#[serde(
+    ser_extension(SharedPointerSerialize),
+    de_extension(SharedPointerDeserialize)
 )]
 pub struct Tree {
     /// The info of where which AST created this tree.

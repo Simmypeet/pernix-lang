@@ -16,6 +16,7 @@ members = [
     "compiler/base/identifiable_derive_lib",
 
     "compiler/syntax/lexical",
+    "compiler/syntax/parser",
     # "compiler/syntax/parser",
     # tidy-alphabetical-end
 ]
