@@ -1,4 +1,112 @@
-use std::marker::PhantomData;
+//! Dynamic serialization and deserialization framework for heterogeneous
+//! collections.
+//!
+//! This module provides a flexible framework for serializing and deserializing
+//! collections that contain values of different types determined at runtime.
+//! It's designed to work with the query system's `Map` and `DynamicBox` types,
+//! enabling persistence and transfer of complex, type-erased data structures.
+//!
+//! # Overview
+//!
+//! The core challenge this module addresses is serializing/deserializing
+//! heterogeneous collections where the concrete types are only known at runtime
+//! through stable type IDs. Traditional serialization approaches require
+//! compile-time knowledge of all types, but this system uses a registry-based
+//! approach with function pointers to handle dynamic typing.
+//!
+//! # Key Components
+//!
+//! ## Traits
+//!
+//! * [`DynamicSerialize`] - Provides access to serialization helpers indexed by
+//!   type ID
+//! * [`DynamicDeserialize`] - Provides access to deserialization helpers
+//!   indexed by type ID
+//! * [`DynamicRegistry`] - Interface for registering types with both
+//!   capabilities
+//!
+//! ## Helper Structs
+//!
+//! * [`SerializationHelper`] - Contains function pointers for serializing a
+//!   specific type
+//! * [`DeserializationHelper`] - Contains function pointers for deserializing a
+//!   specific type
+//!
+//! ## Registry Types
+//!
+//! * [`Registry`] - Main registry that manages helpers for multiple types
+//! * [`SelfRegistry`] - Self-referential registry that can be used as an
+//!   extension parameter
+//!
+//! # Architecture
+//!
+//! The system works by:
+//!
+//! 1. **Registration**: Types are registered with a `Registry` using
+//!    [`Registry::register`]
+//! 2. **Helper Creation**: The registry creates serialization/deserialization
+//!    function pointers
+//! 3. **Runtime Lookup**: During serialization/deserialization, helpers are
+//!    looked up by type ID
+//! 4. **Dynamic Dispatch**: The appropriate function pointer is called to
+//!    handle the specific type
+//!
+//! # Serialization Format
+//!
+//! Maps are serialized as nested structures:
+//! ```text
+//! {
+//!   "type_id_1": {
+//!     "key1": "value1",
+//!     "key2": "value2",
+//!     ...
+//!   },
+//!   "type_id_2": {
+//!     "key1": "value1",
+//!     ...
+//!   }
+//! }
+//! ```
+//!
+//! Dynamic boxes are serialized as structs with type information:
+//! ```text
+//! {
+//!   "stable_type_id": "<type_id>",
+//!   "value": <serialized_value>
+//! }
+//! ```
+//!
+//! # Usage Example
+//!
+//! ```rust,ignore
+//! use pernixc_serialize::{Serialize, Deserialize};
+//!
+//! // Create a registry
+//! let mut registry = Registry::new();
+//!
+//! // Register your key types
+//! registry.register::<MyKey>();
+//! registry.register::<AnotherKey>();
+//!
+//! // Use for serialization/deserialization
+//! let map = Map::new();
+//! let serialized = map.serialize(&mut serializer, &registry)?;
+//! ```
+//!
+//! # Type Safety
+//!
+//! While this system provides dynamic typing capabilities, it maintains type
+//! safety through:
+//! * Stable type IDs that uniquely identify types across compilation units
+//! * Runtime type checking during downcasting operations
+//! * Panic-on-mismatch semantics for registration conflicts
+//!
+//! # Performance Considerations
+//!
+//! * Function pointer calls have minimal overhead compared to trait object
+//!   dispatch
+//! * Type lookups use efficient hash maps with stable type IDs as keys
+//! * Registration is typically done once at startup, not in hot paths
 
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_serialize::{
@@ -11,26 +119,82 @@ use smallbox::smallbox;
 
 use crate::{database::map::Map, key::DynamicBox, Key};
 
+/// A trait for types that can provide dynamic serialization capabilities.
+///
+/// This trait enables types to serialize dynamic content by providing access
+/// to serialization helpers indexed by stable type IDs. It's primarily used
+/// for serializing heterogeneous collections where the concrete types are
+/// determined at runtime.
 pub trait DynamicSerialize<S: Serializer<Self>>: Sized {
+    /// Returns a mapping from stable type IDs to their corresponding
+    /// serialization helpers.
+    ///
+    /// # Returns
+    /// A reference to a `HashMap` mapping `StableTypeID` to
+    /// `SerializationHelper<S, Self>`. The serialization helpers contain
+    /// function pointers for serializing specific types.
     fn serialization_helper_by_type_id(
         &self,
     ) -> &HashMap<StableTypeID, SerializationHelper<S, Self>>;
 }
 
+/// A trait for types that can provide dynamic deserialization capabilities.
+///
+/// This trait enables types to deserialize dynamic content by providing access
+/// to deserialization helpers indexed by stable type IDs. It's primarily used
+/// for deserializing heterogeneous collections where the concrete types are
+/// determined at runtime.
 pub trait DynamicDeserialize<D: Deserializer<Self>>: Sized {
+    /// Returns a mapping from stable type IDs to their corresponding
+    /// deserialization helpers.
+    ///
+    /// # Returns
+    /// A reference to a `HashMap` mapping `StableTypeID` to
+    /// `DeserializationHelper<D, Self>`. The deserialization helpers
+    /// contain function pointers for deserializing specific types.
     fn deserialization_helper_by_type_id(
         &self,
     ) -> &HashMap<StableTypeID, DeserializationHelper<D, Self>>;
 }
 
+/// A trait for types that can register serialization and deserialization
+/// helpers for dynamic types.
+///
+/// This trait provides a unified interface for registering types with both
+/// serialization and deserialization capabilities. It's typically implemented
+/// by registry types that manage collections of type-specific helpers.
 pub trait DynamicRegistry<S: Serializer<Self>, D: Deserializer<Self>>:
     Sized
 {
+    /// Registers a key type and its associated value type for both
+    /// serialization and deserialization.
+    ///
+    /// This method creates and stores serialization and deserialization helpers
+    /// for the given key type `K` and its associated value type `K::Value`.
+    /// Both types must implement the appropriate serialization and
+    /// deserialization traits.
+    ///
+    /// # Type Parameters
+    /// * `K` - The key type that implements `Key`, `Serialize`, and
+    ///   `Deserialize`
+    ///
+    /// # Requirements
+    /// * `K::Value` must implement `Serialize<S, Self>` and `Deserialize<D,
+    ///   Self>`
+    ///
+    /// # Panics
+    /// May panic if the type has already been registered.
     fn register<K: Key + Serialize<S, Self> + Deserialize<D, Self>>(&mut self)
     where
         K::Value: Serialize<S, Self> + Deserialize<D, Self>;
 }
 
+/// A helper struct that contains function pointers for serializing a specific
+/// type.
+///
+/// This struct stores the necessary function pointers to serialize both `Map`
+/// instances and `DynamicBox` instances for a specific type. It also stores the
+/// standard library's `TypeId` for runtime type checking.
 #[derive(Debug, Copy)]
 pub struct SerializationHelper<S: Serializer<E>, E> {
     map_serializer: fn(&Map, &mut S, &mut E) -> Result<(), S::Error>,
@@ -40,7 +204,17 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
     std_type_id: std::any::TypeId,
 }
 
+/// A helper struct that contains function pointers for deserializing a specific
+/// type.
+///
+/// This struct stores the necessary function pointers to deserialize both `Map`
+/// instances and `DynamicBox` instances for a specific type. It also stores the
+/// standard library's `TypeId` for runtime type checking.
+///
+/// The function pointer types are complex due to the lifetime requirements of
+/// the deserialization process.
 #[derive(Debug, Copy)]
+#[allow(clippy::type_complexity)]
 pub struct DeserializationHelper<D: Deserializer<E>, E> {
     map_deserializer: for<'m, 'v> fn(
         &mut Map,
@@ -161,6 +335,18 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for DynamicBox {
     }
 }
 
+/// A registry that manages serialization and deserialization helpers for
+/// dynamic types.
+///
+/// The `Registry` maintains mappings from stable type IDs to their
+/// corresponding serialization and deserialization helpers. This enables
+/// dynamic serialization and deserialization of heterogeneous collections where
+/// the concrete types are determined at runtime.
+///
+/// # Type Parameters
+/// * `S` - The serializer type
+/// * `D` - The deserializer type
+/// * `E` - The extension type used by both serializer and deserializer
 pub struct Registry<S: Serializer<E>, D: Deserializer<E>, E> {
     serialization_helpers_by_type_id:
         HashMap<StableTypeID, SerializationHelper<S, E>>,
@@ -169,6 +355,11 @@ pub struct Registry<S: Serializer<E>, D: Deserializer<E>, E> {
 }
 
 impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
+    /// Creates a new empty registry.
+    ///
+    /// # Returns
+    /// A new `Registry` instance with empty helper mappings.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             serialization_helpers_by_type_id: HashMap::default(),
@@ -226,6 +417,25 @@ fn dynamic_box_deserializer<
 }
 
 impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
+    /// Registers a key type and its associated value type for both
+    /// serialization and deserialization.
+    ///
+    /// This method creates and stores serialization and deserialization helpers
+    /// for the given key type `K` and its associated value type `K::Value`.
+    /// The helpers contain function pointers that can serialize/deserialize
+    /// both `Map` instances and `DynamicBox` instances containing values of
+    /// the registered type.
+    ///
+    /// # Type Parameters
+    /// * `K` - The key type that implements `Key`, `Serialize`, and
+    ///   `Deserialize`
+    ///
+    /// # Requirements
+    /// * `K::Value` must implement `Serialize<S, E>` and `Deserialize<D, E>`
+    ///
+    /// # Panics
+    /// Panics if the key type `K` has already been registered in this registry.
+    /// Each type can only be registered once per registry instance.
     pub fn register<K: Key + Serialize<S, E> + Deserialize<D, E>>(&mut self)
     where
         K::Value: Serialize<S, E> + Deserialize<D, E>,
@@ -291,6 +501,33 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
                     std::any::type_name::<K>()
                 )
             });
+    }
+}
+
+impl<S: Serializer<E>, D: Deserializer<E>, E> std::fmt::Debug
+    for Registry<S, D, E>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Registry")
+            .field(
+                "serialization_helpers_count",
+                &self.serialization_helpers_by_type_id.len(),
+            )
+            .field(
+                "deserialization_helpers_count",
+                &self.deserialization_helpers_by_type_id.len(),
+            )
+            .finish()
+    }
+}
+
+impl<S: Serializer<Self>, D: Deserializer<Self>> std::fmt::Debug
+    for SelfRegistry<S, D>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SelfRegistry")
+            .field("registry", &"Registry { .. }")
+            .finish()
     }
 }
 
@@ -439,11 +676,27 @@ where
     }
 }
 
+/// A specialized registry that implements the dynamic traits for
+/// self-referential usage.
+///
+/// `SelfRegistry` is a wrapper around `Registry` that implements
+/// `DynamicSerialize`, `DynamicDeserialize`, and `DynamicRegistry` for itself.
+/// This is useful when you need a registry that can be passed as the extension
+/// parameter to serialization and deserialization operations.
+///
+/// # Type Parameters
+/// * `S` - The serializer type that uses `Self` as its extension type
+/// * `D` - The deserializer type that uses `Self` as its extension type
 pub struct SelfRegistry<S: Serializer<Self>, D: Deserializer<Self>> {
     registry: Registry<S, D, Self>,
 }
 
 impl<S: Serializer<Self>, D: Deserializer<Self>> SelfRegistry<S, D> {
+    /// Creates a new empty self-registry.
+    ///
+    /// # Returns
+    /// A new `SelfRegistry` instance with an empty internal registry.
+    #[must_use]
     pub fn new() -> Self { Self { registry: Registry::new() } }
 }
 
@@ -480,7 +733,7 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicRegistry<S, D>
     where
         K::Value: Serialize<S, Self> + Deserialize<D, Self>,
     {
-        self.registry.register::<K>()
+        self.registry.register::<K>();
     }
 }
 
