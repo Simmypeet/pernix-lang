@@ -16,24 +16,24 @@ where
 #[test]
 fn primitives() {
     // Test integers
-    let buf = with_serializer(|s| 42u8.serialize(s));
+    let buf = with_serializer(|s| 42u8.serialize(s, &mut ()));
     assert_eq!(buf, [42]);
 
-    let buf = with_serializer(|s| 1000u16.serialize(s));
+    let buf = with_serializer(|s| 1000u16.serialize(s, &mut ()));
     assert_eq!(buf, 1000u16.to_le_bytes());
 
-    let buf = with_serializer(|s| (-42i32).serialize(s));
+    let buf = with_serializer(|s| (-42i32).serialize(s, &mut ()));
     assert_eq!(buf, (-42i32).to_le_bytes());
 
     // Test boolean
-    let buf = with_serializer(|s| true.serialize(s));
+    let buf = with_serializer(|s| true.serialize(s, &mut ()));
     assert_eq!(buf, [1]);
 
-    let buf = with_serializer(|s| false.serialize(s));
+    let buf = with_serializer(|s| false.serialize(s, &mut ()));
     assert_eq!(buf, [0]);
 
     // Test string
-    let buf = with_serializer(|s| "hello".serialize(s));
+    let buf = with_serializer(|s| "hello".serialize(s, &mut ()));
     assert_eq!(buf[0], 5); // length
     assert_eq!(&buf[1..], b"hello");
 }
@@ -60,13 +60,13 @@ fn varint() {
 #[test]
 fn sequences() {
     // Test Vec<u8>
-    let buf = with_serializer(|s| vec![1u8, 2, 3, 4, 5].serialize(s));
+    let buf = with_serializer(|s| vec![1u8, 2, 3, 4, 5].serialize(s, &mut ()));
     // Should start with length varint (5), then the bytes
     assert_eq!(buf[0], 5); // length
     assert_eq!(&buf[1..], &[1, 2, 3, 4, 5]);
 
     // Test Vec<u32>
-    let buf = with_serializer(|s| vec![100u32, 200, 300].serialize(s));
+    let buf = with_serializer(|s| vec![100u32, 200, 300].serialize(s, &mut ()));
     assert_eq!(buf[0], 3); // length
                            // Each u32 is 4 bytes in little-endian
     let expected: Vec<u8> =
@@ -77,12 +77,12 @@ fn sequences() {
     assert_eq!(&buf[1..], &expected);
 
     // Test empty Vec
-    let buf = with_serializer(|s| Vec::<u8>::new().serialize(s));
+    let buf = with_serializer(|s| Vec::<u8>::new().serialize(s, &mut ()));
     assert_eq!(buf, [0]); // just the length
 
     // Test Vec<String>
     let buf = with_serializer(|s| {
-        vec!["hello".to_string(), "world".to_string()].serialize(s)
+        vec!["hello".to_string(), "world".to_string()].serialize(s, &mut ())
     });
     assert_eq!(buf[0], 2); // length of vec
                            // First string: length (5) + "hello"
@@ -102,7 +102,7 @@ fn maps() {
     map.insert("key1".to_string(), 100u32);
     map.insert("key2".to_string(), 200u32);
 
-    let buf = with_serializer(|s| map.serialize(s));
+    let buf = with_serializer(|s| map.serialize(s, &mut ()));
     assert_eq!(buf[0], 2); // length of map
 
     // Note: HashMap iteration order is not guaranteed, so we need to check
@@ -114,7 +114,7 @@ fn maps() {
 
     // Test empty HashMap
     let empty_map: HashMap<String, u32> = HashMap::new();
-    let buf = with_serializer(|s| empty_map.serialize(s));
+    let buf = with_serializer(|s| empty_map.serialize(s, &mut ()));
     assert_eq!(buf, [0]); // just the length
 }
 
@@ -122,7 +122,7 @@ fn maps() {
 fn structs() {
     // Test tuple struct
     let tuple_struct = (42u32, "hello".to_string(), true);
-    let buf = with_serializer(|s| tuple_struct.serialize(s));
+    let buf = with_serializer(|s| tuple_struct.serialize(s, &mut ()));
 
     // Should serialize as: u32 (4 bytes) + string length + string bytes + bool
     // (1 byte)
@@ -133,7 +133,7 @@ fn structs() {
 
     // Test nested tuple
     let nested = ((1u8, 2u8), (3u16, 4u16));
-    let buf = with_serializer(|s| nested.serialize(s));
+    let buf = with_serializer(|s| nested.serialize(s, &mut ()));
 
     // Should serialize as: u8 + u8 + u16 + u16
     assert_eq!(buf[0], 1);
@@ -146,27 +146,27 @@ fn structs() {
 fn options() {
     // Test Some variant
     let some_value = Some(42u32);
-    let buf = with_serializer(|s| some_value.serialize(s));
+    let buf = with_serializer(|s| some_value.serialize(s, &mut ()));
     // Should serialize as: variant index (1 for Some) + value
     assert_eq!(buf[0], 1); // Some variant index
     assert_eq!(&buf[1..5], &42u32.to_le_bytes());
 
     // Test None variant
     let none_value: Option<u32> = None;
-    let buf = with_serializer(|s| none_value.serialize(s));
+    let buf = with_serializer(|s| none_value.serialize(s, &mut ()));
     // Should serialize as: variant index (0 for None)
     assert_eq!(buf, [0]); // None variant index only
 
     // Test nested Option
     let nested_some = Some(Some(123u16));
-    let buf = with_serializer(|s| nested_some.serialize(s));
+    let buf = with_serializer(|s| nested_some.serialize(s, &mut ()));
     assert_eq!(buf[0], 1); // outer Some
     assert_eq!(buf[1], 1); // inner Some
     assert_eq!(&buf[2..4], &123u16.to_le_bytes());
 
     // Test Option<String>
     let some_string = Some("test".to_string());
-    let buf = with_serializer(|s| some_string.serialize(s));
+    let buf = with_serializer(|s| some_string.serialize(s, &mut ()));
     assert_eq!(buf[0], 1); // Some variant
     assert_eq!(buf[1], 4); // string length
     assert_eq!(&buf[2..6], b"test");
@@ -176,13 +176,13 @@ fn options() {
 fn results() {
     // Test Ok variant
     let ok_value: Result<u32, String> = Ok(42);
-    let buf = with_serializer(|s| ok_value.serialize(s));
+    let buf = with_serializer(|s| ok_value.serialize(s, &mut ()));
     assert_eq!(buf[0], 0); // Ok variant index
     assert_eq!(&buf[1..5], &42u32.to_le_bytes());
 
     // Test Err variant
     let err_value: Result<u32, String> = Err("error".to_string());
-    let buf = with_serializer(|s| err_value.serialize(s));
+    let buf = with_serializer(|s| err_value.serialize(s, &mut ()));
     assert_eq!(buf[0], 1); // Err variant index
     assert_eq!(buf[1], 5); // string length
     assert_eq!(&buf[2..7], b"error");
@@ -197,7 +197,7 @@ fn complex_nested() {
         Some(("key2".to_string(), vec![4u8, 5])),
     ];
 
-    let buf = with_serializer(|s| complex.serialize(s));
+    let buf = with_serializer(|s| complex.serialize(s, &mut ()));
 
     // Should start with vec length
     assert_eq!(buf[0], 3); // 3 elements in vec
@@ -225,25 +225,25 @@ fn complex_nested() {
 fn floating_point() {
     // Test f32
     let f32_val = std::f32::consts::PI;
-    let buf = with_serializer(|s| f32_val.serialize(s));
+    let buf = with_serializer(|s| f32_val.serialize(s, &mut ()));
     assert_eq!(buf, f32_val.to_le_bytes());
 
     // Test f64
     let f64_val = std::f64::consts::E;
-    let buf = with_serializer(|s| f64_val.serialize(s));
+    let buf = with_serializer(|s| f64_val.serialize(s, &mut ()));
     assert_eq!(buf, f64_val.to_le_bytes());
 
     // Test special values
     let nan = f32::NAN;
-    let buf = with_serializer(|s| nan.serialize(s));
+    let buf = with_serializer(|s| nan.serialize(s, &mut ()));
     assert_eq!(buf, nan.to_le_bytes());
 
     let infinity = f32::INFINITY;
-    let buf = with_serializer(|s| infinity.serialize(s));
+    let buf = with_serializer(|s| infinity.serialize(s, &mut ()));
     assert_eq!(buf, infinity.to_le_bytes());
 
     let neg_infinity = f32::NEG_INFINITY;
-    let buf = with_serializer(|s| neg_infinity.serialize(s));
+    let buf = with_serializer(|s| neg_infinity.serialize(s, &mut ()));
     assert_eq!(buf, neg_infinity.to_le_bytes());
 }
 

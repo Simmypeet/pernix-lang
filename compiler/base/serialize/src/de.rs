@@ -44,12 +44,15 @@ use std::fmt::Display;
 ///     data: String,
 /// }
 ///
-/// impl<D> Deserialize<D> for MyType
+/// impl<D, E: ?Sized> Deserialize<D, E> for MyType
 /// where
-///     D: Deserializer,
+///     D: Deserializer<E>,
 ///     D::Error: de::Error,
 /// {
-///     fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+///     fn deserialize(
+///         deserializer: &mut D,
+///         extension: &mut E,
+///     ) -> Result<Self, D::Error> {
 ///         let data = String::deserialize(deserializer)?;
 ///         if data.is_empty() {
 ///             return Err(de::Error::custom("data cannot be empty"));
@@ -165,18 +168,19 @@ impl From<&'static str> for Identifier {
 /// This trait is used to deserialize ordered collections of elements where
 /// all elements are of the same type or can be deserialized with the same
 /// deserializer.
-pub trait SeqAccess {
+pub trait SeqAccess<E: ?Sized> {
     /// The parent deserializer type that created this sequence access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// Deserialize the next element in the sequence.
     ///
     /// Returns `Ok(Some(element))` if there is a next element,
     /// `Ok(None)` if the sequence is finished, or an error if
     /// deserialization fails.
-    fn next_element<T: Deserialize<Self::Parent>>(
+    fn next_element<T: Deserialize<Self::Parent, E>>(
         &mut self,
-    ) -> Result<Option<T>, <Self::Parent as Deserializer>::Error>;
+        extension: &mut E,
+    ) -> Result<Option<T>, <Self::Parent as Deserializer<E>>::Error>;
 
     /// Get the size hint for the remaining elements.
     ///
@@ -190,62 +194,65 @@ pub trait SeqAccess {
 /// This trait is used to deserialize fixed-size ordered collections where
 /// elements may be of different types but the number of elements is known at
 /// compile time.
-pub trait TupleAccess {
+pub trait TupleAccess<E: ?Sized> {
     /// The parent deserializer type that created this tuple access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// Deserialize the next element in the tuple.
     ///
     /// Returns `Ok(element)` if successful, or an error if deserialization
     /// fails.
-    fn next_element<T: Deserialize<Self::Parent>>(
+    fn next_element<T: Deserialize<Self::Parent, E>>(
         &mut self,
-    ) -> Result<T, <Self::Parent as Deserializer>::Error>;
+        extension: &mut E,
+    ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing tuple structs.
 ///
 /// Tuple structs are structs with unnamed fields accessed by position,
 /// similar to tuples but with a named type.
-pub trait TupleStructAccess {
+pub trait TupleStructAccess<E: ?Sized> {
     /// The parent deserializer type that created this tuple struct access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// Deserialize the next field in the tuple struct.
     ///
     /// Returns `Ok(field)` if successful, or an error if deserialization fails.
-    fn next_field<T: Deserialize<Self::Parent>>(
+    fn next_field<T: Deserialize<Self::Parent, E>>(
         &mut self,
-    ) -> Result<T, <Self::Parent as Deserializer>::Error>;
+        extension: &mut E,
+    ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for accessing a specific field during struct deserialization.
 ///
 /// This trait represents access to a single field that can be deserialized
 /// on demand.
-pub trait FieldAccess {
+pub trait FieldAccess<E: ?Sized> {
     /// The parent deserializer type that created this field access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// Deserialize the field value.
     ///
     /// Returns the deserialized field value, or an error if deserialization
     /// fails.
-    fn deserialize<T: Deserialize<Self::Parent>>(
+    fn deserialize<T: Deserialize<Self::Parent, E>>(
         self,
-    ) -> Result<T, <Self::Parent as Deserializer>::Error>;
+        extension: &mut E,
+    ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing structs with named fields.
 ///
 /// This trait handles the deserialization of structures where each field
 /// has a name and can be accessed by name.
-pub trait StructAccess {
+pub trait StructAccess<E: ?Sized> {
     /// The parent deserializer type that created this struct access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// The type used for accessing individual fields.
-    type FieldAccess<'s>: FieldAccess<Parent = Self::Parent>;
+    type FieldAccess<'s>: FieldAccess<E, Parent = Self::Parent>;
 
     /// Process the next field in the struct.
     ///
@@ -259,41 +266,43 @@ pub trait StructAccess {
     /// * `next` - A closure that receives the field information and access
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<'s, R>(
+    fn next_field<'s, 'e, R>(
         &'s mut self,
+        extension: &'e mut E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'s>)>,
+            Option<(Identifier, Self::FieldAccess<'s>, &'e mut E)>,
         )
-            -> Result<R, <Self::Parent as Deserializer>::Error>,
-    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
+            -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for accessing a specific value during map deserialization.
 ///
 /// This trait represents access to a single map value that can be deserialized
 /// on demand after the key has been examined.
-pub trait ValueAccess {
+pub trait ValueAccess<E: ?Sized> {
     /// The parent deserializer type that created this value access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// Deserialize the value.
     ///
     /// Returns the deserialized value, or an error if deserialization fails.
-    fn deserialize<V: Deserialize<Self::Parent>>(
+    fn deserialize<V: Deserialize<Self::Parent, E>>(
         self,
-    ) -> Result<V, <Self::Parent as Deserializer>::Error>;
+        extension: &mut E,
+    ) -> Result<V, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing maps (dictionaries, hash tables, etc.).
 ///
 /// Maps are collections of key-value pairs where keys and values
 /// can be of different types.
-pub trait MapAccess {
+pub trait MapAccess<E: ?Sized> {
     /// The parent deserializer type that created this map access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// The type used for accessing individual values after key examination.
-    type ValueAccess<'s>: ValueAccess<Parent = Self::Parent>;
+    type ValueAccess<'s>: ValueAccess<E, Parent = Self::Parent>;
 
     /// Process the next entry in the map.
     ///
@@ -309,13 +318,14 @@ pub trait MapAccess {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_entry<'s, K: Deserialize<Self::Parent>, R>(
+    fn next_entry<'s, 'e, K: Deserialize<Self::Parent, E>, R>(
         &'s mut self,
+        extension: &'e mut E,
         next: impl FnOnce(
-            Option<(K, Self::ValueAccess<'s>)>,
+            Option<(K, Self::ValueAccess<'s>, &'e mut E)>,
         )
-            -> Result<R, <Self::Parent as Deserializer>::Error>,
-    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
+            -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
 
     /// Get the size hint for the remaining entries.
     ///
@@ -328,28 +338,29 @@ pub trait MapAccess {
 ///
 /// Tuple variants are enum variants that contain unnamed fields,
 /// similar to tuple structs but within an enum context.
-pub trait TupleVariantAccess {
+pub trait TupleVariantAccess<E: ?Sized> {
     /// The parent deserializer type that created this tuple variant access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// Deserialize the next field in the tuple variant.
     ///
     /// Returns `Ok(field)` if successful, or an error if deserialization fails.
-    fn next_field<T: Deserialize<Self::Parent>>(
+    fn next_field<T: Deserialize<Self::Parent, E>>(
         &mut self,
-    ) -> Result<T, <Self::Parent as Deserializer>::Error>;
+        extension: &mut E,
+    ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing struct variants of enums.
 ///
 /// Struct variants are enum variants that contain named fields,
 /// similar to regular structs but within an enum context.
-pub trait StructVariantAccess {
+pub trait StructVariantAccess<E: ?Sized> {
     /// The parent deserializer type that created this struct variant access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// The type used for accessing individual fields.
-    type FieldAccess<'s>: FieldAccess<Parent = Self::Parent>;
+    type FieldAccess<'s>: FieldAccess<E, Parent = Self::Parent>;
 
     /// Process the next field in the struct variant.
     ///
@@ -365,34 +376,37 @@ pub trait StructVariantAccess {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<'s, R>(
+    fn next_field<'s, 'e, R>(
         &'s mut self,
+        extension: &'e mut E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'s>)>,
+            Option<(Identifier, Self::FieldAccess<'s>, &'e mut E)>,
         )
-            -> Result<R, <Self::Parent as Deserializer>::Error>,
-    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
+            -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing enums.
 ///
 /// This trait provides access to the enum variant identifier and allows
 /// deserializing the variant content through specific variant access methods.
-pub trait EnumAccess {
+pub trait EnumAccess<E: ?Sized> {
     /// The parent deserializer type that created this enum access.
-    type Parent: Deserializer;
+    type Parent: Deserializer<E>;
 
     /// The type used for deserializing tuple variants.
-    type TupleVariantAccess: TupleVariantAccess<Parent = Self::Parent>;
+    type TupleVariantAccess: TupleVariantAccess<E, Parent = Self::Parent>;
 
     /// The type used for deserializing struct variants.
-    type StructVariantAccess: StructVariantAccess<Parent = Self::Parent>;
+    type StructVariantAccess: StructVariantAccess<E, Parent = Self::Parent>;
 
     /// Deserialize a unit variant (enum variant with no fields).
     ///
     /// This should be called when the variant is determined to be a unit
     /// variant.
-    fn unit_variant(self) -> Result<(), <Self::Parent as Deserializer>::Error>;
+    fn unit_variant(
+        self,
+    ) -> Result<(), <Self::Parent as Deserializer<E>>::Error>;
 
     /// Deserialize a tuple variant (enum variant with unnamed fields).
     ///
@@ -404,13 +418,16 @@ pub trait EnumAccess {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn tuple_variant<R>(
+    fn tuple_variant<'e, R>(
         self,
         len: usize,
+        extension: &'e mut E,
         f: impl FnOnce(
             Self::TupleVariantAccess,
-        ) -> Result<R, <Self::Parent as Deserializer>::Error>,
-    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
+            &'e mut E,
+        )
+            -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
 
     /// Deserialize a struct variant (enum variant with named fields).
     ///
@@ -422,13 +439,16 @@ pub trait EnumAccess {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn struct_variant<R>(
+    fn struct_variant<'e, R>(
         self,
         fields: &'static [&'static str],
+        extension: &'e mut E,
         f: impl FnOnce(
             Self::StructVariantAccess,
-        ) -> Result<R, <Self::Parent as Deserializer>::Error>,
-    ) -> Result<R, <Self::Parent as Deserializer>::Error>;
+            &'e mut E,
+        )
+            -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
+    ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// The main deserializer trait that defines the interface for deserializing
@@ -437,40 +457,33 @@ pub trait EnumAccess {
 /// This trait provides methods for deserializing primitive types, collections,
 /// and complex data structures. It includes an extension mechanism for
 /// customization and state passing.
-pub trait Deserializer {
+pub trait Deserializer<E: ?Sized> {
     /// The error type returned by deserialization operations.
     type Error: Error;
 
-    /// An extension object that can be used as an additional context for
-    /// specialized deserialization of certain types.
-    ///
-    /// The [`Deserialize`] type can add more trait bounds to this type to
-    /// access additional extended functionality.
-    type Extension;
-
     /// The type used for deserializing sequences.
-    type SeqAccess<'s>: SeqAccess<Parent = Self>;
+    type SeqAccess<'s>: SeqAccess<E, Parent = Self>;
 
     /// The type used for deserializing tuples.
-    type TupleAccess<'s>: TupleAccess<Parent = Self>;
+    type TupleAccess<'s>: TupleAccess<E, Parent = Self>;
 
     /// The type used for deserializing tuple structs.
-    type TupleStructAccess<'s>: TupleStructAccess<Parent = Self>;
+    type TupleStructAccess<'s>: TupleStructAccess<E, Parent = Self>;
 
     /// The type used for deserializing structs.
-    type StructAccess<'s>: StructAccess<Parent = Self>;
+    type StructAccess<'s>: StructAccess<E, Parent = Self>;
 
     /// The type used for deserializing maps.
-    type MapAccess<'s>: MapAccess<Parent = Self>;
+    type MapAccess<'s>: MapAccess<E, Parent = Self>;
 
     /// The type used for deserializing tuple variants.
-    type TupleVariantAccess<'s>: TupleVariantAccess<Parent = Self>;
+    type TupleVariantAccess<'s>: TupleVariantAccess<E, Parent = Self>;
 
     /// The type used for deserializing struct variants.
-    type StructVariantAccess<'s>: StructVariantAccess<Parent = Self>;
+    type StructVariantAccess<'s>: StructVariantAccess<E, Parent = Self>;
 
     /// The type used for deserializing enums.
-    type EnumAccess<'s>: EnumAccess<Parent = Self>;
+    type EnumAccess<'s>: EnumAccess<E, Parent = Self>;
 
     /// Deserialize an i8 value.
     fn expect_i8(&mut self) -> Result<i8, Self::Error>;
@@ -530,13 +543,10 @@ pub trait Deserializer {
     ///
     /// Returns `Ok(Some(value))` if the option contains a value,
     /// `Ok(None)` if the option is None, or an error if deserialization fails.
-    fn expect_option<T: Deserialize<Self>>(
+    fn expect_option<T: Deserialize<Self, E>>(
         &mut self,
+        extension: &mut E,
     ) -> Result<Option<T>, Self::Error>;
-
-    /// Get a mutable reference to the extension object for customized
-    /// deserialization.
-    fn extension(&mut self) -> &mut Self::Extension;
 
     /// Deserialize a sequence (array, vector, etc.).
     ///
@@ -547,9 +557,10 @@ pub trait Deserializer {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_seq<'s, R>(
+    fn expect_seq<'s, 'e, R>(
         &'s mut self,
-        f: impl FnOnce(Self::SeqAccess<'s>) -> Result<R, Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::SeqAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple.
@@ -562,10 +573,11 @@ pub trait Deserializer {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_tuple<'s, R>(
+    fn expect_tuple<'s, 'e, R>(
         &'s mut self,
         len: usize,
-        f: impl FnOnce(Self::TupleAccess<'s>) -> Result<R, Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::TupleAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple struct.
@@ -579,11 +591,15 @@ pub trait Deserializer {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_tuple_struct<'s, R>(
+    fn expect_tuple_struct<'s, 'e, R>(
         &'s mut self,
         name: &'static str,
         len: usize,
-        f: impl FnOnce(Self::TupleStructAccess<'s>) -> Result<R, Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(
+            Self::TupleStructAccess<'s>,
+            &'e mut E,
+        ) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a unit struct (struct with no fields).
@@ -607,11 +623,12 @@ pub trait Deserializer {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_struct<'s, R>(
+    fn expect_struct<'s, 'e, R>(
         &'s mut self,
         name: &'static str,
         fields: &'static [&'static str],
-        f: impl FnOnce(Self::StructAccess<'s>) -> Result<R, Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::StructAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a map (dictionary, hash table, etc.).
@@ -623,9 +640,10 @@ pub trait Deserializer {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_map<'s, R>(
+    fn expect_map<'s, 'e, R>(
         &'s mut self,
-        f: impl FnOnce(Self::MapAccess<'s>) -> Result<R, Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::MapAccess<'s>, &'e mut E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize an enum.
@@ -639,11 +657,16 @@ pub trait Deserializer {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_enum<'s, R>(
+    fn expect_enum<'s, 'e, R>(
         &'s mut self,
         name: &'static str,
         variants: &'static [&'static str],
-        f: impl FnOnce(Identifier, Self::EnumAccess<'s>) -> Result<R, Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(
+            Identifier,
+            Self::EnumAccess<'s>,
+            &'e mut E,
+        ) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 }
 
@@ -652,7 +675,7 @@ pub trait Deserializer {
 /// This trait should be implemented for any type that needs to be deserialized.
 /// The implementation defines how the type's data should be read from the
 /// deserializer.
-pub trait Deserialize<D: ?Sized + Deserializer>: Sized {
+pub trait Deserialize<D: ?Sized + Deserializer<E>, E: ?Sized>: Sized {
     /// Deserialize this value using the provided deserializer.
     ///
     /// # Arguments
@@ -662,7 +685,10 @@ pub trait Deserialize<D: ?Sized + Deserializer>: Sized {
     /// # Errors
     ///
     /// Returns an error if the value cannot be deserialized.
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error>;
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error>;
 }
 
 // =============================================================================
@@ -672,11 +698,11 @@ pub trait Deserialize<D: ?Sized + Deserializer>: Sized {
 macro_rules! impl_deserialize_integer {
     ($($ty:ty => $method:ident),*) => {
         $(
-            impl<D> Deserialize<D> for $ty
+            impl<D, E: ?Sized> Deserialize<D, E> for $ty
             where
-                D: Deserializer,
+                D: Deserializer<E>,
             {
-                fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+                fn deserialize(deserializer: &mut D, _extension: &mut E) -> Result<Self, D::Error> {
                     deserializer.$method()
                 }
             }
@@ -697,47 +723,62 @@ impl_deserialize_integer! {
     usize => expect_usize
 }
 
-impl<D> Deserialize<D> for f32
+impl<D, E: ?Sized> Deserialize<D, E> for f32
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &mut E,
+    ) -> Result<Self, D::Error> {
         deserializer.expect_f32()
     }
 }
 
-impl<D> Deserialize<D> for f64
+impl<D, E: ?Sized> Deserialize<D, E> for f64
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &mut E,
+    ) -> Result<Self, D::Error> {
         deserializer.expect_f64()
     }
 }
 
-impl<D> Deserialize<D> for bool
+impl<D, E: ?Sized> Deserialize<D, E> for bool
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &mut E,
+    ) -> Result<Self, D::Error> {
         deserializer.expect_bool()
     }
 }
 
-impl<D> Deserialize<D> for char
+impl<D, E: ?Sized> Deserialize<D, E> for char
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &mut E,
+    ) -> Result<Self, D::Error> {
         deserializer.expect_char()
     }
 }
 
-impl<D> Deserialize<D> for String
+impl<D, E: ?Sized> Deserialize<D, E> for String
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &mut E,
+    ) -> Result<Self, D::Error> {
         deserializer.expect_string()
     }
 }
@@ -752,17 +793,20 @@ use std::{
     ops::Range,
 };
 
-impl<T, D> Deserialize<D> for Vec<T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for Vec<T>
 where
-    T: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_seq(|mut seq| {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_seq(extension, |mut seq, e| {
             let (lower, upper) = seq.size_hint();
             let mut vec = Self::with_capacity(upper.unwrap_or(lower));
 
-            while let Some(element) = seq.next_element()? {
+            while let Some(element) = seq.next_element(e)? {
                 vec.push(element);
             }
 
@@ -771,22 +815,25 @@ where
     }
 }
 
-impl<T, const N: usize, D> Deserialize<D> for [T; N]
+impl<T, const N: usize, D, E: ?Sized> Deserialize<D, E> for [T; N]
 where
-    T: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
         use std::mem::{ManuallyDrop, MaybeUninit};
 
-        deserializer.expect_seq(|mut seq| {
+        deserializer.expect_seq(extension, |mut seq, e| {
             // Create an uninitialized array
             let mut array: [MaybeUninit<T>; N] =
                 unsafe { MaybeUninit::uninit().assume_init() };
 
             // Deserialize each element with proper error handling
             for i in 0..N {
-                match seq.next_element() {
+                match seq.next_element(e) {
                     Ok(Some(element)) => {
                         array[i] = MaybeUninit::new(element);
                     }
@@ -829,15 +876,18 @@ where
     }
 }
 
-impl<K, V, BH, D> Deserialize<D> for HashMap<K, V, BH>
+impl<K, V, BH, D, E: ?Sized> Deserialize<D, E> for HashMap<K, V, BH>
 where
-    K: Deserialize<D> + Eq + std::hash::Hash,
-    V: Deserialize<D>,
+    K: Deserialize<D, E> + Eq + std::hash::Hash,
+    V: Deserialize<D, E>,
     BH: BuildHasher + Default,
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_map(|mut map_access| {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_map(extension, |mut map_access, e| {
             let (lower, upper) = map_access.size_hint();
             let mut map = Self::with_capacity_and_hasher(
                 upper.unwrap_or(lower),
@@ -845,9 +895,9 @@ where
             );
 
             loop {
-                let done = map_access.next_entry(|entry| {
-                    if let Some((key, value_access)) = entry {
-                        let value = value_access.deserialize()?;
+                let done = map_access.next_entry(e, |entry| {
+                    if let Some((key, value_access, e)) = entry {
+                        let value = value_access.deserialize(e)?;
                         map.insert(key, value);
                         Ok(false) // Continue
                     } else {
@@ -865,20 +915,23 @@ where
     }
 }
 
-impl<K, V, D> Deserialize<D> for BTreeMap<K, V>
+impl<K, V, D, E: ?Sized> Deserialize<D, E> for BTreeMap<K, V>
 where
-    K: Deserialize<D> + Ord,
-    V: Deserialize<D>,
-    D: Deserializer,
+    K: Deserialize<D, E> + Ord,
+    V: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_map(|mut map_access| {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_map(extension, |mut map_access, e| {
             let mut map = Self::new();
 
             loop {
-                let done = map_access.next_entry(|entry| {
-                    if let Some((key, value_access)) = entry {
-                        let value = value_access.deserialize()?;
+                let done = map_access.next_entry(e, |entry| {
+                    if let Some((key, value_access, e)) = entry {
+                        let value = value_access.deserialize(e)?;
                         map.insert(key, value);
                         Ok(false) // Continue
                     } else {
@@ -896,21 +949,24 @@ where
     }
 }
 
-impl<T, BH, D> Deserialize<D> for HashSet<T, BH>
+impl<T, BH, D, E: ?Sized> Deserialize<D, E> for HashSet<T, BH>
 where
-    T: Deserialize<D> + Eq + std::hash::Hash,
+    T: Deserialize<D, E> + Eq + std::hash::Hash,
     BH: BuildHasher + Default,
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_seq(|mut seq| {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_seq(extension, |mut seq, e| {
             let (lower, upper) = seq.size_hint();
             let mut hash_set = Self::with_capacity_and_hasher(
                 upper.unwrap_or(lower),
                 BH::default(),
             );
 
-            while let Some(element) = seq.next_element()? {
+            while let Some(element) = seq.next_element(e)? {
                 hash_set.insert(element);
             }
 
@@ -919,16 +975,19 @@ where
     }
 }
 
-impl<T, D> Deserialize<D> for BTreeSet<T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for BTreeSet<T>
 where
-    T: Deserialize<D> + Ord,
-    D: Deserializer,
+    T: Deserialize<D, E> + Ord,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_seq(|mut seq| {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_seq(extension, |mut seq, e| {
             let mut btree_set = Self::new();
 
-            while let Some(element) = seq.next_element()? {
+            while let Some(element) = seq.next_element(e)? {
                 btree_set.insert(element);
             }
 
@@ -937,17 +996,20 @@ where
     }
 }
 
-impl<T, D> Deserialize<D> for VecDeque<T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for VecDeque<T>
 where
-    T: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_seq(|mut seq| {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_seq(extension, |mut seq, e| {
             let (lower, upper) = seq.size_hint();
             let mut deque = Self::with_capacity(upper.unwrap_or(lower));
 
-            while let Some(element) = seq.next_element()? {
+            while let Some(element) = seq.next_element(e)? {
                 deque.push_back(element);
             }
 
@@ -956,16 +1018,19 @@ where
     }
 }
 
-impl<T, D> Deserialize<D> for LinkedList<T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for LinkedList<T>
 where
-    T: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_seq(|mut seq| {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_seq(extension, |mut seq, e| {
             let mut list = Self::new();
 
-            while let Some(element) = seq.next_element()? {
+            while let Some(element) = seq.next_element(e)? {
                 list.push_back(element);
             }
 
@@ -978,39 +1043,58 @@ where
 // Option and Result Implementations
 // =============================================================================
 
-impl<T, D> Deserialize<D> for Option<T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for Option<T>
 where
-    T: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_option()
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_option(extension)
     }
 }
 
-impl<T, E, D> Deserialize<D> for Result<T, E>
+impl<T, E, D> Deserialize<D, E> for Result<T, E>
 where
-    T: Deserialize<D>,
-    E: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E>,
+    E: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
         const VARIANTS: &[&str] = &["Ok", "Err"];
 
         deserializer.expect_enum(
             "Result",
             VARIANTS,
-            |identifier, enum_access| {
+            extension,
+            |identifier, enum_access, extension| {
                 match identifier {
                     Identifier::Name("Ok") | Identifier::Index(0) => {
-                        enum_access.tuple_variant(1, |mut tuple| {
-                            Ok(Ok(TupleVariantAccess::next_field(&mut tuple)?))
-                        })
+                        enum_access.tuple_variant(
+                            1,
+                            extension,
+                            |mut tuple, e| {
+                                Ok(Ok(TupleVariantAccess::next_field(
+                                    &mut tuple, e,
+                                )?))
+                            },
+                        )
                     }
                     Identifier::Name("Err") | Identifier::Index(1) => {
-                        enum_access.tuple_variant(1, |mut tuple| {
-                            Ok(Err(TupleVariantAccess::next_field(&mut tuple)?))
-                        })
+                        enum_access.tuple_variant(
+                            1,
+                            extension,
+                            |mut tuple, e| {
+                                Ok(Err(TupleVariantAccess::next_field(
+                                    &mut tuple, e,
+                                )?))
+                            },
+                        )
                     }
                     variant_id => {
                         // Unknown variant - this indicates corrupted or invalid
@@ -1029,11 +1113,14 @@ where
 // Tuple Implementations
 // =============================================================================
 
-impl<D> Deserialize<D> for ()
+impl<D, E: ?Sized> Deserialize<D, E> for ()
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &mut E,
+    ) -> Result<Self, D::Error> {
         deserializer.expect_unit()
     }
 }
@@ -1041,16 +1128,16 @@ where
 macro_rules! impl_deserialize_tuple {
     ($($len:expr => ($($idx:tt $T:ident),+)),*) => {
         $(
-            impl<$($T,)* D> Deserialize<D> for ($($T,)*)
+            impl<$($T,)* D, E: ?Sized> Deserialize<D, E> for ($($T,)*)
             where
-                $($T: Deserialize<D>,)*
-                D: Deserializer,
+                $($T: Deserialize<D, E>,)*
+                D: Deserializer<E>,
             {
-                fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-                    deserializer.expect_tuple($len, |mut tuple| {
+                fn deserialize(deserializer: &mut D, extension: &mut E) -> Result<Self, D::Error> {
+                    deserializer.expect_tuple($len, extension, |mut tuple, extension| {
                         Ok((
                             $(
-                                tuple.next_element::<$T>()?,
+                                tuple.next_element::<$T>(extension)?,
                             )+
                         ))
                     })
@@ -1085,25 +1172,31 @@ impl_deserialize_tuple! {
 
 use std::{borrow::Cow, boxed::Box};
 
-impl<T, D> Deserialize<D> for Box<T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for Box<T>
 where
-    T: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let value = T::deserialize(deserializer)?;
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        let value = T::deserialize(deserializer, extension)?;
         Ok(Self::new(value))
     }
 }
 
-impl<T, D> Deserialize<D> for Cow<'static, T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for Cow<'static, T>
 where
-    T: Deserialize<D> + ToOwned + Clone,
-    T::Owned: Deserialize<D>,
-    D: Deserializer,
+    T: Deserialize<D, E> + ToOwned + Clone,
+    T::Owned: Deserialize<D, E>,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        let owned = T::Owned::deserialize(deserializer)?;
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        let owned = T::Owned::deserialize(deserializer, extension)?;
         Ok(Cow::Owned(owned))
     }
 }
@@ -1114,12 +1207,16 @@ where
 
 use std::marker::PhantomData;
 
-impl<T, D> Deserialize<D> for PhantomData<T>
+impl<T, D, E: ?Sized> Deserialize<D, E> for PhantomData<T>
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        deserializer.expect_tuple_struct("PhantomData", 1, |_| Ok(Self))
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        deserializer
+            .expect_tuple_struct("PhantomData", 1, extension, |_, _| Ok(Self))
     }
 }
 
@@ -1137,84 +1234,102 @@ use std::path::PathBuf;
 use dashmap::DashMap;
 use flexstr::FlexStr;
 
-impl<D> Deserialize<D> for PathBuf
+impl<D, E: ?Sized> Deserialize<D, E> for PathBuf
 where
-    D: Deserializer,
+    D: Deserializer<E>,
 {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        Ok(PathBuf::from(String::deserialize(deserializer)?))
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        Ok(PathBuf::from(String::deserialize(deserializer, extension)?))
     }
 }
 
-impl<D: Deserializer, T: Deserialize<D>> Deserialize<D> for Range<T> {
+impl<D: Deserializer<E>, T: Deserialize<D, E>, E: ?Sized> Deserialize<D, E>
+    for Range<T>
+{
     fn deserialize(
         deserializer: &mut D,
-    ) -> Result<Self, <D as Deserializer>::Error> {
-        deserializer.expect_struct("Range", &["start", "end"], |mut x| {
-            let mut start = None;
-            let mut end = None;
+        extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        deserializer.expect_struct(
+            "Range",
+            &["start", "end"],
+            extension,
+            |mut x, extension| {
+                let mut start = None;
+                let mut end = None;
 
-            loop {
-                let should_continue =
-                    StructAccess::next_field(&mut x, |field| {
-                        let Some((ident, access)) = field else {
-                            return Ok(false);
-                        };
+                loop {
+                    let should_continue =
+                        StructAccess::next_field(&mut x, extension, |field| {
+                            let Some((ident, access, e)) = field else {
+                                return Ok(false);
+                            };
 
-                        match ident {
-                            Identifier::Name("start")
-                            | Identifier::Index(0) => {
-                                if start.is_some() {
-                                    return Err(D::Error::duplicated_field(
-                                        Identifier::Name("start"),
-                                    ));
+                            match ident {
+                                Identifier::Name("start")
+                                | Identifier::Index(0) => {
+                                    if start.is_some() {
+                                        return Err(
+                                            D::Error::duplicated_field(
+                                                Identifier::Name("start"),
+                                            ),
+                                        );
+                                    }
+                                    start = Some(access.deserialize(e)?);
                                 }
-                                start = Some(access.deserialize()?);
-                            }
-                            Identifier::Name("end") | Identifier::Index(1) => {
-                                if end.is_some() {
-                                    return Err(D::Error::duplicated_field(
-                                        Identifier::Name("end"),
-                                    ));
+                                Identifier::Name("end")
+                                | Identifier::Index(1) => {
+                                    if end.is_some() {
+                                        return Err(
+                                            D::Error::duplicated_field(
+                                                Identifier::Name("end"),
+                                            ),
+                                        );
+                                    }
+                                    end = Some(access.deserialize(e)?);
                                 }
-                                end = Some(access.deserialize()?);
+                                _ => {
+                                    return Err(D::Error::unknown_field(ident));
+                                }
                             }
-                            _ => {
-                                return Err(D::Error::unknown_field(ident));
-                            }
-                        }
 
-                        Ok(true)
-                    })?;
+                            Ok(true)
+                        })?;
 
-                if !should_continue {
-                    break;
+                    if !should_continue {
+                        break;
+                    }
                 }
-            }
 
-            Ok(Range {
-                start: start.ok_or_else(|| {
-                    D::Error::missing_field(Identifier::Name("start"))
-                })?,
-                end: end.ok_or_else(|| {
-                    D::Error::missing_field(Identifier::Name("end"))
-                })?,
-            })
-        })
+                Ok(Range {
+                    start: start.ok_or_else(|| {
+                        D::Error::missing_field(Identifier::Name("start"))
+                    })?,
+                    end: end.ok_or_else(|| {
+                        D::Error::missing_field(Identifier::Name("end"))
+                    })?,
+                })
+            },
+        )
     }
 }
 
 impl<
-        D: Deserializer,
-        K: Deserialize<D> + Eq + Hash,
-        V: Deserialize<D>,
+        D: Deserializer<E>,
+        K: Deserialize<D, E> + Eq + Hash,
+        V: Deserialize<D, E>,
         BH: BuildHasher + Clone + Default,
-    > Deserialize<D> for DashMap<K, V, BH>
+        E: ?Sized,
+    > Deserialize<D, E> for DashMap<K, V, BH>
 {
     fn deserialize(
         deserializer: &mut D,
-    ) -> Result<Self, <D as Deserializer>::Error> {
-        deserializer.expect_map(|mut map_access| {
+        extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        deserializer.expect_map(extension, |mut map_access, extension| {
             let (lower, upper) = map_access.size_hint();
             let map = Self::with_capacity_and_hasher(
                 upper.unwrap_or(lower),
@@ -1222,9 +1337,9 @@ impl<
             );
 
             loop {
-                let done = map_access.next_entry(|entry| {
-                    if let Some((key, value_access)) = entry {
-                        let value = value_access.deserialize()?;
+                let done = map_access.next_entry(extension, |entry| {
+                    if let Some((key, value_access, extension)) = entry {
+                        let value = value_access.deserialize(extension)?;
                         map.insert(key, value);
                         Ok(false) // Continue
                     } else {
@@ -1243,18 +1358,20 @@ impl<
 }
 
 impl<
-        D: Deserializer,
+        D: Deserializer<E>,
         const SIZE: usize,
         const PAD1: usize,
         const PAD2: usize,
         HEAP,
-    > Deserialize<D> for FlexStr<SIZE, PAD1, PAD2, HEAP>
+        E: ?Sized,
+    > Deserialize<D, E> for FlexStr<SIZE, PAD1, PAD2, HEAP>
 where
     HEAP: for<'a> From<&'a str>,
 {
     fn deserialize(
         deserializer: &mut D,
-    ) -> Result<Self, <D as Deserializer>::Error> {
+        _extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
         Ok(deserializer.expect_str()?.into())
     }
 }

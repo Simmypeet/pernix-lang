@@ -53,21 +53,11 @@ use crate::ser::{
 /// - Enums are prefixed with their variant index as a varint
 /// - Booleans are written as single bytes (0 or 1)
 /// - Floating point numbers are written in IEEE 754 format
-pub struct BinarySerializer<W, E = ()> {
+pub struct BinarySerializer<W> {
     writer: W,
-    extension: E,
 }
 
-impl<W: Write + 'static, E: 'static> BinarySerializer<W, E> {
-    /// Create a new binary serializer that writes to the given writer with the
-    /// specified extension.
-    pub fn with_extension(writer: W, extension: E) -> Self {
-        Self { writer, extension }
-    }
-
-    /// Consume the serializer and return the underlying writer and extension.
-    pub fn into_parts(self) -> (W, E) { (self.writer, self.extension) }
-
+impl<W: Write + 'static> BinarySerializer<W> {
     /// Consume the serializer and return the underlying writer.
     pub fn into_inner(self) -> W { self.writer }
 
@@ -76,12 +66,6 @@ impl<W: Write + 'static, E: 'static> BinarySerializer<W, E> {
 
     /// Get a mutable reference to the underlying writer.
     pub fn writer_mut(&mut self) -> &mut W { &mut self.writer }
-
-    /// Get a reference to the extension.
-    pub fn extension(&self) -> &E { &self.extension }
-
-    /// Get a mutable reference to the extension.
-    pub fn extension_mut(&mut self) -> &mut E { &mut self.extension }
 
     /// Write a varint (variable-length integer) encoding of the given value.
     ///
@@ -108,145 +92,159 @@ impl<W: Write + 'static, E: 'static> BinarySerializer<W, E> {
 }
 
 // Compound serializer implementations
-pub struct BinarySeq<'a, W, E> {
-    serializer: &'a mut BinarySerializer<W, E>,
+pub struct BinarySeq<'a, W> {
+    serializer: &'a mut BinarySerializer<W>,
 }
 
-impl<W: Write + 'static, E: 'static> Seq for BinarySeq<'_, W, E> {
-    type Parent = BinarySerializer<W, E>;
+impl<W: Write + 'static, E: ?Sized> Seq<E> for BinarySeq<'_, W> {
+    type Parent = BinarySerializer<W>;
 
-    fn serialize_element<T: crate::ser::Serialize<Self::Parent> + ?Sized>(
+    fn serialize_element<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
+        extension: &mut E,
     ) -> Result<(), io::Error> {
-        value.serialize(self.serializer)
+        value.serialize(self.serializer, extension)
     }
 }
 
-pub struct BinaryTuple<'a, W, E> {
-    serializer: &'a mut BinarySerializer<W, E>,
+pub struct BinaryTuple<'a, W> {
+    serializer: &'a mut BinarySerializer<W>,
 }
 
-impl<W: Write + 'static, E: 'static> Tuple for BinaryTuple<'_, W, E> {
-    type Parent = BinarySerializer<W, E>;
+impl<W: Write + 'static, E: ?Sized> Tuple<E> for BinaryTuple<'_, W> {
+    type Parent = BinarySerializer<W>;
 
-    fn serialize_element<T: crate::ser::Serialize<Self::Parent> + ?Sized>(
+    fn serialize_element<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
+        extension: &mut E,
     ) -> Result<(), io::Error> {
-        value.serialize(self.serializer)
+        value.serialize(self.serializer, extension)
     }
 }
 
-pub struct BinaryTupleStruct<'a, W, E> {
-    serializer: &'a mut BinarySerializer<W, E>,
+pub struct BinaryTupleStruct<'a, W> {
+    serializer: &'a mut BinarySerializer<W>,
 }
 
-impl<W: Write + 'static, E: 'static> TupleStruct
-    for BinaryTupleStruct<'_, W, E>
+impl<W: Write + 'static, E: ?Sized> TupleStruct<E>
+    for BinaryTupleStruct<'_, W>
 {
-    type Parent = BinarySerializer<W, E>;
+    type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent> + ?Sized>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
+        extension: &mut E,
     ) -> Result<(), io::Error> {
-        value.serialize(self.serializer)
+        value.serialize(self.serializer, extension)
     }
 }
 
-pub struct BinaryStruct<'a, W, E> {
-    serializer: &'a mut BinarySerializer<W, E>,
+pub struct BinaryStruct<'a, W> {
+    serializer: &'a mut BinarySerializer<W>,
 }
 
-impl<W: Write + 'static, E: 'static> Struct for BinaryStruct<'_, W, E> {
-    type Parent = BinarySerializer<W, E>;
+impl<W: Write + 'static, E: ?Sized> Struct<E> for BinaryStruct<'_, W> {
+    type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent> + ?Sized>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         _name: &'static str,
         value: &T,
+        extension: &mut E,
     ) -> Result<(), io::Error> {
-        value.serialize(self.serializer)
+        value.serialize(self.serializer, extension)
     }
 
-    fn skip_field(&mut self, _name: &'static str) -> Result<(), io::Error> {
+    fn skip_field(
+        &mut self,
+        _name: &'static str,
+        _extension: &mut E,
+    ) -> Result<(), io::Error> {
         // For binary format, we don't output anything for skipped fields
         Ok(())
     }
 }
 
-pub struct BinaryMap<'a, W, E> {
-    serializer: &'a mut BinarySerializer<W, E>,
+pub struct BinaryMap<'a, W> {
+    serializer: &'a mut BinarySerializer<W>,
 }
 
-impl<W: Write + 'static, E: 'static> Map for BinaryMap<'_, W, E> {
-    type Parent = BinarySerializer<W, E>;
+impl<W: Write + 'static, E: ?Sized> Map<E> for BinaryMap<'_, W> {
+    type Parent = BinarySerializer<W>;
 
     fn serialize_entry<
-        K: crate::ser::Serialize<Self::Parent> + ?Sized,
-        V: crate::ser::Serialize<Self::Parent> + ?Sized,
+        K: crate::ser::Serialize<Self::Parent, E> + ?Sized,
+        V: crate::ser::Serialize<Self::Parent, E> + ?Sized,
     >(
         &mut self,
         key: &K,
         value: &V,
+        extension: &mut E,
     ) -> Result<(), io::Error> {
-        key.serialize(self.serializer)?;
-        value.serialize(self.serializer)
+        key.serialize(self.serializer, extension)?;
+        value.serialize(self.serializer, extension)
     }
 }
 
-pub struct BinaryTupleVariant<'a, W, E> {
-    serializer: &'a mut BinarySerializer<W, E>,
+pub struct BinaryTupleVariant<'a, W> {
+    serializer: &'a mut BinarySerializer<W>,
 }
 
-impl<W: Write + 'static, E: 'static> TupleVariant
-    for BinaryTupleVariant<'_, W, E>
+impl<W: Write + 'static, E: ?Sized> TupleVariant<E>
+    for BinaryTupleVariant<'_, W>
 {
-    type Parent = BinarySerializer<W, E>;
+    type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent> + ?Sized>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
+        extension: &mut E,
     ) -> Result<(), io::Error> {
-        value.serialize(self.serializer)
+        value.serialize(self.serializer, extension)
     }
 }
 
-pub struct BinaryStructVariant<'a, W, E> {
-    serializer: &'a mut BinarySerializer<W, E>,
+pub struct BinaryStructVariant<'a, W> {
+    serializer: &'a mut BinarySerializer<W>,
 }
 
-impl<W: Write + 'static, E: 'static> StructVariant
-    for BinaryStructVariant<'_, W, E>
+impl<W: Write + 'static, E: ?Sized> StructVariant<E>
+    for BinaryStructVariant<'_, W>
 {
-    type Parent = BinarySerializer<W, E>;
+    type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent> + ?Sized>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         _name: &'static str,
         value: &T,
+        extension: &mut E,
     ) -> Result<(), io::Error> {
-        value.serialize(self.serializer)
+        value.serialize(self.serializer, extension)
     }
 
-    fn skip_field(&mut self, _name: &'static str) -> Result<(), io::Error> {
+    fn skip_field(
+        &mut self,
+        _name: &'static str,
+        _extension: &mut E,
+    ) -> Result<(), io::Error> {
         // For binary format, we don't output anything for skipped fields
         Ok(())
     }
 }
 
-impl<W: Write + 'static, E: 'static> Serializer for BinarySerializer<W, E> {
+impl<W: Write + 'static, E: ?Sized> Serializer<E> for BinarySerializer<W> {
     type Error = io::Error;
-    type Extension = E;
 
-    type Seq<'s> = BinarySeq<'s, W, E>;
-    type Tuple<'s> = BinaryTuple<'s, W, E>;
-    type TupleStruct<'s> = BinaryTupleStruct<'s, W, E>;
-    type Struct<'s> = BinaryStruct<'s, W, E>;
-    type Map<'s> = BinaryMap<'s, W, E>;
-    type TupleVariant<'s> = BinaryTupleVariant<'s, W, E>;
-    type StructVariant<'s> = BinaryStructVariant<'s, W, E>;
+    type Seq<'s> = BinarySeq<'s, W>;
+    type Tuple<'s> = BinaryTuple<'s, W>;
+    type TupleStruct<'s> = BinaryTupleStruct<'s, W>;
+    type Struct<'s> = BinaryStruct<'s, W>;
+    type Map<'s> = BinaryMap<'s, W>;
+    type TupleVariant<'s> = BinaryTupleVariant<'s, W>;
+    type StructVariant<'s> = BinaryStructVariant<'s, W>;
 
     fn emit_i8(&mut self, value: i8) -> Result<(), Self::Error> {
         self.write_bytes(&value.to_le_bytes())
@@ -328,46 +326,48 @@ impl<W: Write + 'static, E: 'static> Serializer for BinarySerializer<W, E> {
         self.write_bytes(&[0])
     }
 
-    fn emit_some<T: crate::ser::Serialize<Self> + ?Sized>(
+    fn emit_some<T: crate::ser::Serialize<Self, E> + ?Sized>(
         &mut self,
         value: &T,
+        extension: &mut E,
     ) -> Result<(), Self::Error> {
         // Write 1 to indicate Some, then serialize the value
         self.write_bytes(&[1])?;
-        value.serialize(self)
+        value.serialize(self, extension)
     }
 
-    fn extension(&mut self) -> &mut Self::Extension { &mut self.extension }
-
-    fn emit_seq<'s>(
+    fn emit_seq<'s, 'e>(
         &'s mut self,
         len: usize,
-        f: impl FnOnce(Self::Seq<'s>) -> Result<(), Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::Seq<'s>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         self.write_varint(len as u64)?;
         let seq = BinarySeq { serializer: self };
-        f(seq)
+        f(seq, extension)
     }
 
-    fn emit_tuple<'s>(
+    fn emit_tuple<'s, 'e>(
         &'s mut self,
         _len: usize,
-        f: impl FnOnce(Self::Tuple<'s>) -> Result<(), Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::Tuple<'s>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         // Tuples have fixed size, so no need to write length
         let tuple = BinaryTuple { serializer: self };
-        f(tuple)
+        f(tuple, extension)
     }
 
-    fn emit_tuple_struct<'s>(
+    fn emit_tuple_struct<'s, 'e>(
         &'s mut self,
         _name: &'static str,
         _len: usize,
-        f: impl FnOnce(Self::TupleStruct<'s>) -> Result<(), Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::TupleStruct<'s>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         // Tuple structs have fixed size, so no need to write length or name
         let tuple_struct = BinaryTupleStruct { serializer: self };
-        f(tuple_struct)
+        f(tuple_struct, extension)
     }
 
     fn emit_unit_struct(
@@ -387,58 +387,66 @@ impl<W: Write + 'static, E: 'static> Serializer for BinarySerializer<W, E> {
         self.write_varint(index as u64)
     }
 
-    fn emit_map<'s>(
+    fn emit_map<'s, 'e>(
         &'s mut self,
         len: usize,
-        f: impl FnOnce(Self::Map<'s>) -> Result<(), Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::Map<'s>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         self.write_varint(len as u64)?;
         let map = BinaryMap { serializer: self };
-        f(map)
+        f(map, extension)
     }
 
-    fn emit_struct<'s>(
+    fn emit_struct<'s, 'e>(
         &'s mut self,
         _name: &'static str,
         _len: usize,
-        f: impl FnOnce(Self::Struct<'s>) -> Result<(), Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::Struct<'s>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         // Structs have fixed fields, so no need to write length or name
         let struct_ser = BinaryStruct { serializer: self };
-        f(struct_ser)
+        f(struct_ser, extension)
     }
 
-    fn emit_tuple_variant<'s>(
+    fn emit_tuple_variant<'s, 'e>(
         &'s mut self,
         _name: &'static str,
         _variant: &'static str,
         index: u32,
         _len: usize,
-        f: impl FnOnce(Self::TupleVariant<'s>) -> Result<(), Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(Self::TupleVariant<'s>, &'e mut E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         self.write_varint(index as u64)?;
         let tuple_variant = BinaryTupleVariant { serializer: self };
-        f(tuple_variant)
+        f(tuple_variant, extension)
     }
 
-    fn emit_struct_variant<'s>(
+    fn emit_struct_variant<'s, 'e>(
         &'s mut self,
         _name: &'static str,
         _variant: &'static str,
         index: u32,
         _len: usize,
-        f: impl FnOnce(Self::StructVariant<'s>) -> Result<(), Self::Error>,
+        extension: &'e mut E,
+        f: impl FnOnce(
+            Self::StructVariant<'s>,
+            &'e mut E,
+        ) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         self.write_varint(index as u64)?;
         let struct_variant = BinaryStructVariant { serializer: self };
-        f(struct_variant)
+
+        f(struct_variant, extension)
     }
 }
 
-impl<W: Write + 'static> BinarySerializer<W, ()> {
+impl<W: Write + 'static> BinarySerializer<W> {
     /// Create a new binary serializer that writes to the given writer with a
     /// unit extension.
-    pub fn new(writer: W) -> Self { Self::with_extension(writer, ()) }
+    pub fn new(writer: W) -> Self { BinarySerializer { writer } }
 }
 
 impl crate::ser::Error for io::Error {
