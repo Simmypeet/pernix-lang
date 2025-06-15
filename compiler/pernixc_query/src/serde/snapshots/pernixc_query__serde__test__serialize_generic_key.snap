@@ -1,8 +1,0 @@
----
-source: compiler/pernixc_query/src/serde/test.rs
-expression: variable_key.serializable(&serde)
----
-Dynamic(
-  stable_type_id: StableTypeID(7566245429934314443, 3955644584863602834),
-  value: GenericKey("test_variable", PhantomData),
-)

@@ -477,30 +477,35 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
                 )
             };
 
-        self.serialization_helpers_by_type_id
+        if self
+            .serialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, SerializationHelper {
                 map_serializer,
                 dynamic_box_serializer: dyn_box_serializer,
                 std_type_id: std::any::TypeId::of::<K>(),
             })
-            .unwrap_or_else(|| {
-                panic!(
-                    "the key {} has already been registered",
-                    std::any::type_name::<K>()
-                )
-            });
-        self.deserialization_helpers_by_type_id
+            .is_some()
+        {
+            panic!(
+                "the key {} has already been registered",
+                std::any::type_name::<K>()
+            )
+        }
+
+        if self
+            .deserialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, DeserializationHelper {
                 map_deserializer: map_deserializer::<_, _, K>,
                 dynamic_box_deserializer: dynamic_box_deserializer::<_, _, K>,
                 std_type_id: std::any::TypeId::of::<K>(),
             })
-            .unwrap_or_else(|| {
-                panic!(
-                    "the key {} has already been registered",
-                    std::any::type_name::<K>()
-                )
-            });
+            .is_some()
+        {
+            panic!(
+                "the key {} has already been registered",
+                std::any::type_name::<K>()
+            )
+        }
     }
 }
 
