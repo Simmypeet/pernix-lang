@@ -40,16 +40,16 @@ pub fn implements_identifiable(
                     "::",
                     stringify!(#name)
                 );
-                pernixc_stable_type_id::StableTypeID::from_unique_type_name(
+                ::pernixc_stable_type_id::StableTypeID::from_unique_type_name(
                     unique_type_name
                 )
             }
         }
     } else {
         for ty_param in generics.type_params_mut() {
-            ty_param
-                .bounds
-                .push(syn::parse_quote!(pernixc_stable_type_id::Identifiable));
+            ty_param.bounds.push(syn::parse_quote!(
+                ::pernixc_stable_type_id::Identifiable
+            ));
         }
 
         let type_params = generics.type_params().map(|x| &x.ident);
@@ -82,7 +82,7 @@ pub fn implements_identifiable(
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let default_path: syn::Path =
-        syn::parse_quote!(pernixc_stable_type_id::Identifiable);
+        syn::parse_quote!(::pernixc_stable_type_id::Identifiable);
 
     let identifiable_trait = identifiable_trait.unwrap_or(&default_path);
 
@@ -90,7 +90,7 @@ pub fn implements_identifiable(
         impl #impl_generics
             #identifiable_trait for #name #ty_generics #where_clause
         {
-            const STABLE_TYPE_ID: pernixc_stable_type_id::StableTypeID
+            const STABLE_TYPE_ID: ::pernixc_stable_type_id::StableTypeID
                 = #stable_type_id_computation;
         }
     }

@@ -11,7 +11,12 @@ members = [
     "compiler/base/diagnostic",
     "compiler/base/handler",
     "compiler/base/test_input",
+    "compiler/base/stable_type_id",
+    "compiler/base/identifiable_derive",
+    "compiler/base/identifiable_derive_lib",
+
     "compiler/syntax/lexical",
+    # "compiler/syntax/parser",
     # tidy-alphabetical-end
 ]
 

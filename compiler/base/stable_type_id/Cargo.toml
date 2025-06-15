@@ -7,8 +7,8 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-serde = { workspace = true }
-pernixc_identifiable_derive = { path = "../pernixc_identifiable_derive" }
+pernixc_serialize = { path = "../serialize" }
+pernixc_identifiable_derive = { path = "../identifiable_derive" }
 
 [lints]
 workspace = true

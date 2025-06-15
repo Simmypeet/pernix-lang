@@ -2,7 +2,7 @@
 //! trait.
 
 pub use pernixc_identifiable_derive::Identifiable;
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{Deserialize, Serialize};
 
 /// A stable alternative to [`std::any::TypeId`] that is used to uniquely
 /// identify types in a way that is consistent across different runs of the
