@@ -88,7 +88,7 @@ pub struct BinarySeqAccess<'a, R> {
     remaining: usize,
 }
 
-impl<R: Read + 'static, E: ?Sized> SeqAccess<E> for BinarySeqAccess<'_, R> {
+impl<R: Read + 'static, E> SeqAccess<E> for BinarySeqAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
 
     fn next_element<T: Deserialize<Self::Parent, E>>(
@@ -112,7 +112,7 @@ pub struct BinaryTupleAccess<'a, R> {
     deserializer: &'a mut BinaryDeserializer<R>,
 }
 
-impl<R: Read + 'static, E: ?Sized> TupleAccess<E> for BinaryTupleAccess<'_, R> {
+impl<R: Read + 'static, E> TupleAccess<E> for BinaryTupleAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
 
     fn next_element<T: Deserialize<Self::Parent, E>>(
@@ -127,7 +127,7 @@ pub struct BinaryTupleStructAccess<'a, R> {
     deserializer: &'a mut BinaryDeserializer<R>,
 }
 
-impl<R: Read + 'static, E: ?Sized> TupleStructAccess<E>
+impl<R: Read + 'static, E> TupleStructAccess<E>
     for BinaryTupleStructAccess<'_, R>
 {
     type Parent = BinaryDeserializer<R>;
@@ -144,7 +144,7 @@ pub struct BinaryFieldAccess<'a, R> {
     deserializer: &'a mut BinaryDeserializer<R>,
 }
 
-impl<R: Read + 'static, E: ?Sized> FieldAccess<E> for BinaryFieldAccess<'_, R> {
+impl<R: Read + 'static, E> FieldAccess<E> for BinaryFieldAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
 
     fn deserialize<T: Deserialize<Self::Parent, E>>(
@@ -161,9 +161,7 @@ pub struct BinaryStructAccess<'a, R> {
     total_fields: usize,
 }
 
-impl<R: Read + 'static, E: ?Sized> StructAccess<E>
-    for BinaryStructAccess<'_, R>
-{
+impl<R: Read + 'static, E> StructAccess<E> for BinaryStructAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
     type FieldAccess<'s> = BinaryFieldAccess<'s, R>;
 
@@ -198,7 +196,7 @@ pub struct BinaryValueAccess<'a, R> {
     deserializer: &'a mut BinaryDeserializer<R>,
 }
 
-impl<R: Read + 'static, E: ?Sized> ValueAccess<E> for BinaryValueAccess<'_, R> {
+impl<R: Read + 'static, E> ValueAccess<E> for BinaryValueAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
 
     fn deserialize<V: Deserialize<Self::Parent, E>>(
@@ -214,7 +212,7 @@ pub struct BinaryMapAccess<'a, R> {
     remaining: usize,
 }
 
-impl<R: Read + 'static, E: ?Sized> MapAccess<E> for BinaryMapAccess<'_, R> {
+impl<R: Read + 'static, E> MapAccess<E> for BinaryMapAccess<'_, R> {
     type Parent = BinaryDeserializer<R>;
     type ValueAccess<'s> = BinaryValueAccess<'s, R>;
 
@@ -246,7 +244,7 @@ pub struct BinaryTupleVariantAccess<'a, R> {
     deserializer: &'a mut BinaryDeserializer<R>,
 }
 
-impl<R: Read + 'static, E: ?Sized> TupleVariantAccess<E>
+impl<R: Read + 'static, E> TupleVariantAccess<E>
     for BinaryTupleVariantAccess<'_, R>
 {
     type Parent = BinaryDeserializer<R>;
@@ -265,7 +263,7 @@ pub struct BinaryStructVariantAccess<'a, R> {
     total_fields: usize,
 }
 
-impl<R: Read + 'static, E: ?Sized> StructVariantAccess<E>
+impl<R: Read + 'static, E> StructVariantAccess<E>
     for BinaryStructVariantAccess<'_, R>
 {
     type Parent = BinaryDeserializer<R>;
@@ -301,9 +299,7 @@ pub struct BinaryEnumAccess<'a, R> {
     deserializer: &'a mut BinaryDeserializer<R>,
 }
 
-impl<'s, R: Read + 'static, E: ?Sized> EnumAccess<E>
-    for BinaryEnumAccess<'s, R>
-{
+impl<'s, R: Read + 'static, E> EnumAccess<E> for BinaryEnumAccess<'s, R> {
     type Parent = BinaryDeserializer<R>;
     type TupleVariantAccess = BinaryTupleVariantAccess<'s, R>;
     type StructVariantAccess = BinaryStructVariantAccess<'s, R>;
@@ -350,7 +346,7 @@ impl<'s, R: Read + 'static, E: ?Sized> EnumAccess<E>
     }
 }
 
-impl<R: Read + 'static, E: ?Sized> Deserializer<E> for BinaryDeserializer<R> {
+impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
     type Error = io::Error;
 
     type SeqAccess<'s> = BinarySeqAccess<'s, R>;

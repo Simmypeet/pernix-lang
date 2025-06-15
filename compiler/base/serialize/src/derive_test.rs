@@ -1870,7 +1870,7 @@ fn ser_bound_and_de_bound_attributes() {
     struct CustomData(i32);
 
     // Custom implementations that satisfy our bounds
-    impl<S: crate::ser::Serializer<E>, E: ?Sized> crate::ser::Serialize<S, E>
+    impl<S: crate::ser::Serializer<E>, E> crate::ser::Serialize<S, E>
         for CustomData
     {
         fn serialize(
@@ -1882,7 +1882,7 @@ fn ser_bound_and_de_bound_attributes() {
         }
     }
 
-    impl<D: crate::de::Deserializer<E>, E: ?Sized> crate::de::Deserialize<D, E>
+    impl<D: crate::de::Deserializer<E>, E> crate::de::Deserialize<D, E>
         for CustomData
     {
         fn deserialize(

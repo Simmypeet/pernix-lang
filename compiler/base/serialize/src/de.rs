@@ -44,7 +44,7 @@ use std::fmt::Display;
 ///     data: String,
 /// }
 ///
-/// impl<D, E: ?Sized> Deserialize<D, E> for MyType
+/// impl<D, E> Deserialize<D, E> for MyType
 /// where
 ///     D: Deserializer<E>,
 ///     D::Error: de::Error,
@@ -168,7 +168,7 @@ impl From<&'static str> for Identifier {
 /// This trait is used to deserialize ordered collections of elements where
 /// all elements are of the same type or can be deserialized with the same
 /// deserializer.
-pub trait SeqAccess<E: ?Sized> {
+pub trait SeqAccess<E> {
     /// The parent deserializer type that created this sequence access.
     type Parent: Deserializer<E>;
 
@@ -194,7 +194,7 @@ pub trait SeqAccess<E: ?Sized> {
 /// This trait is used to deserialize fixed-size ordered collections where
 /// elements may be of different types but the number of elements is known at
 /// compile time.
-pub trait TupleAccess<E: ?Sized> {
+pub trait TupleAccess<E> {
     /// The parent deserializer type that created this tuple access.
     type Parent: Deserializer<E>;
 
@@ -212,7 +212,7 @@ pub trait TupleAccess<E: ?Sized> {
 ///
 /// Tuple structs are structs with unnamed fields accessed by position,
 /// similar to tuples but with a named type.
-pub trait TupleStructAccess<E: ?Sized> {
+pub trait TupleStructAccess<E> {
     /// The parent deserializer type that created this tuple struct access.
     type Parent: Deserializer<E>;
 
@@ -229,7 +229,7 @@ pub trait TupleStructAccess<E: ?Sized> {
 ///
 /// This trait represents access to a single field that can be deserialized
 /// on demand.
-pub trait FieldAccess<E: ?Sized> {
+pub trait FieldAccess<E> {
     /// The parent deserializer type that created this field access.
     type Parent: Deserializer<E>;
 
@@ -247,7 +247,7 @@ pub trait FieldAccess<E: ?Sized> {
 ///
 /// This trait handles the deserialization of structures where each field
 /// has a name and can be accessed by name.
-pub trait StructAccess<E: ?Sized> {
+pub trait StructAccess<E> {
     /// The parent deserializer type that created this struct access.
     type Parent: Deserializer<E>;
 
@@ -280,7 +280,7 @@ pub trait StructAccess<E: ?Sized> {
 ///
 /// This trait represents access to a single map value that can be deserialized
 /// on demand after the key has been examined.
-pub trait ValueAccess<E: ?Sized> {
+pub trait ValueAccess<E> {
     /// The parent deserializer type that created this value access.
     type Parent: Deserializer<E>;
 
@@ -297,7 +297,7 @@ pub trait ValueAccess<E: ?Sized> {
 ///
 /// Maps are collections of key-value pairs where keys and values
 /// can be of different types.
-pub trait MapAccess<E: ?Sized> {
+pub trait MapAccess<E> {
     /// The parent deserializer type that created this map access.
     type Parent: Deserializer<E>;
 
@@ -338,7 +338,7 @@ pub trait MapAccess<E: ?Sized> {
 ///
 /// Tuple variants are enum variants that contain unnamed fields,
 /// similar to tuple structs but within an enum context.
-pub trait TupleVariantAccess<E: ?Sized> {
+pub trait TupleVariantAccess<E> {
     /// The parent deserializer type that created this tuple variant access.
     type Parent: Deserializer<E>;
 
@@ -355,7 +355,7 @@ pub trait TupleVariantAccess<E: ?Sized> {
 ///
 /// Struct variants are enum variants that contain named fields,
 /// similar to regular structs but within an enum context.
-pub trait StructVariantAccess<E: ?Sized> {
+pub trait StructVariantAccess<E> {
     /// The parent deserializer type that created this struct variant access.
     type Parent: Deserializer<E>;
 
@@ -390,7 +390,7 @@ pub trait StructVariantAccess<E: ?Sized> {
 ///
 /// This trait provides access to the enum variant identifier and allows
 /// deserializing the variant content through specific variant access methods.
-pub trait EnumAccess<E: ?Sized> {
+pub trait EnumAccess<E> {
     /// The parent deserializer type that created this enum access.
     type Parent: Deserializer<E>;
 
@@ -457,7 +457,7 @@ pub trait EnumAccess<E: ?Sized> {
 /// This trait provides methods for deserializing primitive types, collections,
 /// and complex data structures. It includes an extension mechanism for
 /// customization and state passing.
-pub trait Deserializer<E: ?Sized> {
+pub trait Deserializer<E> {
     /// The error type returned by deserialization operations.
     type Error: Error;
 
@@ -675,7 +675,7 @@ pub trait Deserializer<E: ?Sized> {
 /// This trait should be implemented for any type that needs to be deserialized.
 /// The implementation defines how the type's data should be read from the
 /// deserializer.
-pub trait Deserialize<D: ?Sized + Deserializer<E>, E: ?Sized>: Sized {
+pub trait Deserialize<D: Deserializer<E> + ?Sized, E>: Sized {
     /// Deserialize this value using the provided deserializer.
     ///
     /// # Arguments
@@ -698,7 +698,7 @@ pub trait Deserialize<D: ?Sized + Deserializer<E>, E: ?Sized>: Sized {
 macro_rules! impl_deserialize_integer {
     ($($ty:ty => $method:ident),*) => {
         $(
-            impl<D, E: ?Sized> Deserialize<D, E> for $ty
+            impl<D, E> Deserialize<D, E> for $ty
             where
                 D: Deserializer<E>,
             {
@@ -723,7 +723,7 @@ impl_deserialize_integer! {
     usize => expect_usize
 }
 
-impl<D, E: ?Sized> Deserialize<D, E> for f32
+impl<D, E> Deserialize<D, E> for f32
 where
     D: Deserializer<E>,
 {
@@ -735,7 +735,7 @@ where
     }
 }
 
-impl<D, E: ?Sized> Deserialize<D, E> for f64
+impl<D, E> Deserialize<D, E> for f64
 where
     D: Deserializer<E>,
 {
@@ -747,7 +747,7 @@ where
     }
 }
 
-impl<D, E: ?Sized> Deserialize<D, E> for bool
+impl<D, E> Deserialize<D, E> for bool
 where
     D: Deserializer<E>,
 {
@@ -759,7 +759,7 @@ where
     }
 }
 
-impl<D, E: ?Sized> Deserialize<D, E> for char
+impl<D, E> Deserialize<D, E> for char
 where
     D: Deserializer<E>,
 {
@@ -771,7 +771,7 @@ where
     }
 }
 
-impl<D, E: ?Sized> Deserialize<D, E> for String
+impl<D, E> Deserialize<D, E> for String
 where
     D: Deserializer<E>,
 {
@@ -793,7 +793,7 @@ use std::{
     ops::Range,
 };
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for Vec<T>
+impl<T, D, E> Deserialize<D, E> for Vec<T>
 where
     T: Deserialize<D, E>,
     D: Deserializer<E>,
@@ -815,7 +815,7 @@ where
     }
 }
 
-impl<T, const N: usize, D, E: ?Sized> Deserialize<D, E> for [T; N]
+impl<T, const N: usize, D, E> Deserialize<D, E> for [T; N]
 where
     T: Deserialize<D, E>,
     D: Deserializer<E>,
@@ -876,7 +876,7 @@ where
     }
 }
 
-impl<K, V, BH, D, E: ?Sized> Deserialize<D, E> for HashMap<K, V, BH>
+impl<K, V, BH, D, E> Deserialize<D, E> for HashMap<K, V, BH>
 where
     K: Deserialize<D, E> + Eq + std::hash::Hash,
     V: Deserialize<D, E>,
@@ -915,7 +915,7 @@ where
     }
 }
 
-impl<K, V, D, E: ?Sized> Deserialize<D, E> for BTreeMap<K, V>
+impl<K, V, D, E> Deserialize<D, E> for BTreeMap<K, V>
 where
     K: Deserialize<D, E> + Ord,
     V: Deserialize<D, E>,
@@ -949,7 +949,7 @@ where
     }
 }
 
-impl<T, BH, D, E: ?Sized> Deserialize<D, E> for HashSet<T, BH>
+impl<T, BH, D, E> Deserialize<D, E> for HashSet<T, BH>
 where
     T: Deserialize<D, E> + Eq + std::hash::Hash,
     BH: BuildHasher + Default,
@@ -975,7 +975,7 @@ where
     }
 }
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for BTreeSet<T>
+impl<T, D, E> Deserialize<D, E> for BTreeSet<T>
 where
     T: Deserialize<D, E> + Ord,
     D: Deserializer<E>,
@@ -996,7 +996,7 @@ where
     }
 }
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for VecDeque<T>
+impl<T, D, E> Deserialize<D, E> for VecDeque<T>
 where
     T: Deserialize<D, E>,
     D: Deserializer<E>,
@@ -1018,7 +1018,7 @@ where
     }
 }
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for LinkedList<T>
+impl<T, D, E> Deserialize<D, E> for LinkedList<T>
 where
     T: Deserialize<D, E>,
     D: Deserializer<E>,
@@ -1043,7 +1043,7 @@ where
 // Option and Result Implementations
 // =============================================================================
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for Option<T>
+impl<T, D, E> Deserialize<D, E> for Option<T>
 where
     T: Deserialize<D, E>,
     D: Deserializer<E>,
@@ -1056,7 +1056,7 @@ where
     }
 }
 
-impl<T, E, D, Ext: ?Sized> Deserialize<D, Ext> for Result<T, E>
+impl<T, E, D, Ext> Deserialize<D, Ext> for Result<T, E>
 where
     T: Deserialize<D, Ext>,
     E: Deserialize<D, Ext>,
@@ -1113,7 +1113,7 @@ where
 // Tuple Implementations
 // =============================================================================
 
-impl<D, E: ?Sized> Deserialize<D, E> for ()
+impl<D, E> Deserialize<D, E> for ()
 where
     D: Deserializer<E>,
 {
@@ -1128,7 +1128,7 @@ where
 macro_rules! impl_deserialize_tuple {
     ($($len:expr => ($($idx:tt $T:ident),+)),*) => {
         $(
-            impl<$($T,)* D, E: ?Sized> Deserialize<D, E> for ($($T,)*)
+            impl<$($T,)* D, E> Deserialize<D, E> for ($($T,)*)
             where
                 $($T: Deserialize<D, E>,)*
                 D: Deserializer<E>,
@@ -1172,7 +1172,7 @@ impl_deserialize_tuple! {
 
 use std::{borrow::Cow, boxed::Box};
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for Box<T>
+impl<T, D, E> Deserialize<D, E> for Box<T>
 where
     T: Deserialize<D, E>,
     D: Deserializer<E>,
@@ -1186,7 +1186,7 @@ where
     }
 }
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for Cow<'static, T>
+impl<T, D, E> Deserialize<D, E> for Cow<'static, T>
 where
     T: Deserialize<D, E> + ToOwned + Clone,
     T::Owned: Deserialize<D, E>,
@@ -1207,7 +1207,7 @@ where
 
 use std::marker::PhantomData;
 
-impl<T, D, E: ?Sized> Deserialize<D, E> for PhantomData<T>
+impl<T, D, E> Deserialize<D, E> for PhantomData<T>
 where
     D: Deserializer<E>,
 {
@@ -1234,7 +1234,7 @@ use std::path::PathBuf;
 use dashmap::DashMap;
 use flexstr::FlexStr;
 
-impl<D, E: ?Sized> Deserialize<D, E> for PathBuf
+impl<D, E> Deserialize<D, E> for PathBuf
 where
     D: Deserializer<E>,
 {
@@ -1246,7 +1246,7 @@ where
     }
 }
 
-impl<D: Deserializer<E>, T: Deserialize<D, E>, E: ?Sized> Deserialize<D, E>
+impl<D: Deserializer<E>, T: Deserialize<D, E>, E> Deserialize<D, E>
     for Range<T>
 {
     fn deserialize(
@@ -1322,7 +1322,7 @@ impl<
         K: Deserialize<D, E> + Eq + Hash,
         V: Deserialize<D, E>,
         BH: BuildHasher + Clone + Default,
-        E: ?Sized,
+        E,
     > Deserialize<D, E> for DashMap<K, V, BH>
 {
     fn deserialize(
@@ -1363,7 +1363,7 @@ impl<
         const PAD1: usize,
         const PAD2: usize,
         HEAP,
-        E: ?Sized,
+        E,
     > Deserialize<D, E> for FlexStr<SIZE, PAD1, PAD2, HEAP>
 where
     HEAP: for<'a> From<&'a str>,

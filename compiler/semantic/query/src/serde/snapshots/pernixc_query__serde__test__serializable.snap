@@ -1,0 +1,14 @@
+---
+source: compiler/pernixc_query/src/serde/test.rs
+expression: map
+---
+{
+  StableTypeID(9826010096479560164, 8392937417900161637): {
+    Variable("x"): 32,
+    Variable("y"): 64,
+  },
+  StableTypeID(15447801780215915451, 2280902209528049490): {
+    NegateVariable("x"): -32,
+    NegateVariable("y"): -64,
+  },
+}

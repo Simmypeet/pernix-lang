@@ -1,0 +1,30 @@
+[package]
+name = "pernixc_query"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_arena = { path = "../../base/arena" }
+pernixc_target = { path = "../../base/target" }
+pernixc_query_derive = { path = "../query_derive" }
+pernixc_stable_type_id = { path = "../../base/stable_type_id" }
+pernixc_serialize = { path = "../../base/serialize" }
+pernixc_hash = { path = "../../base/hash" }
+parking_lot = { workspace = true }
+static_assertions = { workspace = true }
+smallbox = { workspace = true }
+getset = { workspace = true }
+derive_more = { workspace = true }
+enum-as-inner = { workspace = true }
+dashmap = { workspace = true }
+
+[dev-dependencies]
+ron = { workspace = true }
+insta = { workspace = true }
+
+
+[lints]
+workspace = true

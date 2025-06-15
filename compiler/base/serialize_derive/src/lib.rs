@@ -756,12 +756,10 @@ fn generate_impl_generics(
     bounds.push(param_bound);
 
     // Add extension bounds if specified
-    let ext_bound = extension_bounds.map_or_else(
-        || quote! { #ext_param_ident: ?Sized },
-        |ext_bounds| quote! { #ext_param_ident: #ext_bounds },
-    );
+    let ext_bound = extension_bounds
+        .map(|ext_bounds| quote! { #ext_param_ident: #ext_bounds });
 
-    bounds.push(ext_bound);
+    bounds.extend(ext_bound);
 
     // Add type parameters third
     for type_param in generics.type_params() {

@@ -86,23 +86,30 @@ impl<T> std::hash::Hash for ID<T> {
     }
 }
 
-impl<S: Serializer, T> Serialize<S> for ID<T> {
-    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
-        self.index.serialize(serializer)
+impl<S: Serializer<E>, E, T> Serialize<S, E> for ID<T> {
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        extension: &mut E,
+    ) -> Result<(), S::Error> {
+        self.index.serialize(serializer, extension)
     }
 }
 
-impl<D: Deserializer, T> Deserialize<D> for ID<T> {
-    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
-        u64::deserialize(deserializer).map(Self::new)
+impl<D: Deserializer<E>, E, T> Deserialize<D, E> for ID<T> {
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        u64::deserialize(deserializer, extension).map(Self::new)
     }
 }
 
 /// Represents a collection of items of type `T` that can be referenced by an
 /// [`ID`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(ser_bound(G: Serialize<__S>, G::ID: Serialize<__S>, T: Serialize<__S>))]
-#[serde(de_bound(G: Deserialize<__D>, G::ID: Deserialize<__D>, T: Deserialize<__D>))]
+#[serde(ser_bound(G: Serialize<__S, __E>, G::ID: Serialize<__S, __E>, T: Serialize<__S, __E>))]
+#[serde(de_bound(G: Deserialize<__D, __E>, G::ID: Deserialize<__D, __E>, T: Deserialize<__D, __E>))]
 pub struct Arena<T, G: State<T> = state::Default> {
     generator: G,
     items: HashMap<G::ID, T>,

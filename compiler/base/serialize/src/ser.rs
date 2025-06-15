@@ -85,7 +85,7 @@ pub trait Error: Sized + std::error::Error {
 /// - `[1, 2, 3]` (arrays)
 /// - `vec![1, 2, 3]` (vectors)
 /// - `&[1, 2, 3]` (slices)
-pub trait Seq<E: ?Sized> {
+pub trait Seq<E> {
     /// The parent serializer type that created this sequence serializer.
     type Parent: Serializer<E>;
 
@@ -98,7 +98,7 @@ pub trait Seq<E: ?Sized> {
     /// # Errors
     ///
     /// Returns an error if the element cannot be serialized.
-    fn serialize_element<T: Serialize<Self::Parent, E> + ?Sized>(
+    fn serialize_element<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
         extension: &mut E,
@@ -117,7 +117,7 @@ pub trait Seq<E: ?Sized> {
 /// - `(a, b, c)` (tuples with named variables)
 /// - `(1, "hello", true)` (tuples with mixed types)
 /// - `()` (unit tuple)
-pub trait Tuple<E: ?Sized> {
+pub trait Tuple<E> {
     /// The parent serializer type that created this tuple serializer.
     type Parent: Serializer<E>;
 
@@ -130,7 +130,7 @@ pub trait Tuple<E: ?Sized> {
     /// # Errors
     ///
     /// Returns an error if the element cannot be serialized.
-    fn serialize_element<T: Serialize<Self::Parent, E> + ?Sized>(
+    fn serialize_element<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
         extension: &mut E,
@@ -148,7 +148,7 @@ pub trait Tuple<E: ?Sized> {
 /// - `Point(x, y)` where `struct Point(i32, i32);`
 /// - `Color(255, 128, 0)` where `struct Color(u8, u8, u8);`
 /// - `Wrapper(value)` where `struct Wrapper(String);`
-pub trait TupleStruct<E: ?Sized> {
+pub trait TupleStruct<E> {
     /// The parent serializer type that created this tuple struct serializer.
     type Parent: Serializer<E>;
 
@@ -161,7 +161,7 @@ pub trait TupleStruct<E: ?Sized> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
+    fn serialize_field<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
         extension: &mut E,
@@ -182,7 +182,7 @@ pub trait TupleStruct<E: ?Sized> {
 ///   u32, height: u32 }`
 /// - `Config { debug: true, max_connections: 100 }` where `struct Config {
 ///   debug: bool, max_connections: usize }`
-pub trait Struct<E: ?Sized> {
+pub trait Struct<E> {
     /// The parent serializer type that created this struct serializer.
     type Parent: Serializer<E>;
 
@@ -196,7 +196,7 @@ pub trait Struct<E: ?Sized> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
+    fn serialize_field<T: Serialize<Self::Parent, E>>(
         &mut self,
         name: &'static str,
         value: &T,
@@ -233,7 +233,7 @@ pub trait Struct<E: ?Sized> {
 /// - `HashMap<String, i32>` where `{"Alice": 25, "Bob": 30}`
 /// - `BTreeMap<i32, String>` where `{1: "one", 2: "two", 3: "three"}`
 /// - `IndexMap<&str, bool>` where `{"debug": true, "verbose": false}`
-pub trait Map<E: ?Sized> {
+pub trait Map<E> {
     /// The parent serializer type that created this map serializer.
     type Parent: Serializer<E>;
 
@@ -248,8 +248,8 @@ pub trait Map<E: ?Sized> {
     ///
     /// Returns an error if the key or value cannot be serialized.
     fn serialize_entry<
-        K: Serialize<Self::Parent, E> + ?Sized,
-        V: Serialize<Self::Parent, E> + ?Sized,
+        K: Serialize<Self::Parent, E>,
+        V: Serialize<Self::Parent, E>,
     >(
         &mut self,
         key: &K,
@@ -269,7 +269,7 @@ pub trait Map<E: ?Sized> {
 /// - `Message::Move(x, y)` where `enum Message { Move(i32, i32), ... }`
 /// - `Result::Ok(value)` where `enum Result<T, E> { Ok(T), Err(E) }`
 /// - `Option::Some(data)` where `enum Option<T> { Some(T), None }`
-pub trait TupleVariant<E: ?Sized> {
+pub trait TupleVariant<E> {
     /// The parent serializer type that created this tuple variant serializer.
     type Parent: Serializer<E>;
 
@@ -282,7 +282,7 @@ pub trait TupleVariant<E: ?Sized> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
+    fn serialize_field<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
         extension: &mut E,
@@ -303,7 +303,7 @@ pub trait TupleVariant<E: ?Sized> {
 ///   { width: u32, height: u32 }, ... }`
 /// - `Event::KeyPress { key: 'a', modifiers: ["ctrl"] }` where `enum Event {
 ///   KeyPress { key: char, modifiers: Vec<String> }, ... }`
-pub trait StructVariant<E: ?Sized> {
+pub trait StructVariant<E> {
     /// The parent serializer type that created this struct variant serializer.
     type Parent: Serializer<E>;
 
@@ -317,7 +317,7 @@ pub trait StructVariant<E: ?Sized> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
+    fn serialize_field<T: Serialize<Self::Parent, E>>(
         &mut self,
         name: &'static str,
         value: &T,
@@ -346,7 +346,7 @@ pub trait StructVariant<E: ?Sized> {
 /// This trait provides methods for serializing primitive types, collections,
 /// and complex data structures. It includes an extension mechanism for
 /// customization and state passing.
-pub trait Serializer<E: ?Sized> {
+pub trait Serializer<E> {
     /// The error type returned by serialization operations.
     type Error: Error;
 
@@ -430,7 +430,7 @@ pub trait Serializer<E: ?Sized> {
     /// # Arguments
     ///
     /// * `value` - The contained value to serialize
-    fn emit_some<T: Serialize<Self, E> + ?Sized>(
+    fn emit_some<T: Serialize<Self, E>>(
         &mut self,
         value: &T,
         extension: &mut E,
@@ -574,7 +574,7 @@ pub trait Serializer<E: ?Sized> {
 /// This trait should be implemented for any type that needs to be serialized.
 /// The implementation defines how the type's data should be written to the
 /// serializer.
-pub trait Serialize<S: ?Sized + Serializer<E>, E: ?Sized> {
+pub trait Serialize<S: Serializer<E> + ?Sized, E> {
     /// Serialize this value using the provided serializer.
     ///
     /// # Arguments
@@ -598,7 +598,7 @@ pub trait Serialize<S: ?Sized + Serializer<E>, E: ?Sized> {
 macro_rules! impl_serialize_integer {
     ($($ty:ty => $method:ident),*) => {
         $(
-            impl<S: Serializer<E>, E: ?Sized> Serialize<S, E> for $ty {
+            impl<S: Serializer<E>, E> Serialize<S, E> for $ty {
                 fn serialize(
                     &self,
                     serializer: &mut S,
@@ -628,7 +628,7 @@ impl_serialize_integer! {
     char => emit_char
 }
 
-impl<S, E: ?Sized> Serialize<S, E> for str
+impl<S, E> Serialize<S, E> for str
 where
     S: Serializer<E>,
 {
@@ -637,7 +637,7 @@ where
     }
 }
 
-impl<S, E: ?Sized> Serialize<S, E> for String
+impl<S, E> Serialize<S, E> for String
 where
     S: Serializer<E>,
 {
@@ -656,7 +656,7 @@ use std::{
     ops::{Deref, Range},
 };
 
-impl<T, S, E: ?Sized> Serialize<S, E> for Vec<T>
+impl<T, S, E> Serialize<S, E> for Vec<T>
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
@@ -671,7 +671,7 @@ where
     }
 }
 
-impl<T, S, E: ?Sized> Serialize<S, E> for [T]
+impl<T, S, E> Serialize<S, E> for [T]
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
@@ -686,7 +686,7 @@ where
     }
 }
 
-impl<T, const N: usize, S, E: ?Sized> Serialize<S, E> for [T; N]
+impl<T, const N: usize, S, E> Serialize<S, E> for [T; N]
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
@@ -701,7 +701,7 @@ where
     }
 }
 
-impl<K, V, BH, S, E: ?Sized> Serialize<S, E> for HashMap<K, V, BH>
+impl<K, V, BH, S, E> Serialize<S, E> for HashMap<K, V, BH>
 where
     K: Serialize<S, E>,
     V: Serialize<S, E>,
@@ -718,7 +718,7 @@ where
     }
 }
 
-impl<K, V, S, E: ?Sized> Serialize<S, E> for BTreeMap<K, V>
+impl<K, V, S, E> Serialize<S, E> for BTreeMap<K, V>
 where
     K: Serialize<S, E>,
     V: Serialize<S, E>,
@@ -734,7 +734,7 @@ where
     }
 }
 
-impl<T, BH, S, E: ?Sized> Serialize<S, E> for HashSet<T, BH>
+impl<T, BH, S, E> Serialize<S, E> for HashSet<T, BH>
 where
     T: Serialize<S, E>,
     BH: BuildHasher,
@@ -750,7 +750,7 @@ where
     }
 }
 
-impl<T, S, E: ?Sized> Serialize<S, E> for BTreeSet<T>
+impl<T, S, E> Serialize<S, E> for BTreeSet<T>
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
@@ -765,7 +765,7 @@ where
     }
 }
 
-impl<T, S, E: ?Sized> Serialize<S, E> for VecDeque<T>
+impl<T, S, E> Serialize<S, E> for VecDeque<T>
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
@@ -780,7 +780,7 @@ where
     }
 }
 
-impl<T, S, E: ?Sized> Serialize<S, E> for LinkedList<T>
+impl<T, S, E> Serialize<S, E> for LinkedList<T>
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
@@ -799,7 +799,7 @@ where
 // Option and Result Implementations
 // =============================================================================
 
-impl<T, S, E: ?Sized> Serialize<S, E> for Option<T>
+impl<T, S, E> Serialize<S, E> for Option<T>
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
@@ -812,7 +812,7 @@ where
     }
 }
 
-impl<T, E, S, Ext: ?Sized> Serialize<S, Ext> for Result<T, E>
+impl<T, E, S, Ext> Serialize<S, Ext> for Result<T, E>
 where
     T: Serialize<S, Ext>,
     E: Serialize<S, Ext>,
@@ -864,7 +864,7 @@ where
 macro_rules! impl_serialize_tuple {
     ($($len:expr => ($($idx:tt $T:ident),+)),*) => {
         $(
-            impl<$($T,)* S, E: ?Sized> Serialize<S, E> for ($($T,)*)
+            impl<$($T,)* S, E> Serialize<S, E> for ($($T,)*)
             where
                 $($T: Serialize<S, E>,)*
                 S: Serializer<E>,
@@ -905,9 +905,9 @@ impl_serialize_tuple! {
 // Reference and Smart Pointer Implementations
 // =============================================================================
 
-impl<T, S, E: ?Sized> Serialize<S, E> for &T
+impl<T: ?Sized, S, E> Serialize<S, E> for &T
 where
-    T: Serialize<S, E> + ?Sized,
+    T: Serialize<S, E>,
     S: Serializer<E>,
 {
     fn serialize(&self, serializer: &mut S, e: &mut E) -> Result<(), S::Error> {
@@ -915,9 +915,9 @@ where
     }
 }
 
-impl<T, S, E: ?Sized> Serialize<S, E> for &mut T
+impl<T: ?Sized, S, E> Serialize<S, E> for &mut T
 where
-    T: Serialize<S, E> + ?Sized,
+    T: Serialize<S, E>,
     S: Serializer<E>,
 {
     fn serialize(&self, serializer: &mut S, e: &mut E) -> Result<(), S::Error> {
@@ -927,9 +927,9 @@ where
 
 use std::{borrow::Cow, boxed::Box};
 
-impl<T, S, E: ?Sized> Serialize<S, E> for Box<T>
+impl<T, S, E> Serialize<S, E> for Box<T>
 where
-    T: Serialize<S, E> + ?Sized,
+    T: Serialize<S, E>,
     S: Serializer<E>,
 {
     fn serialize(&self, serializer: &mut S, e: &mut E) -> Result<(), S::Error> {
@@ -937,9 +937,9 @@ where
     }
 }
 
-impl<T, S, E: ?Sized> Serialize<S, E> for Cow<'_, T>
+impl<T, S, E> Serialize<S, E> for Cow<'_, T>
 where
-    T: Serialize<S, E> + ToOwned + ?Sized,
+    T: Serialize<S, E> + ToOwned,
     S: Serializer<E>,
 {
     fn serialize(&self, serializer: &mut S, e: &mut E) -> Result<(), S::Error> {
@@ -953,7 +953,7 @@ where
 
 use std::marker::PhantomData;
 
-impl<T, S, E: ?Sized> Serialize<S, E> for PhantomData<T>
+impl<T, S, E> Serialize<S, E> for PhantomData<T>
 where
     S: Serializer<E>,
 {
@@ -964,7 +964,7 @@ where
 
 use std::path::PathBuf;
 
-impl<S, E: ?Sized> Serialize<S, E> for PathBuf
+impl<S, E> Serialize<S, E> for PathBuf
 where
     S: Serializer<E>,
 {
@@ -978,7 +978,7 @@ use std::path::Path;
 use dashmap::DashMap;
 use flexstr::FlexStr;
 
-impl<S, E: ?Sized> Serialize<S, E> for Path
+impl<S, E> Serialize<S, E> for Path
 where
     S: Serializer<E>,
 {
@@ -990,9 +990,7 @@ where
     }
 }
 
-impl<S: Serializer<E>, T: Serialize<S, E>, E: ?Sized> Serialize<S, E>
-    for Range<T>
-{
+impl<S: Serializer<E>, T: Serialize<S, E>, E> Serialize<S, E> for Range<T> {
     fn serialize(
         &self,
         serializer: &mut S,
@@ -1010,7 +1008,7 @@ impl<
         K: Serialize<S, E> + Eq + Hash,
         V: Serialize<S, E>,
         BH: BuildHasher + Clone,
-        E: ?Sized,
+        E,
     > Serialize<S, E> for DashMap<K, V, BH>
 {
     fn serialize(
@@ -1034,7 +1032,7 @@ impl<
         const PAD1: usize,
         const PAD2: usize,
         HEAP,
-        E: ?Sized,
+        E,
     > Serialize<S, E> for FlexStr<SIZE, PAD1, PAD2, HEAP>
 where
     HEAP: Deref<Target = str>,

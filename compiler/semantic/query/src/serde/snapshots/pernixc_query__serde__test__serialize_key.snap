@@ -1,0 +1,8 @@
+---
+source: compiler/pernixc_query/src/serde/test.rs
+expression: key.serializable(&serde)
+---
+Dynamic(
+  stable_type_id: StableTypeID(9826010096479560164, 8392937417900161637),
+  value: Variable("test"),
+)
