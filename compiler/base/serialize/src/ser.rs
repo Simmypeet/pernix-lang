@@ -666,9 +666,8 @@ where
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
-    hash::BuildHasher,
+    hash::{BuildHasher, Hash},
     ops::Range,
-    range::RangeInclusive,
 };
 
 impl<T, S> Serialize<S> for Vec<T>
@@ -984,6 +983,8 @@ where
 
 use std::path::Path;
 
+use dashmap::DashMap;
+
 impl<S> Serialize<S> for Path
 where
     S: Serializer,
@@ -1004,6 +1005,27 @@ impl<S: Serializer, T: Serialize<S>> Serialize<S> for Range<T> {
         serializer.emit_struct("Range", 2, |mut s| {
             s.serialize_field("start", &self.start)?;
             s.serialize_field("end", &self.end)
+        })
+    }
+}
+
+impl<
+        S: Serializer,
+        K: Serialize<S> + Eq + Hash,
+        V: Serialize<S>,
+        BH: BuildHasher + Clone,
+    > Serialize<S> for DashMap<K, V, BH>
+{
+    fn serialize(
+        &self,
+        serializer: &mut S,
+    ) -> Result<(), <S as Serializer>::Error> {
+        serializer.emit_map(self.len(), |mut map| {
+            for entry in self.iter() {
+                map.serialize_entry(entry.key(), entry.value())?;
+            }
+
+            Ok(())
         })
     }
 }

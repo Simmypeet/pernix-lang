@@ -745,7 +745,7 @@ where
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
-    hash::BuildHasher,
+    hash::{BuildHasher, Hash},
     ops::Range,
 };
 
@@ -1131,6 +1131,8 @@ impl std::fmt::Display for Identifier {
 
 use std::path::PathBuf;
 
+use dashmap::DashMap;
+
 impl<D> Deserialize<D> for PathBuf
 where
     D: Deserializer,
@@ -1194,6 +1196,44 @@ impl<D: Deserializer, T: Deserialize<D>> Deserialize<D> for Range<T> {
                     D::Error::missing_field(Identifier::Name("end"))
                 })?,
             })
+        })
+    }
+}
+
+impl<
+        D: Deserializer,
+        K: Deserialize<D> + Eq + Hash,
+        V: Deserialize<D>,
+        BH: BuildHasher + Clone + Default,
+    > Deserialize<D> for DashMap<K, V, BH>
+{
+    fn deserialize(
+        deserializer: &mut D,
+    ) -> Result<Self, <D as Deserializer>::Error> {
+        deserializer.expect_map(|mut map_access| {
+            let (lower, upper) = map_access.size_hint();
+            let map = Self::with_capacity_and_hasher(
+                upper.unwrap_or(lower),
+                BH::default(),
+            );
+
+            loop {
+                let done = map_access.next_entry(|entry| {
+                    if let Some((key, value_access)) = entry {
+                        let value = value_access.deserialize()?;
+                        map.insert(key, value);
+                        Ok(false) // Continue
+                    } else {
+                        Ok(true) // Done
+                    }
+                })?;
+
+                if done {
+                    break;
+                }
+            }
+
+            Ok(map)
         })
     }
 }

@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_serialize_derive = { path = "../serialize_derive" }
+dashmap = { workspace = true }
 
 [dev-dependencies]
 pernixc_serialize_derive = { path = "../serialize_derive" }
