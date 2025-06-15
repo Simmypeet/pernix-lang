@@ -687,7 +687,22 @@ fn generate_impl_generics(
     
     // Add type parameters third
     for type_param in generics.type_params() {
-        generic_list.push(quote! { #type_param });
+        let syn::TypeParam { 
+            attrs, 
+            ident, 
+            colon_token, 
+            bounds: ty_bounds, 
+            ..
+        } = type_param;
+
+        let ty_bounds = ty_bounds.iter();
+        
+        generic_list.push(quote! { 
+            #(#attrs)*
+            #ident
+            #colon_token
+            #(#ty_bounds)+*
+        });
         
         // Only generate implicit Serialize/Deserialize bounds if no explicit generic bounds are provided
         if generic_bounds.is_none() {
