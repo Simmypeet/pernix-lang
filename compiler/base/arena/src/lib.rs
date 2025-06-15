@@ -12,7 +12,9 @@ use std::{
 };
 
 use fnv::FnvHashMap;
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{
+    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+};
 use state::{Generator, Rebind, State};
 
 pub mod state;
@@ -84,20 +86,14 @@ impl<T> std::hash::Hash for ID<T> {
     }
 }
 
-impl<T> Serialize for ID<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
+impl<S: Serializer, T> Serialize<S> for ID<T> {
+    fn serialize(&self, serializer: &mut S) -> Result<(), S::Error> {
         self.index.serialize(serializer)
     }
 }
 
-impl<'de, T: 'static> serde::Deserialize<'de> for ID<T> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
+impl<D: Deserializer, T> Deserialize<D> for ID<T> {
+    fn deserialize(deserializer: &mut D) -> Result<Self, D::Error> {
         u64::deserialize(deserializer).map(Self::new)
     }
 }
@@ -105,16 +101,14 @@ impl<'de, T: 'static> serde::Deserialize<'de> for ID<T> {
 /// Represents a collection of items of type `T` that can be referenced by an
 /// [`ID`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(bound(
-    serialize = "G: Serialize, G::ID: Serialize, T: Serialize",
-    deserialize = "G: Deserialize<'de>, G::ID: Deserialize<'de>, T: \
-                   Deserialize<'de>",
-))]
+#[serde(ser_bound(G: Serialize<__S>, G::ID: Serialize<__S>, T: Serialize<__S>))]
+#[serde(de_bound(G: Deserialize<__D>, G::ID: Deserialize<__D>, T: Deserialize<__D>))]
 pub struct Arena<T, G: State<T> = state::Default> {
     generator: G,
     items: FnvHashMap<G::ID, T>,
 }
 
+// skipcq: RS-W1111 this doesn't require G::ID to be `Default`
 impl<T, G: State<T> + Default> Default for Arena<T, G> {
     fn default() -> Self {
         Self { items: FnvHashMap::default(), generator: G::default() }

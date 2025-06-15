@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use fnv::FnvHashMap;
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{Deserialize, Serialize};
 
 use crate::ID;
 
