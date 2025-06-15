@@ -791,6 +791,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::{BuildHasher, Hash},
     ops::Range,
+    sync::atomic::AtomicBool,
 };
 
 impl<T, D, E> Deserialize<D, E> for Vec<T>
@@ -1421,5 +1422,14 @@ impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(parking_lot::Mutex::new(value))
+    }
+}
+
+impl<D: Deserializer<E>, E> Deserialize<D, E> for AtomicBool {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        deserializer.expect_bool().map(AtomicBool::new)
     }
 }

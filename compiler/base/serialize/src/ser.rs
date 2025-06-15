@@ -654,6 +654,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::{BuildHasher, Hash},
     ops::{Deref, Range},
+    sync::atomic::AtomicBool,
 };
 
 impl<T, S, E> Serialize<S, E> for Vec<T>
@@ -1091,5 +1092,15 @@ impl<S: Serializer<E>, E, T: Serialize<S, E>> Serialize<S, E>
     ) -> Result<(), <S as Serializer<E>>::Error> {
         let read_guard = self.lock();
         read_guard.serialize(serializer, extension)
+    }
+}
+
+impl<S: Serializer<E>, E> Serialize<S, E> for AtomicBool {
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        _extension: &mut E,
+    ) -> Result<(), <S as Serializer<E>>::Error> {
+        serializer.emit_bool(self.load(std::sync::atomic::Ordering::SeqCst))
     }
 }
