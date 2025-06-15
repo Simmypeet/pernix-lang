@@ -1041,3 +1041,55 @@ where
         serializer.emit_str(self)
     }
 }
+
+impl<S: Serializer<E>, E, T: Serialize<S, E>> Serialize<S, E>
+    for std::sync::RwLock<T>
+{
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        extension: &mut E,
+    ) -> Result<(), <S as Serializer<E>>::Error> {
+        let read_guard = self.read().map_err(S::Error::custom)?;
+        read_guard.serialize(serializer, extension)
+    }
+}
+
+impl<S: Serializer<E>, E, T: Serialize<S, E>> Serialize<S, E>
+    for std::sync::Mutex<T>
+{
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        extension: &mut E,
+    ) -> Result<(), <S as Serializer<E>>::Error> {
+        let read_guard = self.lock().map_err(S::Error::custom)?;
+        read_guard.serialize(serializer, extension)
+    }
+}
+
+impl<S: Serializer<E>, E, T: Serialize<S, E>> Serialize<S, E>
+    for parking_lot::RwLock<T>
+{
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        extension: &mut E,
+    ) -> Result<(), <S as Serializer<E>>::Error> {
+        let read_guard = self.read();
+        read_guard.serialize(serializer, extension)
+    }
+}
+
+impl<S: Serializer<E>, E, T: Serialize<S, E>> Serialize<S, E>
+    for parking_lot::Mutex<T>
+{
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        extension: &mut E,
+    ) -> Result<(), <S as Serializer<E>>::Error> {
+        let read_guard = self.lock();
+        read_guard.serialize(serializer, extension)
+    }
+}

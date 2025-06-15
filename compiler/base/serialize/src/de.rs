@@ -1375,3 +1375,51 @@ where
         Ok(deserializer.expect_str()?.into())
     }
 }
+
+impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
+    for std::sync::RwLock<T>
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        let value = T::deserialize(deserializer, extension)?;
+        Ok(std::sync::RwLock::new(value))
+    }
+}
+
+impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
+    for std::sync::Mutex<T>
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        let value = T::deserialize(deserializer, extension)?;
+        Ok(std::sync::Mutex::new(value))
+    }
+}
+
+impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
+    for parking_lot::RwLock<T>
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        let value = T::deserialize(deserializer, extension)?;
+        Ok(parking_lot::RwLock::new(value))
+    }
+}
+
+impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
+    for parking_lot::Mutex<T>
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        let value = T::deserialize(deserializer, extension)?;
+        Ok(parking_lot::Mutex::new(value))
+    }
+}
