@@ -375,9 +375,10 @@ impl<W: Write + 'static, E> Serializer<E> for BinarySerializer<W> {
     fn emit_unit_variant(
         &mut self,
         _name: &'static str,
+        _variant: &'static str,
         index: u32,
     ) -> Result<(), Self::Error> {
-        // Write the variant index
+        // Write the variant index (binary format doesn't need variant name)
         self.write_varint(index as u64)
     }
 

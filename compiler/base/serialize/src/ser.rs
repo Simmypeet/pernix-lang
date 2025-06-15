@@ -492,10 +492,12 @@ pub trait Serializer<E> {
     /// # Arguments
     ///
     /// * `name` - The name of the enum type
+    /// * `variant` - The name of the variant
     /// * `index` - The index of the variant within the enum
     fn emit_unit_variant(
         &mut self,
         name: &'static str,
+        variant: &'static str,
         index: u32,
     ) -> Result<(), Self::Error>;
 

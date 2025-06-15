@@ -625,7 +625,7 @@ fn serialize_enum_variants(
                 // Unit variant: MyEnum::Variant
                 quote! {
                     #enum_name::#variant_name => {
-                        serializer.emit_unit_variant(#enum_name_str, #variant_index)
+                        serializer.emit_unit_variant(#enum_name_str, #variant_name_str, #variant_index)
                     }
                 }
             }
