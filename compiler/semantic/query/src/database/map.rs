@@ -156,6 +156,17 @@ impl Map {
             None => f(None),
         }
     }
+
+    pub(crate) fn insert_typed_map<K: Key>(
+        &self,
+        map: TypedMap<K>,
+    ) -> Option<TypedMap<K>> {
+        let transparent_map = TransparentMap::from_typed_map(map);
+        let existing_map =
+            self.inner.insert(TypeId::of::<K>(), transparent_map);
+
+        existing_map.map(|m| unsafe { m.cast_into_map() })
+    }
 }
 
 fn drop<K: Key>(ptr: *mut ()) {
@@ -187,6 +198,30 @@ impl TransparentMap {
                     ManuallyDrop<DashMap<(), ()>>,
                 >(map)
             },
+        }
+    }
+
+    fn from_typed_map<K: Key>(map: TypedMap<K>) -> Self {
+        let transparent_map = ManuallyDrop::new(map);
+
+        Self {
+            drop_inst: drop::<K>,
+            transparent_map: unsafe {
+                // SAFETY: this is safe assuming the internal layout of
+                // DashMap is just pointers and usize.
+                std::mem::transmute::<
+                    ManuallyDrop<DashMap<K, K::Value>>,
+                    ManuallyDrop<DashMap<(), ()>>,
+                >(transparent_map)
+            },
+        }
+    }
+
+    unsafe fn cast_into_map<K: Key>(mut self) -> DashMap<K, K::Value> {
+        unsafe {
+            let map = ManuallyDrop::take(&mut self.transparent_map);
+
+            std::mem::transmute(map)
         }
     }
 
