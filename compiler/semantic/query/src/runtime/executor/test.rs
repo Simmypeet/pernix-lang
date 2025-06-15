@@ -1,25 +1,10 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use super::Executor;
 use crate::{Engine, Key};
 
-#[derive(
-    Key,
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Key, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[value(String)]
-#[pernixc_query(crate)]
 struct Test;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

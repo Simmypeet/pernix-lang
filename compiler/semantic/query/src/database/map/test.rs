@@ -1,40 +1,15 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
 use pernixc_query_derive::Key;
-use serde::{Deserialize, Serialize};
 
 use super::Map;
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Key,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
 #[value(i32)]
 #[pernixc_query(crate)]
 struct I32Key(i32);
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Key,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
 #[value(i32)]
 #[pernixc_query(crate)]
 struct I64Key(i64);
@@ -52,44 +27,13 @@ fn basic() {
     assert!(map.insert(I64Key(10), 10).is_none());
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Key,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
 #[value(DropCheck)]
 #[pernixc_query(crate)]
 pub struct DropKey(i32);
 
 #[derive(Debug, Clone, Default)]
 pub struct DropCheck(pub Arc<AtomicBool>);
-
-impl Serialize for DropCheck {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for DropCheck {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = Arc::new(AtomicBool::deserialize(deserializer)?);
-        Ok(Self(value))
-    }
-}
 
 impl PartialEq for DropCheck {
     fn eq(&self, other: &Self) -> bool {

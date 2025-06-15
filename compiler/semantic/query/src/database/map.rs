@@ -243,5 +243,5 @@ impl std::ops::Drop for TransparentMap {
 
 static_assertions::assert_impl_all!(Map: Send, Sync);
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

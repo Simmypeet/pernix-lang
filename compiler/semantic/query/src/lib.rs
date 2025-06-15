@@ -41,5 +41,5 @@ pub struct Engine {
     pub runtime: runtime::Runtime,
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

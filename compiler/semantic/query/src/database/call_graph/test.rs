@@ -3,10 +3,15 @@
 use std::sync::{atomic::AtomicUsize, Arc};
 
 use pernixc_query_derive::Key;
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    Deserialize, Serialize,
+};
 
 use crate::{
+    database::Database,
     runtime::executor::{CyclicError, Executor},
+    serde::{DynamicRegistry as _, SelfRegistry},
     Engine,
 };
 
@@ -1195,8 +1200,6 @@ fn conditional_cyclic_with_dependent_query() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn database_serialization_deserialization() {
-    use ron::ser::PrettyConfig;
-
     // Step 1: Set up original engine with input data and executors
     let mut original_engine = Engine::default();
 
@@ -1242,7 +1245,7 @@ fn database_serialization_deserialization() {
     assert_eq!(add_executor.get_call_count(), 1);
 
     // Step 3: Serialize the database state
-    let mut serde_config = crate::serde::Serde::default();
+    let mut serde_config = SelfRegistry::default();
 
     // Register all Key types used in this test
     serde_config.register::<Variable>();
@@ -1250,14 +1253,11 @@ fn database_serialization_deserialization() {
     serde_config.register::<AbsVariable>();
     serde_config.register::<AddTwoAbsVariable>();
 
-    let serializable_database =
-        original_engine.database.serializable(&serde_config);
-
-    let serialized_data = ron::ser::to_string_pretty(
-        &serializable_database,
-        PrettyConfig::default(),
-    )
-    .expect("Failed to serialize database");
+    let mut serializer = BinarySerializer::new(Vec::new());
+    original_engine
+        .database
+        .serialize(&mut serializer, &mut serde_config)
+        .unwrap();
 
     // Step 4: Create a new engine instance
     let mut new_engine = Engine::default();
@@ -1272,16 +1272,12 @@ fn database_serialization_deserialization() {
     new_engine.runtime.executor.register(new_add_executor.clone());
 
     // Step 5: Deserialize the saved state into the new engine
-    let database_deserializer =
-        crate::database::DatabaseDeserializer(&serde_config);
-    let mut deserializer = ron::de::Deserializer::from_str(&serialized_data)
-        .expect("Failed to create deserializer");
+    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(dbg!(
+        serializer.into_inner()
+    )));
 
-    new_engine.database = serde::de::DeserializeSeed::deserialize(
-        database_deserializer,
-        &mut deserializer,
-    )
-    .expect("Failed to deserialize database");
+    new_engine.database =
+        Database::deserialize(&mut deserializer, &mut serde_config).unwrap();
 
     // Step 6: Verify that queries return the same results without recomputation
     let new_result1 =

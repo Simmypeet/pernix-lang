@@ -4,19 +4,7 @@ use pernixc_target::{Global, TargetID};
 
 use crate::key::{Dynamic, SmallBox};
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Key,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
 #[pernixc_query(crate)]
 #[value(())]
 struct Test(Global<ID<()>>);
