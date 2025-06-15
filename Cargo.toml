@@ -19,8 +19,8 @@ members = [
     "compiler/syntax/parser",
     "compiler/syntax/syntax",
 
-    # "compiler/semantic/query",
-    # "compiler/semantic/query_derive",
+    "compiler/semantic/query",
+    "compiler/semantic/query_derive",
 
     # tidy-alphabetical-end
 ]

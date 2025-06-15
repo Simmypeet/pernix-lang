@@ -87,6 +87,7 @@ pub fn implements_identifiable(
     let identifiable_trait = identifiable_trait.unwrap_or(&default_path);
 
     quote::quote! {
+        #[allow(clippy::trait_duplication_in_bounds)]
         impl #impl_generics
             #identifiable_trait for #name #ty_generics #where_clause
         {

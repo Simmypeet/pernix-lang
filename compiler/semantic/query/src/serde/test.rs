@@ -4,6 +4,7 @@ use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize, Serialize,
 };
+use pernixc_stable_type_id::Identifiable;
 
 use crate::{
     database::map::Map,
@@ -43,6 +44,195 @@ pub struct Variable(String);
 )]
 #[value(i32)]
 pub struct Constant(String);
+
+/// Additional types with generic parameters that implement Identifiable
+/// Wrapper for String type implementing Identifiable
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[value(String)]
+pub struct StringWrapper(pub String);
+
+/// Wrapper for i32 type implementing Identifiable
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[value(i32)]
+pub struct I32Wrapper(pub i32);
+
+/// Wrapper for bool type implementing Identifiable
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[value(bool)]
+pub struct BoolWrapper(pub bool);
+
+/// Generic key with type parameter T that implements Identifiable
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[value(StringWrapper)]
+pub struct GenericKey<
+    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+>(T);
+
+impl<
+        T: Identifiable
+            + Clone
+            + Eq
+            + std::hash::Hash
+            + Send
+            + Sync
+            + 'static
+            + Default,
+    > Default for GenericKey<T>
+{
+    fn default() -> Self { Self(T::default()) }
+}
+
+/// Generic key with bool value type
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[value(BoolWrapper)]
+pub struct GenericBoolKey<
+    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+>(T);
+
+impl<
+        T: Identifiable
+            + Clone
+            + Eq
+            + std::hash::Hash
+            + Send
+            + Sync
+            + 'static
+            + Default,
+    > Default for GenericBoolKey<T>
+{
+    fn default() -> Self { Self(T::default()) }
+}
+
+/// Generic key with i32 value type
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[value(I32Wrapper)]
+pub struct GenericI32Key<
+    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+>(T);
+
+impl<
+        T: Identifiable
+            + Clone
+            + Eq
+            + std::hash::Hash
+            + Send
+            + Sync
+            + 'static
+            + Default,
+    > Default for GenericI32Key<T>
+{
+    fn default() -> Self { Self(T::default()) }
+}
+
+/// Multi-parameter generic key
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Key,
+    Serialize,
+    Deserialize,
+)]
+#[value(StringWrapper)]
+pub struct MultiGenericKey<T, U>(T, U)
+where
+    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+    U: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static;
+
+impl<T, U> Default for MultiGenericKey<T, U>
+where
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static
+        + Default,
+    U: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static
+        + Default,
+{
+    fn default() -> Self { Self(T::default(), U::default()) }
+}
 
 #[test]
 fn map_basic_round_trip() {
