@@ -420,21 +420,11 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
             return Ok(());
         }
 
-        let multiline = matches!(self.config, RonConfig::Pretty(_)) && len > 2;
         self.writer.write_char('{').map_err(|e| RonError::custom(e))?;
-
-        if multiline {
-            self.indent();
-        }
-
+        
         let map = RonMap::new(self, len);
         f(map, extension)?;
 
-        if multiline {
-            self.write_newline()?;
-            self.dedent();
-            self.write_indent()?;
-        }
         self.writer.write_char('}').map_err(|e| RonError::custom(e))?;
         Ok(())
     }
@@ -801,15 +791,13 @@ pub struct RonMap<'a, W> {
     serializer: &'a mut RonSerializer<W>,
     len: usize,
     count: usize,
-    multiline: bool,
+    is_pretty: bool,
 }
 
 impl<'a, W: Write> RonMap<'a, W> {
     fn new(serializer: &'a mut RonSerializer<W>, len: usize) -> Self {
-        let multiline =
-            matches!(serializer.config, RonConfig::Pretty(_)) && len > 2;
-        // Don't indent here since it's handled in the parent method
-        Self { serializer, len, count: 0, multiline }
+        let is_pretty = matches!(serializer.config, RonConfig::Pretty(_));
+        Self { serializer, len, count: 0, is_pretty }
     }
 }
 
@@ -825,37 +813,48 @@ impl<W: Write + 'static, E> Map<E> for RonMap<'_, W> {
         value: &V,
         extension: &mut E,
     ) -> Result<(), RonError> {
-        if self.multiline {
-            self.serializer.write_newline()?;
-            self.serializer.write_indent()?;
-        } else if self.count > 0 {
-            self.serializer
-                .writer
-                .write_str(", ")
-                .map_err(|e| RonError::custom(e))?;
+        // Add separator for compact mode (no space after comma)
+        if !self.is_pretty && self.count > 0 {
+            self.serializer.writer.write_char(',').map_err(RonError::custom)?;
         }
 
+        // For pretty mode, handle newlines and indentation
+        if self.is_pretty {
+            if self.count == 0 {
+                // First entry: add newline and indent
+                self.serializer.write_newline()?;
+                self.serializer.indent();
+                self.serializer.write_indent()?;
+            } else {
+                // Subsequent entries: add comma, newline, and indent
+                self.serializer.writer.write_char(',').map_err(RonError::custom)?;
+                self.serializer.write_newline()?;
+                self.serializer.write_indent()?;
+            }
+        }
+
+        // Serialize key
         key.serialize(self.serializer, extension)?;
-        self.serializer
-            .writer
-            .write_str(":")
-            .map_err(|e| RonError::custom(e))?;
-        self.serializer.write_space()?;
+        
+        // Add colon separator
+        self.serializer.writer.write_char(':').map_err(RonError::custom)?;
+        
+        // Add space after colon only in pretty mode
+        if self.is_pretty {
+            self.serializer.writer.write_char(' ').map_err(RonError::custom)?;
+        }
+        
+        // Serialize value
         value.serialize(self.serializer, extension)?;
         self.count += 1;
 
-        if self.count < self.len {
-            self.serializer
-                .writer
-                .write_char(',')
-                .map_err(|e| RonError::custom(e))?;
-        } else if self.multiline
-            && matches!(self.serializer.config, RonConfig::Pretty(_))
-        {
-            self.serializer
-                .writer
-                .write_char(',')
-                .map_err(|e| RonError::custom(e))?;
+        // For pretty mode, handle the closing
+        if self.is_pretty && self.count == self.len {
+            // Add trailing comma and dedent
+            self.serializer.writer.write_char(',').map_err(RonError::custom)?;
+            self.serializer.write_newline()?;
+            self.serializer.dedent();
+            self.serializer.write_indent()?;
         }
 
         Ok(())
