@@ -965,11 +965,11 @@ impl<W: Write + 'static, E> StructVariant<E> for RonStructVariant<'_, W> {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
 
     #[test]
-    fn test_basic_functionality() {
+    fn basic_functionality() {
         // This is a basic smoke test
         let config = RonConfig::default();
         assert!(
@@ -981,7 +981,7 @@ mod tests {
     }
 
     #[test]
-    fn test_serializer_creation() {
+    fn serializer_creation() {
         let mut buffer = String::new();
         let _serializer = RonSerializer::new(&mut buffer);
 
@@ -994,7 +994,7 @@ mod tests {
     }
 
     #[test]
-    fn test_primitives() {
+    fn primitives() {
         insta::assert_snapshot!(to_ron_string(&42).unwrap(), @"42");
         insta::assert_snapshot!(to_ron_string(&true).unwrap(), @"true");
         insta::assert_snapshot!(to_ron_string(&false).unwrap(), @"false");
@@ -1004,7 +1004,7 @@ mod tests {
     }
 
     #[test]
-    fn test_arrays_compact() {
+    fn arrays_compact() {
         let simple = vec![1, 2, 3];
         let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
 
@@ -1013,7 +1013,7 @@ mod tests {
     }
 
     #[test]
-    fn test_arrays_pretty() {
+    fn arrays_pretty() {
         let simple = vec![1, 2, 3];
         let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
 
@@ -1031,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    fn test_string_escaping() {
+    fn string_escaping() {
         insta::assert_snapshot!(to_ron_string(&"hello \"world\"").unwrap(), @r#""hello \"world\"""#);
         insta::assert_snapshot!(to_ron_string(&"line1\nline2").unwrap(), @r#""line1\nline2""#);
         insta::assert_snapshot!(to_ron_string(&"tab\there").unwrap(), @r#""tab\there""#);
@@ -1039,7 +1039,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_arrays_compact() {
+    fn simple_arrays_compact() {
         let empty: Vec<i32> = vec![];
         let single = vec![42];
         let multiple = vec![1, 2, 3, 4, 5];
@@ -1050,7 +1050,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_arrays_compact() {
+    fn nested_arrays_compact() {
         let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
 
         insta::assert_snapshot!(to_ron_string_compact(&nested).unwrap(), @"[[1,2],[3,4,5],[]]");
@@ -1061,7 +1061,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_tuples_compact() {
+    fn tuples_compact() {
         let empty = ();
         let single = (42,);
         let pair = (1, 2);
@@ -1076,7 +1076,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tuples_pretty() {
+    fn tuples_pretty() {
         let empty = ();
         let single = (42,);
         let pair = (1, 2);
