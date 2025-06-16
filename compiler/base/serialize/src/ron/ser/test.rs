@@ -397,3 +397,49 @@ fn enum_struct_variants_pretty() {
         to_ron_string_with_config(&multipart, config).unwrap()
     );
 }
+
+// ========================================================================
+// Unit struct formatting tests
+// ========================================================================
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct UnitStruct;
+
+#[test]
+fn unit_structs() {
+    let unit = UnitStruct;
+
+    // Unit structs should format the same in both compact and pretty modes
+    insta::assert_snapshot!(to_ron_string_compact(&unit).unwrap());
+    
+    let config = RonConfig::Pretty("    ".to_string());
+    insta::assert_snapshot!(to_ron_string_with_config(&unit, config).unwrap());
+}
+
+// ========================================================================
+// Unit variant formatting tests
+// ========================================================================
+
+#[derive(pernixc_serialize_derive::Serialize)]
+enum Status {
+    Active,
+}
+
+#[derive(pernixc_serialize_derive::Serialize)]
+enum Direction {
+    North,
+}
+
+#[test]
+fn unit_variants() {
+    let active = Status::Active;
+    let north = Direction::North;
+
+    // Unit variants should format the same in both compact and pretty modes
+    insta::assert_snapshot!(to_ron_string_compact(&active).unwrap());
+    
+    let config = RonConfig::Pretty("    ".to_string());
+    insta::assert_snapshot!(to_ron_string_with_config(&north, config).unwrap());
+}
+
+
