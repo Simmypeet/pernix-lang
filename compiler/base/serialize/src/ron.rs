@@ -16,9 +16,10 @@
 //!
 //! ```rust
 //! use pernixc_serialize::{ron::ser::RonSerializer, ser::Serialize};
+//! use pernixc_serialize_derive::Serialize;
 //!
-//! let mut buffer = String::new();
-//! let mut serializer = RonSerializer::new(&mut buffer);
+//! let buffer = Vec::new();
+//! let mut serializer = RonSerializer::new(buffer);
 //!
 //! // Serialize a struct
 //! #[derive(Serialize)]
@@ -31,7 +32,7 @@
 //! let person = Person { name: "Alice".to_string(), age: 30, active: true };
 //!
 //! person.serialize(&mut serializer, &mut ()).unwrap();
-//! println!("{}", buffer);
+//! let output = String::from_utf8(serializer.into_inner()).unwrap();
 //! // Output:
 //! // Person {
 //! //     name: "Alice",

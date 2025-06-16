@@ -1,9 +1,6 @@
-use crate::{
-    ron::ser::{
-        to_ron_string, to_ron_string_compact, to_ron_string_with_config,
-        RonConfig, RonError, RonSerializer,
-    },
-    ser::Error,
+use crate::ron::ser::{
+    to_ron_string, to_ron_string_compact, to_ron_string_with_config, RonConfig,
+    RonSerializer,
 };
 
 #[test]
@@ -13,21 +10,18 @@ fn basic_functionality() {
     assert!(
         matches!(config, RonConfig::Pretty(ref indent) if indent == "    ")
     );
-
-    let error = RonError::custom("test error");
-    assert!(error.to_string().contains("test error"));
 }
 
 #[test]
 fn serializer_creation() {
-    let mut buffer = String::new();
+    let mut buffer = Vec::new();
     let _serializer = RonSerializer::new(&mut buffer);
 
-    let mut buffer2 = String::new();
+    let mut buffer2 = Vec::new();
     let config = RonConfig::Pretty("  ".to_string());
     let _serializer2 = RonSerializer::with_config(&mut buffer2, config);
 
-    let mut buffer3 = String::new();
+    let mut buffer3 = Vec::new();
     let _serializer3 = RonSerializer::compact(&mut buffer3);
 }
 
@@ -411,7 +405,7 @@ fn unit_structs() {
 
     // Unit structs should format the same in both compact and pretty modes
     insta::assert_snapshot!(to_ron_string_compact(&unit).unwrap());
-    
+
     let config = RonConfig::Pretty("    ".to_string());
     insta::assert_snapshot!(to_ron_string_with_config(&unit, config).unwrap());
 }
@@ -437,9 +431,7 @@ fn unit_variants() {
 
     // Unit variants should format the same in both compact and pretty modes
     insta::assert_snapshot!(to_ron_string_compact(&active).unwrap());
-    
+
     let config = RonConfig::Pretty("    ".to_string());
     insta::assert_snapshot!(to_ron_string_with_config(&north, config).unwrap());
 }
-
-

@@ -443,7 +443,8 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
 ///
 /// let value = 42;
 /// let result = to_ron_string(&value);
-/// assert_eq!(result, Ok("42".to_string()));
+/// assert!(result.is_ok());
+/// assert_eq!(result.unwrap(), "42");
 /// ```
 pub fn to_ron_string<T>(value: &T) -> Result<String, io::Error>
 where
