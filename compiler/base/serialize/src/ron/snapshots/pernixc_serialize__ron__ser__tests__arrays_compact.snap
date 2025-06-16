@@ -1,0 +1,5 @@
+---
+source: compiler/base/serialize/src/ron/ser.rs
+expression: to_ron_string_compact(&simple).unwrap()
+---
+[1,2,3]

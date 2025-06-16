@@ -14,3 +14,4 @@ parking_lot = { workspace = true }
 
 [dev-dependencies]
 pernixc_serialize_derive = { path = "../serialize_derive" }
+insta = "1.34"
