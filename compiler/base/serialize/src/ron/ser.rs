@@ -579,7 +579,11 @@ where
 
 /// Common logic for formatting sequence-like elements (arrays, tuples)
 /// Handles both compact and pretty mode formatting with proper indentation
-fn serialize_sequence_element<W: Write + 'static, E, T: Serialize<RonSerializer<W>, E>>(
+fn serialize_sequence_element<
+    W: Write + 'static,
+    E,
+    T: Serialize<RonSerializer<W>, E>,
+>(
     serializer: &mut RonSerializer<W>,
     value: &T,
     extension: &mut E,
@@ -958,147 +962,4 @@ impl<W: Write + 'static, E> StructVariant<E> for RonStructVariant<'_, W> {
 }
 
 #[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn basic_functionality() {
-        // This is a basic smoke test
-        let config = RonConfig::default();
-        assert!(
-            matches!(config, RonConfig::Pretty(ref indent) if indent == "    ")
-        );
-
-        let error = RonError::custom("test error");
-        assert!(error.to_string().contains("test error"));
-    }
-
-    #[test]
-    fn serializer_creation() {
-        let mut buffer = String::new();
-        let _serializer = RonSerializer::new(&mut buffer);
-
-        let mut buffer2 = String::new();
-        let config = RonConfig::Pretty("  ".to_string());
-        let _serializer2 = RonSerializer::with_config(&mut buffer2, config);
-
-        let mut buffer3 = String::new();
-        let _serializer3 = RonSerializer::compact(&mut buffer3);
-    }
-
-    #[test]
-    fn primitives() {
-        insta::assert_snapshot!(to_ron_string(&42).unwrap(), @"42");
-        insta::assert_snapshot!(to_ron_string(&true).unwrap(), @"true");
-        insta::assert_snapshot!(to_ron_string(&false).unwrap(), @"false");
-        insta::assert_snapshot!(to_ron_string(&2.718).unwrap(), @"2.718");
-        insta::assert_snapshot!(to_ron_string(&"hello world").unwrap(), @r#""hello world""#);
-        insta::assert_snapshot!(to_ron_string(&'A').unwrap(), @"'A'");
-    }
-
-    #[test]
-    fn arrays_compact() {
-        let simple = vec![1, 2, 3];
-        let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
-
-        insta::assert_snapshot!(to_ron_string_compact(&simple).unwrap());
-        insta::assert_snapshot!(to_ron_string_compact(&nested).unwrap());
-    }
-
-    #[test]
-    fn arrays_pretty() {
-        let simple = vec![1, 2, 3];
-        let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
-
-        let config = RonConfig::Pretty("    ".to_string());
-        insta::assert_snapshot!(to_ron_string_with_config(
-            &simple,
-            config.clone()
-        )
-        .unwrap());
-        insta::assert_snapshot!(to_ron_string_with_config(
-            &nested,
-            config.clone()
-        )
-        .unwrap());
-    }
-
-    #[test]
-    fn string_escaping() {
-        insta::assert_snapshot!(to_ron_string(&"hello \"world\"").unwrap(), @r#""hello \"world\"""#);
-        insta::assert_snapshot!(to_ron_string(&"line1\nline2").unwrap(), @r#""line1\nline2""#);
-        insta::assert_snapshot!(to_ron_string(&"tab\there").unwrap(), @r#""tab\there""#);
-        insta::assert_snapshot!(to_ron_string(&"backslash\\test").unwrap(), @r#""backslash\\test""#);
-    }
-
-    #[test]
-    fn simple_arrays_compact() {
-        let empty: Vec<i32> = vec![];
-        let single = vec![42];
-        let multiple = vec![1, 2, 3, 4, 5];
-
-        insta::assert_snapshot!(to_ron_string_compact(&empty).unwrap(), @"[]");
-        insta::assert_snapshot!(to_ron_string_compact(&single).unwrap(), @"[42]");
-        insta::assert_snapshot!(to_ron_string_compact(&multiple).unwrap(), @"[1,2,3,4,5]");
-    }
-
-    #[test]
-    fn nested_arrays_compact() {
-        let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
-
-        insta::assert_snapshot!(to_ron_string_compact(&nested).unwrap(), @"[[1,2],[3,4,5],[]]");
-    }
-
-    // ========================================================================
-    // Tuple formatting tests
-    // ========================================================================
-
-    #[test]
-    fn tuples_compact() {
-        let empty = ();
-        let single = (42,);
-        let pair = (1, 2);
-        let triple = (1, "hello", true);
-        let nested = ((1, 2), (3, 4));
-
-        insta::assert_snapshot!(to_ron_string_compact(&empty).unwrap());
-        insta::assert_snapshot!(to_ron_string_compact(&single).unwrap());
-        insta::assert_snapshot!(to_ron_string_compact(&pair).unwrap());
-        insta::assert_snapshot!(to_ron_string_compact(&triple).unwrap());
-        insta::assert_snapshot!(to_ron_string_compact(&nested).unwrap());
-    }
-
-    #[test]
-    fn tuples_pretty() {
-        let empty = ();
-        let single = (42,);
-        let pair = (1, 2);
-        let triple = (1, "hello", true);
-        let nested = ((1, 2), (3, 4));
-
-        let config = RonConfig::Pretty("    ".to_string());
-        insta::assert_snapshot!(to_ron_string_with_config(
-            &empty,
-            config.clone()
-        )
-        .unwrap());
-        insta::assert_snapshot!(to_ron_string_with_config(
-            &single,
-            config.clone()
-        )
-        .unwrap());
-        insta::assert_snapshot!(to_ron_string_with_config(
-            &pair,
-            config.clone()
-        )
-        .unwrap());
-        insta::assert_snapshot!(to_ron_string_with_config(
-            &triple,
-            config.clone()
-        )
-        .unwrap());
-        insta::assert_snapshot!(
-            to_ron_string_with_config(&nested, config).unwrap()
-        );
-    }
-}
+mod test;
