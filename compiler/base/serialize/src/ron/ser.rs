@@ -350,7 +350,7 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         }
 
         self.writer.write_char('[').map_err(RonError::custom)?;
-        
+
         let seq = RonSeq::new(self, len);
         f(seq, extension)?;
 
@@ -370,11 +370,10 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         }
 
         self.writer.write_char('(').map_err(|e| RonError::custom(e))?;
+
         let tuple = RonTuple::new(self, len);
         f(tuple, extension)?;
-        if len == 1 {
-            self.writer.write_char(',').map_err(|e| RonError::custom(e))?;
-        }
+
         self.writer.write_char(')').map_err(|e| RonError::custom(e))?;
         Ok(())
     }
@@ -523,7 +522,7 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
             self.dedent();
             self.write_indent()?;
         }
-        self.writer.write_char('}').map_err(RonError::custom)?;
+        self.writer.write_char('}').map_err(|e| RonError::custom(e))?;
         Ok(())
     }
 }
@@ -604,7 +603,7 @@ impl<W: Write + 'static, E> Seq<E> for RonSeq<'_, W> {
         if !self.is_pretty && self.count > 0 {
             self.serializer.writer.write_char(',').map_err(RonError::custom)?;
         }
-        
+
         // For pretty mode, handle newlines and indentation
         if self.is_pretty {
             if self.count == 0 {
@@ -614,7 +613,10 @@ impl<W: Write + 'static, E> Seq<E> for RonSeq<'_, W> {
                 self.serializer.write_indent()?;
             } else {
                 // Subsequent elements: add comma, newline, and indent
-                self.serializer.writer.write_char(',').map_err(RonError::custom)?;
+                self.serializer
+                    .writer
+                    .write_char(',')
+                    .map_err(RonError::custom)?;
                 self.serializer.write_newline()?;
                 self.serializer.write_indent()?;
             }
@@ -638,12 +640,15 @@ impl<W: Write + 'static, E> Seq<E> for RonSeq<'_, W> {
 
 pub struct RonTuple<'a, W> {
     serializer: &'a mut RonSerializer<W>,
+    len: usize,
     count: usize,
+    is_pretty: bool,
 }
 
-impl<'a, W> RonTuple<'a, W> {
-    fn new(serializer: &'a mut RonSerializer<W>, _len: usize) -> Self {
-        Self { serializer, count: 0 }
+impl<'a, W: Write> RonTuple<'a, W> {
+    fn new(serializer: &'a mut RonSerializer<W>, len: usize) -> Self {
+        let is_pretty = matches!(serializer.config, RonConfig::Pretty(_));
+        Self { serializer, len, count: 0, is_pretty }
     }
 }
 
@@ -655,15 +660,41 @@ impl<W: Write + 'static, E> Tuple<E> for RonTuple<'_, W> {
         value: &T,
         extension: &mut E,
     ) -> Result<(), RonError> {
-        if self.count > 0 {
-            self.serializer
-                .writer
-                .write_str(", ")
-                .map_err(|e| RonError::custom(e))?;
+        // For compact mode, add comma without spaces
+        if !self.is_pretty && self.count > 0 {
+            self.serializer.writer.write_char(',').map_err(RonError::custom)?;
+        }
+
+        // For pretty mode, handle newlines and indentation
+        if self.is_pretty {
+            if self.count == 0 {
+                // First element: add newline and indent
+                self.serializer.write_newline()?;
+                self.serializer.indent();
+                self.serializer.write_indent()?;
+            } else {
+                // Subsequent elements: add comma, newline, and indent
+                self.serializer
+                    .writer
+                    .write_char(',')
+                    .map_err(RonError::custom)?;
+                self.serializer.write_newline()?;
+                self.serializer.write_indent()?;
+            }
         }
 
         value.serialize(self.serializer, extension)?;
         self.count += 1;
+
+        // For pretty mode, handle the closing
+        if self.is_pretty && self.count == self.len {
+            // Add trailing comma and dedent
+            self.serializer.writer.write_char(',').map_err(RonError::custom)?;
+            self.serializer.write_newline()?;
+            self.serializer.dedent();
+            self.serializer.write_indent()?;
+        }
+
         Ok(())
     }
 }
@@ -976,23 +1007,27 @@ mod tests {
     fn test_arrays_compact() {
         let simple = vec![1, 2, 3];
         let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
-        let mixed = vec![1, 2];
-        
+
         insta::assert_snapshot!(to_ron_string_compact(&simple).unwrap());
         insta::assert_snapshot!(to_ron_string_compact(&nested).unwrap());
-        insta::assert_snapshot!(to_ron_string_compact(&mixed).unwrap());
     }
 
     #[test]
     fn test_arrays_pretty() {
         let simple = vec![1, 2, 3];
         let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
-        let mixed = vec![1, 2];
-        
+
         let config = RonConfig::Pretty("    ".to_string());
-        insta::assert_snapshot!(to_ron_string_with_config(&simple, config.clone()).unwrap());
-        insta::assert_snapshot!(to_ron_string_with_config(&nested, config.clone()).unwrap());
-        insta::assert_snapshot!(to_ron_string_with_config(&mixed, config).unwrap());
+        insta::assert_snapshot!(to_ron_string_with_config(
+            &simple,
+            config.clone()
+        )
+        .unwrap());
+        insta::assert_snapshot!(to_ron_string_with_config(
+            &nested,
+            config.clone()
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1019,5 +1054,58 @@ mod tests {
         let nested = vec![vec![1, 2], vec![3, 4, 5], vec![]];
 
         insta::assert_snapshot!(to_ron_string_compact(&nested).unwrap(), @"[[1,2],[3,4,5],[]]");
+    }
+
+    // ========================================================================
+    // Tuple formatting tests
+    // ========================================================================
+
+    #[test]
+    fn test_tuples_compact() {
+        let empty = ();
+        let single = (42,);
+        let pair = (1, 2);
+        let triple = (1, "hello", true);
+        let nested = ((1, 2), (3, 4));
+
+        insta::assert_snapshot!(to_ron_string_compact(&empty).unwrap());
+        insta::assert_snapshot!(to_ron_string_compact(&single).unwrap());
+        insta::assert_snapshot!(to_ron_string_compact(&pair).unwrap());
+        insta::assert_snapshot!(to_ron_string_compact(&triple).unwrap());
+        insta::assert_snapshot!(to_ron_string_compact(&nested).unwrap());
+    }
+
+    #[test]
+    fn test_tuples_pretty() {
+        let empty = ();
+        let single = (42,);
+        let pair = (1, 2);
+        let triple = (1, "hello", true);
+        let nested = ((1, 2), (3, 4));
+
+        let config = RonConfig::Pretty("    ".to_string());
+        insta::assert_snapshot!(to_ron_string_with_config(
+            &empty,
+            config.clone()
+        )
+        .unwrap());
+        insta::assert_snapshot!(to_ron_string_with_config(
+            &single,
+            config.clone()
+        )
+        .unwrap());
+        insta::assert_snapshot!(to_ron_string_with_config(
+            &pair,
+            config.clone()
+        )
+        .unwrap());
+        insta::assert_snapshot!(to_ron_string_with_config(
+            &triple,
+            config.clone()
+        )
+        .unwrap());
+        insta::assert_snapshot!(
+            to_ron_string_with_config(&nested, config).unwrap()
+        );
     }
 }
