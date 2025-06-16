@@ -441,23 +441,13 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
             return Ok(());
         }
 
-        let multiline = matches!(self.config, RonConfig::Pretty(_)) && len > 2;
         write!(self.writer, "{name}").map_err(RonError::custom)?;
         self.write_space()?;
         self.writer.write_char('{').map_err(RonError::custom)?;
 
-        if multiline {
-            self.indent();
-        }
-
         let struct_ser = RonStruct::new(self, len);
         f(struct_ser, extension)?;
 
-        if multiline {
-            self.write_newline()?;
-            self.dedent();
-            self.write_indent()?;
-        }
         self.writer.write_char('}').map_err(RonError::custom)?;
         Ok(())
     }
@@ -495,24 +485,14 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
             return Ok(());
         }
 
-        let multiline = matches!(self.config, RonConfig::Pretty(_)) && len > 2;
         write!(self.writer, "{variant}").map_err(RonError::custom)?;
         self.write_space()?;
         self.writer.write_char('{').map_err(RonError::custom)?;
 
-        if multiline {
-            self.indent();
-        }
-
         let struct_variant = RonStructVariant::new(self, len);
         f(struct_variant, extension)?;
 
-        if multiline {
-            self.write_newline()?;
-            self.dedent();
-            self.write_indent()?;
-        }
-        self.writer.write_char('}').map_err(|e| RonError::custom(e))?;
+        self.writer.write_char('}').map_err(RonError::custom)?;
         Ok(())
     }
 }
@@ -743,14 +723,13 @@ pub struct RonStruct<'a, W> {
     serializer: &'a mut RonSerializer<W>,
     len: usize,
     count: usize,
-    multiline: bool,
+    is_pretty: bool,
 }
 
 impl<'a, W: Write> RonStruct<'a, W> {
     fn new(serializer: &'a mut RonSerializer<W>, len: usize) -> Self {
-        let multiline =
-            matches!(serializer.config, RonConfig::Pretty(_)) && len > 2;
-        Self { serializer, len, count: 0, multiline }
+        let is_pretty = matches!(serializer.config, RonConfig::Pretty(_));
+        Self { serializer, len, count: 0, is_pretty }
     }
 }
 
@@ -763,38 +742,24 @@ impl<W: Write + 'static, E> Struct<E> for RonStruct<'_, W> {
         value: &T,
         extension: &mut E,
     ) -> Result<(), RonError> {
-        if self.count > 0 {
-            self.serializer
-                .writer
-                .write_char(',')
-                .map_err(|e| RonError::custom(e))?;
-        }
+        serialize_element_with_formatting(
+            self.serializer,
+            &mut self.count,
+            self.len,
+            self.is_pretty,
+            |ser| {
+                // Write field name (without quotes)
+                write!(ser.writer, "{name}:").map_err(RonError::custom)?;
 
-        if self.multiline {
-            self.serializer.write_newline()?;
-            self.serializer.write_indent()?;
-        } else if self.count > 0 {
-            self.serializer.write_space()?;
-        }
+                // Add space after colon only in pretty mode
+                if self.is_pretty {
+                    ser.writer.write_char(' ').map_err(RonError::custom)?;
+                }
 
-        write!(self.serializer.writer, "{name}:")
-            .map_err(|e| RonError::custom(e))?;
-        self.serializer.write_space()?;
-        value.serialize(self.serializer, extension)?;
-        self.count += 1;
-
-        // Add trailing comma for the last field in multiline mode
-        if self.count == self.len
-            && self.multiline
-            && matches!(self.serializer.config, RonConfig::Pretty(_))
-        {
-            self.serializer
-                .writer
-                .write_char(',')
-                .map_err(|e| RonError::custom(e))?;
-        }
-
-        Ok(())
+                // Serialize value
+                value.serialize(ser, extension)
+            },
+        )
     }
 
     fn skip_field(
@@ -894,14 +859,13 @@ pub struct RonStructVariant<'a, W> {
     serializer: &'a mut RonSerializer<W>,
     len: usize,
     count: usize,
-    multiline: bool,
+    is_pretty: bool,
 }
 
 impl<'a, W: Write> RonStructVariant<'a, W> {
     fn new(serializer: &'a mut RonSerializer<W>, len: usize) -> Self {
-        let multiline =
-            matches!(serializer.config, RonConfig::Pretty(_)) && len > 2;
-        Self { serializer, len, count: 0, multiline }
+        let is_pretty = matches!(serializer.config, RonConfig::Pretty(_));
+        Self { serializer, len, count: 0, is_pretty }
     }
 }
 
@@ -914,38 +878,24 @@ impl<W: Write + 'static, E> StructVariant<E> for RonStructVariant<'_, W> {
         value: &T,
         extension: &mut E,
     ) -> Result<(), RonError> {
-        if self.count > 0 {
-            self.serializer
-                .writer
-                .write_char(',')
-                .map_err(|e| RonError::custom(e))?;
-        }
+        serialize_element_with_formatting(
+            self.serializer,
+            &mut self.count,
+            self.len,
+            self.is_pretty,
+            |ser| {
+                // Write field name (without quotes)
+                write!(ser.writer, "{name}:").map_err(RonError::custom)?;
 
-        if self.multiline {
-            self.serializer.write_newline()?;
-            self.serializer.write_indent()?;
-        } else if self.count > 0 {
-            self.serializer.write_space()?;
-        }
+                // Add space after colon only in pretty mode
+                if self.is_pretty {
+                    ser.writer.write_char(' ').map_err(RonError::custom)?;
+                }
 
-        write!(self.serializer.writer, "{name}:")
-            .map_err(|e| RonError::custom(e))?;
-        self.serializer.write_space()?;
-        value.serialize(self.serializer, extension)?;
-        self.count += 1;
-
-        // Add trailing comma for the last field in multiline mode
-        if self.count == self.len
-            && self.multiline
-            && matches!(self.serializer.config, RonConfig::Pretty(_))
-        {
-            self.serializer
-                .writer
-                .write_char(',')
-                .map_err(|e| RonError::custom(e))?;
-        }
-
-        Ok(())
+                // Serialize value
+                value.serialize(ser, extension)
+            },
+        )
     }
 
     fn skip_field(

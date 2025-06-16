@@ -1,0 +1,15 @@
+---
+source: compiler/base/serialize/src/ron/ser/test.rs
+expression: "to_ron_string_with_config(&multipart, config).unwrap()"
+---
+Multipart {
+    title: "Complex message",
+    parts: [
+        "part1",
+        "part2",
+    ],
+    metadata: {
+        "priority": 1,
+        "retry_count": 3,
+    },
+}

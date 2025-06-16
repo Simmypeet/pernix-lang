@@ -256,3 +256,144 @@ fn maps_pretty() {
         to_ron_string_with_config(&nested_map, config).unwrap()
     );
 }
+
+// Regular struct with named fields formatting tests
+#[derive(pernixc_serialize_derive::Serialize)]
+struct Person {
+    name: String,
+    age: u32,
+    active: bool,
+}
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct ComplexData {
+    id: u64,
+    description: String,
+    values: Vec<i32>,
+    metadata: pernixc_hash::HashMap<String, String>,
+}
+
+#[test]
+fn structs_compact() {
+    let person = Person { name: "Alice".to_string(), age: 30, active: true };
+
+    let complex = ComplexData {
+        id: 12345,
+        description: "Test data".to_string(),
+        values: vec![1, 2, 3],
+        metadata: {
+            let mut map = pernixc_hash::HashMap::default();
+            map.insert("type".to_string(), "test".to_string());
+            map.insert("version".to_string(), "1.0".to_string());
+            map
+        },
+    };
+
+    insta::assert_snapshot!(to_ron_string_compact(&person).unwrap());
+    insta::assert_snapshot!(to_ron_string_compact(&complex).unwrap());
+}
+
+#[test]
+fn structs_pretty() {
+    let person = Person { name: "Alice".to_string(), age: 30, active: true };
+
+    let complex = ComplexData {
+        id: 12345,
+        description: "Test data".to_string(),
+        values: vec![1, 2, 3],
+        metadata: {
+            let mut map = pernixc_hash::HashMap::default();
+            map.insert("type".to_string(), "test".to_string());
+            map.insert("version".to_string(), "1.0".to_string());
+            map
+        },
+    };
+
+    let config = RonConfig::Pretty("    ".to_string());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&person, config.clone()).unwrap()
+    );
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&complex, config).unwrap()
+    );
+}
+
+// Enum with struct variants formatting tests
+#[derive(pernixc_serialize_derive::Serialize)]
+enum Message {
+    Text {
+        content: String,
+        urgent: bool,
+    },
+    Image {
+        url: String,
+        width: u32,
+        height: u32,
+    },
+    Multipart {
+        title: String,
+        parts: Vec<String>,
+        metadata: pernixc_hash::HashMap<String, i32>,
+    },
+}
+
+#[test]
+fn enum_struct_variants_compact() {
+    let text =
+        Message::Text { content: "Hello, world!".to_string(), urgent: false };
+
+    let image = Message::Image {
+        url: "https://example.com/pic.jpg".to_string(),
+        width: 800,
+        height: 600,
+    };
+
+    let multipart = Message::Multipart {
+        title: "Complex message".to_string(),
+        parts: vec!["part1".to_string(), "part2".to_string()],
+        metadata: {
+            let mut map = pernixc_hash::HashMap::default();
+            map.insert("priority".to_string(), 1);
+            map.insert("retry_count".to_string(), 3);
+            map
+        },
+    };
+
+    insta::assert_snapshot!(to_ron_string_compact(&text).unwrap());
+    insta::assert_snapshot!(to_ron_string_compact(&image).unwrap());
+    insta::assert_snapshot!(to_ron_string_compact(&multipart).unwrap());
+}
+
+#[test]
+fn enum_struct_variants_pretty() {
+    let text =
+        Message::Text { content: "Hello, world!".to_string(), urgent: false };
+
+    let image = Message::Image {
+        url: "https://example.com/pic.jpg".to_string(),
+        width: 800,
+        height: 600,
+    };
+
+    let multipart = Message::Multipart {
+        title: "Complex message".to_string(),
+        parts: vec!["part1".to_string(), "part2".to_string()],
+        metadata: {
+            let mut map = pernixc_hash::HashMap::default();
+            map.insert("priority".to_string(), 1);
+            map.insert("retry_count".to_string(), 3);
+            map
+        },
+    };
+
+    let config = RonConfig::Pretty("    ".to_string());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&text, config.clone()).unwrap()
+    );
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&image, config.clone()).unwrap()
+    );
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&multipart, config).unwrap()
+    );
+}
