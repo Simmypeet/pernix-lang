@@ -1,0 +1,5 @@
+---
+source: compiler/base/serialize/src/ron/ser/test.rs
+expression: to_ron_string_compact(&point).unwrap()
+---
+Point(10,20)

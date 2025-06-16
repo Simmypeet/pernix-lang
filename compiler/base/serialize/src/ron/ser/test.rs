@@ -36,7 +36,7 @@ fn primitives() {
     insta::assert_snapshot!(to_ron_string(&42).unwrap(), @"42");
     insta::assert_snapshot!(to_ron_string(&true).unwrap(), @"true");
     insta::assert_snapshot!(to_ron_string(&false).unwrap(), @"false");
-    insta::assert_snapshot!(to_ron_string(&2.718).unwrap(), @"2.718");
+    insta::assert_snapshot!(to_ron_string(&1.5).unwrap(), @"1.5");
     insta::assert_snapshot!(to_ron_string(&"hello world").unwrap(), @r#""hello world""#);
     insta::assert_snapshot!(to_ron_string(&'A').unwrap(), @"'A'");
 }
@@ -131,4 +131,77 @@ fn tuples_pretty() {
         to_ron_string_with_config(&triple, config.clone()).unwrap()
     );
     insta::assert_snapshot!(to_ron_string_with_config(&nested, config).unwrap());
+}
+
+// ========================================================================
+// Tuple struct formatting tests
+// ========================================================================
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct Point(i32, i32);
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct Color(u8, u8, u8, String);
+
+#[test]
+fn tuple_structs_compact() {
+    let point = Point(10, 20);
+    let color = Color(255, 128, 0, "orange".to_string());
+
+    insta::assert_snapshot!(to_ron_string_compact(&point).unwrap());
+    insta::assert_snapshot!(to_ron_string_compact(&color).unwrap());
+}
+
+#[test]
+fn tuple_structs_pretty() {
+    let point = Point(10, 20);
+    let color = Color(255, 128, 0, "orange".to_string());
+
+    let config = RonConfig::Pretty("    ".to_string());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&point, config.clone()).unwrap()
+    );
+    insta::assert_snapshot!(to_ron_string_with_config(&color, config).unwrap());
+}
+
+// ========================================================================
+// Enum tuple variant formatting tests
+// ========================================================================
+
+#[derive(pernixc_serialize_derive::Serialize)]
+enum Shape {
+    Circle(f64),
+    Rectangle(f64, f64),
+    Triangle(f64, f64, f64),
+}
+
+#[test]
+fn enum_tuple_variants_compact() {
+    let circle = Shape::Circle(5.0);
+    let rectangle = Shape::Rectangle(10.0, 20.0);
+    let triangle = Shape::Triangle(3.0, 4.0, 5.0);
+
+    insta::assert_snapshot!(to_ron_string_compact(&circle).unwrap());
+    insta::assert_snapshot!(to_ron_string_compact(&rectangle).unwrap());
+    insta::assert_snapshot!(to_ron_string_compact(&triangle).unwrap());
+}
+
+#[test]
+fn enum_tuple_variants_pretty() {
+    let circle = Shape::Circle(5.0);
+    let rectangle = Shape::Rectangle(10.0, 20.0);
+    let triangle = Shape::Triangle(3.0, 4.0, 5.0);
+
+    let config = RonConfig::Pretty("    ".to_string());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&circle, config.clone()).unwrap()
+    );
+    insta::assert_snapshot!(to_ron_string_with_config(
+        &rectangle,
+        config.clone()
+    )
+    .unwrap());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&triangle, config).unwrap()
+    );
 }

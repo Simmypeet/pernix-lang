@@ -698,12 +698,15 @@ impl<W: Write + 'static, E> Tuple<E> for RonTuple<'_, W> {
 
 pub struct RonTupleStruct<'a, W> {
     serializer: &'a mut RonSerializer<W>,
+    len: usize,
     count: usize,
+    is_pretty: bool,
 }
 
-impl<'a, W> RonTupleStruct<'a, W> {
-    fn new(serializer: &'a mut RonSerializer<W>, _len: usize) -> Self {
-        Self { serializer, count: 0 }
+impl<'a, W: Write> RonTupleStruct<'a, W> {
+    fn new(serializer: &'a mut RonSerializer<W>, len: usize) -> Self {
+        let is_pretty = matches!(serializer.config, RonConfig::Pretty(_));
+        Self { serializer, len, count: 0, is_pretty }
     }
 }
 
@@ -715,16 +718,14 @@ impl<W: Write + 'static, E> TupleStruct<E> for RonTupleStruct<'_, W> {
         value: &T,
         extension: &mut E,
     ) -> Result<(), RonError> {
-        if self.count > 0 {
-            self.serializer
-                .writer
-                .write_str(", ")
-                .map_err(|e| RonError::custom(e))?;
-        }
-
-        value.serialize(self.serializer, extension)?;
-        self.count += 1;
-        Ok(())
+        serialize_sequence_element(
+            self.serializer,
+            value,
+            extension,
+            &mut self.count,
+            self.len,
+            self.is_pretty,
+        )
     }
 }
 
@@ -863,12 +864,15 @@ impl<W: Write + 'static, E> Map<E> for RonMap<'_, W> {
 
 pub struct RonTupleVariant<'a, W> {
     serializer: &'a mut RonSerializer<W>,
+    len: usize,
     count: usize,
+    is_pretty: bool,
 }
 
-impl<'a, W> RonTupleVariant<'a, W> {
-    fn new(serializer: &'a mut RonSerializer<W>, _len: usize) -> Self {
-        Self { serializer, count: 0 }
+impl<'a, W: Write> RonTupleVariant<'a, W> {
+    fn new(serializer: &'a mut RonSerializer<W>, len: usize) -> Self {
+        let is_pretty = matches!(serializer.config, RonConfig::Pretty(_));
+        Self { serializer, len, count: 0, is_pretty }
     }
 }
 
@@ -880,16 +884,14 @@ impl<W: Write + 'static, E> TupleVariant<E> for RonTupleVariant<'_, W> {
         value: &T,
         extension: &mut E,
     ) -> Result<(), RonError> {
-        if self.count > 0 {
-            self.serializer
-                .writer
-                .write_str(", ")
-                .map_err(|e| RonError::custom(e))?;
-        }
-
-        value.serialize(self.serializer, extension)?;
-        self.count += 1;
-        Ok(())
+        serialize_sequence_element(
+            self.serializer,
+            value,
+            extension,
+            &mut self.count,
+            self.len,
+            self.is_pretty,
+        )
     }
 }
 

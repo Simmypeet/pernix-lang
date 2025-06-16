@@ -1,0 +1,8 @@
+---
+source: compiler/base/serialize/src/ron/ser/test.rs
+expression: "to_ron_string_with_config(&rectangle, config.clone()).unwrap()"
+---
+Rectangle(
+    10,
+    20,
+)
