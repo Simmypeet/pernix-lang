@@ -435,3 +435,102 @@ fn unit_variants() {
     let config = RonConfig::Pretty("    ".to_string());
     insta::assert_snapshot!(to_ron_string_with_config(&north, config).unwrap());
 }
+
+// ========================================================================
+// Comprehensive nested data model test
+// ========================================================================
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct NestedData {
+    name: String,
+    metadata: NestedTupleStruct,
+    stats: (u32, f64, bool),
+    items: Vec<NestedItem>,
+    config: pernixc_hash::HashMap<String, ConfigValue>,
+    status: NestedStatus,
+    unit_field: NestedUnit,
+}
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct NestedTupleStruct(String, u32, Vec<i32>);
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct NestedUnit;
+
+#[derive(pernixc_serialize_derive::Serialize)]
+enum NestedItem {
+    Simple(String),
+    Complex { id: u64, data: Vec<u8> },
+    Empty,
+    Nested(NestedSubItem),
+}
+
+#[derive(pernixc_serialize_derive::Serialize)]
+struct NestedSubItem {
+    value: Option<String>,
+    flags: (bool, bool),
+}
+
+#[derive(pernixc_serialize_derive::Serialize)]
+enum NestedStatus {
+    Active { uptime: u64 },
+}
+
+#[derive(pernixc_serialize_derive::Serialize)]
+enum ConfigValue {
+    String(String),
+    Number(f64),
+    Boolean(bool),
+    Array(Vec<String>),
+    Nested { key: String, value: Box<ConfigValue> },
+}
+
+#[test]
+fn comprehensive_nested_data_model() {
+    use pernixc_hash::HashMap;
+
+    // Create complex nested data structure
+    let mut config = HashMap::default();
+    config.insert("debug".to_string(), ConfigValue::Boolean(true));
+    config.insert(
+        "version".to_string(),
+        ConfigValue::String("1.0.0".to_string()),
+    );
+    config.insert("timeout".to_string(), ConfigValue::Number(30.5));
+    config.insert(
+        "features".to_string(),
+        ConfigValue::Array(vec!["auth".to_string(), "logging".to_string()]),
+    );
+    config.insert("database".to_string(), ConfigValue::Nested {
+        key: "connection".to_string(),
+        value: Box::new(ConfigValue::String("localhost:5432".to_string())),
+    });
+
+    let nested_data = NestedData {
+        name: "Test Application".to_string(),
+        metadata: NestedTupleStruct("app".to_string(), 42, vec![1, 2, 3, 4, 5]),
+        stats: (100, 99.9, true),
+        items: vec![
+            NestedItem::Simple("basic_item".to_string()),
+            NestedItem::Complex { id: 12345, data: vec![0xFF, 0xAB, 0xCD] },
+            NestedItem::Empty,
+            NestedItem::Nested(NestedSubItem {
+                value: Some("nested_value".to_string()),
+                flags: (true, false),
+            }),
+        ],
+        config,
+        status: NestedStatus::Active { uptime: 86400 },
+        unit_field: NestedUnit,
+    };
+
+    // Test both compact and pretty formatting
+    insta::assert_snapshot!(to_ron_string_compact(&nested_data).unwrap());
+    insta::assert_snapshot!(to_ron_string(&nested_data).unwrap());
+
+    // Also test with custom indentation
+    let config = RonConfig::Pretty("  ".to_string());
+    insta::assert_snapshot!(
+        to_ron_string_with_config(&nested_data, config).unwrap()
+    );
+}

@@ -1,0 +1,73 @@
+---
+source: compiler/base/serialize/src/ron/ser/test.rs
+expression: "to_ron_string_with_config(&nested_data, config).unwrap()"
+---
+NestedData {
+  name: "Test Application",
+  metadata: NestedTupleStruct(
+    "app",
+    42,
+    [
+      1,
+      2,
+      3,
+      4,
+      5,
+    ],
+  ),
+  stats: (
+    100,
+    99.9,
+    true,
+  ),
+  items: [
+    Simple(
+      "basic_item",
+    ),
+    Complex {
+      id: 12345,
+      data: [
+        255,
+        171,
+        205,
+      ],
+    },
+    Empty,
+    Nested(
+      NestedSubItem {
+        value: Some("nested_value"),
+        flags: (
+          true,
+          false,
+        ),
+      },
+    ),
+  ],
+  config: {
+    "version": String(
+      "1.0.0",
+    ),
+    "database": Nested {
+      key: "connection",
+      value: String(
+        "localhost:5432",
+      ),
+    },
+    "debug": Boolean(
+      true,
+    ),
+    "timeout": Number(
+      30.5,
+    ),
+    "features": Array(
+      [
+        "auth",
+        "logging",
+      ],
+    ),
+  },
+  status: Active {
+    uptime: 86400,
+  },
+  unit_field: NestedUnit,
+}
