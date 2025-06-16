@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_serialize_derive = { path = "../serialize_derive" }
+pernixc_hash = { path = "../hash" }
 dashmap = { workspace = true }
 flexstr = { workspace = true }
 parking_lot = { workspace = true }

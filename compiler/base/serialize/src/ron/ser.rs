@@ -421,7 +421,7 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         }
 
         self.writer.write_char('{').map_err(|e| RonError::custom(e))?;
-        
+
         let map = RonMap::new(self, len);
         f(map, extension)?;
 
@@ -567,19 +567,14 @@ where
 // Common formatting logic for sequence-like types (arrays, tuples)
 // =============================================================================
 
-/// Common logic for formatting sequence-like elements (arrays, tuples)
-/// Handles both compact and pretty mode formatting with proper indentation
-fn serialize_sequence_element<
-    W: Write + 'static,
-    E,
-    T: Serialize<RonSerializer<W>, E>,
->(
+/// Common logic for formatting elements in sequences or maps
+/// Handles both compact and pretty mode formatting with proper indentation  
+fn serialize_element_with_formatting<W: Write + 'static>(
     serializer: &mut RonSerializer<W>,
-    value: &T,
-    extension: &mut E,
     count: &mut usize,
     len: usize,
     is_pretty: bool,
+    serialize_content: impl FnOnce(&mut RonSerializer<W>) -> Result<(), RonError>,
 ) -> Result<(), RonError> {
     // Add separator for compact mode (no space after comma)
     if !is_pretty && *count > 0 {
@@ -601,7 +596,9 @@ fn serialize_sequence_element<
         }
     }
 
-    value.serialize(serializer, extension)?;
+    // Execute the custom serialization logic
+    serialize_content(serializer)?;
+
     *count += 1;
 
     // For pretty mode, handle the closing
@@ -614,6 +611,29 @@ fn serialize_sequence_element<
     }
 
     Ok(())
+}
+
+/// Helper function for serializing sequence elements using the common
+/// formatting logic
+fn serialize_sequence_element<
+    W: Write + 'static,
+    E,
+    T: Serialize<RonSerializer<W>, E>,
+>(
+    serializer: &mut RonSerializer<W>,
+    value: &T,
+    extension: &mut E,
+    count: &mut usize,
+    len: usize,
+    is_pretty: bool,
+) -> Result<(), RonError> {
+    serialize_element_with_formatting(
+        serializer,
+        count,
+        len,
+        is_pretty,
+        |ser| value.serialize(ser, extension),
+    )
 }
 
 // =============================================================================
@@ -813,51 +833,27 @@ impl<W: Write + 'static, E> Map<E> for RonMap<'_, W> {
         value: &V,
         extension: &mut E,
     ) -> Result<(), RonError> {
-        // Add separator for compact mode (no space after comma)
-        if !self.is_pretty && self.count > 0 {
-            self.serializer.writer.write_char(',').map_err(RonError::custom)?;
-        }
+        serialize_element_with_formatting(
+            self.serializer,
+            &mut self.count,
+            self.len,
+            self.is_pretty,
+            |ser| {
+                // Serialize key
+                key.serialize(ser, extension)?;
 
-        // For pretty mode, handle newlines and indentation
-        if self.is_pretty {
-            if self.count == 0 {
-                // First entry: add newline and indent
-                self.serializer.write_newline()?;
-                self.serializer.indent();
-                self.serializer.write_indent()?;
-            } else {
-                // Subsequent entries: add comma, newline, and indent
-                self.serializer.writer.write_char(',').map_err(RonError::custom)?;
-                self.serializer.write_newline()?;
-                self.serializer.write_indent()?;
-            }
-        }
+                // Add colon separator
+                ser.writer.write_char(':').map_err(RonError::custom)?;
 
-        // Serialize key
-        key.serialize(self.serializer, extension)?;
-        
-        // Add colon separator
-        self.serializer.writer.write_char(':').map_err(RonError::custom)?;
-        
-        // Add space after colon only in pretty mode
-        if self.is_pretty {
-            self.serializer.writer.write_char(' ').map_err(RonError::custom)?;
-        }
-        
-        // Serialize value
-        value.serialize(self.serializer, extension)?;
-        self.count += 1;
+                // Add space after colon only in pretty mode
+                if self.is_pretty {
+                    ser.writer.write_char(' ').map_err(RonError::custom)?;
+                }
 
-        // For pretty mode, handle the closing
-        if self.is_pretty && self.count == self.len {
-            // Add trailing comma and dedent
-            self.serializer.writer.write_char(',').map_err(RonError::custom)?;
-            self.serializer.write_newline()?;
-            self.serializer.dedent();
-            self.serializer.write_indent()?;
-        }
-
-        Ok(())
+                // Serialize value
+                value.serialize(ser, extension)
+            },
+        )
     }
 }
 

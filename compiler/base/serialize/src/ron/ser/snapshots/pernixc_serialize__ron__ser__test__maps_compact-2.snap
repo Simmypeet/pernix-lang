@@ -2,4 +2,4 @@
 source: compiler/base/serialize/src/ron/ser/test.rs
 expression: to_ron_string_compact(&simple_map).unwrap()
 ---
-{"key2":2,"key1":1}
+{"key1":1,"key2":2}

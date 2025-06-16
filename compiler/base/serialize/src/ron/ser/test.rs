@@ -210,17 +210,17 @@ fn enum_tuple_variants_pretty() {
 // Map formatting tests
 // ========================================================================
 
-use std::collections::HashMap;
+use pernixc_hash::HashMap;
 
 #[test]
 fn maps_compact() {
-    let empty_map: HashMap<String, i32> = HashMap::new();
-    let mut simple_map = HashMap::new();
+    let empty_map: HashMap<String, i32> = HashMap::default();
+    let mut simple_map = HashMap::default();
     simple_map.insert("key1".to_string(), 1);
     simple_map.insert("key2".to_string(), 2);
-    
-    let mut nested_map = HashMap::new();
-    let mut inner_map = HashMap::new();
+
+    let mut nested_map = HashMap::default();
+    let mut inner_map = HashMap::default();
     inner_map.insert("inner".to_string(), 42);
     nested_map.insert("outer".to_string(), inner_map);
 
@@ -231,23 +231,27 @@ fn maps_compact() {
 
 #[test]
 fn maps_pretty() {
-    let empty_map: HashMap<String, i32> = HashMap::new();
-    let mut simple_map = HashMap::new();
+    let empty_map: HashMap<String, i32> = HashMap::default();
+    let mut simple_map = HashMap::default();
     simple_map.insert("key1".to_string(), 1);
     simple_map.insert("key2".to_string(), 2);
-    
-    let mut nested_map = HashMap::new();
-    let mut inner_map = HashMap::new();
+
+    let mut nested_map = HashMap::default();
+    let mut inner_map = HashMap::default();
     inner_map.insert("inner".to_string(), 42);
     nested_map.insert("outer".to_string(), inner_map);
 
     let config = RonConfig::Pretty("    ".to_string());
-    insta::assert_snapshot!(
-        to_ron_string_with_config(&empty_map, config.clone()).unwrap()
-    );
-    insta::assert_snapshot!(
-        to_ron_string_with_config(&simple_map, config.clone()).unwrap()
-    );
+    insta::assert_snapshot!(to_ron_string_with_config(
+        &empty_map,
+        config.clone()
+    )
+    .unwrap());
+    insta::assert_snapshot!(to_ron_string_with_config(
+        &simple_map,
+        config.clone()
+    )
+    .unwrap());
     insta::assert_snapshot!(
         to_ron_string_with_config(&nested_map, config).unwrap()
     );
