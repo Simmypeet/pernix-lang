@@ -20,7 +20,21 @@ use crate::{AccessModifier, Identifier, Keyword, Passable, SimplePath};
 pub mod arbitrary;
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     pub struct Signature {
         pub module_keyword: Keyword = expect::Keyword::Module,
         pub identifier: Identifier = expect::Identifier

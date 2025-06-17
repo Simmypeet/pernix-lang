@@ -3,15 +3,20 @@
 use std::{
     collections::hash_map::Entry,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use dashmap::DashMap;
 use enum_as_inner::EnumAsInner;
-use fnv::{FnvBuildHasher, FnvHashMap};
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_handler::Storage;
+use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_parser::abstract_tree::AbstractTree;
+use pernixc_query::Value;
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap, Span};
 use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
@@ -71,7 +76,7 @@ impl Report<()> for RootSubmoduleConflict {
 /// Failed to load a source file for the submodule.
 #[derive(Debug)]
 pub struct SourceFileLoadFail {
-    /// The error that occurred while loading the source file.
+    /// The string representation of the source error.
     pub source_error: pernixc_source_file::Error,
 
     /// The submodule that submodule stems from.
@@ -145,21 +150,28 @@ impl Report<()> for ModuleRedefinition {
 }
 
 /// The result of parsing the module tree syntax.
-#[derive(Debug)]
+#[derive(Debug, Value, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[value(Arc<Parse>)]
+#[id(TargetID)]
+#[serde(
+    ser_extension(SharedPointerSerialize),
+    de_extension(SharedPointerDeserialize)
+)]
 pub struct Parse {
     /// The root of the module tree.
     pub tree: Tree,
 
     /// All of the token trees that were parsed from the source files,
     pub token_trees_by_source_id:
-        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree, FnvBuildHasher>,
-
-    /// All of the errors that occurred during the parsing.
-    pub errors: Vec<Error>,
+        HashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
 }
 
-/// The tree strucutre of the compilation module.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The tree structure of the compilation module.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(
+    ser_extension(SharedPointerSerialize),
+    de_extension(SharedPointerDeserialize)
+)]
 pub struct Tree {
     /// The signature of the module, if it exists.
     pub signature: Option<pernixc_syntax::item::module::Signature>,
@@ -171,7 +183,7 @@ pub struct Tree {
     pub content: pernixc_syntax::item::module::Content,
 
     /// The submodules of the module, indexed by their names.
-    pub submodules_by_name: FnvHashMap<String, Self>,
+    pub submodules_by_name: HashMap<String, Self>,
 }
 
 #[derive(Debug, Clone)]
@@ -223,7 +235,6 @@ impl Tree {
         token_trees_by_source_id: &DashMap<
             GlobalSourceID,
             pernixc_lexical::tree::Tree,
-            FnvBuildHasher,
         >,
         in_source_id: GlobalSourceID,
         handler: &dyn Handler,
@@ -320,7 +331,6 @@ impl Tree {
         token_trees_by_source_id: &DashMap<
             GlobalSourceID,
             pernixc_lexical::tree::Tree,
-            FnvBuildHasher,
         >,
         handler: &dyn Handler,
     ) -> Self {
@@ -415,7 +425,7 @@ impl Tree {
                 }));
             }
 
-            let mut submodules_by_name = FnvHashMap::<String, Self>::default();
+            let mut submodules_by_name = HashMap::<String, Self>::default();
 
             for (name, module_tree) in
                 scope_handles.into_iter().filter_map(|x| x.join().unwrap())
@@ -447,7 +457,10 @@ impl Tree {
 /// Parses the whole module tree for the target program from the given root
 /// source file.
 #[must_use]
-pub fn parse(source_id: GlobalSourceID, source_map: &SourceMap) -> Parse {
+pub fn parse(
+    source_id: GlobalSourceID,
+    source_map: &SourceMap,
+) -> (Parse, Vec<Error>) {
     let token_trees_by_source_id = DashMap::default();
     let storage = Storage::<Error>::default();
 
@@ -459,20 +472,24 @@ pub fn parse(source_id: GlobalSourceID, source_map: &SourceMap) -> Parse {
         .unwrap_or_else(|| Path::new(""))
         .to_path_buf();
 
-    Parse {
-        tree: Tree::parse_input(
-            Input::File {
-                source_id,
-                access_modifier: None,
-                root: true,
-                signature: None,
-            },
-            &path,
-            source_map,
-            &token_trees_by_source_id,
-            &storage,
-        ),
-        token_trees_by_source_id,
-        errors: storage.into_vec(),
-    }
+    (
+        Parse {
+            tree: Tree::parse_input(
+                Input::File {
+                    source_id,
+                    access_modifier: None,
+                    root: true,
+                    signature: None,
+                },
+                &path,
+                source_map,
+                &token_trees_by_source_id,
+                &storage,
+            ),
+            token_trees_by_source_id: token_trees_by_source_id
+                .into_iter()
+                .collect(),
+        },
+        storage.into_vec(),
+    )
 }

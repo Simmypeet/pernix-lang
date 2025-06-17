@@ -262,6 +262,14 @@ pub struct Tree {
     end_location_cache: DashMap<ID<Branch>, ByteIndex>,
 }
 
+impl PartialEq for Tree {
+    fn eq(&self, other: &Self) -> bool {
+        self.source_id == other.source_id && self.arena == other.arena
+    }
+}
+
+impl Eq for Tree {}
+
 impl Tree {
     /// Creates a new [`Tree`] from the given source code and source ID.
     ///

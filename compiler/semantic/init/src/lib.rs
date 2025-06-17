@@ -2,12 +2,11 @@
 //! compilation process.
 use std::{
     fs::File,
-    io::{BufReader, BufWriter, Read},
+    io::{BufReader, BufWriter},
     path::Path,
+    sync::Arc,
 };
 
-use dashmap::DashMap;
-use fnv::FnvBuildHasher;
 use pernixc_query::{
     database::Database,
     serde::{DynamicDeserialize, DynamicRegistry},
@@ -18,6 +17,7 @@ use pernixc_serialize::{
     Deserialize,
 };
 use pernixc_source_file::{GlobalSourceID, SourceMap};
+use pernixc_target::TargetID;
 
 pub mod accessibility;
 pub mod implemented;
@@ -25,9 +25,9 @@ pub mod implements;
 pub mod import;
 pub mod kind;
 pub mod member;
-pub mod module;
 pub mod name;
 pub mod parent;
+pub mod parse;
 pub mod symbol;
 pub mod target;
 
@@ -41,22 +41,6 @@ pub enum Error {
     ReadIncrementalFileIO(std::io::Error),
     #[error(transparent)]
     IncrementalFileDeserialize(std::io::Error),
-}
-
-/// The result of calling [`start_query_database`].
-#[derive(Debug)]
-pub struct Start {
-    /// The database where all the query inputs are set-up and is ready for
-    /// querying.
-    pub database: Database,
-
-    /// A map of token trees by their source ID, which is used to later
-    /// retrieve the absolute location
-    pub token_trees_by_source_id:
-        DashMap<GlobalSourceID, pernixc_lexical::tree::Tree, FnvBuildHasher>,
-
-    /// The list of errors encountered while parsing the module tree.
-    pub module_parsing_errors: Vec<module::Error>,
 }
 
 /// Describes the relationship between two symbols in the hierarchy.
@@ -87,7 +71,7 @@ pub fn start_query_database<
     root_source_id: GlobalSourceID,
     _library_paths: impl IntoIterator<Item = &'l Path>,
     incremental_path: Option<(&Path, &mut Ext)>,
-) -> Result<Start, Error> {
+) -> Result<(Database, Vec<parse::Error>), Error> {
     // load the incremental file (if any)
     let incremental_file_de =
         if let Some((incremental_path, extension)) = incremental_path {
@@ -106,7 +90,7 @@ pub fn start_query_database<
         };
 
     // create a fresh database or load the incremental file
-    let database = incremental_file_de.map_or_else(
+    let mut database = incremental_file_de.map_or_else(
         || Ok(Database::default()),
         |(file, ext)| {
             let buf_reader = BufReader::new(file);
@@ -117,13 +101,15 @@ pub fn start_query_database<
         },
     )?;
 
-    let parse = module::parse(root_source_id, source_map);
+    let (parse, errors) = parse::parse(root_source_id, source_map);
 
-    Ok(Start {
-        database,
-        token_trees_by_source_id: parse.token_trees_by_source_id,
-        module_parsing_errors: parse.errors,
-    })
+    if let Err(error) =
+        database.set_input(&parse::Key(TargetID::Local), Arc::new(parse), true)
+    {
+        panic!("{error}");
+    }
+
+    Ok((database, errors))
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -138,6 +124,7 @@ pub fn register_runtime<
     serder_registry: &mut Registry,
 ) {
     serder_registry.register::<accessibility::Key>();
+    serder_registry.register::<parse::Key>();
     serder_registry.register::<implemented::Key>();
     serder_registry.register::<implements::Key>();
     serder_registry.register::<kind::Key>();

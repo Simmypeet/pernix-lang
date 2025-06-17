@@ -14,6 +14,7 @@ use pernixc_parser::{
     expect::{self, Ext as _},
     parser::{ast, Parser as _},
 };
+use pernixc_serialize::{Deserialize, Serialize};
 use r#type::Type;
 
 pub mod expression;
@@ -48,7 +49,18 @@ pub type Punctuation = Token<kind::Punctuation, RelativeLocation>;
 pub type Numeric = Token<kind::Numeric, RelativeLocation>;
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        EnumAsInner,
+        Serialize,
+        Deserialize
+    )]
     pub enum AccessModifier {
         Public(Keyword = expect::Keyword::Public),
         Private(Keyword = expect::Keyword::Private),

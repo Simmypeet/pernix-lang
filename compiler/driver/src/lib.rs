@@ -13,14 +13,13 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     term::termcolor::WriteColor,
 };
-use dashmap::DashMap;
-use fnv::FnvBuildHasher;
 use pernixc_diagnostic::Report;
 use pernixc_hash::HashMap;
+use pernixc_init::parse;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
     serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
-    Key,
+    Engine, Key,
 };
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
@@ -107,10 +106,9 @@ fn pernix_diagnostic_to_codespan_diagnostic(
 fn rel_pernix_diagnostic_to_codespan_diagnostic(
     diagostic: pernixc_diagnostic::Diagnostic<RelativeLocation>,
     source_map: &SourceMap,
-    token_trees_by_source_id: &DashMap<
+    token_trees_by_source_id: &HashMap<
         GlobalSourceID,
         pernixc_lexical::tree::Tree,
-        FnvBuildHasher,
     >,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
     let mut result = match diagostic.severity {
@@ -135,8 +133,8 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
 
                 let source_file = source_map.get(span.source_id).unwrap();
                 let begin =
-                    span.start.to_absolute_index(&source_file, &token_tree);
-                let end = span.end.to_absolute_index(&source_file, &token_tree);
+                    span.start.to_absolute_index(&source_file, token_tree);
+                let end = span.end.to_absolute_index(&source_file, token_tree);
 
                 let mut primary = Label::primary(span.source_id, begin..end);
 
@@ -154,9 +152,9 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
                 let source_file = source_map.get(x.span.source_id).unwrap();
 
                 let begin =
-                    x.span.start.to_absolute_index(&source_file, &token_tree);
+                    x.span.start.to_absolute_index(&source_file, token_tree);
                 let end =
-                    x.span.end.to_absolute_index(&source_file, &token_tree);
+                    x.span.end.to_absolute_index(&source_file, token_tree);
 
                 Label::secondary(x.span.source_id, begin..end)
                     .with_message(x.message)
@@ -357,13 +355,13 @@ pub fn run(
         return ExitCode::FAILURE;
     };
 
-    let mut query_runtime = pernixc_query::runtime::Runtime::default();
+    let mut runtime = pernixc_query::runtime::Runtime::default();
     let mut serde_extension = SerdeExtension::<
         BinarySerializer<BufWriter<File>>,
         BinaryDeserializer<BufReader<File>>,
     >::default();
 
-    pernixc_init::register_runtime(&mut query_runtime, &mut serde_extension);
+    pernixc_init::register_runtime(&mut runtime, &mut serde_extension);
 
     let _target_name =
         argument.command.input().target_name.clone().unwrap_or_else(|| {
@@ -377,7 +375,7 @@ pub fn run(
                 .to_string()
         });
 
-    let database = match pernixc_init::start_query_database(
+    let (database, errors) = match pernixc_init::start_query_database(
         &mut source_map,
         root_source_id,
         argument.command.input().library_paths.iter().map(PathBuf::as_path),
@@ -399,7 +397,7 @@ pub fn run(
                 pernixc_init::Error::IncrementalFileDeserialize(error_kind) => {
                     Diagnostic::error().with_message(format!(
                         "Failed to load (deserialize) incremental file: \
-                     {error_kind}"
+                         {error_kind}"
                     ))
                 }
                 pernixc_init::Error::ReadIncrementalFileIO(error) => {
@@ -414,18 +412,22 @@ pub fn run(
         }
     };
 
-    for diagnostic in database.module_parsing_errors {
+    let query_engine = Engine { database, runtime };
+    let target_parsing =
+        query_engine.query(&parse::Key(TargetID::Local)).unwrap();
+
+    for diagnostic in &errors {
         let codespan_reporting = match diagnostic {
-            pernixc_init::module::Error::Lexical(error) => {
+            pernixc_init::parse::Error::Lexical(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
                     error.report(&source_map),
                 )
             }
 
-            pernixc_init::module::Error::Syntax(error) => {
+            pernixc_init::parse::Error::Syntax(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
                     error.report(
-                        &database
+                        target_parsing
                             .token_trees_by_source_id
                             .get(&error.source_id)
                             .unwrap(),
@@ -433,27 +435,27 @@ pub fn run(
                 )
             }
 
-            pernixc_init::module::Error::RootSubmoduleConflict(
+            pernixc_init::parse::Error::RootSubmoduleConflict(
                 root_submodule_conflict,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 root_submodule_conflict.report(()),
                 &source_map,
-                &database.token_trees_by_source_id,
+                &target_parsing.token_trees_by_source_id,
             ),
 
-            pernixc_init::module::Error::SourceFileLoadFail(
+            pernixc_init::parse::Error::SourceFileLoadFail(
                 source_file_load_fail,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 source_file_load_fail.report(()),
                 &source_map,
-                &database.token_trees_by_source_id,
+                &target_parsing.token_trees_by_source_id,
             ),
-            pernixc_init::module::Error::ModuleRedefinition(
+            pernixc_init::parse::Error::ModuleRedefinition(
                 module_redefinition,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 module_redefinition.report(()),
                 &source_map,
-                &database.token_trees_by_source_id,
+                &target_parsing.token_trees_by_source_id,
             ),
         };
 
@@ -479,7 +481,7 @@ pub fn run(
 
         // Serialize using postcard and write to file
         if let Err(error) = Serialize::serialize(
-            &database.database,
+            &query_engine.database,
             &mut bianry_serializer,
             &mut serde_extension,
         ) {
