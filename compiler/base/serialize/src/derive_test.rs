@@ -72,11 +72,11 @@ fn named_struct() {
 
     let bytes = serialize_to_bytes(&person);
 
-    // Expected: name length (5) + "Alice" + age (30 as u32 in little-endian)
+    // Expected: name length (5) + "Alice" + age (30 as u32 varint)
     let mut expected = Vec::new();
     expected.push(5); // name length as varint
     expected.extend_from_slice(b"Alice");
-    expected.extend_from_slice(&30u32.to_le_bytes());
+    expected.push(30); // age as u32 varint (30 < 128, so single byte)
 
     assert_eq!(bytes, expected);
 }
@@ -111,9 +111,10 @@ fn tuple_struct() {
 
     let bytes = serialize_to_bytes(&tuple);
 
-    // Expected: 42 as i32 in little-endian + string length (5) + "hello"
+    // Expected: 42 as i32 encoded as varint (zigzag) + string length (5) +
+    // "hello"
     let mut expected = Vec::new();
-    expected.extend_from_slice(&42i32.to_le_bytes());
+    expected.push(84); // 42 zigzag encoded as varint: (42 << 1) = 84
     expected.push(5); // string length as varint
     expected.extend_from_slice(b"hello");
 
@@ -217,9 +218,9 @@ fn generic_enum() {
     let some_value = GenericOption::Some(42i32);
     let bytes = serialize_to_bytes(&some_value);
 
-    let mut expected = Vec::new();
-    expected.push(0); // variant index 0 as varint (Some)
-    expected.extend_from_slice(&42i32.to_le_bytes());
+    // variant index 0 as varint (Some)
+    // 42i32 zigzag encoded: (42 << 1) = 84
+    let expected = [0, 84];
     assert_eq!(bytes, expected);
 
     // Test None variant
@@ -251,7 +252,7 @@ fn mixed_enum() {
 
     let mut expected = Vec::new();
     expected.push(1); // variant index 1 as varint
-    expected.extend_from_slice(&123i32.to_le_bytes());
+    expected.extend_from_slice(&[246, 1]); // 123i32 zigzag+varint encoded: 246 needs 2 bytes in varint
     assert_eq!(bytes, expected);
 
     // Test Struct variant (index 2) with String field
@@ -280,7 +281,8 @@ fn nested_structures() {
 
     let mut expected = Vec::new();
     expected.push(1); // Color::Green variant index
-    expected.extend_from_slice(&1000u16.to_le_bytes());
+    expected.extend_from_slice(&[232, 7]); // 1000u16 as varint: 1000 = 0x3E8 -> [0xE8|0x80, 0x07] = [232, 7]
+    let expected = vec![1, 232, 7];
     assert_eq!(bytes, expected);
 
     // Test enum containing struct-like data
@@ -292,13 +294,17 @@ fn nested_structures() {
     let complex = Complex::Data { items: vec![1, 2, 3], flag: false };
     let bytes = serialize_to_bytes(&complex);
 
-    let mut expected = Vec::new();
-    expected.push(0); // variant index 0
-    expected.push(3); // vec length as varint
-    expected.extend_from_slice(&1i32.to_le_bytes());
-    expected.extend_from_slice(&2i32.to_le_bytes());
-    expected.extend_from_slice(&3i32.to_le_bytes());
-    expected.push(0); // flag as bool (false = 0)
+    // variant index 0
+    // vec length as varint
+    // i32 values are zigzag+varint encoded:
+    // 1 zigzag = 2, varint = [2]
+    // 2 zigzag = 4, varint = [4]
+    // 3 zigzag = 6, varint = [6]
+    // 1i32 zigzag+varint encoded
+    // 2i32 zigzag+varint encoded
+    // 3i32 zigzag+varint encoded
+    // flag as bool (false = 0)
+    let expected = [0, 3, 2, 4, 6, 0];
     assert_eq!(bytes, expected);
 }
 
@@ -317,7 +323,7 @@ fn trait_bounds_in_generics() {
     let mut expected = Vec::new();
     expected.push(4); // string length as varint
     expected.extend_from_slice(b"test");
-    expected.extend_from_slice(&42usize.to_le_bytes());
+    expected.push(42); // 42usize as varint (42 < 128, so single byte)
     assert_eq!(bytes, expected);
 
     // Test with multiple trait bounds
@@ -328,7 +334,7 @@ fn trait_bounds_in_generics() {
 
     let multi = MultiBounded { data: 123i32 };
     let bytes = serialize_to_bytes(&multi);
-    let expected = 123i32.to_le_bytes().to_vec();
+    let expected = vec![246, 1]; // 123i32 zigzag+varint encoded
     assert_eq!(bytes, expected);
 }
 
@@ -349,13 +355,13 @@ fn where_clause_constraints() {
         WhereClauseStruct { first: vec![1, 2, 3], second: "hello".to_string() };
     let bytes = serialize_to_bytes(&where_struct);
 
-    let mut expected = Vec::new();
-    expected.push(3); // vec length as varint
-    expected.extend_from_slice(&1i32.to_le_bytes());
-    expected.extend_from_slice(&2i32.to_le_bytes());
-    expected.extend_from_slice(&3i32.to_le_bytes());
-    expected.push(5); // string length as varint
-    expected.extend_from_slice(b"hello");
+    // vec length as varint
+    // 1i32 zigzag encoded: (1 << 1) = 2
+    // 2i32 zigzag encoded: (2 << 1) = 4
+    // 3i32 zigzag encoded: (3 << 1) = 6
+    // string length as varint
+    let expected = [3, 2, 4, 6, 5, b'h', b'e', b'l', b'l', b'o'];
+
     assert_eq!(bytes, expected);
 
     // Test enum with where clause
@@ -373,9 +379,9 @@ fn where_clause_constraints() {
 
     let enum_first = WhereClauseEnum::First::<i32, String>(42i32);
     let bytes = serialize_to_bytes(&enum_first);
-    let mut expected = Vec::new();
-    expected.push(0); // variant index 0
-    expected.extend_from_slice(&42i32.to_le_bytes());
+    // variant index 0
+    // 42i32 zigzag+varint encoded: 42 << 1 = 84
+    let expected = [0, 84];
     assert_eq!(bytes, expected);
 
     let enum_second =
@@ -401,7 +407,7 @@ fn lifetime_and_trait_bounds() {
     let bytes = serialize_to_bytes(&lifetime_struct);
 
     let mut expected = Vec::new();
-    expected.extend_from_slice(&100u64.to_le_bytes());
+    expected.push(100); // 100u64 as varint (100 < 128, so single byte)
     expected.push(4); // string length as varint
     expected.extend_from_slice(b"test");
     assert_eq!(bytes, expected);
@@ -419,9 +425,9 @@ fn complex_trait_bounds() {
     let thread_safe = ThreadSafeStruct { value: 42i32, id: 123 };
     let bytes = serialize_to_bytes(&thread_safe);
 
-    let mut expected = Vec::new();
-    expected.extend_from_slice(&42i32.to_le_bytes());
-    expected.extend_from_slice(&123u64.to_le_bytes());
+    // 42i32 zigzag encoded: (42 << 1) = 84
+    // 123u64 as varint (123 < 128, so single byte)
+    let expected = [84, 123];
     assert_eq!(bytes, expected);
 
     // Test struct with multiple constraints using where clause
@@ -437,12 +443,16 @@ fn complex_trait_bounds() {
     let multi = MultiConstraint { value: vec![1, 2, 3], id: 12345 };
     let bytes = serialize_to_bytes(&multi);
 
-    let mut expected = Vec::new();
-    expected.push(3); // vec length as varint
-    expected.extend_from_slice(&1i32.to_le_bytes());
-    expected.extend_from_slice(&2i32.to_le_bytes());
-    expected.extend_from_slice(&3i32.to_le_bytes());
-    expected.extend_from_slice(&12345u64.to_le_bytes());
+    // vec length as varint
+    // i32 values zigzag+varint encoded: 1->2, 2->4, 3->6
+    // 1i32 zigzag+varint encoded
+    // 2i32 zigzag+varint encoded
+    // 3i32 zigzag+varint encoded
+    // 12345u64 varint encoded: needs to be calculated
+    // 12345 = 1*8192 + 4153, so 12345 = 8192 + 4153
+    // 12345 varint = [185, 96] (from the test output)
+    // 12345u64 varint encoded
+    let expected = [3, 2, 4, 6, 185, 96];
     assert_eq!(bytes, expected);
 }
 
@@ -489,7 +499,7 @@ fn nested_generic_bounds() {
 
     let mut expected = Vec::new();
     expected.push(2); // variant index 2
-    expected.extend_from_slice(&42i32.to_le_bytes());
+    expected.push(84); // 42i32 zigzag encoded: (42 << 1) = 84
     expected.push(4); // string length
     expected.extend_from_slice(b"test");
     assert_eq!(bytes, expected);

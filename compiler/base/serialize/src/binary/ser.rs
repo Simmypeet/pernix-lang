@@ -12,10 +12,10 @@
 //! let mut buffer = Vec::new();
 //! let mut serializer = BinarySerializer::new(buffer);
 //!
-//! // Serialize a primitive value
+//! // Serialize a primitive value - u32 is now varint encoded
 //! 42u32.serialize(&mut serializer, &mut ()).unwrap();
 //! let buffer = serializer.into_inner();
-//! assert_eq!(buffer, 42u32.to_le_bytes());
+//! assert_eq!(buffer, vec![42]); // 42 < 128, so single byte varint
 //! ```
 //!
 //! # Binary Format
