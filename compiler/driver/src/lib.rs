@@ -1,6 +1,11 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{fs::File, io::BufWriter, path::PathBuf, process::ExitCode};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter},
+    path::PathBuf,
+    process::ExitCode,
+};
 
 use argument::Arguments;
 use clap::Args;
@@ -11,12 +16,27 @@ use codespan_reporting::{
 use dashmap::DashMap;
 use fnv::FnvBuildHasher;
 use pernixc_diagnostic::Report;
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
+use pernixc_query::{
+    serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+    Key,
+};
+use pernixc_serialize::{
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    de::Deserializer,
+    extension::{
+        shared_pointer::{SharedPointerStore, SharedPointerTracker},
+        SharedPointerDeserialize, SharedPointerSerialize,
+    },
+    ser::Serializer,
+    Deserialize, Serialize,
+};
 use pernixc_source_file::{
     ByteIndex, GlobalSourceID, Location, SourceFile, SourceMap,
 };
+use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::TargetID;
-use postcard::ser_flavors::io::WriteFlavor;
 use term::get_coonfig;
 
 pub mod argument;
@@ -225,6 +245,101 @@ pub struct Input {
     pub show_progress: bool,
 }
 
+/// An object for serialization support
+struct SerdeExtension<S: Serializer<Self>, D: Deserializer<Self>> {
+    pub registry: pernixc_query::serde::Registry<S, D, Self>,
+    pub shared_pointer_store: SharedPointerStore,
+    pub shared_pointer_tracker: SharedPointerTracker,
+}
+
+impl<S: Serializer<Self>, D: Deserializer<Self>> Default
+    for SerdeExtension<S, D>
+{
+    fn default() -> Self {
+        Self {
+            registry: pernixc_query::serde::Registry::default(),
+            shared_pointer_store: SharedPointerStore::default(),
+            shared_pointer_tracker: SharedPointerTracker::default(),
+        }
+    }
+}
+
+impl<S: Serializer<Self>, D: Deserializer<Self>> SharedPointerSerialize
+    for SerdeExtension<S, D>
+{
+    fn register_arc<T>(&mut self, arc: &std::sync::Arc<T>) -> bool {
+        self.shared_pointer_tracker.register_arc(arc)
+    }
+
+    fn register_rc<T>(&mut self, rc: &std::rc::Rc<T>) -> bool {
+        self.shared_pointer_tracker.register_rc(rc)
+    }
+}
+
+impl<S: Serializer<Self>, D: Deserializer<Self>> SharedPointerDeserialize
+    for SerdeExtension<S, D>
+{
+    fn store_arc<T: 'static + Send + Sync>(
+        &mut self,
+        pointer: usize,
+        arc: std::sync::Arc<T>,
+    ) {
+        self.shared_pointer_store.store_arc(pointer, arc);
+    }
+
+    fn get_arc<T: 'static + Send + Sync>(
+        &self,
+        pointer: usize,
+    ) -> Option<std::sync::Arc<T>> {
+        self.shared_pointer_store.get_arc(pointer)
+    }
+
+    fn store_rc<T: 'static>(&mut self, pointer: usize, rc: std::rc::Rc<T>) {
+        self.shared_pointer_store.store_rc(pointer, rc);
+    }
+
+    fn get_rc<T: 'static>(&self, pointer: usize) -> Option<std::rc::Rc<T>> {
+        self.shared_pointer_store.get_rc(pointer)
+    }
+}
+
+impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicSerialize<S>
+    for SerdeExtension<S, D>
+{
+    fn serialization_helper_by_type_id(
+        &self,
+    ) -> &HashMap<
+        StableTypeID,
+        pernixc_query::serde::SerializationHelper<S, Self>,
+    > {
+        self.registry.serialization_helpers_by_type_id()
+    }
+}
+
+impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicDeserialize<D>
+    for SerdeExtension<S, D>
+{
+    fn deserialization_helper_by_type_id(
+        &self,
+    ) -> &HashMap<
+        StableTypeID,
+        pernixc_query::serde::DeserializationHelper<D, Self>,
+    > {
+        self.registry.deserialization_helpers_by_type_id()
+    }
+}
+
+impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicRegistry<S, D>
+    for SerdeExtension<S, D>
+{
+    fn register<K: Key + Serialize<S, Self> + Deserialize<D, Self>>(&mut self)
+    where
+        K::Value: Serialize<S, Self> + Deserialize<D, Self>,
+    {
+        self.registry.register::<K>();
+    }
+}
+
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines)]
@@ -243,11 +358,14 @@ pub fn run(
     };
 
     let mut query_runtime = pernixc_query::runtime::Runtime::default();
-    let mut serde = pernixc_query::serde::Serde::default();
+    let mut serde_extension = SerdeExtension::<
+        BinarySerializer<BufWriter<File>>,
+        BinaryDeserializer<BufReader<File>>,
+    >::default();
 
-    pernixc_query_base::register_runtime(&mut query_runtime, &mut serde);
+    pernixc_init::register_runtime(&mut query_runtime, &mut serde_extension);
 
-    let target_name =
+    let _target_name =
         argument.command.input().target_name.clone().unwrap_or_else(|| {
             source_map
                 .get(root_source_id)
@@ -259,33 +377,32 @@ pub fn run(
                 .to_string()
         });
 
-    let database = match pernixc_query_base::start_query_database(
+    let database = match pernixc_init::start_query_database(
         &mut source_map,
         root_source_id,
         argument.command.input().library_paths.iter().map(PathBuf::as_path),
-        &target_name,
         argument
             .command
             .input()
             .incremental_path
             .as_ref()
-            .map(|x| (x.as_path(), &serde)),
+            .map(|x| (x.as_path(), &mut serde_extension)),
     ) {
         Ok(database) => database,
         Err(error) => {
             let msg = match error {
-                pernixc_query_base::Error::OpenIncrementalFileIO(error) => {
+                pernixc_init::Error::OpenIncrementalFileIO(error) => {
                     Diagnostic::error().with_message(format!(
                         "Failed to open incremental file: {error}"
                     ))
                 }
-                pernixc_query_base::Error::IncrementalFileDeserialize(
-                    error_kind,
-                ) => Diagnostic::error().with_message(format!(
-                    "Failed to load (deserialize) incremental file: \
+                pernixc_init::Error::IncrementalFileDeserialize(error_kind) => {
+                    Diagnostic::error().with_message(format!(
+                        "Failed to load (deserialize) incremental file: \
                      {error_kind}"
-                )),
-                pernixc_query_base::Error::ReadIncrementalFileIO(error) => {
+                    ))
+                }
+                pernixc_init::Error::ReadIncrementalFileIO(error) => {
                     Diagnostic::error().with_message(format!(
                         "Failed to read incremental file: {error}"
                     ))
@@ -299,13 +416,13 @@ pub fn run(
 
     for diagnostic in database.module_parsing_errors {
         let codespan_reporting = match diagnostic {
-            pernixc_query_base::module::Error::Lexical(error) => {
+            pernixc_init::module::Error::Lexical(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
                     error.report(&source_map),
                 )
             }
 
-            pernixc_query_base::module::Error::Syntax(error) => {
+            pernixc_init::module::Error::Syntax(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
                     error.report(
                         &database
@@ -316,7 +433,7 @@ pub fn run(
                 )
             }
 
-            pernixc_query_base::module::Error::RootSubmoduleConflict(
+            pernixc_init::module::Error::RootSubmoduleConflict(
                 root_submodule_conflict,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 root_submodule_conflict.report(()),
@@ -324,14 +441,14 @@ pub fn run(
                 &database.token_trees_by_source_id,
             ),
 
-            pernixc_query_base::module::Error::SourceFileLoadFail(
+            pernixc_init::module::Error::SourceFileLoadFail(
                 source_file_load_fail,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 source_file_load_fail.report(()),
                 &source_map,
                 &database.token_trees_by_source_id,
             ),
-            pernixc_query_base::module::Error::ModuleRedefinition(
+            pernixc_init::module::Error::ModuleRedefinition(
                 module_redefinition,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 module_redefinition.report(()),
@@ -356,15 +473,16 @@ pub fn run(
                 return ExitCode::FAILURE;
             }
         };
-        let serializable_database = database.database.serializable(&serde);
 
         let writer = BufWriter::new(incremental_file);
-        let flavor = WriteFlavor::new(writer);
+        let mut bianry_serializer = BinarySerializer::new(writer);
 
         // Serialize using postcard and write to file
-        if let Err(error) =
-            postcard::serialize_with_flavor(&serializable_database, flavor)
-        {
+        if let Err(error) = Serialize::serialize(
+            &database.database,
+            &mut bianry_serializer,
+            &mut serde_extension,
+        ) {
             let msg = Diagnostic::error().with_message(format!(
                 "Failed to serialize incremental file: {error}"
             ));

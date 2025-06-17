@@ -75,14 +75,6 @@ pub enum HierarchyRelationship {
     Unrelated,
 }
 
-fn read_file_buffer(
-    file: &mut std::fs::File,
-) -> Result<Vec<u8>, std::io::Error> {
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    Ok(buffer)
-}
-
 /// Setup the query database for the compilation process.
 ///
 /// This will initialize the query database with the initial syntax tree and
@@ -94,7 +86,6 @@ pub fn start_query_database<
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
     _library_paths: impl IntoIterator<Item = &'l Path>,
-    target_name: &str,
     incremental_path: Option<(&Path, &mut Ext)>,
 ) -> Result<Start, Error> {
     // load the incremental file (if any)

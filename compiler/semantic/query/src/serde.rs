@@ -108,6 +108,7 @@
 //! * Type lookups use efficient hash maps with stable type IDs as keys
 //! * Registration is typically done once at startup, not in hot paths
 
+use getset::Getters;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_serialize::{
     de::{Deserializer, MapAccess, StructAccess},
@@ -347,9 +348,15 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for DynamicBox {
 /// * `S` - The serializer type
 /// * `D` - The deserializer type
 /// * `E` - The extension type used by both serializer and deserializer
+#[derive(Getters)]
 pub struct Registry<S: Serializer<E>, D: Deserializer<E>, E> {
+    /// Gets the serialization helpers indexed by stable type ID.
+    #[get = "pub"]
     serialization_helpers_by_type_id:
         HashMap<StableTypeID, SerializationHelper<S, E>>,
+
+    /// Gets the deserialization helpers indexed by stable type ID.
+    #[get = "pub"]
     deserialization_helpers_by_type_id:
         HashMap<StableTypeID, DeserializationHelper<D, E>>,
 }
@@ -479,11 +486,14 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
 
         if self
             .serialization_helpers_by_type_id
-            .insert(K::STABLE_TYPE_ID, SerializationHelper {
-                map_serializer,
-                dynamic_box_serializer: dyn_box_serializer,
-                std_type_id: std::any::TypeId::of::<K>(),
-            })
+            .insert(
+                K::STABLE_TYPE_ID,
+                SerializationHelper {
+                    map_serializer,
+                    dynamic_box_serializer: dyn_box_serializer,
+                    std_type_id: std::any::TypeId::of::<K>(),
+                },
+            )
             .is_some()
         {
             panic!(
@@ -702,13 +712,17 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> SelfRegistry<S, D> {
     /// # Returns
     /// A new `SelfRegistry` instance with an empty internal registry.
     #[must_use]
-    pub fn new() -> Self { Self { registry: Registry::new() } }
+    pub fn new() -> Self {
+        Self { registry: Registry::new() }
+    }
 }
 
 impl<S: Serializer<Self>, D: Deserializer<Self>> Default
     for SelfRegistry<S, D>
 {
-    fn default() -> Self { Self { registry: Registry::default() } }
+    fn default() -> Self {
+        Self { registry: Registry::default() }
+    }
 }
 
 impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicSerialize<S>

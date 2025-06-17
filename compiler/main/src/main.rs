@@ -1,7 +1,7 @@
 //! The executable for the Pernix programming language.
 
 use std::{
-    fmt::Write as _, fs::File, io::Write as _, mem, path::PathBuf,
+    fmt::Write as _, fs::File, io::BufWriter, mem, path::PathBuf,
     process::ExitCode,
 };
 
@@ -15,7 +15,13 @@ use codespan_reporting::{
     },
 };
 use pernixc_driver::argument::Arguments;
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{
+    ron::{
+        self,
+        ser::{RonConfig, RonSerializer},
+    },
+    Deserialize, Serialize,
+};
 
 fn main() -> ExitCode {
     // if the program is compiled in release mode, set the panic hook to
@@ -76,13 +82,14 @@ impl IceReport {
         );
         let file_path = temp_dir.join(&file_name);
 
-        let mut file = std::fs::File::create(&file_path)?;
-        let toml_string = toml::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let file = std::fs::File::create(&file_path)?;
+        let mut binary_serializer = RonSerializer::with_config(
+            BufWriter::new(file),
+            RonConfig::Pretty("    ".to_string()),
+        );
+        self.serialize(&mut binary_serializer, &mut ())?;
 
-        write!(file, "{toml_string}")?;
-
-        Ok((file, file_path))
+        Ok((binary_serializer.into_inner().into_inner()?, file_path))
     }
 }
 
@@ -177,7 +184,11 @@ fn setup_panic() {
 
             eprintln!(
                 "```\n{}```",
-                toml::to_string_pretty(&ice_report).unwrap()
+                ron::ser::to_ron_string_with_config(
+                    &ice_report,
+                    RonConfig::Pretty("    ".to_string()),
+                )
+                .unwrap()
             );
         }
 
