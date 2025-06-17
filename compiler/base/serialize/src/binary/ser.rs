@@ -22,7 +22,10 @@
 //!
 //! The binary format uses the following conventions:
 //!
-//! - **Integers**: Written in little-endian format
+//! - **Integers (i8, u8)**: Single byte, stored as-is
+//! - **Integers (i16, i32, i64, isize)**: Varint encoded with zigzag encoding
+//!   for signed types
+//! - **Integers (u16, u32, u64, usize)**: Varint encoded
 //! - **Strings**: Length-prefixed with varint encoding
 //! - **Sequences/Collections**: Length-prefixed with varint encoding
 //! - **Maps**: Length-prefixed with varint encoding
@@ -83,6 +86,69 @@ impl<W: Write + 'static> BinarySerializer<W> {
             }
         }
         Ok(())
+    }
+
+    /// Zigzag encode a signed integer to move the sign bit to the LSB.
+    /// This allows small negative numbers to be encoded compactly.
+    fn zigzag_encode_i16(value: i16) -> u16 {
+        ((value << 1) ^ (value >> 15)) as u16
+    }
+
+    fn zigzag_encode_i32(value: i32) -> u32 {
+        ((value << 1) ^ (value >> 31)) as u32
+    }
+
+    fn zigzag_encode_i64(value: i64) -> u64 {
+        ((value << 1) ^ (value >> 63)) as u64
+    }
+
+    fn zigzag_encode_isize(value: isize) -> usize {
+        ((value << 1) ^ (value >> (std::mem::size_of::<isize>() * 8 - 1)))
+            as usize
+    }
+
+    /// Write a varint-encoded u16
+    fn write_varint_u16(&mut self, value: u16) -> Result<(), io::Error> {
+        self.write_varint(value as u64)
+    }
+
+    /// Write a varint-encoded u32
+    fn write_varint_u32(&mut self, value: u32) -> Result<(), io::Error> {
+        self.write_varint(value as u64)
+    }
+
+    /// Write a varint-encoded u64
+    fn write_varint_u64(&mut self, value: u64) -> Result<(), io::Error> {
+        self.write_varint(value)
+    }
+
+    /// Write a varint-encoded usize
+    fn write_varint_usize(&mut self, value: usize) -> Result<(), io::Error> {
+        self.write_varint(value as u64)
+    }
+
+    /// Write a zigzag + varint encoded i16
+    fn write_varint_i16(&mut self, value: i16) -> Result<(), io::Error> {
+        let encoded = Self::zigzag_encode_i16(value);
+        self.write_varint_u16(encoded)
+    }
+
+    /// Write a zigzag + varint encoded i32
+    fn write_varint_i32(&mut self, value: i32) -> Result<(), io::Error> {
+        let encoded = Self::zigzag_encode_i32(value);
+        self.write_varint_u32(encoded)
+    }
+
+    /// Write a zigzag + varint encoded i64
+    fn write_varint_i64(&mut self, value: i64) -> Result<(), io::Error> {
+        let encoded = Self::zigzag_encode_i64(value);
+        self.write_varint_u64(encoded)
+    }
+
+    /// Write a zigzag + varint encoded isize
+    fn write_varint_isize(&mut self, value: isize) -> Result<(), io::Error> {
+        let encoded = Self::zigzag_encode_isize(value);
+        self.write_varint_usize(encoded)
     }
 
     /// Write raw bytes to the writer.
@@ -241,43 +307,53 @@ impl<W: Write + 'static, E> Serializer<E> for BinarySerializer<W> {
     type StructVariant<'s> = BinaryStructVariant<'s, W>;
 
     fn emit_i8(&mut self, value: i8) -> Result<(), Self::Error> {
+        // i8 is stored as-is (single byte)
         self.write_bytes(&value.to_le_bytes())
     }
 
     fn emit_i16(&mut self, value: i16) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // i16 is varint encoded with zigzag
+        self.write_varint_i16(value)
     }
 
     fn emit_i32(&mut self, value: i32) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // i32 is varint encoded with zigzag
+        self.write_varint_i32(value)
     }
 
     fn emit_i64(&mut self, value: i64) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // i64 is varint encoded with zigzag
+        self.write_varint_i64(value)
     }
 
     fn emit_u8(&mut self, value: u8) -> Result<(), Self::Error> {
+        // u8 is stored as-is (single byte)
         self.write_bytes(&[value])
     }
 
     fn emit_u16(&mut self, value: u16) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // u16 is varint encoded
+        self.write_varint_u16(value)
     }
 
     fn emit_u32(&mut self, value: u32) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // u32 is varint encoded
+        self.write_varint_u32(value)
     }
 
     fn emit_u64(&mut self, value: u64) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // u64 is varint encoded
+        self.write_varint_u64(value)
     }
 
     fn emit_isize(&mut self, value: isize) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // isize is varint encoded with zigzag
+        self.write_varint_isize(value)
     }
 
     fn emit_usize(&mut self, value: usize) -> Result<(), Self::Error> {
-        self.write_bytes(&value.to_le_bytes())
+        // usize is varint encoded
+        self.write_varint_usize(value)
     }
 
     fn emit_f32(&mut self, value: f32) -> Result<(), Self::Error> {

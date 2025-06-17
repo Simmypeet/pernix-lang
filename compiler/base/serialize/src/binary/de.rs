@@ -15,7 +15,10 @@ use crate::de::{
 /// A binary deserializer that reads from any `Read` implementation.
 ///
 /// This deserializer reads data in the same format as the binary serializer:
-/// - Integers in little-endian format
+/// - Integers (i8, u8): Single byte, stored as-is
+/// - Integers (i16, i32, i64, isize): Varint decoded with zigzag decoding for
+///   signed types
+/// - Integers (u16, u32, u64, usize): Varint decoded
 /// - Strings with varint length prefix
 /// - Sequences and maps with varint length prefix
 /// - Enums with varint variant index
@@ -68,6 +71,88 @@ impl<R: Read + 'static> BinaryDeserializer<R> {
         }
 
         Ok(result)
+    }
+
+    /// Read a varint-encoded u16 with bounds checking
+    fn read_varint_u16(&mut self) -> Result<u16, io::Error> {
+        let value = self.read_varint()?;
+        if value > u16::MAX as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Varint value exceeds u16 range",
+            ));
+        }
+        Ok(value as u16)
+    }
+
+    /// Read a varint-encoded u32 with bounds checking
+    fn read_varint_u32(&mut self) -> Result<u32, io::Error> {
+        let value = self.read_varint()?;
+        if value > u32::MAX as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Varint value exceeds u32 range",
+            ));
+        }
+        Ok(value as u32)
+    }
+
+    /// Read a varint-encoded u64
+    fn read_varint_u64(&mut self) -> Result<u64, io::Error> {
+        self.read_varint()
+    }
+
+    /// Read a varint-encoded usize with bounds checking
+    fn read_varint_usize(&mut self) -> Result<usize, io::Error> {
+        let value = self.read_varint()?;
+        if value > usize::MAX as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Varint value exceeds usize range",
+            ));
+        }
+        Ok(value as usize)
+    }
+
+    /// Read a zigzag + varint encoded i16
+    fn read_varint_i16(&mut self) -> Result<i16, io::Error> {
+        let encoded = self.read_varint_u16()?;
+        Ok(Self::zigzag_decode_i16(encoded))
+    }
+
+    /// Read a zigzag + varint encoded i32
+    fn read_varint_i32(&mut self) -> Result<i32, io::Error> {
+        let encoded = self.read_varint_u32()?;
+        Ok(Self::zigzag_decode_i32(encoded))
+    }
+
+    /// Read a zigzag + varint encoded i64
+    fn read_varint_i64(&mut self) -> Result<i64, io::Error> {
+        let encoded = self.read_varint_u64()?;
+        Ok(Self::zigzag_decode_i64(encoded))
+    }
+
+    /// Read a zigzag + varint encoded isize
+    fn read_varint_isize(&mut self) -> Result<isize, io::Error> {
+        let encoded = self.read_varint_usize()?;
+        Ok(Self::zigzag_decode_isize(encoded))
+    }
+
+    /// Zigzag decode functions - reverse the zigzag encoding
+    fn zigzag_decode_i16(value: u16) -> i16 {
+        ((value >> 1) as i16) ^ (-((value & 1) as i16))
+    }
+
+    fn zigzag_decode_i32(value: u32) -> i32 {
+        ((value >> 1) as i32) ^ (-((value & 1) as i32))
+    }
+
+    fn zigzag_decode_i64(value: u64) -> i64 {
+        ((value >> 1) as i64) ^ (-((value & 1) as i64))
+    }
+
+    fn zigzag_decode_isize(value: usize) -> isize {
+        ((value >> 1) as isize) ^ (-((value & 1) as isize))
     }
 
     /// Read exact number of bytes from the reader.
@@ -359,75 +444,57 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
     type EnumAccess<'s> = BinaryEnumAccess<'s, R>;
 
     fn expect_i8(&mut self) -> Result<i8, Self::Error> {
+        // i8 is stored as-is (single byte)
         let mut buf = [0u8; 1];
         self.read_bytes(&mut buf)?;
         Ok(i8::from_le_bytes(buf))
     }
 
     fn expect_i16(&mut self) -> Result<i16, Self::Error> {
-        let mut buf = [0u8; 2];
-        self.read_bytes(&mut buf)?;
-        Ok(i16::from_le_bytes(buf))
+        // i16 is varint encoded with zigzag
+        self.read_varint_i16()
     }
 
     fn expect_i32(&mut self) -> Result<i32, Self::Error> {
-        let mut buf = [0u8; 4];
-        self.read_bytes(&mut buf)?;
-        Ok(i32::from_le_bytes(buf))
+        // i32 is varint encoded with zigzag
+        self.read_varint_i32()
     }
 
     fn expect_i64(&mut self) -> Result<i64, Self::Error> {
-        let mut buf = [0u8; 8];
-        self.read_bytes(&mut buf)?;
-        Ok(i64::from_le_bytes(buf))
+        // i64 is varint encoded with zigzag
+        self.read_varint_i64()
     }
 
     fn expect_u8(&mut self) -> Result<u8, Self::Error> {
+        // u8 is stored as-is (single byte)
         let mut buf = [0u8; 1];
         self.read_bytes(&mut buf)?;
         Ok(buf[0])
     }
 
     fn expect_u16(&mut self) -> Result<u16, Self::Error> {
-        let mut buf = [0u8; 2];
-        self.read_bytes(&mut buf)?;
-        Ok(u16::from_le_bytes(buf))
+        // u16 is varint encoded
+        self.read_varint_u16()
     }
 
     fn expect_u32(&mut self) -> Result<u32, Self::Error> {
-        let mut buf = [0u8; 4];
-        self.read_bytes(&mut buf)?;
-        Ok(u32::from_le_bytes(buf))
+        // u32 is varint encoded
+        self.read_varint_u32()
     }
 
     fn expect_u64(&mut self) -> Result<u64, Self::Error> {
-        let mut buf = [0u8; 8];
-        self.read_bytes(&mut buf)?;
-        Ok(u64::from_le_bytes(buf))
+        // u64 is varint encoded
+        self.read_varint_u64()
     }
 
     fn expect_isize(&mut self) -> Result<isize, Self::Error> {
-        #[cfg(target_pointer_width = "64")]
-        let mut buf = [0u8; 8];
-
-        #[cfg(target_pointer_width = "32")]
-        let mut buf = [0u8; 4];
-
-        self.read_bytes(&mut buf)?;
-
-        Ok(isize::from_le_bytes(buf))
+        // isize is varint encoded with zigzag
+        self.read_varint_isize()
     }
 
     fn expect_usize(&mut self) -> Result<usize, Self::Error> {
-        #[cfg(target_pointer_width = "64")]
-        let mut buf = [0u8; 8];
-
-        #[cfg(target_pointer_width = "32")]
-        let mut buf = [0u8; 4];
-
-        self.read_bytes(&mut buf)?;
-
-        Ok(usize::from_le_bytes(buf))
+        // usize is varint encoded
+        self.read_varint_usize()
     }
 
     fn expect_f32(&mut self) -> Result<f32, Self::Error> {
@@ -458,7 +525,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
     fn expect_char(&mut self) -> Result<char, Self::Error> {
         // Read UTF-8 bytes with varint length prefix (matching serializer
         // format)
-        let len = self.read_varint()? as usize;
+        let len = self.read_varint_usize()?;
         let mut buf = vec![0u8; len];
         self.read_bytes(&mut buf)?;
         let s = std::str::from_utf8(&buf).map_err(|e| {
@@ -478,7 +545,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
     }
 
     fn expect_string(&mut self) -> Result<String, Self::Error> {
-        let len = self.read_varint()? as usize;
+        let len = self.read_varint_usize()?;
         let mut buf = vec![0u8; len];
         self.read_bytes(&mut buf)?;
         String::from_utf8(buf).map_err(|e| {
@@ -490,7 +557,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
     }
 
     fn expect_bytes(&mut self) -> Result<Vec<u8>, Self::Error> {
-        let len = self.read_varint()? as usize;
+        let len = self.read_varint_usize()?;
         let mut buf = vec![0u8; len];
         self.read_bytes(&mut buf)?;
         Ok(buf)
@@ -502,7 +569,9 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         &mut self,
         extension: &mut E,
     ) -> Result<Option<T>, Self::Error> {
-        let variant = self.read_varint()?;
+        let mut buf = [0u8; 1];
+        self.read_bytes(&mut buf)?;
+        let variant = buf[0];
         match variant {
             0 => Ok(None),
             1 => Ok(Some(T::deserialize(self, extension)?)),
@@ -518,7 +587,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         extension: &'e mut E,
         f: impl FnOnce(Self::SeqAccess<'_>, &'e mut E) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
-        let len = self.read_varint()? as usize;
+        let len = self.read_varint_usize()?;
         let seq_access = BinarySeqAccess { deserializer: self, remaining: len };
         f(seq_access, extension)
     }
@@ -578,7 +647,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         extension: &'e mut E,
         f: impl FnOnce(Self::MapAccess<'_>, &'e mut E) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
-        let len = self.read_varint()? as usize;
+        let len = self.read_varint_usize()?;
         let map_access = BinaryMapAccess { deserializer: self, remaining: len };
         f(map_access, extension)
     }
@@ -594,14 +663,14 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
             &'e mut E,
         ) -> Result<Ret, Self::Error>,
     ) -> Result<Ret, Self::Error> {
-        let variant_index = self.read_varint()?;
+        let variant_index = self.read_varint_u32()?;
         let enum_access = BinaryEnumAccess { deserializer: self };
 
-        f(Identifier::from_index(variant_index as u32), enum_access, extension)
+        f(Identifier::from_index(variant_index), enum_access, extension)
     }
 
     fn expect_str(&mut self) -> Result<&str, Self::Error> {
-        let len = self.read_varint()? as usize;
+        let len = self.read_varint_usize()?;
 
         if len > self.buffer.len() {
             self.buffer.resize(len, 0);
@@ -625,5 +694,5 @@ impl crate::de::Error for io::Error {
     }
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

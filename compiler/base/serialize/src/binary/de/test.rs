@@ -9,21 +9,21 @@ use crate::{binary::ser::BinarySerializer, de::Deserialize, ser::Serialize};
 /// compatibility.
 fn round_trip<T>(value: &T) -> Result<T, Box<dyn std::error::Error>>
 where
-    T: Serialize<BinarySerializer<Vec<u8>, ()>>
-        + Deserialize<BinaryDeserializer<std::io::Cursor<Vec<u8>>, ()>>
+    T: Serialize<BinarySerializer<Vec<u8>>, ()>
+        + Deserialize<BinaryDeserializer<std::io::Cursor<Vec<u8>>>, ()>
         + std::fmt::Debug
         + PartialEq,
 {
     // Serialize
     let buffer = Vec::new();
     let mut serializer = BinarySerializer::new(buffer);
-    value.serialize(&mut serializer)?;
+    value.serialize(&mut serializer, &mut ())?;
     let buffer = serializer.into_inner();
 
     // Deserialize
     let cursor = std::io::Cursor::new(buffer);
     let mut deserializer = BinaryDeserializer::new(cursor);
-    let result = T::deserialize(&mut deserializer)?;
+    let result = T::deserialize(&mut deserializer, &mut ())?;
 
     Ok(result)
 }
@@ -199,21 +199,6 @@ fn empty_collections() {
 }
 
 #[test]
-fn extension_field_access() {
-    let buffer = Vec::new();
-    let mut deserializer =
-        BinaryDeserializer::with_extension(std::io::Cursor::new(buffer), 42u32);
-
-    // Test getter through trait method
-    use crate::de::Deserializer;
-    assert_eq!(*deserializer.extension(), 42u32);
-
-    // Test mutable access through trait method
-    *deserializer.extension() = 200u32;
-    assert_eq!(*deserializer.extension(), 200u32);
-}
-
-#[test]
 fn reader_access() {
     let data = vec![1, 2, 3, 4];
     let cursor = std::io::Cursor::new(data);
@@ -231,14 +216,14 @@ fn error_handling() {
     let cursor = std::io::Cursor::new(Vec::new());
     let mut deserializer = BinaryDeserializer::new(cursor);
 
-    let result = u32::deserialize(&mut deserializer);
+    let result = u32::deserialize(&mut deserializer, &mut ());
     assert!(result.is_err());
 
-    // Test deserializing incomplete data
-    let cursor = std::io::Cursor::new(vec![1, 2]); // Only 2 bytes for a u32
+    // Test deserializing incomplete data  
+    let cursor = std::io::Cursor::new(vec![0x80]); // Varint with continuation bit but no follow-up byte
     let mut deserializer = BinaryDeserializer::new(cursor);
 
-    let result = u32::deserialize(&mut deserializer);
+    let result = u32::deserialize(&mut deserializer, &mut ());
     assert!(result.is_err());
 }
 
@@ -248,7 +233,7 @@ fn bool_invalid_values() {
     let cursor = std::io::Cursor::new(vec![2u8]); // Invalid bool value
     let mut deserializer = BinaryDeserializer::new(cursor);
 
-    let result = bool::deserialize(&mut deserializer);
+    let result = bool::deserialize(&mut deserializer, &mut ());
     assert!(result.is_err());
 }
 
@@ -259,7 +244,7 @@ fn string_with_invalid_utf8() {
     let mut serializer = BinarySerializer::new(buffer);
 
     // Serialize a valid string first to get the length encoding
-    "hello".serialize(&mut serializer).unwrap();
+    "hello".serialize(&mut serializer, &mut ()).unwrap();
 
     // Now manually corrupt the buffer to have invalid UTF-8
     let mut buffer = serializer.into_inner();
@@ -269,7 +254,7 @@ fn string_with_invalid_utf8() {
     let cursor = std::io::Cursor::new(buffer);
     let mut deserializer = BinaryDeserializer::new(cursor);
 
-    let result = String::deserialize(&mut deserializer);
+    let result = String::deserialize(&mut deserializer, &mut ());
     assert!(result.is_err());
 }
 
@@ -279,7 +264,7 @@ fn char_invalid_unicode() {
     let cursor = std::io::Cursor::new(vec![0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8]); // Invalid Unicode
     let mut deserializer = BinaryDeserializer::new(cursor);
 
-    let result = char::deserialize(&mut deserializer);
+    let result = char::deserialize(&mut deserializer, &mut ());
     assert!(result.is_err());
 }
 
@@ -290,14 +275,14 @@ fn array_error_handling() {
     let mut serializer = BinarySerializer::new(buffer);
 
     // Serialize a vector with only 2 elements
-    vec![1u32, 2u32].serialize(&mut serializer).unwrap();
+    vec![1u32, 2u32].serialize(&mut serializer, &mut ()).unwrap();
     let buffer = serializer.into_inner();
 
     let cursor = std::io::Cursor::new(buffer);
     let mut deserializer = BinaryDeserializer::new(cursor);
 
     // Try to deserialize as an array of 3 elements - should panic
-    let result = <[u32; 3]>::deserialize(&mut deserializer);
+    let result = <[u32; 3]>::deserialize(&mut deserializer, &mut ());
 
     // Should have returned an error due to insufficient elements
     assert!(result.is_err());
@@ -325,24 +310,25 @@ fn array_drop_behavior_with_shared_counter() {
     }
 
     // Implement Serialize for GlobalDropCounter
-    impl Serialize<BinarySerializer<Vec<u8>, ()>> for GlobalDropCounter {
+    impl Serialize<BinarySerializer<Vec<u8>>, ()> for GlobalDropCounter {
         fn serialize(
             &self,
-            serializer: &mut BinarySerializer<Vec<u8>, ()>,
+            serializer: &mut BinarySerializer<Vec<u8>>,
+            extension: &mut (),
         ) -> Result<
             (),
-            <BinarySerializer<Vec<u8>, ()> as crate::ser::Serializer>::Error,
+            <BinarySerializer<Vec<u8>> as crate::ser::Serializer<()>>::Error,
         > {
-            self.id.serialize(serializer)
+            self.id.serialize(serializer, extension)
         }
     }
 
     // Implement Deserialize for GlobalDropCounter
-    impl Deserialize<BinaryDeserializer<std::io::Cursor<Vec<u8>>, ()>>
+    impl Deserialize<BinaryDeserializer<std::io::Cursor<Vec<u8>>>, ()>
         for GlobalDropCounter
     {
-        fn deserialize(deserializer: &mut BinaryDeserializer<std::io::Cursor<Vec<u8>>, ()>) -> Result<Self, <BinaryDeserializer<std::io::Cursor<Vec<u8>>, ()> as crate::de::Deserializer>::Error>{
-            let id = usize::deserialize(deserializer)?;
+        fn deserialize(deserializer: &mut BinaryDeserializer<std::io::Cursor<Vec<u8>>>, extension: &mut ()) -> Result<Self, <BinaryDeserializer<std::io::Cursor<Vec<u8>>> as crate::de::Deserializer<()>>::Error>{
+            let id = usize::deserialize(deserializer, extension)?;
             Ok(GlobalDropCounter::new(id))
         }
     }
@@ -364,13 +350,13 @@ fn array_drop_behavior_with_shared_counter() {
 
             let buffer = Vec::new();
             let mut serializer = BinarySerializer::new(buffer);
-            original_array.serialize(&mut serializer).unwrap();
+            original_array.serialize(&mut serializer, &mut ()).unwrap();
             let buffer = serializer.into_inner();
 
             // Deserialize the array
             let cursor = std::io::Cursor::new(buffer);
             let mut deserializer = BinaryDeserializer::new(cursor);
-            let _ = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer)
+            let _ = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer, &mut ())
                 .unwrap();
 
             // Arrays automatically drop when going out of scope
@@ -394,7 +380,7 @@ fn array_drop_behavior_with_shared_counter() {
 
         let buffer = Vec::new();
         let mut serializer = BinarySerializer::new(buffer);
-        partial_vec.serialize(&mut serializer).unwrap();
+        partial_vec.serialize(&mut serializer, &mut ()).unwrap();
         let buffer = serializer.into_inner();
 
         // Try to deserialize as an array of 3 elements
@@ -403,7 +389,7 @@ fn array_drop_behavior_with_shared_counter() {
 
         let before_error = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
 
-        let result = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer);
+        let result = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer, &mut ());
 
         assert!(
             result.is_err(),
