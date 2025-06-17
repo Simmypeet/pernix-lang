@@ -21,6 +21,7 @@ members = [
 
     "compiler/semantic/query",
     "compiler/semantic/query_derive",
+    "compiler/semantic/init",
 
     # tidy-alphabetical-end
 ]

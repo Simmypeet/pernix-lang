@@ -1,7 +1,7 @@
 //! Contains the definitions related to the symbols.
 use std::hash::Hash;
 
-use serde::{Deserialize, Serialize};
+use pernixc_serialize::{Deserialize, Serialize};
 
 /// Represents a unique identifier for the symbols in the compilation target.
 /// This ID is only unique within the context of a single target. If wants to

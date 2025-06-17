@@ -1,17 +1,28 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
-
-use std::{io::Read, path::Path};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter, Read},
+    path::Path,
+};
 
 use dashmap::DashMap;
 use fnv::FnvBuildHasher;
-use pernixc_query::database::Database;
+use pernixc_query::{
+    database::Database,
+    serde::{DynamicDeserialize, DynamicRegistry},
+};
+use pernixc_serialize::{
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize,
+};
 use pernixc_source_file::{GlobalSourceID, SourceMap};
-use serde::de::DeserializeSeed;
 
 pub mod accessibility;
 pub mod implemented;
 pub mod implements;
+pub mod import;
 pub mod kind;
 pub mod member;
 pub mod module;
@@ -19,7 +30,6 @@ pub mod name;
 pub mod parent;
 pub mod symbol;
 pub mod target;
-pub mod import;
 
 /// A fatal error that aborts the compilation process.
 #[derive(Debug, thiserror::Error)]
@@ -30,7 +40,7 @@ pub enum Error {
     #[error(transparent)]
     ReadIncrementalFileIO(std::io::Error),
     #[error(transparent)]
-    IncrementalFileDeserialize(postcard::Error),
+    IncrementalFileDeserialize(std::io::Error),
 }
 
 /// The result of calling [`start_query_database`].
@@ -77,47 +87,42 @@ fn read_file_buffer(
 ///
 /// This will initialize the query database with the initial syntax tree and
 /// module structure
-pub fn start_query_database<'l>(
+pub fn start_query_database<
+    'l,
+    Ext: DynamicDeserialize<BinaryDeserializer<BufReader<File>>>,
+>(
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
     _library_paths: impl IntoIterator<Item = &'l Path>,
     target_name: &str,
-    incremental_path: Option<(&Path, &pernixc_query::serde::Serde)>,
+    incremental_path: Option<(&Path, &mut Ext)>,
 ) -> Result<Start, Error> {
     // load the incremental file (if any)
-    let incremental_file = if let Some((incremental_path, _)) = incremental_path
-    {
-        match std::fs::File::open(incremental_path) {
-            Ok(file) => Some(file),
-            Err(err) => {
-                if err.kind() == std::io::ErrorKind::NotFound {
-                    None
-                } else {
-                    return Err(Error::OpenIncrementalFileIO(err));
+    let incremental_file_de =
+        if let Some((incremental_path, extension)) = incremental_path {
+            match std::fs::File::open(incremental_path) {
+                Ok(file) => Some((file, extension)),
+                Err(err) => {
+                    if err.kind() == std::io::ErrorKind::NotFound {
+                        None
+                    } else {
+                        return Err(Error::OpenIncrementalFileIO(err));
+                    }
                 }
             }
-        }
-    } else {
-        None
-    };
+        } else {
+            None
+        };
 
     // create a fresh database or load the incremental file
-    let database = incremental_file.map_or_else(
+    let database = incremental_file_de.map_or_else(
         || Ok(Database::default()),
-        |mut file| {
-            let buffer = read_file_buffer(&mut file)
-                .map_err(Error::ReadIncrementalFileIO)?;
+        |(file, ext)| {
+            let buf_reader = BufReader::new(file);
+            let mut binary_deserializer = BinaryDeserializer::new(buf_reader);
 
-            let mut deserializer = postcard::Deserializer::from_flavor(
-                postcard::de_flavors::Slice::new(&buffer),
-            );
-
-            incremental_path
-                .unwrap()
-                .1
-                .database_deserializer()
-                .deserialize(&mut deserializer)
-                .map_err(Error::IncrementalFileDeserialize)
+            Database::deserialize(&mut binary_deserializer, ext)
+                .map_err(Error::ReadIncrementalFileIO)
         },
     )?;
 
@@ -131,9 +136,21 @@ pub fn start_query_database<'l>(
 }
 
 /// Registers all the necessary runtime information for the query engine.
-pub fn register_runtime(
-    query_runtime: &mut pernixc_query::runtime::Runtime,
-    serde: &mut pernixc_query::serde::Serde,
+pub fn register_runtime<
+    Registry: DynamicRegistry<
+            BinarySerializer<BufWriter<File>>,
+            BinaryDeserializer<BufReader<File>>,
+        > + SharedPointerSerialize
+        + SharedPointerDeserialize,
+>(
+    _query_runtime: &mut pernixc_query::runtime::Runtime,
+    serder_registry: &mut Registry,
 ) {
-    todo!()
+    serder_registry.register::<accessibility::Key>();
+    serder_registry.register::<implemented::Key>();
+    serder_registry.register::<implements::Key>();
+    serder_registry.register::<kind::Key>();
+    serder_registry.register::<member::Key>();
+    serder_registry.register::<name::Key>();
+    serder_registry.register::<parent::Key>();
 }
