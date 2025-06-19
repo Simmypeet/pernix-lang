@@ -37,7 +37,7 @@ fn main() -> ExitCode {
     );
 
     let result = pernixc_driver::run(
-        &Arguments::parse(),
+        Arguments::parse(),
         &mut stderr.lock(),
         &mut stdout.lock(),
     );

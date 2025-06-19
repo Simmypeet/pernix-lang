@@ -175,7 +175,7 @@ fn test(file_path: &Path) {
         },
     );
 
-    let _ = pernixc_driver::run(&arguments, &mut err_writer, &mut out_writer);
+    let _ = pernixc_driver::run(arguments, &mut err_writer, &mut out_writer);
 
     let stderr_string = String::from_utf8(err_writer.into_inner()).unwrap();
     let stout_string = String::from_utf8(out_writer.into_inner()).unwrap();

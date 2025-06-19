@@ -31,68 +31,16 @@ pub trait Key:
     /// The corresponding value type for this key
     type Value: 'static + Send + Sync + Clone + Default + Eq;
 
-    /// Merges a new value with an existing value for this key.
+    /// A value returned by the key when the key is a part of a strongly
+    /// connected component (SCC) in the cyclic dependencies.
     ///
-    /// This method is called when attempting to set a value for a key that
-    /// already has a value in the database. The default implementation
-    /// performs an equality check and returns an error if the values
-    /// differ, ensuring data consistency.
-    ///
-    /// # Arguments
-    ///
-    /// * `old` - A mutable reference to the existing value that will be updated
-    /// * `new` - The new value to merge with the existing one
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` if the merge was successful (values are equal in the default
-    ///   implementation)
-    /// * `Err(String)` if the merge failed due to incompatible values, with an
-    ///   error message
-    ///
-    /// # Default Behavior
-    ///
-    /// The default implementation compares the old and new values for equality:
-    /// - If they are equal, the merge succeeds without modifying the old value
-    /// - If they differ, an error is returned indicating incompatible values
-    ///
-    /// # Custom Implementations
-    ///
-    /// Types can override this method to implement custom merge logic, such as:
-    /// - Combining numeric values (e.g., summing, taking maximum)
-    /// - Merging collections (e.g., union of sets, concatenation of lists)
-    /// - Applying domain-specific merge strategies
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// // Default behavior - values must be equal
-    /// let mut old_value = 42;
-    /// assert!(MyKey::merge_value(&mut old_value, 42).is_ok());
-    /// assert!(MyKey::merge_value(&mut old_value, 24).is_err());
-    ///
-    /// // Custom implementation for additive merging
-    /// impl Key for AdditiveKey {
-    ///     type Value = i32;
-    ///
-    ///     fn merge_value(old: &mut Self::Value, new: Self::Value) -> Result<(), String> {
-    ///         *old += new;
-    ///         Ok(())
-    ///     }
-    /// }
-    /// ```
-    fn merge_value(
-        old: &mut Self::Value,
-        new: Self::Value,
-    ) -> Result<bool, String> {
-        if old == &new {
-            Ok(true)
-        } else {
-            Err(format!(
-                "Encountered an incompatible value for key {}",
-                std::any::type_name::<Self>()
-            ))
-        }
+    /// By default, this method panics, as the most queries are not supposed
+    /// to allow cyclic dependencies.
+    fn scc_value(&self) -> Self::Value {
+        panic!(
+            "SCC `{}` value for cyclic dependencies is not defined",
+            std::any::type_name::<Self>()
+        )
     }
 }
 

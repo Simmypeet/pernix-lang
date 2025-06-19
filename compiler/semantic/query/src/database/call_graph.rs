@@ -3,6 +3,7 @@
 //! Implements the [`CallGraph`] struct used to track the dependencies between
 //! queries.
 
+use core::panic;
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     sync::Arc,
@@ -131,33 +132,24 @@ impl Database {
     /// the version of the database will be bumped up by one. This is to
     /// indicate that the input value has changed and all the derived values
     /// need to reflect this change.
-    pub fn set_input<K: Key + Dynamic>(
-        &mut self,
-        key: &K,
-        value: K::Value,
-        overwrite: bool,
-    ) -> Result<(), String> {
+    pub fn set_input<K: Key + Dynamic>(&mut self, key: &K, value: K::Value) {
         let invalidate = self.map.entry(key.clone(), |entry| match entry {
             dashmap::Entry::Occupied(mut occupied_entry) => {
-                if overwrite {
-                    let old_value = occupied_entry.get();
+                let old_value = occupied_entry.get();
 
-                    if *old_value == value {
-                        Ok(false)
-                    } else {
-                        occupied_entry.insert(value);
-                        Ok(true)
-                    }
-                } else {
-                    K::merge_value(occupied_entry.get_mut(), value).map(|x| !x)
-                }
+                let invalidate = old_value != &value;
+
+                occupied_entry.insert(value);
+
+                invalidate
             }
 
             dashmap::Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(value);
-                Ok(false)
+
+                false
             }
-        })?;
+        });
 
         // set the input value
         match self
@@ -189,8 +181,6 @@ impl Database {
                 });
             }
         }
-
-        Ok(())
     }
 }
 

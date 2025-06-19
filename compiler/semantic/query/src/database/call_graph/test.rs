@@ -97,8 +97,8 @@ impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
 fn negate_variable() {
     let mut engine = Engine::default();
 
-    engine.database.set_input(&Variable("a".to_string()), 100, true).unwrap();
-    engine.database.set_input(&Variable("b".to_string()), 200, true).unwrap();
+    engine.database.set_input(&Variable("a".to_string()), 100);
+    engine.database.set_input(&Variable("b".to_string()), 200);
     assert_eq!(engine.database.version(), 0);
 
     engine.runtime.executor.register(Arc::new(NegateVariableExecutor));
@@ -109,16 +109,16 @@ fn negate_variable() {
 
     assert_eq!(value, Ok(-300));
 
-    engine.database.set_input(&Variable("a".to_string()), 200, true).unwrap();
-    engine.database.set_input(&Variable("b".to_string()), 300, true).unwrap();
+    engine.database.set_input(&Variable("a".to_string()), 200);
+    engine.database.set_input(&Variable("b".to_string()), 300);
     assert_eq!(engine.database.version(), 1);
 
     let value = engine
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
     assert_eq!(value, Ok(-500));
 
-    engine.database.set_input(&Variable("a".to_string()), -300, true).unwrap();
-    engine.database.set_input(&Variable("b".to_string()), -300, true).unwrap();
+    engine.database.set_input(&Variable("a".to_string()), -300);
+    engine.database.set_input(&Variable("b".to_string()), -300);
 
     assert_eq!(engine.database.version(), 2);
     let value = engine
@@ -174,7 +174,7 @@ fn skip_when_input_unchanged() {
     let mut engine = Engine::default();
 
     // Set initial input
-    engine.database.set_input(&Variable("x".to_string()), 42, true).unwrap();
+    engine.database.set_input(&Variable("x".to_string()), 42);
     assert_eq!(engine.database.version(), 0);
 
     // Create tracked executor to count invocations
@@ -196,7 +196,7 @@ fn skip_when_input_unchanged() {
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
     // Now change the input - should trigger recomputation
-    engine.database.set_input(&Variable("x".to_string()), 100, true).unwrap();
+    engine.database.set_input(&Variable("x".to_string()), 100);
     assert_eq!(engine.database.version(), 1); // Version should increment
 
     // Query after input change - should compute and call executor again
@@ -302,8 +302,8 @@ fn skip_when_intermediate_result_unchanged() {
     let mut engine = Engine::default();
 
     // Set initial inputs - both positive values
-    engine.database.set_input(&Variable("x".to_string()), 400, true).unwrap();
-    engine.database.set_input(&Variable("y".to_string()), 300, true).unwrap();
+    engine.database.set_input(&Variable("x".to_string()), 400);
+    engine.database.set_input(&Variable("y".to_string()), 300);
     assert_eq!(engine.database.version(), 0);
 
     // Create tracked executors to count invocations
@@ -329,7 +329,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again
 
     // Change x from 400 to -400 (abs value stays the same)
-    engine.database.set_input(&Variable("x".to_string()), -400, true).unwrap();
+    engine.database.set_input(&Variable("x".to_string()), -400);
     assert_eq!(engine.database.version(), 1); // Version should increment
 
     // Query after input change - abs executor should be called for x, but add
@@ -342,7 +342,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again because abs values are the same
 
     // Change y from 300 to -300 (abs value stays the same)
-    engine.database.set_input(&Variable("y".to_string()), -300, true).unwrap();
+    engine.database.set_input(&Variable("y".to_string()), -300);
     assert_eq!(engine.database.version(), 2); // Version should increment again
 
     // Query after second input change - abs executor should be called for y,
@@ -354,7 +354,7 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // STILL not called because both abs values are the same
 
     // Now change x to a value that actually changes the abs result
-    engine.database.set_input(&Variable("x".to_string()), 500, true).unwrap();
+    engine.database.set_input(&Variable("x".to_string()), 500);
     assert_eq!(engine.database.version(), 3); // Version should increment
 
     // Query after meaningful change - both executors should be called
@@ -456,7 +456,7 @@ fn multi_layer_dependency_skipping() {
     let mut engine = Engine::default();
 
     // Set initial input
-    engine.database.set_input(&Variable("z".to_string()), 5, true).unwrap();
+    engine.database.set_input(&Variable("z".to_string()), 5);
     assert_eq!(engine.database.version(), 0);
 
     // Create tracked executors
@@ -479,7 +479,7 @@ fn multi_layer_dependency_skipping() {
     // Change z from 5 to -5
     // abs(-5) = 5 (unchanged), but square(-5) = 25 (unchanged too!)
     // So the complex computation result should be the same: 5 + 25 = 30
-    engine.database.set_input(&Variable("z".to_string()), -5, true).unwrap();
+    engine.database.set_input(&Variable("z".to_string()), -5);
     assert_eq!(engine.database.version(), 1);
 
     let result2 = engine.query(&ComplexComputation("z".to_string()));
@@ -489,7 +489,7 @@ fn multi_layer_dependency_skipping() {
     assert_eq!(complex_executor.get_call_count(), 1); // NOT called because both dependencies are unchanged!
 
     // Change to a different value that actually changes the result
-    engine.database.set_input(&Variable("z".to_string()), 3, true).unwrap();
+    engine.database.set_input(&Variable("z".to_string()), 3);
     assert_eq!(engine.database.version(), 2);
 
     let result3 = engine.query(&ComplexComputation("z".to_string()));
@@ -597,14 +597,8 @@ fn incremental_compilation_simulation() {
     let mut engine = Engine::default();
 
     // Set up input values (representing source code)
-    engine
-        .database
-        .set_input(&Variable("module_a".to_string()), 10, true)
-        .unwrap();
-    engine
-        .database
-        .set_input(&Variable("module_b".to_string()), 20, true)
-        .unwrap();
+    engine.database.set_input(&Variable("module_a".to_string()), 10);
+    engine.database.set_input(&Variable("module_b".to_string()), 20);
 
     let type_check_executor = Arc::new(TypeCheckExecutor::default());
     let dependency_executor = Arc::new(DependencyExecutor::default());
@@ -624,10 +618,7 @@ fn incremental_compilation_simulation() {
     assert_eq!(dependency_executor.get_call_count(), 2);
 
     // Simulate incremental change: only module_a changes
-    engine
-        .database
-        .set_input(&Variable("module_a".to_string()), 15, true)
-        .unwrap();
+    engine.database.set_input(&Variable("module_a".to_string()), 15);
 
     // Reset call counts to track incremental behavior
     type_check_executor
@@ -1061,7 +1052,7 @@ fn conditional_cyclic_dependency() {
     engine.runtime.executor.register(Arc::clone(&executor_b));
 
     // Phase 1: Set control value to create NO cycle (control_value != 1)
-    engine.database.set_input(&CycleControlVariable, 5, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 5);
 
     // Query both A and B - they should compute normal values without cycles
     let result_a = engine.query(&ConditionalCyclicQueryA);
@@ -1076,7 +1067,7 @@ fn conditional_cyclic_dependency() {
     assert_eq!(executor_b.get_call_count(), 1);
 
     // Phase 2: Change control value to CREATE a cycle (control_value == 1)
-    engine.database.set_input(&CycleControlVariable, 1, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 1);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1094,7 +1085,7 @@ fn conditional_cyclic_dependency() {
 
     // Phase 3: Change control value back to break the cycle (control_value !=
     // 1)
-    engine.database.set_input(&CycleControlVariable, 3, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 3);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1112,7 +1103,7 @@ fn conditional_cyclic_dependency() {
 
     // Phase 4: Create cycle again with a different control value
     // (control_value // == 1)
-    engine.database.set_input(&CycleControlVariable, 1, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 1);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1143,7 +1134,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 1: No cycle - dependent query should use computed values
 
-    engine.database.set_input(&CycleControlVariable, 2, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 2);
 
     let result_dependent = engine.query(&DependentQuery);
 
@@ -1158,7 +1149,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 2: Create cycle - dependent query should use default values
 
-    engine.database.set_input(&CycleControlVariable, 1, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 1);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
 
@@ -1178,7 +1169,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 3: Break cycle again - dependent query should use computed values
 
-    engine.database.set_input(&CycleControlVariable, 4, true).unwrap();
+    engine.database.set_input(&CycleControlVariable, 4);
     executor_a.reset_call_count();
     executor_b.reset_call_count();
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst); // Query A and B to ensure they're computed
@@ -1204,18 +1195,9 @@ fn database_serialization_deserialization() {
     let mut original_engine = Engine::default();
 
     // Set up input variables
-    original_engine
-        .database
-        .set_input(&Variable("x".to_string()), 100, true)
-        .unwrap();
-    original_engine
-        .database
-        .set_input(&Variable("y".to_string()), 200, true)
-        .unwrap();
-    original_engine
-        .database
-        .set_input(&Variable("z".to_string()), 300, true)
-        .unwrap();
+    original_engine.database.set_input(&Variable("x".to_string()), 100);
+    original_engine.database.set_input(&Variable("y".to_string()), 200);
+    original_engine.database.set_input(&Variable("z".to_string()), 300);
 
     // Register executors
     let tracked_executor = Arc::new(TrackedExecutor::default());
@@ -1272,9 +1254,8 @@ fn database_serialization_deserialization() {
     new_engine.runtime.executor.register(new_add_executor.clone());
 
     // Step 5: Deserialize the saved state into the new engine
-    let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(dbg!(
-        serializer.into_inner()
-    )));
+    let mut deserializer =
+        BinaryDeserializer::new(std::io::Cursor::new(serializer.into_inner()));
 
     new_engine.database =
         Database::deserialize(&mut deserializer, &mut serde_config).unwrap();
@@ -1302,10 +1283,7 @@ fn database_serialization_deserialization() {
     // computations are re-executed
     //
     // Version is incremented
-    new_engine
-        .database
-        .set_input(&Variable("x".to_string()), 150, true)
-        .unwrap();
+    new_engine.database.set_input(&Variable("x".to_string()), 150);
 
     // Query again - should trigger recomputation for affected queries only
     let updated_result1 =
@@ -1330,10 +1308,7 @@ fn database_serialization_deserialization() {
     assert_eq!(new_add_executor.get_call_count(), 1);
 
     // Step 8: Test adding completely new queries after deserialization
-    new_engine
-        .database
-        .set_input(&Variable("w".to_string()), 50, true)
-        .unwrap();
+    new_engine.database.set_input(&Variable("w".to_string()), 50);
 
     let new_query_result =
         new_engine.query(&TrackedComputation("w".to_string())).unwrap();

@@ -1,19 +1,16 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
-use std::{
-    fs::File,
-    io::{BufReader, BufWriter},
-    path::Path,
-    sync::Arc,
-};
+use std::{fs::File, io::BufReader, path::Path, sync::Arc};
 
 use pernixc_query::{
     database::Database,
     serde::{DynamicDeserialize, DynamicRegistry},
 };
 use pernixc_serialize::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    binary::de::BinaryDeserializer,
+    de::Deserializer,
     extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    ser::Serializer,
     Deserialize,
 };
 use pernixc_source_file::{GlobalSourceID, SourceMap};
@@ -103,22 +100,16 @@ pub fn start_query_database<
 
     let (parse, errors) = parse::parse(root_source_id, source_map);
 
-    if let Err(error) =
-        database.set_input(&parse::Key(TargetID::Local), Arc::new(parse), true)
-    {
-        panic!("{error}");
-    }
+    database.set_input(&parse::Key(TargetID::Local), Arc::new(parse));
 
     Ok((database, errors))
 }
 
 /// Registers all the necessary runtime information for the query engine.
 pub fn register_runtime<
-    Registry: DynamicRegistry<
-            BinarySerializer<BufWriter<File>>,
-            BinaryDeserializer<BufReader<File>>,
-        > + SharedPointerSerialize
-        + SharedPointerDeserialize,
+    S: Serializer<Registry>,
+    D: Deserializer<Registry>,
+    Registry: DynamicRegistry<S, D> + SharedPointerSerialize + SharedPointerDeserialize,
 >(
     _query_runtime: &mut pernixc_query::runtime::Runtime,
     serder_registry: &mut Registry,

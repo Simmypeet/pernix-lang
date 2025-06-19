@@ -340,9 +340,9 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicRegistry<S, D>
 
 /// Runs the program with the given arguments.
 #[must_use]
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 pub fn run(
-    argument: &Arguments,
+    argument: Arguments,
     err_writer: &mut dyn WriteColor,
     _out_writer: &mut dyn WriteColor,
 ) -> ExitCode {
@@ -350,7 +350,7 @@ pub fn run(
     let mut source_map = SourceMap::new();
 
     let Some(root_source_id) =
-        create_root_source_file(argument, &mut source_map, &mut report_term)
+        create_root_source_file(&argument, &mut source_map, &mut report_term)
     else {
         return ExitCode::FAILURE;
     };
@@ -462,9 +462,7 @@ pub fn run(
         report_term.report(&mut source_map, &codespan_reporting);
     }
 
-    if let Some(incremental_path) =
-        argument.command.input().incremental_path.as_ref()
-    {
+    if let Some(incremental_path) = &argument.command.input().incremental_path {
         let incremental_file = match File::create(incremental_path) {
             Ok(file) => file,
             Err(error) => {
