@@ -74,7 +74,7 @@ impl IceReport {
     pub fn write_to_temp(&self) -> std::io::Result<(File, PathBuf)> {
         let temp_dir = std::env::temp_dir();
         let file_name = format!(
-            "pernixc_ice_{}.toml",
+            "pernixc_ice_{}.ron",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
