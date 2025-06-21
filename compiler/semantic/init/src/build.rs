@@ -67,9 +67,6 @@ pub(super) fn create_module(
     for item in syntax_tree.content.members().filter_map(|x| x.into_line().ok())
     {
         match item {
-            pernixc_syntax::item::module::Member::Module(_) => {}
-
-            pernixc_syntax::item::module::Member::Import(import) => todo!(),
             pernixc_syntax::item::module::Member::Trait(tr) => {
                 let Some(identifier) =
                     tr.signature().and_then(|x| x.identifier())
@@ -87,16 +84,17 @@ pub(super) fn create_module(
                     handler,
                 );
             }
-            pernixc_syntax::item::module::Member::Function(function) => todo!(),
-            pernixc_syntax::item::module::Member::Type(_) => todo!(),
-            pernixc_syntax::item::module::Member::Struct(_) => todo!(),
-            pernixc_syntax::item::module::Member::Implements(implements) => {
-                todo!()
-            }
-            pernixc_syntax::item::module::Member::Enum(_) => todo!(),
-            pernixc_syntax::item::module::Member::Constant(constant) => todo!(),
-            pernixc_syntax::item::module::Member::Extern(_) => todo!(),
-            pernixc_syntax::item::module::Member::Marker(marker) => todo!(),
+
+            pernixc_syntax::item::module::Member::Import(_)
+            | pernixc_syntax::item::module::Member::Module(_)
+            | pernixc_syntax::item::module::Member::Function(_)
+            | pernixc_syntax::item::module::Member::Type(_)
+            | pernixc_syntax::item::module::Member::Struct(_)
+            | pernixc_syntax::item::module::Member::Implements(_)
+            | pernixc_syntax::item::module::Member::Enum(_)
+            | pernixc_syntax::item::module::Member::Constant(_)
+            | pernixc_syntax::item::module::Member::Extern(_)
+            | pernixc_syntax::item::module::Member::Marker(_) => {}
         }
     }
 }

@@ -656,6 +656,7 @@ fn incremental_compilation_simulation() {
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
+#[scc_value(Default::default())]
 pub struct CyclicQueryA;
 
 #[derive(
@@ -673,6 +674,7 @@ pub struct CyclicQueryA;
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
+#[scc_value(Default::default())]
 pub struct CyclicQueryB;
 
 #[derive(
@@ -929,6 +931,7 @@ fn comprehensive_cyclic_dependency_behavior() {
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
+#[scc_value(Default::default())]
 pub struct ConditionalCyclicQueryA;
 
 #[derive(
@@ -946,6 +949,7 @@ pub struct ConditionalCyclicQueryA;
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
+#[scc_value(Default::default())]
 pub struct ConditionalCyclicQueryB;
 
 #[derive(
