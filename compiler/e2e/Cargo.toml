@@ -1,0 +1,26 @@
+[package]
+name = "pernixc_e2e"
+description = "end-to-end tests for Pernix compiler"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+tempfile = { workspace = true }
+insta = { workspace = true }
+codespan-reporting = { workspace = true }
+pernixc_driver = { path = "../driver" }
+clap = { workspace = true }
+termcolor = { workspace = true }
+
+[[test]]
+name = "snapshot_e2e"
+path = "test/snapshot/mod.rs"
+
+
+[lints]
+workspace = true

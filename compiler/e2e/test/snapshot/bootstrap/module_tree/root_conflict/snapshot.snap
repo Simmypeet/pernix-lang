@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: assert_string
+---
+stderr:
+error: the submodule of the root source file ends up pointing to the root source file itself
+  ╭─ bootstrap/module_tree/root_conflict/main.pnx:3:15
+  │
+3 │ public module main
+  │               ^^^^ this ends up loading the file `bootstrap/module_tree/root_conflict/main.pnx`, which is the current module itself
+  │
+  = consider renaming the submodule name to avoid this conflict
+
+
+
+stdout:

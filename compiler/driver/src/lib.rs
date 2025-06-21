@@ -360,7 +360,7 @@ pub fn run(
         BinaryDeserializer<BufReader<File>>,
     >::default();
 
-    pernixc_init::register_serde(&mut serde_extension);
+    pernixc_bootstrap::register_serde(&mut serde_extension);
 
     let target_name: SharedStr =
         argument.command.input().target_name.clone().map_or_else(
@@ -380,7 +380,7 @@ pub fn run(
 
     let token_trees_by_source_id = DashMap::default();
     let (engine, syntax_errors, init_semantic_errors) =
-        match pernixc_init::start_query_database(
+        match pernixc_bootstrap::bootstrap(
             &mut source_map,
             root_source_id,
             target_name,
@@ -396,18 +396,18 @@ pub fn run(
             Ok(database) => database,
             Err(error) => {
                 let msg = match error {
-                    pernixc_init::Error::OpenIncrementalFileIO(error) => {
+                    pernixc_bootstrap::Error::OpenIncrementalFileIO(error) => {
                         Diagnostic::error().with_message(format!(
                             "Failed to open incremental file: {error}"
                         ))
                     }
-                    pernixc_init::Error::IncrementalFileDeserialize(
+                    pernixc_bootstrap::Error::IncrementalFileDeserialize(
                         error_kind,
                     ) => Diagnostic::error().with_message(format!(
                         "Failed to load (deserialize) incremental file: \
                          {error_kind}"
                     )),
-                    pernixc_init::Error::ReadIncrementalFileIO(error) => {
+                    pernixc_bootstrap::Error::ReadIncrementalFileIO(error) => {
                         Diagnostic::error().with_message(format!(
                             "Failed to read incremental file: {error}"
                         ))
@@ -421,19 +421,19 @@ pub fn run(
 
     for diagnostic in &syntax_errors {
         let codespan_reporting = match diagnostic {
-            pernixc_init::tree::Error::Lexical(error) => {
+            pernixc_bootstrap::tree::Error::Lexical(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
                     error.report(&source_map),
                 )
             }
 
-            pernixc_init::tree::Error::Syntax(error) => {
+            pernixc_bootstrap::tree::Error::Syntax(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(error.report(
                     &token_trees_by_source_id.get(&error.source_id).unwrap(),
                 ))
             }
 
-            pernixc_init::tree::Error::RootSubmoduleConflict(
+            pernixc_bootstrap::tree::Error::RootSubmoduleConflict(
                 root_submodule_conflict,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 root_submodule_conflict.report(()),
@@ -441,14 +441,14 @@ pub fn run(
                 &token_trees_by_source_id,
             ),
 
-            pernixc_init::tree::Error::SourceFileLoadFail(
+            pernixc_bootstrap::tree::Error::SourceFileLoadFail(
                 source_file_load_fail,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 source_file_load_fail.report(()),
                 &source_map,
                 &token_trees_by_source_id,
             ),
-            pernixc_init::tree::Error::ModuleRedefinition(
+            pernixc_bootstrap::tree::Error::ModuleRedefinition(
                 module_redefinition,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 module_redefinition.report(()),

@@ -1,0 +1,17 @@
+---
+source: compiler/test/src/snapshot/mod.rs
+expression: assert_string
+---
+stderr:
+error: symbol `First` is already defined in the scope `main`
+  ╭─ bootstrap/redifinition/main.pnx:5:14
+  │
+1 │ public trait First:
+  │              ----- symbol `First` is already defined here
+  ·
+5 │ public trait First:
+  │              ^^^^^ redefinition here
+
+
+
+stdout:

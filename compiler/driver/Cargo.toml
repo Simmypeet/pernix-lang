@@ -14,7 +14,7 @@ pernixc_diagnostic = { path = "../base/diagnostic" }
 pernixc_handler = { path = "../base/handler" }
 pernixc_arena = { path = "../base/arena" }
 pernixc_target = { path = "../base/target" }
-pernixc_init = { path = "../semantic/init" }
+pernixc_bootstrap = { path = "../semantic/bootstrap" }
 pernixc_query = { path = "../semantic/query" }
 pernixc_lexical = { path = "../syntax/lexical" }
 pernixc_serialize = { path = "../base/serialize/" }
