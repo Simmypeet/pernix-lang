@@ -124,11 +124,10 @@ use syn::{parenthesized, parse_quote};
 ///
 /// The value type must implement:
 /// - `Clone` - For value cloning
-/// - `Default` - For default value creation
 /// - `Eq` + `PartialEq` - For merge conflict detection
 /// - `Send + Sync + 'static` - For thread safety and type erasure
 /// - `Serialize + Deserialize` - For database serialization
-#[proc_macro_derive(Key, attributes(value, pernixc_query, merge))]
+#[proc_macro_derive(Key, attributes(value, pernixc_query, scc_value))]
 #[allow(clippy::too_many_lines)]
 pub fn derive_key(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -177,13 +176,14 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         }
     };
 
-    let merge_fn: Option<syn::Path> =
-        match input.attrs.iter().find(|attr| attr.path().is_ident("merge")) {
+    let scc_value_expr: Option<syn::Expr> =
+        match input.attrs.iter().find(|attr| attr.path().is_ident("scc_value"))
+        {
             Some(attr) => {
-                let Ok(value) = attr.parse_args::<syn::Path>() else {
+                let Ok(value) = attr.parse_args::<syn::Expr>() else {
                     return syn::Error::new_spanned(
                         attr,
-                        "invalid `#[merge]` attribute on key type",
+                        "invalid `#[scc_value]` attribute on key type",
                     )
                     .to_compile_error()
                     .into();
@@ -194,10 +194,10 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
             None => None,
         };
 
-    let merge_fn = merge_fn.map(|x| {
+    let scc_value_fn = scc_value_expr.map(|x| {
         quote::quote! {
-            fn merge_value(old: &mut Self::Value, new: Self::Value) -> Result<bool, ::std::string::String> {
-                #x(old, new)
+            fn scc_value() -> Self::Value {
+                #x
             }
         }
     });
@@ -218,7 +218,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         impl #impl_generics #pernixc_query_crate::key::Key for #name #ty_generics #where_clause {
             type Value = #value_type;
 
-            #merge_fn
+            #scc_value_fn
         }
 
         #impl_identifiable
