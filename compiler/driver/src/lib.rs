@@ -13,13 +13,13 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
     term::termcolor::WriteColor,
 };
+use flexstr::SharedStr;
 use pernixc_diagnostic::Report;
-use pernixc_hash::HashMap;
-use pernixc_init::parse;
+use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
     serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
-    Engine, Key,
+    Key,
 };
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
@@ -106,7 +106,7 @@ fn pernix_diagnostic_to_codespan_diagnostic(
 fn rel_pernix_diagnostic_to_codespan_diagnostic(
     diagostic: pernixc_diagnostic::Diagnostic<RelativeLocation>,
     source_map: &SourceMap,
-    token_trees_by_source_id: &HashMap<
+    token_trees_by_source_id: &DashMap<
         GlobalSourceID,
         pernixc_lexical::tree::Tree,
     >,
@@ -133,8 +133,8 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
 
                 let source_file = source_map.get(span.source_id).unwrap();
                 let begin =
-                    span.start.to_absolute_index(&source_file, token_tree);
-                let end = span.end.to_absolute_index(&source_file, token_tree);
+                    span.start.to_absolute_index(&source_file, &token_tree);
+                let end = span.end.to_absolute_index(&source_file, &token_tree);
 
                 let mut primary = Label::primary(span.source_id, begin..end);
 
@@ -152,9 +152,9 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
                 let source_file = source_map.get(x.span.source_id).unwrap();
 
                 let begin =
-                    x.span.start.to_absolute_index(&source_file, token_tree);
+                    x.span.start.to_absolute_index(&source_file, &token_tree);
                 let end =
-                    x.span.end.to_absolute_index(&source_file, token_tree);
+                    x.span.end.to_absolute_index(&source_file, &token_tree);
 
                 Label::secondary(x.span.source_id, begin..end)
                     .with_message(x.message)
@@ -355,109 +355,118 @@ pub fn run(
         return ExitCode::FAILURE;
     };
 
-    let mut runtime = pernixc_query::runtime::Runtime::default();
     let mut serde_extension = SerdeExtension::<
         BinarySerializer<BufWriter<File>>,
         BinaryDeserializer<BufReader<File>>,
     >::default();
 
-    pernixc_init::register_runtime(&mut runtime, &mut serde_extension);
+    pernixc_init::register_serde(&mut serde_extension);
 
-    let _target_name =
-        argument.command.input().target_name.clone().unwrap_or_else(|| {
-            source_map
-                .get(root_source_id)
-                .unwrap()
-                .full_path()
-                .file_stem()
-                .unwrap()
-                .to_string_lossy()
-                .to_string()
-        });
+    let target_name: SharedStr =
+        argument.command.input().target_name.clone().map_or_else(
+            || {
+                source_map
+                    .get(root_source_id)
+                    .unwrap()
+                    .full_path()
+                    .file_stem()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+                    .into()
+            },
+            Into::into,
+        );
 
-    let (database, errors) = match pernixc_init::start_query_database(
-        &mut source_map,
-        root_source_id,
-        argument.command.input().library_paths.iter().map(PathBuf::as_path),
-        argument
-            .command
-            .input()
-            .incremental_path
-            .as_ref()
-            .map(|x| (x.as_path(), &mut serde_extension)),
-    ) {
-        Ok(database) => database,
-        Err(error) => {
-            let msg = match error {
-                pernixc_init::Error::OpenIncrementalFileIO(error) => {
-                    Diagnostic::error().with_message(format!(
-                        "Failed to open incremental file: {error}"
-                    ))
-                }
-                pernixc_init::Error::IncrementalFileDeserialize(error_kind) => {
-                    Diagnostic::error().with_message(format!(
+    let token_trees_by_source_id = DashMap::default();
+    let (engine, syntax_errors, init_semantic_errors) =
+        match pernixc_init::start_query_database(
+            &mut source_map,
+            root_source_id,
+            target_name,
+            argument.command.input().library_paths.iter().map(PathBuf::as_path),
+            &token_trees_by_source_id,
+            argument
+                .command
+                .input()
+                .incremental_path
+                .as_ref()
+                .map(|x| (x.as_path(), &mut serde_extension)),
+        ) {
+            Ok(database) => database,
+            Err(error) => {
+                let msg = match error {
+                    pernixc_init::Error::OpenIncrementalFileIO(error) => {
+                        Diagnostic::error().with_message(format!(
+                            "Failed to open incremental file: {error}"
+                        ))
+                    }
+                    pernixc_init::Error::IncrementalFileDeserialize(
+                        error_kind,
+                    ) => Diagnostic::error().with_message(format!(
                         "Failed to load (deserialize) incremental file: \
                          {error_kind}"
-                    ))
-                }
-                pernixc_init::Error::ReadIncrementalFileIO(error) => {
-                    Diagnostic::error().with_message(format!(
-                        "Failed to read incremental file: {error}"
-                    ))
-                }
-            };
+                    )),
+                    pernixc_init::Error::ReadIncrementalFileIO(error) => {
+                        Diagnostic::error().with_message(format!(
+                            "Failed to read incremental file: {error}"
+                        ))
+                    }
+                };
 
-            report_term.report(&mut source_map, &msg);
-            return ExitCode::FAILURE;
-        }
-    };
+                report_term.report(&mut source_map, &msg);
+                return ExitCode::FAILURE;
+            }
+        };
 
-    let query_engine = Engine { database, runtime };
-    let target_parsing =
-        query_engine.query(&parse::Key(TargetID::Local)).unwrap();
-
-    for diagnostic in &errors {
+    for diagnostic in &syntax_errors {
         let codespan_reporting = match diagnostic {
-            pernixc_init::parse::Error::Lexical(error) => {
+            pernixc_init::tree::Error::Lexical(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
                     error.report(&source_map),
                 )
             }
 
-            pernixc_init::parse::Error::Syntax(error) => {
-                pernix_diagnostic_to_codespan_diagnostic(
-                    error.report(
-                        target_parsing
-                            .token_trees_by_source_id
-                            .get(&error.source_id)
-                            .unwrap(),
-                    ),
-                )
+            pernixc_init::tree::Error::Syntax(error) => {
+                pernix_diagnostic_to_codespan_diagnostic(error.report(
+                    &token_trees_by_source_id.get(&error.source_id).unwrap(),
+                ))
             }
 
-            pernixc_init::parse::Error::RootSubmoduleConflict(
+            pernixc_init::tree::Error::RootSubmoduleConflict(
                 root_submodule_conflict,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 root_submodule_conflict.report(()),
                 &source_map,
-                &target_parsing.token_trees_by_source_id,
+                &token_trees_by_source_id,
             ),
 
-            pernixc_init::parse::Error::SourceFileLoadFail(
+            pernixc_init::tree::Error::SourceFileLoadFail(
                 source_file_load_fail,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 source_file_load_fail.report(()),
                 &source_map,
-                &target_parsing.token_trees_by_source_id,
+                &token_trees_by_source_id,
             ),
-            pernixc_init::parse::Error::ModuleRedefinition(
+            pernixc_init::tree::Error::ModuleRedefinition(
                 module_redefinition,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 module_redefinition.report(()),
                 &source_map,
-                &target_parsing.token_trees_by_source_id,
+                &token_trees_by_source_id,
             ),
         };
+
+        report_term.report(&mut source_map, &codespan_reporting);
+    }
+
+    for diagnostic in &init_semantic_errors {
+        let rel_pernixc_diagnostic = diagnostic.report(&engine);
+        let codespan_reporting = rel_pernix_diagnostic_to_codespan_diagnostic(
+            rel_pernixc_diagnostic,
+            &source_map,
+            &token_trees_by_source_id,
+        );
 
         report_term.report(&mut source_map, &codespan_reporting);
     }
@@ -479,7 +488,7 @@ pub fn run(
 
         // Serialize using postcard and write to file
         if let Err(error) = Serialize::serialize(
-            &query_engine.database,
+            &engine.database,
             &mut bianry_serializer,
             &mut serde_extension,
         ) {

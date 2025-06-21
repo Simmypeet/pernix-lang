@@ -1,10 +1,10 @@
 //!  Contains the definition of the [`Kind`] enum.
 
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_target::{Global, TargetID};
+use pernixc_target::Global;
 
 use crate::symbol;
 
@@ -266,33 +266,5 @@ impl Kind {
     #[must_use]
     pub const fn has_function_constness(&self) -> bool {
         matches!(self, Self::Function | Self::AdtImplementationFunction)
-    }
-}
-
-pub(super) fn generate_id<'a>(
-    database: &pernixc_query::database::Database,
-    paths: impl IntoIterator<Item = &'a str>,
-    target_id: TargetID,
-) -> symbol::ID {
-    let mut hasher = fnv::FnvHasher::default();
-    // write all paths to the hasher
-    for path in paths {
-        path.hash(&mut hasher);
-    }
-
-    // encode attempts to the hasher
-    let mut attempt = 0;
-    loop {
-        let mut attempt_hasher = fnv::FnvHasher::with_key(hasher.finish());
-        attempt.hash(&mut attempt_hasher);
-
-        let id = symbol::ID(attempt_hasher.finish());
-
-        if database.contains_key(&Key(target_id.make_global(id))) {
-            // try again with a new attempt
-            attempt += 1;
-        } else {
-            return id;
-        }
     }
 }

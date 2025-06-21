@@ -1,3 +1,5 @@
+//! Contains the definition of all syntax-related queries
+
 use derive_more::{Deref, DerefMut};
 use pernixc_query::Value;
 use pernixc_serialize::{

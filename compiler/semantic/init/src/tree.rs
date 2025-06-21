@@ -3,16 +3,15 @@
 use std::{
     collections::hash_map::Entry,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use enum_as_inner::EnumAsInner;
+use flexstr::SharedStr;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_handler::Storage;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_parser::abstract_tree::AbstractTree;
-use pernixc_query::Value;
 use pernixc_serialize::{
     extension::{SharedPointerDeserialize, SharedPointerSerialize},
     Deserialize, Serialize,
@@ -149,23 +148,6 @@ impl Report<()> for ModuleRedefinition {
     }
 }
 
-/// The result of parsing the module tree syntax.
-#[derive(Debug, Value, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[value(Arc<Parse>)]
-#[id(TargetID)]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
-)]
-pub struct Parse {
-    /// The root of the module tree.
-    pub tree: Tree,
-
-    /// All of the token trees that were parsed from the source files,
-    pub token_trees_by_source_id:
-        HashMap<GlobalSourceID, pernixc_lexical::tree::Tree>,
-}
-
 /// The tree structure of the compilation module.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(
@@ -183,14 +165,14 @@ pub struct Tree {
     pub content: pernixc_syntax::item::module::Content,
 
     /// The submodules of the module, indexed by their names.
-    pub submodules_by_name: HashMap<String, Self>,
+    pub submodules_by_name: HashMap<SharedStr, Self>,
 }
 
 #[derive(Debug, Clone)]
 enum Input {
     Inline {
         module_content: pernixc_syntax::item::module::Content,
-        module_name: String,
+        module_name: SharedStr,
         signature: pernixc_syntax::item::module::Signature,
         access_modifier: Option<pernixc_syntax::AccessModifier>,
         in_source_id: GlobalSourceID,
@@ -238,7 +220,7 @@ impl Tree {
         >,
         in_source_id: GlobalSourceID,
         handler: &dyn Handler,
-    ) -> Option<(String, Self)> {
+    ) -> Option<(SharedStr, Self)> {
         let signature = submodule.signature()?;
 
         let ident_span_rel = signature.identifier()?.span;
@@ -249,10 +231,10 @@ impl Tree {
         };
 
         // get the current module name from the source map
-        let submodule_name =
+        let submodule_name: SharedStr =
             source_map.get(ident_span_abs.source_id).unwrap().content()
                 [ident_span_abs.range()]
-            .to_owned();
+            .into();
 
         let module_tree = if let Some(inline_body) = submodule.inline_body() {
             Self::parse_input(
@@ -270,19 +252,19 @@ impl Tree {
             )
         } else {
             // ended up pointing to the same file
-            if is_root && current_module_name == submodule_name {
+            if is_root && current_module_name == submodule_name.as_str() {
                 handler.receive(RootSubmoduleConflict {
                     root: ident_span_abs.source_id,
                     submodule_span: ident_span_rel,
                     load_path: submodule_current_directory
-                        .join(&submodule_name)
+                        .join(submodule_name.as_str())
                         .with_extension("pnx"),
                 });
                 return None;
             }
 
             let mut source_file_path =
-                submodule_current_directory.join(&submodule_name);
+                submodule_current_directory.join(submodule_name.as_str());
             source_file_path.set_extension("pnx");
 
             // load the source file
@@ -386,7 +368,7 @@ impl Tree {
                         .unwrap()
                         .to_str()
                         .unwrap()
-                        .to_string(),
+                        .into(),
                     root,
                     signature,
                     access_modifier,
@@ -397,7 +379,7 @@ impl Tree {
         let submodule_current_directory = if is_root {
             current_directory.to_path_buf()
         } else {
-            current_directory.join(&current_module_name)
+            current_directory.join(current_module_name.as_str())
         };
 
         std::thread::scope(|scope| {
@@ -425,7 +407,7 @@ impl Tree {
                 }));
             }
 
-            let mut submodules_by_name = HashMap::<String, Self>::default();
+            let mut submodules_by_name = HashMap::<SharedStr, Self>::default();
 
             for (name, module_tree) in
                 scope_handles.into_iter().filter_map(|x| x.join().unwrap())
@@ -460,8 +442,11 @@ impl Tree {
 pub fn parse(
     source_id: GlobalSourceID,
     source_map: &SourceMap,
-) -> (Parse, Vec<Error>) {
-    let token_trees_by_source_id = DashMap::default();
+    token_trees_by_source_id: &DashMap<
+        GlobalSourceID,
+        pernixc_lexical::tree::Tree,
+    >,
+) -> (Tree, Vec<Error>) {
     let storage = Storage::<Error>::default();
 
     let path = source_map
@@ -473,23 +458,18 @@ pub fn parse(
         .to_path_buf();
 
     (
-        Parse {
-            tree: Tree::parse_input(
-                Input::File {
-                    source_id,
-                    access_modifier: None,
-                    root: true,
-                    signature: None,
-                },
-                &path,
-                source_map,
-                &token_trees_by_source_id,
-                &storage,
-            ),
-            token_trees_by_source_id: token_trees_by_source_id
-                .into_iter()
-                .collect(),
-        },
+        Tree::parse_input(
+            Input::File {
+                source_id,
+                access_modifier: None,
+                root: true,
+                signature: None,
+            },
+            &path,
+            source_map,
+            token_trees_by_source_id,
+            &storage,
+        ),
         storage.into_vec(),
     )
 }

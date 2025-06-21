@@ -1,10 +1,16 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
-use std::{fs::File, io::BufReader, path::Path, sync::Arc};
+use std::{fs::File, io::BufReader, path::Path};
 
+use flexstr::SharedStr;
+use parking_lot::lock_api::RwLock;
+use pernixc_handler::Storage;
+use pernixc_hash::{DashMap, HashSet};
 use pernixc_query::{
     database::Database,
+    runtime::Runtime,
     serde::{DynamicDeserialize, DynamicRegistry},
+    Engine,
 };
 use pernixc_serialize::{
     binary::de::BinaryDeserializer,
@@ -14,9 +20,11 @@ use pernixc_serialize::{
     Deserialize,
 };
 use pernixc_source_file::{GlobalSourceID, SourceMap};
-use pernixc_target::TargetID;
+
+use crate::diagnostic::Diagnostic;
 
 pub mod accessibility;
+pub mod diagnostic;
 pub mod implemented;
 pub mod implements;
 pub mod import;
@@ -24,9 +32,13 @@ pub mod kind;
 pub mod member;
 pub mod name;
 pub mod parent;
-pub mod parse;
+pub mod span;
 pub mod symbol;
+pub mod syntax;
 pub mod target;
+pub mod tree;
+
+mod build;
 
 /// A fatal error that aborts the compilation process.
 #[derive(Debug, thiserror::Error)]
@@ -66,9 +78,14 @@ pub fn start_query_database<
 >(
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
+    target_name: SharedStr,
     _library_paths: impl IntoIterator<Item = &'l Path>,
+    token_trees_by_source_id: &DashMap<
+        GlobalSourceID,
+        pernixc_lexical::tree::Tree,
+    >,
     incremental_path: Option<(&Path, &mut Ext)>,
-) -> Result<(Database, Vec<parse::Error>), Error> {
+) -> Result<(Engine, Vec<tree::Error>, Vec<Diagnostic>), Error> {
     // load the incremental file (if any)
     let incremental_file_de =
         if let Some((incremental_path, extension)) = incremental_path {
@@ -87,7 +104,7 @@ pub fn start_query_database<
         };
 
     // create a fresh database or load the incremental file
-    let mut database = incremental_file_de.map_or_else(
+    let database = incremental_file_de.map_or_else(
         || Ok(Database::default()),
         |(file, ext)| {
             let buf_reader = BufReader::new(file);
@@ -98,24 +115,33 @@ pub fn start_query_database<
         },
     )?;
 
-    let (parse, errors) = parse::parse(root_source_id, source_map);
+    let (tree, errors) =
+        tree::parse(root_source_id, source_map, token_trees_by_source_id);
+    let generated_ids_rw = RwLock::new(HashSet::default());
+    let engine = RwLock::new(Engine { database, runtime: Runtime::default() });
+    let handler = Storage::<Diagnostic>::new();
 
-    database.set_input(&parse::Key(TargetID::Local), Arc::new(parse));
+    build::create_module(
+        &engine,
+        &generated_ids_rw,
+        target_name,
+        tree,
+        None,
+        &handler,
+    );
 
-    Ok((database, errors))
+    Ok((engine.into_inner(), errors, handler.into_vec()))
 }
 
 /// Registers all the necessary runtime information for the query engine.
-pub fn register_runtime<
+pub fn register_serde<
     S: Serializer<Registry>,
     D: Deserializer<Registry>,
     Registry: DynamicRegistry<S, D> + SharedPointerSerialize + SharedPointerDeserialize,
 >(
-    _query_runtime: &mut pernixc_query::runtime::Runtime,
     serder_registry: &mut Registry,
 ) {
     serder_registry.register::<accessibility::Key>();
-    serder_registry.register::<parse::Key>();
     serder_registry.register::<implemented::Key>();
     serder_registry.register::<implements::Key>();
     serder_registry.register::<kind::Key>();

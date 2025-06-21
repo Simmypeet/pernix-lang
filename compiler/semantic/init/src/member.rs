@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use derive_more::{Deref, DerefMut};
 use extend::ext;
+use flexstr::SharedStr;
 use pernixc_hash::HashMap;
 use pernixc_query::{Engine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -31,7 +32,7 @@ use crate::{
 )]
 #[id(Global<symbol::ID>)]
 #[value(Arc<Member>)]
-pub struct Member(pub HashMap<String, ID>);
+pub struct Member(pub HashMap<SharedStr, ID>);
 
 /// Extension trait related to retrieving the members of a symbol.
 #[ext(name = Ext)]

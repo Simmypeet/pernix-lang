@@ -26,6 +26,7 @@ fnv = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
 extend = { workspace = true }
+flexstr = { workspace = true }
 
 [lints]
 workspace = true

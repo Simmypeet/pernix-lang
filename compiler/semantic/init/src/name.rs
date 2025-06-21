@@ -1,6 +1,7 @@
 //! Defines the [`Name`] type.
 
 use extend::ext;
+use flexstr::SharedStr;
 use pernixc_query::{Engine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_target::Global;
@@ -30,7 +31,7 @@ use crate::{
     Value,
 )]
 #[id(Global<symbol::ID>)]
-pub struct Name(pub String);
+pub struct Name(pub SharedStr);
 
 /// Extension trait related to retrieving the name of a symbol.
 #[ext(name = Ext)]
