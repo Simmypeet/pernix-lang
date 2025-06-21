@@ -3,6 +3,10 @@
 use binary::Binary;
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{abstract_tree, parser::ast};
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 use terminator::Terminator;
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -16,7 +20,22 @@ pub mod terminator;
 pub mod unit;
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        EnumAsInner
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     pub enum Expression {
         Binary(Binary = ast::<Binary>()),
         Terminator(Terminator = ast::<Terminator>()),

@@ -29,14 +29,15 @@ pub trait Key:
     'static + Send + Sync + Eq + Clone + std::hash::Hash + Identifiable
 {
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Clone + Default + Eq;
+    type Value: 'static + Send + Sync + Clone + Eq;
 
     /// A value returned by the key when the key is a part of a strongly
     /// connected component (SCC) in the cyclic dependencies.
     ///
     /// By default, this method panics, as the most queries are not supposed
     /// to allow cyclic dependencies.
-    fn scc_value(&self) -> Self::Value {
+    #[must_use]
+    fn scc_value() -> Self::Value {
         panic!(
             "SCC `{}` value for cyclic dependencies is not defined",
             std::any::type_name::<Self>()
@@ -56,7 +57,7 @@ pub type SmallBox<T> = smallbox::SmallBox<T, Global<ID<()>>>;
 /// A trait allowing store multiple types of as a key in a hashmap. This is
 /// automatically implemented for all types that implement the [`Key`] trait.
 #[doc(hidden)]
-pub trait Dynamic {
+pub trait Dynamic: 'static + Send + Sync {
     #[doc(hidden)]
     fn any(&self) -> &dyn std::any::Any;
     #[doc(hidden)]

@@ -3,6 +3,10 @@ use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser as _},
 };
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 
 use crate::{
     expression::Expression, pattern::Irrefutable, r#type::Type, Keyword,
@@ -13,7 +17,21 @@ use crate::{
 pub mod arbitrary;
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     pub struct VariableDeclaration {
         pub let_keyword: Keyword = expect::Keyword::Let,
         pub irrefutable_pattern: Irrefutable = ast::<Irrefutable>(),
@@ -32,7 +50,22 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        EnumAsInner
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     pub enum Statement {
         VariableDeclaration(VariableDeclaration = ast::<VariableDeclaration>()),
         Expression(Expression = ast::<Expression>())

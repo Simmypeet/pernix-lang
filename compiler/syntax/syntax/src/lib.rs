@@ -14,7 +14,10 @@ use pernixc_parser::{
     expect::{self, Ext as _},
     parser::{ast, Parser as _},
 };
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 use r#type::Type;
 
 pub mod expression;
@@ -77,7 +80,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     pub struct Elided {
         pub first_dot = '.',
         pub second_dot = '.'.no_prior_insignificant()
@@ -180,7 +197,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     pub struct QualifiedIdentifier {
         pub root: QualifiedIdentifierRoot = ast::<QualifiedIdentifierRoot>(),
         pub subsequences: #[multi] QualifiedIdentifierSubsequent

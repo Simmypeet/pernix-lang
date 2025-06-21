@@ -5,6 +5,7 @@ use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser},
 };
+use pernixc_serialize::{Deserialize, Serialize};
 
 use crate::{
     Elided, Ellipsis, Identifier, Keyword, Lifetime, Numeric, Punctuation,
@@ -15,7 +16,17 @@ use crate::{
 pub mod arbitrary;
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
     pub enum Primitive {
         Bool(Keyword = expect::Keyword::Bool),
         Float32(Keyword = expect::Keyword::Float32),
@@ -34,10 +45,23 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
+        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
+    )]
     pub struct Reference {
-        pub ampersand: Punctuation = '&',
-        pub lifetime: Lifetime = ast::<Lifetime>().optional(),
+        pub ampersand: Punctuation = '&', pub lifetime: Lifetime = ast::<Lifetime>().optional(),
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
         pub r#type: Type = ast::<Type>(),
     }
@@ -52,7 +76,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
+        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
+    )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct Tuple {
         pub types: #[multi] Unpackable
@@ -61,7 +99,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
+        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
+    )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct Array {
         pub r#type: Type = ast::<Type>(),
@@ -71,7 +123,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
+        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
+    )]
     pub struct Pointer {
         pub asterisk: Punctuation = '*',
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
@@ -80,7 +146,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
+        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
+    )]
     pub struct Phantom {
         pub phantom: Keyword = expect::Keyword::Phantom,
         pub r#type: Type = ast::<Type>(),
@@ -88,7 +168,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
+        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
+    )]
     pub enum Type {
         Primitive(Primitive = ast::<Primitive>()),
         QualifiedIdentifier(QualifiedIdentifier = ast::<QualifiedIdentifier>()),

@@ -3,6 +3,10 @@ use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser as _},
 };
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 
 use super::Body;
 use crate::{
@@ -24,7 +28,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct VariantAssociation {
         pub r#type: Type = ast::<Type>(),

@@ -461,9 +461,7 @@ impl Engine {
                         .push(CyclicDependency { records_stack: stack });
 
                     // insert a default value for the cyclic dependency
-                    self.database
-                        .map
-                        .insert(key.clone(), <T::Value as Default>::default());
+                    self.database.map.insert(key.clone(), T::scc_value());
 
                     call_graph.version_info_by_keys.insert(
                         DynamicBox(key.smallbox_clone()),
@@ -658,7 +656,7 @@ impl Engine {
 
                 // Cyclic dependency detected - store default value and mark as
                 // cyclic
-                let default_value = <K::Value as Default>::default();
+                let default_value = K::scc_value();
 
                 self.database.map.entry(key.clone(), |entry| match entry {
                     dashmap::Entry::Occupied(mut occupied_entry) => {

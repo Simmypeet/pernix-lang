@@ -4,6 +4,10 @@ use pernixc_parser::{
     expect,
     parser::{ast, Parser as _},
 };
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 
 use crate::{
     expression::Expression, predicate::TypeBound, r#type::Type, Identifier,
@@ -61,7 +65,21 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct GenericParameters {
         pub parameters: #[multi] GenericParameter

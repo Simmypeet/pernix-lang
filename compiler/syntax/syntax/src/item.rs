@@ -3,6 +3,10 @@ use pernixc_parser::{
     expect,
     parser::{ast, Parser as _},
 };
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 use where_clause::WhereClause;
 
 use crate::Passable;
@@ -32,11 +36,32 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
+    pub struct Members<T: 'static + AbstractTree> {
+        pub members: #[multi] Passable<T>
+            = ast::<Passable<T>>().line().repeat_all(),
+    }
+}
+
+abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Indentation}
     pub struct Body<T: 'static + AbstractTree> {
         pub where_clause: WhereClause = ast::<WhereClause>().optional(),
-        pub members: #[multi] Passable<T>
-            = ast::<Passable<T>>().line().repeat_all(),
+        pub members: Members<T> = ast::<Members<T>>(),
     }
 }

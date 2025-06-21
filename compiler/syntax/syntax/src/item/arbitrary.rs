@@ -44,25 +44,21 @@ impl IndentDisplay for TrailingWhereClause {
 }
 
 #[derive(Debug, Clone)]
-pub struct Body<T> {
-    pub where_clause: Option<WhereClause>,
+pub struct Members<T> {
     pub members: Vec<Passable<T>>,
 }
 
 impl<O: std::fmt::Debug + AbstractTree, T: std::fmt::Debug>
-    Input<&super::Body<O>, ()> for &Body<T>
+    Input<&super::Members<O>, ()> for &Members<T>
 where
     for<'x, 'y> &'x T: Input<&'y O, ()>,
 {
-    fn assert(self, output: &super::Body<O>, (): ()) -> TestCaseResult {
-        self.where_clause
-            .as_ref()
-            .assert(output.where_clause().as_ref(), ())?;
+    fn assert(self, output: &super::Members<O>, (): ()) -> TestCaseResult {
         self.members.assert(output.members().collect::<Vec<_>>().as_slice(), ())
     }
 }
 
-impl<T: 'static + Arbitrary + Clone> Arbitrary for Body<T>
+impl<T: 'static + Arbitrary + Clone> Arbitrary for Members<T>
 where
     <T as Arbitrary>::Strategy: 'static,
 {
@@ -75,10 +71,54 @@ where
             1 => Just(Passable::Pass),
         ];
 
-        (
-            proptest::option::of(WhereClause::arbitrary()),
-            proptest::collection::vec(variant, 1..=10),
-        )
+        proptest::collection::vec(variant, 1..=10)
+            .prop_map(|members| Self { members })
+            .boxed()
+    }
+}
+
+impl<T: IndentDisplay> IndentDisplay for Members<T> {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        for member in &self.members {
+            write_indent_line_for_indent_display(f, member, indent)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Body<T> {
+    pub where_clause: Option<WhereClause>,
+    pub members: Members<T>,
+}
+
+impl<O: std::fmt::Debug + AbstractTree, T: std::fmt::Debug>
+    Input<&super::Body<O>, ()> for &Body<T>
+where
+    for<'x, 'y> &'x T: Input<&'y O, ()>,
+{
+    fn assert(self, output: &super::Body<O>, (): ()) -> TestCaseResult {
+        self.where_clause
+            .as_ref()
+            .assert(output.where_clause().as_ref(), ())?;
+        Some(&self.members).assert(output.members().as_ref(), ())
+    }
+}
+
+impl<T: 'static + Arbitrary + Clone> Arbitrary for Body<T>
+where
+    <T as Arbitrary>::Strategy: 'static,
+{
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (proptest::option::of(WhereClause::arbitrary()), Members::arbitrary())
             .prop_map(|(where_clause, members)| Self { where_clause, members })
             .boxed()
     }
@@ -96,9 +136,7 @@ impl<T: IndentDisplay> IndentDisplay for Body<T> {
             write_indent_line_for_indent_display(f, where_clause, indent + 1)?;
         }
 
-        for member in &self.members {
-            write_indent_line_for_indent_display(f, member, indent + 1)?;
-        }
+        self.members.indent_fmt(f, indent + 1)?;
 
         Ok(())
     }

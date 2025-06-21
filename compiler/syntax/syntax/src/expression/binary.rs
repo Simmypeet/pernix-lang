@@ -4,6 +4,10 @@ use pernixc_parser::{
     expect::Ext as _,
     parser::{ast, Parser as _},
 };
+use pernixc_serialize::{
+    extension::{SharedPointerDeserialize, SharedPointerSerialize},
+    Deserialize, Serialize,
+};
 
 use super::block::Block;
 use crate::expression::prefix::Prefixable;
@@ -12,7 +16,21 @@ use crate::expression::prefix::Prefixable;
 pub mod arbitrary;
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+    )]
+    #[serde(
+        ser_extension(SharedPointerSerialize),
+        de_extension(SharedPointerDeserialize)
+    )]
     pub struct Binary {
         pub first: Node = ast::<Node>(),
         pub chain: #[multi] BinarySubsequent
