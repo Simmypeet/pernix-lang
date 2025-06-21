@@ -157,13 +157,16 @@ pub fn register_serde<
     D: Deserializer<Registry>,
     Registry: DynamicRegistry<S, D> + SharedPointerSerialize + SharedPointerDeserialize,
 >(
-    serder_registry: &mut Registry,
+    serde_registry: &mut Registry,
 ) {
-    serder_registry.register::<accessibility::Key>();
-    serder_registry.register::<implemented::Key>();
-    serder_registry.register::<implements::Key>();
-    serder_registry.register::<kind::Key>();
-    serder_registry.register::<member::Key>();
-    serder_registry.register::<name::Key>();
-    serder_registry.register::<parent::Key>();
+    serde_registry.register::<accessibility::Key>();
+    serde_registry.register::<implemented::Key>();
+    serde_registry.register::<implements::Key>();
+    serde_registry.register::<kind::Key>();
+    serde_registry.register::<member::Key>();
+    serde_registry.register::<name::Key>();
+    serde_registry.register::<parent::Key>();
+    serde_registry.register::<parent::IntermediateKey>();
+    serde_registry.register::<target::Key>();
+    serde_registry.register::<span::Key>();
 }
