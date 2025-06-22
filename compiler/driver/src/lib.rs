@@ -315,8 +315,13 @@ pub fn run(
         BinarySerializer<BufWriter<File>>,
         BinaryDeserializer<BufReader<File>>,
     >::default();
+    let mut serde_extension_2 = SerdeExtension::<
+        BinarySerializer<Vec<u8>>,
+        BinaryDeserializer<std::io::Cursor<Vec<u8>>>,
+    >::default();
 
     pernixc_bootstrap::register_serde(&mut serde_extension);
+    pernixc_bootstrap::register_serde(&mut serde_extension_2);
 
     let target_name: SharedStr =
         argument.command.input().target_name.clone().map_or_else(
@@ -456,8 +461,10 @@ pub fn run(
         }
     }
 
-    engine.runtime.persistence =
-        Some(Persistence::new("incremental".into(), Arc::new(serde_extension)));
+    engine.runtime.persistence = Some(Persistence::new(
+        "incremental".into(),
+        Arc::new(serde_extension_2),
+    ));
 
     pernixc_bootstrap::skip_serde(engine.runtime.persistence.as_mut().unwrap());
 

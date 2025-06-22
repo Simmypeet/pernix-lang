@@ -209,9 +209,9 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
     value_serializer: fn(&dyn Any, &mut S, &E) -> Result<(), S::Error>,
     cas_map_serializer: fn(
         &Map,
-        &(dyn Send + Sync + Fn(StableTypeID, u128) -> Result<S, S::Error>),
+        &(dyn Send + Sync + Fn() -> Result<S, S::Error>),
         &E,
-        StableTypeID,
+        &(dyn Send + Sync + Fn(S, u128) -> Result<(), S::Error>),
     ) -> Result<bool, S::Error>,
 
     std_type_id: std::any::TypeId,
@@ -230,20 +230,20 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
 
     /// Serializes a `Map` instance in a Content-Addressable Storage (CAS)
     /// protocol.
-    pub fn serialize_cas_map(
+    pub fn serialize_fingerprint_map(
         &self,
         map: &Map,
-        create_serializer: &(dyn Send
-              + Sync
-              + Fn(StableTypeID, u128) -> Result<S, S::Error>),
+        create_serializer: &(dyn Send + Sync + Fn() -> Result<S, S::Error>),
         extension: &E,
-        stable_type_id: StableTypeID,
+        post_serialize: &(dyn Send
+              + Sync
+              + Fn(S, u128) -> Result<(), S::Error>),
     ) -> Result<bool, S::Error> {
         (self.cas_map_serializer)(
             map,
             create_serializer,
             extension,
-            stable_type_id,
+            post_serialize,
         )
     }
 }
@@ -553,9 +553,11 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
             |map: &Map,
              create_serializer: &(dyn Send
                    + Sync
-                   + Fn(StableTypeID, u128) -> Result<S, S::Error>),
+                   + Fn() -> Result<S, S::Error>),
              extension: &E,
-             stable_type_id: StableTypeID| {
+             post_serialize: &(dyn Send
+                   + Sync
+                   + Fn(S, u128) -> Result<(), S::Error>)| {
                 map.type_storage::<K, _>(|x| {
                     let Some(x) = x else { return Ok(false) };
 
@@ -563,12 +565,12 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
                         .par_bridge()
                         .map(|value| {
                             let value = value.value();
-                            let mut serializer = create_serializer(
-                                stable_type_id,
-                                crate::fingerprint::fingerprint(value),
-                            )?;
+                            let fingerprint =
+                                crate::fingerprint::fingerprint(value);
+                            let mut serializer = create_serializer()?;
 
                             value.serialize(&mut serializer, extension)?;
+                            post_serialize(serializer, fingerprint)?;
 
                             Ok(())
                         })

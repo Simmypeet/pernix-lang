@@ -22,6 +22,7 @@ derive_more = { workspace = true }
 enum-as-inner = { workspace = true }
 dashmap = { workspace = true }
 rayon = { workspace = true }
+redb = { workspace = true }
 
 [dev-dependencies]
 ron = { workspace = true }

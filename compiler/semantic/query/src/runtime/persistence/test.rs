@@ -64,6 +64,11 @@ fn save_and_load_value() {
         persistence.try_load::<Variable>(initial_fingerprint).unwrap().unwrap();
 
     assert_eq!(initial_string_value, loaded_string_value);
+
+    Command::new("tree")
+        .arg(tmp_dir.path())
+        .status()
+        .expect("Failed to run tree command");
 }
 
 #[test]
