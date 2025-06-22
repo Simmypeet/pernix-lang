@@ -70,15 +70,29 @@ impl<W: Write + 'static> BinarySerializer<W> {
     /// Get a mutable reference to the underlying writer.
     pub fn writer_mut(&mut self) -> &mut W { &mut self.writer }
 
-    /// Write a varint (variable-length integer) encoding of the given value.
+    /// Write a varint (variable-length integer) encoding using a generic
+    /// implementation.
     ///
     /// This uses a simple encoding where each byte contains 7 bits of data
     /// and the high bit indicates whether more bytes follow.
-    fn write_varint(&mut self, mut value: u64) -> Result<(), io::Error> {
+    fn write_varint_generic<T>(&mut self, mut value: T) -> Result<(), io::Error>
+    where
+        T: Copy
+            + PartialEq
+            + From<u8>
+            + std::ops::BitAnd<Output = T>
+            + std::ops::ShrAssign<u8>,
+        u8: TryFrom<T>,
+    {
         loop {
-            let byte = (value & 0x7F) as u8;
+            let byte = u8::try_from(value & T::from(0x7F)).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid varint conversion",
+                )
+            })?;
             value >>= 7;
-            if value == 0 {
+            if value == T::from(0) {
                 self.writer.write_all(&[byte])?;
                 break;
             } else {
@@ -88,21 +102,15 @@ impl<W: Write + 'static> BinarySerializer<W> {
         Ok(())
     }
 
+    /// Write a varint (variable-length integer) encoding of the given u64
+    /// value.
+    fn write_varint(&mut self, value: u64) -> Result<(), io::Error> {
+        self.write_varint_generic(value)
+    }
+
     /// Write a 128-bit varint (variable-length integer) encoding.
-    ///
-    /// This uses the same encoding as write_varint but supports 128-bit values.
-    fn write_varint_u128(&mut self, mut value: u128) -> Result<(), io::Error> {
-        loop {
-            let byte = (value & 0x7F) as u8;
-            value >>= 7;
-            if value == 0 {
-                self.writer.write_all(&[byte])?;
-                break;
-            } else {
-                self.writer.write_all(&[byte | 0x80])?;
-            }
-        }
-        Ok(())
+    fn write_varint_u128(&mut self, value: u128) -> Result<(), io::Error> {
+        self.write_varint_generic(value)
     }
 
     /// Zigzag encode a signed integer to move the sign bit to the LSB.

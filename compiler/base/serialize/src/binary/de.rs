@@ -45,9 +45,22 @@ impl<R: Read + 'static> BinaryDeserializer<R> {
     /// Get a mutable reference to the underlying reader.
     pub fn reader_mut(&mut self) -> &mut R { &mut self.reader }
 
-    /// Read a varint (variable-length integer) from the reader.
-    fn read_varint(&mut self) -> Result<u64, io::Error> {
-        let mut result = 0u64;
+    /// Read a varint (variable-length integer) from the reader using a generic
+    /// implementation.
+    fn read_varint_generic<T>(
+        &mut self,
+        max_bits: u32,
+        error_msg: &'static str,
+    ) -> Result<T, io::Error>
+    where
+        T: Default
+            + Copy
+            + From<u8>
+            + std::ops::BitOr<Output = T>
+            + std::ops::BitOrAssign
+            + std::ops::Shl<u32, Output = T>,
+    {
+        let mut result = T::default();
         let mut shift = 0;
 
         loop {
@@ -55,17 +68,17 @@ impl<R: Read + 'static> BinaryDeserializer<R> {
             self.reader.read_exact(&mut byte)?;
             let byte = byte[0];
 
-            result |= ((byte & 0x7F) as u64) << shift;
+            result |= T::from(byte & 0x7F) << shift;
 
             if byte & 0x80 == 0 {
                 break;
             }
 
             shift += 7;
-            if shift >= 64 {
+            if shift >= max_bits {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Varint too long",
+                    error_msg,
                 ));
             }
         }
@@ -73,32 +86,14 @@ impl<R: Read + 'static> BinaryDeserializer<R> {
         Ok(result)
     }
 
+    /// Read a varint (variable-length integer) from the reader.
+    fn read_varint(&mut self) -> Result<u64, io::Error> {
+        self.read_varint_generic(64, "Varint too long")
+    }
+
     /// Read a 128-bit varint (variable-length integer) from the reader.
     fn read_varint_u128(&mut self) -> Result<u128, io::Error> {
-        let mut result = 0u128;
-        let mut shift = 0;
-
-        loop {
-            let mut byte = [0u8; 1];
-            self.reader.read_exact(&mut byte)?;
-            let byte = byte[0];
-
-            result |= ((byte & 0x7F) as u128) << shift;
-
-            if byte & 0x80 == 0 {
-                break;
-            }
-
-            shift += 7;
-            if shift >= 128 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "128-bit varint too long",
-                ));
-            }
-        }
-
-        Ok(result)
+        self.read_varint_generic(128, "128-bit varint too long")
     }
 
     /// Read a varint-encoded u16 with bounds checking
