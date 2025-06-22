@@ -2,9 +2,10 @@
 
 use std::{
     any::Any,
+    collections::HashSet,
     fs::File,
     io::{BufReader, BufWriter},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -13,8 +14,10 @@ use pernixc_serialize::binary::{
 };
 use pernixc_stable_hash::{StableHash, StableHasher as _, StableSipHasher};
 use pernixc_stable_type_id::StableTypeID;
+use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator};
 
 use crate::{
+    database::map::Map,
     runtime::serde::{DynamicDeserialize, DynamicSerialize},
     Key,
 };
@@ -28,6 +31,8 @@ pub mod morton;
 pub struct Persistence {
     path: PathBuf,
     serde_extension: Arc<dyn Any>,
+    skip_keys: HashSet<StableTypeID>,
+
     serialize_any_value: fn(
         StableTypeID,
         &dyn Any,
@@ -40,13 +45,84 @@ pub struct Persistence {
         &mut BinaryDeserializer<BufReader<File>>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
+    serialize_map: fn(
+        &Map,
+        &HashSet<StableTypeID>,
+        &Path,
+        &dyn Any,
+    ) -> Result<(), std::io::Error>,
+}
+
+fn serialize_map<
+    E: DynamicSerialize<BinarySerializer<BufWriter<File>>>
+        + DynamicDeserialize<BinaryDeserializer<BufReader<File>>>
+        + Send
+        + Sync
+        + 'static,
+>(
+    map: &Map,
+    skip_keys: &HashSet<StableTypeID>,
+    base_path: &Path,
+    serde_extension: &dyn Any,
+) -> Result<(), std::io::Error> {
+    let serde_extension = serde_extension
+        .downcast_ref::<E>()
+        .expect("serde_extension must match the expected type");
+
+    let result = serde_extension
+        .serialization_helper_by_type_id()
+        .par_iter()
+        .map(|a| {
+            if skip_keys.contains(a.0) {
+                return Ok(());
+            }
+
+            let helper = a.1;
+            helper.serialize_cas_map(
+                map,
+                &|stable_type_id, fingerprint| {
+                    // Get the path for the value
+                    let path_buf = Persistence::get_path(
+                        base_path,
+                        stable_type_id,
+                        fingerprint,
+                    );
+
+                    // Create parent directories if they don't exist
+                    if let Some(parent) = path_buf.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+
+                    // Open the file for writing
+                    let file = File::create(&path_buf)?;
+
+                    Ok(BinarySerializer::new(BufWriter::new(file)))
+                },
+                serde_extension,
+                *a.0,
+            )
+        })
+        .collect::<Result<Vec<_>, std::io::Error>>()?;
+
+    assert!(
+        result.len() == map.type_lens(),
+        "not all types were serialized, expected: {}, got: {}",
+        map.type_lens(),
+        result.len()
+    );
+
+    Ok(())
 }
 
 impl Persistence {
-    /// Test
+    /// Creates a new instance of [`Persistence`] with the specified path where
+    /// the database is stored and the serde extension where the types that will
+    /// be serialized and deserialized are registered.
     pub fn new<
         E: DynamicSerialize<BinarySerializer<BufWriter<File>>>
             + DynamicDeserialize<BinaryDeserializer<BufReader<File>>>
+            + Send
+            + Sync
             + 'static,
     >(
         path: PathBuf,
@@ -107,10 +183,22 @@ impl Persistence {
         Self {
             path,
             serde_extension: serde_extension as Arc<dyn Any>,
+            skip_keys: HashSet::default(),
 
             serialize_any_value,
             deserialize_any_value,
+            serialize_map: serialize_map::<E>,
         }
+    }
+
+    /// Serializes thne entire map to the persistence storage.
+    pub fn serialize_map(&self, map: &Map) -> Result<(), std::io::Error> {
+        (self.serialize_map)(
+            map,
+            &self.skip_keys,
+            &self.path,
+            self.serde_extension.as_ref(),
+        )
     }
 
     /// Gets a content-adressable path for a given value's key stable type ID
@@ -118,7 +206,7 @@ impl Persistence {
     #[must_use]
     #[allow(clippy::cast_possible_truncation)]
     pub fn get_path(
-        &self,
+        base_path: &Path,
         key_stable_type_id: StableTypeID,
         value_fingerprint: u128,
     ) -> PathBuf {
@@ -145,7 +233,7 @@ impl Persistence {
         let segment2_hex = format!("{segment2:02x}");
         let segment3_hex = format!("{hi_lower:028x}{lo:032x}"); // 112bits + 128bits = 240bits exactly
 
-        let mut path = self.path.clone();
+        let mut path = base_path.to_path_buf();
         path.push(segment1_hex);
         path.push(segment2_hex);
         path.push(format!("{segment3_hex}.bin"));
@@ -158,7 +246,8 @@ impl Persistence {
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
         // path to load the value
-        let path = self.get_path(K::STABLE_TYPE_ID, value_fingerprint);
+        let path =
+            Self::get_path(&self.path, K::STABLE_TYPE_ID, value_fingerprint);
 
         // Check if the file exists
         if !path.exists() {
@@ -186,11 +275,11 @@ impl Persistence {
     /// Saves a value to the persistence storage.
     pub fn save<K: Key>(&self, value: &K::Value) -> Result<(), std::io::Error> {
         // path to store the value
-        let path = dbg!(self.get_path(K::STABLE_TYPE_ID, {
+        let path = Self::get_path(&self.path, K::STABLE_TYPE_ID, {
             let mut hasher = StableSipHasher::new();
             value.stable_hash(&mut hasher);
             hasher.finish()
-        }));
+        });
 
         // Create parent directories if they don't exist
         if let Some(parent) = path.parent() {

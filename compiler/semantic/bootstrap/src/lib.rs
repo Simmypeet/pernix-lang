@@ -154,10 +154,12 @@ fn bootstrap_runtime() -> Runtime {
 pub fn register_serde<
     S: Serializer<Registry>,
     D: Deserializer<Registry>,
-    Registry: DynamicRegistry<S, D>,
+    Registry: DynamicRegistry<S, D> + Send + Sync,
 >(
     serde_registry: &mut Registry,
-) {
+) where
+    S::Error: Send + Sync,
+{
     serde_registry.register::<accessibility::Key>();
     serde_registry.register::<implemented::Key>();
     serde_registry.register::<implements::Key>();

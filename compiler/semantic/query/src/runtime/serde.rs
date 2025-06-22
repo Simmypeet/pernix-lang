@@ -118,6 +118,7 @@ use pernixc_serialize::{
     Deserialize, Serialize,
 };
 use pernixc_stable_type_id::StableTypeID;
+use rayon::iter::{ParallelBridge, ParallelIterator as _};
 use smallbox::smallbox;
 
 use crate::{database::map::Map, key::DynamicBox, Key};
@@ -189,7 +190,9 @@ pub trait DynamicRegistry<S: Serializer<Self>, D: Deserializer<Self>>:
     /// May panic if the type has already been registered.
     fn register<K: Key + Serialize<S, Self> + Deserialize<D, Self>>(&mut self)
     where
-        K::Value: Serialize<S, Self> + Deserialize<D, Self>;
+        K::Value: Serialize<S, Self> + Deserialize<D, Self>,
+        S::Error: Send + Sync,
+        Self: Send + Sync;
 }
 
 /// A helper struct that contains function pointers for serializing a specific
@@ -204,6 +207,12 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
     map_serializer: fn(&Map, &mut S, &E) -> Result<(), S::Error>,
     dynamic_box_serializer: fn(&DynamicBox, &mut S, &E) -> Result<(), S::Error>,
     value_serializer: fn(&dyn Any, &mut S, &E) -> Result<(), S::Error>,
+    cas_map_serializer: fn(
+        &Map,
+        &(dyn Send + Sync + Fn(StableTypeID, u128) -> Result<S, S::Error>),
+        &E,
+        StableTypeID,
+    ) -> Result<(), S::Error>,
 
     std_type_id: std::any::TypeId,
 }
@@ -217,6 +226,25 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
         extension: &E,
     ) -> Result<(), S::Error> {
         (self.value_serializer)(value, serializer, extension)
+    }
+
+    /// Serializes a `Map` instance in a Content-Addressable Storage (CAS)
+    /// protocol.
+    pub fn serialize_cas_map(
+        &self,
+        map: &Map,
+        create_serializer: &(dyn Send
+              + Sync
+              + Fn(StableTypeID, u128) -> Result<S, S::Error>),
+        extension: &E,
+        stable_type_id: StableTypeID,
+    ) -> Result<(), S::Error> {
+        (self.cas_map_serializer)(
+            map,
+            create_serializer,
+            extension,
+            stable_type_id,
+        )
     }
 }
 
@@ -468,9 +496,12 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
     /// # Panics
     /// Panics if the key type `K` has already been registered in this registry.
     /// Each type can only be registered once per registry instance.
+    #[allow(clippy::too_many_lines)]
     pub fn register<K: Key + Serialize<S, E> + Deserialize<D, E>>(&mut self)
     where
         K::Value: Serialize<S, E> + Deserialize<D, E>,
+        S::Error: Send + Sync,
+        E: Send + Sync,
     {
         use pernixc_serialize::ser::Struct;
 
@@ -518,11 +549,41 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
             value.serialize(serializer, extension)
         };
 
+        let cas_map_serializer =
+            |map: &Map,
+             create_serializer: &(dyn Send
+                   + Sync
+                   + Fn(StableTypeID, u128) -> Result<S, S::Error>),
+             extension: &E,
+             stable_type_id: StableTypeID| {
+                map.type_storage::<K, _>(|x| {
+                    let Some(x) = x else { return Ok(()) };
+
+                    x.iter()
+                        .par_bridge()
+                        .map(|value| {
+                            let value = value.value();
+                            let mut serializer = create_serializer(
+                                stable_type_id,
+                                crate::fingerprint::fingerprint(value),
+                            )?;
+
+                            value.serialize(&mut serializer, extension)?;
+
+                            Ok(())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    Ok(())
+                })
+            };
+
         if self
             .serialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, SerializationHelper {
                 map_serializer,
                 dynamic_box_serializer: dyn_box_serializer,
+                cas_map_serializer,
                 std_type_id: std::any::TypeId::of::<K>(),
                 value_serializer,
             })
@@ -598,6 +659,7 @@ impl<S: Serializer<E>, E> Clone for SerializationHelper<S, E> {
             map_serializer: self.map_serializer,
             dynamic_box_serializer: self.dynamic_box_serializer,
             value_serializer: self.value_serializer,
+            cas_map_serializer: self.cas_map_serializer,
             std_type_id: self.std_type_id,
         }
     }
@@ -795,6 +857,8 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicRegistry<S, D>
     fn register<K: Key + Serialize<S, Self> + Deserialize<D, Self>>(&mut self)
     where
         K::Value: Serialize<S, Self> + Deserialize<D, Self>,
+        S::Error: Send + Sync,
+        Self: Send + Sync,
     {
         self.registry.register::<K>();
     }

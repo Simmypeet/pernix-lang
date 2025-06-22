@@ -284,6 +284,7 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicRegistry<S, D>
     fn register<K: Key + Serialize<S, Self> + Deserialize<D, Self>>(&mut self)
     where
         K::Value: Serialize<S, Self> + Deserialize<D, Self>,
+        S::Error: Send + Sync,
     {
         self.registry.register::<K>();
     }
