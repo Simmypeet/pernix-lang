@@ -23,7 +23,6 @@ extern crate self as pernixc_query;
 pub mod database;
 pub mod fingerprint;
 pub mod key;
-pub mod persistence;
 pub mod runtime;
 
 /// The central data structure for the Pernix compiler storing all the semantic
@@ -42,6 +41,8 @@ pub struct Engine {
     /// serialization components.
     pub runtime: runtime::Runtime,
 }
+
+static_assertions::assert_impl_all!(Engine: Send, Sync);
 
 #[cfg(test)]
 mod test;

@@ -18,9 +18,10 @@ use crate::{
     name::{self, Ext, Name},
     parent::Ext as _,
     span::{self, Span},
-    symbol, tree,
+    symbol, syntax, tree,
 };
 
+#[allow(clippy::too_many_lines)]
 pub(super) fn create_module(
     engine_rw: &RwLock<Engine>,
     generated_ids_rw: &RwLock<HashSet<symbol::ID>>,
@@ -96,9 +97,44 @@ pub(super) fn create_module(
                 );
             }
 
+            pernixc_syntax::item::module::Member::Function(f) => {
+                let Some(identifier) =
+                    f.signature().and_then(|x| x.identifier())
+                else {
+                    continue;
+                };
+
+                let id = add_symbol(
+                    engine_rw,
+                    identifier,
+                    Kind::Function,
+                    current_module_id,
+                    &mut members,
+                    &mut redefinitions,
+                    generated_ids_rw,
+                    handler,
+                );
+
+                engine_rw.write().database.set_input(
+                    &member::Key(TargetID::Local.make_global(id)),
+                    Arc::new(Member::default()),
+                );
+
+                engine_rw.write().database.set_input(
+                    &syntax::FunctionSignatureKey(
+                        TargetID::Local.make_global(id),
+                    ),
+                    syntax::FunctionSignature {
+                        parameters: f.signature().and_then(|x| x.parameters()),
+                        return_type: f
+                            .signature()
+                            .and_then(|x| x.return_type()),
+                    },
+                );
+            }
+
             pernixc_syntax::item::module::Member::Import(_)
             | pernixc_syntax::item::module::Member::Module(_)
-            | pernixc_syntax::item::module::Member::Function(_)
             | pernixc_syntax::item::module::Member::Type(_)
             | pernixc_syntax::item::module::Member::Struct(_)
             | pernixc_syntax::item::module::Member::Implements(_)

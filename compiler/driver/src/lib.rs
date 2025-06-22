@@ -1,10 +1,11 @@
 //! Contains the main `run()` function for the compiler.
 
 use std::{
-    fs::File,
+    fs::{File, Permissions},
     io::{BufReader, BufWriter},
     path::PathBuf,
     process::ExitCode,
+    sync::Arc,
 };
 
 use argument::Arguments;
@@ -18,7 +19,10 @@ use pernixc_diagnostic::Report;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
-    runtime::serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+    runtime::{
+        persistence::Persistence,
+        serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+    },
     Key,
 };
 use pernixc_serialize::{
@@ -331,7 +335,7 @@ pub fn run(
         );
 
     let token_trees_by_source_id = DashMap::default();
-    let (engine, syntax_errors, init_semantic_errors) =
+    let (mut engine, syntax_errors, init_semantic_errors) =
         match pernixc_bootstrap::bootstrap(
             &mut source_map,
             root_source_id,
@@ -451,6 +455,13 @@ pub fn run(
             return ExitCode::FAILURE;
         }
     }
+
+    engine.runtime.persistence =
+        Some(Persistence::new("incremental".into(), Arc::new(serde_extension)));
+
+    pernixc_bootstrap::skip_serde(engine.runtime.persistence.as_mut().unwrap());
+
+    engine.try_save_database().unwrap();
 
     ExitCode::SUCCESS
 }

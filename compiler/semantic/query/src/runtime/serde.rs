@@ -212,7 +212,7 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
         &(dyn Send + Sync + Fn(StableTypeID, u128) -> Result<S, S::Error>),
         &E,
         StableTypeID,
-    ) -> Result<(), S::Error>,
+    ) -> Result<bool, S::Error>,
 
     std_type_id: std::any::TypeId,
 }
@@ -238,7 +238,7 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
               + Fn(StableTypeID, u128) -> Result<S, S::Error>),
         extension: &E,
         stable_type_id: StableTypeID,
-    ) -> Result<(), S::Error> {
+    ) -> Result<bool, S::Error> {
         (self.cas_map_serializer)(
             map,
             create_serializer,
@@ -557,7 +557,7 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
              extension: &E,
              stable_type_id: StableTypeID| {
                 map.type_storage::<K, _>(|x| {
-                    let Some(x) = x else { return Ok(()) };
+                    let Some(x) = x else { return Ok(false) };
 
                     x.iter()
                         .par_bridge()
@@ -574,7 +574,7 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    Ok(())
+                    Ok(true)
                 })
             };
 

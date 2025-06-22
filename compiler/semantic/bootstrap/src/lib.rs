@@ -9,6 +9,7 @@ use pernixc_hash::{DashMap, HashSet};
 use pernixc_query::{
     database::Database,
     runtime::{
+        persistence::Persistence,
         serde::{DynamicDeserialize, DynamicRegistry},
         Runtime,
     },
@@ -170,4 +171,26 @@ pub fn register_serde<
     serde_registry.register::<parent::IntermediateKey>();
     serde_registry.register::<target::Key>();
     serde_registry.register::<span::Key>();
+    serde_registry.register::<import::Key>();
+
+    serde_registry.register::<syntax::FunctionSignatureKey>();
+    serde_registry.register::<syntax::GenericParametersKey>();
+    serde_registry.register::<syntax::WhereClauseKey>();
+    serde_registry.register::<syntax::TypeAliasKey>();
+    serde_registry.register::<syntax::ImplementationQualifiedIdentifierKey>();
+    serde_registry.register::<syntax::StatementsKey>();
+    serde_registry.register::<syntax::FieldsKey>();
+}
+
+/// Registers the keys that should be skipped during serialization and
+/// deserialization in the query engine's persistence layer
+pub fn skip_serde(serde_registry: &mut Persistence) {
+    serde_registry.register_skip_key::<syntax::FunctionSignatureKey>();
+    serde_registry.register_skip_key::<syntax::GenericParametersKey>();
+    serde_registry.register_skip_key::<syntax::WhereClauseKey>();
+    serde_registry.register_skip_key::<syntax::TypeAliasKey>();
+    serde_registry
+        .register_skip_key::<syntax::ImplementationQualifiedIdentifierKey>();
+    serde_registry.register_skip_key::<syntax::StatementsKey>();
+    serde_registry.register_skip_key::<syntax::FieldsKey>();
 }

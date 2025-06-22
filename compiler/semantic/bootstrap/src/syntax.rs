@@ -145,10 +145,10 @@ pub struct WhereClause(
     trait(FunctionSignatureExt)
 )]
 pub struct FunctionSignature {
-    /// The syntax tree that represents the parameters of the function.
-    pub parameters: pernixc_syntax::item::function::Parameters,
+    /// The parameters of the function signature, which can be empty.
+    pub parameters: Option<pernixc_syntax::item::function::Parameters>,
 
-    /// The return type of the function.
+    /// The return type of the function signature, which can be empty.
     pub return_type: Option<pernixc_syntax::item::function::ReturnType>,
 }
 

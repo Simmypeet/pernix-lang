@@ -83,7 +83,18 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Serialize,
+        Deserialize,
+    )]
     pub struct Signature {
         pub function_keyword: Keyword = expect::Keyword::Function,
         pub identifier: Identifier = expect::Identifier,

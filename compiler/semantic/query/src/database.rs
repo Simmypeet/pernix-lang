@@ -8,7 +8,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 
 use crate::{
     runtime::serde::{DynamicDeserialize, DynamicSerialize},
-    Key,
+    Engine, Key,
 };
 
 pub mod call_graph;
@@ -36,5 +36,17 @@ impl Database {
     /// Checks if the database contains a key.
     pub fn contains_key<K: Key>(&self, key: &K) -> bool {
         self.map.contains_key(key)
+    }
+}
+
+impl Engine {
+    /// Attempts to save the current database to persistent storage (if
+    /// persistence is configured).
+    pub fn try_save_database(&self) -> Result<(), std::io::Error> {
+        let Some(persistence) = self.runtime.persistence.as_ref() else {
+            return Ok(());
+        };
+
+        persistence.serialize_map(&self.database.map)
     }
 }

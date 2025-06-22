@@ -30,7 +30,7 @@ pub mod morton;
 #[allow(clippy::type_complexity)]
 pub struct Persistence {
     path: PathBuf,
-    serde_extension: Arc<dyn Any>,
+    serde_extension: Arc<dyn Any + Send + Sync>,
     skip_keys: HashSet<StableTypeID>,
 
     serialize_any_value: fn(
@@ -74,7 +74,7 @@ fn serialize_map<
         .par_iter()
         .map(|a| {
             if skip_keys.contains(a.0) {
-                return Ok(());
+                return Ok(true);
             }
 
             let helper = a.1;
@@ -104,11 +104,13 @@ fn serialize_map<
         })
         .collect::<Result<Vec<_>, std::io::Error>>()?;
 
+    let scanned_count = result.into_iter().filter(|x| *x).count();
+
     assert!(
-        result.len() == map.type_lens(),
+        scanned_count >= map.type_lens(),
         "not all types were serialized, expected: {}, got: {}",
+        scanned_count,
         map.type_lens(),
-        result.len()
     );
 
     Ok(())
@@ -182,13 +184,18 @@ impl Persistence {
 
         Self {
             path,
-            serde_extension: serde_extension as Arc<dyn Any>,
+            serde_extension: serde_extension as Arc<dyn Any + Send + Sync>,
             skip_keys: HashSet::default(),
 
             serialize_any_value,
             deserialize_any_value,
             serialize_map: serialize_map::<E>,
         }
+    }
+
+    /// Registers a key to be skipped during serialization.
+    pub fn register_skip_key<K: Key>(&mut self) {
+        self.skip_keys.insert(K::STABLE_TYPE_ID);
     }
 
     /// Serializes thne entire map to the persistence storage.
