@@ -25,6 +25,11 @@
 
 use std::hash::{BuildHasher, Hash};
 
+extern crate self as pernixc_stable_hash;
+
+#[doc(hidden)]
+pub mod __internal {}
+
 /// A trait for values that can be used as hash outputs.
 ///
 /// This trait represents numeric values that can be used as the result of
