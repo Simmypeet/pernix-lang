@@ -76,7 +76,7 @@
 ///     hashes.into_iter().fold(V::default(), |acc, h| acc.wrapping_add(h))
 /// }
 /// ```
-pub trait Value {
+pub trait Value: Default + StableHash {
     /// Performs wrapping addition with another hash value.
     ///
     /// This operation combines two hash values using wrapping arithmetic,
@@ -574,7 +574,7 @@ pub trait StableHash {
     /// # Returns
     ///
     /// The hash value computed by the hasher
-    fn stable_hash<H: StableHasher>(&self, state: &mut H);
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H);
 }
 
 static_assertions::assert_obj_safe!(StableHasher<Hash = u128>);
@@ -839,5 +839,116 @@ impl StableHasher for StableSipHasher {
         let mut sub_hasher = Self::new_sub_hasher();
         f(&mut sub_hasher);
         sub_hasher.finish()
+    }
+}
+
+impl StableHash for u8 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_u8(*self);
+    }
+}
+
+impl StableHash for u16 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_u16(*self);
+    }
+}
+
+impl StableHash for u32 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_u32(*self);
+    }
+}
+
+impl StableHash for u64 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_u64(*self);
+    }
+}
+
+impl StableHash for u128 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_u128(*self);
+    }
+}
+
+impl StableHash for usize {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_usize(*self);
+    }
+}
+
+impl<T: StableHash> StableHash for Vec<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_length_prefix(self.len());
+        for item in self {
+            item.stable_hash(state);
+        }
+    }
+}
+
+impl<K: StableHash, V: StableHash, B> StableHash
+    for std::collections::HashMap<K, V, B>
+{
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+
+        for (key, value) in self {
+            combined = combined.wrapping_add(state.sub_hash(&mut |sub| {
+                key.stable_hash(sub);
+                value.stable_hash(sub);
+            }));
+        }
+
+        combined.stable_hash(state);
+    }
+}
+
+impl<T: StableHash, B> StableHash for std::collections::HashSet<T, B> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+
+        for value in self {
+            combined = combined.wrapping_add(state.sub_hash(&mut |sub| {
+                value.stable_hash(sub);
+            }));
+        }
+
+        combined.stable_hash(state);
+    }
+}
+
+impl<K: StableHash, V: StableHash> StableHash
+    for std::collections::BTreeMap<K, V>
+{
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        for (key, value) in self {
+            key.stable_hash(state);
+            value.stable_hash(state);
+        }
+    }
+}
+
+impl<T: StableHash> StableHash for std::collections::BTreeSet<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        for value in self {
+            value.stable_hash(state);
+        }
+    }
+}
+
+impl<T: StableHash + ?Sized> StableHash for &T {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        (**self).stable_hash(state);
+    }
+}
+
+impl<T: StableHash + ?Sized> StableHash for &mut T {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        (**self).stable_hash(state);
     }
 }
