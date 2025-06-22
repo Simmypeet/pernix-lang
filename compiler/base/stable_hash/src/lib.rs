@@ -1,590 +1,327 @@
-//! # Stable Hashing
+//! # Stable Hash Library
 //!
-//! This crate provides traits and utilities for stable hashing, ensuring
-//! consistent hash values across different runs and platforms. The stable
-//! hashing system is designed to be deterministic and reproducible, making it
-//! suitable for use in scenarios where hash consistency is critical, such as:
+//! This crate provides a stable hashing system that produces consistent hash
+//! values across different program runs and platforms. Unlike standard hash
+//! functions that may vary between runs for security reasons, stable hashes are
+//! designed to be reproducible and deterministic.
 //!
-//! - Compiler intermediate representations
-//! - Serialization and deserialization
-//! - Testing and debugging
-//! - Incremental compilation systems
+//! The main components of this library are:
 //!
-//! ## Core Traits
-//!
-//! - [`Value`]: Represents hash values that can be combined
-//! - [`StableHasher`]: The core hashing interface with deterministic behavior
-//! - [`StableHash`]: Types that can be hashed in a stable manner
+//! - [`StableHash`] trait: Defines how types can be hashed in a stable manner
+//! - [`StableHasher`] trait: Defines the interface for stable hash functions
+//! - [`StableSipHasher`] struct: A concrete implementation using the `SipHash`
+//!   algorithm
+//! - [`Value`] trait: Represents hash output values that can be combined
 //!
 //! ## Example
 //!
 //! ```rust
-//! use stable_hash::{StableHash, StableHasher};
+//! use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
 //!
-//! // Implement StableHash for your types
-//! struct MyStruct {
-//!     value: u32,
-//! }
-//!
-//! impl StableHash for MyStruct {
-//!     fn stable_hash<H: StableHasher>(&self, state: &mut H) -> H::Hash {
-//!         self.value.stable_hash(state)
-//!     }
-//! }
+//! let mut hasher = StableSipHasher::new();
+//! "hello world".stable_hash(&mut hasher);
+//! let hash = hasher.finish();
 //! ```
 
-/// A trait for hash values that can be combined through wrapping addition.
+/// A trait for values that can be used as hash outputs.
 ///
-/// This trait is used to represent the result type of stable hashing
-/// operations. Hash values must support wrapping addition to enable composition
-/// of hashes from multiple components in a deterministic and order-independent
-/// manner.
-///
-/// The key requirement is that the `wrapping_add` operation must be both
-/// commutative and associative, ensuring that hash combinations produce
-/// consistent results regardless of the order in which hash values are
-/// combined. This property is crucial for stable hashing where deterministic
-/// behavior across different execution contexts is required.
-///
-/// # Mathematical Properties
-///
-/// Implementations must satisfy:
-/// - **Commutativity**: `a + b = b + a`
-/// - **Associativity**: `(a + b) + c = a + (b + c)`
-///
-/// These properties ensure that collections of hash values can be combined
-/// in any order and still produce the same final result.
-///
-/// # Examples
-///
-/// Common implementations include:
-/// - `u64` for 64-bit hash values
-/// - `u128` for 128-bit hash values
-///
-/// ```rust
-/// use stable_hash::Value;
-///
-/// fn combine_hashes<V: Value>(hash1: V, hash2: V) -> V {
-///     hash1.wrapping_add(hash2)
-/// }
-///
-/// // Hash values can be combined in any order
-/// fn combine_multiple<V: Value>(hashes: Vec<V>) -> V
-/// where
-///     V: Default + Copy,
-/// {
-///     hashes.into_iter().fold(V::default(), |acc, h| acc.wrapping_add(h))
-/// }
-/// ```
+/// This trait represents numeric values that can be used as the result of
+/// stable hashing. Types implementing this trait must support default
+/// construction, stable hashing of themselves, and wrapping addition for
+/// combining hash values.
 pub trait Value: Default + StableHash {
-    /// Performs wrapping addition with another hash value.
+    /// Performs wrapping addition of two values.
     ///
-    /// This operation combines two hash values using wrapping arithmetic,
-    /// which ensures that overflow is handled consistently across platforms.
-    /// The wrapping addition operation has crucial mathematical properties
-    /// that make it suitable for stable hashing:
+    /// This is used to combine hash values in a way that doesn't panic on
+    /// overflow, which is essential for stable hash computation.
     ///
-    /// - **Commutative**: `a.wrapping_add(b) == b.wrapping_add(a)`
-    /// - **Associative**: `(a.wrapping_add(b)).wrapping_add(c) ==
-    ///   a.wrapping_add(b.wrapping_add(c))`
+    /// # Arguments
     ///
-    /// These properties ensure that hash values can be combined in any order
-    /// and still produce the same result, which is essential for stable hashing
-    /// where the order of operations must not affect the final hash value.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use stable_hash::Value;
-    ///
-    /// let hash1: u64 = 0x1234567890abcdef;
-    /// let hash2: u64 = 0xfedcba0987654321;
-    /// let hash3: u64 = 0x1111222233334444;
-    ///
-    /// // Commutative property
-    /// assert_eq!(hash1.wrapping_add(hash2), hash2.wrapping_add(hash1));
-    ///
-    /// // Associative property
-    /// let combined1 = hash1.wrapping_add(hash2).wrapping_add(hash3);
-    /// let combined2 = hash1.wrapping_add(hash2.wrapping_add(hash3));
-    /// assert_eq!(combined1, combined2);
-    /// ```
-    ///
-    /// # Parameters
-    ///
-    /// - `other`: The hash value to add to this one
+    /// * `other` - The value to add to this value
     ///
     /// # Returns
     ///
-    /// The combined hash value using wrapping addition
+    /// The result of wrapping addition
     #[must_use]
     fn wrapping_add(self, other: Self) -> Self;
 }
 
-/// A trait for stable hashers that provide deterministic hashing behavior.
+/// A trait for stable hash functions.
 ///
-/// `StableHasher` is the core trait for implementing stable hashing. Unlike
-/// standard hashers that may produce different results across runs, stable
-/// hashers guarantee consistent output for the same input, making them suitable
-/// for use in scenarios where reproducibility is required.
+/// This trait defines the interface for hash functions that produce consistent,
+/// stable hash values. Unlike standard hash functions that may vary between
+/// runs for security reasons, stable hashers are designed to be reproducible.
 ///
-/// The hasher supports hierarchical hashing through the `sub_hash` method,
-/// allowing for structured hashing of complex data types.
+/// The hasher works by accepting data through various `write_*` methods and
+/// producing a final hash value through the `finish` method.
 ///
-/// # Type Parameters
-///
-/// - `Hash`: The type of hash values produced by this hasher, must implement
-///   [`Value`]
-///
-/// # Examples
+/// ## Example
 ///
 /// ```rust
-/// use stable_hash::{StableHasher, Value};
+/// use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
 ///
-/// struct MyHasher {
-///     state: u64,
-/// }
-///
-/// impl StableHasher for MyHasher {
-///     type Hash = u64;
-///
-///     fn finish(&self) -> u128 { self.state as u128 }
-///
-///     fn write(&mut self, bytes: &[u8]) {
-///         // Implementation details...
-///     }
-///
-///     fn sub_hash(
-///         &mut self,
-///         f: &mut dyn FnMut(&mut dyn StableHasher<Hash = Self::Hash>),
-///     ) -> Self::Hash {
-///         // Implementation details...
-///         # 0
-///     }
-/// }
+/// let mut hasher = StableSipHasher::new();
+/// hasher.write_u32(42);
+/// hasher.write_str("hello");
+/// let hash = hasher.finish();
 /// ```
 pub trait StableHasher {
-    /// The type of hash values produced by this hasher.
+    /// The type of hash value produced by this hasher.
     ///
-    /// This associated type must implement [`Value`] to support hash
-    /// combination operations. Common choices are `u64` for performance or
-    /// `u128` for reduced collision probability.
+    /// This associated type must implement [`Value`], which allows hash values
+    /// to be combined using wrapping addition for stable hash computation.
     type Hash: Value;
 
-    /// Returns the final hash value as a 128-bit integer.
+    /// Consumes the hasher and returns the final hash value.
     ///
     /// This method should be called after all data has been written to the
-    /// hasher to obtain the final hash result. The result is always
-    /// returned as `u128` regardless of the internal hash type for
-    /// consistency.
+    /// hasher to obtain the computed hash value.
     ///
     /// # Returns
     ///
-    /// The final hash value as a 128-bit unsigned integer
-    fn finish(&self) -> u128;
+    /// The computed hash value of type `Self::Hash`
+    fn finish(&self) -> Self::Hash;
 
-    /// Writes a slice of bytes into the hasher.
+    /// Writes a slice of bytes to the hasher.
     ///
-    /// This is the fundamental method for feeding data into the hasher. All
-    /// other data types should ultimately be converted to bytes and fed
-    /// through this method to ensure consistent hashing behavior.
+    /// This is the fundamental method that all other `write_*` methods delegate
+    /// to. The bytes are processed in the order they appear in the slice.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `bytes`: The byte slice to hash
+    /// * `bytes` - The byte slice to hash
     fn write(&mut self, bytes: &[u8]);
 
-    /// Writes a single `u8` value into the hasher.
+    /// Writes a single `u8` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// # Arguments
     ///
-    /// # Parameters
-    ///
-    /// - `i`: The `u8` value to hash
+    /// * `i` - The `u8` value to hash
     fn write_u8(&mut self, i: u8) { self.write(&[i]); }
 
-    /// Writes a single `i8` value into the hasher.
+    /// Writes a single `i8` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `i8` value to hash
+    /// * `i` - The `i8` value to hash
     fn write_i8(&mut self, i: i8) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `u16` value into the hasher.
+    /// Writes a single `u16` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `u16` value to hash
+    /// * `i` - The `u16` value to hash
     fn write_u16(&mut self, i: u16) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `i16` value into the hasher.
+    /// Writes a single `i16` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `i16` value to hash
+    /// * `i` - The `i16` value to hash
     fn write_i16(&mut self, i: i16) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `u32` value into the hasher.
+    /// Writes a single `u32` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `u32` value to hash
+    /// * `i` - The `u32` value to hash
     fn write_u32(&mut self, i: u32) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `i32` value into the hasher.
+    /// Writes a single `i32` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `i32` value to hash
+    /// * `i` - The `i32` value to hash
     fn write_i32(&mut self, i: i32) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `u64` value into the hasher.
+    /// Writes a single `u64` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `u64` value to hash
+    /// * `i` - The `u64` value to hash
     fn write_u64(&mut self, i: u64) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `i64` value into the hasher.
+    /// Writes a single `i64` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `i64` value to hash
+    /// * `i` - The `i64` value to hash
     fn write_i64(&mut self, i: i64) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `u128` value into the hasher.
+    /// Writes a single `u128` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `u128` value to hash
+    /// * `i` - The `u128` value to hash
     fn write_u128(&mut self, i: u128) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `i128` value into the hasher.
+    /// Writes a single `i128` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `i128` value to hash
+    /// * `i` - The `i128` value to hash
     fn write_i128(&mut self, i: i128) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `usize` value into the hasher.
+    /// Writes a single `usize` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `usize` value to hash
+    /// * `i` - The `usize` value to hash
     fn write_usize(&mut self, i: usize) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `isize` value into the hasher.
+    /// Writes a single `isize` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `i`: The `isize` value to hash
+    /// * `i` - The `isize` value to hash
     fn write_isize(&mut self, i: isize) { self.write(&i.to_le_bytes()); }
 
-    /// Writes a single `f32` value into the hasher.
+    /// Writes a single `f32` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
-    /// Special handling is applied for NaN values to ensure deterministic
-    /// behavior.
+    /// NaN values are normalized to a canonical NaN before hashing to ensure
+    /// consistent hash values regardless of the specific NaN representation.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `f`: The `f32` value to hash
+    /// * `f` - The `f32` value to hash
     fn write_f32(&mut self, f: f32) {
-        // Normalize NaN to ensure deterministic hashing
         let normalized = if f.is_nan() { f32::NAN } else { f };
         self.write(&normalized.to_le_bytes());
     }
 
-    /// Writes a single `f64` value into the hasher.
+    /// Writes a single `f64` value to the hasher.
     ///
-    /// The default implementation converts the value to bytes using
-    /// little-endian encoding for consistent cross-platform behavior.
-    /// Special handling is applied for NaN values to ensure deterministic
-    /// behavior.
+    /// NaN values are normalized to a canonical NaN before hashing to ensure
+    /// consistent hash values regardless of the specific NaN representation.
+    /// The value is converted to little-endian bytes before hashing.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `f`: The `f64` value to hash
+    /// * `f` - The `f64` value to hash
     fn write_f64(&mut self, f: f64) {
-        // Normalize NaN to ensure deterministic hashing
         let normalized = if f.is_nan() { f64::NAN } else { f };
         self.write(&normalized.to_le_bytes());
     }
 
     /// Writes a length prefix for variable-length data.
     ///
-    /// This method is used to hash a length value before hashing the actual
-    /// data, ensuring that different-sized data with the same prefix don't
-    /// collide. The default implementation writes the length as a `usize`
-    /// using little-endian encoding.
+    /// This is typically used before writing collections or strings to include
+    /// their length in the hash, ensuring that different collections with the
+    /// same elements in the same order but different lengths produce different
+    /// hashes.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `len`: The length to write as a prefix
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use stable_hash::StableHasher;
-    ///
-    /// fn hash_slice<H: StableHasher>(hasher: &mut H, data: &[u8]) -> H::Hash {
-    ///     hasher.sub_hash(&mut |sub| {
-    ///         sub.write_length_prefix(data.len());
-    ///         sub.write(data);
-    ///     })
-    /// }
-    /// ```
+    /// * `len` - The length value to write as a prefix
     fn write_length_prefix(&mut self, len: usize) { self.write_usize(len); }
 
-    /// Writes a string slice into the hasher.
+    /// Writes a string to the hasher.
     ///
-    /// This method hashes a string by first writing its length as a prefix
-    /// (to prevent collisions between strings that are prefixes of others)
-    /// and then writing the UTF-8 bytes of the string. This ensures
-    /// deterministic behavior and prevents hash collisions between strings
-    /// like "ab" + "c" and "a" + "bc".
+    /// The string is hashed with a length prefix followed by its UTF-8 bytes.
+    /// This ensures that strings with the same content but different lengths
+    /// (due to embedded nulls or similar) produce different hash values.
     ///
-    /// # Design Choice: Length Prefix vs Suffix Delimiter
+    /// # Arguments
     ///
-    /// Unlike Rust's standard `Hasher::write_str` which uses a `0xFF` suffix
-    /// for performance reasons, this implementation uses a length prefix for
-    /// several stability-focused reasons:
-    ///
-    /// 1. **Cross-platform consistency**: Length prefixes behave identically
-    ///    across different hasher implementations and architectures
-    /// 2. **Deterministic semantics**: The length-first approach makes data
-    ///    boundaries explicit and predictable
-    /// 3. **Stable hashing priority**: Consistency is more important than
-    ///    micro-optimizations in stable hashing contexts
-    ///
-    /// # Parameters
-    ///
-    /// - `s`: The string slice to hash
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use stable_hash::StableHasher;
-    ///
-    /// fn hash_string<H: StableHasher>(hasher: &mut H, text: &str) -> H::Hash {
-    ///     hasher.sub_hash(&mut |sub| {
-    ///         sub.write_str(text);
-    ///     })
-    /// }
-    /// ```
-    ///
-    /// # Implementation Details
-    ///
-    /// The default implementation is equivalent to:
-    /// ```rust,ignore
-    /// hasher.write_length_prefix(s.len());
-    /// hasher.write(s.as_bytes());
-    /// ```
-    ///
-    /// This approach guarantees that different strings always produce
-    /// different hash input sequences, preventing prefix-based collisions.
+    /// * `s` - The string slice to hash
     fn write_str(&mut self, s: &str) {
         self.write_length_prefix(s.len());
         self.write(s.as_bytes());
     }
 
-    /// Computes a sub-hash using a nested hasher context.
+    /// Creates a sub-hasher and computes a hash for a nested structure.
     ///
-    /// This method enables hierarchical hashing by creating a nested hashing
-    /// context. The provided closure receives a mutable reference to a
-    /// sub-hasher, allowing for structured hashing of complex data types
-    /// while maintaining deterministic ordering.
+    /// This method is used to compute hashes for nested data structures while
+    /// maintaining the stability of the overall hash. The provided closure is
+    /// called with a new hasher instance, and the resulting hash is returned.
     ///
-    /// # Deterministic Requirements
+    /// This is particularly useful for hashing collections where the order of
+    /// elements shouldn't affect the final hash (like `HashMap` or `HashSet`).
     ///
-    /// **CRITICAL**: This method MUST be deterministic across all invocations.
-    /// For the same input data and hasher state, `sub_hash` must always:
+    /// # Arguments
     ///
-    /// 1. **Produce identical results**: Multiple calls with the same inputs
-    ///    must yield exactly the same hash value
-    /// 2. **Maintain consistent sub-hasher behavior**: The sub-hasher provided
-    ///    to the closure must behave identically across invocations
-    /// 3. **Preserve state isolation**: Each sub-hash operation must not
-    ///    interfere with other sub-hash operations or the parent hasher's state
-    /// 4. **Ensure reproducible execution**: The same sequence of operations
-    ///    within the closure must produce the same final hash
-    ///
-    /// Violating these requirements will break the stability guarantees of the
-    /// entire hashing system, leading to inconsistent results across program
-    /// runs, which is unacceptable for incremental compilation, serialization,
-    /// and testing scenarios.
-    ///
-    /// # Implementation Guidelines
-    ///
-    /// When implementing this method:
-    /// - Use deterministic initialization for the sub-hasher
-    /// - Ensure the sub-hasher's internal state is fully isolated
-    /// - Do not rely on non-deterministic sources (e.g., memory addresses,
-    ///   timestamps)
-    /// - Maintain consistent behavior regardless of system state or execution
-    ///   context
-    ///
-    /// # Parameters
-    ///
-    /// - `f`: A closure that receives a mutable reference to a sub-hasher. This
-    ///   closure must also be deterministic in its operations.
+    /// * `f` - A closure that receives a mutable reference to a sub-hasher
     ///
     /// # Returns
     ///
-    /// The hash value computed by the sub-hasher, guaranteed to be identical
-    /// for identical inputs across all invocations.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use stable_hash::StableHasher;
-    ///
-    /// fn hash_pair<H: StableHasher>(hasher: &mut H, a: u32, b: u32) -> H::Hash {
-    ///     // This sub_hash call must produce the same result every time
-    ///     // for the same values of a and b
-    ///     hasher.sub_hash(&mut |sub_hasher| {
-    ///         sub_hasher.write(&a.to_le_bytes());
-    ///         sub_hasher.write(&b.to_le_bytes());
-    ///     })
-    /// }
-    ///
-    /// // Example of deterministic nested hashing
-    /// fn hash_struct<H: StableHasher>(
-    ///     hasher: &mut H,
-    ///     name: &str,
-    ///     id: u64,
-    ///     active: bool,
-    /// ) -> H::Hash {
-    ///     hasher.sub_hash(&mut |sub| {
-    ///         // Always hash in the same order for deterministic results
-    ///         sub.write(name.as_bytes());
-    ///         sub.write(&id.to_le_bytes());
-    ///         sub.write(&[active as u8]);
-    ///     })
-    /// }
-    /// ```
-    ///
-    /// # Counterexample (DO NOT DO)
-    ///
-    /// ```rust,ignore
-    /// use stable_hash::StableHasher;
-    /// use std::collections::HashMap;
-    ///
-    /// // BAD: Non-deterministic due to HashMap iteration order
-    /// fn bad_hash_map<H: StableHasher>(hasher: &mut H, map: &HashMap<String, u32>) -> H::Hash {
-    ///     hasher.sub_hash(&mut |sub| {
-    ///         for (key, value) in map.iter() { // Order is not guaranteed!
-    ///             sub.write(key.as_bytes());
-    ///             sub.write(&value.to_le_bytes());
-    ///         }
-    ///     })
-    /// }
-    /// ```
+    /// The hash value computed by the sub-hasher
     fn sub_hash(
         &mut self,
         f: &mut dyn FnMut(&mut dyn StableHasher<Hash = Self::Hash>),
     ) -> Self::Hash;
 }
 
-/// A trait for types that can be stably hashed.
+/// A trait for types that can be hashed in a stable manner.
 ///
-/// Types implementing this trait can produce deterministic hash values that
-/// remain consistent across different program runs and platforms. This is
-/// essential for use cases like incremental compilation, serialization,
-/// and testing.
+/// Types implementing this trait can produce consistent hash values across
+/// different program runs and platforms. This is essential for reproducible
+/// builds, serialization, and testing scenarios where hash consistency matters.
 ///
-/// # Implementation Guidelines
+/// The trait provides a single method that takes a mutable reference to a
+/// [`StableHasher`] and feeds the type's data into the hasher.
 ///
-/// When implementing `StableHash` for your types:
-///
-/// 1. Hash all fields that contribute to the type's identity
-/// 2. Use a consistent order for hashing fields
-/// 3. Consider using `sub_hash` for complex nested structures
-/// 4. Ensure the implementation is deterministic
-///
-/// # Examples
+/// ## Example
 ///
 /// ```rust
-/// use stable_hash::{StableHash, StableHasher};
+/// use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
 ///
+/// #[derive(Debug)]
 /// struct Point {
-///     x: f64,
-///     y: f64,
+///     x: i32,
+///     y: i32,
 /// }
 ///
 /// impl StableHash for Point {
-///     fn stable_hash<H: StableHasher>(&self, state: &mut H) -> H::Hash {
-///         state.sub_hash(&mut |sub_state| {
-///             sub_state.write(&self.x.to_le_bytes());
-///             sub_state.write(&self.y.to_le_bytes());
-///         })
+///     fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+///         self.x.stable_hash(state);
+///         self.y.stable_hash(state);
 ///     }
 /// }
+///
+/// let point = Point { x: 10, y: 20 };
+/// let mut hasher = StableSipHasher::new();
+/// point.stable_hash(&mut hasher);
+/// let hash = hasher.finish();
 /// ```
 pub trait StableHash {
-    /// Computes a stable hash of this value.
+    /// Feeds this type's data into the provided hasher.
     ///
-    /// This method feeds the value's data into the provided hasher in a
-    /// deterministic manner, producing a stable hash that will be consistent
-    /// across different program runs.
+    /// Implementations should hash all fields that contribute to the type's
+    /// identity in a consistent order. The hash should be stable across
+    /// different program runs and platforms.
     ///
-    /// # Type Parameters
+    /// # Arguments
     ///
-    /// - `H`: The type of hasher to use, must implement [`StableHasher`]
-    ///
-    /// # Parameters
-    ///
-    /// - `state`: A mutable reference to the hasher
-    ///
-    /// # Returns
-    ///
-    /// The hash value computed by the hasher
+    /// * `state` - The hasher to feed data into
     fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H);
 }
 
 static_assertions::assert_obj_safe!(StableHasher<Hash = u128>);
 static_assertions::assert_obj_safe!(StableHasher<Hash = u64>);
 
-/// Implementations of `Value` for unsigned integer types.
-///
-/// These implementations enable using standard unsigned integer types as hash
-/// values in the stable hashing system. All implementations use the built-in
-/// `wrapping_add` method to ensure consistent overflow behavior.
 impl Value for u8 {
     #[must_use]
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
@@ -615,31 +352,33 @@ impl Value for usize {
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
 }
 
-/// A stable hasher implementation using SipHash-2-4 algorithm.
+/// A stable hash function implementation based on the `SipHash` algorithm.
 ///
-/// This implementation provides cryptographically secure hashing with excellent
-/// performance characteristics, making it ideal for critical fingerprinting and
-/// equality checking scenarios. The hasher produces 128-bit hashes for maximum
-/// collision resistance.
+/// `StableSipHasher` provides a concrete implementation of the [`StableHasher`]
+/// trait using a modified version of the `SipHash` algorithm. Unlike the
+/// standard library's hasher, this implementation uses fixed keys to ensure
+/// consistent hash values across different program runs.
 ///
-/// # Features
+/// The hasher produces 128-bit hash values and is designed to be
+/// cryptographically secure while maintaining excellent performance
+/// characteristics.
 ///
-/// - **Cryptographically secure**: Resistant to hash-flooding attacks
+/// ## Features
+///
 /// - **Deterministic**: Always produces the same hash for the same input
-/// - **128-bit output**: Provides excellent collision resistance
-/// - **Cross-platform consistent**: Identical behavior across all platforms
+/// - **Fast**: Optimized for performance with minimal overhead
+/// - **Secure**: Based on the cryptographically secure `SipHash` algorithm
+/// - **Cross-platform**: Consistent results across different architectures
 ///
-/// # Examples
+/// ## Example
 ///
 /// ```rust
-/// use stable_hash::{StableHash, StableHasher, StableSipHasher};
+/// use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
 ///
 /// let mut hasher = StableSipHasher::new();
-/// hasher.write_str("hello world");
+/// "hello world".stable_hash(&mut hasher);
 /// let hash = hasher.finish();
-///
-/// // Or using the StableHash trait
-/// let hash = "hello world".stable_hash(&mut StableSipHasher::new());
+/// println!("Hash: {:x}", hash);
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct StableSipHasher {
@@ -653,18 +392,25 @@ pub struct StableSipHasher {
 }
 
 impl StableSipHasher {
-    /// Creates a new `StableSipHasher` with deterministic seeds.
+    /// Creates a new `StableSipHasher` with default keys.
     ///
-    /// This constructor uses fixed, deterministic seeds to ensure that
-    /// hash values are consistent across different program runs and
-    /// platforms. This is essential for stable hashing requirements.
+    /// This constructor uses fixed, predetermined keys to ensure that hash
+    /// values are consistent across different program runs. The default keys
+    /// are chosen to provide good hash distribution while maintaining
+    /// stability.
     ///
-    /// # Examples
+    /// # Returns
+    ///
+    /// A new `StableSipHasher` instance ready for use
+    ///
+    /// # Example
     ///
     /// ```rust
-    /// use stable_hash::StableSipHasher;
+    /// use pernixc_stable_hash::{StableHasher, StableSipHasher};
     ///
-    /// let hasher = StableSipHasher::new();
+    /// let mut hasher = StableSipHasher::new();
+    /// hasher.write_u32(42);
+    /// let hash = hasher.finish();
     /// ```
     #[must_use]
     pub const fn new() -> Self {
@@ -673,21 +419,30 @@ impl StableSipHasher {
 
     /// Creates a new `StableSipHasher` with custom keys.
     ///
-    /// This allows for custom initialization while maintaining deterministic
-    /// behavior. The keys should be fixed constants to ensure stability.
+    /// This constructor allows you to specify custom keys for the hasher.
+    /// Different keys will produce different hash values for the same input,
+    /// but the same keys will always produce consistent results.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// - `key0`: First 64-bit key
-    /// - `key1`: Second 64-bit key
+    /// * `key0` - The first 64-bit key for the hash function
+    /// * `key1` - The second 64-bit key for the hash function
     ///
-    /// # Examples
+    /// # Returns
+    ///
+    /// A new `StableSipHasher` instance initialized with the provided keys
+    ///
+    /// # Example
     ///
     /// ```rust
-    /// use stable_hash::StableSipHasher;
+    /// use pernixc_stable_hash::{StableHasher, StableSipHasher};
     ///
-    /// let hasher =
-    ///     StableSipHasher::new_with_keys(0x1234567890abcdef, 0xfedcba0987654321);
+    /// let mut hasher = StableSipHasher::new_with_keys(
+    ///     0x1234_5678_9abc_def0,
+    ///     0xfedc_ba98_7654_3210,
+    /// );
+    /// hasher.write_str("test");
+    /// let hash = hasher.finish();
     /// ```
     #[must_use]
     pub const fn new_with_keys(key0: u64, key1: u64) -> Self {
@@ -701,17 +456,11 @@ impl StableSipHasher {
             processed: 0,
         };
 
-        // XOR in the 128-bit output flag
         hasher.v1 ^= 0xee;
 
         hasher
     }
 
-    /// Creates a fresh hasher for sub-hashing operations.
-    ///
-    /// This method creates a new hasher instance with deterministic
-    /// initialization suitable for use in `sub_hash` operations.
-    /// The hasher is isolated from the parent hasher state.
     const fn new_sub_hasher() -> Self {
         Self::new_with_keys(0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3210)
     }
@@ -741,7 +490,6 @@ impl StableSipHasher {
     const fn process_block(&mut self, block: u64) {
         self.v3 ^= block;
 
-        // SipHash-2-4: 2 compression rounds
         self.sipround();
         self.sipround();
 
@@ -751,16 +499,13 @@ impl StableSipHasher {
     fn finish_128(&self) -> u128 {
         let mut hasher = *self;
 
-        // Process remaining tail bytes
         let mut tail = hasher.tail;
         tail |= (hasher.processed.wrapping_add(hasher.ntail) as u64) << 56;
 
         hasher.process_block(tail);
 
-        // Finalization: XOR in 0xff and run 4 rounds
         hasher.v2 ^= 0xff;
 
-        // SipHash-2-4: 4 finalization rounds
         hasher.sipround();
         hasher.sipround();
         hasher.sipround();
@@ -768,7 +513,6 @@ impl StableSipHasher {
 
         let first_half = hasher.v0 ^ hasher.v1 ^ hasher.v2 ^ hasher.v3;
 
-        // Second half for 128-bit output
         hasher.v1 ^= 0xdd;
 
         hasher.sipround();
@@ -794,7 +538,6 @@ impl StableHasher for StableSipHasher {
     fn write(&mut self, bytes: &[u8]) {
         let mut bytes = bytes;
 
-        // Process any remaining tail bytes first
         if self.ntail > 0 {
             let needed = 8 - self.ntail;
             let available = bytes.len().min(needed);
@@ -814,7 +557,6 @@ impl StableHasher for StableSipHasher {
             bytes = &bytes[available..];
         }
 
-        // Process full 8-byte blocks
         while bytes.len() >= 8 {
             let block = u64::from_le_bytes([
                 bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
@@ -825,7 +567,6 @@ impl StableHasher for StableSipHasher {
             bytes = &bytes[8..];
         }
 
-        // Store remaining bytes in tail
         for (i, &byte) in bytes.iter().enumerate() {
             self.tail |= u64::from(byte) << (8 * i);
         }
@@ -848,9 +589,21 @@ impl StableHash for u8 {
     }
 }
 
+impl StableHash for i8 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_i8(*self);
+    }
+}
+
 impl StableHash for u16 {
     fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         state.write_u16(*self);
+    }
+}
+
+impl StableHash for i16 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_i16(*self);
     }
 }
 
@@ -860,9 +613,21 @@ impl StableHash for u32 {
     }
 }
 
+impl StableHash for i32 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_i32(*self);
+    }
+}
+
 impl StableHash for u64 {
     fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         state.write_u64(*self);
+    }
+}
+
+impl StableHash for i64 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_i64(*self);
     }
 }
 
@@ -872,9 +637,45 @@ impl StableHash for u128 {
     }
 }
 
+impl StableHash for i128 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_i128(*self);
+    }
+}
+
 impl StableHash for usize {
     fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
         state.write_usize(*self);
+    }
+}
+
+impl StableHash for isize {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_isize(*self);
+    }
+}
+
+impl StableHash for f32 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_f32(*self);
+    }
+}
+
+impl StableHash for f64 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_f64(*self);
+    }
+}
+
+impl StableHash for str {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_str(self);
+    }
+}
+
+impl StableHash for String {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.as_str().stable_hash(state);
     }
 }
 
@@ -952,3 +753,6 @@ impl<T: StableHash + ?Sized> StableHash for &mut T {
         (**self).stable_hash(state);
     }
 }
+
+#[cfg(test)]
+mod test;
