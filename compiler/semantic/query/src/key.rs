@@ -3,7 +3,7 @@
 use std::hash::Hash;
 
 use pernixc_arena::ID;
-use pernixc_stable_hash::StableHash;
+use pernixc_stable_hash::{StableHash, StableHasher};
 use pernixc_stable_type_id::{Identifiable, StableTypeID};
 use pernixc_target::Global;
 
@@ -66,6 +66,8 @@ pub trait Dynamic: 'static + Send + Sync {
     #[doc(hidden)]
     fn hash(&self, state: &mut dyn std::hash::Hasher);
     #[doc(hidden)]
+    fn stable_hash_u128(&self, state: &mut dyn StableHasher<Hash = u128>);
+    #[doc(hidden)]
     fn smallbox_clone(&self) -> SmallBox<dyn Dynamic>;
     #[doc(hidden)]
     fn stable_type_id(&self) -> StableTypeID;
@@ -105,6 +107,10 @@ impl<K: Key> Dynamic for K {
     fn stable_type_id(&self) -> StableTypeID { Self::STABLE_TYPE_ID }
 
     fn type_name(&self) -> &'static str { std::any::type_name::<Self>() }
+
+    fn stable_hash_u128(&self, state: &mut dyn StableHasher<Hash = u128>) {
+        pernixc_stable_hash::StableHash::stable_hash(self, state);
+    }
 }
 
 impl std::fmt::Debug for dyn Dynamic {

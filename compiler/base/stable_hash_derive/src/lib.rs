@@ -110,6 +110,7 @@ pub fn derive_stable_hash(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
+        #[allow(clippy::trait_duplication_in_bounds)]
         impl #impl_generics ::pernixc_stable_hash::StableHash for #name #ty_generics #where_clause {
             fn stable_hash<H: ::pernixc_stable_hash::StableHasher + ?Sized>(&self, state: &mut H) {
                 #stable_hash_impl

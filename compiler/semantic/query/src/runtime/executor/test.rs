@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
+use pernixc_stable_hash::StableHash;
+
 use super::Executor;
 use crate::{Engine, Key};
 
-#[derive(Key, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Key, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash,
+)]
 #[value(String)]
 struct Test;
 

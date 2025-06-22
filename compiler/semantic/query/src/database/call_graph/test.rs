@@ -7,6 +7,7 @@ use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     database::Database,
@@ -26,6 +27,7 @@ use crate::{
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -42,6 +44,7 @@ pub struct Variable(String);
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -71,6 +74,7 @@ impl Executor<NegateVariable> for NegateVariableExecutor {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -79,7 +83,9 @@ pub struct SumNegatedVariable {
     pub b: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash,
+)]
 pub struct SumNegatedVariableExecutor;
 
 impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
@@ -138,6 +144,7 @@ fn negate_variable() {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -221,6 +228,7 @@ fn skip_when_input_unchanged() {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -263,6 +271,7 @@ impl Executor<AbsVariable> for TrackedAbsExecutor {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -383,6 +392,7 @@ fn skip_when_intermediate_result_unchanged() {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -422,6 +432,7 @@ impl Executor<SquareVariable> for TrackedSquareExecutor {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -519,6 +530,7 @@ fn multi_layer_dependency_skipping() {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -535,6 +547,7 @@ pub struct TypeCheckQuery(String);
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -653,6 +666,7 @@ fn incremental_compilation_simulation() {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -671,6 +685,7 @@ pub struct CyclicQueryA;
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -689,6 +704,7 @@ pub struct CyclicQueryB;
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -928,6 +944,7 @@ fn comprehensive_cyclic_dependency_behavior() {
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -946,6 +963,7 @@ pub struct ConditionalCyclicQueryA;
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
@@ -964,6 +982,7 @@ pub struct ConditionalCyclicQueryB;
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[pernixc_query(crate)]
 #[value(i32)]

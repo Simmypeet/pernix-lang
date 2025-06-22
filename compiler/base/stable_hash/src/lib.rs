@@ -1092,6 +1092,7 @@ macro_rules! impl_stable_hash_atomic {
     };
 }
 
+impl_stable_hash_atomic!(std::sync::atomic::AtomicBool);
 impl_stable_hash_atomic!(std::sync::atomic::AtomicU8);
 impl_stable_hash_atomic!(std::sync::atomic::AtomicU16);
 impl_stable_hash_atomic!(std::sync::atomic::AtomicU32);

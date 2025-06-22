@@ -1,15 +1,20 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
 use pernixc_query_derive::Key;
+use pernixc_stable_hash::StableHash;
 
 use super::Map;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key, StableHash,
+)]
 #[value(i32)]
 #[pernixc_query(crate)]
 struct I32Key(i32);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key, StableHash,
+)]
 #[value(i32)]
 #[pernixc_query(crate)]
 struct I64Key(i64);
@@ -27,12 +32,14 @@ fn basic() {
     assert!(map.insert(I64Key(10), 10).is_none());
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Key, StableHash,
+)]
 #[value(DropCheck)]
 #[pernixc_query(crate)]
 pub struct DropKey(i32);
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, StableHash)]
 pub struct DropCheck(pub Arc<AtomicBool>);
 
 impl PartialEq for DropCheck {

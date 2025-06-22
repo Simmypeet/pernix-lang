@@ -4,6 +4,7 @@ use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 
 use crate::{
@@ -25,6 +26,7 @@ use crate::{
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(i32)]
 pub struct Variable(String);
@@ -41,6 +43,7 @@ pub struct Variable(String);
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(i32)]
 pub struct Constant(String);
@@ -59,6 +62,7 @@ pub struct Constant(String);
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(String)]
 pub struct StringWrapper(pub String);
@@ -76,6 +80,7 @@ pub struct StringWrapper(pub String);
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(i32)]
 pub struct I32Wrapper(pub i32);
@@ -93,6 +98,7 @@ pub struct I32Wrapper(pub i32);
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(bool)]
 pub struct BoolWrapper(pub bool);
@@ -109,10 +115,18 @@ pub struct BoolWrapper(pub bool);
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(StringWrapper)]
 pub struct GenericKey<
-    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static
+        + StableHash,
 >(T);
 
 impl<
@@ -123,7 +137,8 @@ impl<
             + Send
             + Sync
             + 'static
-            + Default,
+            + Default
+            + StableHash,
     > Default for GenericKey<T>
 {
     fn default() -> Self { Self(T::default()) }
@@ -141,10 +156,18 @@ impl<
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(BoolWrapper)]
 pub struct GenericBoolKey<
-    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static
+        + StableHash,
 >(T);
 
 impl<
@@ -155,7 +178,8 @@ impl<
             + Send
             + Sync
             + 'static
-            + Default,
+            + Default
+            + StableHash,
     > Default for GenericBoolKey<T>
 {
     fn default() -> Self { Self(T::default()) }
@@ -173,10 +197,18 @@ impl<
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(I32Wrapper)]
 pub struct GenericI32Key<
-    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static
+        + StableHash,
 >(T);
 
 impl<
@@ -187,7 +219,8 @@ impl<
             + Send
             + Sync
             + 'static
-            + Default,
+            + Default
+            + StableHash,
     > Default for GenericI32Key<T>
 {
     fn default() -> Self { Self(T::default()) }
@@ -205,12 +238,27 @@ impl<
     Key,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[value(StringWrapper)]
 pub struct MultiGenericKey<T, U>(T, U)
 where
-    T: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static,
-    U: Identifiable + Clone + Eq + std::hash::Hash + Send + Sync + 'static;
+    T: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static
+        + StableHash,
+    U: Identifiable
+        + Clone
+        + Eq
+        + std::hash::Hash
+        + Send
+        + Sync
+        + 'static
+        + StableHash;
 
 impl<T, U> Default for MultiGenericKey<T, U>
 where
@@ -221,7 +269,8 @@ where
         + Send
         + Sync
         + 'static
-        + Default,
+        + Default
+        + StableHash,
     U: Identifiable
         + Clone
         + Eq
@@ -229,7 +278,8 @@ where
         + Send
         + Sync
         + 'static
-        + Default,
+        + Default
+        + StableHash,
 {
     fn default() -> Self { Self(T::default(), U::default()) }
 }
