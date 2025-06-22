@@ -14,6 +14,8 @@ members = [
     "compiler/base/stable_type_id",
     "compiler/base/identifiable_derive",
     "compiler/base/identifiable_derive_lib",
+    "compiler/base/stable_hash",
+    "compiler/base/stable_hash_derive",
 
     "compiler/syntax/lexical",
     "compiler/syntax/parser",

@@ -7,6 +7,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+pernixc_stable_hash = { path = "../stable_hash" }
 pernixc_serialize = { path = "../serialize" }
 pernixc_hash = { path = "../hash" }
 derive_more = { workspace = true }

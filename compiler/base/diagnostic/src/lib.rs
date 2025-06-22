@@ -2,6 +2,7 @@
 
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::Span;
+use pernixc_stable_hash::StableHash;
 
 /// Implement this trait for a type that can report a diagnostic.
 ///
@@ -34,6 +35,7 @@ pub trait Report<Param> {
     Hash,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub enum Severity {
     /// An error that prevents the program from compiling.
@@ -50,7 +52,16 @@ pub enum Severity {
 /// A struct containing all the information required to display the diagnostic
 /// to the user.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 pub struct Diagnostic<L> {
     /// The span location where the diagnostic occurred.
@@ -75,7 +86,16 @@ pub struct Diagnostic<L> {
 
 /// The related information that is displayed alongside the main [`Diagnostic`].
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 pub struct Related<L> {
     /// The span location to display the message.

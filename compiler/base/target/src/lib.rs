@@ -2,6 +2,7 @@
 
 use derive_new::new;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 /// Represents an identifier for a target.
 #[derive(
@@ -16,6 +17,7 @@ use pernixc_serialize::{Deserialize, Serialize};
     Default,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub enum TargetID {
     /// Representing a target that is being compiled at the moment.
@@ -52,6 +54,7 @@ impl TargetID {
     Default,
     Serialize,
     Deserialize,
+    StableHash,
     new,
 )]
 pub struct Global<ID> {

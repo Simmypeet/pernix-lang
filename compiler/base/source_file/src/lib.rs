@@ -19,6 +19,7 @@ use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 use thiserror::Error;
 
@@ -371,6 +372,7 @@ pub type ByteIndex = usize;
     CopyGetters,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct Span<L> {
     /// Gets the start byte index of the span.
@@ -456,7 +458,18 @@ impl<ID: PartialEq + Clone> Join for Span<ID> {
 ///
 /// This struct is used by text editors or user-facing tools to display the
 /// location of a character in the source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    StableHash,
+)]
 pub struct EditorLocation {
     /// The line number of the location (starts at 0).
     pub line: usize,

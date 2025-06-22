@@ -10,6 +10,7 @@ rust-version.workspace = true
 pernixc_arena = { path = "../arena" }
 pernixc_target = { path = "../target" }
 pernixc_serialize = { path = "../serialize" }
+pernixc_stable_hash = { path = "../stable_hash" }
 dashmap = { workspace = true }
 getset = { workspace = true }
 thiserror = { workspace = true }

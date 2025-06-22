@@ -15,6 +15,7 @@ use pernixc_hash::HashMap;
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 use state::{Generator, Rebind, State};
 
 pub mod state;
@@ -86,6 +87,15 @@ impl<T> std::hash::Hash for ID<T> {
     }
 }
 
+impl<T> StableHash for ID<T> {
+    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        self.index.stable_hash(state);
+    }
+}
+
 impl<S: Serializer<E>, E, T> Serialize<S, E> for ID<T> {
     fn serialize(
         &self,
@@ -119,6 +129,19 @@ pub struct Arena<T, G: State<T> = state::Default> {
 impl<T, G: State<T> + Default> Default for Arena<T, G> {
     fn default() -> Self {
         Self { items: HashMap::default(), generator: G::default() }
+    }
+}
+
+impl<T: StableHash, G: State<T> + StableHash> StableHash for Arena<T, G>
+where
+    G::ID: StableHash,
+{
+    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        self.generator.stable_hash(state);
+        self.items.stable_hash(state);
     }
 }
 
