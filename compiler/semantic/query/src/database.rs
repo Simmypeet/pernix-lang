@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use pernixc_serialize::{Deserialize, Serialize};
 
 use crate::{
-    serde::{DynamicDeserialize, DynamicSerialize},
+    runtime::serde::{DynamicDeserialize, DynamicSerialize},
     Key,
 };
 

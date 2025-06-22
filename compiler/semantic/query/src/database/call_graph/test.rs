@@ -11,8 +11,10 @@ use pernixc_stable_hash::StableHash;
 
 use crate::{
     database::Database,
-    runtime::executor::{CyclicError, Executor},
-    serde::{DynamicRegistry as _, SelfRegistry},
+    runtime::{
+        executor::{CyclicError, Executor},
+        serde::{DynamicRegistry as _, SelfRegistry},
+    },
     Engine,
 };
 

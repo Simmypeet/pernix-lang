@@ -12,9 +12,9 @@ pub mod __internal {
 
     pub use pernixc_query_derive::{Key, Value};
     pub use pernixc_serialize::{Deserialize, Serialize};
+    pub use pernixc_stable_hash::StableHash;
 
     pub use crate::key::Key;
-    pub use pernixc_stable_hash::StableHash;
 }
 
 // so that this crate can use derive macro
@@ -24,7 +24,6 @@ pub mod database;
 pub mod key;
 pub mod persistence;
 pub mod runtime;
-pub mod serde;
 
 /// The central data structure for the Pernix compiler storing all the semantic
 /// information about the program.

@@ -18,7 +18,7 @@ use pernixc_diagnostic::Report;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
-    serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+    runtime::serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
     Key,
 };
 use pernixc_serialize::{
@@ -241,14 +241,14 @@ pub struct Input {
 
 /// An object for serialization support
 struct SerdeExtension<S: Serializer<Self>, D: Deserializer<Self>> {
-    pub registry: pernixc_query::serde::Registry<S, D, Self>,
+    pub registry: pernixc_query::runtime::serde::Registry<S, D, Self>,
 }
 
 impl<S: Serializer<Self>, D: Deserializer<Self>> Default
     for SerdeExtension<S, D>
 {
     fn default() -> Self {
-        Self { registry: pernixc_query::serde::Registry::default() }
+        Self { registry: pernixc_query::runtime::serde::Registry::default() }
     }
 }
 
@@ -259,7 +259,7 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicSerialize<S>
         &self,
     ) -> &HashMap<
         StableTypeID,
-        pernixc_query::serde::SerializationHelper<S, Self>,
+        pernixc_query::runtime::serde::SerializationHelper<S, Self>,
     > {
         self.registry.serialization_helpers_by_type_id()
     }
@@ -272,7 +272,7 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicDeserialize<D>
         &self,
     ) -> &HashMap<
         StableTypeID,
-        pernixc_query::serde::DeserializationHelper<D, Self>,
+        pernixc_query::runtime::serde::DeserializationHelper<D, Self>,
     > {
         self.registry.deserialization_helpers_by_type_id()
     }

@@ -1,6 +1,7 @@
 //! Contains the runtime components for the query system.
 
 pub mod executor;
+pub mod serde;
 
 /// Represents the runtime environment for the query system.
 ///

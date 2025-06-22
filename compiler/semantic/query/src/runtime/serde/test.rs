@@ -9,7 +9,7 @@ use pernixc_stable_type_id::Identifiable;
 
 use crate::{
     database::map::Map,
-    serde::{DynamicRegistry, SelfRegistry},
+    runtime::serde::{DynamicRegistry, SelfRegistry},
     Key,
 };
 
