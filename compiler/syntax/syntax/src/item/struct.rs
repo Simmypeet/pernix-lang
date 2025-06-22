@@ -6,6 +6,7 @@ use pernixc_serialize::{
     extension::{SharedPointerDeserialize, SharedPointerSerialize},
     Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     item::{generic_parameters::GenericParameters, Body},
@@ -35,6 +36,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
     )]

@@ -16,6 +16,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
 };
+use pernixc_stable_hash::StableHash;
 use strum_macros::EnumIter;
 
 use crate::{
@@ -125,6 +126,7 @@ pub struct Indentation {
     Hash,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub enum OffsetMode {
     /// Relative to the start byte of the branch.
@@ -147,6 +149,7 @@ pub enum OffsetMode {
     Hash,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct RelativeLocation {
     /// The byte offset from the branch.

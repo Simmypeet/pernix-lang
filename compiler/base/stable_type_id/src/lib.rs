@@ -3,6 +3,7 @@
 
 pub use pernixc_identifiable_derive::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 /// A stable alternative to [`std::any::TypeId`] that is used to uniquely
 /// identify types in a way that is consistent across different runs of the
@@ -91,6 +92,7 @@ use pernixc_serialize::{Deserialize, Serialize};
     Hash,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[allow(clippy::unsafe_derive_deserialize)]
 pub struct StableTypeID(u64, u64);

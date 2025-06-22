@@ -12,6 +12,7 @@ use flexstr::ToFlex;
 use pernixc_handler::Handler;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     error::{self, InvalidEscapeSequence},
@@ -59,6 +60,7 @@ pub type Kind<L> = Token<kind::Kind, L>;
     Hash,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct Token<T, L> {
     /// Specifies the kind of the token.

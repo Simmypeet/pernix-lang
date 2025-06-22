@@ -1161,5 +1161,9 @@ impl<T> StableHash for Discriminant<T> {
     }
 }
 
+impl<T> StableHash for std::marker::PhantomData<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, _state: &mut H) {}
+}
+
 #[cfg(test)]
 mod test;

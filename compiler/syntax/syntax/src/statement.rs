@@ -7,6 +7,7 @@ use pernixc_serialize::{
     extension::{SharedPointerDeserialize, SharedPointerSerialize},
     Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     expression::Expression, pattern::Irrefutable, r#type::Type, Keyword,
@@ -25,6 +26,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
     )]
@@ -60,6 +62,7 @@ abstract_tree::abstract_tree! {
         Hash,
         Serialize,
         Deserialize,
+        StableHash,
         EnumAsInner
     )]
     #[serde(

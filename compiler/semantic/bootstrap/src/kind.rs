@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
 use crate::symbol;
@@ -23,6 +24,7 @@ use crate::symbol;
     Serialize,
     Deserialize,
     Default,
+    StableHash,
     Value,
 )]
 #[allow(missing_docs)]

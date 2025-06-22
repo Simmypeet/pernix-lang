@@ -7,6 +7,7 @@ use flexstr::SharedStr;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_query::{Engine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
 use crate::{
@@ -18,7 +19,15 @@ use crate::{
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Value,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    Value,
+    StableHash,
 )]
 #[id(Global<symbol::ID>)]
 #[value(Arc<Member>)]

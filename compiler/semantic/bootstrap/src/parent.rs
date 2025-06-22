@@ -7,6 +7,7 @@ use extend::ext;
 use pernixc_hash::HashMap;
 use pernixc_query::{Engine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
 use crate::{
@@ -33,6 +34,7 @@ use crate::{
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[id(Global<symbol::ID>)]
 pub struct Parent(pub Option<symbol::ID>);
@@ -80,6 +82,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[id(TargetID)]
 #[key(IntermediateKey)]

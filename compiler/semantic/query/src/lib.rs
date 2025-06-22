@@ -14,6 +14,7 @@ pub mod __internal {
     pub use pernixc_serialize::{Deserialize, Serialize};
 
     pub use crate::key::Key;
+    pub use pernixc_stable_hash::StableHash;
 }
 
 // so that this crate can use derive macro

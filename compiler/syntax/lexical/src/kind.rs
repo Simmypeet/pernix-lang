@@ -11,6 +11,7 @@ use derive_more::{Deref, DerefMut, From};
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 use thiserror::Error;
@@ -35,6 +36,7 @@ pub mod arbitrary;
     EnumIter,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub enum Keyword {
     /// `match` keyword.
@@ -197,6 +199,7 @@ static STRING_KEYWORD_MAP: LazyLock<HashMap<&'static str, Keyword>> =
     Error,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 #[error("invalid string representation of keyword.")]
 pub struct KeywordParseError;
@@ -303,6 +306,7 @@ impl Display for Keyword {
     Default,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct NewLine;
 
@@ -321,6 +325,7 @@ pub struct NewLine;
     Deserialize,
     Deref,
     DerefMut,
+    StableHash,
 )]
 pub struct Character(pub char);
 
@@ -338,6 +343,7 @@ pub struct Character(pub char);
     Deserialize,
     Deref,
     DerefMut,
+    StableHash,
 )]
 pub struct String(pub SharedStr);
 
@@ -356,6 +362,7 @@ pub struct String(pub SharedStr);
     Deserialize,
     Deref,
     DerefMut,
+    StableHash,
 )]
 pub struct Identifier(pub SharedStr);
 
@@ -381,6 +388,7 @@ impl Display for Identifier {
     Deserialize,
     Deref,
     DerefMut,
+    StableHash,
 )]
 pub struct Punctuation(pub char);
 
@@ -405,6 +413,7 @@ impl Display for Punctuation {
     Deserialize,
     Deref,
     DerefMut,
+    StableHash,
 )]
 pub struct Numeric(pub SharedStr);
 
@@ -422,6 +431,7 @@ pub struct Numeric(pub SharedStr);
     Deserialize,
     From,
     EnumAsInner,
+    StableHash,
 )]
 #[allow(missing_docs)]
 pub enum Kind {

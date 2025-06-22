@@ -7,6 +7,7 @@ use pernixc_serialize::{
     extension::{SharedPointerDeserialize, SharedPointerSerialize},
     Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 
 use crate::{expression::binary::Binary, Keyword, Label};
 
@@ -22,6 +23,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
         EnumAsInner
@@ -47,6 +49,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
     )]
@@ -69,6 +72,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
     )]
@@ -91,6 +95,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
     )]
@@ -114,6 +119,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
     )]

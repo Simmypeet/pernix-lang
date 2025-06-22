@@ -8,13 +8,22 @@ use flexstr::SharedStr;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
 use crate::symbol;
 
 /// Stores the information about a target
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, Value,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    Value,
+    StableHash,
 )]
 #[id(TargetID)]
 #[value(Arc<Target>)]
@@ -43,6 +52,7 @@ pub struct Target {
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[id(())]
 #[value(Arc<Map>)]

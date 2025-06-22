@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 pernixc_serialize = { path = "../serialize" }
 pernixc_identifiable_derive = { path = "../identifiable_derive" }
+pernixc_stable_hash = { path = "../stable_hash" }
 
 [lints]
 workspace = true

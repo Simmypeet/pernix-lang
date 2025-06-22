@@ -6,6 +6,7 @@ use pernixc_serialize::{
     extension::{SharedPointerDeserialize, SharedPointerSerialize},
     Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::Members;
 use pernixc_target::Global;
 
@@ -26,6 +27,7 @@ use crate::symbol;
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -58,6 +60,7 @@ pub struct GenericParameters(
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -88,6 +91,7 @@ pub struct TypeAlias(pub pernixc_syntax::r#type::Type);
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -119,6 +123,7 @@ pub struct ImplementationQualifiedIdentifier(
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -149,6 +154,7 @@ pub struct WhereClause(
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -181,6 +187,7 @@ pub struct FunctionSignature {
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -211,6 +218,7 @@ pub struct Statements(
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -244,6 +252,7 @@ pub struct Fields(
     Serialize,
     Deserialize,
     Value,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),

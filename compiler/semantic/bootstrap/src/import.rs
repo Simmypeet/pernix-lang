@@ -8,6 +8,7 @@ use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::Span;
+use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
 use crate::symbol;
@@ -24,6 +25,7 @@ use crate::symbol;
     Hash,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct Using {
     /// The ID of the symbol being imported.
@@ -46,6 +48,7 @@ pub struct Using {
     Value,
     derive_more::Deref,
     derive_more::DerefMut,
+    StableHash,
 )]
 #[id(Global<symbol::ID>)]
 #[value(Arc<Import>)]

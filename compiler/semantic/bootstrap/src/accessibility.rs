@@ -4,6 +4,7 @@ use enum_as_inner::EnumAsInner;
 use extend::ext;
 use pernixc_query::Engine;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
 use crate::{
@@ -26,6 +27,7 @@ use crate::{
     Serialize,
     Deserialize,
     pernixc_query::Key,
+    StableHash,
 )]
 #[value(Accessibility<symbol::ID>)]
 pub struct Key(pub Global<symbol::ID>);
@@ -44,6 +46,7 @@ pub struct Key(pub Global<symbol::ID>);
     Serialize,
     Deserialize,
     EnumAsInner,
+    StableHash,
 )]
 pub enum Accessibility<ID> {
     /// The symbol is accessible from anywhere.

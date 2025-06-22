@@ -7,6 +7,7 @@ use pernixc_serialize::{
     extension::{SharedPointerDeserialize, SharedPointerSerialize},
     Deserialize, Serialize,
 };
+use pernixc_stable_hash::StableHash;
 use terminator::Terminator;
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -28,6 +29,7 @@ abstract_tree::abstract_tree! {
         PartialOrd,
         Ord,
         Hash,
+        StableHash,
         Serialize,
         Deserialize,
         EnumAsInner

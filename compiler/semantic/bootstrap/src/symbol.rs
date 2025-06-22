@@ -2,6 +2,7 @@
 use std::hash::Hash;
 
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 /// Represents a unique identifier for the symbols in the compilation target.
 /// This ID is only unique within the context of a single target. If wants to
@@ -19,6 +20,7 @@ use pernixc_serialize::{Deserialize, Serialize};
     Default,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct ID(pub u64);
 

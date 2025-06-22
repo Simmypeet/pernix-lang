@@ -445,7 +445,8 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
             Hash,
             ::pernixc_query::__internal::Key,
             ::pernixc_query::__internal::Serialize,
-            ::pernixc_query::__internal::Deserialize
+            ::pernixc_query::__internal::Deserialize,
+            ::pernixc_query::__internal::StableHash,
         )]
         #[value(#value_type)]
         pub struct #key_ident(pub #id_type);

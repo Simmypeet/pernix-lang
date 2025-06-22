@@ -4,6 +4,7 @@ use extend::ext;
 use flexstr::SharedStr;
 use pernixc_query::{Engine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
 use crate::{
@@ -29,6 +30,7 @@ use crate::{
     derive_more::DerefMut,
     derive_more::Deref,
     Value,
+    StableHash,
 )]
 #[id(Global<symbol::ID>)]
 pub struct Name(pub SharedStr);

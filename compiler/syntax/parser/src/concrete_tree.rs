@@ -14,6 +14,7 @@ use pernixc_serialize::{
     Deserialize, Serialize,
 };
 use pernixc_source_file::{GlobalSourceID, Span};
+use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::StableTypeID;
 
 /// An enumeration of the different types of nodes that can be found in
@@ -29,6 +30,7 @@ use pernixc_stable_type_id::StableTypeID;
     Serialize,
     Deserialize,
     EnumAsInner,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),
@@ -84,6 +86,7 @@ impl Node {
     Hash,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct AstInfo {
     /// The [`TypeId`] that implements the AST trait for this node. This type
@@ -108,6 +111,7 @@ pub struct AstInfo {
     Serialize,
     Deserialize,
     Default,
+    StableHash,
 )]
 #[serde(
     ser_extension(SharedPointerSerialize),

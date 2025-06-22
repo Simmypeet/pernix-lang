@@ -3,6 +3,7 @@
 use derive_more::{Deref, DerefMut};
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
 use crate::symbol;
@@ -24,6 +25,7 @@ use crate::symbol;
     Deref,
     DerefMut,
     Value,
+    StableHash,
 )]
 #[id(Global<symbol::ID>)]
 #[ext(method(get_implements), unwrap("should have no cyclic dependencies"))]
