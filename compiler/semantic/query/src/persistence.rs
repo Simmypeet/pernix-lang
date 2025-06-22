@@ -125,69 +125,31 @@ impl Persistence {
         let key_stable_type_id = key_stable_type_id.as_u128();
         let (hi, lo) = morton::morton(key_stable_type_id, value_fingerprint);
 
-        // Extract high and low 64-bit parts from the hi component
-        let hi_high = (hi >> 64) as u64;
-        let hi_low = hi as u64;
+        // Combine hi and lo into a 256-bit value for bit extraction
+        // hi (128 bits) | lo (128 bits) = 256 bits total
 
-        // Encode values as path-safe base64 (URL-safe base64 without padding)
-        let hi_high_b64 = Self::encode_path_safe_base64(&hi_high.to_le_bytes());
-        let hi_low_b64 = Self::encode_path_safe_base64(&hi_low.to_le_bytes());
-        let lo_b64 = Self::encode_path_safe_base64(&lo.to_le_bytes());
+        // Extract first 8 bits from hi (upper 8 bits of hi)
+        let segment1 = (hi >> 120) as u8;
 
-        // Construct the three-segment path: {hi_high}/{hi_low}/{lo}.bin
+        // Extract next 8 bits from hi (bits 112-119 of hi) - properly mask to
+        // get only 8 bits
+        let segment2 = ((hi >> 112) & 0xFF) as u8;
+
+        // Extract remaining 240 bits (lower 112 bits of hi + all 128 bits of
+        // lo) This creates exactly 240 bits:
+        // [hi_lower_112bits][lo_128bits]
+        let hi_lower = hi & 0x0000_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF; // Lower 112 bits of hi
+
+        // Construct the three-segment path: {8bits}/{8bits}/{240bits}.bin
+        let segment1_hex = format!("{segment1:02x}");
+        let segment2_hex = format!("{segment2:02x}");
+        let segment3_hex = format!("{hi_lower:028x}{lo:032x}"); // 112bits + 128bits = 240bits exactly
+
         let mut path = self.path.clone();
-        path.push(hi_high_b64);
-        path.push(hi_low_b64);
-        path.push(format!("{lo_b64}.bin"));
+        path.push(segment1_hex);
+        path.push(segment2_hex);
+        path.push(format!("{segment3_hex}.bin"));
         path
-    }
-
-    /// Encodes bytes as path-safe base64 (URL-safe without padding)
-    /// Uses '-' instead of '+' and '_' instead of '/' to be filesystem-safe
-    /// across all platforms (macOS, Linux, Windows)
-    fn encode_path_safe_base64(bytes: &[u8]) -> String {
-        // Base64 alphabet for URL-safe encoding
-        const ALPHABET: &[u8] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
-        let mut result = String::new();
-        let mut i = 0;
-
-        // Process 3 bytes at a time
-        while i + 2 < bytes.len() {
-            let b1 = bytes[i];
-            let b2 = bytes[i + 1];
-            let b3 = bytes[i + 2];
-
-            result.push(ALPHABET[(b1 >> 2) as usize] as char);
-            result.push(
-                ALPHABET[(((b1 & 0x03) << 4) | (b2 >> 4)) as usize] as char,
-            );
-            result.push(
-                ALPHABET[(((b2 & 0x0f) << 2) | (b3 >> 6)) as usize] as char,
-            );
-            result.push(ALPHABET[(b3 & 0x3f) as usize] as char);
-
-            i += 3;
-        }
-
-        // Handle remaining bytes
-        if i < bytes.len() {
-            let b1 = bytes[i];
-            result.push(ALPHABET[(b1 >> 2) as usize] as char);
-
-            if i + 1 < bytes.len() {
-                let b2 = bytes[i + 1];
-                result.push(
-                    ALPHABET[(((b1 & 0x03) << 4) | (b2 >> 4)) as usize] as char,
-                );
-                result.push(ALPHABET[((b2 & 0x0f) << 2) as usize] as char);
-            } else {
-                result.push(ALPHABET[((b1 & 0x03) << 4) as usize] as char);
-            }
-        }
-
-        result
     }
 
     /// Attempts to load a value from the persistence storage.

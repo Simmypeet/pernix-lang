@@ -1,4 +1,4 @@
-use std::{env::temp_dir, string, sync::Arc};
+use std::sync::Arc;
 
 use pernixc_query_derive::Key;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use pernixc_stable_hash::StableHash;
 use crate::{
     fingerprint,
     persistence::Persistence,
-    runtime::serde::{self, DynamicRegistry, SelfRegistry},
+    runtime::serde::{DynamicRegistry, SelfRegistry},
 };
 
 #[derive(
@@ -31,7 +31,7 @@ fn save_and_load_value() {
     let mut serde_config = SelfRegistry::default();
     serde_config.register::<Key>();
 
-    let initial_string_value = "some not so secret value".to_string();
+    let initial_string_value = "some not so secret value anothe sa".to_string();
     let initial_fingerprint = fingerprint::fingerprint(&initial_string_value);
 
     let tmp_dir = tempfile::tempdir().unwrap();
