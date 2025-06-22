@@ -562,7 +562,6 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
                     let Some(x) = x else { return Ok(false) };
 
                     x.iter()
-                        .par_bridge()
                         .map(|value| {
                             let value = value.value();
                             let fingerprint =

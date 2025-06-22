@@ -94,8 +94,10 @@ fn serialize_map<
                 stable_type_id,
                 path,
             );
-            let tx =
+            let mut tx =
                 db.begin_write().expect("Failed to begin write transaction");
+
+            tx.set_durability(redb::Durability::None);
 
             let table = RwLock::new(
                 tx.open_table(TABLE).expect("Failed to open table"),
