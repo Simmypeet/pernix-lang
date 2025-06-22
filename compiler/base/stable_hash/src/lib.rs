@@ -23,6 +23,8 @@
 //! let hash = hasher.finish();
 //! ```
 
+use std::hash::{BuildHasher, Hash};
+
 /// A trait for values that can be used as hash outputs.
 ///
 /// This trait represents numeric values that can be used as the result of
@@ -754,5 +756,387 @@ impl<T: StableHash + ?Sized> StableHash for &mut T {
     }
 }
 
-#[cfg(test)]
-mod test;
+// Commonly used standard library types
+impl<T: StableHash> StableHash for Option<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        match self {
+            Some(value) => {
+                1u8.stable_hash(state);
+                value.stable_hash(state);
+            }
+            None => {
+                0u8.stable_hash(state);
+            }
+        }
+    }
+}
+
+impl<T: StableHash, E: StableHash> StableHash for Result<T, E> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        match self {
+            Ok(value) => {
+                0u8.stable_hash(state);
+                value.stable_hash(state);
+            }
+            Err(error) => {
+                1u8.stable_hash(state);
+                error.stable_hash(state);
+            }
+        }
+    }
+}
+
+impl StableHash for bool {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_u8(u8::from(*self));
+    }
+}
+
+impl StableHash for char {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_u32(*self as u32);
+    }
+}
+
+// Tuple implementations using macro
+macro_rules! impl_stable_hash_tuple {
+    () => {
+        impl StableHash for () {
+            fn stable_hash<H: StableHasher + ?Sized>(&self, _state: &mut H) {
+                // Unit type has no data to hash
+            }
+        }
+    };
+    ($($name:ident)+) => {
+        impl<$($name: StableHash),+> StableHash for ($($name,)+) {
+            #[allow(non_snake_case)]
+            fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+                let ($($name,)+) = self;
+                $($name.stable_hash(state);)+
+            }
+        }
+    };
+}
+
+// Implement tuples from () to (T, U, V, W, X, Y, Z, A, B, C, D, E)
+impl_stable_hash_tuple!();
+impl_stable_hash_tuple!(T);
+impl_stable_hash_tuple!(T U);
+impl_stable_hash_tuple!(T U V);
+impl_stable_hash_tuple!(T U V W);
+impl_stable_hash_tuple!(T U V W X);
+impl_stable_hash_tuple!(T U V W X Y);
+impl_stable_hash_tuple!(T U V W X Y Z);
+impl_stable_hash_tuple!(T U V W X Y Z A);
+impl_stable_hash_tuple!(T U V W X Y Z A B);
+impl_stable_hash_tuple!(T U V W X Y Z A B C);
+impl_stable_hash_tuple!(T U V W X Y Z A B C D);
+impl_stable_hash_tuple!(T U V W X Y Z A B C D E);
+
+// Array implementation using const generics - coerce to slice and hash
+impl<T: StableHash, const N: usize> StableHash for [T; N] {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        // Coerce the array to a slice and hash it
+        self.as_slice().stable_hash(state);
+    }
+}
+
+// Slice implementation
+impl<T: StableHash> StableHash for [T] {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_length_prefix(self.len());
+        for item in self {
+            item.stable_hash(state);
+        }
+    }
+}
+
+// Box implementation
+impl<T: StableHash + ?Sized> StableHash for Box<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        (**self).stable_hash(state);
+    }
+}
+
+// Rc and Arc implementations
+impl<T: StableHash + ?Sized> StableHash for std::rc::Rc<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        (**self).stable_hash(state);
+    }
+}
+
+impl<T: StableHash + ?Sized> StableHash for std::sync::Arc<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        (**self).stable_hash(state);
+    }
+}
+
+// Cow implementation
+impl<T: StableHash + Clone> StableHash for std::borrow::Cow<'_, T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        (**self).stable_hash(state);
+    }
+}
+
+// Range implementations
+impl<T: StableHash> StableHash for std::ops::Range<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.start.stable_hash(state);
+        self.end.stable_hash(state);
+    }
+}
+
+impl<T: StableHash> StableHash for std::ops::RangeInclusive<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.start().stable_hash(state);
+        self.end().stable_hash(state);
+    }
+}
+
+impl<T: StableHash> StableHash for std::ops::RangeFrom<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.start.stable_hash(state);
+    }
+}
+
+impl<T: StableHash> StableHash for std::ops::RangeTo<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.end.stable_hash(state);
+    }
+}
+
+impl<T: StableHash> StableHash for std::ops::RangeToInclusive<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.end.stable_hash(state);
+    }
+}
+
+impl StableHash for std::ops::RangeFull {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, _state: &mut H) {
+        // RangeFull (..) has no data to hash
+    }
+}
+
+// VecDeque implementation
+impl<T: StableHash> StableHash for std::collections::VecDeque<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_length_prefix(self.len());
+        for item in self {
+            item.stable_hash(state);
+        }
+    }
+}
+
+// LinkedList implementation
+impl<T: StableHash> StableHash for std::collections::LinkedList<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_length_prefix(self.len());
+        for item in self {
+            item.stable_hash(state);
+        }
+    }
+}
+
+impl<T: StableHash> StableHash for std::collections::BinaryHeap<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+
+        for value in self {
+            combined = combined.wrapping_add(state.sub_hash(&mut |sub| {
+                value.stable_hash(sub);
+            }));
+        }
+
+        combined.stable_hash(state);
+    }
+}
+
+// NonZero types
+impl StableHash for std::num::NonZeroU8 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroU16 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroU32 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroU64 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroU128 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroUsize {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroI8 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroI16 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroI32 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroI64 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroI128 {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+impl StableHash for std::num::NonZeroIsize {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.get().stable_hash(state);
+    }
+}
+
+// Duration implementation
+impl StableHash for std::time::Duration {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.as_secs().stable_hash(state);
+        self.subsec_nanos().stable_hash(state);
+    }
+}
+
+// PathBuf and Path implementations
+impl StableHash for std::path::PathBuf {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.as_path().stable_hash(state);
+    }
+}
+
+impl StableHash for std::path::Path {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.as_os_str().stable_hash(state);
+    }
+}
+
+// OsString and OsStr implementations
+impl StableHash for std::ffi::OsString {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.as_os_str().stable_hash(state);
+    }
+}
+
+impl StableHash for std::ffi::OsStr {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.as_encoded_bytes().stable_hash(state);
+    }
+}
+
+// CString and CStr implementations
+impl StableHash for std::ffi::CString {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.as_c_str().stable_hash(state);
+    }
+}
+
+impl StableHash for std::ffi::CStr {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        let bytes = self.to_bytes();
+        state.write_length_prefix(bytes.len());
+        state.write(bytes);
+    }
+}
+
+macro_rules! impl_stable_hash_atomic {
+    ($type:ty) => {
+        impl StableHash for $type {
+            fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+                self.load(std::sync::atomic::Ordering::Relaxed)
+                    .stable_hash(state);
+            }
+        }
+    };
+}
+
+impl_stable_hash_atomic!(std::sync::atomic::AtomicU8);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicU16);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicU32);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicU64);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicUsize);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicI8);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicI16);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicI32);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicI64);
+impl_stable_hash_atomic!(std::sync::atomic::AtomicIsize);
+
+impl<K: StableHash + Eq + Hash, V: StableHash, B: BuildHasher + Clone>
+    StableHash for dashmap::DashMap<K, V, B>
+{
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+
+        for entry in self {
+            combined = combined.wrapping_add(state.sub_hash(&mut |sub| {
+                entry.key().stable_hash(sub);
+                entry.value().stable_hash(sub);
+            }));
+        }
+
+        combined.stable_hash(state);
+    }
+}
+
+impl<T: StableHash + Eq + Hash, B: BuildHasher + Clone> StableHash
+    for dashmap::DashSet<T, B>
+{
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+
+        for value in self.iter() {
+            combined = combined.wrapping_add(state.sub_hash(&mut |sub| {
+                value.stable_hash(sub);
+            }));
+        }
+
+        combined.stable_hash(state);
+    }
+}
+
+impl<const SIZE: usize, const PAD1: usize, const PAD2: usize, HEAP> StableHash
+    for flexstr::FlexStr<SIZE, PAD1, PAD2, HEAP>
+where
+    HEAP: std::ops::Deref<Target = str>,
+{
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        state.write_str(self.as_str());
+    }
+}

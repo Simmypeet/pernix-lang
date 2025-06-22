@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 static_assertions = { workspace = true }
+dashmap = { workspace = true }
+flexstr = { workspace = true }
 
 [lints]
 workspace = true
