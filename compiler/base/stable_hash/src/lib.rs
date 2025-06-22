@@ -574,7 +574,7 @@ pub trait StableHash {
     /// # Returns
     ///
     /// The hash value computed by the hasher
-    fn stable_hash<H: StableHasher>(&self, state: &mut H) -> H::Hash;
+    fn stable_hash<H: StableHasher>(&self, state: &mut H);
 }
 
 static_assertions::assert_obj_safe!(StableHasher<Hash = u128>);
