@@ -441,7 +441,7 @@ pub fn run(
         if let Err(error) = Serialize::serialize(
             &engine.database,
             &mut bianry_serializer,
-            &mut serde_extension,
+            &serde_extension,
         ) {
             let msg = Diagnostic::error().with_message(format!(
                 "Failed to serialize incremental file: {error}"

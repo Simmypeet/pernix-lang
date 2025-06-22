@@ -274,7 +274,7 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
     fn emit_some<T: Serialize<Self, E>>(
         &mut self,
         value: &T,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), Self::Error> {
         self.writer.write_all(b"Some(")?;
         value.serialize(self, extension)?;
@@ -282,11 +282,11 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         Ok(())
     }
 
-    fn emit_seq<'e>(
+    fn emit_seq(
         &mut self,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::Seq<'_>, &'e mut E) -> Result<(), Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::Seq<'_>, &E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         if len == 0 {
             self.writer.write_all(b"[]")?;
@@ -302,11 +302,11 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         Ok(())
     }
 
-    fn emit_tuple<'e>(
+    fn emit_tuple(
         &mut self,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::Tuple<'_>, &'e mut E) -> Result<(), Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::Tuple<'_>, &E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         if len == 0 {
             self.writer.write_all(b"()")?;
@@ -322,12 +322,12 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         Ok(())
     }
 
-    fn emit_tuple_struct<'e>(
+    fn emit_tuple_struct(
         &mut self,
         name: &'static str,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::TupleStruct<'_>, &'e mut E) -> Result<(), Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::TupleStruct<'_>, &E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         write!(self.writer, "{name}(")?;
         let tuple_struct = RonTupleStruct::new(self, len);
@@ -353,11 +353,11 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         write!(self.writer, "{variant}")
     }
 
-    fn emit_map<'e>(
+    fn emit_map(
         &mut self,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::Map<'_>, &'e mut E) -> Result<(), Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::Map<'_>, &E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         if len == 0 {
             self.writer.write_all(b"{}")?;
@@ -373,12 +373,12 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         Ok(())
     }
 
-    fn emit_struct<'e>(
+    fn emit_struct(
         &mut self,
         name: &'static str,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::Struct<'_>, &'e mut E) -> Result<(), Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::Struct<'_>, &E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         if len == 0 {
             write!(self.writer, "{name} {{}}")?;
@@ -396,14 +396,14 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         Ok(())
     }
 
-    fn emit_tuple_variant<'e>(
+    fn emit_tuple_variant(
         &mut self,
         _name: &'static str,
         variant: &'static str,
         _index: u32,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::TupleVariant<'_>, &'e mut E) -> Result<(), Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::TupleVariant<'_>, &E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         write!(self.writer, "{variant}(")?;
         let tuple_variant = RonTupleVariant::new(self, len);
@@ -412,17 +412,14 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         Ok(())
     }
 
-    fn emit_struct_variant<'e>(
+    fn emit_struct_variant(
         &mut self,
         _name: &'static str,
         variant: &'static str,
         _index: u32,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(
-            Self::StructVariant<'_>,
-            &'e mut E,
-        ) -> Result<(), Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::StructVariant<'_>, &E) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error> {
         if len == 0 {
             write!(self.writer, "{variant} {{}}")?;
@@ -460,7 +457,7 @@ where
 {
     let buffer = Vec::new();
     let mut serializer = RonSerializer::new(buffer);
-    value.serialize(&mut serializer, &mut ())?;
+    value.serialize(&mut serializer, &())?;
     let buffer = serializer.into_inner();
     String::from_utf8(buffer)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
@@ -477,7 +474,7 @@ where
 {
     let buffer = Vec::new();
     let mut serializer = RonSerializer::with_config(buffer, config);
-    value.serialize(&mut serializer, &mut ())?;
+    value.serialize(&mut serializer, &())?;
     let buffer = serializer.into_inner();
     String::from_utf8(buffer)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
@@ -491,7 +488,7 @@ where
 {
     let buffer = Vec::new();
     let mut serializer = RonSerializer::compact(buffer);
-    value.serialize(&mut serializer, &mut ())?;
+    value.serialize(&mut serializer, &())?;
     let buffer = serializer.into_inner();
     String::from_utf8(buffer)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
@@ -556,7 +553,7 @@ fn serialize_sequence_element<
 >(
     serializer: &mut RonSerializer<W>,
     value: &T,
-    extension: &mut E,
+    extension: &E,
     count: &mut usize,
     len: usize,
     is_pretty: bool,
@@ -594,7 +591,7 @@ impl<W: Write + 'static, E> Seq<E> for RonSeq<'_, W> {
     fn serialize_element<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), io::Error> {
         serialize_sequence_element(
             self.serializer,
@@ -627,7 +624,7 @@ impl<W: Write + 'static, E> Tuple<E> for RonTuple<'_, W> {
     fn serialize_element<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), io::Error> {
         serialize_sequence_element(
             self.serializer,
@@ -660,7 +657,7 @@ impl<W: Write + 'static, E> TupleStruct<E> for RonTupleStruct<'_, W> {
     fn serialize_field<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), io::Error> {
         serialize_sequence_element(
             self.serializer,
@@ -694,7 +691,7 @@ impl<W: Write + 'static, E> Struct<E> for RonStruct<'_, W> {
         &mut self,
         name: &'static str,
         value: &T,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), io::Error> {
         serialize_element_with_formatting(
             self.serializer,
@@ -719,7 +716,7 @@ impl<W: Write + 'static, E> Struct<E> for RonStruct<'_, W> {
     fn skip_field(
         &mut self,
         _name: &'static str,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<(), io::Error> {
         // For RON, we simply don't serialize skipped fields
         Ok(())
@@ -750,7 +747,7 @@ impl<W: Write + 'static, E> Map<E> for RonMap<'_, W> {
         &mut self,
         key: &K,
         value: &V,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), io::Error> {
         serialize_element_with_formatting(
             self.serializer,
@@ -796,7 +793,7 @@ impl<W: Write + 'static, E> TupleVariant<E> for RonTupleVariant<'_, W> {
     fn serialize_field<T: Serialize<Self::Parent, E>>(
         &mut self,
         value: &T,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), io::Error> {
         serialize_sequence_element(
             self.serializer,
@@ -830,7 +827,7 @@ impl<W: Write + 'static, E> StructVariant<E> for RonStructVariant<'_, W> {
         &mut self,
         name: &'static str,
         value: &T,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), io::Error> {
         serialize_element_with_formatting(
             self.serializer,
@@ -855,7 +852,7 @@ impl<W: Write + 'static, E> StructVariant<E> for RonStructVariant<'_, W> {
     fn skip_field(
         &mut self,
         _name: &'static str,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<(), io::Error> {
         // For RON, we simply don't serialize skipped fields
         Ok(())

@@ -100,7 +100,7 @@ impl<S: Serializer<E>, E, T> Serialize<S, E> for ID<T> {
     fn serialize(
         &self,
         serializer: &mut S,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), S::Error> {
         self.index.serialize(serializer, extension)
     }
@@ -109,7 +109,7 @@ impl<S: Serializer<E>, E, T> Serialize<S, E> for ID<T> {
 impl<D: Deserializer<E>, E, T> Deserialize<D, E> for ID<T> {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         u64::deserialize(deserializer, extension).map(Self::new)
     }

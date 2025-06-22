@@ -1261,10 +1261,7 @@ fn database_serialization_deserialization() {
     serde_config.register::<AddTwoAbsVariable>();
 
     let mut serializer = BinarySerializer::new(Vec::new());
-    original_engine
-        .database
-        .serialize(&mut serializer, &mut serde_config)
-        .unwrap();
+    original_engine.database.serialize(&mut serializer, &serde_config).unwrap();
 
     // Step 4: Create a new engine instance
     let mut new_engine = Engine::default();
@@ -1283,7 +1280,7 @@ fn database_serialization_deserialization() {
         BinaryDeserializer::new(std::io::Cursor::new(serializer.into_inner()));
 
     new_engine.database =
-        Database::deserialize(&mut deserializer, &mut serde_config).unwrap();
+        Database::deserialize(&mut deserializer, &serde_config).unwrap();
 
     // Step 6: Verify that queries return the same results without recomputation
     let new_result1 =

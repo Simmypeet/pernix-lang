@@ -87,7 +87,7 @@ impl IceReport {
             BufWriter::new(file),
             RonConfig::Pretty("    ".to_string()),
         );
-        self.serialize(&mut binary_serializer, &mut ())?;
+        self.serialize(&mut binary_serializer, &())?;
 
         Ok((binary_serializer.into_inner().into_inner()?, file_path))
     }

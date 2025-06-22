@@ -296,7 +296,7 @@ fn map_basic_round_trip() {
 
     let mut buffer = Vec::new();
     let mut binary_serializer = BinarySerializer::new(buffer);
-    dynamic_map.serialize(&mut binary_serializer, &mut serde_registry).unwrap();
+    dynamic_map.serialize(&mut binary_serializer, &serde_registry).unwrap();
 
     buffer = dbg!(binary_serializer.into_inner());
 
@@ -304,7 +304,7 @@ fn map_basic_round_trip() {
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
 
     let deserialized_map: Map =
-        Map::deserialize(&mut deserializer, &mut serde_registry).unwrap();
+        Map::deserialize(&mut deserializer, &serde_registry).unwrap();
 
     assert_eq!(deserialized_map.get(&Variable("x".to_string())), Some(1));
     assert_eq!(deserialized_map.get(&Constant("c".to_string())), Some(42));
@@ -332,7 +332,7 @@ fn dynamic_box_basic_round_trip() {
     let mut buffer = Vec::new();
     let mut binary_serializer = BinarySerializer::new(buffer);
     variable_dynamic_box
-        .serialize(&mut binary_serializer, &mut serde_registry)
+        .serialize(&mut binary_serializer, &serde_registry)
         .unwrap();
 
     buffer = binary_serializer.into_inner();
@@ -340,7 +340,7 @@ fn dynamic_box_basic_round_trip() {
     let mut deserializer =
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
     let deserialized_variable_box: DynamicBox =
-        DynamicBox::deserialize(&mut deserializer, &mut serde_registry)
+        DynamicBox::deserialize(&mut deserializer, &serde_registry)
             .unwrap();
 
     // Verify the deserialized dynamic box contains the correct value
@@ -359,7 +359,7 @@ fn dynamic_box_basic_round_trip() {
     let mut buffer = Vec::new();
     let mut binary_serializer = BinarySerializer::new(buffer);
     constant_dynamic_box
-        .serialize(&mut binary_serializer, &mut serde_registry)
+        .serialize(&mut binary_serializer, &serde_registry)
         .unwrap();
 
     buffer = binary_serializer.into_inner();
@@ -367,7 +367,7 @@ fn dynamic_box_basic_round_trip() {
     let mut deserializer =
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
     let deserialized_constant_box: DynamicBox =
-        DynamicBox::deserialize(&mut deserializer, &mut serde_registry)
+        DynamicBox::deserialize(&mut deserializer, &serde_registry)
             .unwrap();
 
     // Verify the deserialized dynamic box contains the correct value
@@ -405,7 +405,7 @@ fn dynamic_box_multiple_types_round_trip() {
         let mut buffer = Vec::new();
         let mut binary_serializer = BinarySerializer::new(buffer);
         dynamic_box
-            .serialize(&mut binary_serializer, &mut serde_registry)
+            .serialize(&mut binary_serializer, &serde_registry)
             .unwrap();
 
         buffer = binary_serializer.into_inner();
@@ -413,7 +413,7 @@ fn dynamic_box_multiple_types_round_trip() {
         let mut deserializer =
             BinaryDeserializer::new(std::io::Cursor::new(buffer));
         let deserialized_box: DynamicBox =
-            DynamicBox::deserialize(&mut deserializer, &mut serde_registry)
+            DynamicBox::deserialize(&mut deserializer, &serde_registry)
                 .unwrap();
 
         deserialized_boxes.push(deserialized_box);
@@ -479,7 +479,7 @@ fn map_generic_types_round_trip() {
     // Serialize the map
     let mut buffer = Vec::new();
     let mut binary_serializer = BinarySerializer::new(buffer);
-    dynamic_map.serialize(&mut binary_serializer, &mut serde_registry).unwrap();
+    dynamic_map.serialize(&mut binary_serializer, &serde_registry).unwrap();
 
     buffer = binary_serializer.into_inner();
 
@@ -488,7 +488,7 @@ fn map_generic_types_round_trip() {
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
 
     let deserialized_map: Map =
-        Map::deserialize(&mut deserializer, &mut serde_registry).unwrap();
+        Map::deserialize(&mut deserializer, &serde_registry).unwrap();
 
     // Verify all generic key-value pairs were correctly deserialized
     assert_eq!(
@@ -563,7 +563,7 @@ fn dynamic_box_generic_types_round_trip() {
         let mut buffer = Vec::new();
         let mut binary_serializer = BinarySerializer::new(buffer);
         dynamic_box
-            .serialize(&mut binary_serializer, &mut serde_registry)
+            .serialize(&mut binary_serializer, &serde_registry)
             .unwrap();
 
         buffer = binary_serializer.into_inner();
@@ -571,7 +571,7 @@ fn dynamic_box_generic_types_round_trip() {
         let mut deserializer =
             BinaryDeserializer::new(std::io::Cursor::new(buffer));
         let deserialized_box: DynamicBox =
-            DynamicBox::deserialize(&mut deserializer, &mut serde_registry)
+            DynamicBox::deserialize(&mut deserializer, &serde_registry)
                 .unwrap();
 
         deserialized_boxes.push(deserialized_box);
@@ -660,7 +660,7 @@ fn dynamic_box_mixed_generic_and_simple_types_round_trip() {
         let mut buffer = Vec::new();
         let mut binary_serializer = BinarySerializer::new(buffer);
         dynamic_box
-            .serialize(&mut binary_serializer, &mut serde_registry)
+            .serialize(&mut binary_serializer, &serde_registry)
             .unwrap();
 
         buffer = binary_serializer.into_inner();
@@ -668,7 +668,7 @@ fn dynamic_box_mixed_generic_and_simple_types_round_trip() {
         let mut deserializer =
             BinaryDeserializer::new(std::io::Cursor::new(buffer));
         let deserialized_box: DynamicBox =
-            DynamicBox::deserialize(&mut deserializer, &mut serde_registry)
+            DynamicBox::deserialize(&mut deserializer, &serde_registry)
                 .unwrap();
 
         deserialized_boxes.push(deserialized_box);
@@ -747,7 +747,7 @@ fn map_different_generic_instantiations_round_trip() {
     // Serialize the map
     let mut buffer = Vec::new();
     let mut binary_serializer = BinarySerializer::new(buffer);
-    dynamic_map.serialize(&mut binary_serializer, &mut serde_registry).unwrap();
+    dynamic_map.serialize(&mut binary_serializer, &serde_registry).unwrap();
 
     buffer = binary_serializer.into_inner();
 
@@ -756,7 +756,7 @@ fn map_different_generic_instantiations_round_trip() {
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
 
     let deserialized_map: Map =
-        Map::deserialize(&mut deserializer, &mut serde_registry).unwrap();
+        Map::deserialize(&mut deserializer, &serde_registry).unwrap();
 
     // Verify all different generic instantiations were preserved
     assert_eq!(

@@ -62,7 +62,7 @@ fn serialize_to_bytes<T: Serialize<BinarySerializer<Vec<u8>>, ()>>(
     value: &T,
 ) -> Vec<u8> {
     let mut serializer = BinarySerializer::new(Vec::new());
-    value.serialize(&mut serializer, &mut ()).unwrap();
+    value.serialize(&mut serializer, &()).unwrap();
     serializer.into_inner()
 }
 
@@ -525,7 +525,7 @@ fn manual_deserialize_test() {
     let bytes = serialize_to_bytes(&value);
 
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized = i32::deserialize(&mut deserializer, &mut ()).unwrap();
+    let deserialized = i32::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(value, deserialized);
 }
@@ -538,7 +538,7 @@ fn struct_round_trip() {
     let bytes = serialize_to_bytes(&test_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        SimpleStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        SimpleStruct::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(test_struct, deserialized);
 }
@@ -563,7 +563,7 @@ fn multi_field_struct_round_trip() {
     let bytes = serialize_to_bytes(&test_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        MultiFieldStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        MultiFieldStruct::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(test_struct, deserialized);
 }
@@ -581,7 +581,7 @@ fn single_field_struct() {
     let bytes = serialize_to_bytes(&test_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        SingleField::deserialize(&mut deserializer, &mut ()).unwrap();
+        SingleField::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(test_struct, deserialized);
 }
@@ -621,8 +621,7 @@ fn comprehensive_round_trip_all_forms() {
     let unit_struct = UnitStruct;
     let bytes = serialize_to_bytes(&unit_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized =
-        UnitStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+    let deserialized = UnitStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(unit_struct, deserialized);
 
     // Test tuple struct
@@ -630,7 +629,7 @@ fn comprehensive_round_trip_all_forms() {
     let bytes = serialize_to_bytes(&tuple_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        TupleStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        TupleStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(tuple_struct, deserialized);
 
     // Test fields struct
@@ -639,7 +638,7 @@ fn comprehensive_round_trip_all_forms() {
     let bytes = serialize_to_bytes(&fields_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        FieldsStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        FieldsStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(fields_struct, deserialized);
 
     // Test enum unit variant
@@ -647,7 +646,7 @@ fn comprehensive_round_trip_all_forms() {
     let bytes = serialize_to_bytes(&enum_unit);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComprehensiveEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComprehensiveEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(enum_unit, deserialized);
 
     // Test enum tuple variant
@@ -655,7 +654,7 @@ fn comprehensive_round_trip_all_forms() {
     let bytes = serialize_to_bytes(&enum_tuple);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComprehensiveEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComprehensiveEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(enum_tuple, deserialized);
 
     // Test enum struct variant
@@ -667,7 +666,7 @@ fn comprehensive_round_trip_all_forms() {
     let bytes = serialize_to_bytes(&enum_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComprehensiveEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComprehensiveEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(enum_struct, deserialized);
 }
 
@@ -712,8 +711,7 @@ fn complex_nested_forms() {
 
     let bytes = serialize_to_bytes(&complex_data);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized =
-        OuterEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+    let deserialized = OuterEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(complex_data, deserialized);
 
     // Test simple variant with vector
@@ -725,8 +723,7 @@ fn complex_nested_forms() {
 
     let bytes = serialize_to_bytes(&simple_data);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized =
-        OuterEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+    let deserialized = OuterEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(simple_data, deserialized);
 }
 
@@ -773,7 +770,7 @@ fn edge_cases() {
     let bytes = serialize_to_bytes(&many_fields);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ManyFieldsStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        ManyFieldsStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(many_fields, deserialized);
 
     // Enum with many struct variants to test variant field index calculation
@@ -803,7 +800,7 @@ fn edge_cases() {
     let bytes = serialize_to_bytes(&variant0);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ManyVariantsEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ManyVariantsEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(variant0, deserialized);
 
     let variant1 = ManyVariantsEnum::Variant1 {
@@ -814,7 +811,7 @@ fn edge_cases() {
     let bytes = serialize_to_bytes(&variant1);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ManyVariantsEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ManyVariantsEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(variant1, deserialized);
 
     let variant2 = ManyVariantsEnum::Variant2 {
@@ -827,7 +824,7 @@ fn edge_cases() {
     let bytes = serialize_to_bytes(&variant2);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ManyVariantsEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ManyVariantsEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(variant2, deserialized);
 }
 
@@ -857,7 +854,7 @@ fn advanced_generic_struct_roundtrip() {
     let bytes = serialize_to_bytes(&multi_generic);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        MultiGeneric::deserialize(&mut deserializer, &mut ()).unwrap();
+        MultiGeneric::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(multi_generic, deserialized);
 
     // Test with different types
@@ -871,7 +868,7 @@ fn advanced_generic_struct_roundtrip() {
     let bytes = serialize_to_bytes(&multi_generic2);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        MultiGeneric::deserialize(&mut deserializer, &mut ()).unwrap();
+        MultiGeneric::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(multi_generic2, deserialized);
 }
 
@@ -906,7 +903,7 @@ fn advanced_generic_enum_roundtrip() {
     let bytes = serialize_to_bytes(&empty);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(empty, deserialized);
 
     // Test Single variant with explicit type annotation
@@ -915,7 +912,7 @@ fn advanced_generic_enum_roundtrip() {
     let bytes = serialize_to_bytes(&single);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(single, deserialized);
 
     // Test Pair variant with explicit type annotation
@@ -924,7 +921,7 @@ fn advanced_generic_enum_roundtrip() {
     let bytes = serialize_to_bytes(&pair);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(pair, deserialized);
 
     // Test Triple variant
@@ -936,7 +933,7 @@ fn advanced_generic_enum_roundtrip() {
     let bytes = serialize_to_bytes(&triple);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(triple, deserialized);
 
     // Test Structured variant
@@ -952,7 +949,7 @@ fn advanced_generic_enum_roundtrip() {
     let bytes = serialize_to_bytes(&structured);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(structured, deserialized);
 
     // Test Nested variant with reordered generics
@@ -967,7 +964,7 @@ fn advanced_generic_enum_roundtrip() {
     let bytes = serialize_to_bytes(&nested);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(nested, deserialized);
 }
 
@@ -995,7 +992,7 @@ fn lifetime_generic_roundtrip() {
     let bytes = serialize_to_bytes(&lifetime_data);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        WithLifetimes::deserialize(&mut deserializer, &mut ()).unwrap();
+        WithLifetimes::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(lifetime_data, deserialized);
 
     // Test enum with lifetimes
@@ -1015,7 +1012,7 @@ fn lifetime_generic_roundtrip() {
     let bytes = serialize_to_bytes(&reference_variant);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        LifetimeEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        LifetimeEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(reference_variant, deserialized);
 
     let combined_variant = LifetimeEnum::Combined {
@@ -1026,7 +1023,7 @@ fn lifetime_generic_roundtrip() {
     let bytes = serialize_to_bytes(&combined_variant);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        LifetimeEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        LifetimeEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(combined_variant, deserialized);
 }
 
@@ -1052,7 +1049,7 @@ fn const_generic_roundtrip() {
     let bytes = serialize_to_bytes(&const_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ConstGenericStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        ConstGenericStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(const_struct, deserialized);
 
     // Test with different size and type
@@ -1065,7 +1062,7 @@ fn const_generic_roundtrip() {
     let bytes = serialize_to_bytes(&const_struct2);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ConstGenericStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        ConstGenericStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(const_struct2, deserialized);
 
     // Test enum with const generics
@@ -1083,7 +1080,7 @@ fn const_generic_roundtrip() {
     let bytes = serialize_to_bytes(&array_variant);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ConstGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ConstGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(array_variant, deserialized);
 
     let mixed_variant = ConstGenericEnum::Mixed {
@@ -1094,7 +1091,7 @@ fn const_generic_roundtrip() {
     let bytes = serialize_to_bytes(&mixed_variant);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ConstGenericEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ConstGenericEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(mixed_variant, deserialized);
 }
 
@@ -1136,7 +1133,7 @@ fn higher_order_trait_bounds_roundtrip() {
     let bytes = serialize_to_bytes(&alt_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        AlternativeStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        AlternativeStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(alt_struct, deserialized);
 }
 
@@ -1183,7 +1180,7 @@ fn complex_where_clause_roundtrip() {
     let bytes = serialize_to_bytes(&complex_struct);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexWhereStruct::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexWhereStruct::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(complex_struct, deserialized);
 
     // Test corresponding enum
@@ -1212,7 +1209,7 @@ fn complex_where_clause_roundtrip() {
     let bytes = serialize_to_bytes(&simple_variant);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexWhereEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexWhereEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(simple_variant, deserialized);
 
     let compound_variant: ComplexWhereEnum<String, String, f64> =
@@ -1224,7 +1221,7 @@ fn complex_where_clause_roundtrip() {
     let bytes = serialize_to_bytes(&compound_variant);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexWhereEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexWhereEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(compound_variant, deserialized);
 
     let complex_variant: ComplexWhereEnum<String, String, f64> =
@@ -1241,7 +1238,7 @@ fn complex_where_clause_roundtrip() {
     let bytes = serialize_to_bytes(&complex_variant);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ComplexWhereEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+        ComplexWhereEnum::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(complex_variant, deserialized);
 }
 
@@ -1262,7 +1259,7 @@ fn recursive_generic_roundtrip() {
     let bytes = serialize_to_bytes(&leaf);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        RecursiveGeneric::deserialize(&mut deserializer, &mut ()).unwrap();
+        RecursiveGeneric::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(leaf, deserialized);
 
     // Test single node
@@ -1277,7 +1274,7 @@ fn recursive_generic_roundtrip() {
     let bytes = serialize_to_bytes(&single_node);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        RecursiveGeneric::deserialize(&mut deserializer, &mut ()).unwrap();
+        RecursiveGeneric::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(single_node, deserialized);
 
     // Test nested nodes
@@ -1303,7 +1300,7 @@ fn recursive_generic_roundtrip() {
     let bytes = serialize_to_bytes(&nested_nodes);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        RecursiveGeneric::deserialize(&mut deserializer, &mut ()).unwrap();
+        RecursiveGeneric::deserialize(&mut deserializer, &()).unwrap();
     assert_eq!(nested_nodes, deserialized);
 }
 
@@ -1345,7 +1342,7 @@ fn struct_with_skip_round_trip() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        StructWithSkip::deserialize(&mut deserializer, &mut ()).unwrap();
+        StructWithSkip::deserialize(&mut deserializer, &()).unwrap();
 
     // The deserialized struct should have the skipped field set to default (0)
     let expected = StructWithSkip {
@@ -1366,7 +1363,7 @@ fn test_tuple_with_skip_round_trip() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        TupleWithSkip::deserialize(&mut deserializer, &mut ()).unwrap();
+        TupleWithSkip::deserialize(&mut deserializer, &()).unwrap();
 
     // The deserialized tuple should have the skipped field (middle) set to
     // default (0)
@@ -1388,7 +1385,7 @@ fn enum_with_skip_round_trip() {
     let bytes = serialize_to_bytes(&original_named);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized_named =
-        EnumWithSkip::deserialize(&mut deserializer, &mut ()).unwrap();
+        EnumWithSkip::deserialize(&mut deserializer, &()).unwrap();
 
     let expected_named = EnumWithSkip::Named {
         name: "test".to_string(),
@@ -1404,7 +1401,7 @@ fn enum_with_skip_round_trip() {
     let bytes = serialize_to_bytes(&original_tuple);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized_tuple =
-        EnumWithSkip::deserialize(&mut deserializer, &mut ()).unwrap();
+        EnumWithSkip::deserialize(&mut deserializer, &()).unwrap();
 
     let expected_tuple = EnumWithSkip::Tuple("test".to_string(), 0, 42);
 
@@ -1416,7 +1413,7 @@ fn enum_with_skip_round_trip() {
     let bytes = serialize_to_bytes(&original_unit);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized_unit =
-        EnumWithSkip::deserialize(&mut deserializer, &mut ()).unwrap();
+        EnumWithSkip::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(original_unit, deserialized_unit);
 }
@@ -1445,7 +1442,7 @@ fn multiple_skip_fields() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        MultipleSkip::deserialize(&mut deserializer, &mut ()).unwrap();
+        MultipleSkip::deserialize(&mut deserializer, &()).unwrap();
 
     let expected = MultipleSkip {
         keep1: "hello".to_string(),
@@ -1473,8 +1470,7 @@ fn all_fields_skipped() {
 
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
-    let deserialized =
-        AllSkipped::deserialize(&mut deserializer, &mut ()).unwrap();
+    let deserialized = AllSkipped::deserialize(&mut deserializer, &()).unwrap();
 
     let expected = AllSkipped::default();
 
@@ -1552,8 +1548,7 @@ fn skip_fields_binary_buffer_inspection() {
     // Verify deserialization works correctly
     let mut deserializer =
         BinaryDeserializer::new(std::io::Cursor::new(bytes_with_skip));
-    let deserialized =
-        WithSkip::deserialize(&mut deserializer, &mut ()).unwrap();
+    let deserialized = WithSkip::deserialize(&mut deserializer, &()).unwrap();
 
     let expected = WithSkip {
         keep1: 42,
@@ -1674,7 +1669,7 @@ fn extension_attribute_with_generics() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        GenericExtension::deserialize(&mut deserializer, &mut ()).unwrap();
+        GenericExtension::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(original, deserialized);
 }
@@ -1692,7 +1687,7 @@ fn extension_attribute_tuple_struct() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        ExtensionTuple::deserialize(&mut deserializer, &mut ()).unwrap();
+        ExtensionTuple::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(original, deserialized);
 }
@@ -1715,7 +1710,7 @@ fn ser_extension_attribute() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        SerExtensionTest::deserialize(&mut deserializer, &mut ()).unwrap();
+        SerExtensionTest::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(original, deserialized);
 }
@@ -1738,7 +1733,7 @@ fn de_extension_attribute() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        DeExtensionTest::deserialize(&mut deserializer, &mut ()).unwrap();
+        DeExtensionTest::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(original, deserialized);
 }
@@ -1760,7 +1755,7 @@ fn mixed_extension_attributes() {
     let bytes = serialize_to_bytes(&original);
     let mut deserializer = BinaryDeserializer::new(std::io::Cursor::new(bytes));
     let deserialized =
-        MixedExtensionTest::deserialize(&mut deserializer, &mut ()).unwrap();
+        MixedExtensionTest::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(original, deserialized);
 }
@@ -1789,7 +1784,7 @@ fn separate_extension_attributes_enum() {
         let mut deserializer =
             BinaryDeserializer::new(std::io::Cursor::new(bytes));
         let deserialized =
-            ExtensionEnum::deserialize(&mut deserializer, &mut ()).unwrap();
+            ExtensionEnum::deserialize(&mut deserializer, &()).unwrap();
 
         assert_eq!(original, deserialized);
     }
@@ -1812,7 +1807,7 @@ fn ser_bound_and_de_bound_attributes() {
         fn serialize(
             &self,
             serializer: &mut S,
-            extension: &mut E,
+            extension: &E,
         ) -> Result<(), S::Error> {
             self.0.serialize(serializer, extension)
         }
@@ -1823,7 +1818,7 @@ fn ser_bound_and_de_bound_attributes() {
     {
         fn deserialize(
             deserializer: &mut D,
-            extension: &mut E,
+            extension: &E,
         ) -> Result<Self, D::Error> {
             Ok(CustomData(i32::deserialize(deserializer, extension)?))
         }
@@ -1843,14 +1838,14 @@ fn ser_bound_and_de_bound_attributes() {
     // Test serialization
     let buffer = Vec::new();
     let mut serializer = crate::binary::ser::BinarySerializer::new(buffer);
-    original.serialize(&mut serializer, &mut ()).unwrap();
+    original.serialize(&mut serializer, &()).unwrap();
     let buffer = serializer.into_inner();
 
     // Test deserialization
     let cursor = std::io::Cursor::new(buffer);
     let mut deserializer = crate::binary::de::BinaryDeserializer::new(cursor);
     let deserialized =
-        BoundedGeneric::<CustomData>::deserialize(&mut deserializer, &mut ())
+        BoundedGeneric::<CustomData>::deserialize(&mut deserializer, &())
             .unwrap();
 
     assert_eq!(original, deserialized);
@@ -1865,14 +1860,14 @@ fn pathbuf_round_trip() {
     // Test serialization
     let buffer = Vec::new();
     let mut serializer = crate::binary::ser::BinarySerializer::new(buffer);
-    original_path.serialize(&mut serializer, &mut ()).unwrap();
+    original_path.serialize(&mut serializer, &()).unwrap();
     let buffer = serializer.into_inner();
 
     // Test deserialization
     let cursor = std::io::Cursor::new(buffer);
     let mut deserializer = crate::binary::de::BinaryDeserializer::new(cursor);
     let deserialized_path =
-        PathBuf::deserialize(&mut deserializer, &mut ()).unwrap();
+        PathBuf::deserialize(&mut deserializer, &()).unwrap();
 
     assert_eq!(original_path, deserialized_path);
 }

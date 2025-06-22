@@ -471,7 +471,7 @@ fn expand_serialize_struct(
             fn serialize(
                 &self,
                 serializer: &mut __S,
-                extension: &mut __E
+                extension: &__E
             ) -> Result<(), __S::Error> {
                 #serialize_body
             }
@@ -594,7 +594,7 @@ fn expand_serialize_enum(
             fn serialize(
                 &self,
                 serializer: &mut __S,
-                extension: &mut __E
+                extension: &__E
             ) -> Result<(), __S::Error> {
                 #serialize_body
             }
@@ -1080,7 +1080,7 @@ fn expand_deserialize_struct(
         where
             #(#bounds),*
         {
-            fn deserialize(deserializer: &mut __D, extension: &mut __E) -> Result<Self, __D::Error> {
+            fn deserialize(deserializer: &mut __D, extension: &__E) -> Result<Self, __D::Error> {
                 #deserialize_body
             }
         }
@@ -1110,7 +1110,7 @@ fn expand_deserialize_enum(
         where
             #(#bounds),*
         {
-            fn deserialize(deserializer: &mut __D, extension: &mut __E) -> Result<Self, __D::Error> {
+            fn deserialize(deserializer: &mut __D, extension: &__E) -> Result<Self, __D::Error> {
                 #deserialize_body
             }
         }

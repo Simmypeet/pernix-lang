@@ -51,7 +51,7 @@ use std::fmt::Display;
 /// {
 ///     fn deserialize(
 ///         deserializer: &mut D,
-///         extension: &mut E,
+///         extension: &E,
 ///     ) -> Result<Self, D::Error> {
 ///         let data = String::deserialize(deserializer, extension)?;
 ///         if data.is_empty() {
@@ -179,7 +179,7 @@ pub trait SeqAccess<E> {
     /// deserialization fails.
     fn next_element<T: Deserialize<Self::Parent, E>>(
         &mut self,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Option<T>, <Self::Parent as Deserializer<E>>::Error>;
 
     /// Get the size hint for the remaining elements.
@@ -204,7 +204,7 @@ pub trait TupleAccess<E> {
     /// fails.
     fn next_element<T: Deserialize<Self::Parent, E>>(
         &mut self,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
@@ -221,7 +221,7 @@ pub trait TupleStructAccess<E> {
     /// Returns `Ok(field)` if successful, or an error if deserialization fails.
     fn next_field<T: Deserialize<Self::Parent, E>>(
         &mut self,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
@@ -239,7 +239,7 @@ pub trait FieldAccess<E> {
     /// fails.
     fn deserialize<T: Deserialize<Self::Parent, E>>(
         self,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
@@ -266,11 +266,11 @@ pub trait StructAccess<E> {
     /// * `next` - A closure that receives the field information and access
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<'e, R>(
+    fn next_field<R>(
         &mut self,
-        extension: &'e mut E,
+        extension: &E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'_>, &'e mut E)>,
+            Option<(Identifier, Self::FieldAccess<'_>, &E)>,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -289,7 +289,7 @@ pub trait ValueAccess<E> {
     /// Returns the deserialized value, or an error if deserialization fails.
     fn deserialize<V: Deserialize<Self::Parent, E>>(
         self,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<V, <Self::Parent as Deserializer<E>>::Error>;
 }
 
@@ -318,11 +318,11 @@ pub trait MapAccess<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_entry<'e, K: Deserialize<Self::Parent, E>, R>(
+    fn next_entry<K: Deserialize<Self::Parent, E>, R>(
         &mut self,
-        extension: &'e mut E,
+        extension: &E,
         next: impl FnOnce(
-            Option<(K, Self::ValueAccess<'_>, &'e mut E)>,
+            Option<(K, Self::ValueAccess<'_>, &E)>,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -347,7 +347,7 @@ pub trait TupleVariantAccess<E> {
     /// Returns `Ok(field)` if successful, or an error if deserialization fails.
     fn next_field<T: Deserialize<Self::Parent, E>>(
         &mut self,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
 }
 
@@ -376,11 +376,11 @@ pub trait StructVariantAccess<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn next_field<'e, R>(
+    fn next_field<R>(
         &mut self,
-        extension: &'e mut E,
+        extension: &E,
         next: impl FnOnce(
-            Option<(Identifier, Self::FieldAccess<'_>, &'e mut E)>,
+            Option<(Identifier, Self::FieldAccess<'_>, &E)>,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -418,13 +418,13 @@ pub trait EnumAccess<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn tuple_variant<'e, R>(
+    fn tuple_variant<R>(
         self,
         len: usize,
-        extension: &'e mut E,
+        extension: &E,
         f: impl FnOnce(
             Self::TupleVariantAccess,
-            &'e mut E,
+            &E,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -439,13 +439,13 @@ pub trait EnumAccess<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn struct_variant<'e, R>(
+    fn struct_variant<R>(
         self,
         fields: &'static [&'static str],
-        extension: &'e mut E,
+        extension: &E,
         f: impl FnOnce(
             Self::StructVariantAccess,
-            &'e mut E,
+            &E,
         )
             -> Result<R, <Self::Parent as Deserializer<E>>::Error>,
     ) -> Result<R, <Self::Parent as Deserializer<E>>::Error>;
@@ -551,7 +551,7 @@ pub trait Deserializer<E> {
     /// `Ok(None)` if the option is None, or an error if deserialization fails.
     fn expect_option<T: Deserialize<Self, E>>(
         &mut self,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Option<T>, Self::Error>;
 
     /// Deserialize a sequence (array, vector, etc.).
@@ -563,10 +563,10 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_seq<'e, R>(
+    fn expect_seq<R>(
         &mut self,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::SeqAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::SeqAccess<'_>, &E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple.
@@ -579,11 +579,11 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_tuple<'e, R>(
+    fn expect_tuple<R>(
         &mut self,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::TupleAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::TupleAccess<'_>, &E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a tuple struct.
@@ -597,15 +597,12 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_tuple_struct<'e, R>(
+    fn expect_tuple_struct<R>(
         &mut self,
         name: &'static str,
         len: usize,
-        extension: &'e mut E,
-        f: impl FnOnce(
-            Self::TupleStructAccess<'_>,
-            &'e mut E,
-        ) -> Result<R, Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::TupleStructAccess<'_>, &E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a unit struct (struct with no fields).
@@ -629,12 +626,12 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_struct<'e, R>(
+    fn expect_struct<R>(
         &mut self,
         name: &'static str,
         fields: &'static [&'static str],
-        extension: &'e mut E,
-        f: impl FnOnce(Self::StructAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::StructAccess<'_>, &E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize a map (dictionary, hash table, etc.).
@@ -646,10 +643,10 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_map<'e, R>(
+    fn expect_map<R>(
         &mut self,
-        extension: &'e mut E,
-        f: impl FnOnce(Self::MapAccess<'_>, &'e mut E) -> Result<R, Self::Error>,
+        extension: &E,
+        f: impl FnOnce(Self::MapAccess<'_>, &E) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 
     /// Deserialize an enum.
@@ -663,15 +660,15 @@ pub trait Deserializer<E> {
     /// # Returns
     ///
     /// Returns the result of the closure, or an error if deserialization fails.
-    fn expect_enum<'e, R>(
+    fn expect_enum<R>(
         &mut self,
         name: &'static str,
         variants: &'static [&'static str],
-        extension: &'e mut E,
+        extension: &E,
         f: impl FnOnce(
             Identifier,
             Self::EnumAccess<'_>,
-            &'e mut E,
+            &E,
         ) -> Result<R, Self::Error>,
     ) -> Result<R, Self::Error>;
 }
@@ -693,7 +690,7 @@ pub trait Deserialize<D: Deserializer<E> + ?Sized, E>: Sized {
     /// Returns an error if the value cannot be deserialized.
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error>;
 }
 
@@ -708,7 +705,7 @@ macro_rules! impl_deserialize_integer {
             where
                 D: Deserializer<E>,
             {
-                fn deserialize(deserializer: &mut D, _extension: &mut E) -> Result<Self, D::Error> {
+                fn deserialize(deserializer: &mut D, _extension: &E) -> Result<Self, D::Error> {
                     deserializer.$method()
                 }
             }
@@ -737,7 +734,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_f32()
     }
@@ -749,7 +746,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_f64()
     }
@@ -761,7 +758,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_bool()
     }
@@ -773,7 +770,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_char()
     }
@@ -785,7 +782,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_string()
     }
@@ -809,7 +806,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_seq(extension, |mut seq, e| {
             let (lower, upper) = seq.size_hint();
@@ -831,7 +828,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         use std::mem::{ManuallyDrop, MaybeUninit};
 
@@ -894,7 +891,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_map(extension, |mut map_access, e| {
             let (lower, upper) = map_access.size_hint();
@@ -932,7 +929,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_map(extension, |mut map_access, e| {
             let mut map = Self::new();
@@ -966,7 +963,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_seq(extension, |mut seq, e| {
             let (lower, upper) = seq.size_hint();
@@ -991,7 +988,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_seq(extension, |mut seq, e| {
             let mut btree_set = Self::new();
@@ -1012,7 +1009,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_seq(extension, |mut seq, e| {
             let (lower, upper) = seq.size_hint();
@@ -1034,7 +1031,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_seq(extension, |mut seq, e| {
             let mut list = Self::new();
@@ -1059,7 +1056,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_option(extension)
     }
@@ -1073,7 +1070,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut Ext,
+        extension: &Ext,
     ) -> Result<Self, D::Error> {
         const VARIANTS: &[&str] = &["Ok", "Err"];
 
@@ -1128,7 +1125,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer.expect_unit()
     }
@@ -1142,7 +1139,7 @@ macro_rules! impl_deserialize_tuple {
                 $($T: Deserialize<D, E>,)*
                 D: Deserializer<E>,
             {
-                fn deserialize(deserializer: &mut D, extension: &mut E) -> Result<Self, D::Error> {
+                fn deserialize(deserializer: &mut D, extension: &E) -> Result<Self, D::Error> {
                     deserializer.expect_tuple($len, extension, |mut tuple, extension| {
                         Ok((
                             $(
@@ -1188,7 +1185,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(Self::new(value))
@@ -1203,7 +1200,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         let owned = T::Owned::deserialize(deserializer, extension)?;
         Ok(Cow::Owned(owned))
@@ -1222,7 +1219,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         deserializer
             .expect_tuple_struct("PhantomData", 1, extension, |_, _| Ok(Self))
@@ -1249,7 +1246,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         Ok(PathBuf::from(String::deserialize(deserializer, extension)?))
     }
@@ -1260,7 +1257,7 @@ impl<D: Deserializer<E>, T: Deserialize<D, E>, E> Deserialize<D, E>
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         deserializer.expect_struct(
             "Range",
@@ -1336,7 +1333,7 @@ impl<
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         deserializer.expect_map(extension, |mut map_access, extension| {
             let (lower, upper) = map_access.size_hint();
@@ -1379,7 +1376,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         Ok(deserializer.expect_str()?.into())
     }
@@ -1390,7 +1387,7 @@ impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(std::sync::RwLock::new(value))
@@ -1402,7 +1399,7 @@ impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(std::sync::Mutex::new(value))
@@ -1414,7 +1411,7 @@ impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(parking_lot::RwLock::new(value))
@@ -1426,7 +1423,7 @@ impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(parking_lot::Mutex::new(value))
@@ -1436,7 +1433,7 @@ impl<D: Deserializer<E>, E, T: Deserialize<D, E>> Deserialize<D, E>
 impl<D: Deserializer<E>, E> Deserialize<D, E> for AtomicBool {
     fn deserialize(
         deserializer: &mut D,
-        _extension: &mut E,
+        _extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         deserializer.expect_bool().map(AtomicBool::new)
     }
@@ -1449,7 +1446,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(std::sync::Arc::new(value))
@@ -1463,7 +1460,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(std::rc::Rc::new(value))

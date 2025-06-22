@@ -198,9 +198,8 @@ pub trait DynamicRegistry<S: Serializer<Self>, D: Deserializer<Self>>:
 /// standard library's `TypeId` for runtime type checking.
 #[derive(Debug, Copy)]
 pub struct SerializationHelper<S: Serializer<E>, E> {
-    map_serializer: fn(&Map, &mut S, &mut E) -> Result<(), S::Error>,
-    dynamic_box_serializer:
-        fn(&DynamicBox, &mut S, &mut E) -> Result<(), S::Error>,
+    map_serializer: fn(&Map, &mut S, &E) -> Result<(), S::Error>,
+    dynamic_box_serializer: fn(&DynamicBox, &mut S, &E) -> Result<(), S::Error>,
 
     std_type_id: std::any::TypeId,
 }
@@ -220,12 +219,12 @@ pub struct DeserializationHelper<D: Deserializer<E>, E> {
     map_deserializer: for<'m, 'v> fn(
         &mut Map,
         <D::MapAccess<'m> as MapAccess<E>>::ValueAccess<'v>,
-        &mut E,
+        &E,
     ) -> Result<(), D::Error>,
 
     dynamic_box_deserializer: for<'m, 'v> fn(
         <D::StructAccess<'m> as StructAccess<E>>::FieldAccess<'v>,
-        &mut E,
+        &E,
     )
         -> Result<DynamicBox, D::Error>,
 
@@ -241,7 +240,7 @@ impl<S: Serializer<E>, E> Serialize<S, E> for SerializableTypedMap<'_, S, E> {
     fn serialize(
         &self,
         serializer: &mut S,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), <S as Serializer<E>>::Error> {
         (self.helper.map_serializer)(self.map, serializer, extension)
     }
@@ -251,7 +250,7 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for Map {
     fn serialize(
         &self,
         serializer: &mut S,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), <S as Serializer<E>>::Error> {
         use pernixc_serialize::ser::{Error, Map};
 
@@ -277,13 +276,9 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for Map {
             |mut map, extension| {
                 let mut serialized_count = 0;
 
-                let serialization_helpers = extension
-                    .serialization_helper_by_type_id()
-                    .iter()
-                    .map(|x| (*x.0, x.1.clone()))
-                    .collect::<Vec<_>>();
-
-                for (stable_type_id, helper) in serialization_helpers {
+                for (stable_type_id, helper) in
+                    extension.serialization_helper_by_type_id()
+                {
                     // skip this map type
                     if !self.has_type_id(helper.std_type_id) {
                         continue;
@@ -291,7 +286,7 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for Map {
 
                     map.serialize_entry(
                         &stable_type_id,
-                        &SerializableTypedMap { map: self, helper: &helper },
+                        &SerializableTypedMap { map: self, helper },
                         extension,
                     )?;
 
@@ -317,7 +312,7 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for DynamicBox {
     fn serialize(
         &self,
         serializer: &mut S,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<(), <S as Serializer<E>>::Error> {
         use pernixc_serialize::ser::Error;
 
@@ -387,7 +382,7 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Default for Registry<S, D, E> {
 fn map_deserializer<D: Deserializer<E>, E, K: Key + Deserialize<D, E>>(
     map: &mut Map,
     value_access: <D::MapAccess<'_> as MapAccess<E>>::ValueAccess<'_>,
-    extension: &mut E,
+    extension: &E,
 ) -> Result<(), D::Error>
 where
     K::Value: Deserialize<D, E>,
@@ -414,7 +409,7 @@ fn dynamic_box_deserializer<
     K: Key + Deserialize<D, E>,
 >(
     value_access: <D::StructAccess<'_> as StructAccess<E>>::FieldAccess<'_>,
-    extension: &mut E,
+    extension: &E,
 ) -> Result<DynamicBox, D::Error> {
     use pernixc_serialize::de::FieldAccess;
 
@@ -449,17 +444,16 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
     {
         use pernixc_serialize::ser::Struct;
 
-        let map_serializer =
-            |map: &Map, serializer: &mut S, extension: &mut E| {
-                map.type_storage::<K, _>(|x| {
-                    let map = x.expect("should exists");
+        let map_serializer = |map: &Map, serializer: &mut S, extension: &E| {
+            map.type_storage::<K, _>(|x| {
+                let map = x.expect("should exists");
 
-                    map.serialize(serializer, extension)
-                })
-            };
+                map.serialize(serializer, extension)
+            })
+        };
 
         let dyn_box_serializer =
-            |dyn_box: &DynamicBox, serializer: &mut S, extension: &mut E| {
+            |dyn_box: &DynamicBox, serializer: &mut S, extension: &E| {
                 serializer.emit_struct(
                     "DynamicBox",
                     2,
@@ -570,7 +564,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         use pernixc_serialize::de::{Error, MapAccess};
 
@@ -624,7 +618,7 @@ where
 {
     fn deserialize(
         deserializer: &mut D,
-        extension: &mut E,
+        extension: &E,
     ) -> Result<Self, D::Error> {
         use pernixc_serialize::de::{
             Error, FieldAccess, Identifier, StructAccess,
