@@ -248,6 +248,19 @@ pub struct DeserializationHelper<D: Deserializer<E>, E> {
     std_type_id: std::any::TypeId,
 }
 
+impl<D: Deserializer<E>, E> DeserializationHelper<D, E> {
+    /// Deserializes a [`K::Value`] instance into the [`result_buffer`] which
+    /// has a type of [`Option<K::Value>`] that has been downcasted to `Any`.
+    pub fn deserialize_any_value(
+        &self,
+        result_buffer: &mut dyn Any,
+        deserializer: &mut D,
+        extension: &E,
+    ) -> Result<(), D::Error> {
+        (self.value_deserializer)(result_buffer, deserializer, extension)
+    }
+}
+
 struct SerializableTypedMap<'s, S: Serializer<E>, E> {
     map: &'s Map,
     helper: &'s SerializationHelper<S, E>,

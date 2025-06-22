@@ -21,6 +21,7 @@ pub mod __internal {
 extern crate self as pernixc_query;
 
 pub mod database;
+pub mod fingerprint;
 pub mod key;
 pub mod persistence;
 pub mod runtime;
