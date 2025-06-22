@@ -4,10 +4,7 @@ use pernixc_parser::{
     expect::Ext as _,
     parser::{ast, Parser as _},
 };
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use super::block::Block;
@@ -28,10 +25,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize,
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub struct Binary {
         pub first: Node = ast::<Node>(),

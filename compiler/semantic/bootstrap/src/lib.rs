@@ -13,10 +13,7 @@ use pernixc_query::{
     Engine,
 };
 use pernixc_serialize::{
-    binary::de::BinaryDeserializer,
-    de::Deserializer,
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    ser::Serializer,
+    binary::de::BinaryDeserializer, de::Deserializer, ser::Serializer,
     Deserialize,
 };
 use pernixc_source_file::{GlobalSourceID, SourceMap};
@@ -155,7 +152,7 @@ fn bootstrap_runtime() -> Runtime {
 pub fn register_serde<
     S: Serializer<Registry>,
     D: Deserializer<Registry>,
-    Registry: DynamicRegistry<S, D> + SharedPointerSerialize + SharedPointerDeserialize,
+    Registry: DynamicRegistry<S, D>,
 >(
     serde_registry: &mut Registry,
 ) {

@@ -14,10 +14,7 @@ use pernixc_parser::{
     expect::{self, Ext as _},
     parser::{ast, Parser as _},
 };
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use r#type::Type;
 
@@ -92,10 +89,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub struct Elided {
         pub first_dot = '.',
@@ -210,10 +203,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub struct QualifiedIdentifier {
         pub root: QualifiedIdentifierRoot = ast::<QualifiedIdentifierRoot>(),

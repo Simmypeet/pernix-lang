@@ -3,10 +3,7 @@
 use binary::Binary;
 use enum_as_inner::EnumAsInner;
 use pernixc_parser::{abstract_tree, parser::ast};
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use terminator::Terminator;
 
@@ -33,10 +30,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize,
         EnumAsInner
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub enum Expression {
         Binary(Binary = ast::<Binary>()),

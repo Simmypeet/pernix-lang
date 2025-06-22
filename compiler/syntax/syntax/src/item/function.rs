@@ -4,10 +4,7 @@ use pernixc_parser::{
     expect::{self, Ext as _},
     parser::{ast, Parser as _},
 };
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
@@ -58,10 +55,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize,
     )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
-    )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct Parameters {
         pub parameters: #[multi] ParameterKind
@@ -81,10 +74,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize,
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub struct ReturnType {
         pub dash = '-',

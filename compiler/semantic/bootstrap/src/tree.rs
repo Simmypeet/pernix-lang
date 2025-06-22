@@ -12,10 +12,7 @@ use pernixc_handler::Storage;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_parser::abstract_tree::AbstractTree;
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap, Span};
 use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
@@ -150,10 +147,6 @@ impl Report<()> for ModuleRedefinition {
 
 /// The tree structure of the compilation module.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
-)]
 pub struct Tree {
     /// The signature of the module, if it exists.
     pub signature: Option<pernixc_syntax::item::module::Signature>,

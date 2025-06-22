@@ -199,7 +199,9 @@ impl Engine {
         &self,
         key: &T,
     ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
-        self.query_internal(key, self.database.call_graph.lock()).0
+        self.query_internal(key, self.database.call_graph.lock()).0?;
+
+        self.database.map.get(key).map_or_else(|| todo!(), Ok)
     }
 
     fn check_cyclic(
@@ -235,15 +237,17 @@ impl Engine {
         key: &T,
         mut call_graph: MutexGuard<'a, CallGraph>,
     ) -> (
-        Result<T::Value, crate::runtime::executor::CyclicError>,
+        Result<(), crate::runtime::executor::CyclicError>,
         MutexGuard<'a, CallGraph>,
     ) {
         let key_smallbox = DynamicBox(key.smallbox_clone());
 
         let called_from = call_graph.called_from();
 
-        // query has already been computed return the result
-        let Some(mut result) = self.database.map.get(key) else {
+        // get the version info for the key.
+        let Some(version_info) =
+            call_graph.version_info_by_keys.get(&key_smallbox).copied()
+        else {
             self.database
                 .last_was_query
                 .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -268,12 +272,8 @@ impl Engine {
                 );
             }
 
-            return (Ok(self.database.map.get(key).unwrap()), call_graph);
+            return (Ok(()), call_graph);
         };
-
-        // the result is already up to date
-        let version_info =
-            *call_graph.version_info_by_keys.get(&key_smallbox).unwrap();
 
         if version_info.kind == Kind::Input {
             // add the dependency of the input
@@ -286,7 +286,7 @@ impl Engine {
             }
 
             // the value is an `input` value, always returns as it.
-            return (Ok(result), call_graph);
+            return (Ok(()), call_graph);
         }
 
         self.database
@@ -303,7 +303,7 @@ impl Engine {
                     .insert(key_smallbox);
             }
 
-            return (Ok(result), call_graph);
+            return (Ok(()), call_graph);
         }
 
         let recompute = if matches!(version_info.kind, Kind::Derived {
@@ -380,9 +380,6 @@ impl Engine {
             }
 
             call_graph = returned_call_graph;
-
-            // update the result, as it might have been changed
-            result = self.database.map.get(key).unwrap();
         } else {
             call_graph
                 .version_info_by_keys
@@ -391,7 +388,7 @@ impl Engine {
                 .verfied_at_version = self.database.version;
         }
 
-        (Ok(result), call_graph)
+        (Ok(()), call_graph)
     }
 
     #[allow(clippy::too_many_lines)]

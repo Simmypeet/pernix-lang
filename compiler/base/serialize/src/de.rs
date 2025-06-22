@@ -1441,3 +1441,31 @@ impl<D: Deserializer<E>, E> Deserialize<D, E> for AtomicBool {
         deserializer.expect_bool().map(AtomicBool::new)
     }
 }
+
+impl<T, D, E> Deserialize<D, E> for std::sync::Arc<T>
+where
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        let value = T::deserialize(deserializer, extension)?;
+        Ok(std::sync::Arc::new(value))
+    }
+}
+
+impl<T, D, E> Deserialize<D, E> for std::rc::Rc<T>
+where
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &mut E,
+    ) -> Result<Self, D::Error> {
+        let value = T::deserialize(deserializer, extension)?;
+        Ok(std::rc::Rc::new(value))
+    }
+}

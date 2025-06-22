@@ -1114,3 +1114,25 @@ impl<S: Serializer<E>, E> Serialize<S, E> for AtomicBool {
         serializer.emit_bool(self.load(std::sync::atomic::Ordering::SeqCst))
     }
 }
+
+impl<T, S, E> Serialize<S, E> for std::sync::Arc<T>
+where
+    T: Serialize<S, E>,
+    S: Serializer<E>,
+{
+    fn serialize(&self, serializer: &mut S, e: &mut E) -> Result<(), S::Error> {
+        // Serialize the inner value of the Arc
+        (**self).serialize(serializer, e)
+    }
+}
+
+impl<T, S, E> Serialize<S, E> for std::rc::Rc<T>
+where
+    T: Serialize<S, E>,
+    S: Serializer<E>,
+{
+    fn serialize(&self, serializer: &mut S, e: &mut E) -> Result<(), S::Error> {
+        // Serialize the inner value of the Rc
+        (**self).serialize(serializer, e)
+    }
+}

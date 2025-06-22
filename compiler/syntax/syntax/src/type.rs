@@ -59,10 +59,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize
     )]
-    #[serde(
-        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
-        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
-    )]
     pub struct Reference {
         pub ampersand: Punctuation = '&', pub lifetime: Lifetime = ast::<Lifetime>().optional(),
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
@@ -91,10 +87,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize
     )]
-    #[serde(
-        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
-        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
-    )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct Tuple {
         pub types: #[multi] Unpackable
@@ -114,10 +106,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize
-    )]
-    #[serde(
-        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
-        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
     )]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct Array {
@@ -140,10 +128,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize
     )]
-    #[serde(
-        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
-        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
-    )]
     pub struct Pointer {
         pub asterisk: Punctuation = '*',
         pub mut_keyword: Keyword = expect::Keyword::Mut.optional(),
@@ -164,10 +148,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize
     )]
-    #[serde(
-        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
-        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
-    )]
     pub struct Phantom {
         pub phantom: Keyword = expect::Keyword::Phantom,
         pub r#type: Type = ast::<Type>(),
@@ -186,10 +166,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize
-    )]
-    #[serde(
-        ser_extension(pernixc_serialize::extension::SharedPointerSerialize),
-        de_extension(pernixc_serialize::extension::SharedPointerDeserialize)
     )]
     pub enum Type {
         Primitive(Primitive = ast::<Primitive>()),

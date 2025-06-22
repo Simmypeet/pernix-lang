@@ -2,10 +2,7 @@ use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser as _},
 };
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
@@ -39,10 +36,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize,
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub struct Field {
         pub access_modifier: AccessModifier = ast::<AccessModifier>(),

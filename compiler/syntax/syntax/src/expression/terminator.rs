@@ -3,10 +3,7 @@ use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser as _},
 };
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{expression::binary::Binary, Keyword, Label};
@@ -27,10 +24,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize,
         EnumAsInner
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub enum Terminator {
         Return(Return = ast::<Return>()),
@@ -53,10 +46,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize,
     )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
-    )]
     pub struct Return {
         pub return_keyword: Keyword = expect::Keyword::Return,
         pub binary: Binary = ast::<Binary>().optional(),
@@ -75,10 +64,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize,
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub struct Continue {
         pub continue_keyword: Keyword = expect::Keyword::Continue,
@@ -99,10 +84,6 @@ abstract_tree::abstract_tree! {
         Serialize,
         Deserialize,
     )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
-    )]
     pub struct Express {
         pub express_keyword: Keyword = expect::Keyword::Express,
         pub label: Label = ast::<Label>().optional(),
@@ -122,10 +103,6 @@ abstract_tree::abstract_tree! {
         StableHash,
         Serialize,
         Deserialize,
-    )]
-    #[serde(
-        ser_extension(SharedPointerSerialize),
-        de_extension(SharedPointerDeserialize)
     )]
     pub struct Break {
         pub break_keyword: Keyword = expect::Keyword::Break,

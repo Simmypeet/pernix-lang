@@ -24,10 +24,6 @@ use pernixc_query::{
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     de::Deserializer,
-    extension::{
-        shared_pointer::{SharedPointerStore, SharedPointerTracker},
-        SharedPointerDeserialize, SharedPointerSerialize,
-    },
     ser::Serializer,
     Deserialize, Serialize,
 };
@@ -246,58 +242,13 @@ pub struct Input {
 /// An object for serialization support
 struct SerdeExtension<S: Serializer<Self>, D: Deserializer<Self>> {
     pub registry: pernixc_query::serde::Registry<S, D, Self>,
-    pub shared_pointer_store: SharedPointerStore,
-    pub shared_pointer_tracker: SharedPointerTracker,
 }
 
 impl<S: Serializer<Self>, D: Deserializer<Self>> Default
     for SerdeExtension<S, D>
 {
     fn default() -> Self {
-        Self {
-            registry: pernixc_query::serde::Registry::default(),
-            shared_pointer_store: SharedPointerStore::default(),
-            shared_pointer_tracker: SharedPointerTracker::default(),
-        }
-    }
-}
-
-impl<S: Serializer<Self>, D: Deserializer<Self>> SharedPointerSerialize
-    for SerdeExtension<S, D>
-{
-    fn register_arc<T>(&mut self, arc: &std::sync::Arc<T>) -> bool {
-        self.shared_pointer_tracker.register_arc(arc)
-    }
-
-    fn register_rc<T>(&mut self, rc: &std::rc::Rc<T>) -> bool {
-        self.shared_pointer_tracker.register_rc(rc)
-    }
-}
-
-impl<S: Serializer<Self>, D: Deserializer<Self>> SharedPointerDeserialize
-    for SerdeExtension<S, D>
-{
-    fn store_arc<T: 'static + Send + Sync>(
-        &mut self,
-        pointer: usize,
-        arc: std::sync::Arc<T>,
-    ) {
-        self.shared_pointer_store.store_arc(pointer, arc);
-    }
-
-    fn get_arc<T: 'static + Send + Sync>(
-        &self,
-        pointer: usize,
-    ) -> Option<std::sync::Arc<T>> {
-        self.shared_pointer_store.get_arc(pointer)
-    }
-
-    fn store_rc<T: 'static>(&mut self, pointer: usize, rc: std::rc::Rc<T>) {
-        self.shared_pointer_store.store_rc(pointer, rc);
-    }
-
-    fn get_rc<T: 'static>(&self, pointer: usize) -> Option<std::rc::Rc<T>> {
-        self.shared_pointer_store.get_rc(pointer)
+        Self { registry: pernixc_query::serde::Registry::default() }
     }
 }
 

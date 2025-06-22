@@ -2,10 +2,7 @@
 
 use derive_more::{Deref, DerefMut};
 use pernixc_query::Value;
-use pernixc_serialize::{
-    extension::{SharedPointerDeserialize, SharedPointerSerialize},
-    Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::Members;
 use pernixc_target::Global;
@@ -28,10 +25,6 @@ use crate::symbol;
     Deserialize,
     Value,
     StableHash,
-)]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
 )]
 #[key(GenericParametersKey)]
 #[id(Global<symbol::ID>)]
@@ -62,10 +55,6 @@ pub struct GenericParameters(
     Value,
     StableHash,
 )]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
-)]
 #[key(TypeAliasKey)]
 #[id(Global<symbol::ID>)]
 #[ext(
@@ -92,10 +81,6 @@ pub struct TypeAlias(pub pernixc_syntax::r#type::Type);
     Deserialize,
     Value,
     StableHash,
-)]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
 )]
 #[ext(
     method(get_implementation_qualified_identifier),
@@ -125,10 +110,6 @@ pub struct ImplementationQualifiedIdentifier(
     Value,
     StableHash,
 )]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
-)]
 #[key(WhereClauseKey)]
 #[id(Global<symbol::ID>)]
 #[ext(
@@ -155,10 +136,6 @@ pub struct WhereClause(
     Deserialize,
     Value,
     StableHash,
-)]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
 )]
 #[key(FunctionSignatureKey)]
 #[id(Global<symbol::ID>)]
@@ -189,10 +166,6 @@ pub struct FunctionSignature {
     Value,
     StableHash,
 )]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
-)]
 #[key(StatementsKey)]
 #[id(Global<symbol::ID>)]
 #[ext(
@@ -219,10 +192,6 @@ pub struct Statements(
     Deserialize,
     Value,
     StableHash,
-)]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
 )]
 #[key(FieldsKey)]
 #[id(Global<symbol::ID>)]
@@ -253,10 +222,6 @@ pub struct Fields(
     Deserialize,
     Value,
     StableHash,
-)]
-#[serde(
-    ser_extension(SharedPointerSerialize),
-    de_extension(SharedPointerDeserialize)
 )]
 #[key(VariantKey)]
 #[id(Global<symbol::ID>)]
