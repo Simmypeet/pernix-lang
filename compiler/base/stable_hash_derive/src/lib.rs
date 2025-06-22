@@ -10,7 +10,6 @@
 //! 
 //! ```rust
 //! use pernixc_stable_hash::StableHash;
-//! use pernixc_stable_hash_derive::StableHash;
 //! 
 //! #[derive(StableHash)]
 //! struct Point {
@@ -23,7 +22,6 @@
 //! 
 //! ```rust
 //! use pernixc_stable_hash::StableHash;
-//! use pernixc_stable_hash_derive::StableHash;
 //! 
 //! #[derive(StableHash)]
 //! enum Message {
@@ -148,9 +146,8 @@ fn impl_stable_hash_struct(data_struct: &DataStruct) -> proc_macro2::TokenStream
 }
 
 fn impl_stable_hash_enum(data_enum: &DataEnum) -> proc_macro2::TokenStream {
-    let variant_matches = data_enum.variants.iter().enumerate().map(|(discriminant, variant)| {
+    let variant_matches = data_enum.variants.iter().map(|variant| {
         let variant_name = &variant.ident;
-        let discriminant_value = discriminant as u32;
         
         match &variant.fields {
             Fields::Named(fields) => {
@@ -163,14 +160,13 @@ fn impl_stable_hash_enum(data_enum: &DataEnum) -> proc_macro2::TokenStream {
                 
                 quote! {
                     Self::#variant_name { #(#field_names),* } => {
-                        ::pernixc_stable_hash::StableHash::stable_hash(&#discriminant_value, state);
                         #(#field_hashes)*
                     }
                 }
             }
             Fields::Unnamed(fields) => {
                 let field_bindings: Vec<_> = (0..fields.unnamed.len())
-                    .map(|i| syn::Ident::new(&format!("field_{}", i), proc_macro2::Span::call_site()))
+                    .map(|i| syn::Ident::new(&format!("field_{i}"), proc_macro2::Span::call_site()))
                     .collect();
                 
                 let field_hashes = field_bindings.iter().map(|field_name| {
@@ -181,22 +177,24 @@ fn impl_stable_hash_enum(data_enum: &DataEnum) -> proc_macro2::TokenStream {
                 
                 quote! {
                     Self::#variant_name(#(#field_bindings),*) => {
-                        ::pernixc_stable_hash::StableHash::stable_hash(&#discriminant_value, state);
                         #(#field_hashes)*
                     }
                 }
             }
             Fields::Unit => {
                 quote! {
-                    Self::#variant_name => {
-                        ::pernixc_stable_hash::StableHash::stable_hash(&#discriminant_value, state);
-                    }
+                    Self::#variant_name => {}
                 }
             }
         }
     });
     
     quote! {
+        ::pernixc_stable_hash::StableHash::stable_hash(
+            &::std::mem::discriminant(self),
+            state
+        );
+
         match self {
             #(#variant_matches)*
         }

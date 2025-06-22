@@ -23,9 +23,13 @@
 //! let hash = hasher.finish();
 //! ```
 
-use std::hash::{BuildHasher, Hash};
+use std::{
+    hash::{BuildHasher, Hash},
+    mem::Discriminant,
+};
 
 extern crate self as pernixc_stable_hash;
+pub use pernixc_stable_hash_derive::StableHash;
 
 #[doc(hidden)]
 pub mod __internal {}
@@ -764,27 +768,25 @@ impl<T: StableHash + ?Sized> StableHash for &mut T {
 // Commonly used standard library types
 impl<T: StableHash> StableHash for Option<T> {
     fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
-        match self {
-            Some(value) => {
-                1u8.stable_hash(state);
-                value.stable_hash(state);
-            }
-            None => {
-                0u8.stable_hash(state);
-            }
+        let discriminant = std::mem::discriminant(self);
+        discriminant.stable_hash(state);
+
+        if let Some(value) = self {
+            value.stable_hash(state);
         }
     }
 }
 
 impl<T: StableHash, E: StableHash> StableHash for Result<T, E> {
     fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        let discriminant = std::mem::discriminant(self);
+        discriminant.stable_hash(state);
+
         match self {
             Ok(value) => {
-                0u8.stable_hash(state);
                 value.stable_hash(state);
             }
             Err(error) => {
-                1u8.stable_hash(state);
                 error.stable_hash(state);
             }
         }
@@ -1145,3 +1147,18 @@ where
         state.write_str(self.as_str());
     }
 }
+
+impl<T> StableHash for Discriminant<T> {
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                std::ptr::from_ref::<Self>(self).cast::<u8>(),
+                std::mem::size_of::<Self>(),
+            )
+        };
+        state.write(bytes);
+    }
+}
+
+#[cfg(test)]
+mod test;
