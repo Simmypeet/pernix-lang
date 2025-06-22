@@ -383,6 +383,9 @@ pub trait Serializer<E> {
     /// Serialize an i64 value.
     fn emit_i64(&mut self, value: i64) -> Result<(), Self::Error>;
 
+    /// Serialize a i128 value.
+    fn emit_i128(&mut self, value: i128) -> Result<(), Self::Error>;
+
     /// Serialize a u8 value.
     fn emit_u8(&mut self, value: u8) -> Result<(), Self::Error>;
 
@@ -394,6 +397,9 @@ pub trait Serializer<E> {
 
     /// Serialize a u64 value.
     fn emit_u64(&mut self, value: u64) -> Result<(), Self::Error>;
+
+    /// Serialize a u64 value.
+    fn emit_u128(&mut self, value: u128) -> Result<(), Self::Error>;
 
     /// Serialize an isize value.
     fn emit_isize(&mut self, value: isize) -> Result<(), Self::Error>;
@@ -618,10 +624,12 @@ impl_serialize_integer! {
     i16 => emit_i16,
     i32 => emit_i32,
     i64 => emit_i64,
+    i128 => emit_i128,
     u8 => emit_u8,
     u16 => emit_u16,
     u32 => emit_u32,
     u64 => emit_u64,
+    u128 => emit_u128,
     isize => emit_isize,
     usize => emit_usize,
     f32 => emit_f32,

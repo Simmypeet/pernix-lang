@@ -497,6 +497,9 @@ pub trait Deserializer<E> {
     /// Deserialize an i64 value.
     fn expect_i64(&mut self) -> Result<i64, Self::Error>;
 
+    /// Deserialize a i128 value.
+    fn expect_i128(&mut self) -> Result<i128, Self::Error>;
+
     /// Deserialize a u8 value.
     fn expect_u8(&mut self) -> Result<u8, Self::Error>;
 
@@ -508,6 +511,9 @@ pub trait Deserializer<E> {
 
     /// Deserialize a u64 value.
     fn expect_u64(&mut self) -> Result<u64, Self::Error>;
+
+    /// Deserialize a u128 value.
+    fn expect_u128(&mut self) -> Result<u128, Self::Error>;
 
     /// Deserialize an isize value.
     fn expect_isize(&mut self) -> Result<isize, Self::Error>;
@@ -715,10 +721,12 @@ impl_deserialize_integer! {
     i16 => expect_i16,
     i32 => expect_i32,
     i64 => expect_i64,
+    i128 => expect_i128,
     u8 => expect_u8,
     u16 => expect_u16,
     u32 => expect_u32,
     u64 => expect_u64,
+    u128 => expect_u128,
     isize => expect_isize,
     usize => expect_usize
 }
