@@ -108,6 +108,8 @@
 //! * Type lookups use efficient hash maps with stable type IDs as keys
 //! * Registration is typically done once at startup, not in hot paths
 
+use std::any::Any;
+
 use getset::Getters;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_serialize::{
@@ -197,11 +199,25 @@ pub trait DynamicRegistry<S: Serializer<Self>, D: Deserializer<Self>>:
 /// instances and `DynamicBox` instances for a specific type. It also stores the
 /// standard library's `TypeId` for runtime type checking.
 #[derive(Debug, Copy)]
+#[allow(clippy::type_complexity)]
 pub struct SerializationHelper<S: Serializer<E>, E> {
     map_serializer: fn(&Map, &mut S, &E) -> Result<(), S::Error>,
     dynamic_box_serializer: fn(&DynamicBox, &mut S, &E) -> Result<(), S::Error>,
+    value_serializer: fn(&dyn Any, &mut S, &E) -> Result<(), S::Error>,
 
     std_type_id: std::any::TypeId,
+}
+
+impl<S: Serializer<E>, E> SerializationHelper<S, E> {
+    /// Serializes a [`K::Value`] instance that has been downcasted to `Any`.
+    pub fn serialize_any_value(
+        &self,
+        value: &dyn Any,
+        serializer: &mut S,
+        extension: &E,
+    ) -> Result<(), S::Error> {
+        (self.value_serializer)(value, serializer, extension)
+    }
 }
 
 /// A helper struct that contains function pointers for deserializing a specific
@@ -227,6 +243,7 @@ pub struct DeserializationHelper<D: Deserializer<E>, E> {
         &E,
     )
         -> Result<DynamicBox, D::Error>,
+    value_deserializer: fn(&mut dyn Any, &mut D, &E) -> Result<(), D::Error>,
 
     std_type_id: std::any::TypeId,
 }
@@ -478,12 +495,23 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
                 )
             };
 
+        let value_serializer = |value: &dyn Any,
+                                serializer: &mut S,
+                                extension: &E| {
+            let value = value.downcast_ref::<K::Value>().unwrap_or_else(|| {
+                panic!("should've been `{}`", std::any::type_name::<K::Value>())
+            });
+
+            value.serialize(serializer, extension)
+        };
+
         if self
             .serialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, SerializationHelper {
                 map_serializer,
                 dynamic_box_serializer: dyn_box_serializer,
                 std_type_id: std::any::TypeId::of::<K>(),
+                value_serializer,
             })
             .is_some()
         {
@@ -493,12 +521,26 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
             )
         }
 
+        let value_deserializer =
+            |result_buffer: &mut dyn Any,
+             deserializer: &mut D,
+             extension: &E| {
+                let value = result_buffer
+                    .downcast_mut::<Option<K::Value>>()
+                    .expect("should be downcastable");
+
+                *value = Some(K::Value::deserialize(deserializer, extension)?);
+
+                Ok(())
+            };
+
         if self
             .deserialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, DeserializationHelper {
                 map_deserializer: map_deserializer::<_, _, K>,
                 dynamic_box_deserializer: dynamic_box_deserializer::<_, _, K>,
                 std_type_id: std::any::TypeId::of::<K>(),
+                value_deserializer,
             })
             .is_some()
         {
@@ -542,6 +584,7 @@ impl<S: Serializer<E>, E> Clone for SerializationHelper<S, E> {
         Self {
             map_serializer: self.map_serializer,
             dynamic_box_serializer: self.dynamic_box_serializer,
+            value_serializer: self.value_serializer,
             std_type_id: self.std_type_id,
         }
     }
@@ -552,6 +595,7 @@ impl<D: Deserializer<E>, E> Clone for DeserializationHelper<D, E> {
         Self {
             map_deserializer: self.map_deserializer,
             dynamic_box_deserializer: self.dynamic_box_deserializer,
+            value_deserializer: self.value_deserializer,
             std_type_id: self.std_type_id,
         }
     }

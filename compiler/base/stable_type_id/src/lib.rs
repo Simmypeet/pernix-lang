@@ -367,6 +367,27 @@ impl StableTypeID {
         *v1 ^= *v2;
         *v2 = v2.rotate_left(32);
     }
+
+    /// Returns the high 64 bits of the stable type ID.
+    #[must_use]
+    pub const fn high(&self) -> u64 {
+        // Returns the high 64 bits of the stable type ID
+        self.0
+    }
+
+    /// Returns the low 64 bits of the stable type ID.
+    #[must_use]
+    pub const fn low(&self) -> u64 {
+        // Returns the low 64 bits of the stable type ID
+        self.1
+    }
+
+    /// Converts the stable type ID into a 128-bit integer representation.
+    #[must_use]
+    pub const fn as_u128(&self) -> u128 {
+        // Returns the stable type ID as a 128-bit integer
+        ((self.0 as u128) << 64) | (self.1 as u128)
+    }
 }
 
 /// A trait for types that can provide a stable, unique identifier across
