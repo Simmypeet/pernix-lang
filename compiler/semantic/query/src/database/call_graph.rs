@@ -13,6 +13,7 @@ use std::{
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, MutexGuard};
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::{StableHash, StableHasher};
 
 use super::Database;
 use crate::{
@@ -95,6 +96,8 @@ pub struct VersionInfo {
     /// the latest computation.
     verfied_at_version: usize,
 
+    fingerprint: Option<u128>,
+
     kind: Kind,
 }
 
@@ -125,6 +128,12 @@ pub enum Kind {
     },
 }
 
+fn calculate_fingerprint<T: StableHash>(value: &T) -> u128 {
+    let mut sip = pernixc_stable_hash::StableSipHasher::new();
+    value.stable_hash(&mut sip);
+    sip.finish()
+}
+
 impl Database {
     /// Sets the input value for the given key.
     ///
@@ -133,25 +142,10 @@ impl Database {
     /// indicate that the input value has changed and all the derived values
     /// need to reflect this change.
     pub fn set_input<K: Key + Dynamic>(&mut self, key: &K, value: K::Value) {
-        let invalidate = self.map.entry(key.clone(), |entry| match entry {
-            dashmap::Entry::Occupied(mut occupied_entry) => {
-                let old_value = occupied_entry.get();
-
-                let invalidate = old_value != &value;
-
-                occupied_entry.insert(value);
-
-                invalidate
-            }
-
-            dashmap::Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(value);
-
-                false
-            }
-        });
-
         // set the input value
+        let value_fingerprint = calculate_fingerprint(&value);
+        self.map.insert(key.clone(), value);
+
         match self
             .call_graph
             .get_mut()
@@ -160,10 +154,11 @@ impl Database {
         {
             Entry::Occupied(mut occupied_entry) => {
                 let value = occupied_entry.get_mut();
+
                 value.verfied_at_version = self.version;
 
                 // update the version info if invalidated
-                if invalidate {
+                if Some(value_fingerprint) != value.fingerprint {
                     // bump the version for the new input setting
                     if *self.last_was_query.get_mut() {
                         self.version += 1;
@@ -171,12 +166,14 @@ impl Database {
                     }
 
                     value.updated_at_version = self.version;
+                    value.fingerprint = Some(value_fingerprint);
                 }
             }
             Entry::Vacant(entry) => {
                 entry.insert(VersionInfo {
                     updated_at_version: self.version,
                     verfied_at_version: self.version,
+                    fingerprint: Some(value_fingerprint),
                     kind: Kind::Input,
                 });
             }
@@ -451,6 +448,7 @@ impl Engine {
                                     kind: Kind::Derived {
                                         defaulted_by_cyclic_dependency: true,
                                     },
+                                    fingerprint: None,
                                 });
                             }
                         }
@@ -471,6 +469,7 @@ impl Engine {
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: true,
                             },
+                            fingerprint: None,
                         },
                     );
 
@@ -564,23 +563,8 @@ impl Engine {
         // Handle the executor result
         match executor_result {
             Ok(value) => {
-                let updated =
-                    self.database.map.entry(key.clone(), |entry| match entry {
-                        dashmap::Entry::Occupied(mut occupied_entry) => {
-                            let updated = *occupied_entry.get_mut() != value;
-
-                            if updated {
-                                occupied_entry.insert(value);
-                            }
-
-                            updated
-                        }
-                        dashmap::Entry::Vacant(vacant_entry) => {
-                            vacant_entry.insert(value);
-
-                            false
-                        }
-                    });
+                let value_fingerprint = calculate_fingerprint(&value);
+                self.database.map.insert(key.clone(), value);
 
                 match call_graph
                     .version_info_by_keys
@@ -593,9 +577,10 @@ impl Engine {
                             defaulted_by_cyclic_dependency: false,
                         };
 
-                        if updated {
+                        if Some(value_fingerprint) != version_info.fingerprint {
                             version_info.updated_at_version =
                                 self.database.version;
+                            version_info.fingerprint = Some(value_fingerprint);
                         }
                     }
                     Entry::Vacant(vacant_entry) => {
@@ -605,6 +590,7 @@ impl Engine {
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: false,
                             },
+                            fingerprint: Some(value_fingerprint),
                         });
                     }
                 }
@@ -618,6 +604,7 @@ impl Engine {
                         kind: Kind::Derived {
                             defaulted_by_cyclic_dependency: true,
                         },
+                        fingerprint: None,
                     },
                 );
 
@@ -650,6 +637,7 @@ impl Engine {
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: true,
                             },
+                            fingerprint: None,
                         });
                     }
                 }

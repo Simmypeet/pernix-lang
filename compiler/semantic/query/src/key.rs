@@ -30,7 +30,7 @@ pub trait Key:
     'static + Send + Sync + Eq + Clone + std::hash::Hash + Identifiable + StableHash
 {
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Clone + Eq + StableHash;
+    type Value: 'static + Send + Sync + Clone + StableHash;
 
     /// A value returned by the key when the key is a part of a strongly
     /// connected component (SCC) in the cyclic dependencies.
