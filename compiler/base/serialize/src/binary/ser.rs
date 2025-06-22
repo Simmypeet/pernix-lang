@@ -23,9 +23,9 @@
 //! The binary format uses the following conventions:
 //!
 //! - **Integers (i8, u8)**: Single byte, stored as-is
-//! - **Integers (i16, i32, i64, isize)**: Varint encoded with zigzag encoding
-//!   for signed types
-//! - **Integers (u16, u32, u64, usize)**: Varint encoded
+//! - **Integers (i16, i32, i64, i128, isize)**: Varint encoded with zigzag
+//!   encoding for signed types
+//! - **Integers (u16, u32, u64, u128, usize)**: Varint encoded
 //! - **Strings**: Length-prefixed with varint encoding
 //! - **Sequences/Collections**: Length-prefixed with varint encoding
 //! - **Maps**: Length-prefixed with varint encoding
@@ -88,6 +88,23 @@ impl<W: Write + 'static> BinarySerializer<W> {
         Ok(())
     }
 
+    /// Write a 128-bit varint (variable-length integer) encoding.
+    ///
+    /// This uses the same encoding as write_varint but supports 128-bit values.
+    fn write_varint_u128(&mut self, mut value: u128) -> Result<(), io::Error> {
+        loop {
+            let byte = (value & 0x7F) as u8;
+            value >>= 7;
+            if value == 0 {
+                self.writer.write_all(&[byte])?;
+                break;
+            } else {
+                self.writer.write_all(&[byte | 0x80])?;
+            }
+        }
+        Ok(())
+    }
+
     /// Zigzag encode a signed integer to move the sign bit to the LSB.
     /// This allows small negative numbers to be encoded compactly.
     fn zigzag_encode_i16(value: i16) -> u16 {
@@ -100,6 +117,10 @@ impl<W: Write + 'static> BinarySerializer<W> {
 
     fn zigzag_encode_i64(value: i64) -> u64 {
         ((value << 1) ^ (value >> 63)) as u64
+    }
+
+    fn zigzag_encode_i128(value: i128) -> u128 {
+        ((value << 1) ^ (value >> 127)) as u128
     }
 
     fn zigzag_encode_isize(value: isize) -> usize {
@@ -149,6 +170,12 @@ impl<W: Write + 'static> BinarySerializer<W> {
     fn write_varint_isize(&mut self, value: isize) -> Result<(), io::Error> {
         let encoded = Self::zigzag_encode_isize(value);
         self.write_varint_usize(encoded)
+    }
+
+    /// Write a zigzag + varint encoded i128
+    fn write_varint_i128(&mut self, value: i128) -> Result<(), io::Error> {
+        let encoded = Self::zigzag_encode_i128(value);
+        self.write_varint_u128(encoded)
     }
 
     /// Write raw bytes to the writer.
@@ -344,6 +371,16 @@ impl<W: Write + 'static, E> Serializer<E> for BinarySerializer<W> {
     fn emit_u64(&mut self, value: u64) -> Result<(), Self::Error> {
         // u64 is varint encoded
         self.write_varint_u64(value)
+    }
+
+    fn emit_i128(&mut self, value: i128) -> Result<(), Self::Error> {
+        // i128 is varint encoded with zigzag
+        self.write_varint_i128(value)
+    }
+
+    fn emit_u128(&mut self, value: u128) -> Result<(), Self::Error> {
+        // u128 is varint encoded
+        self.write_varint_u128(value)
     }
 
     fn emit_isize(&mut self, value: isize) -> Result<(), Self::Error> {

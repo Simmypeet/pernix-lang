@@ -16,9 +16,9 @@ use crate::de::{
 ///
 /// This deserializer reads data in the same format as the binary serializer:
 /// - Integers (i8, u8): Single byte, stored as-is
-/// - Integers (i16, i32, i64, isize): Varint decoded with zigzag decoding for
-///   signed types
-/// - Integers (u16, u32, u64, usize): Varint decoded
+/// - Integers (i16, i32, i64, i128, isize): Varint decoded with zigzag decoding
+///   for signed types
+/// - Integers (u16, u32, u64, u128, usize): Varint decoded
 /// - Strings with varint length prefix
 /// - Sequences and maps with varint length prefix
 /// - Enums with varint variant index
@@ -66,6 +66,34 @@ impl<R: Read + 'static> BinaryDeserializer<R> {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "Varint too long",
+                ));
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Read a 128-bit varint (variable-length integer) from the reader.
+    fn read_varint_u128(&mut self) -> Result<u128, io::Error> {
+        let mut result = 0u128;
+        let mut shift = 0;
+
+        loop {
+            let mut byte = [0u8; 1];
+            self.reader.read_exact(&mut byte)?;
+            let byte = byte[0];
+
+            result |= ((byte & 0x7F) as u128) << shift;
+
+            if byte & 0x80 == 0 {
+                break;
+            }
+
+            shift += 7;
+            if shift >= 128 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "128-bit varint too long",
                 ));
             }
         }
@@ -138,6 +166,12 @@ impl<R: Read + 'static> BinaryDeserializer<R> {
         Ok(Self::zigzag_decode_isize(encoded))
     }
 
+    /// Read a zigzag + varint encoded i128
+    fn read_varint_i128(&mut self) -> Result<i128, io::Error> {
+        let encoded = self.read_varint_u128()?;
+        Ok(Self::zigzag_decode_i128(encoded))
+    }
+
     /// Zigzag decode functions - reverse the zigzag encoding
     fn zigzag_decode_i16(value: u16) -> i16 {
         ((value >> 1) as i16) ^ (-((value & 1) as i16))
@@ -153,6 +187,10 @@ impl<R: Read + 'static> BinaryDeserializer<R> {
 
     fn zigzag_decode_isize(value: usize) -> isize {
         ((value >> 1) as isize) ^ (-((value & 1) as isize))
+    }
+
+    fn zigzag_decode_i128(value: u128) -> i128 {
+        ((value >> 1) as i128) ^ (-((value & 1) as i128))
     }
 
     /// Read exact number of bytes from the reader.
@@ -485,6 +523,16 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
     fn expect_u64(&mut self) -> Result<u64, Self::Error> {
         // u64 is varint encoded
         self.read_varint_u64()
+    }
+
+    fn expect_i128(&mut self) -> Result<i128, Self::Error> {
+        // i128 is varint encoded with zigzag
+        self.read_varint_i128()
+    }
+
+    fn expect_u128(&mut self) -> Result<u128, Self::Error> {
+        // u128 is varint encoded
+        self.read_varint_u128()
     }
 
     fn expect_isize(&mut self) -> Result<isize, Self::Error> {

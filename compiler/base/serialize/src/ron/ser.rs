@@ -186,6 +186,14 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
         write!(self.writer, "{value}")
     }
 
+    fn emit_i128(&mut self, value: i128) -> Result<(), Self::Error> {
+        write!(self.writer, "{value}")
+    }
+
+    fn emit_u128(&mut self, value: u128) -> Result<(), Self::Error> {
+        write!(self.writer, "{value}")
+    }
+
     fn emit_isize(&mut self, value: isize) -> Result<(), Self::Error> {
         write!(self.writer, "{value}")
     }

@@ -426,3 +426,75 @@ fn array_drop_behavior_with_shared_counter() {
         );
     }
 }
+
+#[test]
+fn integers_128_bit() {
+    // Test u128 round-trip
+    assert_eq!(round_trip(&42u128).unwrap(), 42u128);
+    assert_eq!(round_trip(&0u128).unwrap(), 0u128);
+    assert_eq!(round_trip(&128u128).unwrap(), 128u128);
+    assert_eq!(round_trip(&u128::MAX).unwrap(), u128::MAX);
+    
+    // Test some large values
+    let large_u128 = u128::from(u64::MAX) + 1000;
+    assert_eq!(round_trip(&large_u128).unwrap(), large_u128);
+
+    // Test i128 round-trip
+    assert_eq!(round_trip(&42i128).unwrap(), 42i128);
+    assert_eq!(round_trip(&-42i128).unwrap(), -42i128);
+    assert_eq!(round_trip(&0i128).unwrap(), 0i128);
+    assert_eq!(round_trip(&i128::MAX).unwrap(), i128::MAX);
+    assert_eq!(round_trip(&i128::MIN).unwrap(), i128::MIN);
+    
+    // Test edge cases around zero
+    assert_eq!(round_trip(&1i128).unwrap(), 1i128);
+    assert_eq!(round_trip(&-1i128).unwrap(), -1i128);
+    
+    // Test some large positive and negative values
+    let large_positive = i128::from(i64::MAX) + 1000;
+    let large_negative = i128::from(i64::MIN) - 1000;
+    assert_eq!(round_trip(&large_positive).unwrap(), large_positive);
+    assert_eq!(round_trip(&large_negative).unwrap(), large_negative);
+}
+
+#[test]
+fn varint_128_bit() {
+    // Test varint functionality through the public serialization interface
+    let test_values = [
+        0u128,
+        1u128,
+        127u128,
+        128u128,
+        255u128,
+        256u128,
+        u128::from(u64::MAX),
+        u128::from(u64::MAX) + 1,
+        u128::MAX,
+    ];
+
+    for &value in &test_values {
+        // Test using the public round_trip function
+        assert_eq!(round_trip(&value).unwrap(), value, "Failed for u128 value: {}", value);
+    }
+}
+
+#[test]
+fn zigzag_128_bit() {
+    // Test zigzag functionality through the public serialization interface
+    let test_values = [
+        0i128,
+        1i128,
+        -1i128,
+        42i128,
+        -42i128,
+        i128::MAX,
+        i128::MIN,
+        i128::from(i64::MAX),
+        i128::from(i64::MIN),
+    ];
+
+    for &value in &test_values {
+        // Test using the public round_trip function
+        assert_eq!(round_trip(&value).unwrap(), value, "Failed for i128 value: {}", value);
+    }
+}

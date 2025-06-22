@@ -277,3 +277,71 @@ fn large_varints() {
     assert_eq!(buf.len(), 10);
     assert_eq!(buf[9], 0x01); // final byte
 }
+
+#[test]
+fn integers_128_bit() {
+    // Test u128 serialization
+    let buf = with_serializer(|s| 42u128.serialize(s, &mut ()));
+    assert_eq!(buf, [42]); // Small values fit in single byte
+
+    let buf = with_serializer(|s| 128u128.serialize(s, &mut ()));
+    assert_eq!(buf, [0x80, 0x01]); // 128 requires two bytes
+
+    // Test large u128 value
+    let buf = with_serializer(|s| u128::from(u64::MAX).serialize(s, &mut ()));
+    // Should be same as u64::MAX encoded as varint
+    assert_eq!(buf.len(), 10);
+
+    // Test i128 with positive value
+    let buf = with_serializer(|s| 42i128.serialize(s, &mut ()));
+    // 42 zigzag encoded: ((42 << 1) ^ (42 >> 127)) = (84 ^ 0) = 84
+    assert_eq!(buf, [84]);
+
+    // Test i128 with negative value
+    let buf = with_serializer(|s| (-42i128).serialize(s, &mut ()));
+    // -42 zigzag encoded: ((-42 << 1) ^ (-42 >> 127)) = (-84 ^ -1) = 83
+    assert_eq!(buf, [83]);
+
+    // Test edge cases
+    let buf = with_serializer(|s| 0i128.serialize(s, &mut ()));
+    assert_eq!(buf, [0]); // 0 zigzag encoded is 0
+
+    let buf = with_serializer(|s| (-1i128).serialize(s, &mut ()));
+    assert_eq!(buf, [1]); // -1 zigzag encoded is 1
+
+    // Test large positive i128
+    let buf = with_serializer(|s| i128::MAX.serialize(s, &mut ()));
+    // i128::MAX zigzag encoded should be large but finite
+    assert!(!buf.is_empty());
+
+    // Test large negative i128
+    let buf = with_serializer(|s| i128::MIN.serialize(s, &mut ()));
+    // i128::MIN zigzag encoded should be large but finite
+    assert!(!buf.is_empty());
+}
+
+#[test]
+fn varint_128_bit() {
+    // Test 128-bit varint directly
+    let buf = with_serializer(|s| s.write_varint_u128(0));
+    assert_eq!(buf, [0]);
+
+    let buf = with_serializer(|s| s.write_varint_u128(127));
+    assert_eq!(buf, [127]);
+
+    let buf = with_serializer(|s| s.write_varint_u128(128));
+    assert_eq!(buf, [0x80, 0x01]);
+
+    // Test large 128-bit value that exceeds u64
+    let large_value = u128::from(u64::MAX) + 1;
+    let buf = with_serializer(|s| s.write_varint_u128(large_value));
+    // u64::MAX + 1 = 0x10000000000000000, which is 1 followed by 64 zeros
+    // This actually encodes as 10 bytes (same as u64::MAX in terms of varint length)
+    assert_eq!(buf.len(), 10);
+
+    // Test maximum u128 value
+    let buf = with_serializer(|s| s.write_varint_u128(u128::MAX));
+    // u128::MAX should encode as 19 bytes maximum (18 bytes with high bit set + 1 final byte)
+    assert!(buf.len() <= 19);
+    assert!(!buf.is_empty());
+}
