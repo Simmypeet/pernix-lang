@@ -219,7 +219,7 @@ fn error_handling() {
     let result = u32::deserialize(&mut deserializer, &mut ());
     assert!(result.is_err());
 
-    // Test deserializing incomplete data  
+    // Test deserializing incomplete data
     let cursor = std::io::Cursor::new(vec![0x80]); // Varint with continuation bit but no follow-up byte
     let mut deserializer = BinaryDeserializer::new(cursor);
 
@@ -356,8 +356,11 @@ fn array_drop_behavior_with_shared_counter() {
             // Deserialize the array
             let cursor = std::io::Cursor::new(buffer);
             let mut deserializer = BinaryDeserializer::new(cursor);
-            let _ = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer, &mut ())
-                .unwrap();
+            let _ = <[GlobalDropCounter; 3]>::deserialize(
+                &mut deserializer,
+                &mut (),
+            )
+            .unwrap();
 
             // Arrays automatically drop when going out of scope
         } // original_array and deserialized_array drop here
@@ -389,7 +392,8 @@ fn array_drop_behavior_with_shared_counter() {
 
         let before_error = GLOBAL_DROP_COUNT.load(Ordering::SeqCst);
 
-        let result = <[GlobalDropCounter; 3]>::deserialize(&mut deserializer, &mut ());
+        let result =
+            <[GlobalDropCounter; 3]>::deserialize(&mut deserializer, &mut ());
 
         assert!(
             result.is_err(),

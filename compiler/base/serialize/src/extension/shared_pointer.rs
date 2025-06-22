@@ -270,7 +270,7 @@ impl<T, S, E> Serialize<S, E> for Arc<T>
 where
     T: Serialize<S, E>,
     S: Serializer<E>,
-    E: SharedPointerSerialize ,
+    E: SharedPointerSerialize,
 {
     fn serialize(
         &self,

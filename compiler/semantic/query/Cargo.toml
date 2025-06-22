@@ -7,6 +7,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_target = { path = "../../base/target" }
 pernixc_query_derive = { path = "../query_derive" }

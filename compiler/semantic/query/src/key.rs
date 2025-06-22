@@ -3,6 +3,7 @@
 use std::hash::Hash;
 
 use pernixc_arena::ID;
+use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::{Identifiable, StableTypeID};
 use pernixc_target::Global;
 
@@ -26,10 +27,10 @@ pub struct Input;
 /// pub struct MyKey;
 /// ```
 pub trait Key:
-    'static + Send + Sync + Eq + Clone + std::hash::Hash + Identifiable
+    'static + Send + Sync + Eq + Clone + std::hash::Hash + Identifiable + StableHash
 {
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Clone + Eq;
+    type Value: 'static + Send + Sync + Clone + Eq + StableHash;
 
     /// A value returned by the key when the key is a part of a strongly
     /// connected component (SCC) in the cyclic dependencies.

@@ -486,14 +486,11 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
 
         if self
             .serialization_helpers_by_type_id
-            .insert(
-                K::STABLE_TYPE_ID,
-                SerializationHelper {
-                    map_serializer,
-                    dynamic_box_serializer: dyn_box_serializer,
-                    std_type_id: std::any::TypeId::of::<K>(),
-                },
-            )
+            .insert(K::STABLE_TYPE_ID, SerializationHelper {
+                map_serializer,
+                dynamic_box_serializer: dyn_box_serializer,
+                std_type_id: std::any::TypeId::of::<K>(),
+            })
             .is_some()
         {
             panic!(
@@ -712,17 +709,13 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> SelfRegistry<S, D> {
     /// # Returns
     /// A new `SelfRegistry` instance with an empty internal registry.
     #[must_use]
-    pub fn new() -> Self {
-        Self { registry: Registry::new() }
-    }
+    pub fn new() -> Self { Self { registry: Registry::new() } }
 }
 
 impl<S: Serializer<Self>, D: Deserializer<Self>> Default
     for SelfRegistry<S, D>
 {
-    fn default() -> Self {
-        Self { registry: Registry::default() }
-    }
+    fn default() -> Self { Self { registry: Registry::default() } }
 }
 
 impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicSerialize<S>

@@ -22,7 +22,8 @@ fn primitives() {
     // Test u16 - should be varint encoded
     let buf = with_serializer(|s| 1000u16.serialize(s, &mut ()));
     // 1000 = 0x3E8 = 0b1111101000
-    // varint: 0xE8 (low 7 bits + continuation) | 0x07 (high bits, no continuation)
+    // varint: 0xE8 (low 7 bits + continuation) | 0x07 (high bits, no
+    // continuation)
     assert_eq!(buf, [0xE8, 0x07]);
 
     // Test i32 - should be zigzag + varint encoded
@@ -73,11 +74,11 @@ fn sequences() {
 
     // Test Vec<u32> - each u32 should be varint encoded
     let buf = with_serializer(|s| vec![100u32, 200, 300].serialize(s, &mut ()));
-    
+
     assert_eq!(buf[0], 3); // length
-    // 100 = 0x64 (single byte, since 100 < 128)
-    // 200 = 0xC8 -> varint: 0xC8 (200 & 0x7F | 0x80), 0x01 (200 >> 7)
-    // 300 = 0x12C -> varint: 0xAC ((300 & 0x7F) | 0x80), 0x02 (300 >> 7)
+                           // 100 = 0x64 (single byte, since 100 < 128)
+                           // 200 = 0xC8 -> varint: 0xC8 (200 & 0x7F | 0x80), 0x01 (200 >> 7)
+                           // 300 = 0x12C -> varint: 0xAC ((300 & 0x7F) | 0x80), 0x02 (300 >> 7)
     assert_eq!(&buf[1..], &[100, 200, 1, 172, 2]);
 
     // Test empty Vec
@@ -128,7 +129,8 @@ fn structs() {
     let tuple_struct = (42u32, "hello".to_string(), true);
     let buf = with_serializer(|s| tuple_struct.serialize(s, &mut ()));
 
-    // Should serialize as: u32 varint (42 = single byte) + string length + string bytes + bool (1 byte)
+    // Should serialize as: u32 varint (42 = single byte) + string length +
+    // string bytes + bool (1 byte)
     assert_eq!(buf[0], 42); // u32 as varint
     assert_eq!(buf[1], 5); // string length
     assert_eq!(&buf[2..7], b"hello");
@@ -141,7 +143,8 @@ fn structs() {
     // Should serialize as: u8 + u8 + u16 varint + u16
     assert_eq!(buf[0], 1); // u8 as-is
     assert_eq!(buf[1], 2); // u8 as-is
-    // 300 = 0x12C -> varint: 0xAC (low 7 bits + continuation) | 0x02 (high bits)
+                           // 300 = 0x12C -> varint: 0xAC (low 7 bits + continuation) | 0x02 (high
+                           // bits)
     assert_eq!(buf[2], 0xAC); // 300 as varint (first byte)
     assert_eq!(buf[3], 0x02); // 300 as varint (second byte)
     assert_eq!(buf[4], 4); // 4 as varint (single byte)
