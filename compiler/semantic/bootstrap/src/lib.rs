@@ -185,7 +185,6 @@ pub fn register_serde<
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
 pub fn skip_serde(serde_registry: &mut Persistence) {
-    /*
     serde_registry.register_skip_key::<syntax::FunctionSignatureKey>();
     serde_registry.register_skip_key::<syntax::GenericParametersKey>();
     serde_registry.register_skip_key::<syntax::WhereClauseKey>();
@@ -194,5 +193,4 @@ pub fn skip_serde(serde_registry: &mut Persistence) {
         .register_skip_key::<syntax::ImplementationQualifiedIdentifierKey>();
     serde_registry.register_skip_key::<syntax::StatementsKey>();
     serde_registry.register_skip_key::<syntax::FieldsKey>();
-    */
 }
