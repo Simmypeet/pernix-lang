@@ -118,7 +118,6 @@ use pernixc_serialize::{
     Deserialize, Serialize,
 };
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{ParallelBridge, ParallelIterator as _};
 use smallbox::smallbox;
 
 use crate::{database::map::Map, key::DynamicBox, Key};
