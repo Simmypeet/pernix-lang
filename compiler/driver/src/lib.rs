@@ -1,6 +1,6 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{fs::File, io::BufWriter, path::PathBuf, process::ExitCode};
+use std::{fs::File, path::PathBuf, process::ExitCode, sync::Arc};
 
 use argument::Arguments;
 use clap::Args;
@@ -328,7 +328,34 @@ pub fn run(
             Into::into,
         );
 
+    // check if the incremental path is a directory and create it if it does not
+    // exist
+    if let Some(incremental_path) = &argument.command.input().incremental_path {
+        let exists = incremental_path.exists();
+
+        if exists && incremental_path.is_file() {
+            let msg = Diagnostic::error().with_message(format!(
+                "Incremental path `{}` is a file, not a directory.",
+                incremental_path.display()
+            ));
+            report_term.report(&mut source_map, &msg);
+            return ExitCode::FAILURE;
+        }
+
+        if !exists {
+            if let Err(error) = std::fs::create_dir_all(incremental_path) {
+                let msg = Diagnostic::error().with_message(format!(
+                    "Failed to create incremental directory `{}`: {error}",
+                    incremental_path.display()
+                ));
+                report_term.report(&mut source_map, &msg);
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
     let token_trees_by_source_id = DashMap::default();
+
     let (engine, syntax_errors, init_semantic_errors) =
         match pernixc_bootstrap::bootstrap(
             &mut source_map,
@@ -341,7 +368,7 @@ pub fn run(
                 .input()
                 .incremental_path
                 .as_ref()
-                .map(|x| (x.as_path(), &mut serde_extension)),
+                .map(|x| (x.clone(), Arc::new(serde_extension))),
         ) {
             Ok(database) => database,
             Err(error) => {
@@ -421,34 +448,13 @@ pub fn run(
         report_term.report(&mut source_map, &codespan_reporting);
     }
 
-    if let Some(incremental_path) = &argument.command.input().incremental_path {
-        let incremental_file = match File::create(incremental_path) {
-            Ok(file) => file,
-            Err(error) => {
-                let msg = Diagnostic::error().with_message(format!(
-                    "Failed to create incremental file: {error}"
-                ));
-                report_term.report(&mut source_map, &msg);
-                return ExitCode::FAILURE;
-            }
-        };
-
-        let mut binary_serializer = BinarySerializer::<Box<dyn WriteAny>>::new(
-            Box::new(BufWriter::new(incremental_file)),
-        );
-
-        // Serialize using postcard and write to file
-        if let Err(error) = Serialize::serialize(
-            &engine.database,
-            &mut binary_serializer,
-            &serde_extension,
-        ) {
-            let msg = Diagnostic::error().with_message(format!(
-                "Failed to serialize incremental file: {error}"
-            ));
-            report_term.report(&mut source_map, &msg);
-            return ExitCode::FAILURE;
-        }
+    // save the database to the incremental path if it exists
+    if let Err(err) = engine.try_save_database() {
+        let msg = Diagnostic::error().with_message(format!(
+            "Failed to save incremental database: {err}"
+        ));
+        report_term.report(&mut source_map, &msg);
+        return ExitCode::FAILURE;
     }
 
     ExitCode::SUCCESS

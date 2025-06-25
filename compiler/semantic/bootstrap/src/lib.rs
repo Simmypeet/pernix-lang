@@ -1,6 +1,9 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
-use std::{io::BufReader, path::Path, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use flexstr::SharedStr;
 use parking_lot::lock_api::RwLock;
@@ -9,15 +12,17 @@ use pernixc_hash::{DashMap, HashSet};
 use pernixc_query::{
     database::Database,
     runtime::{
-        persistence::{Persistence, ReadAny},
-        serde::{DynamicDeserialize, DynamicRegistry},
+        executor,
+        persistence::{Persistence, ReadAny, WriteAny},
+        serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
         Runtime,
     },
     Engine,
 };
 use pernixc_serialize::{
-    binary::de::BinaryDeserializer, de::Deserializer, ser::Serializer,
-    Deserialize,
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    de::Deserializer,
+    ser::Serializer,
 };
 use pernixc_source_file::{GlobalSourceID, SourceMap};
 use pernixc_target::TargetID;
@@ -72,7 +77,11 @@ pub enum HierarchyRelationship {
 /// Setup the query database for the compilation process.
 pub fn bootstrap<
     'l,
-    Ext: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>,
+    Ext: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+        + DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
+        + Send
+        + Sync
+        + 'static,
 >(
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
@@ -82,44 +91,24 @@ pub fn bootstrap<
         GlobalSourceID,
         pernixc_lexical::tree::Tree,
     >,
-    incremental_path: Option<(&Path, &mut Ext)>,
+    incremental_path: Option<(PathBuf, Arc<Ext>)>,
 ) -> Result<(Engine, Vec<tree::Error>, Vec<Diagnostic>), Error> {
-    // load the incremental file (if any)
-    let incremental_file_de =
-        if let Some((incremental_path, extension)) = incremental_path {
-            match std::fs::File::open(incremental_path) {
-                Ok(file) => Some((file, extension)),
-                Err(err) => {
-                    if err.kind() == std::io::ErrorKind::NotFound {
-                        None
-                    } else {
-                        return Err(Error::OpenIncrementalFileIO(err));
-                    }
-                }
-            }
-        } else {
-            None
-        };
-
-    // create a fresh database or load the incremental file
-    let database = incremental_file_de.map_or_else(
-        || Ok(Database::default()),
-        |(file, ext)| {
-            let mut binary_deserializer =
-                BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
-                    BufReader::new(file),
-                ));
-
-            Database::deserialize(&mut binary_deserializer, ext)
-                .map_err(Error::ReadIncrementalFileIO)
-        },
-    )?;
-
     let (tree, errors) =
         tree::parse(root_source_id, source_map, token_trees_by_source_id);
 
     let generated_ids_rw = RwLock::new(HashSet::default());
-    let engine = RwLock::new(Engine { database, runtime: bootstrap_runtime() });
+    let mut runtime = Runtime {
+        executor: executor::Registry::default(),
+        persistence: incremental_path.map(|(path, ext)| {
+            let mut persistence = Persistence::new(path, ext);
+            skip_persistence(&mut persistence);
+            persistence
+        }),
+    };
+
+    bootstrap_executor(&mut runtime.executor);
+
+    let engine = RwLock::new(Engine { database: Database::default(), runtime });
     let handler = Storage::<Diagnostic>::new();
 
     build::create_module(
@@ -144,13 +133,9 @@ pub fn bootstrap<
     Ok((engine, errors, handler.into_vec()))
 }
 
-fn bootstrap_runtime() -> Runtime {
-    let mut runtime = Runtime::default();
-
-    runtime.executor.register(Arc::new(parent::IntermediateExecutor));
-    runtime.executor.register(Arc::new(parent::Executor));
-
-    runtime
+fn bootstrap_executor(executor: &mut executor::Registry) {
+    executor.register(Arc::new(parent::IntermediateExecutor));
+    executor.register(Arc::new(parent::Executor));
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -186,7 +171,7 @@ pub fn register_serde<
 
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
-pub fn skip_serde(serde_registry: &mut Persistence) {
+pub fn skip_persistence(serde_registry: &mut Persistence) {
     serde_registry.register_skip_key::<syntax::FunctionSignatureKey>();
     serde_registry.register_skip_key::<syntax::GenericParametersKey>();
     serde_registry.register_skip_key::<syntax::WhereClauseKey>();
