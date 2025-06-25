@@ -1,11 +1,6 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{
-    fs::File,
-    io::{BufReader, BufWriter},
-    path::PathBuf,
-    process::ExitCode,
-};
+use std::{fs::File, io::BufWriter, path::PathBuf, process::ExitCode};
 
 use argument::Arguments;
 use clap::Args;
@@ -18,7 +13,10 @@ use pernixc_diagnostic::Report;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
-    runtime::serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+    runtime::{
+        persistence::{ReadAny, WriteAny},
+        serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+    },
     Key,
 };
 use pernixc_serialize::{
@@ -308,16 +306,11 @@ pub fn run(
     };
 
     let mut serde_extension = SerdeExtension::<
-        BinarySerializer<BufWriter<File>>,
-        BinaryDeserializer<BufReader<File>>,
-    >::default();
-    let mut serde_extension_2 = SerdeExtension::<
-        BinarySerializer<Vec<u8>>,
-        BinaryDeserializer<std::io::Cursor<Vec<u8>>>,
+        BinarySerializer<Box<dyn WriteAny>>,
+        BinaryDeserializer<Box<dyn ReadAny>>,
     >::default();
 
     pernixc_bootstrap::register_serde(&mut serde_extension);
-    pernixc_bootstrap::register_serde(&mut serde_extension_2);
 
     let target_name: SharedStr =
         argument.command.input().target_name.clone().map_or_else(
@@ -440,13 +433,14 @@ pub fn run(
             }
         };
 
-        let writer = BufWriter::new(incremental_file);
-        let mut bianry_serializer = BinarySerializer::new(writer);
+        let mut binary_serializer = BinarySerializer::<Box<dyn WriteAny>>::new(
+            Box::new(BufWriter::new(incremental_file)),
+        );
 
         // Serialize using postcard and write to file
         if let Err(error) = Serialize::serialize(
             &engine.database,
-            &mut bianry_serializer,
+            &mut binary_serializer,
             &serde_extension,
         ) {
             let msg = Diagnostic::error().with_message(format!(

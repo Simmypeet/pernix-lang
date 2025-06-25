@@ -26,8 +26,6 @@ use crate::{
     Key,
 };
 
-pub mod morton;
-
 const TABLE: TableDefinition<u128, &[u8]> = TableDefinition::new("persistence");
 
 /// Manages the persistence of the incremental compilation database including
@@ -43,13 +41,13 @@ pub struct Persistence {
     serialize_any_value: fn(
         StableTypeID,
         &dyn Any,
-        &mut BinarySerializer<Vec<u8>>,
+        &mut BinarySerializer<Box<dyn WriteAny>>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
     deserialize_any_value: fn(
         StableTypeID,
         &mut dyn Any,
-        &mut BinaryDeserializer<std::io::Cursor<Vec<u8>>>,
+        &mut BinaryDeserializer<Box<dyn ReadAny>>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
     serialize_map: fn(
@@ -62,8 +60,8 @@ pub struct Persistence {
 }
 
 fn serialize_map<
-    E: DynamicSerialize<BinarySerializer<Vec<u8>>>
-        + DynamicDeserialize<BinaryDeserializer<std::io::Cursor<Vec<u8>>>>
+    E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
+        + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
         + Send
         + Sync
         + 'static,
@@ -109,11 +107,13 @@ fn serialize_map<
                     let buffer =
                         BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
 
-                    Ok(BinarySerializer::new(buffer))
+                    Ok(BinarySerializer::new(Box::new(buffer)))
                 },
                 serde_extension,
                 &|serializer, fingerprint| {
-                    let mut buffer = serializer.into_inner();
+                    let any_box: Box<dyn Any> = serializer.into_inner();
+                    let mut buffer = any_box.downcast::<Vec<u8>>().unwrap();
+
                     table
                         .write()
                         .insert(fingerprint, buffer.as_slice())
@@ -122,7 +122,7 @@ fn serialize_map<
                     BUFFER.with(|b| {
                         // clear the buffer but keep the allocated memory
                         buffer.clear();
-                        *b.borrow_mut() = buffer;
+                        *b.borrow_mut() = *buffer;
                     });
 
                     Ok(())
@@ -153,13 +153,33 @@ thread_local! {
     static BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
+/// A supertrait combining [`std::io::Write`] and [Any] traits, allowing
+/// [`BinarySerializer`] and [`Persistence`] to serialize data to any target
+/// by using dynamic dispatch.
+///
+/// [`Any`] allows the implementation to downcasting the writer to a specific
+/// type after serialization, if needed.
+pub trait WriteAny: std::io::Write + Any {}
+
+impl<T: std::io::Write + Any> WriteAny for T {}
+
+/// A supertrait combining [`std::io::Read`] and [Any] traits, allowing
+/// [`BinaryDeserializer`] and [`Persistence`] to deserialize data from any
+/// source by using dynamic dispatch.
+///
+/// [`Any`] allows the implementation to downcast the reader to a specific
+/// type after deserialization, if needed.
+pub trait ReadAny: std::io::Read + Any {}
+
+impl<T: std::io::Read + Any> ReadAny for T {}
+
 impl Persistence {
     /// Creates a new instance of [`Persistence`] with the specified path where
     /// the database is stored and the serde extension where the types that will
     /// be serialized and deserialized are registered.
     pub fn new<
-        E: DynamicSerialize<BinarySerializer<Vec<u8>>>
-            + DynamicDeserialize<BinaryDeserializer<std::io::Cursor<Vec<u8>>>>
+        E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
+            + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
             + Send
             + Sync
             + 'static,
@@ -170,7 +190,7 @@ impl Persistence {
         let serialize_any_value =
             |stable_type_id: StableTypeID,
              any_value: &dyn Any,
-             serializer: &mut BinarySerializer<Vec<u8>>,
+             serializer: &mut BinarySerializer<Box<dyn WriteAny>>,
              serde_extension: &dyn Any| {
                 let serde_extension = serde_extension
                     .downcast_ref::<E>()
@@ -196,9 +216,7 @@ impl Persistence {
         let deserialize_any_value =
             |stable_type_id: StableTypeID,
              result_buffer: &mut dyn Any,
-             deserializer: &mut BinaryDeserializer<
-                std::io::Cursor<Vec<u8>>,
-            >,
+             deserializer: &mut BinaryDeserializer<Box<dyn ReadAny>>,
              serde_extension: &dyn Any| {
                 let serde_extension = serde_extension
                     .downcast_ref::<E>()
@@ -254,45 +272,6 @@ impl Persistence {
         )
     }
 
-    /// Gets a content-adressable path for a given value's key stable type ID
-    /// and value fingerprint.
-    #[must_use]
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn get_path(
-        base_path: &Path,
-        key_stable_type_id: StableTypeID,
-        value_fingerprint: u128,
-    ) -> PathBuf {
-        let key_stable_type_id = key_stable_type_id.as_u128();
-        let (hi, lo) = morton::morton(key_stable_type_id, value_fingerprint);
-
-        // Combine hi and lo into a 256-bit value for bit extraction
-        // hi (128 bits) | lo (128 bits) = 256 bits total
-
-        // Extract first 8 bits from hi (upper 8 bits of hi)
-        let segment1 = (hi >> 120) as u8;
-
-        // Extract next 8 bits from hi (bits 112-119 of hi) - properly mask to
-        // get only 8 bits
-        let segment2 = ((hi >> 112) & 0xFF) as u8;
-
-        // Extract remaining 240 bits (lower 112 bits of hi + all 128 bits of
-        // lo) This creates exactly 240 bits:
-        // [hi_lower_112bits][lo_128bits]
-        let hi_lower = hi & 0x0000_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF; // Lower 112 bits of hi
-
-        // Construct the three-segment path: {8bits}/{8bits}/{240bits}.bin
-        let segment1_hex = format!("{segment1:02x}");
-        let segment2_hex = format!("{segment2:02x}");
-        let segment3_hex = format!("{hi_lower:028x}{lo:032x}"); // 112bits + 128bits = 240bits exactly
-
-        let mut path = base_path.to_path_buf();
-        path.push(segment1_hex);
-        path.push(segment2_hex);
-        path.push(format!("{segment3_hex}.bin"));
-        path
-    }
-
     /// Attempts to load a value from the persistence storage.
     pub fn try_load<K: Key>(
         &self,
@@ -308,8 +287,8 @@ impl Persistence {
         let table = table.open_table(TABLE).unwrap();
 
         if let Some(buffer) = table.get(&value_fingerprint).unwrap() {
-            let mut deserializer = BinaryDeserializer::new(
-                std::io::Cursor::new(buffer.value().to_vec()),
+            let mut deserializer = BinaryDeserializer::<Box<dyn ReadAny>>::new(
+                Box::new(std::io::Cursor::new(buffer.value().to_vec())),
             );
 
             let mut result_buffer: Option<K::Value> = None;
@@ -351,7 +330,8 @@ impl Persistence {
     pub fn save<K: Key>(&self, value: &K::Value) -> Result<(), std::io::Error> {
         let fingerprint = fingerprint::fingerprint(value);
         let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
-        let mut binary_serializer = BinarySerializer::new(buffer);
+        let mut binary_serializer =
+            BinarySerializer::<Box<dyn WriteAny>>::new(Box::new(buffer));
 
         (self.serialize_any_value)(
             K::STABLE_TYPE_ID,
@@ -360,7 +340,10 @@ impl Persistence {
             self.serde_extension.as_ref(),
         )?;
 
-        let mut buffer = binary_serializer.into_inner();
+        let box_any: Box<dyn Any> = binary_serializer.into_inner();
+        let mut buffer =
+            box_any.downcast::<Vec<u8>>().expect("Buffer must be a Vec<u8>");
+
         let tx = Self::get_databse(
             &self.databases_by_stable_type_id,
             K::STABLE_TYPE_ID,
@@ -379,7 +362,7 @@ impl Persistence {
         BUFFER.with(|b| {
             // clear the buffer but keep the allocated memory
             buffer.clear();
-            *b.borrow_mut() = buffer;
+            *b.borrow_mut() = *buffer;
         });
 
         Ok(())

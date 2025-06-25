@@ -1,6 +1,6 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
-use std::{fs::File, io::BufReader, path::Path, sync::Arc};
+use std::{io::BufReader, path::Path, sync::Arc};
 
 use flexstr::SharedStr;
 use parking_lot::lock_api::RwLock;
@@ -9,7 +9,7 @@ use pernixc_hash::{DashMap, HashSet};
 use pernixc_query::{
     database::Database,
     runtime::{
-        persistence::Persistence,
+        persistence::{Persistence, ReadAny},
         serde::{DynamicDeserialize, DynamicRegistry},
         Runtime,
     },
@@ -72,7 +72,7 @@ pub enum HierarchyRelationship {
 /// Setup the query database for the compilation process.
 pub fn bootstrap<
     'l,
-    Ext: DynamicDeserialize<BinaryDeserializer<BufReader<File>>>,
+    Ext: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>,
 >(
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
@@ -105,8 +105,10 @@ pub fn bootstrap<
     let database = incremental_file_de.map_or_else(
         || Ok(Database::default()),
         |(file, ext)| {
-            let buf_reader = BufReader::new(file);
-            let mut binary_deserializer = BinaryDeserializer::new(buf_reader);
+            let mut binary_deserializer =
+                BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
+                    BufReader::new(file),
+                ));
 
             Database::deserialize(&mut binary_deserializer, ext)
                 .map_err(Error::ReadIncrementalFileIO)
