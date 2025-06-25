@@ -1,4 +1,4 @@
-use std::{process::Command, sync::Arc};
+use std::sync::Arc;
 
 use pernixc_query_derive::Key;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -64,11 +64,6 @@ fn save_and_load_value() {
         persistence.try_load::<Variable>(initial_fingerprint).unwrap().unwrap();
 
     assert_eq!(initial_string_value, loaded_string_value);
-
-    Command::new("tree")
-        .arg(tmp_dir.path())
-        .status()
-        .expect("Failed to run tree command");
 }
 
 #[test]
@@ -115,9 +110,4 @@ fn save_and_load_entire_map() {
     assert_eq!(initial_variable_b_value, loaded_b);
     assert_eq!(initial_constant_pi_value, loaded_pi);
     assert_eq!(initial_constant_e_value, loaded_e);
-
-    Command::new("tree")
-        .arg(tmp_dir.path())
-        .status()
-        .expect("Failed to run tree command");
 }
