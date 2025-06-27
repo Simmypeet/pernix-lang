@@ -47,6 +47,11 @@ impl Engine {
             return Ok(());
         };
 
-        persistence.serialize_map(&self.database.map)
+        let call_graph = self.database.call_graph.lock();
+
+        persistence.serialize_map(&self.database.map)?;
+        persistence.serialize_call_graph(&call_graph)?;
+
+        Ok(())
     }
 }

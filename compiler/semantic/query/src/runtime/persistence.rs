@@ -5,6 +5,8 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::HashSet,
+    fs::File,
+    io::BufWriter,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -12,15 +14,16 @@ use std::{
 use dashmap::mapref::one::Ref;
 use parking_lot::RwLock;
 use pernixc_hash::DashMap;
-use pernixc_serialize::binary::{
-    de::BinaryDeserializer, ser::BinarySerializer,
+use pernixc_serialize::{
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    Serialize as _,
 };
 use pernixc_stable_type_id::StableTypeID;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator};
 use redb::TableDefinition;
 
 use crate::{
-    database::map::Map,
+    database::{call_graph::CallGraph, map::Map},
     fingerprint,
     runtime::serde::{DynamicDeserialize, DynamicSerialize},
     Key,
@@ -56,6 +59,11 @@ pub struct Persistence {
         &dyn Any,
         &DashMap<StableTypeID, redb::Database>,
         &Path,
+    ) -> Result<(), std::io::Error>,
+    serialize_call_graph: fn(
+        &CallGraph,
+        &dyn Any,
+        &mut BinarySerializer<Box<dyn WriteAny>>,
     ) -> Result<(), std::io::Error>,
 }
 
@@ -239,6 +247,17 @@ impl Persistence {
                 )
             };
 
+        let serialize_call_graph =
+            |call_graph: &CallGraph,
+             serde_extension: &dyn Any,
+             serializer: &mut BinarySerializer<Box<dyn WriteAny>>| {
+                let serde_extension = serde_extension
+                    .downcast_ref::<E>()
+                    .expect("serde_extension must match the expected type");
+
+                call_graph.serialize(serializer, serde_extension)
+            };
+
         if !path.exists() {
             std::fs::create_dir_all(&path)
                 .expect("Failed to create persistence directory");
@@ -250,11 +269,17 @@ impl Persistence {
             serde_extension: serde_extension as Arc<dyn Any + Send + Sync>,
             skip_keys: HashSet::default(),
 
+            serialize_call_graph,
             serialize_any_value,
             deserialize_any_value,
             serialize_map: serialize_map::<E>,
         }
     }
+
+    /// Returns the directory path where the database is stored.
+    #[must_use]
+    #[allow(clippy::missing_const_for_fn)]
+    pub fn path(&self) -> &Path { &self.path }
 
     /// Registers a key to be skipped during serialization.
     pub fn register_skip_key<K: Key>(&mut self) {
@@ -269,6 +294,25 @@ impl Persistence {
             self.serde_extension.as_ref(),
             &self.databases_by_stable_type_id,
             &self.path,
+        )
+    }
+
+    /// Serializes thne entire map to the persistence storage.
+    pub fn serialize_call_graph(
+        &self,
+        call_graph: &CallGraph,
+    ) -> Result<(), std::io::Error> {
+        let call_graph_file =
+            File::create(self.path.join("call_graph.pernixc"))?;
+
+        let mut buf_writer = BinarySerializer::<Box<dyn WriteAny>>::new(
+            Box::new(BufWriter::new(call_graph_file)),
+        );
+
+        (self.serialize_call_graph)(
+            call_graph,
+            self.serde_extension.as_ref(),
+            &mut buf_writer,
         )
     }
 
