@@ -182,7 +182,7 @@ fn large_sequences() {
 
     // Test sequence with large strings
     let string_vec: Vec<String> = (0..100)
-        .map(|i| format!("This is a longer string number {}", i))
+        .map(|i| format!("This is a longer string number {i}"))
         .collect();
     assert_eq!(round_trip(&string_vec).unwrap(), string_vec);
 }
@@ -475,8 +475,7 @@ fn varint_128_bit() {
         assert_eq!(
             round_trip(&value).unwrap(),
             value,
-            "Failed for u128 value: {}",
-            value
+            "Failed for u128 value: {value}"
         );
     }
 }
@@ -501,8 +500,7 @@ fn zigzag_128_bit() {
         assert_eq!(
             round_trip(&value).unwrap(),
             value,
-            "Failed for i128 value: {}",
-            value
+            "Failed for i128 value: {value}"
         );
     }
 }

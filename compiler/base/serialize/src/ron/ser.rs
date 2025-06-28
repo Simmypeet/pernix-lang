@@ -255,7 +255,7 @@ impl<W: Write + 'static, E> Serializer<E> for RonSerializer<W> {
                     self.writer.write_all(&[b])?;
                 }
                 b => {
-                    write!(self.writer, "\\x{:02x}", b)?;
+                    write!(self.writer, "\\x{b:02x}")?;
                 }
             }
         }

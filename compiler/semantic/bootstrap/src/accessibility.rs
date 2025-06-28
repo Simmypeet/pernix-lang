@@ -86,7 +86,6 @@ pub impl Engine {
     ///
     /// Returns `None` if either `first` or `second` contains an invalid
     /// module ID.
-    #[must_use]
     fn accessibility_hierarchy_relationship(
         &self,
         target_id: TargetID,
@@ -114,7 +113,6 @@ pub impl Engine {
     }
 
     /// Gets the [`Accessibility`] of the given symbol.
-    #[must_use]
     fn get_accessibility(
         &self,
         id: Global<symbol::ID>,

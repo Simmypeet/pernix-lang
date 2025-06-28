@@ -172,7 +172,6 @@ pub impl Engine {
     /// given [`GlobalID`].
     ///
     /// See [`ScopeWalker`] for more information.
-    #[must_use]
     fn scope_walker(&self, id: Global<symbol::ID>) -> ScopeWalker {
         ScopeWalker {
             engine: self,
@@ -184,7 +183,6 @@ pub impl Engine {
     /// Computes the [`HierarchyRelationship`] between the two given item IDs.
     ///
     /// The returned [`HierarchyRelationship`] is based on the `first` symbol.
-    #[must_use]
     fn symbol_hierarchy_relationship(
         &self,
         target_id: TargetID,

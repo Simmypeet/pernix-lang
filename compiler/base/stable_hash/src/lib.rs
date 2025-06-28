@@ -334,32 +334,26 @@ static_assertions::assert_obj_safe!(StableHasher<Hash = u128>);
 static_assertions::assert_obj_safe!(StableHasher<Hash = u64>);
 
 impl Value for u8 {
-    #[must_use]
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
 }
 
 impl Value for u16 {
-    #[must_use]
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
 }
 
 impl Value for u32 {
-    #[must_use]
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
 }
 
 impl Value for u64 {
-    #[must_use]
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
 }
 
 impl Value for u128 {
-    #[must_use]
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
 }
 
 impl Value for usize {
-    #[must_use]
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
 }
 

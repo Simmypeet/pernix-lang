@@ -560,7 +560,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
             1 => Ok(true),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid boolean value: {}", byte),
+                format!("Invalid boolean value: {byte}"),
             )),
         }
     }
@@ -574,7 +574,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         let s = std::str::from_utf8(&buf).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid UTF-8: {}", e),
+                format!("Invalid UTF-8: {e}"),
             )
         })?;
         let mut chars = s.chars();
@@ -594,7 +594,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
         String::from_utf8(buf).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid UTF-8: {}", e),
+                format!("Invalid UTF-8: {e}"),
             )
         })
     }
@@ -620,7 +620,7 @@ impl<R: Read + 'static, E> Deserializer<E> for BinaryDeserializer<R> {
             1 => Ok(Some(T::deserialize(self, extension)?)),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Invalid option variant: {}", variant),
+                format!("Invalid option variant: {variant}"),
             )),
         }
     }
@@ -727,7 +727,7 @@ impl crate::de::Error for io::Error {
     where
         T: std::fmt::Display,
     {
-        io::Error::new(io::ErrorKind::Other, msg.to_string())
+        io::Error::other(msg.to_string())
     }
 }
 

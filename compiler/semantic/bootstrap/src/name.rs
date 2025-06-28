@@ -39,13 +39,11 @@ pub struct Name(pub SharedStr);
 #[ext(name = Ext)]
 pub impl Engine {
     /// Returns the name of the symbol with the given ID.
-    #[must_use]
     fn get_name(&self, id: Global<symbol::ID>) -> Name {
         self.query(&Key(id)).expect("should have no cyclic dependencies")
     }
 
     /// Gets the qualified name of the symbol such as `module::function`.
-    #[must_use]
     fn get_qualified_name(&self, mut id: Global<symbol::ID>) -> String {
         let mut qualified_name = String::new();
 

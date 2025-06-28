@@ -80,7 +80,7 @@ pub trait Error: Sized + std::error::Error {
     ///
     /// * `field` - The identifier of the duplicated field
     fn duplicated_field(field: Identifier) -> Self {
-        Self::custom(format!("duplicated field `{}`", field))
+        Self::custom(format!("duplicated field `{field}`"))
     }
 
     /// Create an error for when a required field is missing from a struct.
@@ -89,7 +89,7 @@ pub trait Error: Sized + std::error::Error {
     ///
     /// * `field` - The identifier of the missing field
     fn missing_field(field: Identifier) -> Self {
-        Self::custom(format!("missing field `{}`", field))
+        Self::custom(format!("missing field `{field}`"))
     }
 
     /// Create an error for when an unknown field is encountered in a struct.
@@ -98,7 +98,7 @@ pub trait Error: Sized + std::error::Error {
     ///
     /// * `field` - The identifier of the unknown field
     fn unknown_field(field: Identifier) -> Self {
-        Self::custom(format!("unknown field `{}`", field))
+        Self::custom(format!("unknown field `{field}`"))
     }
 
     /// Create an error for when an unknown enum variant is encountered.
@@ -107,7 +107,7 @@ pub trait Error: Sized + std::error::Error {
     ///
     /// * `variant` - The identifier of the unknown variant
     fn unknown_enum_variant(variant: Identifier) -> Self {
-        Self::custom(format!("unknown enum variant `{}`", variant))
+        Self::custom(format!("unknown enum variant `{variant}`"))
     }
 }
 
@@ -1229,8 +1229,8 @@ where
 impl std::fmt::Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Index(index) => write!(f, "{}", index),
-            Self::Name(name) => write!(f, "{}", name),
+            Self::Index(index) => write!(f, "{index}"),
+            Self::Name(name) => write!(f, "{name}"),
         }
     }
 }

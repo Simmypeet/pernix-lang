@@ -300,7 +300,7 @@ impl SourceFile {
 
     /// Gets the number of lines in the source file.
     #[must_use]
-    pub fn line_coount(&self) -> usize { self.lines.len() }
+    pub const fn line_coount(&self) -> usize { self.lines.len() }
 
     /// Loads the source file from the given file path.
     ///

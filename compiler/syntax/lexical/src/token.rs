@@ -99,7 +99,7 @@ impl<T, L> Token<T, L> {
     }
 }
 
-fn is_whitespace(character: char) -> bool {
+const fn is_whitespace(character: char) -> bool {
     character.is_whitespace() && character != '\n' && character != '\r'
 }
 

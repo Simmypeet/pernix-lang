@@ -567,7 +567,7 @@ impl crate::ser::Error for io::Error {
     where
         T: std::fmt::Display,
     {
-        io::Error::new(io::ErrorKind::Other, msg.to_string())
+        io::Error::other(msg.to_string())
     }
 }
 
