@@ -62,6 +62,7 @@ const DEPENDENCY_GRAPH_DIRECTORY: &str = "dependency_graph";
 const VERSION_INFO_BY_KEYS: &str = "version_info_by_keys";
 
 impl CallGraph {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn serialize_dependency_graph<
         E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
             + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
@@ -73,66 +74,140 @@ impl CallGraph {
         serde_extension: &dyn Any,
         base_path: &std::path::Path,
     ) -> Result<(), std::io::Error> {
-        let mut dependency_graph_path = base_path.to_path_buf();
-        dependency_graph_path.push(CALL_GRAPH_DIRECTORY);
-        dependency_graph_path.push(DEPENDENCY_GRAPH_DIRECTORY);
-
-        if !dependency_graph_path.exists() {
-            std::fs::create_dir_all(&dependency_graph_path)?;
-        }
-
         let extension = serde_extension
             .downcast_ref::<E>()
             .expect("serde_extension must match the expected type");
 
-        let mut entries_by_stable_type_id = HashMap::<
-            StableTypeID,
-            Vec<(&DynamicBox, &HashSet<DynamicBox>)>,
-        >::default();
+        let mut dependency_graph = Ok(());
+        let mut version_info = Ok(());
 
-        for (entry, dependencies) in &call_graph.dependency_graph {
-            let stable_type_id = entry.stable_type_id();
-            entries_by_stable_type_id
-                .entry(stable_type_id)
-                .or_default()
-                .push((entry, dependencies));
-        }
+        rayon::scope(|s| {
+            s.spawn(|_| {
+                let mut dependency_graph_path = base_path.to_path_buf();
+                dependency_graph_path.push(CALL_GRAPH_DIRECTORY);
+                dependency_graph_path.push(DEPENDENCY_GRAPH_DIRECTORY);
 
-        println!(
-            "Serializing dependency graph with {} entries",
-            entries_by_stable_type_id.len()
-        );
-        entries_by_stable_type_id
-            .into_par_iter()
-            .map(|(stable_type_id, entries)| {
-                let stable_type_id_u128 = stable_type_id.as_u128();
-                let file = std::fs::File::create(
-                    dependency_graph_path
-                        .join(format!("{stable_type_id_u128:032x}.dat",)),
-                )?;
+                if !dependency_graph_path.exists() {
+                    dependency_graph =
+                        std::fs::create_dir_all(&dependency_graph_path);
 
-                let mut serializer = BinarySerializer::<Box<dyn WriteAny>>::new(
-                    Box::new(BufWriter::new(file)),
+                    if dependency_graph.is_err() {
+                        return;
+                    }
+                }
+
+                let mut entries_by_stable_type_id = HashMap::<
+                    StableTypeID,
+                    Vec<(&DynamicBox, &HashSet<DynamicBox>)>,
+                >::default(
                 );
 
-                extension
-                    .serialization_helper_by_type_id()
-                    .get(&stable_type_id)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "no serialization helper registered for type ID \
-                             {stable_type_id_u128:032x}",
-                        )
-                    })
-                    .serialize_dependency_graph(
-                        &entries,
-                        &mut serializer,
-                        extension,
-                    )?;
+                for (entry, dependencies) in &call_graph.dependency_graph {
+                    let stable_type_id = entry.stable_type_id();
+                    entries_by_stable_type_id
+                        .entry(stable_type_id)
+                        .or_default()
+                        .push((entry, dependencies));
+                }
 
-                Ok(())
-            })
-            .collect::<Result<(), std::io::Error>>()?;
+                dependency_graph = entries_by_stable_type_id
+                    .into_par_iter()
+                    .map(|(stable_type_id, entries)| {
+                        let stable_type_id_u128 = stable_type_id.as_u128();
+                        let file =
+                            std::fs::File::create(dependency_graph_path.join(
+                                format!("{stable_type_id_u128:032x}.dat",),
+                            ))?;
+
+                        let mut serializer =
+                            BinarySerializer::<Box<dyn WriteAny>>::new(
+                                Box::new(BufWriter::new(file)),
+                            );
+
+                        extension
+                            .serialization_helper_by_type_id()
+                            .get(&stable_type_id)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "no serialization helper registered for \
+                                     type ID {stable_type_id_u128:032x}",
+                                )
+                            })
+                            .serialize_dependency_graph(
+                                &entries,
+                                &mut serializer,
+                                extension,
+                            )?;
+
+                        Ok(())
+                    })
+                    .collect::<Result<(), std::io::Error>>();
+            });
+
+            s.spawn(|_| {
+                let mut version_info_path = base_path.to_path_buf();
+                version_info_path.push(CALL_GRAPH_DIRECTORY);
+                version_info_path.push(VERSION_INFO_BY_KEYS);
+
+                if !version_info_path.exists() {
+                    version_info = std::fs::create_dir_all(&version_info_path);
+
+                    if version_info.is_err() {
+                        return;
+                    }
+                }
+
+                let mut entries_by_stable_type_id = HashMap::<
+                    StableTypeID,
+                    Vec<(&DynamicBox, &VersionInfo)>,
+                >::default(
+                );
+
+                for (entry, version_info) in &call_graph.version_info_by_keys {
+                    let stable_type_id = entry.stable_type_id();
+                    entries_by_stable_type_id
+                        .entry(stable_type_id)
+                        .or_default()
+                        .push((entry, version_info));
+                }
+
+                version_info = entries_by_stable_type_id
+                    .into_par_iter()
+                    .map(|(stable_type_id, entries)| {
+                        let stable_type_id_u128 = stable_type_id.as_u128();
+                        let file =
+                            std::fs::File::create(version_info_path.join(
+                                format!("{stable_type_id_u128:032x}.dat",),
+                            ))?;
+
+                        let mut serializer =
+                            BinarySerializer::<Box<dyn WriteAny>>::new(
+                                Box::new(BufWriter::new(file)),
+                            );
+
+                        extension
+                            .serialization_helper_by_type_id()
+                            .get(&stable_type_id)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "no serialization helper registered for \
+                                     type ID {stable_type_id_u128:032x}",
+                                )
+                            })
+                            .serialize_version_info(
+                                &entries,
+                                &mut serializer,
+                                extension,
+                            )?;
+
+                        Ok(())
+                    })
+                    .collect::<Result<(), std::io::Error>>();
+            });
+        });
+
+        dependency_graph?;
+        version_info?;
 
         Ok(())
     }

@@ -175,6 +175,9 @@ pub trait ReadAny: std::io::Read + Any {}
 impl<T: std::io::Read + Any> ReadAny for T {}
 
 impl Persistence {
+    /// The directory where the call graph is stored.
+    pub const CALL_GRAPH_DIRECTORY: &'static str = "call_graph";
+
     /// Creates a new instance of [`Persistence`] with the specified path where
     /// the database is stored and the serde extension where the types that will
     /// be serialized and deserialized are registered.

@@ -120,7 +120,11 @@ use pernixc_serialize::{
 use pernixc_stable_type_id::StableTypeID;
 use smallbox::smallbox;
 
-use crate::{database::map::Map, key::DynamicBox, Key};
+use crate::{
+    database::{call_graph::VersionInfo, map::Map},
+    key::DynamicBox,
+    Key,
+};
 
 /// A trait for types that can provide dynamic serialization capabilities.
 ///
@@ -218,6 +222,8 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
         &mut S,
         &E,
     ) -> Result<(), S::Error>,
+    version_info_serializer:
+        fn(&[(&DynamicBox, &VersionInfo)], &mut S, &E) -> Result<(), S::Error>,
 
     std_type_id: std::any::TypeId,
 }
@@ -256,6 +262,15 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
         extension: &E,
     ) -> Result<(), S::Error> {
         (self.dependency_graph_serializer)(entries, serializer, extension)
+    }
+
+    pub(crate) fn serialize_version_info(
+        &self,
+        entries: &[(&DynamicBox, &VersionInfo)],
+        serializer: &mut S,
+        extension: &E,
+    ) -> Result<(), S::Error> {
+        (self.version_info_serializer)(entries, serializer, extension)
     }
 }
 
@@ -608,6 +623,22 @@ impl<S: Serializer<E>, D: Deserializer<E>, E: DynamicSerialize<S>>
                 })
             };
 
+        let version_info_serializer =
+            |entries: &[(&DynamicBox, &VersionInfo)],
+             serializer: &mut S,
+             extension: &E| {
+                serializer.emit_map(entries.len(), extension, |mut map, _| {
+                    for (key, value) in entries {
+                        let key = (**key).any().downcast_ref::<K>().expect(
+                            "the dynamic box should contain a value of the \
+                             registered type",
+                        );
+                        map.serialize_entry(key, value, extension)?;
+                    }
+                    Ok(())
+                })
+            };
+
         if self
             .serialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, SerializationHelper {
@@ -615,6 +646,7 @@ impl<S: Serializer<E>, D: Deserializer<E>, E: DynamicSerialize<S>>
                 dynamic_box_serializer: dyn_box_serializer,
                 cas_map_serializer,
                 dependency_graph_serializer,
+                version_info_serializer,
                 std_type_id: std::any::TypeId::of::<K>(),
                 value_serializer,
             })
@@ -692,6 +724,7 @@ impl<S: Serializer<E>, E> Clone for SerializationHelper<S, E> {
             value_serializer: self.value_serializer,
             cas_map_serializer: self.cas_map_serializer,
             dependency_graph_serializer: self.dependency_graph_serializer,
+            version_info_serializer: self.version_info_serializer,
             std_type_id: self.std_type_id,
         }
     }
