@@ -29,8 +29,8 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
-            - name: Set up Rust 1.86.0
-              uses: dtolnay/rust-toolchain@1.86.0
+            - name: Set up Rust 1.88.0
+              uses: dtolnay/rust-toolchain@1.88.0
 
             - name: Build LLVM on Unix-like
               if: runner.os != 'Windows'
