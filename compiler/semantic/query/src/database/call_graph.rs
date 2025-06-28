@@ -5,16 +5,22 @@
 
 use core::panic;
 use std::{
-    any::Any, collections::hash_map::Entry, io::BufWriter, sync::Arc,
+    any::Any,
+    collections::hash_map::Entry,
+    fs::DirEntry,
+    io::{BufReader, BufWriter},
+    path::Path,
+    sync::{atomic::AtomicBool, Arc},
     thread::ThreadId,
 };
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use parking_lot::{Condvar, MutexGuard};
+use parking_lot::{Condvar, MutexGuard, RwLock};
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    de::Deserializer,
     Deserialize, Serialize,
 };
 use pernixc_stable_hash::{StableHash, StableHasher};
@@ -62,8 +68,287 @@ const DEPENDENCY_GRAPH_DIRECTORY: &str = "dependency_graph";
 const VERSION_INFO_BY_KEYS: &str = "version_info_by_keys";
 
 impl CallGraph {
+    fn collect_files(path: &Path) -> Result<Vec<DirEntry>, std::io::Error> {
+        path.read_dir()?.collect::<Result<Vec<_>, _>>()
+    }
+
+    fn collect_for_dependency_graph<
+        E: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+            + Send
+            + Sync
+            + 'static,
+    >(
+        files: Vec<DirEntry>,
+        dependency_graph: &RwLock<HashMap<DynamicBox, HashSet<DynamicBox>>>,
+        extension: &E,
+    ) -> Result<(), std::io::Error> {
+        files
+            .into_par_iter()
+            .map(|dir_entry| {
+                // skip if directory
+                if dir_entry.file_type()?.is_dir() {
+                    return Ok(());
+                }
+
+                // dispatch the stable type ID based on the file name
+                let file_name = dir_entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                let stable_type_id_u128 =
+                    u128::from_str_radix(&file_name_str[..32], 16).map_err(
+                        |_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "invalid stable type ID in file name: \
+                                     {file_name_str}"
+                                ),
+                            )
+                        },
+                    )?;
+
+                let hi = (stable_type_id_u128 >> 64) as u64;
+                let lo = (stable_type_id_u128 & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+
+                let stable_type_id =
+                    unsafe { StableTypeID::from_raw_parts(hi, lo) };
+
+                let file = std::fs::File::open(dir_entry.path())?;
+                let mut deserializer =
+                    BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
+                        BufReader::new(file),
+                    ));
+
+                let helper = extension
+                    .deserialization_helper_by_type_id()
+                    .get(&stable_type_id)
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "no deserialization helper registered for \
+                                 type ID {stable_type_id_u128:032x}",
+                            ),
+                        )
+                    })?;
+
+                helper.deserialize_dependency_graph(
+                    &mut deserializer,
+                    extension,
+                    dependency_graph,
+                )?;
+
+                Ok(())
+            })
+            .collect::<Result<(), std::io::Error>>()
+    }
+
+    fn collect_for_version_infos<
+        E: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+            + Send
+            + Sync
+            + 'static,
+    >(
+        files: Vec<DirEntry>,
+        version_infos: &RwLock<HashMap<DynamicBox, VersionInfo>>,
+        extension: &E,
+    ) -> Result<(), std::io::Error> {
+        files
+            .into_par_iter()
+            .map(|dir_entry| {
+                // skip if directory
+                if dir_entry.file_type()?.is_dir() {
+                    return Ok(());
+                }
+
+                // dispatch the stable type ID based on the file name
+                let file_name = dir_entry.file_name();
+                let file_name_str = file_name.to_string_lossy();
+                let stable_type_id_u128 =
+                    u128::from_str_radix(&file_name_str[..32], 16).map_err(
+                        |_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!(
+                                    "invalid stable type ID in file name: \
+                                     {file_name_str}"
+                                ),
+                            )
+                        },
+                    )?;
+
+                let hi = (stable_type_id_u128 >> 64) as u64;
+                let lo = (stable_type_id_u128 & 0xFFFF_FFFF_FFFF_FFFF) as u64;
+
+                let stable_type_id =
+                    unsafe { StableTypeID::from_raw_parts(hi, lo) };
+
+                let file = std::fs::File::open(dir_entry.path())?;
+                let mut deserializer =
+                    BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
+                        BufReader::new(file),
+                    ));
+
+                let helper = extension
+                    .deserialization_helper_by_type_id()
+                    .get(&stable_type_id)
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "no deserialization helper registered for \
+                                 type ID {stable_type_id_u128:032x}",
+                            ),
+                        )
+                    })?;
+
+                helper.deserialize_version_infos(
+                    &mut deserializer,
+                    extension,
+                    version_infos,
+                )?;
+
+                Ok(())
+            })
+            .collect::<Result<(), std::io::Error>>()
+    }
+
     #[allow(clippy::too_many_lines)]
-    pub(crate) fn serialize_dependency_graph<
+    pub(crate) fn deserialize_call_graph<
+        E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
+            + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+            + Send
+            + Sync
+            + 'static,
+    >(
+        serde_extension: &dyn Any,
+        base_path: &std::path::Path,
+    ) -> Result<Self, std::io::Error> {
+        let extension = serde_extension
+            .downcast_ref::<E>()
+            .expect("serde_extension must match the expected type");
+
+        let dependency_graph = RwLock::new(HashMap::default());
+        let version_info_by_keys = RwLock::new(HashMap::default());
+        let mut version = (0, AtomicBool::new(false));
+
+        let mut dependency_graph_result = Ok(());
+        let mut version_infos_result = Ok(());
+        let mut version_result = Ok(());
+
+        rayon::scope(|s| {
+            // deserialize dependency graph
+            s.spawn(|_| {
+                let mut dependency_graph_path = base_path.to_path_buf();
+                dependency_graph_path.push(CALL_GRAPH_DIRECTORY);
+                dependency_graph_path.push(DEPENDENCY_GRAPH_DIRECTORY);
+
+                if !dependency_graph_path.exists() {
+                    if let Err(e) =
+                        std::fs::create_dir_all(&dependency_graph_path)
+                    {
+                        dependency_graph_result = Err(e);
+                        return;
+                    }
+                }
+
+                let files = match Self::collect_files(&dependency_graph_path) {
+                    Ok(files) => files,
+                    Err(error) => {
+                        dependency_graph_result = Err(error);
+                        return;
+                    }
+                };
+
+                dependency_graph_result = Self::collect_for_dependency_graph(
+                    files,
+                    &dependency_graph,
+                    extension,
+                );
+            });
+
+            // deserialize version info
+            s.spawn(|_| {
+                let mut version_info_path = base_path.to_path_buf();
+                version_info_path.push(CALL_GRAPH_DIRECTORY);
+                version_info_path.push(VERSION_INFO_BY_KEYS);
+
+                if !version_info_path.exists() {
+                    if let Err(e) = std::fs::create_dir_all(&version_info_path)
+                    {
+                        version_infos_result = Err(e);
+                        return;
+                    }
+                }
+
+                let files = match Self::collect_files(&version_info_path) {
+                    Ok(files) => files,
+                    Err(error) => {
+                        version_infos_result = Err(error);
+                        return;
+                    }
+                };
+
+                version_infos_result = Self::collect_for_version_infos(
+                    files,
+                    &version_info_by_keys,
+                    extension,
+                );
+            });
+
+            // deserialize version
+            s.spawn(|_| {
+                let mut version_file_path = base_path.to_path_buf();
+                version_file_path.push(CALL_GRAPH_DIRECTORY);
+                version_file_path.push("version.dat");
+
+                if !version_file_path.exists() {
+                    version_result = std::fs::write(
+                        &version_file_path,
+                        self::VERSION_INFO_BY_KEYS,
+                    );
+                    return;
+                }
+
+                let file = match std::fs::File::open(&version_file_path) {
+                    Ok(file) => file,
+                    Err(error) => {
+                        version_result = Err(error);
+                        return;
+                    }
+                };
+
+                let mut binary_deserializer =
+                    BinaryDeserializer::new(BufReader::new(file));
+
+                version_result =
+                    binary_deserializer.expect_tuple(2, &(), |mut x, ()| {
+                        use pernixc_serialize::de::TupleAccess;
+
+                        version.0 = x.next_element::<usize>(extension)?;
+                        version.1 =
+                            AtomicBool::new(x.next_element::<bool>(extension)?);
+
+                        Ok(())
+                    });
+            });
+        });
+
+        dependency_graph_result?;
+        version_infos_result?;
+        version_result?;
+
+        Ok(Self {
+            record_stacks_by_thread_id: HashMap::default(),
+            condvars_by_record: HashMap::default(),
+            current_dependencies_by_dependant: HashMap::default(),
+            dependency_graph: dependency_graph.into_inner(),
+            version_info_by_keys: version_info_by_keys.into_inner(),
+            cyclic_dependencies: Vec::new(),
+        })
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn serialize_call_graph<
         E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
             + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
             + Send

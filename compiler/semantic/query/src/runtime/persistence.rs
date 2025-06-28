@@ -58,6 +58,8 @@ pub struct Persistence {
     ) -> Result<(), std::io::Error>,
     serialize_dependency_graph:
         fn(&CallGraph, &dyn Any, &Path) -> Result<(), std::io::Error>,
+    deserialize_call_graph:
+        fn(&dyn Any, &Path) -> Result<CallGraph, std::io::Error>,
 }
 
 fn serialize_map<
@@ -257,9 +259,9 @@ impl Persistence {
             serialize_any_value,
             deserialize_any_value,
             serialize_map: serialize_map::<E>,
-            serialize_dependency_graph: CallGraph::serialize_dependency_graph::<
-                E,
-            >,
+
+            serialize_dependency_graph: CallGraph::serialize_call_graph::<E>,
+            deserialize_call_graph: CallGraph::deserialize_call_graph::<E>,
         }
     }
 
@@ -294,6 +296,18 @@ impl Persistence {
             self.serde_extension.as_ref(),
             &self.path,
         )
+    }
+
+    /// Loads the [`CallGraph`] from the persistence storage.
+    pub fn load_call_graph<
+        E: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+            + Send
+            + Sync
+            + 'static,
+    >(
+        &self,
+    ) -> Result<CallGraph, std::io::Error> {
+        (self.deserialize_call_graph)(self.serde_extension.as_ref(), &self.path)
     }
 
     /// Attempts to load a value from the persistence storage.
