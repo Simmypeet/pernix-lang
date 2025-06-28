@@ -89,7 +89,7 @@ pub fn bootstrap<'l>(
         .persistence
         .as_mut()
         .map_or_else(Database::default, |persistence| {
-            persistence.load_database().unwrap_or_default()
+            dbg!(persistence.load_database()).unwrap_or_default()
         });
 
     let engine = RwLock::new(Engine { database, runtime });

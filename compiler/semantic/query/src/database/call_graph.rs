@@ -608,9 +608,60 @@ impl Engine {
         &self,
         key: &T,
     ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
-        self.query_internal(key, self.database.call_graph.lock()).0?;
+        let (result, call_graph) =
+            self.query_internal(key, self.database.call_graph.lock());
 
-        self.database.map.get(key).map_or_else(|| todo!(), Ok)
+        result?;
+
+        self.database.map.get(key).map_or_else(
+            || {
+                let key_smallbox = DynamicBox(key.smallbox_clone());
+                let version_info = call_graph
+                    .version_info_by_keys
+                    .get(&key_smallbox)
+                    .copied()
+                    .unwrap();
+
+                let value = self
+                    .runtime
+                    .persistence
+                    .as_ref()
+                    .and_then(|x| {
+                        x.try_load::<T>(version_info.fingerprint.unwrap()).ok()
+                    })
+                    .flatten();
+
+                if let Some(value) = value {
+                    return Ok(value);
+                }
+
+                let called_from = call_graph.called_from();
+
+                // the value hasn't been computed yet, so we need to compute it
+                let (computed_successfully, mut call_graph) = self.fresh_query(
+                    key,
+                    &key_smallbox,
+                    called_from.as_ref(),
+                    call_graph,
+                );
+
+                if self.check_cyclic(
+                    computed_successfully,
+                    called_from.as_ref(),
+                    &mut call_graph,
+                ) != Ok(())
+                {
+                    return Err(crate::runtime::executor::CyclicError);
+                }
+
+                Ok(self
+                    .database
+                    .map
+                    .get(key)
+                    .expect("value should be computed"))
+            },
+            Ok,
+        )
     }
 
     fn check_cyclic(

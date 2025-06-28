@@ -90,11 +90,14 @@ fn serialize_map<
             let stable_type_id = *a.0;
             let helper = a.1;
 
-            let db = Persistence::get_databse(
+            let db = Persistence::get_database(
                 databases_by_stable_type_id,
                 stable_type_id,
                 path,
-            );
+                true,
+            )?
+            .unwrap();
+
             let mut tx =
                 db.begin_write().expect("Failed to begin write transaction");
 
@@ -179,6 +182,9 @@ impl<T: std::io::Read + Any> ReadAny for T {}
 impl Persistence {
     /// The directory where the call graph is stored.
     pub const CALL_GRAPH_DIRECTORY: &'static str = "call_graph";
+
+    /// The file where the call graph version is stored.
+    pub const CALL_GRAPH_VERSION_FILE: &'static str = "version.dat";
 
     /// Creates a new instance of [`Persistence`] with the specified path where
     /// the database is stored and the serde extension where the types that will
@@ -308,14 +314,20 @@ impl Persistence {
         &self,
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
-        let table = Self::get_databse(
+        let Some(table) = Self::get_database(
             &self.databases_by_stable_type_id,
             K::STABLE_TYPE_ID,
             &self.path,
-        )
-        .begin_read()
-        .unwrap();
-        let table = table.open_table(TABLE).unwrap();
+            false,
+        )?
+        else {
+            return Ok(None);
+        };
+
+        let table = table.begin_read().unwrap();
+        let table = table.open_table(TABLE).map_err(|e| {
+            std::io::Error::other(format!("Failed to open table: {e}"))
+        })?;
 
         if let Some(buffer) = table.get(&value_fingerprint).unwrap() {
             let mut deserializer = BinaryDeserializer::<Box<dyn ReadAny>>::new(
@@ -336,25 +348,42 @@ impl Persistence {
         }
     }
 
-    fn get_databse<'a>(
+    fn get_database<'a>(
         databases_by_stable_type_id: &'a DashMap<StableTypeID, redb::Database>,
         stable_type_id: StableTypeID,
         path: &Path,
-    ) -> Ref<'a, StableTypeID, redb::Database> {
+        write: bool,
+    ) -> Result<Option<Ref<'a, StableTypeID, redb::Database>>, std::io::Error>
+    {
         if let Some(database) = databases_by_stable_type_id.get(&stable_type_id)
         {
-            return database;
+            return Ok(Some(database));
         }
 
         let stable_type_id_u128 = stable_type_id.as_u128();
         // format stable_type_id as a hex string
         let path = path.join(format!("{stable_type_id_u128:032x}.dat"));
-        let database = redb::Database::create(&path).unwrap();
+
+        // don't  create in the read mode
+        if !write && !path.exists() {
+            return Ok(None);
+        }
+
+        let database = redb::Database::create(&path).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to create database for stable type ID: \
+                 {stable_type_id:?} at path: {}, error: {e}",
+                path.display()
+            ))
+        })?;
+
         databases_by_stable_type_id.insert(stable_type_id, database);
 
-        databases_by_stable_type_id
-            .get(&stable_type_id)
-            .expect("Database should be inserted")
+        Ok(Some(
+            databases_by_stable_type_id
+                .get(&stable_type_id)
+                .expect("Database should be inserted"),
+        ))
     }
 
     /// Saves a value to the persistence storage.
@@ -375,11 +404,13 @@ impl Persistence {
         let mut buffer =
             box_any.downcast::<Vec<u8>>().expect("Buffer must be a Vec<u8>");
 
-        let tx = Self::get_databse(
+        let tx = Self::get_database(
             &self.databases_by_stable_type_id,
             K::STABLE_TYPE_ID,
             &self.path,
-        )
+            true,
+        )?
+        .unwrap()
         .begin_write()
         .unwrap();
 

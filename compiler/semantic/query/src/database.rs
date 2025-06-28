@@ -63,7 +63,7 @@ impl Persistence {
             s.spawn(|_| {
                 let mut version_file_path = self.path().to_path_buf();
                 version_file_path.push(Self::CALL_GRAPH_DIRECTORY);
-                version_file_path.push("version.dat");
+                version_file_path.push(Self::CALL_GRAPH_VERSION_FILE);
 
                 let file = match std::fs::File::open(&version_file_path) {
                     Ok(file) => file,
@@ -131,7 +131,7 @@ impl Engine {
                 let path = persistence
                     .path()
                     .join(Persistence::CALL_GRAPH_DIRECTORY)
-                    .join("version_info.dat");
+                    .join(Persistence::CALL_GRAPH_VERSION_FILE);
 
                 // make sure that the parent directory exists
                 if let Some(parent) = path.parent() {
