@@ -5,28 +5,35 @@
 
 use core::panic;
 use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::Arc,
+    any::Any, collections::hash_map::Entry, io::BufWriter, sync::Arc,
     thread::ThreadId,
 };
 
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use parking_lot::{Condvar, MutexGuard};
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_hash::{HashMap, HashSet};
+use pernixc_serialize::{
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    Deserialize, Serialize,
+};
 use pernixc_stable_hash::{StableHash, StableHasher};
+use pernixc_stable_type_id::StableTypeID;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use super::Database;
 use crate::{
     key::{Dynamic, DynamicBox, Key},
     runtime::{
         executor::Executor,
+        persistence::{ReadAny, WriteAny},
         serde::{DynamicDeserialize, DynamicSerialize},
     },
     Engine,
 };
 
 /// Tracks the dependencies between queries and their execution order.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Getters)]
 #[allow(clippy::mutable_key_type)]
 #[serde(
     ser_extension(DynamicSerialize<__S>),
@@ -48,6 +55,87 @@ pub struct CallGraph {
     dependency_graph: HashMap<DynamicBox, HashSet<DynamicBox>>,
     version_info_by_keys: HashMap<DynamicBox, VersionInfo>,
     cyclic_dependencies: Vec<CyclicDependency>,
+}
+
+const CALL_GRAPH_DIRECTORY: &str = "call_graph";
+const DEPENDENCY_GRAPH_DIRECTORY: &str = "dependency_graph";
+const VERSION_INFO_BY_KEYS: &str = "version_info_by_keys";
+
+impl CallGraph {
+    pub(crate) fn serialize_dependency_graph<
+        E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
+            + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+            + Send
+            + Sync
+            + 'static,
+    >(
+        call_graph: &Self,
+        serde_extension: &dyn Any,
+        base_path: &std::path::Path,
+    ) -> Result<(), std::io::Error> {
+        let mut dependency_graph_path = base_path.to_path_buf();
+        dependency_graph_path.push(CALL_GRAPH_DIRECTORY);
+        dependency_graph_path.push(DEPENDENCY_GRAPH_DIRECTORY);
+
+        if !dependency_graph_path.exists() {
+            std::fs::create_dir_all(&dependency_graph_path)?;
+        }
+
+        let extension = serde_extension
+            .downcast_ref::<E>()
+            .expect("serde_extension must match the expected type");
+
+        let mut entries_by_stable_type_id = HashMap::<
+            StableTypeID,
+            Vec<(&DynamicBox, &HashSet<DynamicBox>)>,
+        >::default();
+
+        for (entry, dependencies) in &call_graph.dependency_graph {
+            let stable_type_id = entry.stable_type_id();
+            entries_by_stable_type_id
+                .entry(stable_type_id)
+                .or_default()
+                .push((entry, dependencies));
+        }
+
+        println!(
+            "Serializing dependency graph with {} entries",
+            entries_by_stable_type_id.len()
+        );
+        entries_by_stable_type_id
+            .into_par_iter()
+            .map(|(stable_type_id, entries)| {
+                let stable_type_id_u128 = stable_type_id.as_u128();
+                let file = std::fs::File::create(
+                    dependency_graph_path
+                        .join(format!("{stable_type_id_u128:032x}.dat",)),
+                )?;
+
+                let mut serializer = BinarySerializer::<Box<dyn WriteAny>>::new(
+                    Box::new(BufWriter::new(file)),
+                );
+
+                extension
+                    .serialization_helper_by_type_id()
+                    .get(&stable_type_id)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "no serialization helper registered for type ID \
+                             {stable_type_id_u128:032x}",
+                        )
+                    })
+                    .serialize_dependency_graph(
+                        &entries,
+                        &mut serializer,
+                        extension,
+                    )?;
+
+                Ok(())
+            })
+            .collect::<Result<(), std::io::Error>>()?;
+
+        Ok(())
+    }
 }
 
 impl CallGraph {
@@ -403,7 +491,7 @@ impl Engine {
     ) -> (bool, MutexGuard<'a, CallGraph>) {
         call_graph
             .dependency_graph
-            .insert(key_smallbox.clone(), HashSet::new());
+            .insert(key_smallbox.clone(), HashSet::default());
 
         let executor = self.runtime.executor.get::<T>().unwrap_or_else(|| {
             panic!(

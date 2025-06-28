@@ -111,10 +111,10 @@
 use std::any::Any;
 
 use getset::Getters;
-use pernixc_hash::{DashMap, HashMap};
+use pernixc_hash::{DashMap, HashMap, HashSet};
 use pernixc_serialize::{
     de::{Deserializer, MapAccess, StructAccess},
-    ser::Serializer,
+    ser::{Map as _, Serializer},
     Deserialize, Serialize,
 };
 use pernixc_stable_type_id::StableTypeID;
@@ -213,12 +213,17 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
         &(dyn Send + Sync + Fn(S, u128) -> Result<(), S::Error>),
     ) -> Result<bool, S::Error>,
 
+    dependency_graph_serializer: fn(
+        &[(&DynamicBox, &HashSet<DynamicBox>)],
+        &mut S,
+        &E,
+    ) -> Result<(), S::Error>,
+
     std_type_id: std::any::TypeId,
 }
 
 impl<S: Serializer<E>, E> SerializationHelper<S, E> {
-    /// Serializes a [`K::Value`] instance that has been downcasted to `Any`.
-    pub fn serialize_any_value(
+    pub(crate) fn serialize_any_value(
         &self,
         value: &dyn Any,
         serializer: &mut S,
@@ -227,9 +232,7 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
         (self.value_serializer)(value, serializer, extension)
     }
 
-    /// Serializes a `Map` instance in a Content-Addressable Storage (CAS)
-    /// protocol.
-    pub fn serialize_fingerprint_map(
+    pub(crate) fn serialize_fingerprint_map(
         &self,
         map: &Map,
         create_serializer: &(dyn Send + Sync + Fn() -> Result<S, S::Error>),
@@ -244,6 +247,15 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
             extension,
             post_serialize,
         )
+    }
+
+    pub(crate) fn serialize_dependency_graph(
+        &self,
+        entries: &[(&DynamicBox, &HashSet<DynamicBox>)],
+        serializer: &mut S,
+        extension: &E,
+    ) -> Result<(), S::Error> {
+        (self.dependency_graph_serializer)(entries, serializer, extension)
     }
 }
 
@@ -475,7 +487,9 @@ fn dynamic_box_deserializer<
     Ok(DynamicBox(smallbox!(key)))
 }
 
-impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
+impl<S: Serializer<E>, D: Deserializer<E>, E: DynamicSerialize<S>>
+    Registry<S, D, E>
+{
     /// Registers a key type and its associated value type for both
     /// serialization and deserialization.
     ///
@@ -578,12 +592,29 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Registry<S, D, E> {
                 })
             };
 
+        let dependency_graph_serializer =
+            |entries: &[(&DynamicBox, &HashSet<DynamicBox>)],
+             serializer: &mut S,
+             extension: &E| {
+                serializer.emit_map(entries.len(), extension, |mut map, _| {
+                    for (key, value) in entries {
+                        let key = (**key).any().downcast_ref::<K>().expect(
+                            "the dynamic box should contain a value of the \
+                             registered type",
+                        );
+                        map.serialize_entry(key, *value, extension)?;
+                    }
+                    Ok(())
+                })
+            };
+
         if self
             .serialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, SerializationHelper {
                 map_serializer,
                 dynamic_box_serializer: dyn_box_serializer,
                 cas_map_serializer,
+                dependency_graph_serializer,
                 std_type_id: std::any::TypeId::of::<K>(),
                 value_serializer,
             })
@@ -660,6 +691,7 @@ impl<S: Serializer<E>, E> Clone for SerializationHelper<S, E> {
             dynamic_box_serializer: self.dynamic_box_serializer,
             value_serializer: self.value_serializer,
             cas_map_serializer: self.cas_map_serializer,
+            dependency_graph_serializer: self.dependency_graph_serializer,
             std_type_id: self.std_type_id,
         }
     }

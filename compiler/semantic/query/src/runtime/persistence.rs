@@ -4,19 +4,15 @@ use std::{
     self,
     any::Any,
     cell::RefCell,
-    collections::HashSet,
-    fs::File,
-    io::BufWriter,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use dashmap::mapref::one::Ref;
 use parking_lot::RwLock;
-use pernixc_hash::DashMap;
-use pernixc_serialize::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
-    Serialize as _,
+use pernixc_hash::{DashMap, HashSet};
+use pernixc_serialize::binary::{
+    de::BinaryDeserializer, ser::BinarySerializer,
 };
 use pernixc_stable_type_id::StableTypeID;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator};
@@ -60,11 +56,8 @@ pub struct Persistence {
         &DashMap<StableTypeID, redb::Database>,
         &Path,
     ) -> Result<(), std::io::Error>,
-    serialize_call_graph: fn(
-        &CallGraph,
-        &dyn Any,
-        &mut BinarySerializer<Box<dyn WriteAny>>,
-    ) -> Result<(), std::io::Error>,
+    serialize_dependency_graph:
+        fn(&CallGraph, &dyn Any, &Path) -> Result<(), std::io::Error>,
 }
 
 fn serialize_map<
@@ -247,17 +240,6 @@ impl Persistence {
                 )
             };
 
-        let serialize_call_graph =
-            |call_graph: &CallGraph,
-             serde_extension: &dyn Any,
-             serializer: &mut BinarySerializer<Box<dyn WriteAny>>| {
-                let serde_extension = serde_extension
-                    .downcast_ref::<E>()
-                    .expect("serde_extension must match the expected type");
-
-                call_graph.serialize(serializer, serde_extension)
-            };
-
         if !path.exists() {
             std::fs::create_dir_all(&path)
                 .expect("Failed to create persistence directory");
@@ -269,10 +251,12 @@ impl Persistence {
             serde_extension: serde_extension as Arc<dyn Any + Send + Sync>,
             skip_keys: HashSet::default(),
 
-            serialize_call_graph,
             serialize_any_value,
             deserialize_any_value,
             serialize_map: serialize_map::<E>,
+            serialize_dependency_graph: CallGraph::serialize_dependency_graph::<
+                E,
+            >,
         }
     }
 
@@ -302,17 +286,10 @@ impl Persistence {
         &self,
         call_graph: &CallGraph,
     ) -> Result<(), std::io::Error> {
-        let call_graph_file =
-            File::create(self.path.join("call_graph.pernixc"))?;
-
-        let mut buf_writer = BinarySerializer::<Box<dyn WriteAny>>::new(
-            Box::new(BufWriter::new(call_graph_file)),
-        );
-
-        (self.serialize_call_graph)(
+        (self.serialize_dependency_graph)(
             call_graph,
             self.serde_extension.as_ref(),
-            &mut buf_writer,
+            &self.path,
         )
     }
 
@@ -361,7 +338,7 @@ impl Persistence {
 
         let stable_type_id_u128 = stable_type_id.as_u128();
         // format stable_type_id as a hex string
-        let path = path.join(format!("{stable_type_id_u128:032x}.pernixc"));
+        let path = path.join(format!("{stable_type_id_u128:032x}.dat"));
         let database = redb::Database::create(&path).unwrap();
         databases_by_stable_type_id.insert(stable_type_id, database);
 
