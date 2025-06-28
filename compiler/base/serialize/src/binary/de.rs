@@ -7,9 +7,9 @@
 use std::io::{self, Read};
 
 use crate::de::{
-    Deserialize, Deserializer, EnumAccess, FieldAccess, Identifier, MapAccess,
-    SeqAccess, StructAccess, StructVariantAccess, TupleAccess,
-    TupleStructAccess, TupleVariantAccess, ValueAccess,
+    Deserialize, DeserializeSeed, Deserializer, EnumAccess, FieldAccess,
+    Identifier, MapAccess, SeqAccess, StructAccess, StructVariantAccess,
+    TupleAccess, TupleStructAccess, TupleVariantAccess, ValueAccess,
 };
 
 /// A binary deserializer that reads from any `Read` implementation.
@@ -224,6 +224,20 @@ impl<R: Read + 'static, E> SeqAccess<E> for BinarySeqAccess<'_, R> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.remaining, Some(self.remaining))
     }
+
+    fn next_element_seed<T: DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<Option<T::Value>, <Self::Parent as Deserializer<E>>::Error>
+    {
+        if self.remaining == 0 {
+            Ok(None)
+        } else {
+            self.remaining -= 1;
+            seed.deserialize_seed(self.deserializer, extension).map(Some)
+        }
+    }
 }
 
 pub struct BinaryTupleAccess<'a, R> {
@@ -238,6 +252,14 @@ impl<R: Read + 'static, E> TupleAccess<E> for BinaryTupleAccess<'_, R> {
         extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error> {
         T::deserialize(self.deserializer, extension)
+    }
+
+    fn next_element_seed<T: crate::de::DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error> {
+        seed.deserialize_seed(self.deserializer, extension)
     }
 }
 
@@ -256,6 +278,14 @@ impl<R: Read + 'static, E> TupleStructAccess<E>
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error> {
         T::deserialize(self.deserializer, extension)
     }
+
+    fn next_field_seed<T: crate::de::DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error> {
+        seed.deserialize_seed(self.deserializer, extension)
+    }
 }
 
 pub struct BinaryFieldAccess<'a, R> {
@@ -270,6 +300,14 @@ impl<R: Read + 'static, E> FieldAccess<E> for BinaryFieldAccess<'_, R> {
         extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error> {
         T::deserialize(self.deserializer, extension)
+    }
+
+    fn deserialize_seed<T: crate::de::DeserializeSeed<Self::Parent, E>>(
+        self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error> {
+        seed.deserialize_seed(self.deserializer, extension)
     }
 }
 
@@ -323,6 +361,14 @@ impl<R: Read + 'static, E> ValueAccess<E> for BinaryValueAccess<'_, R> {
     ) -> Result<V, <Self::Parent as Deserializer<E>>::Error> {
         V::deserialize(self.deserializer, extension)
     }
+
+    fn deserialize_seed<V: crate::de::DeserializeSeed<Self::Parent, E>>(
+        self,
+        seed: V,
+        extension: &E,
+    ) -> Result<V::Value, <Self::Parent as Deserializer<E>>::Error> {
+        seed.deserialize_seed(self.deserializer, extension)
+    }
 }
 
 pub struct BinaryMapAccess<'a, R> {
@@ -372,6 +418,14 @@ impl<R: Read + 'static, E> TupleVariantAccess<E>
         extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error> {
         T::deserialize(self.deserializer, extension)
+    }
+
+    fn next_field_seed<T: DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error> {
+        seed.deserialize_seed(self.deserializer, extension)
     }
 }
 

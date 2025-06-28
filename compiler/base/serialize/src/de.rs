@@ -12,6 +12,8 @@
 //!   structures
 //! - [`Deserialize`] - Trait for types that can be deserialized using a
 //!   deserializer
+//! - [`DeserializeSeed`] - Trait for stateful deserialization with additional
+//!   configuration or context
 //! - [`Error`] - Trait for deserialization error types
 //! - [`SeqAccess`], [`TupleAccess`], [`TupleStructAccess`], [`StructAccess`],
 //!   [`MapAccess`] - Compound data structure deserializers
@@ -24,6 +26,17 @@
 //! deserialization behavior. Extensions can maintain state across
 //! deserialization operations and provide custom handling for specific types
 //! like shared pointers.
+//!
+//! ## Seeded Deserialization
+//!
+//! The framework supports seeded deserialization through the
+//! [`DeserializeSeed`] trait and corresponding `*_seed` methods on access
+//! traits. This allows for:
+//!
+//! - Stateful deserialization with configuration or context
+//! - Reusing allocations by deserializing into existing buffers
+//! - Runtime determination of target types
+//! - Custom deserialization logic based on external conditions
 
 use std::fmt::Display;
 
@@ -182,6 +195,20 @@ pub trait SeqAccess<E> {
         extension: &E,
     ) -> Result<Option<T>, <Self::Parent as Deserializer<E>>::Error>;
 
+    /// Deserialize the next element in the sequence using a seed.
+    ///
+    /// This method allows stateful deserialization of sequence elements
+    /// where the seed can carry additional configuration or context.
+    ///
+    /// Returns `Ok(Some(value))` if there is a next element,
+    /// `Ok(None)` if the sequence is finished, or an error if
+    /// deserialization fails.
+    fn next_element_seed<T: DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<Option<T::Value>, <Self::Parent as Deserializer<E>>::Error>;
+
     /// Get the size hint for the remaining elements.
     ///
     /// Returns `(lower_bound, upper_bound)` where `upper_bound` is `None`
@@ -206,6 +233,18 @@ pub trait TupleAccess<E> {
         &mut self,
         extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
+
+    /// Deserialize the next element in the tuple using a seed.
+    ///
+    /// This method allows stateful deserialization of tuple elements
+    /// where the seed can carry additional configuration or context.
+    ///
+    /// Returns `Ok(value)` if successful, or an error if deserialization fails.
+    fn next_element_seed<T: DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing tuple structs.
@@ -223,6 +262,18 @@ pub trait TupleStructAccess<E> {
         &mut self,
         extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
+
+    /// Deserialize the next field in the tuple struct using a seed.
+    ///
+    /// This method allows stateful deserialization of tuple struct fields
+    /// where the seed can carry additional configuration or context.
+    ///
+    /// Returns `Ok(value)` if successful, or an error if deserialization fails.
+    fn next_field_seed<T: DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for accessing a specific field during struct deserialization.
@@ -241,6 +292,18 @@ pub trait FieldAccess<E> {
         self,
         extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
+
+    /// Deserialize the field value using a seed.
+    ///
+    /// This method allows stateful deserialization of the field value
+    /// where the seed can carry additional configuration or context.
+    ///
+    /// Returns the deserialized value, or an error if deserialization fails.
+    fn deserialize_seed<T: DeserializeSeed<Self::Parent, E>>(
+        self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing structs with named fields.
@@ -291,6 +354,18 @@ pub trait ValueAccess<E> {
         self,
         extension: &E,
     ) -> Result<V, <Self::Parent as Deserializer<E>>::Error>;
+
+    /// Deserialize the value using a seed.
+    ///
+    /// This method allows stateful deserialization of the map value
+    /// where the seed can carry additional configuration or context.
+    ///
+    /// Returns the deserialized value, or an error if deserialization fails.
+    fn deserialize_seed<V: DeserializeSeed<Self::Parent, E>>(
+        self,
+        seed: V,
+        extension: &E,
+    ) -> Result<V::Value, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing maps (dictionaries, hash tables, etc.).
@@ -349,6 +424,18 @@ pub trait TupleVariantAccess<E> {
         &mut self,
         extension: &E,
     ) -> Result<T, <Self::Parent as Deserializer<E>>::Error>;
+
+    /// Deserialize the next field in the tuple variant using a seed.
+    ///
+    /// This method allows stateful deserialization of tuple variant fields
+    /// where the seed can carry additional configuration or context.
+    ///
+    /// Returns `Ok(value)` if successful, or an error if deserialization fails.
+    fn next_field_seed<T: DeserializeSeed<Self::Parent, E>>(
+        &mut self,
+        seed: T,
+        extension: &E,
+    ) -> Result<T::Value, <Self::Parent as Deserializer<E>>::Error>;
 }
 
 /// A trait for deserializing struct variants of enums.
@@ -692,6 +779,71 @@ pub trait Deserialize<D: Deserializer<E> + ?Sized, E>: Sized {
         deserializer: &mut D,
         extension: &E,
     ) -> Result<Self, D::Error>;
+}
+
+/// A trait for types that can be used as seeds to deserialize other types.
+///
+/// This trait is an alternative to [`Deserialize`] that allows for stateful
+/// deserialization. The seed carries additional state or configuration that
+/// affects how the value is deserialized. This is particularly useful for
+/// scenarios where:
+///
+/// - The deserialization process needs configuration or context
+/// - You want to reuse allocation (e.g., deserializing into an existing buffer)
+/// - The target type cannot be determined statically
+/// - Custom deserialization logic is needed based on runtime conditions
+///
+/// # Examples
+///
+/// ```no_run
+/// # use pernixc_serialize::de::{DeserializeSeed, Deserializer};
+/// #
+/// struct StringSeed {
+///     max_length: usize,
+/// }
+///
+/// impl<D, E> DeserializeSeed<D, E> for StringSeed
+/// where
+///     D: Deserializer<E>,
+/// {
+///     type Value = String;
+///
+///     fn deserialize_seed(
+///         self,
+///         deserializer: &mut D,
+///         extension: &E,
+///     ) -> Result<Self::Value, D::Error> {
+///         let s = deserializer.expect_string()?;
+///         if s.len() > self.max_length {
+///             return Err(D::Error::custom(format!(
+///                 "string too long: {} > {}",
+///                 s.len(),
+///                 self.max_length
+///             )));
+///         }
+///         Ok(s)
+///     }
+/// }
+/// ```
+pub trait DeserializeSeed<D: Deserializer<E> + ?Sized, E>: Sized {
+    /// The type produced by using this seed.
+    type Value;
+
+    /// Deserialize a value using this seed.
+    ///
+    /// # Arguments
+    ///
+    /// * `deserializer` - The deserializer to read the value from
+    /// * `extension` - Additional context for deserialization
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be deserialized.
+    fn deserialize_seed(
+        self,
+        deserializer: &mut D,
+        extension: &E,
+    ) -> Result<Self::Value, D::Error>;
 }
 
 // =============================================================================
