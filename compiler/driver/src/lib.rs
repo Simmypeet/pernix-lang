@@ -14,7 +14,7 @@ use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
     runtime::{
-        persistence::{ReadAny, WriteAny},
+        persistence::{Persistence, ReadAny, WriteAny},
         serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
     },
     Key,
@@ -305,13 +305,6 @@ pub fn run(
         return ExitCode::FAILURE;
     };
 
-    let mut serde_extension = SerdeExtension::<
-        BinarySerializer<Box<dyn WriteAny>>,
-        BinaryDeserializer<Box<dyn ReadAny>>,
-    >::default();
-
-    pernixc_bootstrap::register_serde(&mut serde_extension);
-
     let target_name: SharedStr =
         argument.command.input().target_name.clone().map_or_else(
             || {
@@ -354,6 +347,24 @@ pub fn run(
         }
     }
 
+    let persistence =
+        argument.command.input().incremental_path.as_ref().map(|x| {
+            let mut serde_extension = SerdeExtension::<
+                BinarySerializer<Box<dyn WriteAny>>,
+                BinaryDeserializer<Box<dyn ReadAny>>,
+            >::default();
+
+            // register the serde extension with the persistence
+            pernixc_bootstrap::register_serde(&mut serde_extension);
+
+            let mut persistence =
+                Persistence::new(x.clone(), Arc::new(serde_extension));
+
+            pernixc_bootstrap::skip_persistence(&mut persistence);
+
+            persistence
+        });
+
     let token_trees_by_source_id = DashMap::default();
 
     let (engine, syntax_errors, init_semantic_errors) =
@@ -363,12 +374,7 @@ pub fn run(
             target_name,
             argument.command.input().library_paths.iter().map(PathBuf::as_path),
             &token_trees_by_source_id,
-            argument
-                .command
-                .input()
-                .incremental_path
-                .as_ref()
-                .map(|x| (x.clone(), Arc::new(serde_extension))),
+            persistence,
         ) {
             Ok(database) => database,
             Err(error) => {

@@ -1,9 +1,6 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
 use flexstr::SharedStr;
 use parking_lot::lock_api::RwLock;
@@ -12,18 +9,11 @@ use pernixc_hash::{DashMap, HashSet};
 use pernixc_query::{
     database::Database,
     runtime::{
-        executor,
-        persistence::{Persistence, ReadAny, WriteAny},
-        serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
-        Runtime,
+        executor, persistence::Persistence, serde::DynamicRegistry, Runtime,
     },
     Engine,
 };
-use pernixc_serialize::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
-    de::Deserializer,
-    ser::Serializer,
-};
+use pernixc_serialize::{de::Deserializer, ser::Serializer};
 use pernixc_source_file::{GlobalSourceID, SourceMap};
 use pernixc_target::TargetID;
 
@@ -75,14 +65,7 @@ pub enum HierarchyRelationship {
 }
 
 /// Setup the query database for the compilation process.
-pub fn bootstrap<
-    'l,
-    Ext: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
-        + DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
-        + Send
-        + Sync
-        + 'static,
->(
+pub fn bootstrap<'l>(
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
     target_name: SharedStr,
@@ -91,24 +74,25 @@ pub fn bootstrap<
         GlobalSourceID,
         pernixc_lexical::tree::Tree,
     >,
-    incremental_path: Option<(PathBuf, Arc<Ext>)>,
+    persistence: Option<Persistence>,
 ) -> Result<(Engine, Vec<tree::Error>, Vec<Diagnostic>), Error> {
     let (tree, errors) =
         tree::parse(root_source_id, source_map, token_trees_by_source_id);
 
     let generated_ids_rw = RwLock::new(HashSet::default());
-    let mut runtime = Runtime {
-        executor: executor::Registry::default(),
-        persistence: incremental_path.map(|(path, ext)| {
-            let mut persistence = Persistence::new(path, ext);
-            skip_persistence(&mut persistence);
-            persistence
-        }),
-    };
+    let mut runtime =
+        Runtime { executor: executor::Registry::default(), persistence };
 
     bootstrap_executor(&mut runtime.executor);
 
-    let engine = RwLock::new(Engine { database: Database::default(), runtime });
+    let database = runtime
+        .persistence
+        .as_mut()
+        .map_or_else(Database::default, |persistence| {
+            persistence.load_database().unwrap_or_default()
+        });
+
+    let engine = RwLock::new(Engine { database, runtime });
     let handler = Storage::<Diagnostic>::new();
 
     build::create_module(
@@ -171,13 +155,13 @@ pub fn register_serde<
 
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
-pub fn skip_persistence(serde_registry: &mut Persistence) {
-    serde_registry.register_skip_key::<syntax::FunctionSignatureKey>();
-    serde_registry.register_skip_key::<syntax::GenericParametersKey>();
-    serde_registry.register_skip_key::<syntax::WhereClauseKey>();
-    serde_registry.register_skip_key::<syntax::TypeAliasKey>();
-    serde_registry
+pub fn skip_persistence(persistence: &mut Persistence) {
+    persistence.register_skip_key::<syntax::FunctionSignatureKey>();
+    persistence.register_skip_key::<syntax::GenericParametersKey>();
+    persistence.register_skip_key::<syntax::WhereClauseKey>();
+    persistence.register_skip_key::<syntax::TypeAliasKey>();
+    persistence
         .register_skip_key::<syntax::ImplementationQualifiedIdentifierKey>();
-    serde_registry.register_skip_key::<syntax::StatementsKey>();
-    serde_registry.register_skip_key::<syntax::FieldsKey>();
+    persistence.register_skip_key::<syntax::StatementsKey>();
+    persistence.register_skip_key::<syntax::FieldsKey>();
 }

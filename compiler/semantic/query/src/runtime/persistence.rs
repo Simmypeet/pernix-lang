@@ -299,14 +299,7 @@ impl Persistence {
     }
 
     /// Loads the [`CallGraph`] from the persistence storage.
-    pub fn load_call_graph<
-        E: DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
-            + Send
-            + Sync
-            + 'static,
-    >(
-        &self,
-    ) -> Result<CallGraph, std::io::Error> {
+    pub fn load_call_graph(&self) -> Result<CallGraph, std::io::Error> {
         (self.deserialize_call_graph)(self.serde_extension.as_ref(), &self.path)
     }
 

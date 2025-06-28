@@ -10,7 +10,7 @@ use std::{
     fs::DirEntry,
     io::{BufReader, BufWriter},
     path::Path,
-    sync::{atomic::AtomicBool, Arc},
+    sync::Arc,
     thread::ThreadId,
 };
 
@@ -20,7 +20,6 @@ use parking_lot::{Condvar, MutexGuard, RwLock};
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
-    de::Deserializer,
     Deserialize, Serialize,
 };
 use pernixc_stable_hash::{StableHash, StableHasher};
@@ -229,11 +228,9 @@ impl CallGraph {
 
         let dependency_graph = RwLock::new(HashMap::default());
         let version_info_by_keys = RwLock::new(HashMap::default());
-        let mut version = (0, AtomicBool::new(false));
 
         let mut dependency_graph_result = Ok(());
         let mut version_infos_result = Ok(());
-        let mut version_result = Ok(());
 
         rayon::scope(|s| {
             // deserialize dependency graph
@@ -294,48 +291,10 @@ impl CallGraph {
                     extension,
                 );
             });
-
-            // deserialize version
-            s.spawn(|_| {
-                let mut version_file_path = base_path.to_path_buf();
-                version_file_path.push(CALL_GRAPH_DIRECTORY);
-                version_file_path.push("version.dat");
-
-                if !version_file_path.exists() {
-                    version_result = std::fs::write(
-                        &version_file_path,
-                        self::VERSION_INFO_BY_KEYS,
-                    );
-                    return;
-                }
-
-                let file = match std::fs::File::open(&version_file_path) {
-                    Ok(file) => file,
-                    Err(error) => {
-                        version_result = Err(error);
-                        return;
-                    }
-                };
-
-                let mut binary_deserializer =
-                    BinaryDeserializer::new(BufReader::new(file));
-
-                version_result =
-                    binary_deserializer.expect_tuple(2, &(), |mut x, ()| {
-                        use pernixc_serialize::de::TupleAccess;
-
-                        version.0 = x.next_element::<usize>(extension)?;
-                        version.1 =
-                            AtomicBool::new(x.next_element::<bool>(extension)?);
-
-                        Ok(())
-                    });
-            });
         });
 
         dependency_graph_result?;
         version_infos_result?;
-        version_result?;
 
         Ok(Self {
             record_stacks_by_thread_id: HashMap::default(),

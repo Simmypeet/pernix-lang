@@ -1,16 +1,21 @@
 //! Contains the definition of the [`Database`] struct.
 
-use std::{io::BufWriter, sync::atomic::AtomicBool};
+use std::{
+    io::{BufReader, BufWriter},
+    sync::atomic::AtomicBool,
+};
 
 use getset::CopyGetters;
 use parking_lot::Mutex;
 use pernixc_serialize::{
-    binary::ser::BinarySerializer,
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    de::{Deserializer as _, TupleAccess as _},
     ser::{Serializer, Tuple},
     Deserialize, Serialize,
 };
 
 use crate::{
+    database::map::Map,
     runtime::{
         persistence::Persistence,
         serde::{DynamicDeserialize, DynamicSerialize},
@@ -43,6 +48,57 @@ impl Database {
     /// Checks if the database contains a key.
     pub fn contains_key<K: Key>(&self, key: &K) -> bool {
         self.map.contains_key(key)
+    }
+}
+
+impl Persistence {
+    /// Loads the incremental compilation database from the persistence
+    /// storage, including the call graph and version information.
+    pub fn load_database(&self) -> Result<Database, std::io::Error> {
+        let mut call_graph = None;
+        let mut version = None;
+
+        rayon::scope(|s| {
+            s.spawn(|_| call_graph = Some(self.load_call_graph()));
+            s.spawn(|_| {
+                let mut version_file_path = self.path().to_path_buf();
+                version_file_path.push(Self::CALL_GRAPH_DIRECTORY);
+                version_file_path.push("version.dat");
+
+                let file = match std::fs::File::open(&version_file_path) {
+                    Ok(file) => file,
+                    Err(error) => {
+                        version = Some(Err(error));
+                        return;
+                    }
+                };
+
+                let mut binary_deserializer =
+                    BinaryDeserializer::new(BufReader::new(file));
+
+                version = Some(binary_deserializer.expect_tuple(
+                    2,
+                    &(),
+                    |mut x, extension| {
+                        let version = x.next_element::<usize>(extension)?;
+                        let last_was_query =
+                            AtomicBool::new(x.next_element::<bool>(extension)?);
+
+                        Ok((version, last_was_query))
+                    },
+                ));
+            });
+        });
+
+        let call_graph = call_graph.unwrap()?;
+        let version = version.unwrap()?;
+
+        Ok(Database {
+            map: Map::default(),
+            call_graph: Mutex::new(call_graph),
+            version: version.0,
+            last_was_query: version.1,
+        })
     }
 }
 
