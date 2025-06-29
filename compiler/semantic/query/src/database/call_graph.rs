@@ -622,6 +622,7 @@ impl Engine {
                     .copied()
                     .unwrap();
 
+                // load from the persistence if available
                 let value = self
                     .runtime
                     .persistence
@@ -632,12 +633,15 @@ impl Engine {
                     .flatten();
 
                 if let Some(value) = value {
+                    // save for the future use
+                    self.database.map.insert(key.clone(), value.clone());
+
                     return Ok(value);
                 }
 
                 let called_from = call_graph.called_from();
 
-                // the value hasn't been computed yet, so we need to compute it
+                // compute it again
                 let (computed_successfully, mut call_graph) = self.fresh_query(
                     key,
                     &key_smallbox,
