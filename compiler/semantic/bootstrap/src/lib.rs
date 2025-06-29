@@ -76,9 +76,6 @@ pub fn bootstrap<'l>(
     >,
     persistence: Option<Persistence>,
 ) -> Result<(Engine, Vec<tree::Error>, Vec<Diagnostic>), Error> {
-    let (tree, errors) =
-        tree::parse(root_source_id, source_map, token_trees_by_source_id);
-
     let generated_ids_rw = RwLock::new(HashSet::default());
     let mut runtime =
         Runtime { executor: executor::Registry::default(), persistence };
@@ -89,11 +86,14 @@ pub fn bootstrap<'l>(
         .persistence
         .as_mut()
         .map_or_else(Database::default, |persistence| {
-            dbg!(persistence.load_database()).unwrap_or_default()
+            persistence.load_database().unwrap_or_default()
         });
 
     let engine = RwLock::new(Engine { database, runtime });
     let handler = Storage::<Diagnostic>::new();
+
+    let (tree, errors) =
+        tree::parse(root_source_id, source_map, token_trees_by_source_id);
 
     build::create_module(
         &engine,
