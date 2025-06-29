@@ -1,5 +1,5 @@
 ---
-source: compiler/test/src/snapshot/mod.rs
+source: compiler/e2e/test/snapshot/mod.rs
 expression: assert_string
 ---
 stderr:
@@ -11,6 +11,15 @@ error: symbol `First` is already defined in the scope `main`
   ·
 5 │ public trait First:
   │              ^^^^^ redefinition here
+
+error: symbol `Second` is already defined in the scope `main`
+   ╭─ bootstrap/redifinition/main.pnx:13:17
+   │
+ 9 │ public trait Second:
+   │              ------ symbol `Second` is already defined here
+   ·
+13 │ public function Second():
+   │                 ^^^^^^ redefinition here
 
 
 

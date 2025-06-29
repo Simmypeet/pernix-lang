@@ -4,3 +4,11 @@ public trait First:
 
 public trait First:
     pass
+
+
+public trait Second:
+    pass
+
+
+public function Second():
+    pass
