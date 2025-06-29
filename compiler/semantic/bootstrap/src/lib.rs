@@ -76,24 +76,30 @@ pub fn bootstrap<'l>(
     >,
     persistence: Option<Persistence>,
 ) -> Result<(Engine, Vec<tree::Error>, Vec<Diagnostic>), Error> {
+    let ((tree, syntax_errors), engine) = rayon::join(
+        || tree::parse(root_source_id, source_map, token_trees_by_source_id),
+        || {
+            let mut runtime = Runtime {
+                executor: executor::Registry::default(),
+                persistence,
+            };
+
+            bootstrap_executor(&mut runtime.executor);
+
+            let database = runtime
+                .persistence
+                .as_mut()
+                .map_or_else(Database::default, |persistence| {
+                    persistence.load_database().unwrap_or_default()
+                });
+
+            Engine { database, runtime }
+        },
+    );
+
     let generated_ids_rw = RwLock::new(HashSet::default());
-    let mut runtime =
-        Runtime { executor: executor::Registry::default(), persistence };
-
-    bootstrap_executor(&mut runtime.executor);
-
-    let database = runtime
-        .persistence
-        .as_mut()
-        .map_or_else(Database::default, |persistence| {
-            persistence.load_database().unwrap_or_default()
-        });
-
-    let engine = RwLock::new(Engine { database, runtime });
+    let engine = RwLock::new(engine);
     let handler = Storage::<Diagnostic>::new();
-
-    let (tree, errors) =
-        tree::parse(root_source_id, source_map, token_trees_by_source_id);
 
     build::create_module(
         &engine,
@@ -114,7 +120,7 @@ pub fn bootstrap<'l>(
         }),
     );
 
-    Ok((engine, errors, handler.into_vec()))
+    Ok((engine, syntax_errors, handler.into_vec()))
 }
 
 fn bootstrap_executor(executor: &mut executor::Registry) {
