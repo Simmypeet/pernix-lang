@@ -29,3 +29,10 @@ public trait RedefinitionInTrait:
 
     public const FIFTH: int32
     public type FIFTH
+
+
+public enum RedefinitionInEnum:
+    First
+    Second
+    First(int32)
+    Second(int32)

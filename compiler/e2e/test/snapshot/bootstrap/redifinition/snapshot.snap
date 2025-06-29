@@ -61,6 +61,24 @@ error: symbol `FIFTH` is already defined in the scope `main::RedefinitionInTrait
 31 │     public type FIFTH
    │                 ^^^^^ redefinition here
 
+error: symbol `First` is already defined in the scope `main::RedefinitionInEnum`
+   ╭─ bootstrap/redifinition/main.pnx:37:5
+   │
+35 │     First
+   │     ----- symbol `First` is already defined here
+36 │     Second
+37 │     First(int32)
+   │     ^^^^^ redefinition here
+
+error: symbol `Second` is already defined in the scope `main::RedefinitionInEnum`
+   ╭─ bootstrap/redifinition/main.pnx:38:5
+   │
+36 │     Second
+   │     ------ symbol `Second` is already defined here
+37 │     First(int32)
+38 │     Second(int32)
+   │     ^^^^^^ redefinition here
+
 
 
 stdout:
