@@ -5,7 +5,7 @@ use std::{fs::File, path::PathBuf, process::ExitCode, sync::Arc};
 use argument::Arguments;
 use clap::Args;
 use codespan_reporting::{
-    diagnostic::{Diagnostic, Label},
+    diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
 use flexstr::SharedStr;
@@ -298,6 +298,73 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicRegistry<S, D>
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SortableDiagnostic(Diagnostic<GlobalSourceID>);
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+const fn cmp_label_style(a: &LabelStyle, b: &LabelStyle) -> std::cmp::Ordering {
+    match (a, b) {
+        (LabelStyle::Primary, LabelStyle::Primary) => std::cmp::Ordering::Equal,
+        (LabelStyle::Primary, LabelStyle::Secondary) => {
+            std::cmp::Ordering::Less
+        }
+        (LabelStyle::Secondary, LabelStyle::Primary) => {
+            std::cmp::Ordering::Greater
+        }
+        (LabelStyle::Secondary, LabelStyle::Secondary) => {
+            std::cmp::Ordering::Equal
+        }
+    }
+}
+
+fn cmp_label(
+    a: &Label<GlobalSourceID>,
+    b: &Label<GlobalSourceID>,
+) -> std::cmp::Ordering {
+    cmp_label_style(&a.style, &b.style)
+        .then_with(|| a.file_id.cmp(&b.file_id))
+        .then_with(|| a.range.start.cmp(&b.range.start))
+        .then_with(|| a.range.end.cmp(&b.range.end))
+        .then_with(|| a.message.cmp(&b.message))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComparableLabel<'a>(pub &'a Label<GlobalSourceID>);
+
+impl PartialOrd for ComparableLabel<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ComparableLabel<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        cmp_label(self.0, other.0)
+    }
+}
+
+impl PartialOrd for SortableDiagnostic {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SortableDiagnostic {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .severity
+            .cmp(&other.0.severity)
+            .then_with(|| {
+                self.0
+                    .labels
+                    .iter()
+                    .map(ComparableLabel)
+                    .cmp(other.0.labels.iter().map(ComparableLabel))
+            })
+            .then_with(|| self.0.message.cmp(&other.0.message))
+    }
+}
+
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
@@ -377,7 +444,7 @@ pub fn run(
 
     let token_trees_by_source_id = DashMap::default();
 
-    let (engine, syntax_errors, init_semantic_errors) =
+    let (engine, bootstrap_errors, init_semantic_errors) =
         match pernixc_bootstrap::bootstrap(
             &mut source_map,
             root_source_id,
@@ -412,7 +479,8 @@ pub fn run(
             }
         };
 
-    for diagnostic in &syntax_errors {
+    let mut semantic_diagnostics = Vec::new();
+    for diagnostic in &bootstrap_errors {
         let codespan_reporting = match diagnostic {
             pernixc_bootstrap::tree::Error::Lexical(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
@@ -450,7 +518,7 @@ pub fn run(
             ),
         };
 
-        report_term.report(&mut source_map, &codespan_reporting);
+        semantic_diagnostics.push(SortableDiagnostic(codespan_reporting));
     }
 
     for diagnostic in &init_semantic_errors {
@@ -461,7 +529,13 @@ pub fn run(
             &token_trees_by_source_id,
         );
 
-        report_term.report(&mut source_map, &codespan_reporting);
+        semantic_diagnostics.push(SortableDiagnostic(codespan_reporting));
+    }
+
+    semantic_diagnostics.sort_unstable();
+
+    for diagnostic in semantic_diagnostics {
+        report_term.report(&mut source_map, &diagnostic.0);
     }
 
     // save the database to the incremental path if it exists

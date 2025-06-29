@@ -21,6 +21,30 @@ error: symbol `Second` is already defined in the scope `main`
 13 │ public function Second():
    │                 ^^^^^^ redefinition here
 
+error: symbol `first` is already defined in the scope `main::RedefinitionInTrait`
+   ╭─ bootstrap/redifinition/main.pnx:19:21
+   │
+18 │     public function first()
+   │                     ----- symbol `first` is already defined here
+19 │     public function first()
+   │                     ^^^^^ redefinition here
+
+error: symbol `Second` is already defined in the scope `main::RedefinitionInTrait`
+   ╭─ bootstrap/redifinition/main.pnx:22:17
+   │
+21 │     public type Second
+   │                 ------ symbol `Second` is already defined here
+22 │     public type Second
+   │                 ^^^^^^ redefinition here
+
+error: symbol `THIRD` is already defined in the scope `main::RedefinitionInTrait`
+   ╭─ bootstrap/redifinition/main.pnx:25:17
+   │
+24 │     public type THIRD
+   │                 ----- symbol `THIRD` is already defined here
+25 │     public type THIRD
+   │                 ^^^^^ redefinition here
+
 
 
 stdout:

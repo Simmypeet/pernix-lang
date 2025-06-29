@@ -12,3 +12,14 @@ public trait Second:
 
 public function Second():
     pass
+
+
+public trait RedefinitionInTrait:
+    public function first()
+    public function first()
+
+    public type Second
+    public type Second
+
+    public type THIRD
+    public type THIRD
