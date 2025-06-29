@@ -2,7 +2,6 @@
 
 pub mod executor;
 pub mod persistence;
-pub mod serde;
 
 /// Represents the runtime environment for the query system.
 ///

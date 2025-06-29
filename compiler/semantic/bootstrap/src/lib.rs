@@ -9,7 +9,9 @@ use pernixc_hash::{DashMap, HashSet};
 use pernixc_query::{
     database::Database,
     runtime::{
-        executor, persistence::Persistence, serde::DynamicRegistry, Runtime,
+        executor,
+        persistence::{serde::DynamicRegistry, Persistence},
+        Runtime,
     },
     Engine,
 };

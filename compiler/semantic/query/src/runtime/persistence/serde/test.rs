@@ -9,7 +9,7 @@ use pernixc_stable_type_id::Identifiable;
 
 use crate::{
     database::map::Map,
-    runtime::serde::{DynamicRegistry, SelfRegistry},
+    runtime::persistence::serde::{DynamicRegistry, SelfRegistry},
     Key,
 };
 
@@ -340,8 +340,7 @@ fn dynamic_box_basic_round_trip() {
     let mut deserializer =
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
     let deserialized_variable_box: DynamicBox =
-        DynamicBox::deserialize(&mut deserializer, &serde_registry)
-            .unwrap();
+        DynamicBox::deserialize(&mut deserializer, &serde_registry).unwrap();
 
     // Verify the deserialized dynamic box contains the correct value
     assert_eq!(
@@ -367,8 +366,7 @@ fn dynamic_box_basic_round_trip() {
     let mut deserializer =
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
     let deserialized_constant_box: DynamicBox =
-        DynamicBox::deserialize(&mut deserializer, &serde_registry)
-            .unwrap();
+        DynamicBox::deserialize(&mut deserializer, &serde_registry).unwrap();
 
     // Verify the deserialized dynamic box contains the correct value
     assert_eq!(
@@ -404,9 +402,7 @@ fn dynamic_box_multiple_types_round_trip() {
     for dynamic_box in &dynamic_boxes {
         let mut buffer = Vec::new();
         let mut binary_serializer = BinarySerializer::new(buffer);
-        dynamic_box
-            .serialize(&mut binary_serializer, &serde_registry)
-            .unwrap();
+        dynamic_box.serialize(&mut binary_serializer, &serde_registry).unwrap();
 
         buffer = binary_serializer.into_inner();
 
@@ -562,9 +558,7 @@ fn dynamic_box_generic_types_round_trip() {
     for dynamic_box in &dynamic_boxes {
         let mut buffer = Vec::new();
         let mut binary_serializer = BinarySerializer::new(buffer);
-        dynamic_box
-            .serialize(&mut binary_serializer, &serde_registry)
-            .unwrap();
+        dynamic_box.serialize(&mut binary_serializer, &serde_registry).unwrap();
 
         buffer = binary_serializer.into_inner();
 
@@ -659,9 +653,7 @@ fn dynamic_box_mixed_generic_and_simple_types_round_trip() {
     for dynamic_box in &dynamic_boxes {
         let mut buffer = Vec::new();
         let mut binary_serializer = BinarySerializer::new(buffer);
-        dynamic_box
-            .serialize(&mut binary_serializer, &serde_registry)
-            .unwrap();
+        dynamic_box.serialize(&mut binary_serializer, &serde_registry).unwrap();
 
         buffer = binary_serializer.into_inner();
 

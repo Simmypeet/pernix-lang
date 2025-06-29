@@ -16,9 +16,9 @@ use pernixc_serialize::{
 
 use crate::{
     database::map::Map,
-    runtime::{
-        persistence::Persistence,
+    runtime::persistence::{
         serde::{DynamicDeserialize, DynamicSerialize},
+        Persistence,
     },
     Engine, Key,
 };

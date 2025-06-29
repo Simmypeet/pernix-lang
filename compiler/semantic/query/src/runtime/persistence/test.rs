@@ -7,9 +7,9 @@ use pernixc_stable_hash::StableHash;
 use crate::{
     database::map::Map,
     fingerprint,
-    runtime::{
-        persistence::Persistence,
+    runtime::persistence::{
         serde::{DynamicRegistry, SelfRegistry},
+        Persistence,
     },
 };
 

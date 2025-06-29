@@ -21,9 +21,11 @@ use redb::TableDefinition;
 use crate::{
     database::{call_graph::CallGraph, map::Map},
     fingerprint,
-    runtime::serde::{DynamicDeserialize, DynamicSerialize},
+    runtime::persistence::serde::{DynamicDeserialize, DynamicSerialize},
     Key,
 };
+
+pub mod serde;
 
 const TABLE: TableDefinition<u128, &[u8]> = TableDefinition::new("persistence");
 

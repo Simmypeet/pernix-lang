@@ -31,8 +31,10 @@ use crate::{
     key::{Dynamic, DynamicBox, Key},
     runtime::{
         executor::Executor,
-        persistence::{ReadAny, WriteAny},
-        serde::{DynamicDeserialize, DynamicSerialize},
+        persistence::{
+            serde::{DynamicDeserialize, DynamicSerialize},
+            ReadAny, WriteAny,
+        },
     },
     Engine,
 };

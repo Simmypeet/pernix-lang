@@ -230,7 +230,7 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
 }
 
 impl<S: Serializer<E>, E> SerializationHelper<S, E> {
-    pub(crate) fn serialize_any_value(
+    pub(super) fn serialize_any_value(
         &self,
         value: &dyn Any,
         serializer: &mut S,
@@ -239,7 +239,7 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
         (self.value_serializer)(value, serializer, extension)
     }
 
-    pub(crate) fn serialize_fingerprint_map(
+    pub(super) fn serialize_fingerprint_map(
         &self,
         map: &Map,
         create_serializer: &(dyn Send + Sync + Fn() -> Result<S, S::Error>),

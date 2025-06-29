@@ -14,8 +14,10 @@ use crate::{
     database::Database,
     runtime::{
         executor::{CyclicError, Executor},
-        persistence::Persistence,
-        serde::{DynamicRegistry as _, SelfRegistry},
+        persistence::{
+            serde::{DynamicRegistry as _, SelfRegistry},
+            Persistence,
+        },
     },
     Engine,
 };
