@@ -201,14 +201,160 @@ pub(super) fn create_module(
                 );
             }
 
+            pernixc_syntax::item::module::Member::Struct(st) => {
+                let Some(identifier) =
+                    st.signature().and_then(|x| x.identifier())
+                else {
+                    continue;
+                };
+
+                let id = add_symbol(
+                    engine_rw,
+                    identifier,
+                    Kind::Struct,
+                    current_module_id,
+                    &mut members,
+                    &mut redefinitions,
+                    generated_ids_rw,
+                    handler,
+                );
+
+                let mut engine_write = engine_rw.write();
+                let global_id = TargetID::Local.make_global(id);
+
+                engine_write.database.set_input(
+                    &syntax::FieldsKey(global_id),
+                    syntax::Fields(st.body().and_then(|x| x.members())),
+                );
+                engine_write.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(
+                        st.signature().and_then(|x| x.generic_parameters()),
+                    ),
+                );
+                engine_write.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(st.body().and_then(|x| {
+                        x.where_clause().and_then(|x| x.predicates())
+                    })),
+                );
+            }
+
+            pernixc_syntax::item::module::Member::Enum(en) => {
+                let Some(identifier) =
+                    en.signature().and_then(|x| x.identifier())
+                else {
+                    continue;
+                };
+
+                let id = add_symbol(
+                    engine_rw,
+                    identifier,
+                    Kind::Enum,
+                    current_module_id,
+                    &mut members,
+                    &mut redefinitions,
+                    generated_ids_rw,
+                    handler,
+                );
+
+                let mut engine_write = engine_rw.write();
+                let global_id = TargetID::Local.make_global(id);
+
+                engine_write.database.set_input(
+                    &member::Key(global_id),
+                    Arc::new(member::Member::default()),
+                );
+                engine_write.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(
+                        en.signature().and_then(|x| x.generic_parameters()),
+                    ),
+                );
+                engine_write.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(en.body().and_then(|x| {
+                        x.where_clause().and_then(|x| x.predicates())
+                    })),
+                );
+            }
+
+            pernixc_syntax::item::module::Member::Constant(cn) => {
+                let Some(identifier) =
+                    cn.signature().and_then(|x| x.identifier())
+                else {
+                    continue;
+                };
+
+                let id = add_symbol(
+                    engine_rw,
+                    identifier,
+                    Kind::Constant,
+                    current_module_id,
+                    &mut members,
+                    &mut redefinitions,
+                    generated_ids_rw,
+                    handler,
+                );
+
+                let mut engine_write = engine_rw.write();
+                let global_id = TargetID::Local.make_global(id);
+
+                engine_write.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(
+                        cn.signature().and_then(|x| x.generic_parameters()),
+                    ),
+                );
+                engine_write.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(cn.body().and_then(|x| {
+                        x.trailing_where_clause().and_then(|x| {
+                            x.where_clause().and_then(|x| x.predicates())
+                        })
+                    })),
+                );
+            }
+
+            pernixc_syntax::item::module::Member::Marker(ma) => {
+                let Some(identifier) =
+                    ma.signature().and_then(|x| x.identifier())
+                else {
+                    continue;
+                };
+
+                let id = add_symbol(
+                    engine_rw,
+                    identifier,
+                    Kind::Marker,
+                    current_module_id,
+                    &mut members,
+                    &mut redefinitions,
+                    generated_ids_rw,
+                    handler,
+                );
+
+                let mut engine_write = engine_rw.write();
+                let global_id = TargetID::Local.make_global(id);
+
+                engine_write.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(
+                        ma.signature().and_then(|x| x.generic_parameters()),
+                    ),
+                );
+                engine_write.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(ma.trailing_where_clause().and_then(
+                        |x| x.where_clause().and_then(|x| x.predicates()),
+                    )),
+                );
+            }
+
             pernixc_syntax::item::module::Member::Import(_)
             | pernixc_syntax::item::module::Member::Module(_)
-            | pernixc_syntax::item::module::Member::Struct(_)
             | pernixc_syntax::item::module::Member::Implements(_)
-            | pernixc_syntax::item::module::Member::Enum(_)
-            | pernixc_syntax::item::module::Member::Constant(_)
-            | pernixc_syntax::item::module::Member::Extern(_)
-            | pernixc_syntax::item::module::Member::Marker(_) => {}
+            | pernixc_syntax::item::module::Member::Extern(_) => {}
         }
     }
 
