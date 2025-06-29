@@ -109,6 +109,7 @@ pub fn bootstrap<'l>(
         target_name,
         tree,
         None,
+        &[],
         &handler,
     );
 

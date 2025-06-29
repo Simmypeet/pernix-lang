@@ -13,6 +13,7 @@ use pernixc_target::{Global, TargetID};
 use crate::{
     kind::{Ext as _, Kind},
     member::Ext as _,
+    name::Ext as _,
     symbol,
     target::Ext as _,
     HierarchyRelationship,
@@ -61,10 +62,13 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             .query(&IntermediateKey(key.0.target_id))
             .expect("should have no cyclic dependencies");
 
-        let parent_id = intermediate
-            .get(&key.0.id)
-            .copied()
-            .expect("this symbol doesn't have a parent");
+        let parent_id =
+            intermediate.get(&key.0.id).copied().unwrap_or_else(|| {
+                panic!(
+                    "symbol `{}` doesn't have a parent",
+                    engine.get_name(key.0).0
+                );
+            });
 
         Ok(Parent(Some(parent_id)))
     }
