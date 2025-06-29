@@ -62,7 +62,7 @@ pub struct GenericParameters(
     unwrap("should have no cyclic dependencies"),
     trait(TypeAliasExt)
 )]
-pub struct TypeAlias(pub pernixc_syntax::r#type::Type);
+pub struct TypeAlias(pub Option<pernixc_syntax::r#type::Type>);
 
 /// The qualified identifier that can be found in the `implements[...]
 /// QUALIFIED_IDENTIFIER` syntax of the implementation symbols such as trait

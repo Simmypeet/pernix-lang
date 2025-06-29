@@ -91,9 +91,24 @@ pub(super) fn create_module(
                     handler,
                 );
 
-                engine_rw.write().database.set_input(
-                    &member::Key(TargetID::Local.make_global(id)),
+                let global_id = TargetID::Local.make_global(id);
+                let mut engine_write = engine_rw.write();
+
+                engine_write.database.set_input(
+                    &member::Key(global_id),
                     Arc::new(Member::default()),
+                );
+                engine_write.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(
+                        tr.signature().and_then(|x| x.generic_parameters()),
+                    ),
+                );
+                engine_write.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(tr.body().and_then(|x| {
+                        x.where_clause().and_then(|x| x.predicates())
+                    })),
                 );
             }
 
@@ -115,15 +130,11 @@ pub(super) fn create_module(
                     handler,
                 );
 
-                engine_rw.write().database.set_input(
-                    &member::Key(TargetID::Local.make_global(id)),
-                    Arc::new(Member::default()),
-                );
+                let mut engine_write = engine_rw.write();
+                let global_id = TargetID::Local.make_global(id);
 
-                engine_rw.write().database.set_input(
-                    &syntax::FunctionSignatureKey(
-                        TargetID::Local.make_global(id),
-                    ),
+                engine_write.database.set_input(
+                    &syntax::FunctionSignatureKey(global_id),
                     syntax::FunctionSignature {
                         parameters: f.signature().and_then(|x| x.parameters()),
                         return_type: f
@@ -131,11 +142,67 @@ pub(super) fn create_module(
                             .and_then(|x| x.return_type()),
                     },
                 );
+                engine_write.database.set_input(
+                    &syntax::StatementsKey(global_id),
+                    syntax::Statements(f.body().and_then(|x| x.members())),
+                );
+                engine_write.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(
+                        f.signature().and_then(|x| x.generic_parameters()),
+                    ),
+                );
+                engine_write.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(f.body().and_then(|x| {
+                        x.where_clause().and_then(|x| x.predicates())
+                    })),
+                );
+            }
+
+            pernixc_syntax::item::module::Member::Type(ty) => {
+                let Some(identifier) =
+                    ty.signature().and_then(|x| x.identifier())
+                else {
+                    continue;
+                };
+
+                let id = add_symbol(
+                    engine_rw,
+                    identifier,
+                    Kind::Type,
+                    current_module_id,
+                    &mut members,
+                    &mut redefinitions,
+                    generated_ids_rw,
+                    handler,
+                );
+
+                let mut engine_write = engine_rw.write();
+                let global_id = TargetID::Local.make_global(id);
+
+                engine_write.database.set_input(
+                    &syntax::TypeAliasKey(global_id),
+                    syntax::TypeAlias(ty.body().and_then(|x| x.r#type())),
+                );
+                engine_write.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(
+                        ty.signature().and_then(|x| x.generic_parameters()),
+                    ),
+                );
+                engine_write.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(ty.body().and_then(|x| {
+                        x.trailing_where_clause().and_then(|x| {
+                            x.where_clause().and_then(|x| x.predicates())
+                        })
+                    })),
+                );
             }
 
             pernixc_syntax::item::module::Member::Import(_)
             | pernixc_syntax::item::module::Member::Module(_)
-            | pernixc_syntax::item::module::Member::Type(_)
             | pernixc_syntax::item::module::Member::Struct(_)
             | pernixc_syntax::item::module::Member::Implements(_)
             | pernixc_syntax::item::module::Member::Enum(_)
