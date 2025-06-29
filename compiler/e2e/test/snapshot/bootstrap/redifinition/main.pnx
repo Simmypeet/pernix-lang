@@ -21,5 +21,11 @@ public trait RedefinitionInTrait:
     public type Second
     public type Second
 
-    public type THIRD
-    public type THIRD
+    public const THIRD: int32
+    public const THIRD: int32
+
+    public function fourth()
+    public type fourth
+
+    public const FIFTH: int32
+    public type FIFTH
