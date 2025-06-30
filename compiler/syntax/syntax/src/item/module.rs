@@ -70,7 +70,7 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
     pub struct ParenthesizedImportItems {
-        pub items: ImportItems = ast::<ImportItems>(),
+        pub import_items: ImportItems = ast::<ImportItems>(),
     }
 }
 

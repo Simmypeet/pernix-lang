@@ -245,7 +245,7 @@ pub(super) fn insert_imports(
             ) => Some(import_items),
 
             pernixc_syntax::item::module::ImportItemsKind::Parenthesized(i) => {
-                i.items()
+                i.import_items()
             }
         };
 

@@ -90,15 +90,9 @@ impl Arbitrary for ImportItems {
 
 reference! {
     #[derive(Debug, Clone, derive_more::Display)]
-    #[display(
-        "({})",
-        items.iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )]
+    #[display("({import_items})")]
     pub struct ParenthesizedImportItems for super::ParenthesizedImportItems {
-        pub items (Vec<ImportItem>),
+        pub import_items (ImportItems),
     }
 }
 
@@ -107,8 +101,8 @@ impl Arbitrary for ParenthesizedImportItems {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(ImportItem::arbitrary(), 0..=6)
-            .prop_map(|items| Self { items })
+        ImportItems::arbitrary()
+            .prop_map(|import_items| Self { import_items })
             .boxed()
     }
 }
