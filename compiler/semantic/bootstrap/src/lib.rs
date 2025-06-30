@@ -117,7 +117,7 @@ pub fn bootstrap<'l>(
     );
 
     engine.database.set_input(
-        &target::TargetMapKey(()),
+        &target::MapKey(()),
         Arc::new(target::Map(
             std::iter::once((target_name.clone(), TargetID::Local)).collect(),
         )),
@@ -191,6 +191,7 @@ pub fn register_serde<
     serde_registry.register::<parent::Key>();
     serde_registry.register::<parent::IntermediateKey>();
     serde_registry.register::<target::Key>();
+    serde_registry.register::<target::MapKey>();
     serde_registry.register::<span::Key>();
     serde_registry.register::<import::Key>();
 

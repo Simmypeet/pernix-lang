@@ -128,14 +128,25 @@ fn visit_dirs(dir: &Path, cb: &mut dyn FnMut(&Path)) -> std::io::Result<()> {
     Ok(())
 }
 
-fn test(file_path: &Path) {
+fn run(arguments: Arguments) -> String {
     let mut err_writer =
         codespan_reporting::term::termcolor::NoColor::new(Vec::new());
     let mut out_writer =
         codespan_reporting::term::termcolor::NoColor::new(Vec::new());
 
+    let _ = pernixc_driver::run(arguments, &mut err_writer, &mut out_writer);
+
+    let stderr_string = String::from_utf8(err_writer.into_inner()).unwrap();
+    let stout_string = String::from_utf8(out_writer.into_inner()).unwrap();
+
+    format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}")
+}
+
+fn test(file_path: &Path) {
     let file = std::fs::File::open(file_path).unwrap();
     let buf_reader = std::io::BufReader::new(file);
+
+    let temp_dir = tempfile::tempdir().unwrap();
 
     // read for the custom cli interface starting with `##` comment
     let arguments = buf_reader.lines().next().map(|x| x.unwrap()).map_or_else(
@@ -153,8 +164,15 @@ fn test(file_path: &Path) {
         |mut first_line| {
             if first_line.starts_with("##") {
                 // replace the `{}` with the file path (if any) first_line =
-                first_line = first_line
-                    .replace("{}", file_path.to_string_lossy().as_ref());
+                first_line = first_line.replace(
+                    "$FILE_PATH",
+                    file_path.to_string_lossy().as_ref(),
+                );
+
+                first_line = first_line.replace(
+                    "$INCREMENTAL_PATH",
+                    temp_dir.path().to_string_lossy().as_ref(),
+                );
 
                 first_line.strip_prefix("##").unwrap();
 
@@ -175,10 +193,15 @@ fn test(file_path: &Path) {
         },
     );
 
-    let _ = pernixc_driver::run(arguments, &mut err_writer, &mut out_writer);
+    let clean_run = run(arguments.clone());
+    let with_incremental = run(arguments);
 
-    let stderr_string = String::from_utf8(err_writer.into_inner()).unwrap();
-    let stout_string = String::from_utf8(out_writer.into_inner()).unwrap();
+    assert!(
+        clean_run == with_incremental,
+        "The output of the clean run and the incremental run is \
+         different:\nClean run:\n{clean_run}\n\nIncremental \
+         run:\n{with_incremental}"
+    );
 
     let mut settings = insta::Settings::clone_current();
 
@@ -197,8 +220,5 @@ fn test(file_path: &Path) {
     settings.remove_snapshot_suffix();
     let _guard = settings.bind_to_scope();
 
-    let assert_string =
-        format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}");
-
-    assert_snapshot!("snapshot", assert_string);
+    assert_snapshot!("snapshot", clean_run);
 }

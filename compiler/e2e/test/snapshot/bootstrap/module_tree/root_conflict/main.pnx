@@ -1,4 +1,4 @@
-## check {} --target=main 
+## check $FILE_PATH --target main --inc $INCREMENTAL_PATH
 
 public module main
 

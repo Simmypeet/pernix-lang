@@ -56,7 +56,7 @@ pub struct Target {
 )]
 #[id(())]
 #[value(Arc<Map>)]
-#[key(TargetMapKey)]
+#[key(MapKey)]
 pub struct Map(pub HashMap<SharedStr, TargetID>);
 
 /// Extension trait related to retrieving the target information.
@@ -64,7 +64,6 @@ pub struct Map(pub HashMap<SharedStr, TargetID>);
 pub impl pernixc_query::Engine {
     /// Gets the map from the name of the target to its ID.
     fn get_target_map(&self) -> Arc<Map> {
-        self.query(&TargetMapKey(()))
-            .expect("should have no cyclic dependencies")
+        self.query(&MapKey(())).expect("should have no cyclic dependencies")
     }
 }
