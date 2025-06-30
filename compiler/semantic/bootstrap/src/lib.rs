@@ -126,19 +126,12 @@ pub fn bootstrap<'l>(
     let generated_ids_rw = RwLock::new(HashSet::default());
     let engine = RwLock::new(engine);
     let handler = Storage::<Box<dyn Diagnostic>>::new();
-
     let imports = DashMap::default();
 
-    build::create_module(
-        &engine,
-        &generated_ids_rw,
-        target_name,
-        tree,
-        None,
-        &[],
-        &imports,
-        &handler,
-    );
+    let context =
+        build::Context::new(&engine, &generated_ids_rw, &imports, &handler);
+
+    context.create_module(target_name, tree, None, &[]);
 
     engine.write().database.set_input(
         &target::Key(TargetID::Local),

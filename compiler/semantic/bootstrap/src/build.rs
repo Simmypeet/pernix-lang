@@ -3,6 +3,7 @@ use std::{
     sync::Arc,
 };
 
+use derive_new::new;
 use flexstr::SharedStr;
 use parking_lot::RwLock;
 use pernixc_handler::Handler;
@@ -274,677 +275,665 @@ pub(super) fn insert_imports(
     );
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-pub(super) fn create_trait<'s: 'scope, 'm, 'r, 'scope>(
-    engine_rw: &'s RwLock<Engine>,
-    generated_ids_rw: &'s RwLock<HashSet<symbol::ID>>,
-    tr: pernixc_syntax::item::r#trait::Trait,
-    current_module_id: symbol::ID,
-    current_module_names: &'s [SharedStr],
-    members: &mut HashMap<SharedStr, symbol::ID>,
-    redefinitions: &mut HashSet<symbol::ID>,
-    handler: &'s dyn Handler<Box<dyn Diagnostic>>,
-    scope: &rayon::Scope<'scope>,
-) {
-    let Some(identifier) = tr.signature().and_then(|x| x.identifier()) else {
-        return;
-    };
+pub(super) struct MemberBuilder<'a, 'm, 'r> {
+    current_names: &'a [SharedStr],
+    current_symbol_id: symbol::ID,
 
-    let trait_id = add_symbol(
-        engine_rw,
-        identifier.clone(),
-        current_module_names.iter().map(flexstr::FlexStr::as_str),
-        Kind::Trait,
-        current_module_id,
-        members,
-        redefinitions,
-        generated_ids_rw,
-        Some(syntax::GenericParameters(
-            tr.signature().and_then(|x| x.generic_parameters()),
-        )),
-        Some(syntax::WhereClause(
-            tr.body()
-                .and_then(|x| x.where_clause().and_then(|x| x.predicates())),
-        )),
-        Some(tr.access_modifier()),
-        handler,
-    );
+    member_ids_by_name: &'m mut HashMap<SharedStr, symbol::ID>,
+    redefinitions: &'r mut HashSet<symbol::ID>,
+}
 
-    scope.spawn(move |_| {
-        // spawn a parallel task to handle trait members
-        let mut members = HashMap::<SharedStr, symbol::ID>::default();
-        let mut redefinitions = HashSet::default();
+#[derive(typed_builder::TypedBuilder)]
+#[allow(clippy::option_option)]
+struct NewSymbol {
+    name: pernixc_syntax::Identifier,
+    symbol_kind: Kind,
 
-        let mut trait_names = current_module_names.to_vec();
-        trait_names.push(identifier.kind.0.clone());
+    #[builder(default, setter(strip_option))]
+    generic_parameters: Option<
+        Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
+    >,
 
-        for trait_member in tr
-            .body()
-            .and_then(|x| x.members())
-            .iter()
-            .flat_map(pernixc_syntax::item::Members::members)
-            .filter_map(|x| x.into_line().ok())
-        {
-            match trait_member {
-                pernixc_syntax::item::r#trait::Member::Type(ty) => {
-                    let Some(identifier) =
-                        ty.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
+    #[builder(default, setter(strip_option))]
+    where_clause:
+        Option<Option<pernixc_syntax::item::where_clause::Predicates>>,
 
-                    add_symbol(
-                        engine_rw,
-                        identifier,
-                        trait_names.iter().map(flexstr::FlexStr::as_str),
-                        Kind::TraitType,
-                        trait_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            ty.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(
-                            ty.trailing_where_clause().and_then(|x| {
-                                x.where_clause().and_then(|x| x.predicates())
-                            }),
-                        )),
-                        Some(ty.access_modifier()),
-                        handler,
-                    );
-                }
-                pernixc_syntax::item::r#trait::Member::Function(f) => {
-                    let Some(identifier) =
-                        f.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
+    #[builder(default, setter(strip_option))]
+    access_modifier: Option<Option<pernixc_syntax::AccessModifier>>,
+}
 
-                    let id = add_symbol(
-                        engine_rw,
-                        identifier,
-                        trait_names.iter().map(flexstr::FlexStr::as_str),
-                        Kind::TraitFunction,
-                        trait_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            f.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(
-                            f.trailing_where_clause().and_then(|x| {
-                                x.where_clause().and_then(|x| x.predicates())
-                            }),
-                        )),
-                        Some(f.access_modifier()),
-                        handler,
-                    );
+impl MemberBuilder<'_, '_, '_> {
+    fn add_symbol(
+        &mut self,
+        build_context: &Context,
+        new_symbol: NewSymbol,
+    ) -> symbol::ID {
+        let mut generated_ids =
+            build_context.generated_ids_rw.upgradable_read();
 
-                    let mut engine_write = engine_rw.write();
-                    let global_id = TargetID::Local.make_global(id);
+        let identifier_span = new_symbol.name.span;
 
-                    engine_write.database.set_input(
-                        &syntax::FunctionSignatureKey(global_id),
-                        syntax::FunctionSignature {
-                            parameters: f
-                                .signature()
-                                .and_then(|x| x.parameters()),
-                            return_type: f
-                                .signature()
-                                .and_then(|x| x.return_type()),
-                        },
-                    );
-                }
-                pernixc_syntax::item::r#trait::Member::Constant(cn) => {
-                    let Some(identifier) =
-                        cn.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
+        let id = generate_id(
+            self.current_names.iter().map(flexstr::FlexStr::as_str),
+            new_symbol.name.kind.0.as_str(),
+            &generated_ids,
+        );
 
-                    add_symbol(
-                        engine_rw,
-                        identifier,
-                        trait_names.iter().map(flexstr::FlexStr::as_str),
-                        Kind::TraitConstant,
-                        trait_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            cn.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(
-                            cn.trailing_where_clause().and_then(|x| {
-                                x.where_clause().and_then(|x| x.predicates())
-                            }),
-                        )),
-                        Some(cn.access_modifier()),
-                        handler,
-                    );
-                }
+        generated_ids.with_upgraded(|x| {
+            x.insert(id);
+        });
+
+        drop(generated_ids);
+
+        match self.member_ids_by_name.entry(new_symbol.name.kind.0.clone()) {
+            std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(id);
+            }
+            std::collections::hash_map::Entry::Occupied(occupied_entry) => {
+                build_context.handler.receive(Box::new(ItemRedifinition {
+                    existing_id: TargetID::Local
+                        .make_global(*occupied_entry.get()),
+                    new_id: TargetID::Local.make_global(id),
+                    in_id: TargetID::Local.make_global(self.current_symbol_id),
+                }));
+                self.redefinitions.insert(id);
             }
         }
 
-        // add the members to the module
-        let mut engine = engine_rw.write();
-        let global_id = TargetID::Local.make_global(trait_id);
-        engine.database.set_input(
-            &member::Key(global_id),
-            Arc::new(Member { member_ids_by_name: members, redefinitions }),
-        );
-    });
-}
-
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-pub(super) fn create_enum<'s: 'scope, 'm, 'r, 'scope>(
-    engine_rw: &'s RwLock<Engine>,
-    generated_ids_rw: &'s RwLock<HashSet<symbol::ID>>,
-    en: pernixc_syntax::item::r#enum::Enum,
-    current_module_id: symbol::ID,
-    current_module_names: &'s [SharedStr],
-    members: &mut HashMap<SharedStr, symbol::ID>,
-    redefinitions: &mut HashSet<symbol::ID>,
-    handler: &'s dyn Handler<Box<dyn Diagnostic>>,
-    scope: &rayon::Scope<'scope>,
-) {
-    let Some(identifier) = en.signature().and_then(|x| x.identifier()) else {
-        return;
-    };
-
-    let enum_id = add_symbol(
-        engine_rw,
-        identifier.clone(),
-        current_module_names.iter().map(flexstr::FlexStr::as_str),
-        Kind::Enum,
-        current_module_id,
-        members,
-        redefinitions,
-        generated_ids_rw,
-        Some(syntax::GenericParameters(
-            en.signature().and_then(|x| x.generic_parameters()),
-        )),
-        Some(syntax::WhereClause(
-            en.body()
-                .and_then(|x| x.where_clause().and_then(|x| x.predicates())),
-        )),
-        Some(en.access_modifier()),
-        handler,
-    );
-
-    scope.spawn(move |_| {
-        // spawn a parallel task to handle trait members
-        let mut members = HashMap::<SharedStr, symbol::ID>::default();
-        let mut redefinitions = HashSet::default();
-
-        let mut enum_names = current_module_names.to_vec();
-        enum_names.push(identifier.kind.0.clone());
-
-        for variant_syn in en
-            .body()
-            .and_then(|x| x.members())
-            .iter()
-            .flat_map(pernixc_syntax::item::Members::members)
-            .filter_map(|x| x.into_line().ok())
         {
-            let Some(identifier) = variant_syn.identifier() else {
-                continue;
-            };
-
-            let id = add_symbol(
-                engine_rw,
-                identifier.clone(),
-                enum_names.iter().map(flexstr::FlexStr::as_str),
-                Kind::Variant,
-                enum_id,
-                &mut members,
-                &mut redefinitions,
-                generated_ids_rw,
-                None,
-                None,
-                None,
-                handler,
-            );
-
-            let mut engine_write = engine_rw.write();
+            let mut engine = build_context.engine_rw.write();
             let global_id = TargetID::Local.make_global(id);
+            engine
+                .database
+                .set_input(&name::Key(global_id), Name(new_symbol.name.kind.0));
+            engine
+                .database
+                .set_input(&span::Key(global_id), Span(Some(identifier_span)));
+            engine
+                .database
+                .set_input(&kind::Key(global_id), new_symbol.symbol_kind);
 
-            engine_write.database.set_input(
-                &syntax::VariantKey(global_id),
-                syntax::Variant(variant_syn.association()),
-            );
+            if let Some(generic_parameters) = new_symbol.generic_parameters {
+                engine.database.set_input(
+                    &syntax::GenericParametersKey(global_id),
+                    syntax::GenericParameters(generic_parameters),
+                );
+            }
+
+            if let Some(where_clause) = new_symbol.where_clause {
+                engine.database.set_input(
+                    &syntax::WhereClauseKey(global_id),
+                    syntax::WhereClause(where_clause),
+                );
+            }
+
+            if let Some(access_modifier) = new_symbol.access_modifier {
+                let accessibility = match access_modifier {
+                    Some(pernixc_syntax::AccessModifier::Private(_)) => {
+                        Accessibility::Scoped(self.current_symbol_id)
+                    }
+                    Some(pernixc_syntax::AccessModifier::Internal(_)) => {
+                        Accessibility::Scoped(symbol::ID::ROOT_MODULE)
+                    }
+                    Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
+                        Accessibility::Public
+                    }
+                };
+
+                engine
+                    .database
+                    .set_input(&accessibility::Key(global_id), accessibility);
+            }
         }
 
-        // add the members to the module
-        let mut engine = engine_rw.write();
-        let global_id = TargetID::Local.make_global(enum_id);
-        engine.database.set_input(
-            &member::Key(global_id),
-            Arc::new(Member { member_ids_by_name: members, redefinitions }),
-        );
-    });
+        id
+    }
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
-pub(super) fn create_module(
-    engine_rw: &RwLock<Engine>,
-    generated_ids_rw: &RwLock<HashSet<symbol::ID>>,
-    name: SharedStr,
-    syntax_tree: tree::Tree,
-    parent_module_id: Option<symbol::ID>,
-    parent_names: &[SharedStr],
-    imports_by_global_id: &pernixc_hash::DashMap<
+#[derive(new)]
+pub(super) struct Context<'a> {
+    engine_rw: &'a RwLock<Engine>,
+    generated_ids_rw: &'a RwLock<HashSet<symbol::ID>>,
+    imports_by_global_id: &'a pernixc_hash::DashMap<
         symbol::ID,
         Vec<pernixc_syntax::item::module::Import>,
     >,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> symbol::ID {
-    // the id that will be assigned to the module
-    let mut current_module_names = parent_names.to_vec();
-    current_module_names.push(name.clone());
-
-    let current_module_id = parent_module_id.map_or_else(
-        || {
-            let id = symbol::ID::ROOT_MODULE;
-            generated_ids_rw.write().insert(id);
-            id
-        },
-        |_| {
-            let mut generated_ids = generated_ids_rw.upgradable_read();
-            let id = generate_id(
-                parent_names.iter().map(flexstr::FlexStr::as_str),
-                &name,
-                &generated_ids,
-            );
-
-            generated_ids.with_upgraded(|x| {
-                x.insert(id);
-            });
-
-            id
-        },
-    );
-
-    {
-        let mut engine = engine_rw.write();
-        engine.database.set_input(
-            &kind::Key(TargetID::Local.make_global(current_module_id)),
-            Kind::Module,
-        );
-        engine.database.set_input(
-            &name::Key(TargetID::Local.make_global(current_module_id)),
-            Name(name),
-        );
-        engine.database.set_input(
-            &accessibility::Key(TargetID::Local.make_global(current_module_id)),
-            match syntax_tree.access_modifier {
-                Some(AccessModifier::Internal(_)) => {
-                    Accessibility::Scoped(symbol::ID::ROOT_MODULE)
-                }
-                Some(AccessModifier::Private(_)) => Accessibility::Scoped(
-                    parent_module_id.unwrap_or(symbol::ID::ROOT_MODULE),
-                ),
-                Some(AccessModifier::Public(_)) | None => Accessibility::Public,
-            },
-        );
-    }
-
-    // make sure atleast has an empty import list
-    imports_by_global_id.entry(current_module_id).or_default();
-
-    let members = RwLock::new(HashMap::<SharedStr, symbol::ID>::default());
-    let mut redefinitions = HashSet::default();
-
-    syntax_tree.submodules_by_name.into_par_iter().for_each(|(name, tree)| {
-        let id = create_module(
-            engine_rw,
-            generated_ids_rw,
-            name.clone(),
-            tree,
-            Some(current_module_id),
-            &current_module_names,
-            imports_by_global_id,
-            handler,
-        );
-
-        assert!(
-            members.write().insert(name, id).is_none(),
-            "should've handled the redefinition earlier"
-        );
-    });
-
-    let mut members = members.into_inner();
-
-    rayon::scope(|s| {
-        for item in
-            syntax_tree.content.members().filter_map(|x| x.into_line().ok())
-        {
-            match item {
-                pernixc_syntax::item::module::Member::Trait(tr) => {
-                    create_trait(
-                        engine_rw,
-                        generated_ids_rw,
-                        tr,
-                        current_module_id,
-                        &current_module_names,
-                        &mut members,
-                        &mut redefinitions,
-                        handler,
-                        s,
-                    );
-                }
-
-                pernixc_syntax::item::module::Member::Function(f) => {
-                    let Some(identifier) =
-                        f.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
-
-                    let id = add_symbol(
-                        engine_rw,
-                        identifier,
-                        current_module_names
-                            .iter()
-                            .map(flexstr::FlexStr::as_str),
-                        Kind::Function,
-                        current_module_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            f.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(f.body().and_then(|x| {
-                            x.where_clause().and_then(|x| x.predicates())
-                        }))),
-                        Some(f.access_modifier()),
-                        handler,
-                    );
-
-                    let mut engine_write = engine_rw.write();
-                    let global_id = TargetID::Local.make_global(id);
-
-                    engine_write.database.set_input(
-                        &syntax::FunctionSignatureKey(global_id),
-                        syntax::FunctionSignature {
-                            parameters: f
-                                .signature()
-                                .and_then(|x| x.parameters()),
-                            return_type: f
-                                .signature()
-                                .and_then(|x| x.return_type()),
-                        },
-                    );
-                    engine_write.database.set_input(
-                        &syntax::StatementsKey(global_id),
-                        syntax::Statements(f.body().and_then(|x| x.members())),
-                    );
-                }
-
-                pernixc_syntax::item::module::Member::Type(ty) => {
-                    let Some(identifier) =
-                        ty.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
-
-                    let id = add_symbol(
-                        engine_rw,
-                        identifier,
-                        current_module_names
-                            .iter()
-                            .map(flexstr::FlexStr::as_str),
-                        Kind::Type,
-                        current_module_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            ty.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(ty.body().and_then(|x| {
-                            x.trailing_where_clause().and_then(|x| {
-                                x.where_clause().and_then(|x| x.predicates())
-                            })
-                        }))),
-                        Some(ty.access_modifier()),
-                        handler,
-                    );
-
-                    let mut engine_write = engine_rw.write();
-                    let global_id = TargetID::Local.make_global(id);
-
-                    engine_write.database.set_input(
-                        &syntax::TypeAliasKey(global_id),
-                        syntax::TypeAlias(ty.body().and_then(|x| x.r#type())),
-                    );
-                }
-
-                pernixc_syntax::item::module::Member::Struct(st) => {
-                    let Some(identifier) =
-                        st.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
-
-                    let id = add_symbol(
-                        engine_rw,
-                        identifier,
-                        current_module_names
-                            .iter()
-                            .map(flexstr::FlexStr::as_str),
-                        Kind::Struct,
-                        current_module_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            st.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(st.body().and_then(|x| {
-                            x.where_clause().and_then(|x| x.predicates())
-                        }))),
-                        Some(st.access_modifier()),
-                        handler,
-                    );
-
-                    let mut engine_write = engine_rw.write();
-                    let global_id = TargetID::Local.make_global(id);
-
-                    engine_write.database.set_input(
-                        &syntax::FieldsKey(global_id),
-                        syntax::Fields(st.body().and_then(|x| x.members())),
-                    );
-                }
-
-                pernixc_syntax::item::module::Member::Enum(en) => {
-                    create_enum(
-                        engine_rw,
-                        generated_ids_rw,
-                        en,
-                        current_module_id,
-                        &current_module_names,
-                        &mut members,
-                        &mut redefinitions,
-                        handler,
-                        s,
-                    );
-                }
-
-                pernixc_syntax::item::module::Member::Constant(cn) => {
-                    let Some(identifier) =
-                        cn.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
-
-                    add_symbol(
-                        engine_rw,
-                        identifier,
-                        current_module_names
-                            .iter()
-                            .map(flexstr::FlexStr::as_str),
-                        Kind::Constant,
-                        current_module_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            cn.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(cn.body().and_then(|x| {
-                            x.trailing_where_clause().and_then(|x| {
-                                x.where_clause().and_then(|x| x.predicates())
-                            })
-                        }))),
-                        Some(cn.access_modifier()),
-                        handler,
-                    );
-                }
-
-                pernixc_syntax::item::module::Member::Marker(ma) => {
-                    let Some(identifier) =
-                        ma.signature().and_then(|x| x.identifier())
-                    else {
-                        continue;
-                    };
-
-                    add_symbol(
-                        engine_rw,
-                        identifier,
-                        current_module_names
-                            .iter()
-                            .map(flexstr::FlexStr::as_str),
-                        Kind::Marker,
-                        current_module_id,
-                        &mut members,
-                        &mut redefinitions,
-                        generated_ids_rw,
-                        Some(syntax::GenericParameters(
-                            ma.signature().and_then(|x| x.generic_parameters()),
-                        )),
-                        Some(syntax::WhereClause(
-                            ma.trailing_where_clause().and_then(|x| {
-                                x.where_clause().and_then(|x| x.predicates())
-                            }),
-                        )),
-                        Some(ma.access_modifier()),
-                        handler,
-                    );
-                }
-
-                pernixc_syntax::item::module::Member::Import(im) => {
-                    imports_by_global_id
-                        .entry(current_module_id)
-                        .or_default()
-                        .push(im);
-                }
-
-                pernixc_syntax::item::module::Member::Module(_)
-                | pernixc_syntax::item::module::Member::Implements(_)
-                | pernixc_syntax::item::module::Member::Extern(_) => {}
-            }
-        }
-    });
-
-    // add the members to the module
-    {
-        let mut engine = engine_rw.write();
-        let global_id = TargetID::Local.make_global(current_module_id);
-        engine.database.set_input(
-            &member::Key(global_id),
-            Arc::new(Member { member_ids_by_name: members, redefinitions }),
-        );
-    }
-
-    current_module_id
+    handler: &'a dyn Handler<Box<dyn Diagnostic>>,
 }
 
-#[allow(clippy::too_many_arguments, clippy::option_option)]
-fn add_symbol<'a>(
-    engine: &RwLock<Engine>,
-    name: pernixc_syntax::Identifier,
-    parent_names: impl IntoIterator<Item = &'a str>,
-    symbol_kind: Kind,
-    parent_id: symbol::ID,
-    parent_members: &mut HashMap<SharedStr, symbol::ID>,
-    parent_redefinitions: &mut HashSet<symbol::ID>,
-    generated_ids_rw: &RwLock<HashSet<symbol::ID>>,
-    extract_generic_parameters: Option<syntax::GenericParameters>,
-    extract_where_clause: Option<syntax::WhereClause>,
-    access_modifier: Option<Option<pernixc_syntax::AccessModifier>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> symbol::ID {
-    let mut generated_ids = generated_ids_rw.upgradable_read();
-    let identifier_span = name.span;
+impl Context<'_> {
+    fn create_enum<'s: 'scope, 'scope>(
+        &'s self,
+        module_member: &mut MemberBuilder,
+        en: pernixc_syntax::item::r#enum::Enum,
+        scope: &rayon::Scope<'scope>,
+    ) {
+        let Some(identifier) = en.signature().and_then(|x| x.identifier())
+        else {
+            return;
+        };
 
-    let id = generate_id(parent_names, name.kind.0.as_str(), &generated_ids);
+        let enum_id = module_member.add_symbol(
+            self,
+            NewSymbol::builder()
+                .name(identifier.clone())
+                .symbol_kind(Kind::Enum)
+                .generic_parameters(
+                    en.signature().and_then(|x| x.generic_parameters()),
+                )
+                .where_clause(en.body().and_then(|x| {
+                    x.where_clause().and_then(|x| x.predicates())
+                }))
+                .access_modifier(en.access_modifier())
+                .build(),
+        );
 
-    generated_ids.with_upgraded(|x| {
-        x.insert(id);
-    });
+        let mut enum_names = module_member.current_names.to_vec();
+        enum_names.push(identifier.kind.0);
 
-    drop(generated_ids);
+        scope.spawn(move |_| {
+            // spawn a parallel task to handle trait members
+            let mut members = HashMap::<SharedStr, symbol::ID>::default();
+            let mut redefinitions = HashSet::default();
 
-    match parent_members.entry(name.kind.0.clone()) {
-        std::collections::hash_map::Entry::Vacant(vacant_entry) => {
-            vacant_entry.insert(id);
-        }
-        std::collections::hash_map::Entry::Occupied(occupied_entry) => {
-            handler.receive(Box::new(ItemRedifinition {
-                existing_id: TargetID::Local.make_global(*occupied_entry.get()),
-                new_id: TargetID::Local.make_global(id),
-                in_id: TargetID::Local.make_global(parent_id),
-            }));
-            parent_redefinitions.insert(id);
-        }
+            let mut member_builder = MemberBuilder {
+                current_names: &enum_names,
+                current_symbol_id: enum_id,
+                member_ids_by_name: &mut members,
+                redefinitions: &mut redefinitions,
+            };
+
+            for variant_syn in en
+                .body()
+                .and_then(|x| x.members())
+                .iter()
+                .flat_map(pernixc_syntax::item::Members::members)
+                .filter_map(|x| x.into_line().ok())
+            {
+                let Some(identifier) = variant_syn.identifier() else {
+                    continue;
+                };
+
+                let id = member_builder.add_symbol(
+                    self,
+                    NewSymbol::builder()
+                        .name(identifier.clone())
+                        .symbol_kind(Kind::Variant)
+                        .build(),
+                );
+
+                let mut engine_write = self.engine_rw.write();
+                let global_id = TargetID::Local.make_global(id);
+
+                engine_write.database.set_input(
+                    &syntax::VariantKey(global_id),
+                    syntax::Variant(variant_syn.association()),
+                );
+            }
+
+            // add the members to the module
+            let mut engine = self.engine_rw.write();
+            let global_id = TargetID::Local.make_global(enum_id);
+            engine.database.set_input(
+                &member::Key(global_id),
+                Arc::new(Member { member_ids_by_name: members, redefinitions }),
+            );
+        });
     }
 
-    {
-        let mut engine = engine.write();
-        let global_id = TargetID::Local.make_global(id);
-        engine.database.set_input(&name::Key(global_id), Name(name.kind.0));
-        engine
-            .database
-            .set_input(&span::Key(global_id), Span(Some(identifier_span)));
-        engine.database.set_input(&kind::Key(global_id), symbol_kind);
+    #[allow(clippy::too_many_lines)]
+    fn create_trait<'s: 'scope, 'scope>(
+        &'s self,
+        module_member: &mut MemberBuilder,
+        tr: pernixc_syntax::item::r#trait::Trait,
+        scope: &rayon::Scope<'scope>,
+    ) {
+        let Some(identifier) = tr.signature().and_then(|x| x.identifier())
+        else {
+            return;
+        };
 
-        if let Some(generic_parameters) = extract_generic_parameters {
+        let trait_id = module_member.add_symbol(
+            self,
+            NewSymbol::builder()
+                .name(identifier.clone())
+                .symbol_kind(Kind::Trait)
+                .generic_parameters(
+                    tr.signature().and_then(|x| x.generic_parameters()),
+                )
+                .where_clause(tr.body().and_then(|x| {
+                    x.where_clause().and_then(|x| x.predicates())
+                }))
+                .access_modifier(tr.access_modifier())
+                .build(),
+        );
+
+        let mut trait_names = module_member.current_names.to_vec();
+        trait_names.push(identifier.kind.0);
+
+        scope.spawn(move |_| {
+            // spawn a parallel task to handle trait members
+            let mut members = HashMap::<SharedStr, symbol::ID>::default();
+            let mut redefinitions = HashSet::default();
+
+            let mut trait_member_builder = MemberBuilder {
+                current_names: &trait_names,
+                current_symbol_id: trait_id,
+                member_ids_by_name: &mut members,
+                redefinitions: &mut redefinitions,
+            };
+
+            for trait_member in tr
+                .body()
+                .and_then(|x| x.members())
+                .iter()
+                .flat_map(pernixc_syntax::item::Members::members)
+                .filter_map(|x| x.into_line().ok())
+            {
+                match trait_member {
+                    pernixc_syntax::item::r#trait::Member::Type(ty) => {
+                        let Some(identifier) =
+                            ty.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        trait_member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier.clone())
+                                .symbol_kind(Kind::TraitType)
+                                .generic_parameters(
+                                    ty.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(
+                                    ty.trailing_where_clause()
+                                        .and_then(|x| x.where_clause())
+                                        .and_then(|x| x.predicates()),
+                                )
+                                .access_modifier(ty.access_modifier())
+                                .build(),
+                        );
+                    }
+                    pernixc_syntax::item::r#trait::Member::Function(f) => {
+                        let Some(identifier) =
+                            f.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        let id = trait_member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier.clone())
+                                .symbol_kind(Kind::TraitFunction)
+                                .generic_parameters(
+                                    f.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(
+                                    f.trailing_where_clause()
+                                        .and_then(|x| x.where_clause())
+                                        .and_then(|x| x.predicates()),
+                                )
+                                .access_modifier(f.access_modifier())
+                                .build(),
+                        );
+
+                        let mut engine_write = self.engine_rw.write();
+                        let global_id = TargetID::Local.make_global(id);
+
+                        engine_write.database.set_input(
+                            &syntax::FunctionSignatureKey(global_id),
+                            syntax::FunctionSignature {
+                                parameters: f
+                                    .signature()
+                                    .and_then(|x| x.parameters()),
+                                return_type: f
+                                    .signature()
+                                    .and_then(|x| x.return_type()),
+                            },
+                        );
+                    }
+                    pernixc_syntax::item::r#trait::Member::Constant(cn) => {
+                        let Some(identifier) =
+                            cn.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        trait_member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier.clone())
+                                .symbol_kind(Kind::TraitConstant)
+                                .generic_parameters(
+                                    cn.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(
+                                    cn.trailing_where_clause()
+                                        .and_then(|x| x.where_clause())
+                                        .and_then(|x| x.predicates()),
+                                )
+                                .access_modifier(cn.access_modifier())
+                                .build(),
+                        );
+                    }
+                }
+            }
+
+            // add the members to the module
+            let mut engine = self.engine_rw.write();
+            let global_id = TargetID::Local.make_global(trait_id);
             engine.database.set_input(
-                &syntax::GenericParametersKey(global_id),
-                generic_parameters,
+                &member::Key(global_id),
+                Arc::new(Member { member_ids_by_name: members, redefinitions }),
+            );
+        });
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn create_module(
+        &self,
+        name: SharedStr,
+        syntax_tree: tree::Tree,
+        parent_module_id: Option<symbol::ID>,
+        parent_names: &[SharedStr],
+    ) -> symbol::ID {
+        // the id that will be assigned to the module
+        let mut current_module_names = parent_names.to_vec();
+        current_module_names.push(name.clone());
+
+        let current_module_id = parent_module_id.map_or_else(
+            || {
+                let id = symbol::ID::ROOT_MODULE;
+                self.generated_ids_rw.write().insert(id);
+                id
+            },
+            |_| {
+                let mut generated_ids = self.generated_ids_rw.upgradable_read();
+                let id = generate_id(
+                    parent_names.iter().map(flexstr::FlexStr::as_str),
+                    &name,
+                    &generated_ids,
+                );
+
+                generated_ids.with_upgraded(|x| {
+                    x.insert(id);
+                });
+
+                id
+            },
+        );
+
+        {
+            let mut engine = self.engine_rw.write();
+            engine.database.set_input(
+                &kind::Key(TargetID::Local.make_global(current_module_id)),
+                Kind::Module,
+            );
+            engine.database.set_input(
+                &name::Key(TargetID::Local.make_global(current_module_id)),
+                Name(name),
+            );
+            engine.database.set_input(
+                &accessibility::Key(
+                    TargetID::Local.make_global(current_module_id),
+                ),
+                match syntax_tree.access_modifier {
+                    Some(AccessModifier::Internal(_)) => {
+                        Accessibility::Scoped(symbol::ID::ROOT_MODULE)
+                    }
+                    Some(AccessModifier::Private(_)) => Accessibility::Scoped(
+                        parent_module_id.unwrap_or(symbol::ID::ROOT_MODULE),
+                    ),
+                    Some(AccessModifier::Public(_)) | None => {
+                        Accessibility::Public
+                    }
+                },
             );
         }
 
-        if let Some(where_clause) = extract_where_clause {
-            engine
-                .database
-                .set_input(&syntax::WhereClauseKey(global_id), where_clause);
+        // make sure atleast has an empty import list
+        self.imports_by_global_id.entry(current_module_id).or_default();
+
+        let members = RwLock::new(HashMap::<SharedStr, symbol::ID>::default());
+        let mut redefinitions = HashSet::default();
+
+        syntax_tree.submodules_by_name.into_par_iter().for_each(
+            |(name, tree)| {
+                let id = self.create_module(
+                    name.clone(),
+                    tree,
+                    Some(current_module_id),
+                    &current_module_names,
+                );
+
+                assert!(
+                    members.write().insert(name, id).is_none(),
+                    "should've handled the redefinition earlier"
+                );
+            },
+        );
+
+        let mut members = members.into_inner();
+        let mut member_builder = MemberBuilder {
+            current_names: &current_module_names,
+            current_symbol_id: current_module_id,
+            member_ids_by_name: &mut members,
+            redefinitions: &mut redefinitions,
+        };
+
+        rayon::scope(|s| {
+            for item in
+                syntax_tree.content.members().filter_map(|x| x.into_line().ok())
+            {
+                match item {
+                    pernixc_syntax::item::module::Member::Trait(tr) => {
+                        self.create_trait(&mut member_builder, tr, s);
+                    }
+
+                    pernixc_syntax::item::module::Member::Function(f) => {
+                        let Some(identifier) =
+                            f.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        let id = member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier)
+                                .symbol_kind(Kind::Function)
+                                .generic_parameters(
+                                    f.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(f.body().and_then(|x| {
+                                    x.where_clause()
+                                        .and_then(|x| x.predicates())
+                                }))
+                                .access_modifier(f.access_modifier())
+                                .build(),
+                        );
+
+                        let mut engine_write = self.engine_rw.write();
+                        let global_id = TargetID::Local.make_global(id);
+
+                        engine_write.database.set_input(
+                            &syntax::FunctionSignatureKey(global_id),
+                            syntax::FunctionSignature {
+                                parameters: f
+                                    .signature()
+                                    .and_then(|x| x.parameters()),
+                                return_type: f
+                                    .signature()
+                                    .and_then(|x| x.return_type()),
+                            },
+                        );
+                        engine_write.database.set_input(
+                            &syntax::StatementsKey(global_id),
+                            syntax::Statements(
+                                f.body().and_then(|x| x.members()),
+                            ),
+                        );
+                    }
+
+                    pernixc_syntax::item::module::Member::Type(ty) => {
+                        let Some(identifier) =
+                            ty.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        let id = member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier)
+                                .symbol_kind(Kind::Type)
+                                .generic_parameters(
+                                    ty.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(ty.body().and_then(|x| {
+                                    x.trailing_where_clause().and_then(|x| {
+                                        x.where_clause()
+                                            .and_then(|x| x.predicates())
+                                    })
+                                }))
+                                .access_modifier(ty.access_modifier())
+                                .build(),
+                        );
+
+                        let mut engine_write = self.engine_rw.write();
+                        let global_id = TargetID::Local.make_global(id);
+
+                        engine_write.database.set_input(
+                            &syntax::TypeAliasKey(global_id),
+                            syntax::TypeAlias(
+                                ty.body().and_then(|x| x.r#type()),
+                            ),
+                        );
+                    }
+
+                    pernixc_syntax::item::module::Member::Struct(st) => {
+                        let Some(identifier) =
+                            st.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        let id = member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier)
+                                .symbol_kind(Kind::Struct)
+                                .generic_parameters(
+                                    st.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(st.body().and_then(|x| {
+                                    x.where_clause()
+                                        .and_then(|x| x.predicates())
+                                }))
+                                .access_modifier(st.access_modifier())
+                                .build(),
+                        );
+
+                        let mut engine_write = self.engine_rw.write();
+                        let global_id = TargetID::Local.make_global(id);
+
+                        engine_write.database.set_input(
+                            &syntax::FieldsKey(global_id),
+                            syntax::Fields(st.body().and_then(|x| x.members())),
+                        );
+                    }
+
+                    pernixc_syntax::item::module::Member::Enum(en) => {
+                        self.create_enum(&mut member_builder, en, s);
+                    }
+
+                    pernixc_syntax::item::module::Member::Constant(cn) => {
+                        let Some(identifier) =
+                            cn.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier)
+                                .symbol_kind(Kind::Constant)
+                                .generic_parameters(
+                                    cn.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(
+                                    cn.body()
+                                        .and_then(|x| x.trailing_where_clause())
+                                        .and_then(|x| x.where_clause())
+                                        .and_then(|x| x.predicates()),
+                                )
+                                .access_modifier(cn.access_modifier())
+                                .build(),
+                        );
+                    }
+
+                    pernixc_syntax::item::module::Member::Marker(ma) => {
+                        let Some(identifier) =
+                            ma.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        member_builder.add_symbol(
+                            self,
+                            NewSymbol::builder()
+                                .name(identifier)
+                                .symbol_kind(Kind::Marker)
+                                .generic_parameters(
+                                    ma.signature()
+                                        .and_then(|x| x.generic_parameters()),
+                                )
+                                .where_clause(
+                                    ma.trailing_where_clause()
+                                        .and_then(|x| x.where_clause())
+                                        .and_then(|x| x.predicates()),
+                                )
+                                .access_modifier(ma.access_modifier())
+                                .build(),
+                        );
+                    }
+
+                    pernixc_syntax::item::module::Member::Import(im) => {
+                        self.imports_by_global_id
+                            .entry(current_module_id)
+                            .or_default()
+                            .push(im);
+                    }
+
+                    pernixc_syntax::item::module::Member::Module(_)
+                    | pernixc_syntax::item::module::Member::Implements(_)
+                    | pernixc_syntax::item::module::Member::Extern(_) => {}
+                }
+            }
+        });
+
+        // add the members to the module
+        {
+            let mut engine = self.engine_rw.write();
+            let global_id = TargetID::Local.make_global(current_module_id);
+            engine.database.set_input(
+                &member::Key(global_id),
+                Arc::new(Member { member_ids_by_name: members, redefinitions }),
+            );
         }
 
-        if let Some(access_modifier) = access_modifier {
-            let accessibility = match access_modifier {
-                Some(pernixc_syntax::AccessModifier::Private(_)) => {
-                    Accessibility::Scoped(parent_id)
-                }
-                Some(pernixc_syntax::AccessModifier::Internal(_)) => {
-                    Accessibility::Scoped(symbol::ID::ROOT_MODULE)
-                }
-                Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
-                    Accessibility::Public
-                }
-            };
-
-            engine
-                .database
-                .set_input(&accessibility::Key(global_id), accessibility);
-        }
+        current_module_id
     }
-
-    id
 }
 
 fn generate_id<'a>(
