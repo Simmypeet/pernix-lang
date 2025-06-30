@@ -1,18 +1,22 @@
 //! Defines the [`Name`] type.
-
 use extend::ext;
 use flexstr::SharedStr;
+use pernixc_handler::Handler;
 use pernixc_query::{Engine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_syntax::{Identifier, SimplePath, SimplePathRoot};
 use pernixc_target::Global;
 
 use crate::{
+    accessibility::Ext as _,
+    diagnostic::{Diagnostic, SymbolIsNotAccessible, SymbolNotFound},
+    import::Ext as _,
     kind::Ext as _,
     member::Ext as _,
     parent::Ext as _,
     symbol::{self, ID},
-    target::MapExt as _,
+    target::{Ext as _, MapExt as _},
 };
 
 /// A simple name identifier given to a symbol.
@@ -105,5 +109,120 @@ pub impl Engine {
         }
 
         current_id
+    }
+
+    /// Resolves a [`SimplePath`] as a [`GlobalID`].
+    fn resolve_simple_path(
+        &self,
+        simple_path: &SimplePath,
+        referring_site: Global<symbol::ID>,
+        start_from_root: bool,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Option<Global<symbol::ID>> {
+        // simple path should always have root tough
+        let root: Global<symbol::ID> = match simple_path.root()? {
+            SimplePathRoot::Target(_) => {
+                Global::new(referring_site.target_id, ID::ROOT_MODULE)
+            }
+            SimplePathRoot::Identifier(ident) => {
+                if start_from_root {
+                    let target_map = self.get_target_map();
+                    let Some(target_id) = target_map
+                        .get(ident.kind.0.as_str())
+                        .copied()
+                        .filter(|x| {
+                            x == &referring_site.target_id || {
+                                let target =
+                                    self.get_target(referring_site.target_id);
+
+                                target.linked_targets.contains(x)
+                            }
+                        })
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_item_id: None,
+                            resolution_span: ident.span,
+                            name: ident.kind.0,
+                        }));
+
+                        return None;
+                    };
+
+                    Global::new(target_id, ID::ROOT_MODULE)
+                } else {
+                    let closet_module_id =
+                        self.get_closest_module_id(referring_site);
+
+                    let global_closest_module_id =
+                        Global::new(referring_site.target_id, closet_module_id);
+
+                    let Some(id) = self
+                        .get_members(global_closest_module_id)
+                        .member_ids_by_name
+                        .get(ident.kind.0.as_str())
+                        .map(|x| Global::new(referring_site.target_id, *x))
+                        .or_else(|| {
+                            self.get_imports(global_closest_module_id)
+                                .get(ident.kind.0.as_str())
+                                .map(|x| x.id)
+                        })
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_item_id: Some(global_closest_module_id),
+                            resolution_span: ident.span,
+                            name: ident.kind.0,
+                        }));
+
+                        return None;
+                    };
+
+                    id
+                }
+            }
+        };
+
+        self.resolve_sequence(
+            simple_path.subsequences().flat_map(|x| x.identifier().into_iter()),
+            referring_site,
+            root,
+            handler,
+        )
+    }
+
+    /// Resolves a sequence of identifier starting of from the given `root`.
+    fn resolve_sequence<'a>(
+        &self,
+        simple_path: impl Iterator<Item = Identifier>,
+        referring_site: Global<symbol::ID>,
+        root: Global<symbol::ID>,
+        handler: &dyn Handler<Box<dyn Diagnostic>>,
+    ) -> Option<Global<symbol::ID>> {
+        let mut lastest_resolution = root;
+        for identifier in simple_path {
+            let Some(new_id) = self
+                .get_member_of(lastest_resolution, identifier.kind.0.as_str())
+            else {
+                handler.receive(Box::new(SymbolNotFound {
+                    searched_item_id: Some(lastest_resolution),
+                    resolution_span: identifier.span,
+                    name: identifier.kind.0,
+                }));
+
+                return None;
+            };
+
+            // non-fatal error, no need to return early
+            if !self.symbol_accessible(referring_site, new_id) {
+                handler.receive(Box::new(SymbolIsNotAccessible {
+                    referring_site,
+                    referred: new_id,
+                    referred_span: identifier.span,
+                }));
+            }
+
+            lastest_resolution = new_id;
+        }
+
+        Some(lastest_resolution)
     }
 }

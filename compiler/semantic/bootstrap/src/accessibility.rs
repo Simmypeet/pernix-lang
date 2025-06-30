@@ -152,4 +152,53 @@ pub impl Engine {
             }
         }
     }
+
+    /// Checks if the `referred` is accessible from the `referring_site`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `None` if `referred` or `referring_site` is not a valid ID.
+    fn symbol_accessible(
+        &self,
+        referring_site: Global<symbol::ID>,
+        referred: Global<symbol::ID>,
+    ) -> bool {
+        let referred_accessibility = self.get_accessibility(referred);
+
+        self.is_accessible_from(
+            referring_site.id,
+            referred.target_id,
+            referred_accessibility,
+        )
+    }
+
+    /// Determines whether the given `referred` is accessible from the
+    /// `referring_site` as if the `referred` has the given
+    /// `referred_accessibility`.
+    fn is_accessible_from(
+        &self,
+        referring_site: symbol::ID,
+        referred_target_id: TargetID,
+        referred_accessibility: Accessibility<symbol::ID>,
+    ) -> bool {
+        match referred_accessibility {
+            Accessibility::Public => true,
+
+            Accessibility::Scoped(module_id) => {
+                let referring_site_module_id = self.get_closest_module_id(
+                    Global::new(referred_target_id, referring_site),
+                );
+
+                matches!(
+                    self.symbol_hierarchy_relationship(
+                        referred_target_id,
+                        module_id,
+                        referring_site_module_id,
+                    ),
+                    HierarchyRelationship::Parent
+                        | HierarchyRelationship::Equivalent
+                )
+            }
+        }
+    }
 }

@@ -31,4 +31,4 @@ use crate::symbol;
 )]
 #[id(Global<symbol::ID>)]
 #[ext(method(get_span), unwrap("should have no cyclic dependencies"))]
-pub struct Span(pub RelativeSpan);
+pub struct Span(pub Option<RelativeSpan>);

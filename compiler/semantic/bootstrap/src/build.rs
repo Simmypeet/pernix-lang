@@ -29,7 +29,7 @@ pub(super) fn create_trait<'s: 'scope, 'm, 'r, 'scope>(
     current_module_names: &'s [SharedStr],
     members: &mut HashMap<SharedStr, symbol::ID>,
     redefinitions: &mut HashSet<symbol::ID>,
-    handler: &'s dyn Handler<Diagnostic>,
+    handler: &'s dyn Handler<Box<dyn Diagnostic>>,
     scope: &rayon::Scope<'scope>,
 ) {
     let Some(identifier) = tr.signature().and_then(|x| x.identifier()) else {
@@ -189,7 +189,7 @@ pub(super) fn create_enum<'s: 'scope, 'm, 'r, 'scope>(
     current_module_names: &'s [SharedStr],
     members: &mut HashMap<SharedStr, symbol::ID>,
     redefinitions: &mut HashSet<symbol::ID>,
-    handler: &'s dyn Handler<Diagnostic>,
+    handler: &'s dyn Handler<Box<dyn Diagnostic>>,
     scope: &rayon::Scope<'scope>,
 ) {
     let Some(identifier) = en.signature().and_then(|x| x.identifier()) else {
@@ -267,7 +267,7 @@ pub(super) fn create_enum<'s: 'scope, 'm, 'r, 'scope>(
     });
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 pub(super) fn create_module(
     engine_rw: &RwLock<Engine>,
     generated_ids_rw: &RwLock<HashSet<symbol::ID>>,
@@ -275,7 +275,11 @@ pub(super) fn create_module(
     syntax_tree: tree::Tree,
     parent_module_id: Option<symbol::ID>,
     parent_names: &[SharedStr],
-    handler: &dyn Handler<Diagnostic>,
+    imports_by_global_id: &pernixc_hash::DashMap<
+        symbol::ID,
+        Vec<pernixc_syntax::item::module::Import>,
+    >,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) {
     // the id that will be assigned to the module
     let mut current_module_names = parent_names.to_vec();
@@ -323,6 +327,7 @@ pub(super) fn create_module(
             tree,
             parent_module_id,
             &current_module_names,
+            imports_by_global_id,
             handler,
         );
     });
@@ -544,8 +549,14 @@ pub(super) fn create_module(
                     );
                 }
 
-                pernixc_syntax::item::module::Member::Import(_)
-                | pernixc_syntax::item::module::Member::Module(_)
+                pernixc_syntax::item::module::Member::Import(im) => {
+                    imports_by_global_id
+                        .entry(current_module_id)
+                        .or_default()
+                        .push(im);
+                }
+
+                pernixc_syntax::item::module::Member::Module(_)
                 | pernixc_syntax::item::module::Member::Implements(_)
                 | pernixc_syntax::item::module::Member::Extern(_) => {}
             }
@@ -575,7 +586,7 @@ fn add_symbol<'a>(
     generated_ids_rw: &RwLock<HashSet<symbol::ID>>,
     extract_generic_parameters: Option<syntax::GenericParameters>,
     extract_where_clause: Option<syntax::WhereClause>,
-    handler: &dyn Handler<Diagnostic>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> symbol::ID {
     let mut generated_ids = generated_ids_rw.upgradable_read();
     let identifier_span = name.span;
@@ -593,7 +604,7 @@ fn add_symbol<'a>(
             vacant_entry.insert(id);
         }
         std::collections::hash_map::Entry::Occupied(occupied_entry) => {
-            handler.receive(Diagnostic::ItemRedifinition(ItemRedifinition {
+            handler.receive(Box::new(ItemRedifinition {
                 existing_id: TargetID::Local.make_global(*occupied_entry.get()),
                 new_id: TargetID::Local.make_global(id),
                 in_id: TargetID::Local.make_global(parent_id),
@@ -606,7 +617,9 @@ fn add_symbol<'a>(
         let mut engine = engine.write();
         let global_id = TargetID::Local.make_global(id);
         engine.database.set_input(&name::Key(global_id), Name(name.kind.0));
-        engine.database.set_input(&span::Key(global_id), Span(identifier_span));
+        engine
+            .database
+            .set_input(&span::Key(global_id), Span(Some(identifier_span)));
         engine.database.set_input(&kind::Key(global_id), symbol_kind);
 
         if let Some(generic_parameters) = extract_generic_parameters {

@@ -66,7 +66,23 @@ pub enum HierarchyRelationship {
     Unrelated,
 }
 
+/// The result of the bootstrap process, containing the engine, syntax errors,
+/// and bootstrapping semantic diagnostics.
+#[derive(Debug)]
+pub struct Bootstrap {
+    /// The query engine where all the initial inputs are bootstrapped.
+    pub engine: Engine,
+
+    /// The syntax errors that were encountered during the parsing of the
+    /// source code.
+    pub syntax_errors: Vec<tree::Error>,
+
+    /// The semantic diagnostics that were generated during the bootstrapping
+    pub semantic_diagnostics: Vec<Box<dyn Diagnostic>>,
+}
+
 /// Setup the query database for the compilation process.
+#[allow(clippy::type_complexity)]
 pub fn bootstrap<'l>(
     source_map: &mut SourceMap,
     root_source_id: GlobalSourceID,
@@ -77,7 +93,7 @@ pub fn bootstrap<'l>(
         pernixc_lexical::tree::Tree,
     >,
     persistence: Option<Persistence>,
-) -> Result<(Engine, Vec<tree::Error>, Vec<Diagnostic>), Error> {
+) -> Result<Bootstrap, Error> {
     let ((tree, syntax_errors), engine) = rayon::join(
         || tree::parse(root_source_id, source_map, token_trees_by_source_id),
         || {
@@ -101,7 +117,9 @@ pub fn bootstrap<'l>(
 
     let generated_ids_rw = RwLock::new(HashSet::default());
     let engine = RwLock::new(engine);
-    let handler = Storage::<Diagnostic>::new();
+    let handler = Storage::<Box<dyn Diagnostic>>::new();
+
+    let imports = DashMap::default();
 
     build::create_module(
         &engine,
@@ -110,6 +128,7 @@ pub fn bootstrap<'l>(
         tree,
         None,
         &[],
+        &imports,
         &handler,
     );
 
@@ -123,7 +142,11 @@ pub fn bootstrap<'l>(
         }),
     );
 
-    Ok((engine, syntax_errors, handler.into_vec()))
+    Ok(Bootstrap {
+        engine,
+        syntax_errors,
+        semantic_diagnostics: handler.into_vec(),
+    })
 }
 
 fn bootstrap_executor(executor: &mut executor::Registry) {
