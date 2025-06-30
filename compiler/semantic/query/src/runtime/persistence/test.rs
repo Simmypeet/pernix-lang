@@ -60,8 +60,10 @@ fn save_and_load_value() {
 
     persistence.save::<Variable>(&initial_string_value).unwrap();
 
-    let loaded_string_value =
-        persistence.try_load::<Variable>(initial_fingerprint).unwrap().unwrap();
+    let loaded_string_value = persistence
+        .try_load_value::<Variable>(initial_fingerprint)
+        .unwrap()
+        .unwrap();
 
     assert_eq!(initial_string_value, loaded_string_value);
 }
@@ -100,11 +102,15 @@ fn save_and_load_entire_map() {
 
     persistence.serialize_map(&map).unwrap();
 
-    let loaded_a = persistence.try_load::<Variable>(a_hash).unwrap().unwrap();
-    let loaded_b = persistence.try_load::<Variable>(b_hash).unwrap().unwrap();
+    let loaded_a =
+        persistence.try_load_value::<Variable>(a_hash).unwrap().unwrap();
+    let loaded_b =
+        persistence.try_load_value::<Variable>(b_hash).unwrap().unwrap();
 
-    let loaded_pi = persistence.try_load::<Constant>(pi_hash).unwrap().unwrap();
-    let loaded_e = persistence.try_load::<Constant>(e_hash).unwrap().unwrap();
+    let loaded_pi =
+        persistence.try_load_value::<Constant>(pi_hash).unwrap().unwrap();
+    let loaded_e =
+        persistence.try_load_value::<Constant>(e_hash).unwrap().unwrap();
 
     assert_eq!(initial_variable_a_value, loaded_a);
     assert_eq!(initial_variable_b_value, loaded_b);

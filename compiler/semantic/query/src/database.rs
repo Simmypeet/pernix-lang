@@ -5,17 +5,15 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
-use getset::CopyGetters;
+use getset::Getters;
 use parking_lot::Mutex;
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
-    de::{Deserializer as _, TupleAccess as _},
-    ser::{Serializer, Tuple},
     Deserialize, Serialize,
 };
 
 use crate::{
-    database::map::Map,
+    database::{map::Map, query_tracker::QueryTracker},
     runtime::persistence::{
         serde::{DynamicDeserialize, DynamicSerialize},
         Persistence,
@@ -23,25 +21,38 @@ use crate::{
     Engine, Key,
 };
 
-pub mod call_graph;
 pub mod map;
+pub mod query_tracker;
 
 /// Represents the main database structure used for storing and managing
 /// compiler state, including mappings, call graphs, and versioning information.
-#[derive(Debug, Default, Serialize, Deserialize, CopyGetters)]
+#[derive(Debug, Default, Serialize, Deserialize, Getters)]
 #[serde(
     ser_extension(DynamicSerialize<__S>),
     de_extension(DynamicDeserialize<__D>)
 )]
 pub struct Database {
     map: map::Map,
-    call_graph: Mutex<call_graph::CallGraph>,
+    query_tracker: Mutex<query_tracker::QueryTracker>,
 
-    /// The current version of the database, which is incremented whenever an
-    /// update is made to the database.
-    #[get_copy = "pub"]
-    version: usize,
-    last_was_query: AtomicBool,
+    /// Represents a snapshot of the database version.
+    #[get = "pub"]
+    snapshot: Snapshot,
+}
+
+/// Stores the version information of the database, including whether the
+/// last operation was a query or not.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct Snapshot {
+    /// The current version of the database.
+    ///
+    /// This value is incremented whenever the database is modified,
+    /// such as when a new key-value pair is added or an existing one is
+    /// updated.
+    pub version: usize,
+
+    /// Indicates whether the last operation was a query.
+    pub last_was_query: AtomicBool,
 }
 
 impl Database {
@@ -55,49 +66,17 @@ impl Persistence {
     /// Loads the incremental compilation database from the persistence
     /// storage, including the call graph and version information.
     pub fn load_database(&self) -> Result<Database, std::io::Error> {
-        let mut call_graph = None;
-        let mut version = None;
+        let file = std::fs::File::open(self.database_snapshot_path())?;
 
-        rayon::scope(|s| {
-            s.spawn(|_| call_graph = Some(self.load_call_graph()));
-            s.spawn(|_| {
-                let mut version_file_path = self.path().to_path_buf();
-                version_file_path.push(Self::CALL_GRAPH_DIRECTORY);
-                version_file_path.push(Self::CALL_GRAPH_VERSION_FILE);
+        let mut binary_deserializer =
+            BinaryDeserializer::new(BufReader::new(file));
 
-                let file = match std::fs::File::open(&version_file_path) {
-                    Ok(file) => file,
-                    Err(error) => {
-                        version = Some(Err(error));
-                        return;
-                    }
-                };
-
-                let mut binary_deserializer =
-                    BinaryDeserializer::new(BufReader::new(file));
-
-                version = Some(binary_deserializer.expect_tuple(
-                    2,
-                    &(),
-                    |mut x, extension| {
-                        let version = x.next_element::<usize>(extension)?;
-                        let last_was_query =
-                            AtomicBool::new(x.next_element::<bool>(extension)?);
-
-                        Ok((version, last_was_query))
-                    },
-                ));
-            });
-        });
-
-        let call_graph = call_graph.unwrap()?;
-        let version = version.unwrap()?;
+        let version = Snapshot::deserialize(&mut binary_deserializer, &())?;
 
         Ok(Database {
             map: Map::default(),
-            call_graph: Mutex::new(call_graph),
-            version: version.0,
-            last_was_query: version.1,
+            query_tracker: Mutex::new(QueryTracker::default()),
+            snapshot: version,
         })
     }
 }
@@ -110,7 +89,7 @@ impl Engine {
             return Ok(());
         };
 
-        let call_graph = self.database.call_graph.lock();
+        let call_graph = self.database.query_tracker.lock();
 
         let mut serialize_map_result = Ok(());
         let mut serialize_call_graph_result = Ok(());
@@ -130,8 +109,8 @@ impl Engine {
             s.spawn(|_| {
                 let path = persistence
                     .path()
-                    .join(Persistence::CALL_GRAPH_DIRECTORY)
-                    .join(Persistence::CALL_GRAPH_VERSION_FILE);
+                    .join(Persistence::QUERY_TRACKER_DIRECTORY)
+                    .join(Persistence::DATABASE_SNAPSHOT_FILE);
 
                 // make sure that the parent directory exists
                 if let Some(parent) = path.parent() {
@@ -159,18 +138,7 @@ impl Engine {
                 let mut serializer =
                     BinarySerializer::new(BufWriter::new(file));
 
-                match serializer.emit_tuple(2, &(), |mut tuple, ext| {
-                    tuple.serialize_element(&self.database.version, ext)?;
-                    tuple.serialize_element(
-                        &self
-                            .database
-                            .last_was_query
-                            .load(std::sync::atomic::Ordering::Relaxed),
-                        ext,
-                    )?;
-
-                    Ok(())
-                }) {
+                match self.database.snapshot.serialize(&mut serializer, &()) {
                     Ok(()) => {}
                     Err(err) => {
                         version_info_result = Err(err);

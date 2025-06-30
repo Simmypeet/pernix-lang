@@ -111,7 +111,6 @@
 use std::any::Any;
 
 use getset::Getters;
-use parking_lot::RwLock;
 use pernixc_hash::{DashMap, HashMap, HashSet};
 use pernixc_serialize::{
     de::{Deserializer, MapAccess, StructAccess},
@@ -122,8 +121,8 @@ use pernixc_stable_type_id::StableTypeID;
 use smallbox::smallbox;
 
 use crate::{
-    database::{call_graph::VersionInfo, map::Map},
-    key::{Dynamic, DynamicBox},
+    database::{map::Map, query_tracker::VersionInfo},
+    key::DynamicBox,
     Key,
 };
 
@@ -255,24 +254,6 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
             post_serialize,
         )
     }
-
-    pub(crate) fn serialize_dependency_graph(
-        &self,
-        entries: &[(&DynamicBox, &HashSet<DynamicBox>)],
-        serializer: &mut S,
-        extension: &E,
-    ) -> Result<(), S::Error> {
-        (self.dependency_graph_serializer)(entries, serializer, extension)
-    }
-
-    pub(crate) fn serialize_version_info(
-        &self,
-        entries: &[(&DynamicBox, &VersionInfo)],
-        serializer: &mut S,
-        extension: &E,
-    ) -> Result<(), S::Error> {
-        (self.version_info_serializer)(entries, serializer, extension)
-    }
 }
 
 /// A helper struct that contains function pointers for deserializing a specific
@@ -300,17 +281,6 @@ pub struct DeserializationHelper<D: Deserializer<E>, E> {
         -> Result<DynamicBox, D::Error>,
     value_deserializer: fn(&mut dyn Any, &mut D, &E) -> Result<(), D::Error>,
 
-    dependency_graph_deserializer: fn(
-        &mut D,
-        &E,
-        &RwLock<HashMap<DynamicBox, HashSet<DynamicBox>>>,
-    ) -> Result<(), D::Error>,
-    version_infos_deserializer: fn(
-        &mut D,
-        &E,
-        &RwLock<HashMap<DynamicBox, VersionInfo>>,
-    ) -> Result<(), D::Error>,
-
     std_type_id: std::any::TypeId,
 }
 
@@ -322,32 +292,6 @@ impl<D: Deserializer<E>, E> DeserializationHelper<D, E> {
         extension: &E,
     ) -> Result<(), D::Error> {
         (self.value_deserializer)(result_buffer, deserializer, extension)
-    }
-
-    pub(crate) fn deserialize_dependency_graph(
-        &self,
-        deserializer: &mut D,
-        extension: &E,
-        dependency_graph: &RwLock<HashMap<DynamicBox, HashSet<DynamicBox>>>,
-    ) -> Result<(), D::Error> {
-        (self.dependency_graph_deserializer)(
-            deserializer,
-            extension,
-            dependency_graph,
-        )
-    }
-
-    pub(crate) fn deserialize_version_infos(
-        &self,
-        deserializer: &mut D,
-        extension: &E,
-        version_infos: &RwLock<HashMap<DynamicBox, VersionInfo>>,
-    ) -> Result<(), D::Error> {
-        (self.version_infos_deserializer)(
-            deserializer,
-            extension,
-            version_infos,
-        )
     }
 }
 
@@ -538,79 +482,6 @@ fn dynamic_box_deserializer<
     Ok(DynamicBox(smallbox!(key)))
 }
 
-#[allow(clippy::mutable_key_type)]
-fn dependency_graph_deserializer<
-    K: Deserialize<D, E> + Dynamic,
-    D: Deserializer<E>,
-    E: DynamicDeserialize<D>,
->(
-    deserializer: &mut D,
-    extension: &E,
-    dependency_graph: &RwLock<HashMap<DynamicBox, HashSet<DynamicBox>>>,
-) -> Result<(), D::Error> {
-    deserializer.expect_map(extension, |mut map, extension| {
-        loop {
-            let next = map.next_entry::<K, _>(extension, |entry| {
-                use pernixc_serialize::de::ValueAccess;
-
-                let Some((key, value_access, extension)) = entry else {
-                    return Ok(false);
-                };
-
-                let small_box: DynamicBox = DynamicBox(smallbox!(key));
-                let dependencies = value_access
-                    .deserialize::<HashSet<DynamicBox>>(extension)?;
-
-                dependency_graph.write().insert(small_box, dependencies);
-
-                Ok(true)
-            })?;
-
-            if !next {
-                break;
-            }
-        }
-
-        Ok(())
-    })
-}
-
-fn version_infos_deserializer<
-    K: Deserialize<D, E> + Dynamic,
-    D: Deserializer<E>,
-    E: DynamicDeserialize<D>,
->(
-    deserializer: &mut D,
-    extension: &E,
-    version_infos: &RwLock<HashMap<DynamicBox, VersionInfo>>,
-) -> Result<(), D::Error> {
-    deserializer.expect_map(extension, |mut map, extension| {
-        loop {
-            let next = map.next_entry::<K, _>(extension, |entry| {
-                use pernixc_serialize::de::ValueAccess;
-
-                let Some((key, value_access, extension)) = entry else {
-                    return Ok(false);
-                };
-
-                let small_box: DynamicBox = DynamicBox(smallbox!(key));
-                let version_info =
-                    value_access.deserialize::<VersionInfo>(extension)?;
-
-                version_infos.write().insert(small_box, version_info);
-
-                Ok(true)
-            })?;
-
-            if !next {
-                break;
-            }
-        }
-
-        Ok(())
-    })
-}
-
 impl<
         S: Serializer<E>,
         D: Deserializer<E>,
@@ -790,12 +661,6 @@ impl<
                 dynamic_box_deserializer: dynamic_box_deserializer::<_, _, K>,
                 std_type_id: std::any::TypeId::of::<K>(),
                 value_deserializer,
-                dependency_graph_deserializer: dependency_graph_deserializer::<
-                    K,
-                    D,
-                    E,
-                >,
-                version_infos_deserializer: version_infos_deserializer::<K, D, E>,
             })
             .is_some()
         {
@@ -854,8 +719,6 @@ impl<D: Deserializer<E>, E> Clone for DeserializationHelper<D, E> {
             map_deserializer: self.map_deserializer,
             dynamic_box_deserializer: self.dynamic_box_deserializer,
             value_deserializer: self.value_deserializer,
-            dependency_graph_deserializer: self.dependency_graph_deserializer,
-            version_infos_deserializer: self.version_infos_deserializer,
             std_type_id: self.std_type_id,
         }
     }

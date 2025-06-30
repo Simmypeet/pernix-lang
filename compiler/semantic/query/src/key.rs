@@ -3,9 +3,11 @@
 use std::hash::Hash;
 
 use pernixc_arena::ID;
-use pernixc_stable_hash::{StableHash, StableHasher};
+use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::{Identifiable, StableTypeID};
 use pernixc_target::Global;
+
+use crate::fingerprint;
 
 /// A tag struct used for signifying that a key is an input key.
 ///
@@ -66,7 +68,7 @@ pub trait Dynamic: 'static + Send + Sync {
     #[doc(hidden)]
     fn hash(&self, state: &mut dyn std::hash::Hasher);
     #[doc(hidden)]
-    fn stable_hash_u128(&self, state: &mut dyn StableHasher<Hash = u128>);
+    fn fingerprint(&self) -> u128;
     #[doc(hidden)]
     fn smallbox_clone(&self) -> SmallBox<dyn Dynamic>;
     #[doc(hidden)]
@@ -108,9 +110,7 @@ impl<K: Key> Dynamic for K {
 
     fn type_name(&self) -> &'static str { std::any::type_name::<Self>() }
 
-    fn stable_hash_u128(&self, state: &mut dyn StableHasher<Hash = u128>) {
-        pernixc_stable_hash::StableHash::stable_hash(self, state);
-    }
+    fn fingerprint(&self) -> u128 { fingerprint::fingerprint(self) }
 }
 
 impl std::fmt::Debug for dyn Dynamic {

@@ -9,7 +9,7 @@ use std::{
 use parking_lot::MutexGuard;
 
 use crate::{
-    database::call_graph::CallGraph,
+    database::query_tracker::QueryTracker,
     key::{Dynamic, Key},
     Engine,
 };
@@ -87,8 +87,8 @@ type ExecutorArcDowncast = fn(Arc<dyn Any + Send + Sync>, &mut dyn Any);
 type InvokeQuery = for<'db, 'k> fn(
     &'db Engine,
     &'k dyn Dynamic,
-    MutexGuard<'db, CallGraph>,
-) -> MutexGuard<'db, CallGraph>;
+    MutexGuard<'db, QueryTracker>,
+) -> MutexGuard<'db, QueryTracker>;
 
 #[derive(Clone)]
 struct Entry {
@@ -110,8 +110,8 @@ impl Entry {
         fn invoke<'db, K: Key>(
             engine: &'db Engine,
             key: &dyn Dynamic,
-            call_graph: MutexGuard<'db, CallGraph>,
-        ) -> MutexGuard<'db, CallGraph> {
+            call_graph: MutexGuard<'db, QueryTracker>,
+        ) -> MutexGuard<'db, QueryTracker> {
             let key = key.any().downcast_ref::<K>().unwrap();
 
             engine.query_internal(key, call_graph).1

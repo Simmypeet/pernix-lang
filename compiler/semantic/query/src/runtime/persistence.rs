@@ -9,18 +9,26 @@ use std::{
 };
 
 use dashmap::mapref::one::Ref;
+use getset::Getters;
 use parking_lot::RwLock;
-use pernixc_hash::{DashMap, HashSet};
-use pernixc_serialize::binary::{
-    de::BinaryDeserializer, ser::BinarySerializer,
+use pernixc_hash::{DashMap, HashMap, HashSet};
+use pernixc_serialize::{
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    Deserialize as _, Serialize as _,
 };
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator};
+use rayon::iter::{
+    IntoParallelIterator as _, IntoParallelRefIterator as _, ParallelIterator,
+};
 use redb::TableDefinition;
 
 use crate::{
-    database::{call_graph::CallGraph, map::Map},
+    database::{
+        map::Map,
+        query_tracker::{QueryTracker, VersionInfo},
+    },
     fingerprint,
+    key::DynamicBox,
     runtime::persistence::serde::{DynamicDeserialize, DynamicSerialize},
     Key,
 };
@@ -31,11 +39,34 @@ const TABLE: TableDefinition<u128, &[u8]> = TableDefinition::new("persistence");
 
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 #[allow(clippy::type_complexity)]
 pub struct Persistence {
-    databases_by_stable_type_id: DashMap<StableTypeID, redb::Database>,
+    value_databases_by_stable_type_id: DashMap<StableTypeID, redb::Database>,
+    version_info_databases_by_stable_type_id:
+        DashMap<StableTypeID, redb::Database>,
+    dependency_graph_databases_by_stable_type_id:
+        DashMap<StableTypeID, redb::Database>,
+
     path: PathBuf,
+
+    /// The directory where all the value caches databases are stored.
+    #[get = "pub"]
+    value_map_path: PathBuf,
+
+    /// The directory where the query dependencies databases are stored.
+    #[get = "pub"]
+    query_dependency_graph_path: PathBuf,
+
+    /// The directory where query version information databases are stored.
+    #[get = "pub"]
+    query_version_info_path: PathBuf,
+
+    /// The file where the [`crate::database::Database`] version state is
+    /// stored.
+    #[get = "pub"]
+    database_snapshot_path: PathBuf,
+
     serde_extension: Arc<dyn Any + Send + Sync>,
     skip_keys: HashSet<StableTypeID>,
 
@@ -58,10 +89,24 @@ pub struct Persistence {
         &DashMap<StableTypeID, redb::Database>,
         &Path,
     ) -> Result<(), std::io::Error>,
-    serialize_dependency_graph:
-        fn(&CallGraph, &dyn Any, &Path) -> Result<(), std::io::Error>,
-    deserialize_call_graph:
-        fn(&dyn Any, &Path) -> Result<CallGraph, std::io::Error>,
+    deserialize_dependencies: fn(
+        &dyn Any,
+        &mut BinaryDeserializer<Box<dyn ReadAny>>,
+    )
+        -> Result<HashSet<DynamicBox>, std::io::Error>,
+    deserialize_version_info: fn(
+        &dyn Any,
+        &mut BinaryDeserializer<Box<dyn ReadAny>>,
+    ) -> Result<VersionInfo, std::io::Error>,
+
+    serialize_call_graph: fn(
+        &QueryTracker,
+        &dyn Any,
+        &DashMap<StableTypeID, redb::Database>,
+        &DashMap<StableTypeID, redb::Database>,
+        &Path,
+        &Path,
+    ) -> Result<(), std::io::Error>,
 }
 
 fn serialize_map<
@@ -100,10 +145,8 @@ fn serialize_map<
             )?
             .unwrap();
 
-            let mut tx =
+            let tx =
                 db.begin_write().expect("Failed to begin write transaction");
-
-            tx.set_durability(redb::Durability::None);
 
             let table = RwLock::new(
                 tx.open_table(TABLE).expect("Failed to open table"),
@@ -182,15 +225,25 @@ pub trait ReadAny: std::io::Read + Any {}
 impl<T: std::io::Read + Any> ReadAny for T {}
 
 impl Persistence {
-    /// The directory where the call graph is stored.
-    pub const CALL_GRAPH_DIRECTORY: &'static str = "call_graph";
+    /// The directory where the query tracker is stored.
+    pub const QUERY_TRACKER_DIRECTORY: &'static str = "query_tracker";
 
-    /// The file where the call graph version is stored.
-    pub const CALL_GRAPH_VERSION_FILE: &'static str = "version.dat";
+    /// The directory where the value map databases are stored.
+    pub const VALUE_MAP_DIRECTORY: &'static str = "value_map";
+
+    /// The directory where the dependency graph is stored.
+    pub const DEPENDENCY_GRAPH_DIRECTORY: &'static str = "dependency_graph";
+
+    /// The directory where the version information is stored.
+    pub const VERSION_INFO_DIRECTORY: &'static str = "version_info";
+
+    /// The file where the database snapshot is stored.
+    pub const DATABASE_SNAPSHOT_FILE: &'static str = "snapshot.dat";
 
     /// Creates a new instance of [`Persistence`] with the specified path where
     /// the database is stored and the serde extension where the types that will
     /// be serialized and deserialized are registered.
+    #[allow(clippy::too_many_lines)]
     pub fn new<
         E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
             + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
@@ -253,23 +306,75 @@ impl Persistence {
                 )
             };
 
+        let deserialize_dependencies =
+            |serde_extension: &dyn Any,
+             deserializer: &mut BinaryDeserializer<Box<dyn ReadAny>>| {
+                let serde_extension = serde_extension
+                    .downcast_ref::<E>()
+                    .expect("serde_extension must match the expected type");
+
+                HashSet::<DynamicBox>::deserialize(
+                    deserializer,
+                    serde_extension,
+                )
+
+            };
+
+        let deserialize_version_info =
+            |serde_extension: &dyn Any,
+             deserializer: &mut BinaryDeserializer<Box<dyn ReadAny>>| {
+                let serde_extension = serde_extension
+                    .downcast_ref::<E>()
+                    .expect("serde_extension must match the expected type");
+
+                VersionInfo::deserialize(deserializer, serde_extension)
+            };
+
         if !path.exists() {
             std::fs::create_dir_all(&path)
                 .expect("Failed to create persistence directory");
         }
 
         Self {
+            value_map_path: {
+                let mut path = path.clone();
+                path.push(Self::VALUE_MAP_DIRECTORY);
+                path
+            },
+            query_dependency_graph_path: {
+                let mut path = path.clone();
+                path.push(Self::QUERY_TRACKER_DIRECTORY);
+                path.push(Self::DEPENDENCY_GRAPH_DIRECTORY);
+                path
+            },
+            query_version_info_path: {
+                let mut path = path.clone();
+                path.push(Self::QUERY_TRACKER_DIRECTORY);
+                path.push(Self::VERSION_INFO_DIRECTORY);
+                path
+            },
+            database_snapshot_path: {
+                let mut path = path.clone();
+                path.push(Self::QUERY_TRACKER_DIRECTORY);
+                path.push(Self::DATABASE_SNAPSHOT_FILE);
+                path
+            },
             path,
-            databases_by_stable_type_id: DashMap::default(),
+
+            value_databases_by_stable_type_id: DashMap::default(),
+            dependency_graph_databases_by_stable_type_id: DashMap::default(),
+            version_info_databases_by_stable_type_id: DashMap::default(),
+
             serde_extension: serde_extension as Arc<dyn Any + Send + Sync>,
             skip_keys: HashSet::default(),
 
             serialize_any_value,
             deserialize_any_value,
             serialize_map: serialize_map::<E>,
+            deserialize_dependencies,
+            deserialize_version_info,
 
-            serialize_dependency_graph: CallGraph::serialize_call_graph::<E>,
-            deserialize_call_graph: CallGraph::deserialize_call_graph::<E>,
+            serialize_call_graph: serialize_call_graph::<E>,
         }
     }
 
@@ -289,44 +394,123 @@ impl Persistence {
             map,
             &self.skip_keys,
             self.serde_extension.as_ref(),
-            &self.databases_by_stable_type_id,
-            &self.path,
+            &self.value_databases_by_stable_type_id,
+            &self.value_map_path,
         )
     }
 
     /// Serializes thne entire map to the persistence storage.
     pub fn serialize_call_graph(
         &self,
-        call_graph: &CallGraph,
+        call_graph: &QueryTracker,
     ) -> Result<(), std::io::Error> {
-        (self.serialize_dependency_graph)(
+        (self.serialize_call_graph)(
             call_graph,
             self.serde_extension.as_ref(),
-            &self.path,
+            &self.dependency_graph_databases_by_stable_type_id,
+            &self.version_info_databases_by_stable_type_id,
+            &self.query_dependency_graph_path,
+            &self.query_version_info_path,
         )
     }
 
-    /// Loads the [`CallGraph`] from the persistence storage.
-    pub fn load_call_graph(&self) -> Result<CallGraph, std::io::Error> {
-        (self.deserialize_call_graph)(self.serde_extension.as_ref(), &self.path)
-    }
-
-    /// Attempts to load a value from the persistence storage.
-    pub fn try_load<K: Key>(
+    /// Attempts to load the version information for a given key fingerprint
+    /// from the persistence storage.
+    pub fn try_load_version_info<K: Key>(
         &self,
-        value_fingerprint: u128,
-    ) -> Result<Option<K::Value>, std::io::Error> {
+        key_fingerprint: u128,
+    ) -> Result<Option<VersionInfo>, std::io::Error> {
         let Some(table) = Self::get_database(
-            &self.databases_by_stable_type_id,
+            &self.version_info_databases_by_stable_type_id,
             K::STABLE_TYPE_ID,
-            &self.path,
+            &self.query_version_info_path,
             false,
         )?
         else {
             return Ok(None);
         };
 
-        let table = table.begin_read().unwrap();
+        let table = table.begin_read().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to begin read transaction for table: {e}"
+            ))
+        })?;
+        let table = table.open_table(TABLE).map_err(|e| {
+            std::io::Error::other(format!("Failed to open table: {e}"))
+        })?;
+
+        if let Some(buffer) = table.get(&key_fingerprint).unwrap() {
+            let mut deserializer = BinaryDeserializer::<Box<dyn ReadAny>>::new(
+                Box::new(std::io::Cursor::new(buffer.value().to_vec())),
+            );
+
+            Ok(Some((self.deserialize_version_info)(
+                self.serde_extension.as_ref(),
+                &mut deserializer,
+            )?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Attempts to load a list of dependencies of a given key fingerprint
+    pub fn try_load_dependencies<K: Key>(
+        &self,
+        key_fingerprint: u128,
+    ) -> Result<Option<HashSet<DynamicBox>>, std::io::Error> {
+        let Some(table) = Self::get_database(
+            &self.dependency_graph_databases_by_stable_type_id,
+            K::STABLE_TYPE_ID,
+            &self.query_dependency_graph_path,
+            false,
+        )?
+        else {
+            return Ok(None);
+        };
+
+        let table = table.begin_read().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to begin read transaction for table: {e}"
+            ))
+        })?;
+        let table = table.open_table(TABLE).map_err(|e| {
+            std::io::Error::other(format!("Failed to open table: {e}"))
+        })?;
+
+        if let Some(buffer) = table.get(&key_fingerprint).unwrap() {
+            let mut deserializer = BinaryDeserializer::<Box<dyn ReadAny>>::new(
+                Box::new(std::io::Cursor::new(buffer.value().to_vec())),
+            );
+
+            Ok(Some((self.deserialize_dependencies)(
+                self.serde_extension.as_ref(),
+                &mut deserializer,
+            )?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Attempts to load a value from the persistence storage.
+    pub fn try_load_value<K: Key>(
+        &self,
+        value_fingerprint: u128,
+    ) -> Result<Option<K::Value>, std::io::Error> {
+        let Some(table) = Self::get_database(
+            &self.value_databases_by_stable_type_id,
+            K::STABLE_TYPE_ID,
+            &self.value_map_path,
+            false,
+        )?
+        else {
+            return Ok(None);
+        };
+
+        let table = table.begin_read().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to begin read transaction for table: {e}"
+            ))
+        })?;
         let table = table.open_table(TABLE).map_err(|e| {
             std::io::Error::other(format!("Failed to open table: {e}"))
         })?;
@@ -350,7 +534,7 @@ impl Persistence {
         }
     }
 
-    fn get_database<'a>(
+    pub(crate) fn get_database<'a>(
         databases_by_stable_type_id: &'a DashMap<StableTypeID, redb::Database>,
         stable_type_id: StableTypeID,
         path: &Path,
@@ -369,6 +553,16 @@ impl Persistence {
         // don't  create in the read mode
         if !write && !path.exists() {
             return Ok(None);
+        }
+
+        if path.parent().is_some_and(|x| !x.exists()) {
+            std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to create parent directory for stable type ID: \
+                     {stable_type_id:?} at path: {}, error: {e}",
+                    path.display()
+                ))
+            })?;
         }
 
         let database = redb::Database::create(&path).map_err(|e| {
@@ -407,9 +601,9 @@ impl Persistence {
             box_any.downcast::<Vec<u8>>().expect("Buffer must be a Vec<u8>");
 
         let tx = Self::get_database(
-            &self.databases_by_stable_type_id,
+            &self.value_databases_by_stable_type_id,
             K::STABLE_TYPE_ID,
-            &self.path,
+            &self.value_map_path,
             true,
         )?
         .unwrap()
@@ -431,6 +625,244 @@ impl Persistence {
 
         Ok(())
     }
+}
+
+#[allow(clippy::too_many_lines)]
+fn serialize_call_graph<
+    E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
+        + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+        + Send
+        + Sync
+        + 'static,
+>(
+    call_graph: &QueryTracker,
+    serde_extension: &dyn Any,
+    dependencies_database_by_stable_type_id: &DashMap<
+        StableTypeID,
+        redb::Database,
+    >,
+    version_info_database_by_stable_type_id: &DashMap<
+        StableTypeID,
+        redb::Database,
+    >,
+    dependency_graph_path: &Path,
+    version_info_path: &Path,
+) -> Result<(), std::io::Error> {
+    let extension = serde_extension
+        .downcast_ref::<E>()
+        .expect("serde_extension must match the expected type");
+
+    let mut dependency_graph = Ok(());
+    let mut version_info = Ok(());
+
+    rayon::scope(|s| {
+        s.spawn(|_| {
+            if !dependency_graph_path.exists() {
+                dependency_graph =
+                    std::fs::create_dir_all(dependency_graph_path);
+
+                if dependency_graph.is_err() {
+                    return;
+                }
+            }
+
+            let mut entries_by_stable_type_id = HashMap::<
+                StableTypeID,
+                Vec<(&DynamicBox, &HashSet<DynamicBox>)>,
+            >::default();
+
+            for (entry, dependencies) in call_graph.dependency_graph() {
+                let stable_type_id = entry.stable_type_id();
+                entries_by_stable_type_id
+                    .entry(stable_type_id)
+                    .or_default()
+                    .push((entry, dependencies));
+            }
+
+            dependency_graph = entries_by_stable_type_id
+                .into_par_iter()
+                .map(|(stable_type_id, entries)| {
+                    let db = Persistence::get_database(
+                        dependencies_database_by_stable_type_id,
+                        stable_type_id,
+                        dependency_graph_path,
+                        true,
+                    )?
+                    .unwrap();
+
+                    let tx = db.begin_write().map_err(|e| {
+                        std::io::Error::other(format!(
+                            "Failed to begin write transaction: {e}",
+                        ))
+                    })?;
+
+                    let table =
+                        RwLock::new(tx.open_table(TABLE).map_err(|e| {
+                            std::io::Error::other(format!(
+                                "Failed to open table: {e}",
+                            ))
+                        })?);
+
+                    entries
+                        .into_par_iter()
+                        .map(|(entry, dependencies)| {
+                            let buffer = BUFFER
+                                .with(|b| std::mem::take(&mut *b.borrow_mut()));
+
+                            let mut serializer =
+                                BinarySerializer::<Box<dyn WriteAny>>::new(
+                                    Box::new(buffer),
+                                );
+
+                            dependencies
+                                .serialize(&mut serializer, extension)?;
+
+                            let any_box: Box<dyn Any> = serializer.into_inner();
+                            let mut buffer =
+                                any_box.downcast::<Vec<u8>>().unwrap();
+
+                            table
+                                .write()
+                                .insert(
+                                    entry.0.fingerprint(),
+                                    buffer.as_slice(),
+                                )
+                                .map_err(|e| {
+                                    std::io::Error::other(format!(
+                                        "Failed to insert entry into table: \
+                                         {e}",
+                                    ))
+                                })?;
+
+                            BUFFER.with(|b| {
+                                // clear the buffer but keep the allocated
+                                // memory
+                                buffer.clear();
+                                *b.borrow_mut() = *buffer;
+                            });
+
+                            Ok(())
+                        })
+                        .collect::<Result<(), std::io::Error>>()?;
+
+                    drop(table);
+
+                    tx.commit().map_err(|e| {
+                        std::io::Error::other(format!(
+                            "Failed to commit transaction: {e}",
+                        ))
+                    })?;
+
+                    Ok(())
+                })
+                .collect::<Result<(), std::io::Error>>();
+        });
+
+        s.spawn(|_| {
+            if !version_info_path.exists() {
+                version_info = std::fs::create_dir_all(version_info_path);
+
+                if version_info.is_err() {
+                    return;
+                }
+            }
+
+            let mut entries_by_stable_type_id = HashMap::<
+                StableTypeID,
+                Vec<(&DynamicBox, &VersionInfo)>,
+            >::default();
+
+            for (entry, version_info) in call_graph.version_info_by_keys() {
+                let stable_type_id = entry.stable_type_id();
+                entries_by_stable_type_id
+                    .entry(stable_type_id)
+                    .or_default()
+                    .push((entry, version_info));
+            }
+
+            version_info = entries_by_stable_type_id
+                .into_par_iter()
+                .map(|(stable_type_id, entries)| {
+                    let db = Persistence::get_database(
+                        version_info_database_by_stable_type_id,
+                        stable_type_id,
+                        version_info_path,
+                        true,
+                    )?
+                    .unwrap();
+
+                    let tx = db.begin_write().map_err(|e| {
+                        std::io::Error::other(format!(
+                            "Failed to begin write transaction: {e}",
+                        ))
+                    })?;
+
+                    let table =
+                        RwLock::new(tx.open_table(TABLE).map_err(|e| {
+                            std::io::Error::other(format!(
+                                "Failed to open table: {e}",
+                            ))
+                        })?);
+
+                    entries
+                        .into_par_iter()
+                        .map(|(entry, version_info)| {
+                            let buffer = BUFFER
+                                .with(|b| std::mem::take(&mut *b.borrow_mut()));
+                            let mut serializer =
+                                BinarySerializer::<Box<dyn WriteAny>>::new(
+                                    Box::new(buffer),
+                                );
+
+                            version_info
+                                .serialize(&mut serializer, extension)?;
+
+                            let any_box: Box<dyn Any> = serializer.into_inner();
+                            let mut buffer =
+                                any_box.downcast::<Vec<u8>>().unwrap();
+
+                            table
+                                .write()
+                                .insert(
+                                    entry.0.fingerprint(),
+                                    buffer.as_slice(),
+                                )
+                                .map_err(|e| {
+                                    std::io::Error::other(format!(
+                                        "Failed to insert entry into table: \
+                                         {e}",
+                                    ))
+                                })?;
+
+                            BUFFER.with(|b| {
+                                // clear the buffer but keep the allocated
+                                // memory
+                                buffer.clear();
+                                *b.borrow_mut() = *buffer;
+                            });
+
+                            Ok(())
+                        })
+                        .collect::<Result<(), std::io::Error>>()?;
+
+                    drop(table);
+
+                    tx.commit().map_err(|e| {
+                        std::io::Error::other(format!(
+                            "Failed to commit transaction: {e}",
+                        ))
+                    })?;
+
+                    Ok(())
+                })
+                .collect::<Result<(), std::io::Error>>();
+        });
+    });
+
+    dependency_graph?;
+    version_info?;
+
+    Ok(())
 }
 
 #[cfg(test)]
