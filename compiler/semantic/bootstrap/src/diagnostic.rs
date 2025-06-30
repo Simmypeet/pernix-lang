@@ -10,10 +10,13 @@ use pernixc_target::{Global, TargetID};
 
 use crate::{
     accessibility::{Accessibility, Ext as _},
-    kind::Ext as _,
+    import::Ext as _,
+    kind::{Ext as _, Kind},
+    member::Ext as _,
     name::Ext as _,
     span::Ext as _,
     symbol,
+    target::MapExt,
 };
 
 /// Implemented all the diagnostic objects and provides type erasure.
@@ -120,6 +123,56 @@ pub struct SymbolNotFound {
     pub name: SharedStr,
 }
 
+#[allow(clippy::cast_precision_loss)]
+fn suggest<'a>(
+    not_found_name: &str,
+    available_names: impl IntoIterator<Item = &'a str>,
+) -> Option<&'a str> {
+    // Calculate appropriate maximum distance based on input length
+    let max_distance = match not_found_name.len() {
+        0..=3 => 1,   // Very short: allow only 1 char difference
+        4..=6 => 2,   // Short: allow 2 char difference
+        7..=10 => 3,  // Medium: allow 3 char difference
+        11..=15 => 4, // Long: allow 4 char difference
+        _ => not_found_name.len() / 4, // Very long: allow 25% difference
+    };
+
+    let mut best_candidate = None;
+    let mut best_score = f64::NEG_INFINITY;
+
+    for candidate in available_names {
+        let distance = strsim::levenshtein(not_found_name, candidate);
+
+        // Skip if distance is too large
+        if distance > max_distance {
+            continue;
+        }
+
+        // Skip exact matches (shouldn't happen in real usage)
+        if distance == 0 {
+            continue;
+        }
+
+        // Calculate confidence score
+        let max_len = not_found_name.len().max(candidate.len()) as f64;
+        let base_score = 1.0 - (distance as f64 / max_len);
+
+        // Apply bonus for common typo patterns
+
+        if base_score > best_score {
+            best_score = base_score;
+            best_candidate = Some(candidate);
+        }
+    }
+
+    // Only return suggestion if confidence is reasonable
+    if best_score > 0.4 {
+        best_candidate
+    } else {
+        None
+    }
+}
+
 impl Report<&Engine> for SymbolNotFound {
     type Location = RelativeLocation;
 
@@ -129,6 +182,49 @@ impl Report<&Engine> for SymbolNotFound {
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         let searched_item_id_qualified_name =
             self.searched_item_id.map(|x| table.get_qualified_name(x));
+
+        let did_you_mean = self.searched_item_id.map_or_else(
+            || {
+                let target_map = table.get_target_map();
+                suggest(
+                    &self.name,
+                    target_map.keys().map(flexstr::FlexStr::as_str),
+                )
+                .map(ToString::to_string)
+            },
+            |x| {
+                let members = table.try_get_members(x)?;
+
+                let kind = table.get_kind(x);
+
+                match kind {
+                    Kind::Module => suggest(
+                        &self.name,
+                        members
+                            .member_ids_by_name
+                            .keys()
+                            .map(flexstr::FlexStr::as_str)
+                            .chain(
+                                table
+                                    .get_imports(x)
+                                    .0
+                                    .keys()
+                                    .map(flexstr::FlexStr::as_str),
+                            ),
+                    )
+                    .map(ToString::to_string),
+
+                    _ => suggest(
+                        &self.name,
+                        members
+                            .member_ids_by_name
+                            .keys()
+                            .map(flexstr::FlexStr::as_str),
+                    )
+                    .map(ToString::to_string),
+                }
+            },
+        );
 
         let span_message = searched_item_id_qualified_name.map_or_else(
             || {
@@ -149,7 +245,9 @@ impl Report<&Engine> for SymbolNotFound {
             span: Some((self.resolution_span, Some(span_message))),
             message: "the symbol could not be found".to_string(),
             severity: Severity::Error,
-            help_message: None,
+            help_message: did_you_mean
+                .as_ref()
+                .map(|suggestion| format!("did you mean `{suggestion}`?")),
             related: Vec::new(),
         }
     }

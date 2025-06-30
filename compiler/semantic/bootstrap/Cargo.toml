@@ -30,6 +30,7 @@ extend = { workspace = true }
 flexstr = { workspace = true }
 typed-builder = { workspace = true }
 derive-new = { workspace = true }
+strsim = { workspace = true }
 
 [lints]
 workspace = true
