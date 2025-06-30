@@ -1439,7 +1439,8 @@ fn persistence_variable_map_query() {
     let mut persistence = Persistence::new(
         tempdir.path().to_path_buf(),
         Arc::new(serde_extension),
-    );
+    )
+    .unwrap();
     persistence.register_skip_key::<GetValue>();
 
     engine.runtime.persistence = Some(persistence);

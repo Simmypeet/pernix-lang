@@ -425,8 +425,12 @@ pub fn run(
         }
     }
 
-    let persistence =
-        argument.command.input().incremental_path.as_ref().map(|x| {
+    let persistence = match argument
+        .command
+        .input()
+        .incremental_path
+        .as_ref()
+        .map(|x| {
             let mut serde_extension = SerdeExtension::<
                 BinarySerializer<Box<dyn WriteAny>>,
                 BinaryDeserializer<Box<dyn ReadAny>>,
@@ -436,12 +440,23 @@ pub fn run(
             pernixc_bootstrap::register_serde(&mut serde_extension);
 
             let mut persistence =
-                Persistence::new(x.clone(), Arc::new(serde_extension));
+                Persistence::new(x.clone(), Arc::new(serde_extension))?;
 
             pernixc_bootstrap::skip_persistence(&mut persistence);
 
-            persistence
-        });
+            Ok::<_, redb::DatabaseError>(persistence)
+        })
+        .transpose()
+    {
+        Ok(persistence) => persistence,
+        Err(err) => {
+            let msg = Diagnostic::error().with_message(format!(
+                "Failed to create persistence layer: {err}"
+            ));
+            report_term.report(&mut source_map, &msg);
+            return ExitCode::FAILURE;
+        }
+    };
 
     let token_trees_by_source_id = DashMap::default();
 

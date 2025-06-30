@@ -56,7 +56,8 @@ fn save_and_load_value() {
     let tmp_dir = tempfile::tempdir().unwrap();
 
     let persistence =
-        Persistence::new(tmp_dir.path().to_path_buf(), Arc::new(serde_config));
+        Persistence::new(tmp_dir.path().to_path_buf(), Arc::new(serde_config))
+            .unwrap();
 
     persistence.save::<Variable>(&initial_string_value).unwrap();
 
@@ -98,7 +99,8 @@ fn save_and_load_entire_map() {
     let tmp_dir = tempfile::tempdir().unwrap();
 
     let persistence =
-        Persistence::new(tmp_dir.path().to_path_buf(), Arc::new(serde_config));
+        Persistence::new(tmp_dir.path().to_path_buf(), Arc::new(serde_config))
+            .unwrap();
 
     persistence.serialize_map(&map).unwrap();
 
