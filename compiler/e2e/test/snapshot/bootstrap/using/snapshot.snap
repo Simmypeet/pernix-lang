@@ -9,7 +9,7 @@ error: the using statement conflicts with an existing name in the module
  2 │ import main::First
    │        ^^^^^^^^^^^ the using `First` conflicts with the existing name in the module `main`
    ·
-31 │ public struct First:
+38 │ public struct First:
    │               ----- this symbol already defined the name `First`
 
 error: the using statement conflicts with an existing name in the module
@@ -26,39 +26,57 @@ error: the symbol is not accessible
 9 │ import main::inner3::InAccessible
   │                      ^^^^^^^^^^^^ the symbol `main::inner3::InAccessible` is not accessible from `main`
 
-error: import items that have a `from` clause cannot have the `target` as the root path
-   ╭─ bootstrap/using/main.pnx:12:26
+error: the symbol is not accessible
+   ╭─ bootstrap/using/main.pnx:10:26
    │
-12 │ from main::inner4 import target::invalidOne, target::invalidTwo
+10 │ from main::inner3 import AnotherInAccessible
+   │                          ^^^^^^^^^^^^^^^^^^^ the symbol `main::inner3::AnotherInAccessible` is not accessible from `main`
+
+error: import items that have a `from` clause cannot have the `target` as the root path
+   ╭─ bootstrap/using/main.pnx:13:26
+   │
+13 │ from main::inner4 import target::invalidOne, target::invalidTwo
    │                          ^^^^^^ the `target` root path is not allowed with `from` clause
 
 error: import items that have a `from` clause cannot have the `target` as the root path
-   ╭─ bootstrap/using/main.pnx:12:46
+   ╭─ bootstrap/using/main.pnx:13:46
    │
-12 │ from main::inner4 import target::invalidOne, target::invalidTwo
+13 │ from main::inner4 import target::invalidOne, target::invalidTwo
    │                                              ^^^^^^ the `target` root path is not allowed with `from` clause
 
 error: the using statement conflicts with an existing name in the module
-   ╭─ bootstrap/using/main.pnx:17:16
+   ╭─ bootstrap/using/main.pnx:18:16
    │  
-14 │   from main::inner4 import (
+15 │   from main::inner4 import (
    │ ╭──────────────────────────'
-15 │ │     InnerFirst,
+16 │ │     InnerFirst,
    │ ╰──────────────' this symbol already defined the name `InnerFirst`
-16 │       InnerSecond,
-17 │       InnerThird as InnerFirst # cause conflict 
+17 │       InnerSecond,
+18 │       InnerThird as InnerFirst # cause conflict 
    │                  ^^^^^^^^^^^^^ the using `InnerFirst` conflicts with the existing name in the module `main`
 
-error: the symbol could not be found
-   ╭─ bootstrap/using/main.pnx:21:8
+error: expected a module in the module path, but found `enum main::inner5::Direction`
+   ╭─ bootstrap/using/main.pnx:22:6
    │
-21 │ import unknown
+22 │ from target::inner5::Direction import Up, Down, Left, Right
+   │      ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: the symbol could not be found
+   ╭─ bootstrap/using/main.pnx:25:28
+   │
+25 │ from target::inner5 import NotFound
+   │                            ^^^^^^^^ the symbol named `NotFound` does not exist in `main::inner5`
+
+error: the symbol could not be found
+   ╭─ bootstrap/using/main.pnx:28:8
+   │
+28 │ import unknown
    │        ^^^^^^^ the target named `unknown` is not found
 
 error: the symbol could not be found
-   ╭─ bootstrap/using/main.pnx:22:14
+   ╭─ bootstrap/using/main.pnx:29:14
    │
-22 │ import main::unknown
+29 │ import main::unknown
    │              ^^^^^^^ the symbol named `unknown` does not exist in `main`
 
 

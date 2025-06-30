@@ -1,2 +1,6 @@
 private struct InAccessible:
     pass
+    
+
+private struct AnotherInAccessible:
+    pass

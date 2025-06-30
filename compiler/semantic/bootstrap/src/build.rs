@@ -232,7 +232,7 @@ pub(super) fn insert_imports(
                     module_path: from_simple_path.inner_tree().span(),
                     found_id: from_id,
                 }));
-                return;
+                continue;
             }
 
             Some(from_id)

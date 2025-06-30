@@ -7,6 +7,7 @@ import main::inner2::Inner
 
 # importing in-accessible symbol
 import main::inner3::InAccessible
+from main::inner3 import AnotherInAccessible
 
 # invalid use of `target::` in import
 from main::inner4 import target::invalidOne, target::invalidTwo
@@ -17,15 +18,21 @@ from main::inner4 import (
     InnerThird as InnerFirst # cause conflict 
 )
 
+# non-module symbol in `from` clause
+from target::inner5::Direction import Up, Down, Left, Right
+
+# unknown symbol 
+from target::inner5 import NotFound
+
 # unknown module imports
 import unknown
 import main::unknown
-
 
 public module inner1
 public module inner2
 public module inner3
 public module inner4
+public module inner5
 
 
 public struct First:
