@@ -66,6 +66,7 @@ pub impl Engine {
     fn get_member_of(
         &self,
         id: Global<symbol::ID>,
+        use_imports: bool,
         name: &str,
     ) -> Option<Global<symbol::ID>> {
         // directly get the member from the symbol
@@ -78,11 +79,13 @@ pub impl Engine {
 
         let symbol_kind = self.get_kind(id);
 
-        match (symbol_kind == Kind::Module, symbol_kind.is_adt()) {
-            (true, false) => self.get_imports(id).0.get(name).map(|x| x.id),
+        match (symbol_kind == Kind::Module, symbol_kind.is_adt(), use_imports) {
+            (true, false, true) => {
+                self.get_imports(id).0.get(name).map(|x| x.id)
+            }
 
             // serach for the member of implementations
-            (false, true) => {
+            (false, true, _) => {
                 let implements = self.get_implemented(id);
 
                 for implementation_id in implements.iter().copied() {

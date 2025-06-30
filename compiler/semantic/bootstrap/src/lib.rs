@@ -95,7 +95,7 @@ pub fn bootstrap<'l>(
     >,
     persistence: Option<Persistence>,
 ) -> Result<Bootstrap, Error> {
-    let ((tree, syntax_errors), engine) = rayon::join(
+    let ((tree, syntax_errors), mut engine) = rayon::join(
         || tree::parse(root_source_id, source_map, token_trees_by_source_id),
         || {
             let mut runtime = Runtime {
@@ -116,6 +116,13 @@ pub fn bootstrap<'l>(
         },
     );
 
+    engine.database.set_input(
+        &target::TargetMapKey(()),
+        Arc::new(target::Map(
+            std::iter::once((target_name.clone(), TargetID::Local)).collect(),
+        )),
+    );
+
     let generated_ids_rw = RwLock::new(HashSet::default());
     let engine = RwLock::new(engine);
     let handler = Storage::<Box<dyn Diagnostic>>::new();
@@ -133,6 +140,14 @@ pub fn bootstrap<'l>(
         &handler,
     );
 
+    engine.write().database.set_input(
+        &target::Key(TargetID::Local),
+        Arc::new(target::Target {
+            all_symbol_ids: generated_ids_rw.into_inner(),
+            linked_targets: HashSet::default(),
+        }),
+    );
+
     imports.into_par_iter().for_each(|import| {
         build::insert_imports(
             &engine,
@@ -142,18 +157,8 @@ pub fn bootstrap<'l>(
         );
     });
 
-    let mut engine = engine.into_inner();
-
-    engine.database.set_input(
-        &target::Key(TargetID::Local),
-        Arc::new(target::Target {
-            all_symbol_ids: generated_ids_rw.into_inner(),
-            linked_targets: HashSet::default(),
-        }),
-    );
-
     Ok(Bootstrap {
-        engine,
+        engine: engine.into_inner(),
         syntax_errors,
         semantic_diagnostics: handler.into_vec(),
     })

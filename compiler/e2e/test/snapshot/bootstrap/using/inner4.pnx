@@ -1,0 +1,10 @@
+public struct InnerFirst:
+    pass
+
+
+public struct InnerSecond:
+    pass
+
+    
+public struct InnerThird:
+    pass

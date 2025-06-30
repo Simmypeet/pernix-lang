@@ -9,12 +9,14 @@ use pernixc_handler::Handler;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_query::Engine;
 use pernixc_source_file::SourceElement;
-use pernixc_syntax::{item::module::ImportItems, SimplePathRoot};
+use pernixc_syntax::{
+    item::module::ImportItems, AccessModifier, SimplePathRoot,
+};
 use pernixc_target::{Global, TargetID};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
-    accessibility::Ext as _,
+    accessibility::{self, Accessibility, Ext as _},
     diagnostic::{
         ConflictingUsing, Diagnostic, ExpectModule, ItemRedifinition,
         SymbolIsNotAccessible, SymbolNotFound,
@@ -164,14 +166,13 @@ fn process_import_items(
             .map_or_else(|| engine_rw.read().get_name(start).0, |x| x.kind.0);
 
         // check if there's existing symbol right now
-        let existing = engine_rw
-            .read()
+        let engine = engine_rw.read();
+        let existing = engine
             .get_members(defined_in_module_id)
             .member_ids_by_name
             .get(&name)
             .map(|x| {
-                engine_rw
-                    .read()
+                engine
                     .get_span(Global::new(defined_in_module_id.target_id, *x))
                     .0
             })
@@ -219,6 +220,7 @@ pub(super) fn insert_imports(
                 &from_simple_path,
                 defined_in_module_id,
                 true,
+                false,
                 handler,
             ) else {
                 return;
@@ -304,6 +306,7 @@ pub(super) fn create_trait<'s: 'scope, 'm, 'r, 'scope>(
             tr.body()
                 .and_then(|x| x.where_clause().and_then(|x| x.predicates())),
         )),
+        Some(tr.access_modifier()),
         handler,
     );
 
@@ -347,6 +350,7 @@ pub(super) fn create_trait<'s: 'scope, 'm, 'r, 'scope>(
                                 x.where_clause().and_then(|x| x.predicates())
                             }),
                         )),
+                        Some(ty.access_modifier()),
                         handler,
                     );
                 }
@@ -374,6 +378,7 @@ pub(super) fn create_trait<'s: 'scope, 'm, 'r, 'scope>(
                                 x.where_clause().and_then(|x| x.predicates())
                             }),
                         )),
+                        Some(f.access_modifier()),
                         handler,
                     );
 
@@ -416,6 +421,7 @@ pub(super) fn create_trait<'s: 'scope, 'm, 'r, 'scope>(
                                 x.where_clause().and_then(|x| x.predicates())
                             }),
                         )),
+                        Some(cn.access_modifier()),
                         handler,
                     );
                 }
@@ -448,7 +454,7 @@ pub(super) fn create_enum<'s: 'scope, 'm, 'r, 'scope>(
         return;
     };
 
-    let trait_id = add_symbol(
+    let enum_id = add_symbol(
         engine_rw,
         identifier.clone(),
         current_module_names.iter().map(flexstr::FlexStr::as_str),
@@ -464,6 +470,7 @@ pub(super) fn create_enum<'s: 'scope, 'm, 'r, 'scope>(
             en.body()
                 .and_then(|x| x.where_clause().and_then(|x| x.predicates())),
         )),
+        Some(en.access_modifier()),
         handler,
     );
 
@@ -491,10 +498,11 @@ pub(super) fn create_enum<'s: 'scope, 'm, 'r, 'scope>(
                 identifier.clone(),
                 enum_names.iter().map(flexstr::FlexStr::as_str),
                 Kind::Variant,
-                trait_id,
+                enum_id,
                 &mut members,
                 &mut redefinitions,
                 generated_ids_rw,
+                None,
                 None,
                 None,
                 handler,
@@ -511,7 +519,7 @@ pub(super) fn create_enum<'s: 'scope, 'm, 'r, 'scope>(
 
         // add the members to the module
         let mut engine = engine_rw.write();
-        let global_id = TargetID::Local.make_global(trait_id);
+        let global_id = TargetID::Local.make_global(enum_id);
         engine.database.set_input(
             &member::Key(global_id),
             Arc::new(Member { member_ids_by_name: members, redefinitions }),
@@ -532,7 +540,7 @@ pub(super) fn create_module(
         Vec<pernixc_syntax::item::module::Import>,
     >,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
-) {
+) -> symbol::ID {
     // the id that will be assigned to the module
     let mut current_module_names = parent_names.to_vec();
     current_module_names.push(name.clone());
@@ -569,23 +577,45 @@ pub(super) fn create_module(
             &name::Key(TargetID::Local.make_global(current_module_id)),
             Name(name),
         );
+        engine.database.set_input(
+            &accessibility::Key(TargetID::Local.make_global(current_module_id)),
+            match syntax_tree.access_modifier {
+                Some(AccessModifier::Internal(_)) => {
+                    Accessibility::Scoped(symbol::ID::ROOT_MODULE)
+                }
+                Some(AccessModifier::Private(_)) => Accessibility::Scoped(
+                    parent_module_id.unwrap_or(symbol::ID::ROOT_MODULE),
+                ),
+                Some(AccessModifier::Public(_)) | None => Accessibility::Public,
+            },
+        );
     }
 
+    // make sure atleast has an empty import list
+    imports_by_global_id.entry(current_module_id).or_default();
+
+    let members = RwLock::new(HashMap::<SharedStr, symbol::ID>::default());
+    let mut redefinitions = HashSet::default();
+
     syntax_tree.submodules_by_name.into_par_iter().for_each(|(name, tree)| {
-        create_module(
+        let id = create_module(
             engine_rw,
             generated_ids_rw,
-            name,
+            name.clone(),
             tree,
-            parent_module_id,
+            Some(current_module_id),
             &current_module_names,
             imports_by_global_id,
             handler,
         );
+
+        assert!(
+            members.write().insert(name, id).is_none(),
+            "should've handled the redefinition earlier"
+        );
     });
 
-    let mut members = HashMap::<SharedStr, symbol::ID>::default();
-    let mut redefinitions = HashSet::default();
+    let mut members = members.into_inner();
 
     rayon::scope(|s| {
         for item in
@@ -630,6 +660,7 @@ pub(super) fn create_module(
                         Some(syntax::WhereClause(f.body().and_then(|x| {
                             x.where_clause().and_then(|x| x.predicates())
                         }))),
+                        Some(f.access_modifier()),
                         handler,
                     );
 
@@ -679,6 +710,7 @@ pub(super) fn create_module(
                                 x.where_clause().and_then(|x| x.predicates())
                             })
                         }))),
+                        Some(ty.access_modifier()),
                         handler,
                     );
 
@@ -715,6 +747,7 @@ pub(super) fn create_module(
                         Some(syntax::WhereClause(st.body().and_then(|x| {
                             x.where_clause().and_then(|x| x.predicates())
                         }))),
+                        Some(st.access_modifier()),
                         handler,
                     );
 
@@ -767,6 +800,7 @@ pub(super) fn create_module(
                                 x.where_clause().and_then(|x| x.predicates())
                             })
                         }))),
+                        Some(cn.access_modifier()),
                         handler,
                     );
                 }
@@ -797,6 +831,7 @@ pub(super) fn create_module(
                                 x.where_clause().and_then(|x| x.predicates())
                             }),
                         )),
+                        Some(ma.access_modifier()),
                         handler,
                     );
                 }
@@ -824,9 +859,11 @@ pub(super) fn create_module(
             Arc::new(Member { member_ids_by_name: members, redefinitions }),
         );
     }
+
+    current_module_id
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::option_option)]
 fn add_symbol<'a>(
     engine: &RwLock<Engine>,
     name: pernixc_syntax::Identifier,
@@ -838,6 +875,7 @@ fn add_symbol<'a>(
     generated_ids_rw: &RwLock<HashSet<symbol::ID>>,
     extract_generic_parameters: Option<syntax::GenericParameters>,
     extract_where_clause: Option<syntax::WhereClause>,
+    access_modifier: Option<Option<pernixc_syntax::AccessModifier>>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
 ) -> symbol::ID {
     let mut generated_ids = generated_ids_rw.upgradable_read();
@@ -885,6 +923,24 @@ fn add_symbol<'a>(
             engine
                 .database
                 .set_input(&syntax::WhereClauseKey(global_id), where_clause);
+        }
+
+        if let Some(access_modifier) = access_modifier {
+            let accessibility = match access_modifier {
+                Some(pernixc_syntax::AccessModifier::Private(_)) => {
+                    Accessibility::Scoped(parent_id)
+                }
+                Some(pernixc_syntax::AccessModifier::Internal(_)) => {
+                    Accessibility::Scoped(symbol::ID::ROOT_MODULE)
+                }
+                Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
+                    Accessibility::Public
+                }
+            };
+
+            engine
+                .database
+                .set_input(&accessibility::Key(global_id), accessibility);
         }
     }
 

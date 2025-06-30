@@ -117,6 +117,7 @@ pub impl Engine {
         simple_path: &SimplePath,
         referring_site: Global<symbol::ID>,
         start_from_root: bool,
+        use_imports: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Global<symbol::ID>> {
         // simple path should always have root tough
@@ -185,6 +186,7 @@ pub impl Engine {
             simple_path.subsequences().flat_map(|x| x.identifier().into_iter()),
             referring_site,
             root,
+            use_imports,
             handler,
         )
     }
@@ -195,13 +197,16 @@ pub impl Engine {
         simple_path: impl Iterator<Item = Identifier>,
         referring_site: Global<symbol::ID>,
         root: Global<symbol::ID>,
+        use_imports: bool,
         handler: &dyn Handler<Box<dyn Diagnostic>>,
     ) -> Option<Global<symbol::ID>> {
         let mut lastest_resolution = root;
         for identifier in simple_path {
-            let Some(new_id) = self
-                .get_member_of(lastest_resolution, identifier.kind.0.as_str())
-            else {
+            let Some(new_id) = self.get_member_of(
+                lastest_resolution,
+                use_imports,
+                identifier.kind.0.as_str(),
+            ) else {
                 handler.receive(Box::new(SymbolNotFound {
                     searched_item_id: Some(lastest_resolution),
                     resolution_span: identifier.span,

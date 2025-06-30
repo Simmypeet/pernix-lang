@@ -1,0 +1,32 @@
+# conflict with the `First` struct defined below
+import main::First
+
+# conflicting import
+import main::inner1::Inner
+import main::inner2::Inner
+
+# importing in-accessible symbol
+import main::inner3::InAccessible
+
+# invalid use of `target::` in import
+from main::inner4 import target::invalidOne, target::invalidTwo
+
+from main::inner4 import (
+    InnerFirst,
+    InnerSecond,
+    InnerThird as InnerFirst # cause conflict 
+)
+
+# unknown module imports
+import unknown
+import main::unknown
+
+
+public module inner1
+public module inner2
+public module inner3
+public module inner4
+
+
+public struct First:
+    pass
