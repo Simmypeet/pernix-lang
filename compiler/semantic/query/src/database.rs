@@ -109,7 +109,6 @@ impl Engine {
             s.spawn(|_| {
                 let path = persistence
                     .path()
-                    .join(Persistence::QUERY_TRACKER_DIRECTORY)
                     .join(Persistence::DATABASE_SNAPSHOT_FILE);
 
                 // make sure that the parent directory exists
