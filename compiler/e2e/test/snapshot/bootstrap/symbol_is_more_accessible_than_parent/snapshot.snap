@@ -1,0 +1,25 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: assert_string
+---
+stderr:
+error: the symbol is more accessible than its parent symbol
+  ╭─ bootstrap/symbol_is_more_accessible_than_parent/main.pnx:3:27
+  │
+2 │     private trait Test:
+  │                   ---- the parent symbol `main::inner::Test` is accessible in `main::inner`
+3 │         internal function internalIsMoreAccessible()
+  │                           ^^^^^^^^^^^^^^^^^^^^^^^^ the symbol `internalIsMoreAccessible` is accessible in `main`, which is more accessible than its parent symbol `main::inner::Test`
+
+error: the symbol is more accessible than its parent symbol
+  ╭─ bootstrap/symbol_is_more_accessible_than_parent/main.pnx:5:25
+  │
+2 │     private trait Test:
+  │                   ---- the parent symbol `main::inner::Test` is accessible in `main::inner`
+  ·
+5 │         public function publicIsMoreAccessible()
+  │                         ^^^^^^^^^^^^^^^^^^^^^^ the symbol `publicIsMoreAccessible` is publicly accessible, which is more accessible than its parent symbol `main::inner::Test`
+
+
+
+stdout:

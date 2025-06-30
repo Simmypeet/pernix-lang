@@ -14,14 +14,16 @@ use pernixc_syntax::{
     item::module::ImportItems, AccessModifier, SimplePathRoot,
 };
 use pernixc_target::{Global, TargetID};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 use crate::{
-    accessibility::{self, Accessibility, Ext as _},
+    accessibility::{self, Accessibility, Ext},
     diagnostic::{
         ConflictingUsing, Diagnostic, ExpectModule, ItemRedifinition,
-        SymbolIsNotAccessible, SymbolNotFound,
-        TargetRootInImportIsNotAllowedwithFrom,
+        SymbolIsMoreAccessibleThanParent, SymbolIsNotAccessible,
+        SymbolNotFound, TargetRootInImportIsNotAllowedwithFrom,
     },
     import::{self, Using},
     kind::{self, Ext as _, Kind},
@@ -30,7 +32,7 @@ use crate::{
     span::{self, Ext as _, Span},
     symbol, syntax,
     target::{Ext as _, MapExt},
-    tree,
+    tree, HierarchyRelationship,
 };
 
 #[allow(clippy::too_many_lines)]
@@ -201,6 +203,53 @@ fn process_import_items(
             });
         }
     }
+}
+
+pub(super) fn symbol_is_more_accessible_than_its_parent_check(
+    engine: &Engine,
+    symbol_ids: &HashSet<symbol::ID>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    symbol_ids
+        .par_iter()
+        .copied()
+        .map(|x| TargetID::Local.make_global(x))
+        .for_each(|symbol_id| {
+            let kind = engine.get_kind(symbol_id);
+
+            if kind != Kind::Trait {
+                return;
+            }
+
+            let members = engine.get_members(symbol_id);
+            let parent_accessibility = engine.get_accessibility(symbol_id);
+
+            members
+                .member_ids_by_name
+                .par_iter()
+                .map(|x| *x.1)
+                .chain(members.redefinitions.par_iter().copied())
+                .for_each(|member_id| {
+                    let member_accessibility = engine.get_accessibility(
+                        Global::new(symbol_id.target_id, member_id),
+                    );
+
+                    if engine.accessibility_hierarchy_relationship(
+                        TargetID::Local,
+                        member_accessibility,
+                        parent_accessibility,
+                    ) == HierarchyRelationship::Parent
+                    {
+                        handler.receive(Box::new(
+                            SymbolIsMoreAccessibleThanParent {
+                                symbol_id: TargetID::Local
+                                    .make_global(member_id),
+                                parent_id: symbol_id,
+                            },
+                        ));
+                    }
+                });
+        });
 }
 
 #[allow(clippy::too_many_lines)]
@@ -556,6 +605,7 @@ impl Context<'_> {
                                 .build(),
                         );
                     }
+
                     pernixc_syntax::item::r#trait::Member::Function(f) => {
                         let Some(identifier) =
                             f.signature().and_then(|x| x.identifier())
@@ -596,6 +646,7 @@ impl Context<'_> {
                             },
                         );
                     }
+
                     pernixc_syntax::item::r#trait::Member::Constant(cn) => {
                         let Some(identifier) =
                             cn.signature().and_then(|x| x.identifier())

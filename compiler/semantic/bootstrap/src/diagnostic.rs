@@ -6,9 +6,15 @@ use flexstr::SharedStr;
 use pernixc_diagnostic::{Related, Report, Severity};
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_query::Engine;
-use pernixc_target::Global;
+use pernixc_target::{Global, TargetID};
 
-use crate::{kind::Ext, name::Ext as _, span::Ext as _, symbol};
+use crate::{
+    accessibility::{Accessibility, Ext as _},
+    kind::Ext as _,
+    name::Ext as _,
+    span::Ext as _,
+    symbol,
+};
 
 /// Implemented all the diagnostic objects and provides type erasure.
 pub trait Diagnostic:
@@ -309,6 +315,92 @@ impl Report<&Engine> for ConflictingUsing {
                         message: format!(
                             "this symbol already defined the name `{}`",
                             self.name
+                        ),
+                    }]
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
+/// The symbol is more accessible than the parent symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SymbolIsMoreAccessibleThanParent {
+    /// The ID of the symbol that is more accessible than the parent symbol.
+    pub symbol_id: Global<symbol::ID>,
+
+    /// The ID of the parent symbol.
+    pub parent_id: Global<symbol::ID>,
+}
+
+fn accessibility_description(
+    engine: &Engine,
+    target_id: TargetID,
+    accessibility: Accessibility<symbol::ID>,
+) -> String {
+    match accessibility {
+        Accessibility::Public => "publicly accessible".to_owned(),
+        Accessibility::Scoped(module_id) => {
+            let module_qualified_name =
+                engine.get_qualified_name(Global::new(target_id, module_id));
+
+            format!("accessible in `{module_qualified_name}`")
+        }
+    }
+}
+
+impl Report<&Engine> for SymbolIsMoreAccessibleThanParent {
+    type Location = RelativeLocation;
+
+    fn report(
+        &self,
+        engine: &Engine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let symbol_name = engine.get_name(self.symbol_id);
+        let parent_qualified_name = engine.get_qualified_name(self.parent_id);
+
+        let symbol_accessibility = engine.get_accessibility(self.symbol_id);
+        let parent_accessibility = engine.get_accessibility(self.parent_id);
+
+        let symbol_span = engine.get_span(self.symbol_id);
+        let parent_span = engine.get_span(self.parent_id);
+
+        let symbol_accessibility_description = accessibility_description(
+            engine,
+            self.symbol_id.target_id,
+            symbol_accessibility,
+        );
+
+        let parent_accessibility_description = accessibility_description(
+            engine,
+            self.parent_id.target_id,
+            parent_accessibility,
+        );
+
+        pernixc_diagnostic::Diagnostic {
+            span: symbol_span.map(|span| {
+                (
+                    span,
+                    Some(format!(
+                        "the symbol `{}` is \
+                         {symbol_accessibility_description}, which is more \
+                         accessible than its parent symbol \
+                         `{parent_qualified_name}`",
+                        symbol_name.as_str(),
+                    )),
+                )
+            }),
+            message: "the symbol is more accessible than its parent symbol"
+                .to_string(),
+            severity: Severity::Error,
+            help_message: None,
+            related: parent_span
+                .map(|span| {
+                    vec![Related {
+                        span,
+                        message: format!(
+                            "the parent symbol `{parent_qualified_name}` is \
+                             {parent_accessibility_description}",
                         ),
                     }]
                 })

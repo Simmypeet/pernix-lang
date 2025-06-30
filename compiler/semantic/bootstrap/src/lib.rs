@@ -20,7 +20,7 @@ use pernixc_source_file::{GlobalSourceID, SourceMap};
 use pernixc_target::TargetID;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::diagnostic::Diagnostic;
+use crate::{diagnostic::Diagnostic, target::Ext as _};
 
 pub mod accessibility;
 pub mod diagnostic;
@@ -149,6 +149,16 @@ pub fn bootstrap<'l>(
             &handler,
         );
     });
+
+    {
+        let engine_read = engine.read();
+        let target = engine_read.get_target(TargetID::Local);
+        build::symbol_is_more_accessible_than_its_parent_check(
+            &engine_read,
+            &target.all_symbol_ids,
+            &handler,
+        );
+    }
 
     Ok(Bootstrap {
         engine: engine.into_inner(),

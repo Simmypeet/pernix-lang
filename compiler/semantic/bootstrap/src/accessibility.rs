@@ -81,33 +81,24 @@ pub impl Engine {
     ///
     /// The returned [`HierarchyRelationship`] is based on the `first`
     /// accessibility.
-    ///
-    /// # Returns
-    ///
-    /// Returns `None` if either `first` or `second` contains an invalid
-    /// module ID.
     fn accessibility_hierarchy_relationship(
         &self,
         target_id: TargetID,
         first: Accessibility<symbol::ID>,
         second: Accessibility<symbol::ID>,
-    ) -> Option<HierarchyRelationship> {
+    ) -> HierarchyRelationship {
         match (first, second) {
             (Accessibility::Public, Accessibility::Public) => {
-                Some(HierarchyRelationship::Equivalent)
+                HierarchyRelationship::Equivalent
             }
             (Accessibility::Public, Accessibility::Scoped(_)) => {
-                Some(HierarchyRelationship::Parent)
+                HierarchyRelationship::Parent
             }
             (Accessibility::Scoped(_), Accessibility::Public) => {
-                Some(HierarchyRelationship::Child)
+                HierarchyRelationship::Child
             }
             (Accessibility::Scoped(first), Accessibility::Scoped(second)) => {
-                Some(
-                    self.symbol_hierarchy_relationship(
-                        target_id, first, second,
-                    ),
-                )
+                self.symbol_hierarchy_relationship(target_id, first, second)
             }
         }
     }

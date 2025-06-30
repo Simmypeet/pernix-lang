@@ -1,0 +1,5 @@
+private module inner:
+    private trait Test:
+        internal function internalIsMoreAccessible()
+
+        public function publicIsMoreAccessible()
