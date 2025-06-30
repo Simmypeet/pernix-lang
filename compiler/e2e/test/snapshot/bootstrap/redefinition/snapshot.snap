@@ -4,7 +4,7 @@ expression: assert_string
 ---
 stderr:
 error: symbol `First` is already defined in the scope `main`
-  ╭─ bootstrap/redifinition/main.pnx:5:14
+  ╭─ bootstrap/redefinition/main.pnx:5:14
   │
 1 │ public trait First:
   │              ----- symbol `First` is already defined here
@@ -13,7 +13,7 @@ error: symbol `First` is already defined in the scope `main`
   │              ^^^^^ redefinition here
 
 error: symbol `Second` is already defined in the scope `main`
-   ╭─ bootstrap/redifinition/main.pnx:13:17
+   ╭─ bootstrap/redefinition/main.pnx:13:17
    │
  9 │ public trait Second:
    │              ------ symbol `Second` is already defined here
@@ -22,7 +22,7 @@ error: symbol `Second` is already defined in the scope `main`
    │                 ^^^^^^ redefinition here
 
 error: symbol `first` is already defined in the scope `main::RedefinitionInTrait`
-   ╭─ bootstrap/redifinition/main.pnx:19:21
+   ╭─ bootstrap/redefinition/main.pnx:19:21
    │
 18 │     public function first()
    │                     ----- symbol `first` is already defined here
@@ -30,7 +30,7 @@ error: symbol `first` is already defined in the scope `main::RedefinitionInTrait
    │                     ^^^^^ redefinition here
 
 error: symbol `Second` is already defined in the scope `main::RedefinitionInTrait`
-   ╭─ bootstrap/redifinition/main.pnx:22:17
+   ╭─ bootstrap/redefinition/main.pnx:22:17
    │
 21 │     public type Second
    │                 ------ symbol `Second` is already defined here
@@ -38,7 +38,7 @@ error: symbol `Second` is already defined in the scope `main::RedefinitionInTrai
    │                 ^^^^^^ redefinition here
 
 error: symbol `THIRD` is already defined in the scope `main::RedefinitionInTrait`
-   ╭─ bootstrap/redifinition/main.pnx:25:18
+   ╭─ bootstrap/redefinition/main.pnx:25:18
    │
 24 │     public const THIRD: int32
    │                  ----- symbol `THIRD` is already defined here
@@ -46,7 +46,7 @@ error: symbol `THIRD` is already defined in the scope `main::RedefinitionInTrait
    │                  ^^^^^ redefinition here
 
 error: symbol `fourth` is already defined in the scope `main::RedefinitionInTrait`
-   ╭─ bootstrap/redifinition/main.pnx:28:17
+   ╭─ bootstrap/redefinition/main.pnx:28:17
    │
 27 │     public function fourth()
    │                     ------ symbol `fourth` is already defined here
@@ -54,7 +54,7 @@ error: symbol `fourth` is already defined in the scope `main::RedefinitionInTrai
    │                 ^^^^^^ redefinition here
 
 error: symbol `FIFTH` is already defined in the scope `main::RedefinitionInTrait`
-   ╭─ bootstrap/redifinition/main.pnx:31:17
+   ╭─ bootstrap/redefinition/main.pnx:31:17
    │
 30 │     public const FIFTH: int32
    │                  ----- symbol `FIFTH` is already defined here
@@ -62,7 +62,7 @@ error: symbol `FIFTH` is already defined in the scope `main::RedefinitionInTrait
    │                 ^^^^^ redefinition here
 
 error: symbol `First` is already defined in the scope `main::RedefinitionInEnum`
-   ╭─ bootstrap/redifinition/main.pnx:37:5
+   ╭─ bootstrap/redefinition/main.pnx:37:5
    │
 35 │     First
    │     ----- symbol `First` is already defined here
@@ -71,7 +71,7 @@ error: symbol `First` is already defined in the scope `main::RedefinitionInEnum`
    │     ^^^^^ redefinition here
 
 error: symbol `Second` is already defined in the scope `main::RedefinitionInEnum`
-   ╭─ bootstrap/redifinition/main.pnx:38:5
+   ╭─ bootstrap/redefinition/main.pnx:38:5
    │
 36 │     Second
    │     ------ symbol `Second` is already defined here
