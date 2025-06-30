@@ -45,11 +45,11 @@ pub enum Node {
 impl Node {
     /// Retrieves the [`RelativeSpan`] of the node.
     #[must_use]
-    pub fn span(&self) -> Option<RelativeSpan> {
+    pub fn span(&self) -> RelativeSpan {
         match self {
-            Self::Leaf(token) => Some(token.span),
+            Self::Leaf(token) => token.span,
             Self::Branch(tree) => tree.span(),
-            Self::SkipFragment(id, source_id) => Some(RelativeSpan {
+            Self::SkipFragment(id, source_id) => RelativeSpan {
                 start: RelativeLocation {
                     offset: 0,
                     mode: OffsetMode::Start,
@@ -61,7 +61,7 @@ impl Node {
                     relative_to: *id,
                 },
                 source_id: *source_id,
-            }),
+            },
         }
     }
 }
@@ -114,17 +114,21 @@ pub struct Tree {
     pub ast_info: Option<AstInfo>,
 
     /// List of nodes this tree contains.
+    ///
+    /// # Invariants
+    ///
+    /// The [`Self::nodes`] must not be empty
     pub nodes: Vec<Node>,
 }
 
 impl Tree {
     /// Obtains the [`RelativeSpan`] of the tree.
     #[must_use]
-    pub fn span(&self) -> Option<RelativeSpan> {
+    pub fn span(&self) -> RelativeSpan {
         if let Some(step_into_fragment) =
             self.ast_info.as_ref().and_then(|x| x.step_into_fragment)
         {
-            return Some(Span {
+            return Span {
                 start: RelativeLocation {
                     offset: 0,
                     mode: OffsetMode::Start,
@@ -136,19 +140,19 @@ impl Tree {
                     relative_to: step_into_fragment.0,
                 },
                 source_id: step_into_fragment.1,
-            });
+            };
         }
 
-        let first = self.nodes.first()?;
-        let last = self.nodes.last()?;
+        let first = self.nodes.first().unwrap();
+        let last = self.nodes.last().unwrap();
 
-        let first_span = first.span()?;
-        let last_span = last.span()?;
+        let first_span = first.span();
+        let last_span = last.span();
 
-        Some(Span {
+        Span {
             start: first_span.start,
             end: last_span.end,
             source_id: first_span.source_id,
-        })
+        }
     }
 }

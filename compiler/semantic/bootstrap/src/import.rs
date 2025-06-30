@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use extend::ext;
+use flexstr::SharedStr;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::Value;
@@ -53,4 +54,4 @@ pub struct Using {
 #[id(Global<symbol::ID>)]
 #[value(Arc<Import>)]
 #[ext(method(get_imports), unwrap("should have no cyclic dependencies"))]
-pub struct Import(pub HashMap<String, Using>);
+pub struct Import(pub HashMap<SharedStr, Using>);

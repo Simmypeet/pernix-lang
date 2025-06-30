@@ -4,7 +4,13 @@
 pub use std as __std;
 use std::marker::PhantomData;
 
+#[doc(hidden)]
+pub use pernixc_lexical::tree::RelativeLocation;
+#[doc(hidden)]
+pub use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
+#[doc(hidden)]
+pub use pernixc_source_file::SourceElement;
 #[doc(hidden)]
 pub use pernixc_stable_type_id as __stable_type_id;
 
@@ -157,7 +163,13 @@ pub use field_extract as __field_extract;
 ///
 /// Rarely implemented directly, consider using the [`abstract_tree!`] macro
 /// to generate a struct or enum that implements this trait.
-pub trait AbstractTree: 'static + Sized + FromNode + Identifiable {
+pub trait AbstractTree:
+    'static
+    + Sized
+    + FromNode
+    + Identifiable
+    + SourceElement<Location = RelativeLocation>
+{
     /// Creates a parser for the syntax tree.
     ///
     /// # Note
@@ -459,6 +471,25 @@ macro_rules! abstract_tree {
                 )?
             }
 
+
+            impl
+            $(<
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
+            >)?
+            $crate::abstract_tree::SourceElement
+            for
+            $struct_name
+            $(<
+                $($generic_param),*
+            >)?
+            {
+                type Location = $crate::abstract_tree::RelativeLocation;
+
+                fn span(&self) -> $crate::abstract_tree::RelativeSpan {
+                    self.0.span()
+                }
+            }
+
         };
     };
 
@@ -580,6 +611,26 @@ macro_rules! abstract_tree {
                 )?
             }
 
+            impl
+            $(<
+                $($generic_param $(: $first_bound $(+ $rest_bound)*)?),*
+            >)?
+            $crate::abstract_tree::SourceElement
+            for
+            $enum_name
+            $(<
+                $($generic_param),*
+            >)?
+            {
+                type Location = $crate::abstract_tree::RelativeLocation;
+
+                fn span(&self) -> $crate::abstract_tree::RelativeSpan {
+                    match self {
+                        Self::$first_variant_name(node) => node.span(),
+                        $(Self::$rest_variant_name(node) => node.span()),*
+                    }
+                }
+            }
         };
     }
 }
@@ -667,6 +718,14 @@ impl<T: AbstractTree, U: Identifiable + 'static> AbstractTree for Tag<T, U> {
     fn parser() -> impl Parser { parser::ast::<T>() }
 
     fn step_into_fragment() -> Option<expect::Fragment> { None }
+}
+
+impl<T: AbstractTree, U: Identifiable + 'static> SourceElement for Tag<T, U> {
+    type Location = RelativeLocation;
+
+    fn span(&self) -> pernixc_source_file::Span<Self::Location> {
+        self.0.span()
+    }
 }
 
 impl<T: AbstractTree, U: Identifiable> FromNode for Tag<T, U> {

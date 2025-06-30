@@ -18,6 +18,7 @@ use pernixc_query::{
 use pernixc_serialize::{de::Deserializer, ser::Serializer};
 use pernixc_source_file::{GlobalSourceID, SourceMap};
 use pernixc_target::TargetID;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::diagnostic::Diagnostic;
 
@@ -131,6 +132,15 @@ pub fn bootstrap<'l>(
         &imports,
         &handler,
     );
+
+    imports.into_par_iter().for_each(|import| {
+        build::insert_imports(
+            &engine,
+            TargetID::Local.make_global(import.0),
+            import.1,
+            &handler,
+        );
+    });
 
     let mut engine = engine.into_inner();
 

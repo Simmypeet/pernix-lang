@@ -9,6 +9,7 @@ use codespan_reporting::{
     term::termcolor::WriteColor,
 };
 use flexstr::SharedStr;
+use pernixc_bootstrap::Bootstrap;
 use pernixc_diagnostic::Report;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
@@ -444,7 +445,7 @@ pub fn run(
 
     let token_trees_by_source_id = DashMap::default();
 
-    let (engine, bootstrap_errors, init_semantic_errors) =
+    let Bootstrap { engine, syntax_errors, semantic_diagnostics } =
         match pernixc_bootstrap::bootstrap(
             &mut source_map,
             root_source_id,
@@ -479,8 +480,8 @@ pub fn run(
             }
         };
 
-    let mut semantic_diagnostics = Vec::new();
-    for diagnostic in &bootstrap_errors {
+    let mut sortable_semantic_diagnostics = Vec::new();
+    for diagnostic in syntax_errors {
         let codespan_reporting = match diagnostic {
             pernixc_bootstrap::tree::Error::Lexical(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
@@ -518,10 +519,11 @@ pub fn run(
             ),
         };
 
-        semantic_diagnostics.push(SortableDiagnostic(codespan_reporting));
+        sortable_semantic_diagnostics
+            .push(SortableDiagnostic(codespan_reporting));
     }
 
-    for diagnostic in &init_semantic_errors {
+    for diagnostic in semantic_diagnostics {
         let rel_pernixc_diagnostic = diagnostic.report(&engine);
         let codespan_reporting = rel_pernix_diagnostic_to_codespan_diagnostic(
             rel_pernixc_diagnostic,
@@ -529,12 +531,13 @@ pub fn run(
             &token_trees_by_source_id,
         );
 
-        semantic_diagnostics.push(SortableDiagnostic(codespan_reporting));
+        sortable_semantic_diagnostics
+            .push(SortableDiagnostic(codespan_reporting));
     }
 
-    semantic_diagnostics.sort_unstable();
+    sortable_semantic_diagnostics.sort_unstable();
 
-    for diagnostic in semantic_diagnostics {
+    for diagnostic in sortable_semantic_diagnostics {
         report_term.report(&mut source_map, &diagnostic.0);
     }
 

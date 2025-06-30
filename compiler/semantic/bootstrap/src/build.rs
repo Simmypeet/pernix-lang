@@ -8,17 +8,269 @@ use parking_lot::RwLock;
 use pernixc_handler::Handler;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_query::Engine;
-use pernixc_target::TargetID;
+use pernixc_source_file::SourceElement;
+use pernixc_syntax::{item::module::ImportItems, SimplePathRoot};
+use pernixc_target::{Global, TargetID};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
-    diagnostic::{Diagnostic, ItemRedifinition},
-    kind::{self, Kind},
-    member::{self, Member},
-    name::{self, Name},
-    span::{self, Span},
-    symbol, syntax, tree,
+    accessibility::Ext as _,
+    diagnostic::{
+        ConflictingUsing, Diagnostic, ExpectModule, ItemRedifinition,
+        SymbolIsNotAccessible, SymbolNotFound,
+        TargetRootInImportIsNotAllowedwithFrom,
+    },
+    import::{self, Using},
+    kind::{self, Ext as _, Kind},
+    member::{self, Ext as _, Member},
+    name::{self, Ext as _, Name},
+    span::{self, Ext as _, Span},
+    symbol, syntax,
+    target::{Ext as _, MapExt},
+    tree,
 };
+
+#[allow(clippy::too_many_lines)]
+fn process_import_items(
+    engine_rw: &RwLock<Engine>,
+    defined_in_module_id: Global<symbol::ID>,
+    import: &pernixc_syntax::item::module::Import,
+    import_item: &ImportItems,
+    start_from: Option<Global<symbol::ID>>,
+    import_component: &mut import::Import,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    'item: for import_item in import_item.items() {
+        // if start from , then all the import items can't have `target` as
+        // it root path
+
+        let (Some(root), Some(simple_path)) = (
+            import_item.simple_path().and_then(|x| x.root()),
+            import_item.simple_path(),
+        ) else {
+            continue;
+        };
+
+        if root.is_target() && import.from().is_some() {
+            handler.receive(Box::new(TargetRootInImportIsNotAllowedwithFrom {
+                target_root_span: root.span(),
+            }));
+            continue;
+        }
+
+        let mut start = match start_from {
+            Some(current) => {
+                let identifier_root = root.as_identifier().unwrap();
+
+                let Some(id) = engine_rw
+                    .read()
+                    .get_members(current)
+                    .member_ids_by_name
+                    .get(identifier_root.kind.0.as_str())
+                    .copied()
+                else {
+                    handler.receive(Box::new(SymbolNotFound {
+                        searched_item_id: Some(current),
+                        resolution_span: root.span(),
+                        name: identifier_root.kind.0.clone(),
+                    }));
+                    continue;
+                };
+
+                let result = Global::new(current.target_id, id);
+                if !engine_rw
+                    .read()
+                    .symbol_accessible(defined_in_module_id, result)
+                {
+                    handler.receive(Box::new(SymbolIsNotAccessible {
+                        referring_site: defined_in_module_id,
+                        referred: Global::new(current.target_id, id),
+                        referred_span: root.span(),
+                    }));
+                }
+
+                result
+            }
+
+            None => match root {
+                SimplePathRoot::Target(_) => Global::new(
+                    defined_in_module_id.target_id,
+                    symbol::ID::ROOT_MODULE,
+                ),
+                SimplePathRoot::Identifier(identifier) => {
+                    let target_map = engine_rw.read().get_target_map();
+
+                    let Some(id) = target_map
+                        .get(identifier.kind.0.as_str())
+                        .copied()
+                        .filter(|x| {
+                            x == &defined_in_module_id.target_id
+                                || engine_rw
+                                    .read()
+                                    .get_target(defined_in_module_id.target_id)
+                                    .linked_targets
+                                    .contains(x)
+                        })
+                    else {
+                        handler.receive(Box::new(SymbolNotFound {
+                            searched_item_id: None,
+                            resolution_span: identifier.span,
+                            name: identifier.kind.0.clone(),
+                        }));
+                        continue;
+                    };
+
+                    Global::new(id, symbol::ID::ROOT_MODULE)
+                }
+            },
+        };
+
+        for rest in simple_path.subsequences().filter_map(|x| x.identifier()) {
+            let Some(next) = engine_rw
+                .read()
+                .get_members(start)
+                .member_ids_by_name
+                .get(rest.kind.0.as_str())
+                .copied()
+            else {
+                handler.receive(Box::new(SymbolNotFound {
+                    searched_item_id: Some(start),
+                    resolution_span: rest.span,
+                    name: rest.kind.0.clone(),
+                }));
+                continue 'item;
+            };
+
+            let next_id = Global::new(start.target_id, next);
+
+            if !engine_rw
+                .read()
+                .symbol_accessible(defined_in_module_id, next_id)
+            {
+                handler.receive(Box::new(SymbolIsNotAccessible {
+                    referring_site: defined_in_module_id,
+                    referred: next_id,
+                    referred_span: rest.span,
+                }));
+            }
+
+            start = next_id;
+        }
+
+        let name = import_item
+            .alias()
+            .as_ref()
+            .and_then(pernixc_syntax::item::module::Alias::identifier)
+            .map_or_else(|| engine_rw.read().get_name(start).0, |x| x.kind.0);
+
+        // check if there's existing symbol right now
+        let existing = engine_rw
+            .read()
+            .get_members(defined_in_module_id)
+            .member_ids_by_name
+            .get(&name)
+            .map(|x| {
+                engine_rw
+                    .read()
+                    .get_span(Global::new(defined_in_module_id.target_id, *x))
+                    .0
+            })
+            .or_else(|| {
+                import_component.get(name.as_str()).map(|x| Some(x.span))
+            });
+
+        if let Some(existing) = existing {
+            handler.receive(Box::new(ConflictingUsing {
+                using_span: import_item
+                    .alias()
+                    .as_ref()
+                    .map_or_else(|| import_item.span(), SourceElement::span),
+                name: name.clone(),
+                module_id: defined_in_module_id,
+                conflicting_span: existing,
+            }));
+        } else {
+            import_component.insert(name, Using {
+                id: start,
+                span: import_item
+                    .alias()
+                    .as_ref()
+                    .map_or_else(|| import_item.span(), SourceElement::span),
+            });
+        }
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+pub(super) fn insert_imports(
+    engine_rw: &RwLock<Engine>,
+    defined_in_module_id: Global<symbol::ID>,
+    imports: impl IntoIterator<Item = pernixc_syntax::item::module::Import>,
+    handler: &dyn Handler<Box<dyn Diagnostic>>,
+) {
+    let mut import_component = import::Import::default();
+
+    for import in imports {
+        let start_from = if let Some(from_simple_path) =
+            import.from().and_then(|x| x.simple_path())
+        {
+            let engine = engine_rw.read();
+            let Some(from_id) = engine.resolve_simple_path(
+                &from_simple_path,
+                defined_in_module_id,
+                true,
+                handler,
+            ) else {
+                return;
+            };
+
+            // must be module
+            if engine.get_kind(from_id) != Kind::Module {
+                handler.receive(Box::new(ExpectModule {
+                    module_path: from_simple_path.inner_tree().span(),
+                    found_id: from_id,
+                }));
+                return;
+            }
+
+            Some(from_id)
+        } else {
+            None
+        };
+
+        let import_items = import.items().into_iter().flat_map(|x| {
+            let test: Option<ImportItems> = match x {
+            pernixc_syntax::item::module::ImportItemsKind::Regular(
+                import_items,
+            ) => Some(import_items),
+
+            pernixc_syntax::item::module::ImportItemsKind::Parenthesized(i) => {
+                i.items()
+            }
+        };
+
+            test.into_iter()
+        });
+
+        for import_item in import_items {
+            process_import_items(
+                engine_rw,
+                defined_in_module_id,
+                &import,
+                &import_item,
+                start_from,
+                &mut import_component,
+                handler,
+            );
+        }
+    }
+
+    let mut engine = engine_rw.write();
+    engine.database.set_input(
+        &import::Key(defined_in_module_id),
+        Arc::new(import_component),
+    );
+}
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub(super) fn create_trait<'s: 'scope, 'm, 'r, 'scope>(

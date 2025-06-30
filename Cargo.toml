@@ -70,7 +70,7 @@ bimap = "0.6.3"
 env_logger = "0.11.0"
 log = "0.4.14"
 tower-lsp = { version = "0.20.0", features = ["proposed"] }
-dashmap = { version = "6.1.0" }
+dashmap = { version = "6.1.0", features = ["rayon"] }
 bit-vec = "0.8.0"
 displaydoc = "0.2.5"
 ron = "0.10.1"

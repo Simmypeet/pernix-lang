@@ -412,10 +412,10 @@ impl Tree {
                                 .get()
                                 .signature
                                 .as_ref()
-                                .and_then(|x| x.inner_tree().span()),
+                                .map(|x| x.inner_tree().span()),
                             redefinition_submodule_span: module_tree
                                 .signature
-                                .and_then(|x| x.inner_tree().span()),
+                                .map(|x| x.inner_tree().span()),
                         });
                     }
                     Entry::Vacant(vacant_entry) => {

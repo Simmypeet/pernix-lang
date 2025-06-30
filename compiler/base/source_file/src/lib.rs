@@ -523,16 +523,16 @@ impl<L> Span<L> {
 /// Represents an element that is located within a source file.
 pub trait SourceElement {
     /// The type of the span.
-    type Span;
+    type Location;
 
     /// Gets the span location of the element.
-    fn span(&self) -> Self::Span;
+    fn span(&self) -> Span<Self::Location>;
 }
 
 impl<T: SourceElement> SourceElement for Box<T> {
-    type Span = T::Span;
+    type Location = T::Location;
 
-    fn span(&self) -> Self::Span { self.as_ref().span() }
+    fn span(&self) -> Span<Self::Location> { self.as_ref().span() }
 }
 
 fn get_line_byte_positions(text: &str) -> Vec<Range<usize>> {

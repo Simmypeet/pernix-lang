@@ -11,7 +11,9 @@ use bimap::BiHashMap;
 use flexstr::ToFlex;
 use pernixc_handler::Handler;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
+use pernixc_source_file::{
+    AbsoluteSpan, ByteIndex, GlobalSourceID, SourceElement, Span,
+};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
@@ -75,6 +77,12 @@ pub struct Token<T, L> {
     /// With this information, it's possible to reconstruct the original source
     /// code with the same formatting (lossless).
     pub prior_insignificant: Option<Span<L>>,
+}
+
+impl<T, L: Copy> SourceElement for Token<T, L> {
+    type Location = L;
+
+    fn span(&self) -> Span<L> { self.span }
 }
 
 impl<T, L> Token<T, L> {
