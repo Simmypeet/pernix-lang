@@ -4,6 +4,7 @@ use std::{any::TypeId, mem::ManuallyDrop};
 
 use dashmap::mapref::one::{Ref, RefMut};
 use pernixc_hash::DashMap;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::key::Key;
 
@@ -16,6 +17,12 @@ use crate::key::Key;
 #[allow(clippy::type_complexity)]
 pub struct Map {
     inner: DashMap<TypeId, TransparentMap>,
+}
+
+impl std::ops::Drop for Map {
+    fn drop(&mut self) {
+        std::mem::take(&mut self.inner).into_iter().for_each(core::mem::drop);
+    }
 }
 
 impl std::fmt::Debug for Map {
@@ -172,8 +179,9 @@ impl Map {
 fn drop<K: Key>(ptr: *mut ()) {
     unsafe {
         let map = ptr.cast::<ManuallyDrop<DashMap<K, K::Value>>>();
+        let value = ManuallyDrop::take(&mut *map);
 
-        ManuallyDrop::drop(&mut *map);
+        value.into_par_iter().for_each(core::mem::drop);
     }
 }
 

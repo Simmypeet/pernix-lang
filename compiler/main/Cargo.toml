@@ -16,6 +16,7 @@ clap = { workspace = true }
 backtrace = { workspace = true }
 toml = { workspace = true }
 codespan-reporting = { workspace = true }
+mimalloc = { workspace = true }
 
 
 [lints]

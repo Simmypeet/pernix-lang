@@ -40,6 +40,18 @@ pub struct Database {
     snapshot: Snapshot,
 }
 
+impl Drop for Database {
+    fn drop(&mut self) {
+        let map = std::mem::take(&mut self.map);
+        let query_tracker = std::mem::take(&mut self.query_tracker);
+
+        rayon::scope(|s| {
+            s.spawn(|_| drop(map));
+            s.spawn(|_| drop(query_tracker));
+        });
+    }
+}
+
 /// Stores the version information of the database, including whether the
 /// last operation was a query or not.
 #[derive(Debug, Default, Serialize, Deserialize)]

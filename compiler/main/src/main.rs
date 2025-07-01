@@ -23,6 +23,9 @@ use pernixc_serialize::{
     Deserialize, Serialize,
 };
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> ExitCode {
     // if the program is compiled in release mode, set the panic hook to
     // nicely print the error message and exit.
