@@ -388,7 +388,7 @@ impl Persistence {
     /// Serializes thne entire map to the persistence storage.
     pub fn serialize_call_graph(
         &self,
-        call_graph: &QueryTracker,
+        query_tracker: &QueryTracker,
     ) -> Result<(), std::io::Error> {
         let write = self.database.begin_write().map_err(|e| {
             std::io::Error::other(format!(
@@ -396,7 +396,7 @@ impl Persistence {
             ))
         })?;
         (self.serialize_call_graph)(
-            call_graph,
+            query_tracker,
             self.serde_extension.as_ref(),
             &write,
         )?;
@@ -612,7 +612,7 @@ fn serialize_call_graph<
         + Sync
         + 'static,
 >(
-    call_graph: &QueryTracker,
+    query_tracker: &QueryTracker,
     serde_extension: &dyn Any,
     write_transaction: &redb::WriteTransaction,
 ) -> Result<(), std::io::Error> {
@@ -646,7 +646,7 @@ fn serialize_call_graph<
                 Vec<(&DynamicBox, &HashSet<DynamicBox>)>,
             >::default();
 
-            for (entry, dependencies) in call_graph.dependency_graph() {
+            for (entry, dependencies) in query_tracker.dependency_graph() {
                 let stable_type_id = entry.stable_type_id();
                 entries_by_stable_type_id
                     .entry(stable_type_id)
@@ -729,7 +729,7 @@ fn serialize_call_graph<
                 Vec<(&DynamicBox, &VersionInfo)>,
             >::default();
 
-            for (entry, version_info) in call_graph.version_info_by_keys() {
+            for (entry, version_info) in query_tracker.version_info_by_keys() {
                 let stable_type_id = entry.stable_type_id();
                 entries_by_stable_type_id
                     .entry(stable_type_id)

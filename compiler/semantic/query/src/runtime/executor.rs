@@ -110,11 +110,11 @@ impl Entry {
         fn invoke<'db, K: Key>(
             engine: &'db Engine,
             key: &dyn Dynamic,
-            call_graph: MutexGuard<'db, QueryTracker>,
+            query_tracker: MutexGuard<'db, QueryTracker>,
         ) -> MutexGuard<'db, QueryTracker> {
             let key = key.any().downcast_ref::<K>().unwrap();
 
-            engine.query_internal(key, call_graph).1
+            engine.query_internal(key, query_tracker).1
         }
 
         let downcast = |executor: Arc<dyn Any + Send + Sync>,

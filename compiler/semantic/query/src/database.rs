@@ -76,7 +76,7 @@ impl Database {
 
 impl Persistence {
     /// Loads the incremental compilation database from the persistence
-    /// storage, including the call graph and version information.
+    /// storage, including the query tracker and version information.
     pub fn load_database(&self) -> Result<Database, std::io::Error> {
         let file = std::fs::File::open(self.database_snapshot_path())?;
 
@@ -101,7 +101,7 @@ impl Engine {
             return Ok(());
         };
 
-        let call_graph = self.database.query_tracker.lock();
+        let query_tracker = self.database.query_tracker.lock();
 
         let mut serialize_map_result = Ok(());
         let mut version_info_result = Ok(());
@@ -109,7 +109,7 @@ impl Engine {
         rayon::scope(|s| {
             s.spawn(|_| {
                 serialize_map_result = persistence
-                    .serialize_database(&self.database.map, &call_graph);
+                    .serialize_database(&self.database.map, &query_tracker);
             });
 
             s.spawn(|_| {

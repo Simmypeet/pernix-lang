@@ -1,7 +1,7 @@
 #![allow(clippy::mutable_key_type)]
 
-//! Implements the [`CallGraph`] struct used to track the dependencies between
-//! queries.
+//! Implements the [`QueryTracker`] struct used to track the dependencies
+//! between queries.
 
 use core::panic;
 use std::{collections::hash_map::Entry, sync::Arc, thread::ThreadId};
@@ -67,7 +67,7 @@ impl QueryTracker {
     }
 }
 
-/// Stores the error information about a cyclic dependency in the call graph.
+/// Stores the error information about a cyclic dependency in the query tracker.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
     ser_extension(DynamicSerialize<__S>),
@@ -80,7 +80,7 @@ pub struct CyclicDependency {
 
 impl std::fmt::Debug for QueryTracker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CallGraph").finish_non_exhaustive()
+        f.debug_struct("QueryTracker").finish_non_exhaustive()
     }
 }
 
@@ -209,7 +209,7 @@ impl Engine {
         &self,
         key: &T,
     ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
-        let (result, call_graph) =
+        let (result, query_tracker) =
             self.query_internal(key, self.database.query_tracker.lock());
 
         result?;
@@ -217,7 +217,7 @@ impl Engine {
         self.database.map.get(key).map_or_else(
             || {
                 let key_smallbox = DynamicBox(key.smallbox_clone());
-                let version_info = call_graph
+                let version_info = query_tracker
                     .version_info_by_keys
                     .get(&key_smallbox)
                     .copied()
@@ -241,20 +241,21 @@ impl Engine {
                     return Ok(value);
                 }
 
-                let called_from = call_graph.called_from();
+                let called_from = query_tracker.called_from();
 
                 // compute it again
-                let (computed_successfully, mut call_graph) = self.fresh_query(
-                    key,
-                    &key_smallbox,
-                    called_from.as_ref(),
-                    call_graph,
-                );
+                let (computed_successfully, mut query_tracker) = self
+                    .fresh_query(
+                        key,
+                        &key_smallbox,
+                        called_from.as_ref(),
+                        query_tracker,
+                    );
 
                 if self.check_cyclic(
                     computed_successfully,
                     called_from.as_ref(),
-                    &mut call_graph,
+                    &mut query_tracker,
                 ) != Ok(())
                 {
                     return Err(crate::runtime::executor::CyclicError);
@@ -274,7 +275,7 @@ impl Engine {
         &self,
         computed_successfully: bool,
         called_from: Option<&DynamicBox>,
-        call_graph: &mut MutexGuard<QueryTracker>,
+        query_tracker: &mut MutexGuard<QueryTracker>,
     ) -> Result<(), crate::runtime::executor::CyclicError> {
         let (Some(called_from), true) = (called_from, !computed_successfully)
         else {
@@ -282,7 +283,7 @@ impl Engine {
         };
 
         let Some(version_info) =
-            call_graph.version_info_by_keys.get(called_from)
+            query_tracker.version_info_by_keys.get(called_from)
         else {
             return Ok(());
         };
@@ -302,17 +303,17 @@ impl Engine {
     pub(crate) fn query_internal<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
-        mut call_graph: MutexGuard<'a, QueryTracker>,
+        mut query_tracker: MutexGuard<'a, QueryTracker>,
     ) -> (
         Result<(), crate::runtime::executor::CyclicError>,
         MutexGuard<'a, QueryTracker>,
     ) {
         let key_smallbox = DynamicBox(key.smallbox_clone());
 
-        let called_from = call_graph.called_from();
+        let called_from = query_tracker.called_from();
 
         // get the version info for the key.
-        let Some(version_info) = call_graph
+        let Some(version_info) = query_tracker
             .version_info_by_keys
             .get(&key_smallbox)
             .copied()
@@ -325,7 +326,7 @@ impl Engine {
 
                 // cache to in-memory
                 if let Some(loaded) = loaded {
-                    call_graph
+                    query_tracker
                         .version_info_by_keys
                         .insert(key_smallbox.clone(), loaded);
                 }
@@ -339,32 +340,32 @@ impl Engine {
                 .store(true, std::sync::atomic::Ordering::SeqCst);
 
             // the value hasn't been computed yet, so we need to compute it
-            let (computed_successfully, mut call_graph) = self.fresh_query(
+            let (computed_successfully, mut query_tracker) = self.fresh_query(
                 key,
                 &key_smallbox,
                 called_from.as_ref(),
-                call_graph,
+                query_tracker,
             );
 
             if self.check_cyclic(
                 computed_successfully,
                 called_from.as_ref(),
-                &mut call_graph,
+                &mut query_tracker,
             ) != Ok(())
             {
                 return (
                     Err(crate::runtime::executor::CyclicError),
-                    call_graph,
+                    query_tracker,
                 );
             }
 
-            return (Ok(()), call_graph);
+            return (Ok(()), query_tracker);
         };
 
         if version_info.kind == Kind::Input {
             // add the dependency of the input
             if let Some(called_from) = &called_from {
-                call_graph
+                query_tracker
                     .dependency_graph
                     .get_mut(called_from)
                     .unwrap()
@@ -372,7 +373,7 @@ impl Engine {
             }
 
             // the value is an `input` value, always returns as it.
-            return (Ok(()), call_graph);
+            return (Ok(()), query_tracker);
         }
 
         self.database
@@ -383,14 +384,14 @@ impl Engine {
         if version_info.verfied_at_version == self.database.snapshot.version {
             // add the dependency of the input
             if let Some(called_from) = &called_from {
-                call_graph
+                query_tracker
                     .dependency_graph
                     .get_mut(called_from)
                     .unwrap()
                     .insert(key_smallbox);
             }
 
-            return (Ok(()), call_graph);
+            return (Ok(()), query_tracker);
         }
 
         let recompute = if matches!(version_info.kind, Kind::Derived {
@@ -399,7 +400,7 @@ impl Engine {
             true
         } else {
             'result: {
-                let Some(inputs) = call_graph
+                let Some(inputs) = query_tracker
                     .dependency_graph
                     .get(&key_smallbox)
                     .map(|x| {
@@ -424,7 +425,7 @@ impl Engine {
                         });
 
                         if let Some(dependencies) = loaded {
-                            call_graph
+                            query_tracker
                                 .dependency_graph
                                 .insert(key_smallbox.clone(), dependencies);
                         }
@@ -439,9 +440,12 @@ impl Engine {
                 let mut recompute = false;
                 for dep in &inputs {
                     // run inputs verification for the input as well
-                    let is_input =
-                        call_graph.version_info_by_keys.get(dep).unwrap().kind
-                            == Kind::Input;
+                    let is_input = query_tracker
+                        .version_info_by_keys
+                        .get(dep)
+                        .unwrap()
+                        .kind
+                        == Kind::Input;
 
                     if !is_input {
                         let invoke_fn = self
@@ -455,13 +459,15 @@ impl Engine {
                                 )
                             });
 
-                        call_graph = invoke_fn(self, &***dep, call_graph);
+                        query_tracker = invoke_fn(self, &***dep, query_tracker);
                     }
 
                     // check if there's need to recompute the value
                     if !recompute {
-                        let input_version_info =
-                            call_graph.version_info_by_keys.get(dep).unwrap();
+                        let input_version_info = query_tracker
+                            .version_info_by_keys
+                            .get(dep)
+                            .unwrap();
 
                         let should_recompute = input_version_info
                             .updated_at_version
@@ -482,7 +488,7 @@ impl Engine {
                     key,
                     &key_smallbox,
                     called_from.as_ref(),
-                    call_graph,
+                    query_tracker,
                 );
 
             if self.check_cyclic(
@@ -497,16 +503,16 @@ impl Engine {
                 );
             }
 
-            call_graph = returned_call_graph;
+            query_tracker = returned_call_graph;
         } else {
-            call_graph
+            query_tracker
                 .version_info_by_keys
                 .get_mut(&key_smallbox)
                 .unwrap()
                 .verfied_at_version = self.database.snapshot.version;
         }
 
-        (Ok(()), call_graph)
+        (Ok(()), query_tracker)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -515,9 +521,9 @@ impl Engine {
         key: &T,
         key_smallbox: &DynamicBox,
         called_from: Option<&DynamicBox>,
-        mut call_graph: MutexGuard<'a, QueryTracker>,
+        mut query_tracker: MutexGuard<'a, QueryTracker>,
     ) -> (bool, MutexGuard<'a, QueryTracker>) {
-        call_graph
+        query_tracker
             .dependency_graph
             .insert(key_smallbox.clone(), HashSet::default());
 
@@ -532,7 +538,7 @@ impl Engine {
 
         // check for cyclic dependencies
         if let Some(called_from) = called_from {
-            call_graph
+            query_tracker
                 .dependency_graph
                 .get_mut(called_from)
                 .unwrap()
@@ -544,7 +550,7 @@ impl Engine {
             loop {
                 if stack.last().unwrap() == called_from {
                     for call in &stack {
-                        match call_graph
+                        match query_tracker
                             .version_info_by_keys
                             .entry(call.clone())
                         {
@@ -575,14 +581,14 @@ impl Engine {
                         }
                     }
 
-                    call_graph
+                    query_tracker
                         .cyclic_dependencies
                         .push(CyclicDependency { records_stack: stack });
 
                     // insert a default value for the cyclic dependency
                     self.database.map.insert(key.clone(), T::scc_value());
 
-                    call_graph.version_info_by_keys.insert(
+                    query_tracker.version_info_by_keys.insert(
                         DynamicBox(key.smallbox_clone()),
                         VersionInfo {
                             updated_at_version: self.database.snapshot.version,
@@ -595,11 +601,11 @@ impl Engine {
                     );
 
                     // signifying that the value was defaulted
-                    return (false, call_graph);
+                    return (false, query_tracker);
                 }
 
                 // follow the dependency chain
-                if let Some(next) = call_graph
+                if let Some(next) = query_tracker
                     .current_dependencies_by_dependant
                     .get(stack.last().unwrap())
                 {
@@ -609,35 +615,35 @@ impl Engine {
                 }
             }
 
-            assert!(call_graph
+            assert!(query_tracker
                 .current_dependencies_by_dependant
                 .insert(called_from.clone(), DynamicBox(key.smallbox_clone()))
                 .is_none());
         }
 
         // add the current record to the call stack
-        call_graph
+        query_tracker
             .record_stacks_by_thread_id
             .entry(current_thread_id)
             .or_default()
             .push(DynamicBox(key.smallbox_clone()));
 
-        let sync = call_graph.condvars_by_record.get(key_smallbox).cloned();
+        let sync = query_tracker.condvars_by_record.get(key_smallbox).cloned();
 
         // there's an another thread that is computing the same record
         let succeeded = if let Some(sync) = sync {
-            sync.wait(&mut call_graph);
+            sync.wait(&mut query_tracker);
             true
         } else {
             let (new_call_graph, ok) =
-                self.compute(key, key_smallbox, call_graph, &*executor);
+                self.compute(key, key_smallbox, query_tracker, &*executor);
 
-            call_graph = new_call_graph;
+            query_tracker = new_call_graph;
             ok
         };
 
         assert!(
-            call_graph
+            query_tracker
                 .record_stacks_by_thread_id
                 .get_mut(&current_thread_id)
                 .unwrap()
@@ -647,14 +653,14 @@ impl Engine {
         );
 
         if let Some(called_from) = called_from {
-            assert!(call_graph
+            assert!(query_tracker
                 .current_dependencies_by_dependant
                 .remove(called_from)
                 .is_some());
         }
 
         // Return whether the computation was successful (not cyclic)
-        (succeeded, call_graph)
+        (succeeded, query_tracker)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -662,24 +668,24 @@ impl Engine {
         &'a self,
         key: &K,
         key_smallbox: &DynamicBox,
-        mut call_graph: MutexGuard<'a, QueryTracker>,
+        mut query_tracker: MutexGuard<'a, QueryTracker>,
         executor: &dyn Executor<K>,
     ) -> (MutexGuard<'a, QueryTracker>, bool) {
         // compute the component
         let sync = Arc::new(Condvar::new());
-        assert!(call_graph
+        assert!(query_tracker
             .condvars_by_record
             .insert(key_smallbox.clone(), sync.clone())
             .is_none());
 
         // skipcq: RS-E1021 false positive
-        drop(call_graph); // release the context lock
+        drop(query_tracker); // release the context lock
 
         let executor_result = executor.execute(self, key.clone());
         let ok = executor_result.is_ok();
 
         // re-acquire the context lock
-        call_graph = self.database.query_tracker.lock();
+        query_tracker = self.database.query_tracker.lock();
 
         // Handle the executor result
         match executor_result {
@@ -687,7 +693,7 @@ impl Engine {
                 let value_fingerprint = calculate_fingerprint(&value);
                 self.database.map.insert(key.clone(), value);
 
-                match call_graph
+                match query_tracker
                     .version_info_by_keys
                     .entry(DynamicBox(key.smallbox_clone()))
                 {
@@ -718,7 +724,7 @@ impl Engine {
                 }
             }
             Err(_cyclic_error) => {
-                call_graph.version_info_by_keys.insert(
+                query_tracker.version_info_by_keys.insert(
                     DynamicBox(key.smallbox_clone()),
                     VersionInfo {
                         updated_at_version: self.database.snapshot.version,
@@ -730,7 +736,7 @@ impl Engine {
                     },
                 );
 
-                match call_graph
+                match query_tracker
                     .version_info_by_keys
                     .entry(DynamicBox(key.smallbox_clone()))
                 {
@@ -783,12 +789,15 @@ impl Engine {
             }
         }
 
-        assert!(call_graph.condvars_by_record.remove(key_smallbox).is_some());
+        assert!(query_tracker
+            .condvars_by_record
+            .remove(key_smallbox)
+            .is_some());
 
         // notify the other threads that the component is computed
         sync.notify_all();
 
-        (call_graph, ok)
+        (query_tracker, ok)
     }
 }
 
