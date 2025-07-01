@@ -97,71 +97,28 @@ impl Engine {
     /// Attempts to save the current database to persistent storage (if
     /// persistence is configured).
     pub fn try_save_database(&self) -> Result<(), std::io::Error> {
+        let _span = tracing::trace_span!("save database").entered();
         let Some(persistence) = self.runtime.persistence.as_ref() else {
             return Ok(());
         };
 
-        let query_tracker = self.database.query_tracker.lock();
+        let path = persistence
+            .path()
+            .join(Persistence::QUERY_TRACKER_DIRECTORY)
+            .join(Persistence::DATABASE_SNAPSHOT_FILE);
 
-        let mut serialize_map_result = Ok(());
-        let mut serialize_call_graph_result = Ok(());
-        let mut version_info_result = Ok(());
+        // make sure that the parent directory exists
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
 
-        rayon::scope(|s| {
-            s.spawn(|_| {
-                serialize_map_result =
-                    persistence.serialize_map(&self.database.map);
-            });
+        let file = std::fs::File::create(&path)?;
 
-            s.spawn(|_| {
-                serialize_call_graph_result =
-                    persistence.serialize_call_graph(&query_tracker);
-            });
+        let mut serializer = BinarySerializer::new(BufWriter::new(file));
 
-            s.spawn(|_| {
-                let path = persistence
-                    .path()
-                    .join(Persistence::QUERY_TRACKER_DIRECTORY)
-                    .join(Persistence::DATABASE_SNAPSHOT_FILE);
-
-                // make sure that the parent directory exists
-                if let Some(parent) = path.parent() {
-                    if !parent.exists() {
-                        if let Err(err) = std::fs::create_dir_all(parent) {
-                            version_info_result = Err(err);
-                            return;
-                        }
-                    }
-                } else {
-                    version_info_result = Err(std::io::Error::other(
-                        "Invalid path for version info",
-                    ));
-                    return;
-                }
-
-                let file = match std::fs::File::create(&path) {
-                    Ok(file) => file,
-                    Err(error) => {
-                        version_info_result = Err(error);
-                        return;
-                    }
-                };
-
-                let mut serializer =
-                    BinarySerializer::new(BufWriter::new(file));
-
-                match self.database.snapshot.serialize(&mut serializer, &()) {
-                    Ok(()) => {}
-                    Err(err) => {
-                        version_info_result = Err(err);
-                    }
-                }
-            });
-        });
-
-        serialize_map_result?;
-        serialize_call_graph_result?;
-        version_info_result?;
+        self.database.snapshot.serialize(&mut serializer, &())?;
 
         Ok(())
     }

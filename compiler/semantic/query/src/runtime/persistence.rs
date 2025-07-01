@@ -10,23 +10,18 @@ use std::{
 
 use getset::Getters;
 use parking_lot::RwLock;
-use pernixc_hash::{DashMap, HashSet};
+use pernixc_hash::HashSet;
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize as _, Serialize as _,
 };
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{
-    IntoParallelIterator as _, IntoParallelRefIterator as _, ParallelIterator,
-};
+use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator};
 use redb::TableDefinition;
 use tracing::trace_span;
 
 use crate::{
-    database::{
-        map::Map,
-        query_tracker::{QueryTracker, VersionInfo},
-    },
+    database::query_tracker::{QueryTracker, VersionInfo},
     fingerprint,
     key::DynamicBox,
     runtime::persistence::serde::{DynamicDeserialize, DynamicSerialize},
@@ -81,12 +76,6 @@ pub struct Persistence {
         &mut BinaryDeserializer<Box<dyn ReadAny>>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
-    serialize_map: fn(
-        &Map,
-        &HashSet<StableTypeID>,
-        &dyn Any,
-        &redb::Database,
-    ) -> Result<(), std::io::Error>,
     deserialize_dependencies: fn(
         &dyn Any,
         &mut BinaryDeserializer<Box<dyn ReadAny>>,
@@ -103,88 +92,6 @@ pub struct Persistence {
         &redb::Database,
         &redb::Database,
     ) -> Result<(), std::io::Error>,
-}
-
-fn serialize_map<
-    E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
-        + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
-        + Send
-        + Sync
-        + 'static,
->(
-    map: &Map,
-    skip_keys: &HashSet<StableTypeID>,
-    serde_extension: &dyn Any,
-    database: &redb::Database,
-) -> Result<(), std::io::Error> {
-    let serde_extension = serde_extension
-        .downcast_ref::<E>()
-        .expect("serde_extension must match the expected type");
-
-    let tx = database.begin_write().expect("Failed to begin write transaction");
-    let table =
-        RwLock::new(tx.open_table(TABLE).expect("Failed to open table"));
-
-    let result = serde_extension
-        .serialization_helper_by_type_id()
-        .par_iter()
-        .map(|a| {
-            if skip_keys.contains(a.0) {
-                return Ok(true);
-            }
-
-            let stable_type_id = *a.0;
-            let helper = a.1;
-
-            let result = helper.serialize_fingerprint_map(
-                map,
-                &|| {
-                    let buffer =
-                        BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
-
-                    Ok(BinarySerializer::new(Box::new(buffer)))
-                },
-                serde_extension,
-                &|serializer, fingerprint| {
-                    let any_box: Box<dyn Any> = serializer.into_inner();
-                    let mut buffer = any_box.downcast::<Vec<u8>>().unwrap();
-
-                    table
-                        .write()
-                        .insert(
-                            (stable_type_id.as_u128(), fingerprint),
-                            buffer.as_slice(),
-                        )
-                        .unwrap();
-
-                    BUFFER.with(|b| {
-                        // clear the buffer but keep the allocated memory
-                        buffer.clear();
-                        *b.borrow_mut() = *buffer;
-                    });
-
-                    Ok(())
-                },
-            );
-
-            result
-        })
-        .collect::<Result<Vec<_>, std::io::Error>>()?;
-
-    drop(table);
-
-    tx.commit().unwrap();
-
-    let scanned_count = result.into_iter().filter(|x| *x).count();
-
-    assert!(
-        scanned_count >= map.type_lens(),
-        "not all types were serialized, expected: {}, got: {}",
-        scanned_count,
-        map.type_lens(),
-    );
-
-    Ok(())
 }
 
 thread_local! {
@@ -368,7 +275,6 @@ impl Persistence {
 
             serialize_any_value,
             deserialize_any_value,
-            serialize_map: serialize_map::<E>,
             deserialize_dependencies,
             deserialize_version_info,
 
@@ -405,16 +311,6 @@ impl Persistence {
     /// Registers a key to be skipped during serialization.
     pub fn register_skip_key<K: Key>(&mut self) {
         self.skip_keys.insert(K::STABLE_TYPE_ID);
-    }
-
-    /// Serializes thne entire map to the persistence storage.
-    pub fn serialize_map(&self, map: &Map) -> Result<(), std::io::Error> {
-        (self.serialize_map)(
-            map,
-            &self.skip_keys,
-            self.serde_extension.as_ref(),
-            &self.value_cache_database,
-        )
     }
 
     /// Serializes thne entire map to the persistence storage.
@@ -528,9 +424,71 @@ impl Persistence {
         }
     }
 
+    /// Saves the version information for a given key fingerprint to the
+    /// persistence storage.
+    pub fn save_version_info<K: Key>(
+        &self,
+        fingerprint: u128,
+        version_info: &VersionInfo,
+    ) -> Result<(), std::io::Error> {
+        let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
+
+        let mut binary_serializer = BinarySerializer::new(buffer);
+
+        version_info.serialize(&mut binary_serializer, &())?;
+
+        let mut buffer = binary_serializer.into_inner();
+
+        let tx = self.version_info_database.begin_write().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to begin write transaction: {e}",
+            ))
+        })?;
+
+        {
+            let mut table = tx.open_table(TABLE).unwrap();
+            table
+                .insert(
+                    (K::STABLE_TYPE_ID.as_u128(), fingerprint),
+                    buffer.as_slice(),
+                )
+                .map_err(|e| {
+                    std::io::Error::other(format!(
+                        "Failed to insert entry into table: {e}",
+                    ))
+                })?;
+        }
+
+        tx.commit().map_err(|e| {
+            std::io::Error::other(format!("Failed to commit transaction: {e}",))
+        })?;
+
+        BUFFER.with(|b| {
+            // clear the buffer but keep the allocated memory
+            buffer.clear();
+            *b.borrow_mut() = buffer;
+        });
+
+        Ok(())
+    }
+
     /// Saves a value to the persistence storage.
-    pub fn save<K: Key>(&self, value: &K::Value) -> Result<(), std::io::Error> {
-        let fingerprint = fingerprint::fingerprint(value);
+    ///
+    /// # Safety
+    ///
+    /// The [`fingerprint`] provided must match the fingerprint of the
+    /// value being saved. This function is meant to be used for avoiding
+    /// re-computing the fingerprint of the value.
+    pub unsafe fn save_with_fingerprint<K: Key>(
+        &self,
+        value: &K::Value,
+        fingerprint: u128,
+    ) -> Result<(), std::io::Error> {
+        if self.skip_keys.contains(&K::STABLE_TYPE_ID) {
+            // If the key is registered to be skipped, do not save it.
+            return Ok(());
+        }
+
         let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
         let mut binary_serializer =
             BinarySerializer::<Box<dyn WriteAny>>::new(Box::new(buffer));
@@ -577,6 +535,16 @@ impl Persistence {
         });
 
         Ok(())
+    }
+
+    /// Saves a value to the persistence storage.
+    pub fn save<K: Key>(&self, value: &K::Value) -> Result<(), std::io::Error> {
+        unsafe {
+            self.save_with_fingerprint::<K>(
+                value,
+                fingerprint::fingerprint(value),
+            )
+        }
     }
 }
 
@@ -629,68 +597,41 @@ fn serialize_call_graph<
                 },
             );
 
-            let entries_by_stable_type_id = DashMap::<
-                StableTypeID,
-                Vec<(&DynamicBox, &HashSet<DynamicBox>)>,
-            >::default();
+            let result = query_tracker
+                .dependency_graph()
+                .par_iter()
+                .map(|(key, dependencies)| {
+                    let buffer =
+                        BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
 
-            query_tracker.dependency_graph().par_iter().for_each(
-                |(entry, dependencies)| {
-                    let stable_type_id = entry.stable_type_id();
-                    entries_by_stable_type_id
-                        .entry(stable_type_id)
-                        .or_default()
-                        .push((entry, dependencies));
-                },
-            );
+                    let mut serializer =
+                        BinarySerializer::<Box<dyn WriteAny>>::new(Box::new(
+                            buffer,
+                        ));
 
-            let result = entries_by_stable_type_id
-                .into_par_iter()
-                .map(|(stable_type_id, entries)| {
-                    entries
-                        .into_par_iter()
-                        .map(|(entry, dependencies)| {
-                            let buffer = BUFFER
-                                .with(|b| std::mem::take(&mut *b.borrow_mut()));
+                    dependencies.serialize(&mut serializer, extension)?;
 
-                            let mut serializer =
-                                BinarySerializer::<Box<dyn WriteAny>>::new(
-                                    Box::new(buffer),
-                                );
+                    let any_box: Box<dyn Any> = serializer.into_inner();
+                    let mut buffer = any_box.downcast::<Vec<u8>>().unwrap();
 
-                            dependencies
-                                .serialize(&mut serializer, extension)?;
+                    table
+                        .write()
+                        .insert(
+                            (key.stable_type_id().as_u128(), key.fingerprint()),
+                            buffer.as_slice(),
+                        )
+                        .map_err(|e| {
+                            std::io::Error::other(format!(
+                                "Failed to insert entry into table: {e}",
+                            ))
+                        })?;
 
-                            let any_box: Box<dyn Any> = serializer.into_inner();
-                            let mut buffer =
-                                any_box.downcast::<Vec<u8>>().unwrap();
-
-                            table
-                                .write()
-                                .insert(
-                                    (
-                                        stable_type_id.as_u128(),
-                                        entry.0.fingerprint(),
-                                    ),
-                                    buffer.as_slice(),
-                                )
-                                .map_err(|e| {
-                                    std::io::Error::other(format!(
-                                        "Failed to insert entry into table: \
-                                         {e}",
-                                    ))
-                                })?;
-
-                            BUFFER.with(|b| {
-                                // clear the buffer but keep the allocated
-                                // memory
-                                buffer.clear();
-                                *b.borrow_mut() = *buffer;
-                            });
-
-                            Ok(())
-                        })
-                        .collect::<Result<(), std::io::Error>>()?;
+                    BUFFER.with(|b| {
+                        // clear the buffer but keep the allocated
+                        // memory
+                        buffer.clear();
+                        *b.borrow_mut() = *buffer;
+                    });
 
                     Ok(())
                 })
@@ -737,67 +678,40 @@ fn serialize_call_graph<
                 },
             );
 
-            let entries_by_stable_type_id = DashMap::<
-                StableTypeID,
-                Vec<(&DynamicBox, &VersionInfo)>,
-            >::default();
+            let result = query_tracker
+                .version_info_by_keys()
+                .par_iter()
+                .map(|(key, version_info)| {
+                    let buffer =
+                        BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
+                    let mut serializer =
+                        BinarySerializer::<Box<dyn WriteAny>>::new(Box::new(
+                            buffer,
+                        ));
 
-            query_tracker.version_info_by_keys().par_iter().for_each(
-                |(entry, version_info)| {
-                    let stable_type_id = entry.stable_type_id();
-                    entries_by_stable_type_id
-                        .entry(stable_type_id)
-                        .or_default()
-                        .push((entry, version_info));
-                },
-            );
+                    version_info.serialize(&mut serializer, extension)?;
 
-            let result = entries_by_stable_type_id
-                .into_par_iter()
-                .map(|(stable_type_id, entries)| {
-                    entries
-                        .into_par_iter()
-                        .map(|(entry, version_info)| {
-                            let buffer = BUFFER
-                                .with(|b| std::mem::take(&mut *b.borrow_mut()));
-                            let mut serializer =
-                                BinarySerializer::<Box<dyn WriteAny>>::new(
-                                    Box::new(buffer),
-                                );
+                    let any_box: Box<dyn Any> = serializer.into_inner();
+                    let mut buffer = any_box.downcast::<Vec<u8>>().unwrap();
 
-                            version_info
-                                .serialize(&mut serializer, extension)?;
+                    table
+                        .write()
+                        .insert(
+                            (key.stable_type_id().as_u128(), key.fingerprint()),
+                            buffer.as_slice(),
+                        )
+                        .map_err(|e| {
+                            std::io::Error::other(format!(
+                                "Failed to insert entry into table: {e}",
+                            ))
+                        })?;
 
-                            let any_box: Box<dyn Any> = serializer.into_inner();
-                            let mut buffer =
-                                any_box.downcast::<Vec<u8>>().unwrap();
-
-                            table
-                                .write()
-                                .insert(
-                                    (
-                                        stable_type_id.as_u128(),
-                                        entry.0.fingerprint(),
-                                    ),
-                                    buffer.as_slice(),
-                                )
-                                .map_err(|e| {
-                                    std::io::Error::other(format!(
-                                        "Failed to insert entry into table: \
-                                         {e}",
-                                    ))
-                                })?;
-
-                            BUFFER.with(|b| {
-                                // clear the buffer but keep the allocated
-                                // memory
-                                buffer.clear();
-                                *b.borrow_mut() = *buffer;
-                            });
-
-                            Ok(())
-                        })
-                        .collect::<Result<(), std::io::Error>>()?;
+                    BUFFER.with(|b| {
+                        // clear the buffer but keep the allocated
+                        // memory
+                        buffer.clear();
+                        *b.borrow_mut() = *buffer;
+                    });
 
                     Ok(())
                 })

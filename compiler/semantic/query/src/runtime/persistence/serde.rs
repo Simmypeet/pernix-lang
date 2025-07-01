@@ -213,7 +213,7 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
     value_serializer: fn(&dyn Any, &mut S, &E) -> Result<(), S::Error>,
     cas_map_serializer: fn(
         &Map,
-        &(dyn Send + Sync + Fn() -> Result<S, S::Error>),
+        &(dyn Send + Sync + Fn(u128) -> Result<Option<S>, S::Error>),
         &E,
         &(dyn Send + Sync + Fn(S, u128) -> Result<(), S::Error>),
     ) -> Result<bool, S::Error>,
@@ -237,23 +237,6 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
         extension: &E,
     ) -> Result<(), S::Error> {
         (self.value_serializer)(value, serializer, extension)
-    }
-
-    pub(super) fn serialize_fingerprint_map(
-        &self,
-        map: &Map,
-        create_serializer: &(dyn Send + Sync + Fn() -> Result<S, S::Error>),
-        extension: &E,
-        post_serialize: &(dyn Send
-              + Sync
-              + Fn(S, u128) -> Result<(), S::Error>),
-    ) -> Result<bool, S::Error> {
-        (self.cas_map_serializer)(
-            map,
-            create_serializer,
-            extension,
-            post_serialize,
-        )
     }
 }
 
@@ -565,7 +548,7 @@ impl<
             |map: &Map,
              create_serializer: &(dyn Send
                    + Sync
-                   + Fn() -> Result<S, S::Error>),
+                   + Fn(u128) -> Result<Option<S>, S::Error>),
              extension: &E,
              post_serialize: &(dyn Send
                    + Sync
@@ -578,7 +561,12 @@ impl<
                             let value = value.value();
                             let fingerprint =
                                 crate::fingerprint::fingerprint(value);
-                            let mut serializer = create_serializer()?;
+
+                            let Some(mut serializer) =
+                                create_serializer(fingerprint)?
+                            else {
+                                return Ok(());
+                            };
 
                             value.serialize(&mut serializer, extension)?;
                             post_serialize(serializer, fingerprint)?;

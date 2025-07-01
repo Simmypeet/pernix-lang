@@ -711,35 +711,71 @@ impl Engine {
         match executor_result {
             Ok(value) => {
                 let value_fingerprint = calculate_fingerprint(&value);
-                self.database.map.insert(key.clone(), value);
+                self.database.map.insert(key.clone(), value.clone());
 
-                match query_tracker
+                let (save_database, save_version_info) = match query_tracker
                     .version_info_by_keys
                     .entry(DynamicBox(key.smallbox_clone()))
                 {
                     Entry::Occupied(mut occupied_entry) => {
                         let version_info = occupied_entry.get_mut();
+                        let initial_version = *version_info;
+
                         version_info.verfied_at_version =
                             self.database.snapshot.version;
                         version_info.kind = Kind::Derived {
                             defaulted_by_cyclic_dependency: false,
                         };
 
-                        if Some(value_fingerprint) != version_info.fingerprint {
+                        let save_value = if Some(value_fingerprint)
+                            == version_info.fingerprint
+                        {
+                            false
+                        } else {
                             version_info.updated_at_version =
                                 self.database.snapshot.version;
                             version_info.fingerprint = Some(value_fingerprint);
-                        }
+
+                            true
+                        };
+
+                        (
+                            save_value,
+                            (&initial_version != version_info)
+                                .then_some(*version_info),
+                        )
                     }
                     Entry::Vacant(vacant_entry) => {
-                        vacant_entry.insert(VersionInfo {
+                        let inserted_version_info = VersionInfo {
                             updated_at_version: self.database.snapshot.version,
                             verfied_at_version: self.database.snapshot.version,
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: false,
                             },
                             fingerprint: Some(value_fingerprint),
-                        });
+                        };
+                        vacant_entry.insert(inserted_version_info);
+
+                        (true, Some(inserted_version_info))
+                    }
+                };
+
+                // save to the database upon update
+                if let Some(per) = self.runtime.persistence.as_ref() {
+                    if save_database {
+                        unsafe {
+                            let _ = per.save_with_fingerprint::<K>(
+                                &value,
+                                value_fingerprint,
+                            );
+                        }
+                    }
+
+                    if let Some(save_version_info) = save_version_info {
+                        let _ = per.save_version_info::<K>(
+                            value_fingerprint,
+                            &save_version_info,
+                        );
                     }
                 }
             }
