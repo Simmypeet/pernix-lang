@@ -4,7 +4,6 @@ use std::{
     self,
     any::Any,
     cell::RefCell,
-    fmt::write,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -378,7 +377,11 @@ impl Persistence {
             &self.skip_keys,
             self.serde_extension.as_ref(),
             &write,
-        )
+        )?;
+
+        write.commit().map_err(|e| {
+            std::io::Error::other(format!("Failed to commit transaction: {e}",))
+        })
     }
 
     /// Serializes thne entire map to the persistence storage.
@@ -395,7 +398,11 @@ impl Persistence {
             call_graph,
             self.serde_extension.as_ref(),
             &write,
-        )
+        )?;
+
+        write.commit().map_err(|e| {
+            std::io::Error::other(format!("Failed to commit transaction: {e}",))
+        })
     }
 
     /// Serializes the entire database, including the value map and the
@@ -432,6 +439,10 @@ impl Persistence {
                 );
             });
         });
+
+        write.commit().map_err(|e| {
+            std::io::Error::other(format!("Failed to commit transaction: {e}",))
+        })?;
 
         value_map_result.and(query_tracker_result)
     }
@@ -564,10 +575,16 @@ impl Persistence {
                     (K::STABLE_TYPE_ID.as_u128(), fingerprint),
                     buffer.as_slice(),
                 )
-                .unwrap();
+                .map_err(|e| {
+                    std::io::Error::other(format!(
+                        "Failed to insert entry into table: {e}",
+                    ))
+                })?;
         }
 
-        tx.commit().unwrap();
+        tx.commit().map_err(|e| {
+            std::io::Error::other(format!("Failed to commit transaction: {e}",))
+        })?;
 
         BUFFER.with(|b| {
             // clear the buffer but keep the allocated memory
@@ -712,7 +729,7 @@ fn serialize_call_graph<
                     .push((entry, version_info));
             }
 
-            version_info= entries_by_stable_type_id
+            version_info = entries_by_stable_type_id
                 .into_par_iter()
                 .map(|(stable_type_id, entries)| {
                     entries
