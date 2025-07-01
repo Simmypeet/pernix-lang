@@ -4,6 +4,7 @@ use std::{
     self,
     any::Any,
     cell::RefCell,
+    fmt::Write,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -856,6 +857,29 @@ fn serialize_call_graph<
     version_info?;
 
     Ok(())
+}
+
+impl Drop for Persistence {
+    fn drop(&mut self) {
+        let value_cache_write_transaction =
+            self.value_cache_write_transaction.write().take();
+        let dependency_graph_write_transaction =
+            self.dependency_graph_write_transaction.write().take();
+        let version_info_write_transaction =
+            self.version_info_write_transaction.write().take();
+
+        [
+            value_cache_write_transaction,
+            dependency_graph_write_transaction,
+            version_info_write_transaction,
+        ]
+        .into_par_iter()
+        .for_each(|tx| {
+            if let Some(tx) = tx {
+                drop(tx.into_heads());
+            }
+        });
+    }
 }
 
 #[cfg(test)]

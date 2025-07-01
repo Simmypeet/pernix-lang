@@ -156,9 +156,8 @@ impl Engine {
         let value_fingerprint = calculate_fingerprint(&value);
         let key_fingerprint = fingerprint::fingerprint(key);
 
-        self.database.map.insert(key.clone(), value);
-
-        let mut update_version = |version: &mut VersionInfo| -> bool {
+        let mut update_version = |version: &mut VersionInfo| -> (bool, bool) {
+            let mut save_value = false;
             let mut need_update = version.kind != Kind::Input
                 || version.verfied_at_version != self.database.snapshot.version;
 
@@ -178,12 +177,13 @@ impl Engine {
 
                 // always need to update the version info
                 need_update = true;
+                save_value = true;
             }
 
-            need_update
+            (need_update, save_value)
         };
 
-        let save_version_info = match self
+        let (save_version_info, save_value) = match self
             .database
             .query_tracker
             .get_mut()
@@ -192,9 +192,10 @@ impl Engine {
         {
             Entry::Occupied(mut occupied_entry) => {
                 let version = occupied_entry.get_mut();
-                let need_update = update_version(version);
+                let (version_need_update, update_value) =
+                    update_version(version);
 
-                need_update.then_some(*version)
+                (version_need_update.then_some(*version), update_value)
             }
             Entry::Vacant(entry) => {
                 // try to load from the persistence if available
@@ -203,10 +204,10 @@ impl Engine {
                 });
 
                 if let Some(mut loaded) = loaded {
-                    let result = update_version(&mut loaded);
+                    let (result, update_value) = update_version(&mut loaded);
                     entry.insert(loaded);
 
-                    result.then_some(loaded)
+                    (result.then_some(loaded), update_value)
                 } else {
                     let inserted = VersionInfo {
                         updated_at_version: self.database.snapshot.version,
@@ -216,17 +217,26 @@ impl Engine {
                     };
                     entry.insert(inserted);
 
-                    Some(inserted)
+                    (Some(inserted), true)
                 }
             }
         };
 
-        if let (Some(version_info), Some(persistence)) =
-            (save_version_info, self.runtime.persistence.as_ref())
-        {
-            let _ = persistence
-                .save_version_info::<K>(key_fingerprint, &version_info);
+        if let Some(persistence) = self.runtime.persistence.as_ref() {
+            if let Some(version_info) = save_version_info {
+                let _ = persistence
+                    .save_version_info::<K>(key_fingerprint, &version_info);
+            }
+
+            if save_value {
+                unsafe {
+                    let _ = persistence
+                        .save_with_fingerprint::<K>(&value, value_fingerprint);
+                }
+            }
         }
+
+        self.database.map.insert(key.clone(), value);
     }
 }
 
