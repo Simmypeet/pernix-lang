@@ -118,6 +118,7 @@ use pernixc_serialize::{
     Deserialize, Serialize,
 };
 use pernixc_stable_type_id::StableTypeID;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use smallbox::smallbox;
 
 use crate::{
@@ -572,7 +573,7 @@ impl<
                 map.type_storage::<K, _>(|x| {
                     let Some(x) = x else { return Ok(false) };
 
-                    x.iter()
+                    x.par_iter()
                         .map(|value| {
                             let value = value.value();
                             let fingerprint =
@@ -584,7 +585,7 @@ impl<
 
                             Ok(())
                         })
-                        .collect::<Result<Vec<_>, _>>()?;
+                        .collect::<Result<(), _>>()?;
 
                     Ok(true)
                 })

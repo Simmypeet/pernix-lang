@@ -7,6 +7,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
+use parking_lot::RwLock;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_handler::Storage;
 use pernixc_hash::{DashMap, HashMap};
@@ -375,10 +376,14 @@ impl Tree {
             current_directory.join(current_module_name.as_str())
         };
 
-        std::thread::scope(|scope| {
-            let mut scope_handles = Vec::new();
+        let parsing_result = RwLock::new(Vec::new());
 
-            for member in content.members() {
+        let parsing_result_ref = &parsing_result;
+        let submodule_current_directory_ref = &submodule_current_directory;
+        let current_module_name_ref = &current_module_name;
+
+        rayon::scope(|scope| {
+            for (index, member) in content.members().enumerate() {
                 let Passable::Line(
                     pernixc_syntax::item::module::Member::Module(submodule),
                 ) = member
@@ -386,46 +391,50 @@ impl Tree {
                     continue;
                 };
 
-                scope_handles.push(scope.spawn(|| {
-                    Self::parse_submodule(
+                scope.spawn(move |_| {
+                    let result = Self::parse_submodule(
                         source_map,
-                        &submodule_current_directory,
+                        submodule_current_directory_ref,
                         submodule,
-                        &current_module_name,
+                        current_module_name_ref,
                         is_root,
                         token_trees_by_source_id,
                         source_file,
                         handler,
-                    )
-                }));
+                    );
+
+                    parsing_result_ref.write().push((index, result));
+                });
             }
+        });
 
-            let mut submodules_by_name = HashMap::<SharedStr, Self>::default();
+        let mut submodules_by_name = HashMap::<SharedStr, Self>::default();
+        let mut parsing_result = parsing_result.into_inner();
+        parsing_result.sort_by_key(|x| x.0);
 
-            for (name, module_tree) in
-                scope_handles.into_iter().filter_map(|x| x.join().unwrap())
-            {
-                match submodules_by_name.entry(name) {
-                    Entry::Occupied(occupied_entry) => {
-                        handler.receive(ModuleRedefinition {
-                            existing_module_span: occupied_entry
-                                .get()
-                                .signature
-                                .as_ref()
-                                .map(|x| x.inner_tree().span()),
-                            redefinition_submodule_span: module_tree
-                                .signature
-                                .map(|x| x.inner_tree().span()),
-                        });
-                    }
-                    Entry::Vacant(vacant_entry) => {
-                        vacant_entry.insert(module_tree);
-                    }
+        for (name, module_tree) in
+            parsing_result.into_iter().filter_map(|x| x.1)
+        {
+            match submodules_by_name.entry(name) {
+                Entry::Occupied(occupied_entry) => {
+                    handler.receive(ModuleRedefinition {
+                        existing_module_span: occupied_entry
+                            .get()
+                            .signature
+                            .as_ref()
+                            .map(|x| x.inner_tree().span()),
+                        redefinition_submodule_span: module_tree
+                            .signature
+                            .map(|x| x.inner_tree().span()),
+                    });
+                }
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(module_tree);
                 }
             }
+        }
 
-            Self { signature, access_modifier, content, submodules_by_name }
-        })
+        Self { signature, access_modifier, content, submodules_by_name }
     }
 }
 
