@@ -22,6 +22,7 @@ use pernixc_serialize::{
     },
     Deserialize, Serialize,
 };
+use tracing::error;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -31,6 +32,14 @@ fn main() -> ExitCode {
     // nicely print the error message and exit.
     #[cfg(not(debug_assertions))]
     setup_panic();
+
+    tracing_subscriber::fmt()
+        .with_env_filter("pernixc=info")
+        .with_thread_ids(true)
+        .with_thread_names(true)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        .with_max_level(tracing::Level::TRACE)
+        .init();
 
     let mut stderr =
         codespan_reporting::term::termcolor::StandardStream::stderr(

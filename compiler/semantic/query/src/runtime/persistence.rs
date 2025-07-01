@@ -20,6 +20,7 @@ use rayon::iter::{
     IntoParallelIterator as _, IntoParallelRefIterator as _, ParallelIterator,
 };
 use redb::{TableDefinition, WriteTransaction};
+use tracing::trace_span;
 
 use crate::{
     database::{
@@ -412,6 +413,7 @@ impl Persistence {
         value_map: &Map,
         query_tracker: &QueryTracker,
     ) -> Result<(), std::io::Error> {
+        let write_span = trace_span!("write to database").entered();
         let write = self.database.begin_write().map_err(|e| {
             std::io::Error::other(format!(
                 "Failed to begin write transaction for table: {e}",
@@ -423,6 +425,7 @@ impl Persistence {
 
         rayon::scope(|s| {
             s.spawn(|_| {
+                let _span = trace_span!("serialize value map").entered();
                 value_map_result = (self.serialize_map)(
                     value_map,
                     &self.skip_keys,
@@ -432,6 +435,7 @@ impl Persistence {
             });
 
             s.spawn(|_| {
+                let _span = trace_span!("serialize query tracker").entered();
                 query_tracker_result = (self.serialize_call_graph)(
                     query_tracker,
                     self.serde_extension.as_ref(),
@@ -439,6 +443,10 @@ impl Persistence {
                 );
             });
         });
+
+        drop(write_span);
+
+        let _span = trace_span!("commit database transaction").entered();
 
         write.commit().map_err(|e| {
             std::io::Error::other(format!("Failed to commit transaction: {e}",))
