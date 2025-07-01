@@ -4,10 +4,12 @@ use std::{
     self,
     any::Any,
     cell::RefCell,
+    io::{BufReader, BufWriter, Cursor},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use ouroboros::self_referencing;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -32,6 +34,121 @@ pub mod serde;
 
 const TABLE: TableDefinition<(u128, u128), &[u8]> =
     TableDefinition::new("persistence");
+
+/// Enumeration of writer that will be used throughout the persistence
+/// system.
+#[derive(Debug, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum Writer {
+    Vec(Vec<u8>),
+    File(BufWriter<std::fs::File>),
+}
+
+impl std::io::Write for Writer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Vec(v) => v.write(buf),
+            Self::File(f) => f.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Vec(v) => v.flush(),
+            Self::File(f) => f.flush(),
+        }
+    }
+
+    fn write_vectored(
+        &mut self,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> std::io::Result<usize> {
+        match self {
+            Self::Vec(v) => v.write_vectored(bufs),
+            Self::File(f) => f.write_vectored(bufs),
+        }
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        match self {
+            Self::Vec(v) => v.write_all(buf),
+            Self::File(f) => f.write_all(buf),
+        }
+    }
+
+    fn write_fmt(
+        &mut self,
+        args: std::fmt::Arguments<'_>,
+    ) -> std::io::Result<()> {
+        match self {
+            Self::Vec(v) => v.write_fmt(args),
+            Self::File(f) => f.write_fmt(args),
+        }
+    }
+
+    fn by_ref(&mut self) -> &mut Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+/// Enumeration of readers that will be used throughout the persistence
+/// system.
+#[derive(Debug, EnumAsInner)]
+#[allow(missing_docs)]
+pub enum Reader {
+    Vec(Cursor<Vec<u8>>),
+    File(BufReader<std::fs::File>),
+}
+
+impl std::io::Read for Reader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Vec(v) => v.read(buf),
+            Self::File(f) => f.read(buf),
+        }
+    }
+
+    fn read_vectored(
+        &mut self,
+        bufs: &mut [std::io::IoSliceMut<'_>],
+    ) -> std::io::Result<usize> {
+        match self {
+            Self::Vec(v) => v.read_vectored(bufs),
+            Self::File(f) => f.read_vectored(bufs),
+        }
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
+        match self {
+            Self::Vec(v) => v.read_to_end(buf),
+            Self::File(f) => f.read_to_end(buf),
+        }
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> std::io::Result<usize> {
+        match self {
+            Self::Vec(v) => v.read_to_string(buf),
+            Self::File(f) => f.read_to_string(buf),
+        }
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        match self {
+            Self::Vec(v) => v.read_exact(buf),
+            Self::File(f) => f.read_exact(buf),
+        }
+    }
+
+    fn by_ref(&mut self) -> &mut Self
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
 
 #[self_referencing]
 struct WriteTransactionWithTable {
@@ -81,28 +198,28 @@ pub struct Persistence {
     serialize_any_value: fn(
         StableTypeID,
         &dyn Any,
-        &mut BinarySerializer<Box<dyn WriteAny>>,
+        &mut BinarySerializer<Writer>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
     deserialize_any_value: fn(
         StableTypeID,
         &mut dyn Any,
-        &mut BinaryDeserializer<Box<dyn ReadAny>>,
+        &mut BinaryDeserializer<Reader>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
     deserialize_dependencies: fn(
         &dyn Any,
-        &mut BinaryDeserializer<Box<dyn ReadAny>>,
+        &mut BinaryDeserializer<Reader>,
     )
         -> Result<HashSet<DynamicBox>, std::io::Error>,
     deserialize_version_info: fn(
         &dyn Any,
-        &mut BinaryDeserializer<Box<dyn ReadAny>>,
+        &mut BinaryDeserializer<Reader>,
     ) -> Result<VersionInfo, std::io::Error>,
 
     serialize_dependency_graph: fn(
         &HashSet<DynamicBox>,
-        &mut BinarySerializer<Box<dyn WriteAny>>,
+        &mut BinarySerializer<Writer>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
 }
@@ -125,26 +242,6 @@ thread_local! {
     static BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-/// A supertrait combining [`std::io::Write`] and [Any] traits, allowing
-/// [`BinarySerializer`] and [`Persistence`] to serialize data to any target
-/// by using dynamic dispatch.
-///
-/// [`Any`] allows the implementation to downcasting the writer to a specific
-/// type after serialization, if needed.
-pub trait WriteAny: std::io::Write + Any {}
-
-impl<T: std::io::Write + Any> WriteAny for T {}
-
-/// A supertrait combining [`std::io::Read`] and [Any] traits, allowing
-/// [`BinaryDeserializer`] and [`Persistence`] to deserialize data from any
-/// source by using dynamic dispatch.
-///
-/// [`Any`] allows the implementation to downcast the reader to a specific
-/// type after deserialization, if needed.
-pub trait ReadAny: std::io::Read + Any {}
-
-impl<T: std::io::Read + Any> ReadAny for T {}
-
 impl Persistence {
     /// The directory where the query tracker is stored.
     pub const QUERY_TRACKER_DIRECTORY: &'static str = "query_tracker";
@@ -166,8 +263,8 @@ impl Persistence {
     /// be serialized and deserialized are registered.
     #[allow(clippy::too_many_lines)]
     pub fn new<
-        E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
-            + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+        E: DynamicSerialize<BinarySerializer<Writer>>
+            + DynamicDeserialize<BinaryDeserializer<Reader>>
             + Send
             + Sync
             + 'static,
@@ -178,7 +275,7 @@ impl Persistence {
         let serialize_any_value =
             |stable_type_id: StableTypeID,
              any_value: &dyn Any,
-             serializer: &mut BinarySerializer<Box<dyn WriteAny>>,
+             serializer: &mut BinarySerializer<Writer>,
              serde_extension: &dyn Any| {
                 let serde_extension = serde_extension
                     .downcast_ref::<E>()
@@ -204,7 +301,7 @@ impl Persistence {
         let deserialize_any_value =
             |stable_type_id: StableTypeID,
              result_buffer: &mut dyn Any,
-             deserializer: &mut BinaryDeserializer<Box<dyn ReadAny>>,
+             deserializer: &mut BinaryDeserializer<Reader>,
              serde_extension: &dyn Any| {
                 let serde_extension = serde_extension
                     .downcast_ref::<E>()
@@ -229,7 +326,7 @@ impl Persistence {
 
         let deserialize_dependencies =
             |serde_extension: &dyn Any,
-             deserializer: &mut BinaryDeserializer<Box<dyn ReadAny>>| {
+             deserializer: &mut BinaryDeserializer<Reader>| {
                 let serde_extension = serde_extension
                     .downcast_ref::<E>()
                     .expect("serde_extension must match the expected type");
@@ -243,7 +340,7 @@ impl Persistence {
 
         let deserialize_version_info =
             |serde_extension: &dyn Any,
-             deserializer: &mut BinaryDeserializer<Box<dyn ReadAny>>| {
+             deserializer: &mut BinaryDeserializer<Reader>| {
                 let serde_extension = serde_extension
                     .downcast_ref::<E>()
                     .expect("serde_extension must match the expected type");
@@ -372,40 +469,51 @@ impl Persistence {
         })
     }
 
+    /// Generic helper function for loading data from a database table.
+    #[allow(clippy::unused_self)]
+    fn load_from_table<T>(
+        &self,
+        stable_type_id: StableTypeID,
+        fingerprint: u128,
+        database: &redb::Database,
+        transaction: &RwLock<Option<WriteTransactionWithTable>>,
+        deserialize_fn: impl FnOnce(
+            &mut BinaryDeserializer<Reader>,
+        ) -> Result<T, std::io::Error>,
+    ) -> Result<Option<T>, std::io::Error> {
+        let mut write_transaction = transaction.upgradable_read();
+        Self::ensure_transaction(database, &mut write_transaction)?;
+
+        write_transaction.as_ref().unwrap().with_table(|table| {
+            if let Some(buffer) =
+                table.get(&(stable_type_id.as_u128(), fingerprint)).unwrap()
+            {
+                let mut deserializer = BinaryDeserializer::new(Reader::Vec(
+                    std::io::Cursor::new(buffer.value().to_vec()),
+                ));
+                Ok(Some(deserialize_fn(&mut deserializer)?))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
     /// Attempts to load the version information for a given key fingerprint
     /// from the persistence storage.
     pub fn try_load_version_info<K: Key>(
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<VersionInfo>, std::io::Error> {
-        let mut version_info_write_transaction =
-            self.version_info_write_transaction.upgradable_read();
-
-        Self::ensure_transaction(
+        self.load_from_table(
+            K::STABLE_TYPE_ID,
+            key_fingerprint,
             &self.version_info_database,
-            &mut version_info_write_transaction,
-        )?;
-
-        version_info_write_transaction.as_ref().unwrap().with_table(
-            |table| -> Result<Option<VersionInfo>, std::io::Error> {
-                let value = if let Some(buffer) = table
-                    .get(&(K::STABLE_TYPE_ID.as_u128(), key_fingerprint))
-                    .unwrap()
-                {
-                    let mut deserializer =
-                        BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
-                            std::io::Cursor::new(buffer.value().to_vec()),
-                        ));
-
-                    Ok(Some((self.deserialize_version_info)(
-                        self.serde_extension.as_ref(),
-                        &mut deserializer,
-                    )?))
-                } else {
-                    Ok(None)
-                };
-
-                value
+            &self.version_info_write_transaction,
+            |deserializer| {
+                (self.deserialize_version_info)(
+                    self.serde_extension.as_ref(),
+                    deserializer,
+                )
             },
         )
     }
@@ -415,34 +523,16 @@ impl Persistence {
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<HashSet<DynamicBox>>, std::io::Error> {
-        let mut dependency_graph_write_transaction =
-            self.dependency_graph_write_transaction.upgradable_read();
-
-        Self::ensure_transaction(
+        self.load_from_table(
+            K::STABLE_TYPE_ID,
+            key_fingerprint,
             &self.dependency_graph_database,
-            &mut dependency_graph_write_transaction,
-        )?;
-
-        dependency_graph_write_transaction.as_ref().unwrap().with_table(
-            |table| {
-                let value = if let Some(buffer) = table
-                    .get(&(K::STABLE_TYPE_ID.as_u128(), key_fingerprint))
-                    .unwrap()
-                {
-                    let mut deserializer =
-                        BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
-                            std::io::Cursor::new(buffer.value().to_vec()),
-                        ));
-
-                    Ok(Some((self.deserialize_dependencies)(
-                        self.serde_extension.as_ref(),
-                        &mut deserializer,
-                    )?))
-                } else {
-                    Ok(None)
-                };
-
-                value
+            &self.dependency_graph_write_transaction,
+            |deserializer| {
+                (self.deserialize_dependencies)(
+                    self.serde_extension.as_ref(),
+                    deserializer,
+                )
             },
         )
     }
@@ -452,74 +542,54 @@ impl Persistence {
         &self,
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
-        let mut value_cache_write_transaction =
-            self.value_cache_write_transaction.upgradable_read();
-
-        Self::ensure_transaction(
+        self.load_from_table(
+            K::STABLE_TYPE_ID,
+            value_fingerprint,
             &self.value_cache_database,
-            &mut value_cache_write_transaction,
-        )?;
-
-        value_cache_write_transaction.as_ref().unwrap().with_table(|table| {
-            let value = if let Some(buffer) = table
-                .get(&(K::STABLE_TYPE_ID.as_u128(), value_fingerprint))
-                .unwrap()
-            {
-                let mut deserializer =
-                    BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
-                        std::io::Cursor::new(buffer.value().to_vec()),
-                    ));
-
+            &self.value_cache_write_transaction,
+            |deserializer| {
                 let mut result_buffer: Option<K::Value> = None;
                 (self.deserialize_any_value)(
                     K::STABLE_TYPE_ID,
                     &mut result_buffer as &mut dyn Any,
-                    &mut deserializer,
+                    deserializer,
                     self.serde_extension.as_ref(),
                 )?;
-
-                Ok(Some(result_buffer.unwrap()))
-            } else {
-                Ok(None)
-            };
-
-            value
-        })
+                Ok(result_buffer.unwrap())
+            },
+        )
     }
 
-    /// Saves the version information for a given key fingerprint to the
-    /// persistence storage.
-    #[allow(clippy::mutable_key_type)]
-    pub fn save_dependency_graph(
+    /// Generic helper function for saving data to a database table.
+    #[allow(clippy::unused_self)]
+    fn save_to_table<T>(
         &self,
         stable_type_id: StableTypeID,
-        key_fingerprint: u128,
-        dependencies: &HashSet<DynamicBox>,
+        fingerprint: u128,
+        data: &T,
+        database: &redb::Database,
+        transaction: &RwLock<Option<WriteTransactionWithTable>>,
+        serialize_fn: impl FnOnce(
+            &T,
+            &mut BinarySerializer<Writer>,
+        ) -> Result<(), std::io::Error>,
     ) -> Result<(), std::io::Error> {
         let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
+        let mut binary_serializer = BinarySerializer::new(Writer::Vec(buffer));
 
-        let mut binary_serializer =
-            BinarySerializer::<Box<dyn WriteAny>>::new(Box::new(buffer));
+        serialize_fn(data, &mut binary_serializer)?;
 
-        (self.serialize_dependency_graph)(
-            dependencies,
-            &mut binary_serializer,
-            self.serde_extension.as_ref(),
-        )?;
+        let mut buffer = binary_serializer.into_inner().into_vec().unwrap();
 
-        let box_any: Box<dyn Any> = binary_serializer.into_inner();
-        let mut buffer =
-            *box_any.downcast::<Vec<u8>>().expect("Buffer must be a Vec<u8>");
-
-        let mut tx = self.dependency_graph_write_transaction.upgradable_read();
-        Self::ensure_transaction(&self.dependency_graph_database, &mut tx)?;
+        let mut tx = transaction.upgradable_read();
+        Self::ensure_transaction(database, &mut tx)?;
 
         tx.with_upgraded(|tx| {
             tx.as_mut().unwrap().with_table_mut(
                 |table| -> Result<(), std::io::Error> {
                     table
                         .insert(
-                            (stable_type_id.as_u128(), key_fingerprint),
+                            (stable_type_id.as_u128(), fingerprint),
                             buffer.as_slice(),
                         )
                         .map_err(|e| {
@@ -527,7 +597,6 @@ impl Persistence {
                                 "Failed to insert entry into table: {e}",
                             ))
                         })?;
-
                     Ok(())
                 },
             )
@@ -544,17 +613,42 @@ impl Persistence {
 
     /// Saves the version information for a given key fingerprint to the
     /// persistence storage.
+    #[allow(clippy::mutable_key_type)]
+    pub fn save_dependency_graph(
+        &self,
+        stable_type_id: StableTypeID,
+        key_fingerprint: u128,
+        dependencies: &HashSet<DynamicBox>,
+    ) -> Result<(), std::io::Error> {
+        self.save_to_table(
+            stable_type_id,
+            key_fingerprint,
+            dependencies,
+            &self.dependency_graph_database,
+            &self.dependency_graph_write_transaction,
+            |dependencies, serializer| {
+                (self.serialize_dependency_graph)(
+                    dependencies,
+                    serializer,
+                    self.serde_extension.as_ref(),
+                )
+            },
+        )
+    }
+
+    /// Saves the version information for a given key fingerprint to the
+    /// persistence storage.
     pub fn save_version_info<K: Key>(
         &self,
         fingerprint: u128,
         version_info: &VersionInfo,
     ) -> Result<(), std::io::Error> {
+        // Use a simpler approach for VersionInfo since it uses the unit
+        // serializer
         let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
-
         let mut binary_serializer = BinarySerializer::new(buffer);
 
         version_info.serialize(&mut binary_serializer, &())?;
-
         let mut buffer = binary_serializer.into_inner();
 
         let mut tx = self.version_info_write_transaction.upgradable_read();
@@ -573,7 +667,6 @@ impl Persistence {
                                 "Failed to insert entry into table: {e}",
                             ))
                         })?;
-
                     Ok(())
                 },
             )
@@ -644,55 +737,21 @@ impl Persistence {
             return Ok(());
         }
 
-        let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
-        let mut binary_serializer =
-            BinarySerializer::<Box<dyn WriteAny>>::new(Box::new(buffer));
-
-        (self.serialize_any_value)(
+        self.save_to_table(
             K::STABLE_TYPE_ID,
-            value as &dyn Any,
-            &mut binary_serializer,
-            self.serde_extension.as_ref(),
-        )?;
-
-        let box_any: Box<dyn Any> = binary_serializer.into_inner();
-        let mut buffer =
-            box_any.downcast::<Vec<u8>>().expect("Buffer must be a Vec<u8>");
-
-        let mut value_cache_write_transaction =
-            self.value_cache_write_transaction.upgradable_read();
-
-        Self::ensure_transaction(
+            fingerprint,
+            value,
             &self.value_cache_database,
-            &mut value_cache_write_transaction,
-        )?;
-
-        value_cache_write_transaction.with_upgraded(|x| {
-            x.as_mut().unwrap().with_table_mut(
-                |table| -> Result<(), std::io::Error> {
-                    table
-                        .insert(
-                            (K::STABLE_TYPE_ID.as_u128(), fingerprint),
-                            buffer.as_slice(),
-                        )
-                        .map_err(|e| {
-                            std::io::Error::other(format!(
-                                "Failed to insert entry into table: {e}",
-                            ))
-                        })?;
-
-                    Ok(())
-                },
-            )
-        })?;
-
-        BUFFER.with(|b| {
-            // clear the buffer but keep the allocated memory
-            buffer.clear();
-            *b.borrow_mut() = *buffer;
-        });
-
-        Ok(())
+            &self.value_cache_write_transaction,
+            |value, serializer| {
+                (self.serialize_any_value)(
+                    K::STABLE_TYPE_ID,
+                    value as &dyn Any,
+                    serializer,
+                    self.serde_extension.as_ref(),
+                )
+            },
+        )
     }
 
     /// Saves a value to the persistence storage.
@@ -708,14 +767,14 @@ impl Persistence {
 
 #[allow(clippy::mutable_key_type)]
 fn serialize_dependency_graph<
-    E: DynamicSerialize<BinarySerializer<Box<dyn WriteAny>>>
-        + DynamicDeserialize<BinaryDeserializer<Box<dyn ReadAny>>>
+    E: DynamicSerialize<BinarySerializer<Writer>>
+        + DynamicDeserialize<BinaryDeserializer<Reader>>
         + Send
         + Sync
         + 'static,
 >(
     dependency_graph: &HashSet<DynamicBox>,
-    serializer: &mut BinarySerializer<Box<dyn WriteAny>>,
+    serializer: &mut BinarySerializer<Writer>,
     serde_extension: &dyn Any,
 ) -> Result<(), std::io::Error> {
     let extension = serde_extension

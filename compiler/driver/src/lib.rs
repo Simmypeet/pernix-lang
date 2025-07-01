@@ -16,7 +16,7 @@ use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
     runtime::persistence::{
         serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
-        Persistence, ReadAny, WriteAny,
+        Persistence, Reader, Writer,
     },
     Key,
 };
@@ -432,8 +432,8 @@ pub fn run(
         .as_ref()
         .map(|x| {
             let mut serde_extension = SerdeExtension::<
-                BinarySerializer<Box<dyn WriteAny>>,
-                BinaryDeserializer<Box<dyn ReadAny>>,
+                BinarySerializer<Writer>,
+                BinaryDeserializer<Reader>,
             >::default();
 
             // register the serde extension with the persistence
