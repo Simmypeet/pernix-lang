@@ -21,7 +21,9 @@ pub struct Map {
 
 impl std::ops::Drop for Map {
     fn drop(&mut self) {
-        std::mem::take(&mut self.inner).into_iter().for_each(core::mem::drop);
+        std::mem::take(&mut self.inner)
+            .into_par_iter()
+            .for_each(core::mem::drop);
     }
 }
 
