@@ -224,14 +224,28 @@ impl Engine {
 
         if let Some(persistence) = self.runtime.persistence.as_ref() {
             if let Some(version_info) = save_version_info {
-                let _ = persistence
-                    .save_version_info::<K>(key_fingerprint, &version_info);
+                if let Err(err) = persistence
+                    .save_version_info::<K>(key_fingerprint, &version_info)
+                {
+                    tracing::trace!(
+                        "Failed to save version info for key {}: {}",
+                        key.type_name(),
+                        err
+                    );
+                }
             }
 
             if save_value {
                 unsafe {
-                    let _ = persistence
-                        .save_with_fingerprint::<K>(&value, value_fingerprint);
+                    if let Err(err) = persistence
+                        .save_with_fingerprint::<K>(&value, value_fingerprint)
+                    {
+                        tracing::trace!(
+                            "Failed to save value for key {}: {}",
+                            key.type_name(),
+                            err
+                        );
+                    }
                 }
             }
         }
@@ -572,10 +586,6 @@ impl Engine {
         called_from: Option<&DynamicBox>,
         mut query_tracker: MutexGuard<'a, QueryTracker>,
     ) -> (bool, MutexGuard<'a, QueryTracker>) {
-        query_tracker
-            .dependency_graph
-            .insert(key_smallbox.clone(), HashSet::default());
-
         let executor = self.runtime.executor.get::<T>().unwrap_or_else(|| {
             panic!(
                 "no executor registered for key type {}",
@@ -684,8 +694,27 @@ impl Engine {
             sync.wait(&mut query_tracker);
             true
         } else {
+            query_tracker
+                .dependency_graph
+                .insert(key_smallbox.clone(), HashSet::default());
+
             let (new_call_graph, ok) =
                 self.compute(key, key_smallbox, query_tracker, &*executor);
+
+            // save the dependency graph
+            if let Some(per) = self.runtime.persistence.as_ref() {
+                if let Err(err) = per.save_dependency_graph(
+                    T::STABLE_TYPE_ID,
+                    key.fingerprint(),
+                    new_call_graph.dependency_graph.get(key_smallbox).unwrap(),
+                ) {
+                    tracing::trace!(
+                        "Failed to save dependency graph for key {}: {}",
+                        key.type_name(),
+                        err
+                    );
+                }
+            }
 
             query_tracker = new_call_graph;
             ok
@@ -793,18 +822,30 @@ impl Engine {
                 if let Some(per) = self.runtime.persistence.as_ref() {
                     if save_database {
                         unsafe {
-                            let _ = per.save_with_fingerprint::<K>(
+                            if let Err(err) = per.save_with_fingerprint::<K>(
                                 &value,
                                 value_fingerprint,
-                            );
+                            ) {
+                                tracing::trace!(
+                                    "Failed to save value for key {}: {}",
+                                    key.type_name(),
+                                    err
+                                );
+                            }
                         }
                     }
 
                     if let Some(save_version_info) = save_version_info {
-                        let _ = per.save_version_info::<K>(
-                            value_fingerprint,
+                        if let Err(err) = per.save_version_info::<K>(
+                            key_smallbox.fingerprint(),
                             &save_version_info,
-                        );
+                        ) {
+                            tracing::trace!(
+                                "Failed to save version info for key {}: {}",
+                                key.type_name(),
+                                err
+                            );
+                        }
                     }
                 }
             }

@@ -4,7 +4,6 @@ use std::{
     self,
     any::Any,
     cell::RefCell,
-    fmt::Write,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -12,21 +11,17 @@ use std::{
 use getset::Getters;
 use ouroboros::self_referencing;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use pernixc_arena::state::Hash;
 use pernixc_hash::HashSet;
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize as _, Serialize as _,
 };
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator,
-};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use redb::{ReadableTable as _, Table, TableDefinition, WriteTransaction};
-use tracing::trace_span;
 
 use crate::{
-    database::query_tracker::{QueryTracker, VersionInfo},
+    database::query_tracker::VersionInfo,
     fingerprint,
     key::DynamicBox,
     runtime::persistence::serde::{DynamicDeserialize, DynamicSerialize},
@@ -498,7 +493,7 @@ impl Persistence {
     pub fn save_dependency_graph(
         &self,
         stable_type_id: StableTypeID,
-        fingerprint: u128,
+        key_fingerprint: u128,
         dependencies: &HashSet<DynamicBox>,
     ) -> Result<(), std::io::Error> {
         let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
@@ -524,7 +519,7 @@ impl Persistence {
                 |table| -> Result<(), std::io::Error> {
                     table
                         .insert(
-                            (stable_type_id.as_u128(), fingerprint),
+                            (stable_type_id.as_u128(), key_fingerprint),
                             buffer.as_slice(),
                         )
                         .map_err(|e| {
