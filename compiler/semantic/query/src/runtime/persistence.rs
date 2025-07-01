@@ -19,7 +19,7 @@ use pernixc_stable_type_id::StableTypeID;
 use rayon::iter::{
     IntoParallelIterator as _, IntoParallelRefIterator as _, ParallelIterator,
 };
-use redb::{TableDefinition, WriteTransaction};
+use redb::TableDefinition;
 use tracing::trace_span;
 
 use crate::{
@@ -79,7 +79,7 @@ pub struct Persistence {
         &Map,
         &HashSet<StableTypeID>,
         &dyn Any,
-        &WriteTransaction,
+        &redb::Database,
     ) -> Result<(), std::io::Error>,
     deserialize_dependencies: fn(
         &dyn Any,
@@ -94,7 +94,7 @@ pub struct Persistence {
     serialize_call_graph: fn(
         &QueryTracker,
         &dyn Any,
-        &WriteTransaction,
+        &redb::Database,
     ) -> Result<(), std::io::Error>,
 }
 
@@ -108,14 +108,15 @@ fn serialize_map<
     map: &Map,
     skip_keys: &HashSet<StableTypeID>,
     serde_extension: &dyn Any,
-    write: &WriteTransaction,
+    database: &redb::Database,
 ) -> Result<(), std::io::Error> {
     let serde_extension = serde_extension
         .downcast_ref::<E>()
         .expect("serde_extension must match the expected type");
 
+    let tx = database.begin_write().expect("Failed to begin write transaction");
     let table = RwLock::new(
-        write.open_table(VALUE_CACHE_TABLE).expect("Failed to open table"),
+        tx.open_table(VALUE_CACHE_TABLE).expect("Failed to open table"),
     );
 
     let result = serde_extension
@@ -163,6 +164,10 @@ fn serialize_map<
             result
         })
         .collect::<Result<Vec<_>, std::io::Error>>()?;
+
+    drop(table);
+
+    tx.commit().unwrap();
 
     let scanned_count = result.into_iter().filter(|x| *x).count();
 
@@ -368,21 +373,12 @@ impl Persistence {
 
     /// Serializes thne entire map to the persistence storage.
     pub fn serialize_map(&self, map: &Map) -> Result<(), std::io::Error> {
-        let write = self.database.begin_write().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin write transaction for table: {e}",
-            ))
-        })?;
         (self.serialize_map)(
             map,
             &self.skip_keys,
             self.serde_extension.as_ref(),
-            &write,
-        )?;
-
-        write.commit().map_err(|e| {
-            std::io::Error::other(format!("Failed to commit transaction: {e}",))
-        })
+            &self.database,
+        )
     }
 
     /// Serializes thne entire map to the persistence storage.
@@ -390,69 +386,11 @@ impl Persistence {
         &self,
         query_tracker: &QueryTracker,
     ) -> Result<(), std::io::Error> {
-        let write = self.database.begin_write().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin write transaction for table: {e}",
-            ))
-        })?;
         (self.serialize_call_graph)(
             query_tracker,
             self.serde_extension.as_ref(),
-            &write,
-        )?;
-
-        write.commit().map_err(|e| {
-            std::io::Error::other(format!("Failed to commit transaction: {e}",))
-        })
-    }
-
-    /// Serializes the entire database, including the value map and the
-    /// query tracker.
-    pub fn serialize_database(
-        &self,
-        value_map: &Map,
-        query_tracker: &QueryTracker,
-    ) -> Result<(), std::io::Error> {
-        let write_span = trace_span!("write to database").entered();
-        let write = self.database.begin_write().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin write transaction for table: {e}",
-            ))
-        })?;
-
-        let mut value_map_result = Ok(());
-        let mut query_tracker_result = Ok(());
-
-        rayon::scope(|s| {
-            s.spawn(|_| {
-                let _span = trace_span!("serialize value map").entered();
-                value_map_result = (self.serialize_map)(
-                    value_map,
-                    &self.skip_keys,
-                    self.serde_extension.as_ref(),
-                    &write,
-                );
-            });
-
-            s.spawn(|_| {
-                let _span = trace_span!("serialize query tracker").entered();
-                query_tracker_result = (self.serialize_call_graph)(
-                    query_tracker,
-                    self.serde_extension.as_ref(),
-                    &write,
-                );
-            });
-        });
-
-        drop(write_span);
-
-        let _span = trace_span!("commit database transaction").entered();
-
-        write.commit().map_err(|e| {
-            std::io::Error::other(format!("Failed to commit transaction: {e}",))
-        })?;
-
-        value_map_result.and(query_tracker_result)
+            &self.database,
+        )
     }
 
     /// Attempts to load the version information for a given key fingerprint
@@ -614,7 +552,7 @@ fn serialize_call_graph<
 >(
     query_tracker: &QueryTracker,
     serde_extension: &dyn Any,
-    write_transaction: &redb::WriteTransaction,
+    database: &redb::Database,
 ) -> Result<(), std::io::Error> {
     let extension = serde_extension
         .downcast_ref::<E>()
@@ -627,14 +565,22 @@ fn serialize_call_graph<
         s.spawn(|_| {
             let _span = trace_span!("serialize dependency graph").entered();
 
+            let tx = match database.begin_write().map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to begin write transaction: {e}",
+                ))
+            }) {
+                Ok(tx) => tx,
+                Err(e) => {
+                    dependency_graph = Err(e);
+                    return;
+                }
+            };
+
             let table = RwLock::new(
-                match write_transaction
-                    .open_table(DEPENDENCY_GRAPH_TABLE)
-                    .map_err(|e| {
-                        std::io::Error::other(format!(
-                            "Failed to open table: {e}",
-                        ))
-                    }) {
+                match tx.open_table(DEPENDENCY_GRAPH_TABLE).map_err(|e| {
+                    std::io::Error::other(format!("Failed to open table: {e}",))
+                }) {
                     Ok(table) => table,
                     Err(e) => {
                         dependency_graph = Err(e);
@@ -658,7 +604,7 @@ fn serialize_call_graph<
                 },
             );
 
-            dependency_graph = entries_by_stable_type_id
+            let result = entries_by_stable_type_id
                 .into_par_iter()
                 .map(|(stable_type_id, entries)| {
                     entries
@@ -709,19 +655,40 @@ fn serialize_call_graph<
                     Ok(())
                 })
                 .collect::<Result<(), std::io::Error>>();
+
+            if let Err(e) = result {
+                dependency_graph = Err(e);
+                return;
+            }
+
+            drop(table);
+
+            dependency_graph = tx.commit().map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to commit transaction: {e}",
+                ))
+            });
         });
 
         s.spawn(|_| {
             let _span = trace_span!("serialize version info").entered();
 
+            let tx = match database.begin_write().map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to begin write transaction: {e}",
+                ))
+            }) {
+                Ok(tx) => tx,
+                Err(e) => {
+                    version_info = Err(e);
+                    return;
+                }
+            };
+
             let table = RwLock::new(
-                match write_transaction.open_table(VERSION_INFO_TABLE).map_err(
-                    |e| {
-                        std::io::Error::other(format!(
-                            "Failed to open table: {e}",
-                        ))
-                    },
-                ) {
+                match tx.open_table(VERSION_INFO_TABLE).map_err(|e| {
+                    std::io::Error::other(format!("Failed to open table: {e}",))
+                }) {
                     Ok(table) => table,
                     Err(e) => {
                         version_info = Err(e);
@@ -745,7 +712,7 @@ fn serialize_call_graph<
                 },
             );
 
-            version_info = entries_by_stable_type_id
+            let result = entries_by_stable_type_id
                 .into_par_iter()
                 .map(|(stable_type_id, entries)| {
                     entries
@@ -795,6 +762,19 @@ fn serialize_call_graph<
                     Ok(())
                 })
                 .collect::<Result<(), std::io::Error>>();
+
+            if let Err(e) = result {
+                version_info = Err(e);
+                return;
+            }
+
+            drop(table);
+
+            version_info = tx.commit().map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to commit transaction: {e}",
+                ))
+            });
         });
     });
 
