@@ -35,25 +35,31 @@ use crate::{
 
 pub mod serde;
 
-const VALUE_CACHE_TABLE: TableDefinition<(u128, u128), &[u8]> =
-    TableDefinition::new("value_cache");
-const DEPENDENCY_GRAPH_TABLE: TableDefinition<(u128, u128), &[u8]> =
-    TableDefinition::new("dependency_graph");
-const VERSION_INFO_TABLE: TableDefinition<(u128, u128), &[u8]> =
-    TableDefinition::new("version_info");
+const TABLE: TableDefinition<(u128, u128), &[u8]> =
+    TableDefinition::new("persistence");
 
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
 #[derive(Debug, Getters)]
 #[allow(clippy::type_complexity)]
 pub struct Persistence {
-    database: redb::Database,
+    value_cache_database: redb::Database,
+    dependency_graph_database: redb::Database,
+    version_info_database: redb::Database,
 
     path: PathBuf,
 
     /// The directory where all the value caches databases are stored.
     #[get = "pub"]
     value_cache_path: PathBuf,
+
+    /// The directory where the query dependencies databases are stored.
+    #[get = "pub"]
+    query_dependency_graph_path: PathBuf,
+
+    /// The directory where query version information databases are stored.
+    #[get = "pub"]
+    query_version_info_path: PathBuf,
 
     /// The file where the [`crate::database::Database`] version state is
     /// stored.
@@ -95,6 +101,7 @@ pub struct Persistence {
         &QueryTracker,
         &dyn Any,
         &redb::Database,
+        &redb::Database,
     ) -> Result<(), std::io::Error>,
 }
 
@@ -115,9 +122,8 @@ fn serialize_map<
         .expect("serde_extension must match the expected type");
 
     let tx = database.begin_write().expect("Failed to begin write transaction");
-    let table = RwLock::new(
-        tx.open_table(VALUE_CACHE_TABLE).expect("Failed to open table"),
-    );
+    let table =
+        RwLock::new(tx.open_table(TABLE).expect("Failed to open table"));
 
     let result = serde_extension
         .serialization_helper_by_type_id()
@@ -206,9 +212,17 @@ pub trait ReadAny: std::io::Read + Any {}
 impl<T: std::io::Read + Any> ReadAny for T {}
 
 impl Persistence {
-    /// The file name where the whole incremental compilation database is
-    /// stored.
-    pub const DATABASE_FILE: &'static str = "database.db";
+    /// The directory where the query tracker is stored.
+    pub const QUERY_TRACKER_DIRECTORY: &'static str = "query_tracker";
+
+    /// The directory where the value map databases are stored.
+    pub const VALUE_MAP_DB: &'static str = "value_cache.db";
+
+    /// The directory where the dependency graph is stored.
+    pub const DEPENDENCY_GRAPH_DB: &'static str = "dependency_graph.db";
+
+    /// The directory where the version information is stored.
+    pub const VERSION_INFO_DB: &'static str = "version_info.db";
 
     /// The file where the database snapshot is stored.
     pub const DATABASE_SNAPSHOT_FILE: &'static str = "snapshot.dat";
@@ -310,22 +324,44 @@ impl Persistence {
 
         let value_cache_path = {
             let mut path = path.clone();
-            path.push(Self::DATABASE_FILE);
+            path.push(Self::VALUE_MAP_DB);
+            path
+        };
+        let query_dependency_graph_path = {
+            let mut path = path.clone();
+            path.push(Self::QUERY_TRACKER_DIRECTORY);
+            path.push(Self::DEPENDENCY_GRAPH_DB);
+            path
+        };
+        let query_version_info_path = {
+            let mut path = path.clone();
+            path.push(Self::QUERY_TRACKER_DIRECTORY);
+            path.push(Self::VERSION_INFO_DB);
             path
         };
         let database_snapshot_path = {
             let mut path = path.clone();
+            path.push(Self::QUERY_TRACKER_DIRECTORY);
             path.push(Self::DATABASE_SNAPSHOT_FILE);
             path
         };
 
         let value_cache_database = Self::create_database(&value_cache_path)?;
+        let dependency_graph_database =
+            Self::create_database(&query_dependency_graph_path)?;
+        let version_info_database =
+            Self::create_database(&query_version_info_path)?;
 
         Ok(Self {
-            database: value_cache_database,
             value_cache_path,
+            query_dependency_graph_path,
+            query_version_info_path,
             database_snapshot_path,
             path,
+
+            value_cache_database,
+            dependency_graph_database,
+            version_info_database,
 
             serde_extension: serde_extension as Arc<dyn Any + Send + Sync>,
             skip_keys: HashSet::default(),
@@ -377,7 +413,7 @@ impl Persistence {
             map,
             &self.skip_keys,
             self.serde_extension.as_ref(),
-            &self.database,
+            &self.value_cache_database,
         )
     }
 
@@ -389,7 +425,8 @@ impl Persistence {
         (self.serialize_call_graph)(
             query_tracker,
             self.serde_extension.as_ref(),
-            &self.database,
+            &self.dependency_graph_database,
+            &self.version_info_database,
         )
     }
 
@@ -399,12 +436,12 @@ impl Persistence {
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<VersionInfo>, std::io::Error> {
-        let table = self.database.begin_read().map_err(|e| {
+        let table = self.version_info_database.begin_read().map_err(|e| {
             std::io::Error::other(format!(
                 "Failed to begin read transaction for table: {e}"
             ))
         })?;
-        let table = table.open_table(VERSION_INFO_TABLE).map_err(|e| {
+        let table = table.open_table(TABLE).map_err(|e| {
             std::io::Error::other(format!("Failed to open table: {e}"))
         })?;
 
@@ -429,12 +466,13 @@ impl Persistence {
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<HashSet<DynamicBox>>, std::io::Error> {
-        let table = self.database.begin_read().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin read transaction for table: {e}"
-            ))
-        })?;
-        let table = table.open_table(DEPENDENCY_GRAPH_TABLE).map_err(|e| {
+        let table =
+            self.dependency_graph_database.begin_read().map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to begin read transaction for table: {e}"
+                ))
+            })?;
+        let table = table.open_table(TABLE).map_err(|e| {
             std::io::Error::other(format!("Failed to open table: {e}"))
         })?;
 
@@ -459,12 +497,12 @@ impl Persistence {
         &self,
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
-        let table = self.database.begin_read().map_err(|e| {
+        let table = self.value_cache_database.begin_read().map_err(|e| {
             std::io::Error::other(format!(
                 "Failed to begin read transaction for table: {e}"
             ))
         })?;
-        let table = table.open_table(VALUE_CACHE_TABLE).map_err(|e| {
+        let table = table.open_table(TABLE).map_err(|e| {
             std::io::Error::other(format!("Failed to open table: {e}"))
         })?;
 
@@ -508,14 +546,14 @@ impl Persistence {
         let mut buffer =
             box_any.downcast::<Vec<u8>>().expect("Buffer must be a Vec<u8>");
 
-        let tx = self.database.begin_write().map_err(|e| {
+        let tx = self.value_cache_database.begin_write().map_err(|e| {
             std::io::Error::other(format!(
                 "Failed to begin write transaction: {e}",
             ))
         })?;
 
         {
-            let mut table = tx.open_table(VALUE_CACHE_TABLE).unwrap();
+            let mut table = tx.open_table(TABLE).unwrap();
             table
                 .insert(
                     (K::STABLE_TYPE_ID.as_u128(), fingerprint),
@@ -552,7 +590,8 @@ fn serialize_call_graph<
 >(
     query_tracker: &QueryTracker,
     serde_extension: &dyn Any,
-    database: &redb::Database,
+    dependency_graph_database: &redb::Database,
+    version_info_database: &redb::Database,
 ) -> Result<(), std::io::Error> {
     let extension = serde_extension
         .downcast_ref::<E>()
@@ -565,20 +604,21 @@ fn serialize_call_graph<
         s.spawn(|_| {
             let _span = trace_span!("serialize dependency graph").entered();
 
-            let tx = match database.begin_write().map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to begin write transaction: {e}",
-                ))
-            }) {
-                Ok(tx) => tx,
-                Err(e) => {
-                    dependency_graph = Err(e);
-                    return;
-                }
-            };
+            let tx =
+                match dependency_graph_database.begin_write().map_err(|e| {
+                    std::io::Error::other(format!(
+                        "Failed to begin write transaction: {e}",
+                    ))
+                }) {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        dependency_graph = Err(e);
+                        return;
+                    }
+                };
 
             let table = RwLock::new(
-                match tx.open_table(DEPENDENCY_GRAPH_TABLE).map_err(|e| {
+                match tx.open_table(TABLE).map_err(|e| {
                     std::io::Error::other(format!("Failed to open table: {e}",))
                 }) {
                     Ok(table) => table,
@@ -673,7 +713,7 @@ fn serialize_call_graph<
         s.spawn(|_| {
             let _span = trace_span!("serialize version info").entered();
 
-            let tx = match database.begin_write().map_err(|e| {
+            let tx = match version_info_database.begin_write().map_err(|e| {
                 std::io::Error::other(format!(
                     "Failed to begin write transaction: {e}",
                 ))
@@ -686,7 +726,7 @@ fn serialize_call_graph<
             };
 
             let table = RwLock::new(
-                match tx.open_table(VERSION_INFO_TABLE).map_err(|e| {
+                match tx.open_table(TABLE).map_err(|e| {
                     std::io::Error::other(format!("Failed to open table: {e}",))
                 }) {
                     Ok(table) => table,
