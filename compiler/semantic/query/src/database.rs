@@ -104,18 +104,12 @@ impl Engine {
         let call_graph = self.database.query_tracker.lock();
 
         let mut serialize_map_result = Ok(());
-        let mut serialize_call_graph_result = Ok(());
         let mut version_info_result = Ok(());
 
         rayon::scope(|s| {
             s.spawn(|_| {
-                serialize_map_result =
-                    persistence.serialize_map(&self.database.map);
-            });
-
-            s.spawn(|_| {
-                serialize_call_graph_result =
-                    persistence.serialize_call_graph(&call_graph);
+                serialize_map_result = persistence
+                    .serialize_database(&self.database.map, &call_graph);
             });
 
             s.spawn(|_| {
@@ -159,7 +153,6 @@ impl Engine {
         });
 
         serialize_map_result?;
-        serialize_call_graph_result?;
         version_info_result?;
 
         Ok(())
