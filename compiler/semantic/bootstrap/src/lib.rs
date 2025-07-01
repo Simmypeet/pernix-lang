@@ -116,7 +116,7 @@ pub fn bootstrap<'l>(
         },
     );
 
-    engine.database.set_input(
+    engine.set_input(
         &target::MapKey(()),
         Arc::new(target::Map(
             std::iter::once((target_name.clone(), TargetID::Local)).collect(),
@@ -133,7 +133,7 @@ pub fn bootstrap<'l>(
 
     context.create_module(target_name, tree, None, &[]);
 
-    engine.write().database.set_input(
+    engine.write().set_input(
         &target::Key(TargetID::Local),
         Arc::new(target::Target {
             all_symbol_ids: generated_ids_rw.into_inner(),

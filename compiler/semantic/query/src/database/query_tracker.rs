@@ -13,8 +13,8 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::{StableHash, StableHasher};
 
-use super::Database;
 use crate::{
+    fingerprint,
     key::{Dynamic, DynamicBox, Key},
     runtime::{
         executor::Executor,
@@ -144,7 +144,7 @@ fn calculate_fingerprint<T: StableHash>(value: &T) -> u128 {
     sip.finish()
 }
 
-impl Database {
+impl Engine {
     /// Sets the input value for the given key.
     ///
     /// If this call happens after one of the derived values has been computed,
@@ -154,38 +154,58 @@ impl Database {
     pub fn set_input<K: Key + Dynamic>(&mut self, key: &K, value: K::Value) {
         // set the input value
         let value_fingerprint = calculate_fingerprint(&value);
-        self.map.insert(key.clone(), value);
+        self.database.map.insert(key.clone(), value);
+
+        let mut update_version = |version: &mut VersionInfo| {
+            version.kind = Kind::Input;
+            version.verfied_at_version = self.database.snapshot.version;
+
+            // update the version info if invalidated
+            if Some(value_fingerprint) != version.fingerprint {
+                // bump the version for the new input setting
+                if *self.database.snapshot.last_was_query.get_mut() {
+                    self.database.snapshot.version += 1;
+                    *self.database.snapshot.last_was_query.get_mut() = false;
+                }
+
+                version.updated_at_version = self.database.snapshot.version;
+                version.fingerprint = Some(value_fingerprint);
+            }
+        };
 
         match self
+            .database
             .query_tracker
             .get_mut()
             .version_info_by_keys
             .entry(DynamicBox(key.smallbox_clone()))
         {
             Entry::Occupied(mut occupied_entry) => {
-                let value = occupied_entry.get_mut();
-
-                value.verfied_at_version = self.snapshot.version;
-
-                // update the version info if invalidated
-                if Some(value_fingerprint) != value.fingerprint {
-                    // bump the version for the new input setting
-                    if *self.snapshot.last_was_query.get_mut() {
-                        self.snapshot.version += 1;
-                        *self.snapshot.last_was_query.get_mut() = false;
-                    }
-
-                    value.updated_at_version = self.snapshot.version;
-                    value.fingerprint = Some(value_fingerprint);
-                }
+                let version = occupied_entry.get_mut();
+                update_version(version);
             }
             Entry::Vacant(entry) => {
-                entry.insert(VersionInfo {
-                    updated_at_version: self.snapshot.version,
-                    verfied_at_version: self.snapshot.version,
-                    fingerprint: Some(value_fingerprint),
-                    kind: Kind::Input,
+                // try to load from the persistence if available
+                let loaded = self.runtime.persistence.as_ref().and_then(|x| {
+                    x.try_load_version_info::<K>(fingerprint::fingerprint(key))
+                        .ok()
+                        .flatten()
                 });
+
+                match loaded {
+                    Some(mut loaded) => {
+                        update_version(&mut loaded);
+                        entry.insert(loaded);
+                    }
+                    None => {
+                        entry.insert(VersionInfo {
+                            updated_at_version: self.database.snapshot.version,
+                            verfied_at_version: self.database.snapshot.version,
+                            fingerprint: Some(value_fingerprint),
+                            kind: Kind::Input,
+                        });
+                    }
+                }
             }
         }
     }

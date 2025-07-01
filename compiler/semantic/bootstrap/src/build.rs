@@ -318,7 +318,7 @@ pub(super) fn insert_imports(
     }
 
     let mut engine = engine_rw.write();
-    engine.database.set_input(
+    engine.set_input(
         &import::Key(defined_in_module_id),
         Arc::new(import_component),
     );
@@ -393,24 +393,20 @@ impl MemberBuilder<'_, '_, '_> {
             let mut engine = build_context.engine_rw.write();
             let global_id = TargetID::Local.make_global(id);
             engine
-                .database
                 .set_input(&name::Key(global_id), Name(new_symbol.name.kind.0));
             engine
-                .database
                 .set_input(&span::Key(global_id), Span(Some(identifier_span)));
-            engine
-                .database
-                .set_input(&kind::Key(global_id), new_symbol.symbol_kind);
+            engine.set_input(&kind::Key(global_id), new_symbol.symbol_kind);
 
             if let Some(generic_parameters) = new_symbol.generic_parameters {
-                engine.database.set_input(
+                engine.set_input(
                     &syntax::GenericParametersKey(global_id),
                     syntax::GenericParameters(generic_parameters),
                 );
             }
 
             if let Some(where_clause) = new_symbol.where_clause {
-                engine.database.set_input(
+                engine.set_input(
                     &syntax::WhereClauseKey(global_id),
                     syntax::WhereClause(where_clause),
                 );
@@ -429,9 +425,7 @@ impl MemberBuilder<'_, '_, '_> {
                     }
                 };
 
-                engine
-                    .database
-                    .set_input(&accessibility::Key(global_id), accessibility);
+                engine.set_input(&accessibility::Key(global_id), accessibility);
             }
         }
 
@@ -514,7 +508,7 @@ impl Context<'_> {
                 let mut engine_write = self.engine_rw.write();
                 let global_id = TargetID::Local.make_global(id);
 
-                engine_write.database.set_input(
+                engine_write.set_input(
                     &syntax::VariantKey(global_id),
                     syntax::Variant(variant_syn.association()),
                 );
@@ -523,7 +517,7 @@ impl Context<'_> {
             // add the members to the module
             let mut engine = self.engine_rw.write();
             let global_id = TargetID::Local.make_global(enum_id);
-            engine.database.set_input(
+            engine.set_input(
                 &member::Key(global_id),
                 Arc::new(Member { member_ids_by_name: members, redefinitions }),
             );
@@ -634,7 +628,7 @@ impl Context<'_> {
                         let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.database.set_input(
+                        engine_write.set_input(
                             &syntax::FunctionSignatureKey(global_id),
                             syntax::FunctionSignature {
                                 parameters: f
@@ -678,7 +672,7 @@ impl Context<'_> {
             // add the members to the module
             let mut engine = self.engine_rw.write();
             let global_id = TargetID::Local.make_global(trait_id);
-            engine.database.set_input(
+            engine.set_input(
                 &member::Key(global_id),
                 Arc::new(Member { member_ids_by_name: members, redefinitions }),
             );
@@ -721,15 +715,15 @@ impl Context<'_> {
 
         {
             let mut engine = self.engine_rw.write();
-            engine.database.set_input(
+            engine.set_input(
                 &kind::Key(TargetID::Local.make_global(current_module_id)),
                 Kind::Module,
             );
-            engine.database.set_input(
+            engine.set_input(
                 &name::Key(TargetID::Local.make_global(current_module_id)),
                 Name(name),
             );
-            engine.database.set_input(
+            engine.set_input(
                 &accessibility::Key(
                     TargetID::Local.make_global(current_module_id),
                 ),
@@ -813,7 +807,7 @@ impl Context<'_> {
                         let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.database.set_input(
+                        engine_write.set_input(
                             &syntax::FunctionSignatureKey(global_id),
                             syntax::FunctionSignature {
                                 parameters: f
@@ -824,7 +818,7 @@ impl Context<'_> {
                                     .and_then(|x| x.return_type()),
                             },
                         );
-                        engine_write.database.set_input(
+                        engine_write.set_input(
                             &syntax::StatementsKey(global_id),
                             syntax::Statements(
                                 f.body().and_then(|x| x.members()),
@@ -861,7 +855,7 @@ impl Context<'_> {
                         let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.database.set_input(
+                        engine_write.set_input(
                             &syntax::TypeAliasKey(global_id),
                             syntax::TypeAlias(
                                 ty.body().and_then(|x| x.r#type()),
@@ -896,7 +890,7 @@ impl Context<'_> {
                         let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.database.set_input(
+                        engine_write.set_input(
                             &syntax::FieldsKey(global_id),
                             syntax::Fields(st.body().and_then(|x| x.members())),
                         );
@@ -977,7 +971,7 @@ impl Context<'_> {
         {
             let mut engine = self.engine_rw.write();
             let global_id = TargetID::Local.make_global(current_module_id);
-            engine.database.set_input(
+            engine.set_input(
                 &member::Key(global_id),
                 Arc::new(Member { member_ids_by_name: members, redefinitions }),
             );
