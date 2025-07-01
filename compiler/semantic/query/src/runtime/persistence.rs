@@ -10,7 +10,7 @@ use std::{
 
 use getset::Getters;
 use parking_lot::RwLock;
-use pernixc_hash::{HashMap, HashSet};
+use pernixc_hash::{DashMap, HashSet};
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize as _, Serialize as _,
@@ -625,6 +625,8 @@ fn serialize_call_graph<
 
     rayon::scope(|s| {
         s.spawn(|_| {
+            let _span = trace_span!("serialize dependency graph").entered();
+
             let table = RwLock::new(
                 match write_transaction
                     .open_table(DEPENDENCY_GRAPH_TABLE)
@@ -641,18 +643,20 @@ fn serialize_call_graph<
                 },
             );
 
-            let mut entries_by_stable_type_id = HashMap::<
+            let entries_by_stable_type_id = DashMap::<
                 StableTypeID,
                 Vec<(&DynamicBox, &HashSet<DynamicBox>)>,
             >::default();
 
-            for (entry, dependencies) in query_tracker.dependency_graph() {
-                let stable_type_id = entry.stable_type_id();
-                entries_by_stable_type_id
-                    .entry(stable_type_id)
-                    .or_default()
-                    .push((entry, dependencies));
-            }
+            query_tracker.dependency_graph().par_iter().for_each(
+                |(entry, dependencies)| {
+                    let stable_type_id = entry.stable_type_id();
+                    entries_by_stable_type_id
+                        .entry(stable_type_id)
+                        .or_default()
+                        .push((entry, dependencies));
+                },
+            );
 
             dependency_graph = entries_by_stable_type_id
                 .into_par_iter()
@@ -708,6 +712,8 @@ fn serialize_call_graph<
         });
 
         s.spawn(|_| {
+            let _span = trace_span!("serialize version info").entered();
+
             let table = RwLock::new(
                 match write_transaction.open_table(VERSION_INFO_TABLE).map_err(
                     |e| {
@@ -724,18 +730,20 @@ fn serialize_call_graph<
                 },
             );
 
-            let mut entries_by_stable_type_id = HashMap::<
+            let entries_by_stable_type_id = DashMap::<
                 StableTypeID,
                 Vec<(&DynamicBox, &VersionInfo)>,
             >::default();
 
-            for (entry, version_info) in query_tracker.version_info_by_keys() {
-                let stable_type_id = entry.stable_type_id();
-                entries_by_stable_type_id
-                    .entry(stable_type_id)
-                    .or_default()
-                    .push((entry, version_info));
-            }
+            query_tracker.version_info_by_keys().par_iter().for_each(
+                |(entry, version_info)| {
+                    let stable_type_id = entry.stable_type_id();
+                    entries_by_stable_type_id
+                        .entry(stable_type_id)
+                        .or_default()
+                        .push((entry, version_info));
+                },
+            );
 
             version_info = entries_by_stable_type_id
                 .into_par_iter()
