@@ -42,6 +42,18 @@ pub struct Engine {
     pub runtime: runtime::Runtime,
 }
 
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let database = std::mem::take(&mut self.database);
+        let runtime = std::mem::take(&mut self.runtime);
+
+        rayon::scope(|scope| {
+            scope.spawn(|_| drop(database));
+            scope.spawn(|_| drop(runtime));
+        });
+    }
+}
+
 static_assertions::assert_impl_all!(Engine: Send, Sync);
 
 #[cfg(test)]
