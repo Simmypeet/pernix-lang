@@ -9,15 +9,18 @@ use std::{
 };
 
 use getset::Getters;
-use parking_lot::RwLock;
+use ouroboros::self_referencing;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use pernixc_hash::HashSet;
 use pernixc_serialize::{
     binary::{de::BinaryDeserializer, ser::BinarySerializer},
     Deserialize as _, Serialize as _,
 };
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator};
-use redb::TableDefinition;
+use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator,
+};
+use redb::{ReadableTable as _, Table, TableDefinition, WriteTransaction};
 use tracing::trace_span;
 
 use crate::{
@@ -33,14 +36,28 @@ pub mod serde;
 const TABLE: TableDefinition<(u128, u128), &[u8]> =
     TableDefinition::new("persistence");
 
+#[self_referencing]
+struct WriteTransactionWithTable {
+    write_transaction: WriteTransaction,
+
+    #[borrows(write_transaction)]
+    #[not_covariant]
+    table: Table<'this, (u128, u128), &'static [u8]>,
+}
+
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
-#[derive(Debug, Getters)]
+#[derive(Getters)]
 #[allow(clippy::type_complexity)]
 pub struct Persistence {
     value_cache_database: redb::Database,
     dependency_graph_database: redb::Database,
     version_info_database: redb::Database,
+
+    value_cache_write_transaction: RwLock<Option<WriteTransactionWithTable>>,
+    dependency_graph_write_transaction:
+        RwLock<Option<WriteTransactionWithTable>>,
+    version_info_write_transaction: RwLock<Option<WriteTransactionWithTable>>,
 
     path: PathBuf,
 
@@ -92,6 +109,20 @@ pub struct Persistence {
         &redb::Database,
         &redb::Database,
     ) -> Result<(), std::io::Error>,
+}
+
+impl std::fmt::Debug for Persistence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Persistence")
+            .field("value_cache_path", &self.value_cache_path)
+            .field(
+                "query_dependency_graph_path",
+                &self.query_dependency_graph_path,
+            )
+            .field("query_version_info_path", &self.query_version_info_path)
+            .field("database_snapshot_path", &self.database_snapshot_path)
+            .finish_non_exhaustive()
+    }
 }
 
 thread_local! {
@@ -270,6 +301,10 @@ impl Persistence {
             dependency_graph_database,
             version_info_database,
 
+            value_cache_write_transaction: RwLock::new(None),
+            dependency_graph_write_transaction: RwLock::new(None),
+            version_info_write_transaction: RwLock::new(None),
+
             serde_extension: serde_extension as Arc<dyn Any + Send + Sync>,
             skip_keys: HashSet::default(),
 
@@ -326,35 +361,70 @@ impl Persistence {
         )
     }
 
+    /// Commits all the saved changes made by various `save_*` methods to the
+    /// persistence storage.
+    pub fn commit(&self) -> Result<(), std::io::Error> {
+        let value_cache_write_transaction =
+            self.value_cache_write_transaction.write().take();
+        let dependency_graph_write_transaction =
+            self.dependency_graph_write_transaction.write().take();
+        let version_info_write_transaction =
+            self.version_info_write_transaction.write().take();
+
+        [
+            value_cache_write_transaction,
+            dependency_graph_write_transaction,
+            version_info_write_transaction,
+        ]
+        .into_par_iter()
+        .try_for_each(|tx| {
+            tx.map_or(Ok(()), |tx| {
+                let tx = tx.into_heads();
+                tx.write_transaction.commit().map_err(|e| {
+                    std::io::Error::other(format!(
+                        "Failed to commit transaction: {e}",
+                    ))
+                })
+            })
+        })
+    }
+
     /// Attempts to load the version information for a given key fingerprint
     /// from the persistence storage.
     pub fn try_load_version_info<K: Key>(
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<VersionInfo>, std::io::Error> {
-        let table = self.version_info_database.begin_read().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin read transaction for table: {e}"
-            ))
-        })?;
-        let table = table.open_table(TABLE).map_err(|e| {
-            std::io::Error::other(format!("Failed to open table: {e}"))
-        })?;
+        let mut version_info_write_transaction =
+            self.version_info_write_transaction.upgradable_read();
 
-        if let Some(buffer) =
-            table.get(&(K::STABLE_TYPE_ID.as_u128(), key_fingerprint)).unwrap()
-        {
-            let mut deserializer = BinaryDeserializer::<Box<dyn ReadAny>>::new(
-                Box::new(std::io::Cursor::new(buffer.value().to_vec())),
-            );
+        Self::ensure_transaction(
+            &self.version_info_database,
+            &mut version_info_write_transaction,
+        )?;
 
-            Ok(Some((self.deserialize_version_info)(
-                self.serde_extension.as_ref(),
-                &mut deserializer,
-            )?))
-        } else {
-            Ok(None)
-        }
+        version_info_write_transaction.as_ref().unwrap().with_table(
+            |table| -> Result<Option<VersionInfo>, std::io::Error> {
+                let value = if let Some(buffer) = table
+                    .get(&(K::STABLE_TYPE_ID.as_u128(), key_fingerprint))
+                    .unwrap()
+                {
+                    let mut deserializer =
+                        BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
+                            std::io::Cursor::new(buffer.value().to_vec()),
+                        ));
+
+                    Ok(Some((self.deserialize_version_info)(
+                        self.serde_extension.as_ref(),
+                        &mut deserializer,
+                    )?))
+                } else {
+                    Ok(None)
+                };
+
+                value
+            },
+        )
     }
 
     /// Attempts to load a list of dependencies of a given key fingerprint
@@ -362,30 +432,36 @@ impl Persistence {
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<HashSet<DynamicBox>>, std::io::Error> {
-        let table =
-            self.dependency_graph_database.begin_read().map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to begin read transaction for table: {e}"
-                ))
-            })?;
-        let table = table.open_table(TABLE).map_err(|e| {
-            std::io::Error::other(format!("Failed to open table: {e}"))
-        })?;
+        let mut dependency_graph_write_transaction =
+            self.dependency_graph_write_transaction.upgradable_read();
 
-        if let Some(buffer) =
-            table.get(&(K::STABLE_TYPE_ID.as_u128(), key_fingerprint)).unwrap()
-        {
-            let mut deserializer = BinaryDeserializer::<Box<dyn ReadAny>>::new(
-                Box::new(std::io::Cursor::new(buffer.value().to_vec())),
-            );
+        Self::ensure_transaction(
+            &self.dependency_graph_database,
+            &mut dependency_graph_write_transaction,
+        )?;
 
-            Ok(Some((self.deserialize_dependencies)(
-                self.serde_extension.as_ref(),
-                &mut deserializer,
-            )?))
-        } else {
-            Ok(None)
-        }
+        dependency_graph_write_transaction.as_ref().unwrap().with_table(
+            |table| {
+                let value = if let Some(buffer) = table
+                    .get(&(K::STABLE_TYPE_ID.as_u128(), key_fingerprint))
+                    .unwrap()
+                {
+                    let mut deserializer =
+                        BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
+                            std::io::Cursor::new(buffer.value().to_vec()),
+                        ));
+
+                    Ok(Some((self.deserialize_dependencies)(
+                        self.serde_extension.as_ref(),
+                        &mut deserializer,
+                    )?))
+                } else {
+                    Ok(None)
+                };
+
+                value
+            },
+        )
     }
 
     /// Attempts to load a value from the persistence storage.
@@ -393,35 +469,39 @@ impl Persistence {
         &self,
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
-        let table = self.value_cache_database.begin_read().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin read transaction for table: {e}"
-            ))
-        })?;
-        let table = table.open_table(TABLE).map_err(|e| {
-            std::io::Error::other(format!("Failed to open table: {e}"))
-        })?;
+        let mut value_cache_write_transaction =
+            self.value_cache_write_transaction.upgradable_read();
 
-        if let Some(buffer) = table
-            .get(&(K::STABLE_TYPE_ID.as_u128(), value_fingerprint))
-            .unwrap()
-        {
-            let mut deserializer = BinaryDeserializer::<Box<dyn ReadAny>>::new(
-                Box::new(std::io::Cursor::new(buffer.value().to_vec())),
-            );
+        Self::ensure_transaction(
+            &self.value_cache_database,
+            &mut value_cache_write_transaction,
+        )?;
 
-            let mut result_buffer: Option<K::Value> = None;
-            (self.deserialize_any_value)(
-                K::STABLE_TYPE_ID,
-                &mut result_buffer as &mut dyn Any,
-                &mut deserializer,
-                self.serde_extension.as_ref(),
-            )?;
+        value_cache_write_transaction.as_ref().unwrap().with_table(|table| {
+            let value = if let Some(buffer) = table
+                .get(&(K::STABLE_TYPE_ID.as_u128(), value_fingerprint))
+                .unwrap()
+            {
+                let mut deserializer =
+                    BinaryDeserializer::<Box<dyn ReadAny>>::new(Box::new(
+                        std::io::Cursor::new(buffer.value().to_vec()),
+                    ));
 
-            Ok(Some(result_buffer.unwrap()))
-        } else {
-            Ok(None)
-        }
+                let mut result_buffer: Option<K::Value> = None;
+                (self.deserialize_any_value)(
+                    K::STABLE_TYPE_ID,
+                    &mut result_buffer as &mut dyn Any,
+                    &mut deserializer,
+                    self.serde_extension.as_ref(),
+                )?;
+
+                Ok(Some(result_buffer.unwrap()))
+            } else {
+                Ok(None)
+            };
+
+            value
+        })
     }
 
     /// Saves the version information for a given key fingerprint to the
@@ -439,28 +519,26 @@ impl Persistence {
 
         let mut buffer = binary_serializer.into_inner();
 
-        let tx = self.version_info_database.begin_write().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin write transaction: {e}",
-            ))
-        })?;
+        let mut tx = self.version_info_write_transaction.upgradable_read();
+        Self::ensure_transaction(&self.version_info_database, &mut tx)?;
 
-        {
-            let mut table = tx.open_table(TABLE).unwrap();
-            table
-                .insert(
-                    (K::STABLE_TYPE_ID.as_u128(), fingerprint),
-                    buffer.as_slice(),
-                )
-                .map_err(|e| {
-                    std::io::Error::other(format!(
-                        "Failed to insert entry into table: {e}",
-                    ))
-                })?;
-        }
+        tx.with_upgraded(|tx| {
+            tx.as_mut().unwrap().with_table_mut(
+                |table| -> Result<(), std::io::Error> {
+                    table
+                        .insert(
+                            (K::STABLE_TYPE_ID.as_u128(), fingerprint),
+                            buffer.as_slice(),
+                        )
+                        .map_err(|e| {
+                            std::io::Error::other(format!(
+                                "Failed to insert entry into table: {e}",
+                            ))
+                        })?;
 
-        tx.commit().map_err(|e| {
-            std::io::Error::other(format!("Failed to commit transaction: {e}",))
+                    Ok(())
+                },
+            )
         })?;
 
         BUFFER.with(|b| {
@@ -470,6 +548,45 @@ impl Persistence {
         });
 
         Ok(())
+    }
+
+    fn ensure_transaction(
+        database: &redb::Database,
+        transaction: &mut RwLockUpgradableReadGuard<
+            Option<WriteTransactionWithTable>,
+        >,
+    ) -> Result<(), std::io::Error> {
+        if transaction.is_some() {
+            return Ok(());
+        }
+
+        transaction.with_upgraded(|x| {
+            if x.is_some() {
+                return Ok(());
+            }
+
+            let tx = database.begin_write().map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to begin write transaction: {e}",
+                ))
+            })?;
+
+            *x = Some(
+                WriteTransactionWithTableTryBuilder {
+                    write_transaction: tx,
+                    table_builder: |tx| {
+                        tx.open_table(TABLE).map_err(|e| {
+                            std::io::Error::other(format!(
+                                "Failed to open table: {e}",
+                            ))
+                        })
+                    },
+                }
+                .try_build()?,
+            );
+
+            Ok(())
+        })
     }
 
     /// Saves a value to the persistence storage.
@@ -504,28 +621,31 @@ impl Persistence {
         let mut buffer =
             box_any.downcast::<Vec<u8>>().expect("Buffer must be a Vec<u8>");
 
-        let tx = self.value_cache_database.begin_write().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin write transaction: {e}",
-            ))
-        })?;
+        let mut value_cache_write_transaction =
+            self.value_cache_write_transaction.upgradable_read();
 
-        {
-            let mut table = tx.open_table(TABLE).unwrap();
-            table
-                .insert(
-                    (K::STABLE_TYPE_ID.as_u128(), fingerprint),
-                    buffer.as_slice(),
-                )
-                .map_err(|e| {
-                    std::io::Error::other(format!(
-                        "Failed to insert entry into table: {e}",
-                    ))
-                })?;
-        }
+        Self::ensure_transaction(
+            &self.value_cache_database,
+            &mut value_cache_write_transaction,
+        )?;
 
-        tx.commit().map_err(|e| {
-            std::io::Error::other(format!("Failed to commit transaction: {e}",))
+        value_cache_write_transaction.with_upgraded(|x| {
+            x.as_mut().unwrap().with_table_mut(
+                |table| -> Result<(), std::io::Error> {
+                    table
+                        .insert(
+                            (K::STABLE_TYPE_ID.as_u128(), fingerprint),
+                            buffer.as_slice(),
+                        )
+                        .map_err(|e| {
+                            std::io::Error::other(format!(
+                                "Failed to insert entry into table: {e}",
+                            ))
+                        })?;
+
+                    Ok(())
+                },
+            )
         })?;
 
         BUFFER.with(|b| {

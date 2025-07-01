@@ -119,6 +119,7 @@ impl Engine {
         let mut serializer = BinarySerializer::new(BufWriter::new(file));
 
         self.database.snapshot.serialize(&mut serializer, &())?;
+        persistence.commit()?;
 
         Ok(())
     }

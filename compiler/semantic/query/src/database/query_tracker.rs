@@ -154,9 +154,14 @@ impl Engine {
     pub fn set_input<K: Key + Dynamic>(&mut self, key: &K, value: K::Value) {
         // set the input value
         let value_fingerprint = calculate_fingerprint(&value);
+        let key_fingerprint = fingerprint::fingerprint(key);
+
         self.database.map.insert(key.clone(), value);
 
-        let mut update_version = |version: &mut VersionInfo| {
+        let mut update_version = |version: &mut VersionInfo| -> bool {
+            let mut need_update = version.kind != Kind::Input
+                || version.verfied_at_version != self.database.snapshot.version;
+
             version.kind = Kind::Input;
             version.verfied_at_version = self.database.snapshot.version;
 
@@ -170,10 +175,15 @@ impl Engine {
 
                 version.updated_at_version = self.database.snapshot.version;
                 version.fingerprint = Some(value_fingerprint);
+
+                // always need to update the version info
+                need_update = true;
             }
+
+            need_update
         };
 
-        match self
+        let save_version_info = match self
             .database
             .query_tracker
             .get_mut()
@@ -182,31 +192,40 @@ impl Engine {
         {
             Entry::Occupied(mut occupied_entry) => {
                 let version = occupied_entry.get_mut();
-                update_version(version);
+                let need_update = update_version(version);
+
+                need_update.then_some(*version)
             }
             Entry::Vacant(entry) => {
                 // try to load from the persistence if available
                 let loaded = self.runtime.persistence.as_ref().and_then(|x| {
-                    x.try_load_version_info::<K>(fingerprint::fingerprint(key))
-                        .ok()
-                        .flatten()
+                    x.try_load_version_info::<K>(key_fingerprint).ok().flatten()
                 });
 
-                match loaded {
-                    Some(mut loaded) => {
-                        update_version(&mut loaded);
-                        entry.insert(loaded);
-                    }
-                    None => {
-                        entry.insert(VersionInfo {
-                            updated_at_version: self.database.snapshot.version,
-                            verfied_at_version: self.database.snapshot.version,
-                            fingerprint: Some(value_fingerprint),
-                            kind: Kind::Input,
-                        });
-                    }
+                if let Some(mut loaded) = loaded {
+                    let result = update_version(&mut loaded);
+                    entry.insert(loaded);
+
+                    result.then_some(loaded)
+                } else {
+                    let inserted = VersionInfo {
+                        updated_at_version: self.database.snapshot.version,
+                        verfied_at_version: self.database.snapshot.version,
+                        fingerprint: Some(value_fingerprint),
+                        kind: Kind::Input,
+                    };
+                    entry.insert(inserted);
+
+                    Some(inserted)
                 }
             }
+        };
+
+        if let (Some(version_info), Some(persistence)) =
+            (save_version_info, self.runtime.persistence.as_ref())
+        {
+            let _ = persistence
+                .save_version_info::<K>(key_fingerprint, &version_info);
         }
     }
 }
