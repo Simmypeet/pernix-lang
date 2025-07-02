@@ -225,6 +225,227 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
     }.into()
 }
 
+/// Derives a value type for the query system with automatic key generation and
+/// optional extension traits.
+///
+/// This procedural macro simplifies the creation of value types for the query
+/// database by automatically generating a corresponding key type and optionally
+/// creating extension traits for convenient value retrieval.
+///
+/// # Required Attributes
+///
+/// ## `#[id(Type)]`
+///
+/// Specifies the identifier type used to uniquely identify values of this type
+/// in the query database. This becomes the inner type of the generated key
+/// struct.
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(u32)]
+/// struct User {
+///     name: String,
+///     email: String,
+/// }
+/// // Generates: struct Key(pub u32);
+/// ```
+///
+/// # Optional Attributes
+///
+/// ## `#[key(Name)]`
+///
+/// Specifies a custom name for the generated key struct. If not provided,
+/// defaults to `Key`.
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(String)]
+/// #[key(UserKey)]
+/// struct User {
+///     name: String,
+/// }
+/// // Generates: struct UserKey(pub String);
+/// ```
+///
+/// ## `#[value(Type)]`
+///
+/// Specifies the actual value type stored in the database. If not provided,
+/// defaults to the type being derived. This is useful when you want the key
+/// to reference a different type than the struct itself.
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(u32)]
+/// #[value(UserData)]
+/// struct User;
+/// // The key will store values of type UserData instead of User
+/// ```
+///
+/// ## `#[ext(...)]`
+///
+/// Generates an extension trait for convenient value retrieval from the query
+/// engine. This attribute accepts several sub-attributes:
+///
+/// ### Required: `method(name)`
+///
+/// Specifies the name of the method to generate in the extension trait.
+///
+/// ### Optional: `trait(name)`
+///
+/// Specifies the name of the extension trait. Defaults to `Ext`.
+///
+/// ### Optional: `unwrap("message")`
+///
+/// If provided, the generated method will unwrap the result and panic with the
+/// given message on cyclic dependency errors. Without this, the method returns
+/// a `Result` type.
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(u32)]
+/// #[ext(method(get_user), trait(UserExt), unwrap("Failed to get user"))]
+/// struct User {
+///     name: String,
+/// }
+///
+/// // Generates:
+/// // pub trait UserExt {
+/// //     fn get_user(&self, id: u32) -> User;
+/// // }
+/// // 
+/// // impl UserExt for TrackedEngine<'_> {
+/// //     fn get_user(&self, id: u32) -> User {
+/// //         self.query(&Key(id)).expect("Failed to get user")
+/// //     }
+/// // }
+/// ```
+///
+/// # Generated Output
+///
+/// The macro generates:
+///
+/// 1. **Key Struct**: A newtype wrapper around the ID type that implements all
+///    necessary traits for use as a query key, including `Key`, `Hash`, 
+///    `Serialize`, `Deserialize`, and `StableHash`.
+///
+/// 2. **Extension Trait** (if `#[ext]` is provided): A trait with methods for
+///    convenient value retrieval, implemented for `TrackedEngine`.
+///
+/// # Examples
+///
+/// ## Basic Usage
+///
+/// ```ignore
+/// use pernixc_query::Value;
+///
+/// #[derive(Debug, Clone, PartialEq, Eq, Value)]
+/// #[id(u32)]
+/// struct User {
+///     name: String,
+///     email: String,
+/// }
+///
+/// // Generated:
+/// // pub struct Key(pub u32);
+/// // Key implements all necessary traits for query database usage
+/// ```
+///
+/// ## With Custom Key Name
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(String)]
+/// #[key(UserKey)]
+/// struct User {
+///     name: String,
+/// }
+///
+/// // Generated:
+/// // pub struct UserKey(pub String);
+/// ```
+///
+/// ## With Extension Trait
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(u32)]
+/// #[ext(method(get_user))]
+/// struct User {
+///     name: String,
+/// }
+///
+/// // Generated:
+/// // pub struct Key(pub u32);
+/// // pub trait Ext {
+/// //     fn get_user(&self, id: u32) -> Result<User, CyclicError>;
+/// // }
+/// // impl Ext for TrackedEngine<'_> { ... }
+///
+/// // Usage:
+/// // let user = engine.get_user(123)?;
+/// ```
+///
+/// ## With Extension Trait and Unwrap
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(u32)]
+/// #[ext(method(get_user), trait(UserExt), unwrap("User not found"))]
+/// struct User {
+///     name: String,
+/// }
+///
+/// // Generated method panics instead of returning Result:
+/// // fn get_user(&self, id: u32) -> User { ... }
+/// ```
+///
+/// ## With Different Value Type
+///
+/// ```ignore
+/// #[derive(Value)]
+/// #[id(u32)]
+/// #[value(UserData)]
+/// struct UserKey;
+///
+/// struct UserData {
+///     name: String,
+///     email: String,
+/// }
+///
+/// // The key will be associated with UserData values
+/// ```
+///
+/// # Compile-Time Validation
+///
+/// The macro performs several compile-time checks:
+///
+/// - Ensures the `#[id(Type)]` attribute is present
+/// - Validates that generic parameters are not used (value types must be concrete)
+/// - Ensures all attribute arguments are well-formed
+/// - Validates that the `method(name)` argument is provided when using `#[ext]`
+///
+/// # Generated Trait Implementations
+///
+/// The generated key struct automatically derives:
+///
+/// - `Debug, Clone, Copy` - For basic functionality
+/// - `PartialEq, Eq, PartialOrd, Ord` - For comparison operations
+/// - `Hash` - For use in hash-based collections
+/// - `Key` - The core query system trait
+/// - `Serialize, Deserialize` - For database persistence
+/// - `StableHash` - For consistent hashing across runs
+///
+/// # Requirements
+///
+/// Value types should implement or derive:
+/// - Standard traits like `Debug`, `Clone`, `PartialEq`, `Eq`
+/// - `Serialize` and `Deserialize` for database storage
+/// - Any other traits required by your specific use case
+///
+/// # Thread Safety
+///
+/// The generated key types are thread-safe and can be used across multiple
+/// threads, making them suitable for concurrent query processing.
 #[proc_macro_derive(Value, attributes(id, ext, value, key))]
 #[allow(clippy::too_many_lines, clippy::redundant_clone)]
 pub fn derive_value(input: TokenStream) -> TokenStream {
