@@ -312,7 +312,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// // pub trait UserExt {
 /// //     fn get_user(&self, id: u32) -> User;
 /// // }
-/// // 
+/// //
 /// // impl UserExt for TrackedEngine<'_> {
 /// //     fn get_user(&self, id: u32) -> User {
 /// //         self.query(&Key(id)).expect("Failed to get user")
@@ -325,7 +325,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// The macro generates:
 ///
 /// 1. **Key Struct**: A newtype wrapper around the ID type that implements all
-///    necessary traits for use as a query key, including `Key`, `Hash`, 
+///    necessary traits for use as a query key, including `Key`, `Hash`,
 ///    `Serialize`, `Deserialize`, and `StableHash`.
 ///
 /// 2. **Extension Trait** (if `#[ext]` is provided): A trait with methods for
@@ -420,7 +420,8 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// The macro performs several compile-time checks:
 ///
 /// - Ensures the `#[id(Type)]` attribute is present
-/// - Validates that generic parameters are not used (value types must be concrete)
+/// - Validates that generic parameters are not used (value types must be
+///   concrete)
 /// - Ensures all attribute arguments are well-formed
 /// - Validates that the `method(name)` argument is provided when using `#[ext]`
 ///

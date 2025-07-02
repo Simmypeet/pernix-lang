@@ -11,7 +11,6 @@ use getset::Getters;
 use parking_lot::{Condvar, MutexGuard};
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::{StableHash, StableHasher};
 
 use crate::{
     fingerprint,
@@ -170,12 +169,6 @@ pub enum Kind {
     },
 }
 
-fn calculate_fingerprint<T: StableHash>(value: &T) -> u128 {
-    let mut sip = pernixc_stable_hash::StableSipHasher::new();
-    value.stable_hash(&mut sip);
-    sip.finish()
-}
-
 impl Engine {
     /// Sets the input value for the given key.
     ///
@@ -185,7 +178,7 @@ impl Engine {
     /// need to reflect this change.
     pub fn set_input<K: Key + Dynamic>(&mut self, key: &K, value: K::Value) {
         // set the input value
-        let value_fingerprint = calculate_fingerprint(&value);
+        let value_fingerprint = fingerprint::fingerprint(&value);
         let key_fingerprint = fingerprint::fingerprint(key);
 
         let mut update_version = |version: &mut VersionInfo| -> (bool, bool) {
@@ -781,7 +774,7 @@ impl Engine {
         // Handle the executor result
         match executor_result {
             Ok(value) => {
-                let value_fingerprint = calculate_fingerprint(&value);
+                let value_fingerprint = fingerprint::fingerprint(&value);
                 self.database.map.insert(key.clone(), value.clone());
 
                 let (save_database, save_version_info) = match query_tracker
