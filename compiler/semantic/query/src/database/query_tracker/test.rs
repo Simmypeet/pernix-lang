@@ -111,7 +111,7 @@ fn negate_variable() {
 
     engine.set_input(&Variable("a".to_string()), 100);
     engine.set_input(&Variable("b".to_string()), 200);
-    assert_eq!(engine.database.snapshot().version, 0);
+    assert_eq!(engine.snapshot().version, 0);
 
     engine.runtime.executor.register(Arc::new(NegateVariableExecutor));
     engine.runtime.executor.register(Arc::new(SumNegatedVariableExecutor));
@@ -124,7 +124,7 @@ fn negate_variable() {
 
     engine.set_input(&Variable("a".to_string()), 200);
     engine.set_input(&Variable("b".to_string()), 300);
-    assert_eq!(engine.database.snapshot().version, 1);
+    assert_eq!(engine.snapshot().version, 1);
 
     let value = engine
         .tracked()
@@ -134,7 +134,7 @@ fn negate_variable() {
     engine.set_input(&Variable("a".to_string()), -300);
     engine.set_input(&Variable("b".to_string()), -300);
 
-    assert_eq!(engine.database.snapshot().version, 2);
+    assert_eq!(engine.snapshot().version, 2);
     let value = engine
         .tracked()
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
@@ -191,7 +191,7 @@ fn skip_when_input_unchanged() {
 
     // Set initial input
     engine.set_input(&Variable("x".to_string()), 42);
-    assert_eq!(engine.database.snapshot().version, 0);
+    assert_eq!(engine.snapshot().version, 0);
 
     // Create tracked executor to count invocations
     let tracked_executor = TrackedExecutor::default();
@@ -213,7 +213,7 @@ fn skip_when_input_unchanged() {
 
     // Now change the input - should trigger recomputation
     engine.set_input(&Variable("x".to_string()), 100);
-    assert_eq!(engine.database.snapshot().version, 1); // Version should increment
+    assert_eq!(engine.snapshot().version, 1); // Version should increment
 
     // Query after input change - should compute and call executor again
     let result4 = engine.tracked().query(&TrackedComputation("x".to_string()));
@@ -322,7 +322,7 @@ fn skip_when_intermediate_result_unchanged() {
     // Set initial inputs - both positive values
     engine.set_input(&Variable("x".to_string()), 400);
     engine.set_input(&Variable("y".to_string()), 300);
-    assert_eq!(engine.database.snapshot().version, 0);
+    assert_eq!(engine.snapshot().version, 0);
 
     // Create tracked executors to count invocations
     let abs_executor = Arc::new(TrackedAbsExecutor::default());
@@ -350,7 +350,7 @@ fn skip_when_intermediate_result_unchanged() {
 
     // Change x from 400 to -400 (abs value stays the same)
     engine.set_input(&Variable("x".to_string()), -400);
-    assert_eq!(engine.database.snapshot().version, 1); // Version should increment
+    assert_eq!(engine.snapshot().version, 1); // Version should increment
 
     // Query after input change - abs executor should be called for x, but add
     // executor should be skipped because the result of abs(x) hasn't
@@ -364,7 +364,7 @@ fn skip_when_intermediate_result_unchanged() {
 
     // Change y from 300 to -300 (abs value stays the same)
     engine.set_input(&Variable("y".to_string()), -300);
-    assert_eq!(engine.database.snapshot().version, 2); // Version should increment again
+    assert_eq!(engine.snapshot().version, 2); // Version should increment again
 
     // Query after second input change - abs executor should be called for y,
     // but add executor still skipped
@@ -377,7 +377,7 @@ fn skip_when_intermediate_result_unchanged() {
 
     // Now change x to a value that actually changes the abs result
     engine.set_input(&Variable("x".to_string()), 500);
-    assert_eq!(engine.database.snapshot().version, 3); // Version should increment
+    assert_eq!(engine.snapshot().version, 3); // Version should increment
 
     // Query after meaningful change - both executors should be called
     let result5 = engine
@@ -483,7 +483,7 @@ fn multi_layer_dependency_skipping() {
 
     // Set initial input
     engine.set_input(&Variable("z".to_string()), 5);
-    assert_eq!(engine.database.snapshot().version, 0);
+    assert_eq!(engine.snapshot().version, 0);
 
     // Create tracked executors
     let abs_executor = Arc::new(TrackedAbsExecutor::default());
@@ -506,7 +506,7 @@ fn multi_layer_dependency_skipping() {
     // abs(-5) = 5 (unchanged), but square(-5) = 25 (unchanged too!)
     // So the complex computation result should be the same: 5 + 25 = 30
     engine.set_input(&Variable("z".to_string()), -5);
-    assert_eq!(engine.database.snapshot().version, 1);
+    assert_eq!(engine.snapshot().version, 1);
 
     let result2 = engine.tracked().query(&ComplexComputation("z".to_string()));
     assert_eq!(result2, Ok(30)); // abs(-5) + square(-5) = 5 + 25 = 30 (same!)
@@ -516,7 +516,7 @@ fn multi_layer_dependency_skipping() {
 
     // Change to a different value that actually changes the result
     engine.set_input(&Variable("z".to_string()), 3);
-    assert_eq!(engine.database.snapshot().version, 2);
+    assert_eq!(engine.snapshot().version, 2);
 
     let result3 = engine.tracked().query(&ComplexComputation("z".to_string()));
     assert_eq!(result3, Ok(12)); // abs(3) + square(3) = 3 + 9 = 12
@@ -1575,7 +1575,7 @@ fn persistence_input_invalidation() {
         3
     ); // Called for a, b, c
 
-    let first_version = engine.database.snapshot().version;
+    let first_version = engine.snapshot().version;
 
     // save to persistence
     engine.try_save_database().unwrap();
@@ -1605,7 +1605,7 @@ fn persistence_input_invalidation() {
     );
 
     // version should be the same as before saving
-    assert_eq!(engine.database.snapshot().version, first_version);
+    assert_eq!(engine.snapshot().version, first_version);
 
     // save the current state to persistence
     engine.try_save_database().unwrap();
@@ -1639,5 +1639,5 @@ fn persistence_input_invalidation() {
     ); // Called for a, b, c again
 
     // version should be incremented
-    assert!(engine.database.snapshot().version > first_version);
+    assert!(engine.snapshot().version > first_version);
 }

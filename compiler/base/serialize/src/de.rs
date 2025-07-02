@@ -944,6 +944,7 @@ where
 // Collection Implementations
 // =============================================================================
 
+use std::sync::atomic::AtomicUsize;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::{BuildHasher, Hash},
@@ -1588,6 +1589,15 @@ impl<D: Deserializer<E>, E> Deserialize<D, E> for AtomicBool {
         _extension: &E,
     ) -> Result<Self, <D as Deserializer<E>>::Error> {
         deserializer.expect_bool().map(AtomicBool::new)
+    }
+}
+
+impl<D: Deserializer<E>, E> Deserialize<D, E> for AtomicUsize {
+    fn deserialize(
+        deserializer: &mut D,
+        _extension: &E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        deserializer.expect_usize().map(AtomicUsize::new)
     }
 }
 

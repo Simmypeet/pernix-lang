@@ -67,6 +67,33 @@ impl Tracked<'_> {
     }
 }
 
+/// Stores the version information of the database, including whether the
+/// last operation was a query or not.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+)]
+pub struct Snapshot {
+    /// The current version of the database.
+    ///
+    /// This value is incremented whenever the database is modified,
+    /// such as when a new key-value pair is added or an existing one is
+    /// updated.
+    pub version: usize,
+
+    /// Indicates whether the last operation was a query.
+    pub last_was_query: bool,
+}
+
 /// Tracks the dependencies between queries and their execution order.
 #[derive(Default, Serialize, Deserialize, Getters)]
 #[allow(clippy::mutable_key_type, missing_docs)]
@@ -96,6 +123,32 @@ pub struct QueryTracker {
     /// execution.
     #[get = "pub"]
     cyclic_dependencies: Vec<CyclicDependency>,
+
+    /// Represents a snapshot of the database version.
+    #[get = "pub"]
+    snapshot: Snapshot,
+}
+
+impl Engine {
+    /// Returns the current snapshot of the database.
+    pub fn snapshot(&self) -> Snapshot {
+        self.database.query_tracker.lock().snapshot
+    }
+}
+
+impl QueryTracker {
+    /// Creates a new instance of [`QueryTracker`] with provided snapshot.
+    #[must_use]
+    pub fn with_snapshot(snapshot: Snapshot) -> Self {
+        Self {
+            condvars_by_record: HashMap::default(),
+            current_dependencies_by_dependant: HashMap::default(),
+            dependency_graph: HashMap::default(),
+            version_info_by_keys: HashMap::default(),
+            cyclic_dependencies: Vec::new(),
+            snapshot,
+        }
+    }
 }
 
 /// Stores the error information about a cyclic dependency in the query tracker.
@@ -176,28 +229,30 @@ impl Engine {
     /// the version of the database will be bumped up by one. This is to
     /// indicate that the input value has changed and all the derived values
     /// need to reflect this change.
-    pub fn set_input<K: Key + Dynamic>(&mut self, key: &K, value: K::Value) {
+    pub fn set_input<K: Key + Dynamic>(&self, key: &K, value: K::Value) {
         // set the input value
         let value_fingerprint = fingerprint::fingerprint(&value);
         let key_fingerprint = fingerprint::fingerprint(key);
 
-        let mut update_version = |version: &mut VersionInfo| -> (bool, bool) {
+        let update_version = |version: &mut VersionInfo,
+                              snapshot: &mut Snapshot|
+         -> (bool, bool) {
             let mut save_value = false;
             let mut need_update = version.kind != Kind::Input
-                || version.verfied_at_version != self.database.snapshot.version;
+                || version.verfied_at_version != snapshot.version;
 
             version.kind = Kind::Input;
-            version.verfied_at_version = self.database.snapshot.version;
+            version.verfied_at_version = snapshot.version;
 
             // update the version info if invalidated
             if Some(value_fingerprint) != version.fingerprint {
                 // bump the version for the new input setting
-                if *self.database.snapshot.last_was_query.get_mut() {
-                    self.database.snapshot.version += 1;
-                    *self.database.snapshot.last_was_query.get_mut() = false;
+                if snapshot.last_was_query {
+                    snapshot.version += 1;
+                    snapshot.last_was_query = false;
                 }
 
-                version.updated_at_version = self.database.snapshot.version;
+                version.updated_at_version = snapshot.version;
                 version.fingerprint = Some(value_fingerprint);
 
                 // always need to update the version info
@@ -208,17 +263,17 @@ impl Engine {
             (need_update, save_value)
         };
 
-        let (save_version_info, save_value) = match self
-            .database
-            .query_tracker
-            .get_mut()
+        let mut query_tracker = self.database.query_tracker.lock();
+        let query_tracker = &mut *query_tracker;
+
+        let (save_version_info, save_value) = match query_tracker
             .version_info_by_keys
             .entry(DynamicBox(key.smallbox_clone()))
         {
             Entry::Occupied(mut occupied_entry) => {
                 let version = occupied_entry.get_mut();
                 let (version_need_update, update_value) =
-                    update_version(version);
+                    update_version(version, &mut query_tracker.snapshot);
 
                 (version_need_update.then_some(*version), update_value)
             }
@@ -229,22 +284,25 @@ impl Engine {
                 });
 
                 if let Some(mut loaded) = loaded {
-                    let (result, update_value) = update_version(&mut loaded);
+                    let (result, update_value) = update_version(
+                        &mut loaded,
+                        &mut query_tracker.snapshot,
+                    );
+
                     entry.insert(loaded);
 
                     (result.then_some(loaded), update_value)
                 } else {
                     // setting new input could influence the derived values
                     // so we need to bump the version
-                    if *self.database.snapshot.last_was_query.get_mut() {
-                        self.database.snapshot.version += 1;
-                        *self.database.snapshot.last_was_query.get_mut() =
-                            false;
+                    if query_tracker.snapshot.last_was_query {
+                        query_tracker.snapshot.version += 1;
+                        query_tracker.snapshot.last_was_query = false;
                     }
 
                     let inserted = VersionInfo {
-                        updated_at_version: self.database.snapshot.version,
-                        verfied_at_version: self.database.snapshot.version,
+                        updated_at_version: query_tracker.snapshot.version,
+                        verfied_at_version: query_tracker.snapshot.version,
                         fingerprint: Some(value_fingerprint),
                         kind: Kind::Input,
                     };
@@ -337,7 +395,7 @@ impl Engine {
                         query_tracker,
                     );
 
-                if self.check_cyclic(
+                if Self::check_cyclic(
                     computed_successfully,
                     called_from,
                     &mut query_tracker,
@@ -357,7 +415,6 @@ impl Engine {
     }
 
     fn check_cyclic(
-        &self,
         computed_successfully: bool,
         called_from: Option<&DynamicBox>,
         query_tracker: &mut MutexGuard<QueryTracker>,
@@ -376,7 +433,7 @@ impl Engine {
         if matches!(version_info.kind, Kind::Derived {
             defaulted_by_cyclic_dependency: true
         }) && version_info.verfied_at_version
-            == self.database.snapshot.version
+            == query_tracker.snapshot.version
         {
             return Err(crate::runtime::executor::CyclicError);
         }
@@ -418,10 +475,7 @@ impl Engine {
                 loaded
             })
         else {
-            self.database
-                .snapshot
-                .last_was_query
-                .store(true, std::sync::atomic::Ordering::SeqCst);
+            query_tracker.snapshot.last_was_query = true;
 
             // the value hasn't been computed yet, so we need to compute it
             let (computed_successfully, mut query_tracker) = self.fresh_query(
@@ -431,7 +485,7 @@ impl Engine {
                 query_tracker,
             );
 
-            if self.check_cyclic(
+            if Self::check_cyclic(
                 computed_successfully,
                 called_from,
                 &mut query_tracker,
@@ -460,12 +514,9 @@ impl Engine {
             return (Ok(()), query_tracker);
         }
 
-        self.database
-            .snapshot
-            .last_was_query
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        query_tracker.snapshot.last_was_query = true;
 
-        if version_info.verfied_at_version == self.database.snapshot.version {
+        if version_info.verfied_at_version == query_tracker.snapshot.version {
             // add the dependency of the input
             if let Some(called_from) = &called_from {
                 query_tracker
@@ -575,7 +626,7 @@ impl Engine {
             let (computed_successfully, mut returned_call_graph) = self
                 .fresh_query(key, &key_smallbox, called_from, query_tracker);
 
-            if self.check_cyclic(
+            if Self::check_cyclic(
                 computed_successfully,
                 called_from,
                 &mut returned_call_graph,
@@ -593,7 +644,7 @@ impl Engine {
                 .version_info_by_keys
                 .get_mut(&key_smallbox)
                 .unwrap()
-                .verfied_at_version = self.database.snapshot.version;
+                .verfied_at_version = query_tracker.snapshot.version;
         }
 
         (Ok(()), query_tracker)
@@ -614,9 +665,11 @@ impl Engine {
             )
         });
 
+        let mut query_tracker_ref = &mut *query_tracker;
+
         // check for cyclic dependencies
         if let Some(called_from) = called_from {
-            query_tracker
+            query_tracker_ref
                 .dependency_graph
                 .get_mut(called_from)
                 .unwrap()
@@ -628,26 +681,24 @@ impl Engine {
             loop {
                 if stack.last().unwrap() == called_from {
                     for call in &stack {
-                        match query_tracker
+                        match query_tracker_ref
                             .version_info_by_keys
                             .entry(call.clone())
                         {
                             Entry::Occupied(occupied_entry) => {
                                 let version_info = occupied_entry.into_mut();
                                 version_info.verfied_at_version =
-                                    self.database.snapshot.version;
+                                    query_tracker_ref.snapshot.version;
                                 version_info.kind = Kind::Derived {
                                     defaulted_by_cyclic_dependency: true,
                                 };
                             }
                             Entry::Vacant(vacant_entry) => {
                                 vacant_entry.insert(VersionInfo {
-                                    updated_at_version: self
-                                        .database
+                                    updated_at_version: query_tracker_ref
                                         .snapshot
                                         .version,
-                                    verfied_at_version: self
-                                        .database
+                                    verfied_at_version: query_tracker_ref
                                         .snapshot
                                         .version,
                                     kind: Kind::Derived {
@@ -659,18 +710,22 @@ impl Engine {
                         }
                     }
 
-                    query_tracker
+                    query_tracker_ref
                         .cyclic_dependencies
                         .push(CyclicDependency { records_stack: stack });
 
                     // insert a default value for the cyclic dependency
                     self.database.map.insert(key.clone(), T::scc_value());
 
-                    query_tracker.version_info_by_keys.insert(
+                    query_tracker_ref.version_info_by_keys.insert(
                         DynamicBox(key.smallbox_clone()),
                         VersionInfo {
-                            updated_at_version: self.database.snapshot.version,
-                            verfied_at_version: self.database.snapshot.version,
+                            updated_at_version: query_tracker_ref
+                                .snapshot
+                                .version,
+                            verfied_at_version: query_tracker_ref
+                                .snapshot
+                                .version,
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: true,
                             },
@@ -683,7 +738,7 @@ impl Engine {
                 }
 
                 // follow the dependency chain
-                if let Some(next) = query_tracker
+                if let Some(next) = query_tracker_ref
                     .current_dependencies_by_dependant
                     .get(stack.last().unwrap())
                 {
@@ -693,20 +748,22 @@ impl Engine {
                 }
             }
 
-            assert!(query_tracker
+            assert!(query_tracker_ref
                 .current_dependencies_by_dependant
                 .insert(called_from.clone(), DynamicBox(key.smallbox_clone()))
                 .is_none());
         }
 
-        let sync = query_tracker.condvars_by_record.get(key_smallbox).cloned();
+        let sync =
+            query_tracker_ref.condvars_by_record.get(key_smallbox).cloned();
 
         // there's an another thread that is computing the same record
         let succeeded = if let Some(sync) = sync {
             sync.wait(&mut query_tracker);
+            query_tracker_ref = &mut *query_tracker;
             true
         } else {
-            query_tracker
+            query_tracker_ref
                 .dependency_graph
                 .insert(key_smallbox.clone(), HashSet::default());
 
@@ -729,11 +786,13 @@ impl Engine {
             }
 
             query_tracker = new_call_graph;
+            query_tracker_ref = &mut *query_tracker;
+
             ok
         };
 
         if let Some(called_from) = called_from {
-            assert!(query_tracker
+            assert!(query_tracker_ref
                 .current_dependencies_by_dependant
                 .remove(called_from)
                 .is_some());
@@ -770,6 +829,7 @@ impl Engine {
 
         // re-acquire the context lock
         query_tracker = self.database.query_tracker.lock();
+        let query_tracker_ref = &mut *query_tracker;
 
         // Handle the executor result
         match executor_result {
@@ -777,7 +837,7 @@ impl Engine {
                 let value_fingerprint = fingerprint::fingerprint(&value);
                 self.database.map.insert(key.clone(), value.clone());
 
-                let (save_database, save_version_info) = match query_tracker
+                let (save_database, save_version_info) = match query_tracker_ref
                     .version_info_by_keys
                     .entry(DynamicBox(key.smallbox_clone()))
                 {
@@ -786,7 +846,7 @@ impl Engine {
                         let initial_version = *version_info;
 
                         version_info.verfied_at_version =
-                            self.database.snapshot.version;
+                            query_tracker_ref.snapshot.version;
                         version_info.kind = Kind::Derived {
                             defaulted_by_cyclic_dependency: false,
                         };
@@ -797,7 +857,7 @@ impl Engine {
                             false
                         } else {
                             version_info.updated_at_version =
-                                self.database.snapshot.version;
+                                query_tracker_ref.snapshot.version;
                             version_info.fingerprint = Some(value_fingerprint);
 
                             true
@@ -811,8 +871,12 @@ impl Engine {
                     }
                     Entry::Vacant(vacant_entry) => {
                         let inserted_version_info = VersionInfo {
-                            updated_at_version: self.database.snapshot.version,
-                            verfied_at_version: self.database.snapshot.version,
+                            updated_at_version: query_tracker_ref
+                                .snapshot
+                                .version,
+                            verfied_at_version: query_tracker_ref
+                                .snapshot
+                                .version,
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: false,
                             },
@@ -856,11 +920,11 @@ impl Engine {
                 }
             }
             Err(_cyclic_error) => {
-                query_tracker.version_info_by_keys.insert(
+                query_tracker_ref.version_info_by_keys.insert(
                     DynamicBox(key.smallbox_clone()),
                     VersionInfo {
-                        updated_at_version: self.database.snapshot.version,
-                        verfied_at_version: self.database.snapshot.version,
+                        updated_at_version: query_tracker_ref.snapshot.version,
+                        verfied_at_version: query_tracker_ref.snapshot.version,
                         kind: Kind::Derived {
                             defaulted_by_cyclic_dependency: true,
                         },
@@ -868,7 +932,7 @@ impl Engine {
                     },
                 );
 
-                match query_tracker
+                match query_tracker_ref
                     .version_info_by_keys
                     .entry(DynamicBox(key.smallbox_clone()))
                 {
@@ -878,24 +942,28 @@ impl Engine {
                         // must've been marked as cyclic before
                         assert!(
                             version_info.verfied_at_version
-                                == self.database.snapshot.version
+                                == query_tracker_ref.snapshot.version
                                 && matches!(version_info.kind, Kind::Derived {
                                     defaulted_by_cyclic_dependency: true
                                 })
                         );
 
                         version_info.verfied_at_version =
-                            self.database.snapshot.version;
+                            query_tracker_ref.snapshot.version;
                         version_info.updated_at_version =
-                            self.database.snapshot.version;
+                            query_tracker_ref.snapshot.version;
                         version_info.kind = Kind::Derived {
                             defaulted_by_cyclic_dependency: true,
                         };
                     }
                     Entry::Vacant(vacant_entry) => {
                         vacant_entry.insert(VersionInfo {
-                            updated_at_version: self.database.snapshot.version,
-                            verfied_at_version: self.database.snapshot.version,
+                            updated_at_version: query_tracker_ref
+                                .snapshot
+                                .version,
+                            verfied_at_version: query_tracker_ref
+                                .snapshot
+                                .version,
                             kind: Kind::Derived {
                                 defaulted_by_cyclic_dependency: true,
                             },
@@ -921,7 +989,7 @@ impl Engine {
             }
         }
 
-        assert!(query_tracker
+        assert!(query_tracker_ref
             .condvars_by_record
             .remove(key_smallbox)
             .is_some());

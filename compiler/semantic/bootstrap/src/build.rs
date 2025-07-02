@@ -37,7 +37,7 @@ use crate::{
 
 #[allow(clippy::too_many_lines)]
 fn process_import_items(
-    engine_rw: &RwLock<Engine>,
+    engine: &Engine,
     defined_in_module_id: Global<symbol::ID>,
     import: &pernixc_syntax::item::module::Import,
     import_item: &ImportItems,
@@ -67,8 +67,7 @@ fn process_import_items(
             Some(current) => {
                 let identifier_root = root.as_identifier().unwrap();
 
-                let Some(id) = engine_rw
-                    .read()
+                let Some(id) = engine
                     .tracked()
                     .get_members(current)
                     .member_ids_by_name
@@ -84,8 +83,7 @@ fn process_import_items(
                 };
 
                 let result = Global::new(current.target_id, id);
-                if !engine_rw
-                    .read()
+                if !engine
                     .tracked()
                     .symbol_accessible(defined_in_module_id, result)
                 {
@@ -105,16 +103,14 @@ fn process_import_items(
                     symbol::ID::ROOT_MODULE,
                 ),
                 SimplePathRoot::Identifier(identifier) => {
-                    let target_map =
-                        engine_rw.read().tracked().get_target_map();
+                    let target_map = engine.tracked().get_target_map();
 
                     let Some(id) = target_map
                         .get(identifier.kind.0.as_str())
                         .copied()
                         .filter(|x| {
                             x == &defined_in_module_id.target_id
-                                || engine_rw
-                                    .read()
+                                || engine
                                     .tracked()
                                     .get_target(defined_in_module_id.target_id)
                                     .linked_targets
@@ -135,8 +131,7 @@ fn process_import_items(
         };
 
         for rest in simple_path.subsequences().filter_map(|x| x.identifier()) {
-            let Some(next) = engine_rw
-                .read()
+            let Some(next) = engine
                 .tracked()
                 .get_members(start)
                 .member_ids_by_name
@@ -153,8 +148,7 @@ fn process_import_items(
 
             let next_id = Global::new(start.target_id, next);
 
-            if !engine_rw
-                .read()
+            if !engine
                 .tracked()
                 .symbol_accessible(defined_in_module_id, next_id)
             {
@@ -172,13 +166,9 @@ fn process_import_items(
             .alias()
             .as_ref()
             .and_then(pernixc_syntax::item::module::Alias::identifier)
-            .map_or_else(
-                || engine_rw.read().tracked().get_name(start).0,
-                |x| x.kind.0,
-            );
+            .map_or_else(|| engine.tracked().get_name(start).0, |x| x.kind.0);
 
         // check if there's existing symbol right now
-        let engine = engine_rw.read();
         let existing = engine
             .tracked()
             .get_members(defined_in_module_id)
@@ -268,7 +258,7 @@ pub(super) fn symbol_is_more_accessible_than_its_parent_check(
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn insert_imports(
-    engine_rw: &RwLock<Engine>,
+    engine: &Engine,
     defined_in_module_id: Global<symbol::ID>,
     imports: impl IntoIterator<Item = pernixc_syntax::item::module::Import>,
     handler: &dyn Handler<Box<dyn Diagnostic>>,
@@ -279,7 +269,6 @@ pub(super) fn insert_imports(
         let start_from = if let Some(from_simple_path) =
             import.from().and_then(|x| x.simple_path())
         {
-            let engine = engine_rw.read();
             let Some(from_id) = engine.tracked().resolve_simple_path(
                 &from_simple_path,
                 defined_in_module_id,
@@ -320,7 +309,7 @@ pub(super) fn insert_imports(
 
         for import_item in import_items {
             process_import_items(
-                engine_rw,
+                engine,
                 defined_in_module_id,
                 &import,
                 &import_item,
@@ -331,7 +320,6 @@ pub(super) fn insert_imports(
         }
     }
 
-    let mut engine = engine_rw.write();
     engine.set_input(
         &import::Key(defined_in_module_id),
         Arc::new(import_component),
@@ -404,23 +392,26 @@ impl MemberBuilder<'_, '_, '_> {
         }
 
         {
-            let mut engine = build_context.engine_rw.write();
             let global_id = TargetID::Local.make_global(id);
-            engine
+            build_context
+                .engine
                 .set_input(&name::Key(global_id), Name(new_symbol.name.kind.0));
-            engine
+            build_context
+                .engine
                 .set_input(&span::Key(global_id), Span(Some(identifier_span)));
-            engine.set_input(&kind::Key(global_id), new_symbol.symbol_kind);
+            build_context
+                .engine
+                .set_input(&kind::Key(global_id), new_symbol.symbol_kind);
 
             if let Some(generic_parameters) = new_symbol.generic_parameters {
-                engine.set_input(
+                build_context.engine.set_input(
                     &syntax::GenericParametersKey(global_id),
                     syntax::GenericParameters(generic_parameters),
                 );
             }
 
             if let Some(where_clause) = new_symbol.where_clause {
-                engine.set_input(
+                build_context.engine.set_input(
                     &syntax::WhereClauseKey(global_id),
                     syntax::WhereClause(where_clause),
                 );
@@ -439,7 +430,9 @@ impl MemberBuilder<'_, '_, '_> {
                     }
                 };
 
-                engine.set_input(&accessibility::Key(global_id), accessibility);
+                build_context
+                    .engine
+                    .set_input(&accessibility::Key(global_id), accessibility);
             }
         }
 
@@ -449,7 +442,7 @@ impl MemberBuilder<'_, '_, '_> {
 
 #[derive(new)]
 pub(super) struct Context<'a> {
-    engine_rw: &'a RwLock<Engine>,
+    engine: &'a Engine,
     generated_ids_rw: &'a RwLock<HashSet<symbol::ID>>,
     imports_by_global_id: &'a pernixc_hash::DashMap<
         symbol::ID,
@@ -519,19 +512,17 @@ impl Context<'_> {
                         .build(),
                 );
 
-                let mut engine_write = self.engine_rw.write();
                 let global_id = TargetID::Local.make_global(id);
 
-                engine_write.set_input(
+                self.engine.set_input(
                     &syntax::VariantKey(global_id),
                     syntax::Variant(variant_syn.association()),
                 );
             }
 
             // add the members to the module
-            let mut engine = self.engine_rw.write();
             let global_id = TargetID::Local.make_global(enum_id);
-            engine.set_input(
+            self.engine.set_input(
                 &member::Key(global_id),
                 Arc::new(Member { member_ids_by_name: members, redefinitions }),
             );
@@ -639,10 +630,9 @@ impl Context<'_> {
                                 .build(),
                         );
 
-                        let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.set_input(
+                        self.engine.set_input(
                             &syntax::FunctionSignatureKey(global_id),
                             syntax::FunctionSignature {
                                 parameters: f
@@ -684,9 +674,8 @@ impl Context<'_> {
             }
 
             // add the members to the module
-            let mut engine = self.engine_rw.write();
             let global_id = TargetID::Local.make_global(trait_id);
-            engine.set_input(
+            self.engine.set_input(
                 &member::Key(global_id),
                 Arc::new(Member { member_ids_by_name: members, redefinitions }),
             );
@@ -728,16 +717,15 @@ impl Context<'_> {
         );
 
         {
-            let mut engine = self.engine_rw.write();
-            engine.set_input(
+            self.engine.set_input(
                 &kind::Key(TargetID::Local.make_global(current_module_id)),
                 Kind::Module,
             );
-            engine.set_input(
+            self.engine.set_input(
                 &name::Key(TargetID::Local.make_global(current_module_id)),
                 Name(name),
             );
-            engine.set_input(
+            self.engine.set_input(
                 &accessibility::Key(
                     TargetID::Local.make_global(current_module_id),
                 ),
@@ -818,10 +806,9 @@ impl Context<'_> {
                                 .build(),
                         );
 
-                        let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.set_input(
+                        self.engine.set_input(
                             &syntax::FunctionSignatureKey(global_id),
                             syntax::FunctionSignature {
                                 parameters: f
@@ -832,7 +819,7 @@ impl Context<'_> {
                                     .and_then(|x| x.return_type()),
                             },
                         );
-                        engine_write.set_input(
+                        self.engine.set_input(
                             &syntax::StatementsKey(global_id),
                             syntax::Statements(
                                 f.body().and_then(|x| x.members()),
@@ -866,10 +853,9 @@ impl Context<'_> {
                                 .build(),
                         );
 
-                        let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.set_input(
+                        self.engine.set_input(
                             &syntax::TypeAliasKey(global_id),
                             syntax::TypeAlias(
                                 ty.body().and_then(|x| x.r#type()),
@@ -901,10 +887,9 @@ impl Context<'_> {
                                 .build(),
                         );
 
-                        let mut engine_write = self.engine_rw.write();
                         let global_id = TargetID::Local.make_global(id);
 
-                        engine_write.set_input(
+                        self.engine.set_input(
                             &syntax::FieldsKey(global_id),
                             syntax::Fields(st.body().and_then(|x| x.members())),
                         );
@@ -983,9 +968,8 @@ impl Context<'_> {
 
         // add the members to the module
         {
-            let mut engine = self.engine_rw.write();
             let global_id = TargetID::Local.make_global(current_module_id);
-            engine.set_input(
+            self.engine.set_input(
                 &member::Key(global_id),
                 Arc::new(Member { member_ids_by_name: members, redefinitions }),
             );

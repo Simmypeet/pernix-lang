@@ -95,7 +95,7 @@ pub fn bootstrap<'l>(
     >,
     persistence: Option<Persistence>,
 ) -> Result<Bootstrap, Error> {
-    let ((tree, syntax_errors), mut engine) = rayon::join(
+    let ((tree, syntax_errors), engine) = rayon::join(
         || tree::parse(root_source_id, source_map, token_trees_by_source_id),
         || {
             let mut runtime = Runtime {
@@ -124,7 +124,6 @@ pub fn bootstrap<'l>(
     );
 
     let generated_ids_rw = RwLock::new(HashSet::default());
-    let engine = RwLock::new(engine);
     let handler = Storage::<Box<dyn Diagnostic>>::new();
     let imports = DashMap::default();
 
@@ -133,7 +132,7 @@ pub fn bootstrap<'l>(
 
     context.create_module(target_name, tree, None, &[]);
 
-    engine.write().set_input(
+    engine.set_input(
         &target::Key(TargetID::Local),
         Arc::new(target::Target {
             all_symbol_ids: generated_ids_rw.into_inner(),
@@ -151,17 +150,16 @@ pub fn bootstrap<'l>(
     });
 
     {
-        let engine_read = engine.read();
-        let target = engine_read.tracked().get_target(TargetID::Local);
+        let target = engine.tracked().get_target(TargetID::Local);
         build::symbol_is_more_accessible_than_its_parent_check(
-            &engine_read,
+            &engine,
             &target.all_symbol_ids,
             &handler,
         );
     }
 
     Ok(Bootstrap {
-        engine: engine.into_inner(),
+        engine,
         syntax_errors,
         semantic_diagnostics: handler.into_vec(),
     })

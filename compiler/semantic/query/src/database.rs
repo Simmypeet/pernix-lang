@@ -1,9 +1,6 @@
 //! Contains the definition of the [`Database`] struct.
 
-use std::{
-    io::{BufReader, BufWriter},
-    sync::atomic::AtomicBool,
-};
+use std::io::{BufReader, BufWriter};
 
 use getset::Getters;
 use parking_lot::Mutex;
@@ -13,7 +10,10 @@ use pernixc_serialize::{
 };
 
 use crate::{
-    database::{map::Map, query_tracker::QueryTracker},
+    database::{
+        map::Map,
+        query_tracker::{QueryTracker, Snapshot},
+    },
     runtime::persistence::{
         serde::{DynamicDeserialize, DynamicSerialize},
         Persistence,
@@ -34,10 +34,6 @@ pub mod query_tracker;
 pub struct Database {
     map: map::Map,
     query_tracker: Mutex<query_tracker::QueryTracker>,
-
-    /// Represents a snapshot of the database version.
-    #[get = "pub"]
-    snapshot: Snapshot,
 }
 
 impl Drop for Database {
@@ -50,21 +46,6 @@ impl Drop for Database {
             s.spawn(|_| drop(query_tracker));
         });
     }
-}
-
-/// Stores the version information of the database, including whether the
-/// last operation was a query or not.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct Snapshot {
-    /// The current version of the database.
-    ///
-    /// This value is incremented whenever the database is modified,
-    /// such as when a new key-value pair is added or an existing one is
-    /// updated.
-    pub version: usize,
-
-    /// Indicates whether the last operation was a query.
-    pub last_was_query: AtomicBool,
 }
 
 impl Database {
@@ -83,12 +64,11 @@ impl Persistence {
         let mut binary_deserializer =
             BinaryDeserializer::new(BufReader::new(file));
 
-        let version = Snapshot::deserialize(&mut binary_deserializer, &())?;
+        let snapshot = Snapshot::deserialize(&mut binary_deserializer, &())?;
 
         Ok(Database {
             map: Map::default(),
-            query_tracker: Mutex::new(QueryTracker::default()),
-            snapshot: version,
+            query_tracker: Mutex::new(QueryTracker::with_snapshot(snapshot)),
         })
     }
 }
@@ -101,6 +81,8 @@ impl Engine {
         let Some(persistence) = self.runtime.persistence.as_ref() else {
             return Ok(());
         };
+
+        let query_tracker = self.database.query_tracker.lock();
 
         let path = persistence
             .path()
@@ -118,7 +100,7 @@ impl Engine {
 
         let mut serializer = BinarySerializer::new(BufWriter::new(file));
 
-        self.database.snapshot.serialize(&mut serializer, &())?;
+        query_tracker.snapshot().serialize(&mut serializer, &())?;
         persistence.commit()?;
 
         Ok(())
