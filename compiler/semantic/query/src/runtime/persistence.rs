@@ -335,7 +335,6 @@ impl Persistence {
                     deserializer,
                     serde_extension,
                 )
-
             };
 
         let deserialize_version_info =
@@ -561,25 +560,23 @@ impl Persistence {
     }
 
     /// Generic helper function for saving data to a database table.
-    #[allow(clippy::unused_self)]
-    fn save_to_table<T>(
+    #[allow(clippy::unused_self, clippy::too_many_arguments)]
+    fn save_to_table<S>(
         &self,
         stable_type_id: StableTypeID,
         fingerprint: u128,
-        data: &T,
         database: &redb::Database,
         transaction: &RwLock<Option<WriteTransactionWithTable>>,
-        serialize_fn: impl FnOnce(
-            &T,
-            &mut BinarySerializer<Writer>,
-        ) -> Result<(), std::io::Error>,
+        create_serializer: impl FnOnce(Vec<u8>) -> S,
+        serialize_fn: impl FnOnce(&mut S) -> Result<(), std::io::Error>,
+        extract_buffer: impl FnOnce(S) -> Vec<u8>,
     ) -> Result<(), std::io::Error> {
         let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
-        let mut binary_serializer = BinarySerializer::new(Writer::Vec(buffer));
+        let mut binary_serializer = create_serializer(buffer);
 
-        serialize_fn(data, &mut binary_serializer)?;
+        serialize_fn(&mut binary_serializer)?;
 
-        let mut buffer = binary_serializer.into_inner().into_vec().unwrap();
+        let mut buffer = extract_buffer(binary_serializer);
 
         let mut tx = transaction.upgradable_read();
         Self::ensure_transaction(database, &mut tx)?;
@@ -623,16 +620,17 @@ impl Persistence {
         self.save_to_table(
             stable_type_id,
             key_fingerprint,
-            dependencies,
             &self.dependency_graph_database,
             &self.dependency_graph_write_transaction,
-            |dependencies, serializer| {
+            |buffer| BinarySerializer::new(Writer::Vec(buffer)),
+            |serializer| {
                 (self.serialize_dependency_graph)(
                     dependencies,
                     serializer,
                     self.serde_extension.as_ref(),
                 )
             },
+            |s| s.into_inner().into_vec().unwrap(),
         )
     }
 
@@ -643,42 +641,15 @@ impl Persistence {
         fingerprint: u128,
         version_info: &VersionInfo,
     ) -> Result<(), std::io::Error> {
-        // Use a simpler approach for VersionInfo since it uses the unit
-        // serializer
-        let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
-        let mut binary_serializer = BinarySerializer::new(buffer);
-
-        version_info.serialize(&mut binary_serializer, &())?;
-        let mut buffer = binary_serializer.into_inner();
-
-        let mut tx = self.version_info_write_transaction.upgradable_read();
-        Self::ensure_transaction(&self.version_info_database, &mut tx)?;
-
-        tx.with_upgraded(|tx| {
-            tx.as_mut().unwrap().with_table_mut(
-                |table| -> Result<(), std::io::Error> {
-                    table
-                        .insert(
-                            (K::STABLE_TYPE_ID.as_u128(), fingerprint),
-                            buffer.as_slice(),
-                        )
-                        .map_err(|e| {
-                            std::io::Error::other(format!(
-                                "Failed to insert entry into table: {e}",
-                            ))
-                        })?;
-                    Ok(())
-                },
-            )
-        })?;
-
-        BUFFER.with(|b| {
-            // clear the buffer but keep the allocated memory
-            buffer.clear();
-            *b.borrow_mut() = buffer;
-        });
-
-        Ok(())
+        self.save_to_table(
+            K::STABLE_TYPE_ID,
+            fingerprint,
+            &self.version_info_database,
+            &self.version_info_write_transaction,
+            BinarySerializer::new,
+            |serializer| version_info.serialize(serializer, &()),
+            BinarySerializer::into_inner,
+        )
     }
 
     fn ensure_transaction(
@@ -740,10 +711,10 @@ impl Persistence {
         self.save_to_table(
             K::STABLE_TYPE_ID,
             fingerprint,
-            value,
             &self.value_cache_database,
             &self.value_cache_write_transaction,
-            |value, serializer| {
+            |buffer| BinarySerializer::new(Writer::Vec(buffer)),
+            |serializer| {
                 (self.serialize_any_value)(
                     K::STABLE_TYPE_ID,
                     value as &dyn Any,
@@ -751,6 +722,7 @@ impl Persistence {
                     self.serde_extension.as_ref(),
                 )
             },
+            |s| s.into_inner().into_vec().unwrap(),
         )
     }
 

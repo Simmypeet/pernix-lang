@@ -209,6 +209,14 @@ impl Engine {
 
                     (result.then_some(loaded), update_value)
                 } else {
+                    // setting new input could influence the derived values
+                    // so we need to bump the version
+                    if *self.database.snapshot.last_was_query.get_mut() {
+                        self.database.snapshot.version += 1;
+                        *self.database.snapshot.last_was_query.get_mut() =
+                            false;
+                    }
+
                     let inserted = VersionInfo {
                         updated_at_version: self.database.snapshot.version,
                         verfied_at_version: self.database.snapshot.version,

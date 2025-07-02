@@ -37,7 +37,7 @@ fn main() -> ExitCode {
         .with_thread_ids(true)
         .with_thread_names(true)
         .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(tracing::Level::ERROR)
         .init();
 
     let mut stderr =
