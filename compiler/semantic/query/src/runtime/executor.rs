@@ -9,8 +9,8 @@ use std::{
 use parking_lot::MutexGuard;
 
 use crate::{
-    database::query_tracker::QueryTracker,
-    key::{Dynamic, Key},
+    database::query_tracker::{QueryTracker, Tracked},
+    key::{Dynamic, DynamicBox, Key},
     Engine,
 };
 
@@ -30,20 +30,16 @@ pub trait Executor<K: Key>: Any + Send + Sync {
     /// It's recommended that the executor is stateless and this method is
     /// a pure function. This allows the query system to cache the result.
     ///
-    /// Moreover, the executor **MUST NOT** spawn any threads since the query
-    /// system internally uses a thread id to keep track of the query graph
-    /// and the dependencies. Spawning threads will break the query dependency
-    /// tracking and will lead to undefined behavior. It worths mentioning that
-    /// the query system does distribute the work across multiple threads at
-    /// very higher-level. So the executor should not worry about that.
-    ///
     /// # Returns
     ///
     /// Returns `Ok(value)` on successful computation, or `Err(CyclicError)`
     /// when the query is part of a strongly connected component (SCC) with
     /// cyclic dependencies.
-    fn execute(&self, engine: &Engine, key: K)
-        -> Result<K::Value, CyclicError>;
+    fn execute(
+        &self,
+        engine: &Tracked,
+        key: K,
+    ) -> Result<K::Value, CyclicError>;
 }
 
 /// Contains the [`Executor`] objects for each key type. This struct allows
@@ -87,6 +83,7 @@ type ExecutorArcDowncast = fn(Arc<dyn Any + Send + Sync>, &mut dyn Any);
 type InvokeQuery = for<'db, 'k> fn(
     &'db Engine,
     &'k dyn Dynamic,
+    Option<&DynamicBox>,
     MutexGuard<'db, QueryTracker>,
 ) -> MutexGuard<'db, QueryTracker>;
 
@@ -110,11 +107,12 @@ impl Entry {
         fn invoke<'db, K: Key>(
             engine: &'db Engine,
             key: &dyn Dynamic,
+            called_from: Option<&DynamicBox>,
             query_tracker: MutexGuard<'db, QueryTracker>,
         ) -> MutexGuard<'db, QueryTracker> {
             let key = key.any().downcast_ref::<K>().unwrap();
 
-            engine.query_internal(key, query_tracker).1
+            engine.query_internal(key, called_from, query_tracker).1
         }
 
         let downcast = |executor: Arc<dyn Any + Send + Sync>,
@@ -136,6 +134,3 @@ impl Entry {
         target.unwrap()
     }
 }
-
-#[cfg(test)]
-mod test;

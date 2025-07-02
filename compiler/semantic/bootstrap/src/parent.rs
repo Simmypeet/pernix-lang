@@ -5,7 +5,7 @@ use std::sync::Arc;
 use derive_more::{Deref, DerefMut};
 use extend::ext;
 use pernixc_hash::HashMap;
-use pernixc_query::{Engine, Value};
+use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
@@ -48,7 +48,7 @@ pub struct Executor;
 impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &TrackedEngine,
         key: Key,
     ) -> Result<
         <Key as pernixc_query::Key>::Value,
@@ -103,7 +103,7 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
 {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &TrackedEngine,
         key: IntermediateKey,
     ) -> Result<
         <IntermediateKey as pernixc_query::Key>::Value,
@@ -140,7 +140,7 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
 /// initial symbol.
 #[derive(Debug, Clone)]
 pub struct ScopeWalker<'a> {
-    engine: &'a Engine,
+    engine: &'a TrackedEngine<'a>,
     current_id: Option<symbol::ID>,
     target_id: TargetID,
 }
@@ -166,7 +166,7 @@ impl Iterator for ScopeWalker<'_> {
 /// An extension trait for [`Engine`] related to symbol hierarchy and
 /// relationships.
 #[ext(name = Ext)]
-pub impl Engine {
+pub impl TrackedEngine<'_> {
     /// Retrieves the [`Parent`] of this symbol.
     fn get_parent(&self, id: Global<symbol::ID>) -> Parent {
         self.query(&Key(id)).expect("should have no cyclic dependencies")

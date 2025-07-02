@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 use extend::ext;
-use pernixc_query::Engine;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
@@ -75,7 +75,7 @@ impl Accessibility<symbol::ID> {
 
 /// An extension trait for [`Engine`] related to accessibility.
 #[ext(name = Ext)]
-pub impl Engine {
+pub impl TrackedEngine<'_> {
     /// Computes the [`HierarchyRelationship`] between the two given
     /// accessibilities.
     ///

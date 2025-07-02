@@ -6,7 +6,7 @@ use derive_more::{Deref, DerefMut};
 use extend::ext;
 use flexstr::SharedStr;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_query::Value;
+use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
@@ -61,7 +61,7 @@ pub struct Map(pub HashMap<SharedStr, TargetID>);
 
 /// Extension trait related to retrieving the target information.
 #[ext(name = MapExt)]
-pub impl pernixc_query::Engine {
+pub impl TrackedEngine<'_> {
     /// Gets the map from the name of the target to its ID.
     fn get_target_map(&self) -> Arc<Map> {
         self.query(&MapKey(())).expect("should have no cyclic dependencies")

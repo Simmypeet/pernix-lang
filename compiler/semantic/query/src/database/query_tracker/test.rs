@@ -11,7 +11,7 @@ use pernixc_serialize::{
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    database::Database,
+    database::{query_tracker::Tracked, Database},
     runtime::{
         executor::{CyclicError, Executor},
         persistence::{
@@ -62,7 +62,7 @@ pub struct NegateVariableExecutor;
 impl Executor<NegateVariable> for NegateVariableExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: NegateVariable,
     ) -> Result<i32, CyclicError> {
         Ok(-engine.query(&Variable(key.0))?)
@@ -97,7 +97,7 @@ pub struct SumNegatedVariableExecutor;
 impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: SumNegatedVariable,
     ) -> Result<i32, CyclicError> {
         Ok(engine.query(&NegateVariable(key.a.clone()))?
@@ -117,6 +117,7 @@ fn negate_variable() {
     engine.runtime.executor.register(Arc::new(SumNegatedVariableExecutor));
 
     let value = engine
+        .tracked()
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
 
     assert_eq!(value, Ok(-300));
@@ -126,6 +127,7 @@ fn negate_variable() {
     assert_eq!(engine.database.snapshot().version, 1);
 
     let value = engine
+        .tracked()
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
     assert_eq!(value, Ok(-500));
 
@@ -134,6 +136,7 @@ fn negate_variable() {
 
     assert_eq!(engine.database.snapshot().version, 2);
     let value = engine
+        .tracked()
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() });
 
     assert_eq!(value, Ok(600)); // -(-300) + -(-300) = 300 + 300 = 600
@@ -170,7 +173,7 @@ impl TrackedExecutor {
 impl Executor<TrackedComputation> for TrackedExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: TrackedComputation,
     ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
@@ -198,13 +201,13 @@ fn skip_when_input_unchanged() {
     engine.runtime.executor.register(executor_arc.clone());
 
     // First query - should compute and call executor
-    let result1 = engine.query(&TrackedComputation("x".to_string()));
+    let result1 = engine.tracked().query(&TrackedComputation("x".to_string()));
     assert_eq!(result1, Ok(84)); // 42 * 2
     assert_eq!(executor_arc.get_call_count(), 1);
 
     // Second query with same input - should skip computation and return cached
     // result
-    let result2 = engine.query(&TrackedComputation("x".to_string()));
+    let result2 = engine.tracked().query(&TrackedComputation("x".to_string()));
     assert_eq!(result2, Ok(84)); // Same result
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
@@ -213,12 +216,12 @@ fn skip_when_input_unchanged() {
     assert_eq!(engine.database.snapshot().version, 1); // Version should increment
 
     // Query after input change - should compute and call executor again
-    let result4 = engine.query(&TrackedComputation("x".to_string()));
+    let result4 = engine.tracked().query(&TrackedComputation("x".to_string()));
     assert_eq!(result4, Ok(200)); // 100 * 2
     assert_eq!(executor_arc.get_call_count(), 2); // Executor called again
 
     // Query again with unchanged input - should skip computation again
-    let result5 = engine.query(&TrackedComputation("x".to_string()));
+    let result5 = engine.tracked().query(&TrackedComputation("x".to_string()));
     assert_eq!(result5, Ok(200)); // Same result
     assert_eq!(executor_arc.get_call_count(), 2); // Executor NOT called again
 }
@@ -254,7 +257,7 @@ impl TrackedAbsExecutor {
 impl Executor<AbsVariable> for TrackedAbsExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: AbsVariable,
     ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
@@ -300,7 +303,7 @@ impl TrackedAddTwoAbsExecutor {
 impl Executor<AddTwoAbsVariable> for TrackedAddTwoAbsExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: AddTwoAbsVariable,
     ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
@@ -331,6 +334,7 @@ fn skip_when_intermediate_result_unchanged() {
 
     // First query - should compute everything from scratch
     let result1 = engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result1, Ok(700)); // abs(400) + abs(300) = 400 + 300 = 700
     assert_eq!(abs_executor.get_call_count(), 2); // Called for both x and y
@@ -338,6 +342,7 @@ fn skip_when_intermediate_result_unchanged() {
 
     // Query again with same inputs - should skip all computation
     let result2 = engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result2, Ok(700)); // Same result
     assert_eq!(abs_executor.get_call_count(), 2); // NOT called again
@@ -351,6 +356,7 @@ fn skip_when_intermediate_result_unchanged() {
     // executor should be skipped because the result of abs(x) hasn't
     // changed
     let result3 = engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result3, Ok(700)); // abs(-400) + abs(300) = 400 + 300 = 700 (same result!)
     assert_eq!(abs_executor.get_call_count(), 3); // Called again for x only
@@ -363,6 +369,7 @@ fn skip_when_intermediate_result_unchanged() {
     // Query after second input change - abs executor should be called for y,
     // but add executor still skipped
     let result4 = engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result4, Ok(700)); // abs(-400) + abs(-300) = 400 + 300 = 700 (still same result!)
     assert_eq!(abs_executor.get_call_count(), 4); // Called again for y only
@@ -374,6 +381,7 @@ fn skip_when_intermediate_result_unchanged() {
 
     // Query after meaningful change - both executors should be called
     let result5 = engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result5, Ok(800)); // abs(500) + abs(-300) = 500 + 300 = 800
     assert_eq!(abs_executor.get_call_count(), 5); // Called for x
@@ -381,6 +389,7 @@ fn skip_when_intermediate_result_unchanged() {
 
     // Query again - should skip everything
     let result6 = engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() });
     assert_eq!(result6, Ok(800)); // Same result
     assert_eq!(abs_executor.get_call_count(), 5); // NOT called
@@ -418,7 +427,7 @@ impl TrackedSquareExecutor {
 impl Executor<SquareVariable> for TrackedSquareExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: SquareVariable,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -458,7 +467,7 @@ impl TrackedComplexExecutor {
 impl Executor<ComplexComputation> for TrackedComplexExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: ComplexComputation,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -487,7 +496,7 @@ fn multi_layer_dependency_skipping() {
     engine.runtime.executor.register(complex_executor.clone());
 
     // First query - everything computed from scratch
-    let result1 = engine.query(&ComplexComputation("z".to_string()));
+    let result1 = engine.tracked().query(&ComplexComputation("z".to_string()));
     assert_eq!(result1, Ok(30)); // abs(5) + square(5) = 5 + 25 = 30
     assert_eq!(abs_executor.get_call_count(), 1);
     assert_eq!(square_executor.get_call_count(), 1);
@@ -499,7 +508,7 @@ fn multi_layer_dependency_skipping() {
     engine.set_input(&Variable("z".to_string()), -5);
     assert_eq!(engine.database.snapshot().version, 1);
 
-    let result2 = engine.query(&ComplexComputation("z".to_string()));
+    let result2 = engine.tracked().query(&ComplexComputation("z".to_string()));
     assert_eq!(result2, Ok(30)); // abs(-5) + square(-5) = 5 + 25 = 30 (same!)
     assert_eq!(abs_executor.get_call_count(), 2); // Called for abs(-5)
     assert_eq!(square_executor.get_call_count(), 2); // Called for square(-5)
@@ -509,14 +518,14 @@ fn multi_layer_dependency_skipping() {
     engine.set_input(&Variable("z".to_string()), 3);
     assert_eq!(engine.database.snapshot().version, 2);
 
-    let result3 = engine.query(&ComplexComputation("z".to_string()));
+    let result3 = engine.tracked().query(&ComplexComputation("z".to_string()));
     assert_eq!(result3, Ok(12)); // abs(3) + square(3) = 3 + 9 = 12
     assert_eq!(abs_executor.get_call_count(), 3); // Called for abs(3)
     assert_eq!(square_executor.get_call_count(), 3); // Called for square(3)
     assert_eq!(complex_executor.get_call_count(), 2); // Called because dependencies changed
 
     // Query again - everything should be cached
-    let result4 = engine.query(&ComplexComputation("z".to_string()));
+    let result4 = engine.tracked().query(&ComplexComputation("z".to_string()));
     assert_eq!(result4, Ok(12)); // Same result
     assert_eq!(abs_executor.get_call_count(), 3); // NOT called
     assert_eq!(square_executor.get_call_count(), 3); // NOT called
@@ -573,7 +582,7 @@ impl TypeCheckExecutor {
 impl Executor<TypeCheckQuery> for TypeCheckExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: TypeCheckQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -600,7 +609,7 @@ impl DependencyExecutor {
 impl Executor<DependencyQuery> for DependencyExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: DependencyQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -626,8 +635,10 @@ fn incremental_compilation_simulation() {
     engine.runtime.executor.register(Arc::clone(&dependency_executor));
 
     // First compilation: everything computed from scratch
-    let result_a = engine.query(&TypeCheckQuery("module_a".to_string()));
-    let result_b = engine.query(&TypeCheckQuery("module_b".to_string()));
+    let result_a =
+        engine.tracked().query(&TypeCheckQuery("module_a".to_string()));
+    let result_b =
+        engine.tracked().query(&TypeCheckQuery("module_b".to_string()));
 
     assert_eq!(result_a, Ok(30)); // 10 + (10 * 2) = 30
     assert_eq!(result_b, Ok(60)); // 20 + (20 * 2) = 60
@@ -648,8 +659,10 @@ fn incremental_compilation_simulation() {
         .store(0, std::sync::atomic::Ordering::SeqCst);
 
     // Re-query: only module_a should be recomputed
-    let new_result_a = engine.query(&TypeCheckQuery("module_a".to_string()));
-    let cached_result_b = engine.query(&TypeCheckQuery("module_b".to_string()));
+    let new_result_a =
+        engine.tracked().query(&TypeCheckQuery("module_a".to_string()));
+    let cached_result_b =
+        engine.tracked().query(&TypeCheckQuery("module_b".to_string()));
 
     assert_eq!(new_result_a, Ok(45)); // 15 + (15 * 2) = 45
     assert_eq!(cached_result_b, Ok(60)); // Same as before, should be cached
@@ -730,7 +743,7 @@ impl CyclicExecutorA {
 impl Executor<CyclicQueryA> for CyclicExecutorA {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         _key: CyclicQueryA,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -754,7 +767,7 @@ impl CyclicExecutorB {
 impl Executor<CyclicQueryB> for CyclicExecutorB {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         _key: CyclicQueryB,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -778,7 +791,7 @@ impl DependentExecutor {
 impl Executor<DependentQuery> for DependentExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         _key: DependentQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -804,7 +817,7 @@ impl ConditionalDependentExecutor {
 impl Executor<DependentQuery> for ConditionalDependentExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         _key: DependentQuery,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -828,8 +841,8 @@ fn cyclic_dependency_returns_default_values() {
 
     // When we query CyclicQueryA, it should detect the cycle A -> B -> A
     // and return default values (0 for i32) without calling the executors
-    let result_a = engine.query(&CyclicQueryA);
-    let result_b = engine.query(&CyclicQueryB);
+    let result_a = engine.tracked().query(&CyclicQueryA);
+    let result_b = engine.tracked().query(&CyclicQueryB);
 
     // Both should return default values (0 for i32)
     assert_eq!(result_a, Ok(0));
@@ -859,7 +872,7 @@ fn dependent_query_uses_cyclic_default_values() {
     engine.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // Query the dependent query, which depends on the cyclic queries
-    let result = engine.query(&DependentQuery);
+    let result = engine.tracked().query(&DependentQuery);
 
     // DependentQuery should execute and use the default values from the cyclic
     // queries Default values: CyclicQueryA = 0, CyclicQueryB = 0
@@ -890,7 +903,7 @@ fn comprehensive_cyclic_dependency_behavior() {
     engine.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // First, query CyclicQueryA directly to trigger cycle detection
-    let result_a = engine.query(&CyclicQueryA);
+    let result_a = engine.tracked().query(&CyclicQueryA);
     assert_eq!(result_a, Ok(0)); // Should return default value
 
     // Check call counts after first cycle detection
@@ -903,7 +916,7 @@ fn comprehensive_cyclic_dependency_behavior() {
     assert_eq!(initial_b_calls, 1);
 
     // Now query CyclicQueryB - it should return cached default value
-    let result_b = engine.query(&CyclicQueryB);
+    let result_b = engine.tracked().query(&CyclicQueryB);
     assert_eq!(result_b, Ok(0)); // Should return default value
 
     // Call counts shouldn't change because values are cached
@@ -911,7 +924,7 @@ fn comprehensive_cyclic_dependency_behavior() {
     assert_eq!(executor_b.get_call_count(), initial_b_calls);
 
     // Now query DependentQuery - it should use the cached default values
-    let result_dependent = engine.query(&DependentQuery);
+    let result_dependent = engine.tracked().query(&DependentQuery);
     assert_eq!(result_dependent, Ok(100)); // 0 + 0 + 100 = 100
 
     // The dependent executor should be called once
@@ -922,9 +935,9 @@ fn comprehensive_cyclic_dependency_behavior() {
     assert_eq!(executor_b.get_call_count(), initial_b_calls);
 
     // Query everything again - all should be cached
-    let result_a2 = engine.query(&CyclicQueryA);
-    let result_b2 = engine.query(&CyclicQueryB);
-    let result_dependent2 = engine.query(&DependentQuery);
+    let result_a2 = engine.tracked().query(&CyclicQueryA);
+    let result_b2 = engine.tracked().query(&CyclicQueryB);
+    let result_dependent2 = engine.tracked().query(&DependentQuery);
 
     assert_eq!(result_a2, Ok(0));
     assert_eq!(result_b2, Ok(0));
@@ -1012,7 +1025,7 @@ impl ConditionalCyclicExecutorA {
 impl Executor<ConditionalCyclicQueryA> for ConditionalCyclicExecutorA {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         _key: ConditionalCyclicQueryA,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1050,7 +1063,7 @@ impl ConditionalCyclicExecutorB {
 impl Executor<ConditionalCyclicQueryB> for ConditionalCyclicExecutorB {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         _key: ConditionalCyclicQueryB,
     ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1084,8 +1097,8 @@ fn conditional_cyclic_dependency() {
     engine.set_input(&CycleControlVariable, 5);
 
     // Query both A and B - they should compute normal values without cycles
-    let result_a = engine.query(&ConditionalCyclicQueryA);
-    let result_b = engine.query(&ConditionalCyclicQueryB);
+    let result_a = engine.tracked().query(&ConditionalCyclicQueryA);
+    let result_b = engine.tracked().query(&ConditionalCyclicQueryB);
 
     // Expected values: A = 5 * 100 = 500, B = 5 * 200 = 1000
     assert_eq!(result_a, Ok(500));
@@ -1101,8 +1114,8 @@ fn conditional_cyclic_dependency() {
     executor_b.reset_call_count();
 
     // Query A - this should trigger cycle detection and return default values
-    let result_a_cyclic = engine.query(&ConditionalCyclicQueryA);
-    let result_b_cyclic = engine.query(&ConditionalCyclicQueryB);
+    let result_a_cyclic = engine.tracked().query(&ConditionalCyclicQueryA);
+    let result_b_cyclic = engine.tracked().query(&ConditionalCyclicQueryB);
 
     // Both should return default values (0 for i32) due to cycle detection
     assert_eq!(result_a_cyclic, Ok(0));
@@ -1119,8 +1132,8 @@ fn conditional_cyclic_dependency() {
     executor_b.reset_call_count();
 
     // Query both A and B - they should recompute and return normal values again
-    let result_a_normal = engine.query(&ConditionalCyclicQueryA);
-    let result_b_normal = engine.query(&ConditionalCyclicQueryB);
+    let result_a_normal = engine.tracked().query(&ConditionalCyclicQueryA);
+    let result_b_normal = engine.tracked().query(&ConditionalCyclicQueryB);
 
     // Expected values: A = 3 * 100 = 300, B = 3 * 200 = 600
     assert_eq!(result_a_normal, Ok(300));
@@ -1137,8 +1150,8 @@ fn conditional_cyclic_dependency() {
     executor_b.reset_call_count();
 
     // Query A - cycle should be detected again and default values returned
-    let result_a_cyclic2 = engine.query(&ConditionalCyclicQueryA);
-    let result_b_cyclic2 = engine.query(&ConditionalCyclicQueryB);
+    let result_a_cyclic2 = engine.tracked().query(&ConditionalCyclicQueryA);
+    let result_b_cyclic2 = engine.tracked().query(&ConditionalCyclicQueryB);
 
     // Both should return default values (0 for i32) due to cycle detection
     assert_eq!(result_a_cyclic2, Ok(0));
@@ -1165,7 +1178,7 @@ fn conditional_cyclic_with_dependent_query() {
 
     engine.set_input(&CycleControlVariable, 2);
 
-    let result_dependent = engine.query(&DependentQuery);
+    let result_dependent = engine.tracked().query(&DependentQuery);
 
     // DependentQuery = A + B + 100 = (2*100) + (2*200) + 100 = 200 + 400 + 100
     // = 700
@@ -1185,7 +1198,7 @@ fn conditional_cyclic_with_dependent_query() {
     // Reset dependent executor call count to track new computation
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
-    let result_dependent_cyclic = engine.query(&DependentQuery);
+    let result_dependent_cyclic = engine.tracked().query(&DependentQuery);
 
     // DependentQuery should use default values: 0 + 0 + 100 = 100
     assert_eq!(result_dependent_cyclic, Ok(100));
@@ -1202,10 +1215,10 @@ fn conditional_cyclic_with_dependent_query() {
     executor_a.reset_call_count();
     executor_b.reset_call_count();
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst); // Query A and B to ensure they're computed
-    let _debug_a = engine.query(&ConditionalCyclicQueryA);
-    let _debug_b = engine.query(&ConditionalCyclicQueryB);
+    let _debug_a = engine.tracked().query(&ConditionalCyclicQueryA);
+    let _debug_b = engine.tracked().query(&ConditionalCyclicQueryB);
 
-    let result_dependent_normal = engine.query(&DependentQuery);
+    let result_dependent_normal = engine.tracked().query(&DependentQuery);
 
     // DependentQuery = A + B + 100 = (4*100) + (4*200) + 100 = 400 + 800 + 100
     // = 1300
@@ -1238,10 +1251,14 @@ fn database_serialization_deserialization() {
     original_engine.runtime.executor.register(add_executor.clone());
 
     // Step 2: Perform queries to populate the database with computed values
-    let result1 =
-        original_engine.query(&TrackedComputation("x".to_string())).unwrap();
-    let result2 = original_engine.query(&AbsVariable("y".to_string())).unwrap();
+    let result1 = original_engine
+        .tracked()
+        .query(&TrackedComputation("x".to_string()))
+        .unwrap();
+    let result2 =
+        original_engine.tracked().query(&AbsVariable("y".to_string())).unwrap();
     let result3 = original_engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "z".to_string() })
         .unwrap();
 
@@ -1287,10 +1304,14 @@ fn database_serialization_deserialization() {
         Database::deserialize(&mut deserializer, &serde_config).unwrap();
 
     // Step 6: Verify that queries return the same results without recomputation
-    let new_result1 =
-        new_engine.query(&TrackedComputation("x".to_string())).unwrap();
-    let new_result2 = new_engine.query(&AbsVariable("y".to_string())).unwrap();
+    let new_result1 = new_engine
+        .tracked()
+        .query(&TrackedComputation("x".to_string()))
+        .unwrap();
+    let new_result2 =
+        new_engine.tracked().query(&AbsVariable("y".to_string())).unwrap();
     let new_result3 = new_engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "z".to_string() })
         .unwrap();
 
@@ -1312,11 +1333,14 @@ fn database_serialization_deserialization() {
     new_engine.set_input(&Variable("x".to_string()), 150);
 
     // Query again - should trigger recomputation for affected queries only
-    let updated_result1 =
-        new_engine.query(&TrackedComputation("x".to_string())).unwrap();
+    let updated_result1 = new_engine
+        .tracked()
+        .query(&TrackedComputation("x".to_string()))
+        .unwrap();
     let updated_result2 =
-        new_engine.query(&AbsVariable("y".to_string())).unwrap();
+        new_engine.tracked().query(&AbsVariable("y".to_string())).unwrap();
     let updated_result3 = new_engine
+        .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "z".to_string() })
         .unwrap();
 
@@ -1336,8 +1360,10 @@ fn database_serialization_deserialization() {
     // Step 8: Test adding completely new queries after deserialization
     new_engine.set_input(&Variable("w".to_string()), 50);
 
-    let new_query_result =
-        new_engine.query(&TrackedComputation("w".to_string())).unwrap();
+    let new_query_result = new_engine
+        .tracked()
+        .query(&TrackedComputation("w".to_string()))
+        .unwrap();
     assert_eq!(new_query_result, 100); // 50 * 2
 
     // TrackedExecutor should be called one more time for the new variable
@@ -1368,7 +1394,7 @@ pub struct VariableMapExecutor {
 impl Executor<VariableMap> for VariableMapExecutor {
     fn execute(
         &self,
-        _: &Engine,
+        _: &Tracked,
         _: VariableMap,
     ) -> Result<HashMap<String, i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1406,7 +1432,7 @@ pub struct GetValueExecutor {
 impl Executor<GetValue> for GetValueExecutor {
     fn execute(
         &self,
-        engine: &Engine,
+        engine: &Tracked,
         key: GetValue,
     ) -> Result<Option<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -1445,9 +1471,9 @@ fn persistence_variable_map_query() {
 
     engine.runtime.persistence = Some(persistence);
 
-    let a = engine.query(&GetValue("a".to_string())).unwrap();
-    let b = engine.query(&GetValue("b".to_string())).unwrap();
-    let c = engine.query(&GetValue("c".to_string())).unwrap();
+    let a = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a, Some(1));
     assert_eq!(b, Some(2));
@@ -1479,9 +1505,9 @@ fn persistence_variable_map_query() {
     get_value_executor.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
     // Query again after loading from persistence
-    let a2 = engine.query(&GetValue("a".to_string())).unwrap();
-    let b2 = engine.query(&GetValue("b".to_string())).unwrap();
-    let c2 = engine.query(&GetValue("c".to_string())).unwrap();
+    let a2 = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b2 = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c2 = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a2, a);
     assert_eq!(b2, b);
@@ -1536,9 +1562,9 @@ fn persistence_input_invalidation() {
             .collect(),
     );
 
-    let a = engine.query(&GetValue("a".to_string())).unwrap();
-    let b = engine.query(&GetValue("b".to_string())).unwrap();
-    let c = engine.query(&GetValue("c".to_string())).unwrap();
+    let a = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a, Some(1));
     assert_eq!(b, Some(2));
@@ -1563,9 +1589,9 @@ fn persistence_input_invalidation() {
     get_value_executor.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
     // Query again after loading from persistence
-    let a2 = engine.query(&GetValue("a".to_string())).unwrap();
-    let b2 = engine.query(&GetValue("b".to_string())).unwrap();
-    let c2 = engine.query(&GetValue("c".to_string())).unwrap();
+    let a2 = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b2 = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c2 = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a2, a);
     assert_eq!(b2, b);
@@ -1598,9 +1624,9 @@ fn persistence_input_invalidation() {
     );
 
     // Query again after changing the input
-    let a3 = engine.query(&GetValue("a".to_string())).unwrap();
-    let b3 = engine.query(&GetValue("b".to_string())).unwrap();
-    let c3 = engine.query(&GetValue("c".to_string())).unwrap();
+    let a3 = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b3 = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c3 = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a3, Some(10));
     assert_eq!(b3, Some(20));

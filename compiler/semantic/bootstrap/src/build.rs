@@ -69,6 +69,7 @@ fn process_import_items(
 
                 let Some(id) = engine_rw
                     .read()
+                    .tracked()
                     .get_members(current)
                     .member_ids_by_name
                     .get(identifier_root.kind.0.as_str())
@@ -85,6 +86,7 @@ fn process_import_items(
                 let result = Global::new(current.target_id, id);
                 if !engine_rw
                     .read()
+                    .tracked()
                     .symbol_accessible(defined_in_module_id, result)
                 {
                     handler.receive(Box::new(SymbolIsNotAccessible {
@@ -103,7 +105,8 @@ fn process_import_items(
                     symbol::ID::ROOT_MODULE,
                 ),
                 SimplePathRoot::Identifier(identifier) => {
-                    let target_map = engine_rw.read().get_target_map();
+                    let target_map =
+                        engine_rw.read().tracked().get_target_map();
 
                     let Some(id) = target_map
                         .get(identifier.kind.0.as_str())
@@ -112,6 +115,7 @@ fn process_import_items(
                             x == &defined_in_module_id.target_id
                                 || engine_rw
                                     .read()
+                                    .tracked()
                                     .get_target(defined_in_module_id.target_id)
                                     .linked_targets
                                     .contains(x)
@@ -133,6 +137,7 @@ fn process_import_items(
         for rest in simple_path.subsequences().filter_map(|x| x.identifier()) {
             let Some(next) = engine_rw
                 .read()
+                .tracked()
                 .get_members(start)
                 .member_ids_by_name
                 .get(rest.kind.0.as_str())
@@ -150,6 +155,7 @@ fn process_import_items(
 
             if !engine_rw
                 .read()
+                .tracked()
                 .symbol_accessible(defined_in_module_id, next_id)
             {
                 handler.receive(Box::new(SymbolIsNotAccessible {
@@ -166,16 +172,21 @@ fn process_import_items(
             .alias()
             .as_ref()
             .and_then(pernixc_syntax::item::module::Alias::identifier)
-            .map_or_else(|| engine_rw.read().get_name(start).0, |x| x.kind.0);
+            .map_or_else(
+                || engine_rw.read().tracked().get_name(start).0,
+                |x| x.kind.0,
+            );
 
         // check if there's existing symbol right now
         let engine = engine_rw.read();
         let existing = engine
+            .tracked()
             .get_members(defined_in_module_id)
             .member_ids_by_name
             .get(&name)
             .map(|x| {
                 engine
+                    .tracked()
                     .get_span(Global::new(defined_in_module_id.target_id, *x))
                     .0
             })
@@ -215,14 +226,15 @@ pub(super) fn symbol_is_more_accessible_than_its_parent_check(
         .copied()
         .map(|x| TargetID::Local.make_global(x))
         .for_each(|symbol_id| {
-            let kind = engine.get_kind(symbol_id);
+            let kind = engine.tracked().get_kind(symbol_id);
 
             if kind != Kind::Trait {
                 return;
             }
 
-            let members = engine.get_members(symbol_id);
-            let parent_accessibility = engine.get_accessibility(symbol_id);
+            let members = engine.tracked().get_members(symbol_id);
+            let parent_accessibility =
+                engine.tracked().get_accessibility(symbol_id);
 
             members
                 .member_ids_by_name
@@ -230,11 +242,13 @@ pub(super) fn symbol_is_more_accessible_than_its_parent_check(
                 .map(|x| *x.1)
                 .chain(members.redefinitions.par_iter().copied())
                 .for_each(|member_id| {
-                    let member_accessibility = engine.get_accessibility(
-                        Global::new(symbol_id.target_id, member_id),
-                    );
+                    let member_accessibility =
+                        engine.tracked().get_accessibility(Global::new(
+                            symbol_id.target_id,
+                            member_id,
+                        ));
 
-                    if engine.accessibility_hierarchy_relationship(
+                    if engine.tracked().accessibility_hierarchy_relationship(
                         TargetID::Local,
                         member_accessibility,
                         parent_accessibility,
@@ -266,7 +280,7 @@ pub(super) fn insert_imports(
             import.from().and_then(|x| x.simple_path())
         {
             let engine = engine_rw.read();
-            let Some(from_id) = engine.resolve_simple_path(
+            let Some(from_id) = engine.tracked().resolve_simple_path(
                 &from_simple_path,
                 defined_in_module_id,
                 true,
@@ -277,7 +291,7 @@ pub(super) fn insert_imports(
             };
 
             // must be module
-            if engine.get_kind(from_id) != Kind::Module {
+            if engine.tracked().get_kind(from_id) != Kind::Module {
                 handler.receive(Box::new(ExpectModule {
                     module_path: from_simple_path.inner_tree().span(),
                     found_id: from_id,

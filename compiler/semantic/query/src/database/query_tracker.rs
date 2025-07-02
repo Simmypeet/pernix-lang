@@ -4,7 +4,7 @@
 //! between queries.
 
 use core::panic;
-use std::{collections::hash_map::Entry, sync::Arc, thread::ThreadId};
+use std::{collections::hash_map::Entry, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
@@ -23,6 +23,51 @@ use crate::{
     Engine,
 };
 
+/// A wrapper over the [`Engine`] with the key remembering where the query was
+/// called from.
+///
+/// All the queries must be done through this struct to ensure that dependencies
+/// are correctly tracked.
+///
+/// This struct allows the query engine to track the dependencies between query.
+#[derive(Debug, Clone)]
+pub struct Tracked<'a> {
+    engine: &'a Engine,
+    called_from: Option<&'a DynamicBox>,
+}
+
+impl Engine {
+    /// Creates a new [`Tracked`] instance for the current engine.
+    ///
+    /// Using [`Tracked`] instance allows you to query the engine while
+    /// tracking the dependencies of the queries.
+    pub const fn tracked(&self) -> Tracked<'_> {
+        Tracked { engine: self, called_from: None }
+    }
+}
+
+impl Tracked<'_> {
+    /// Queries the value associated with the given key.
+    ///
+    /// # Panics
+    ///
+    /// If the key doesn't have a corresponding [`Executor`] registered in the
+    /// database or the input isn't explicitly set.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(value)` for successful queries, or `Err(CyclicError)` for
+    /// queries that are part of a strongly connected component (SCC). Queries
+    /// outside the SCC that depend on cyclic queries will receive default
+    /// values.
+    pub fn query<T: Dynamic + Key>(
+        &self,
+        key: &T,
+    ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
+        self.engine.query(key, self.called_from)
+    }
+}
+
 /// Tracks the dependencies between queries and their execution order.
 #[derive(Default, Serialize, Deserialize, Getters)]
 #[allow(clippy::mutable_key_type, missing_docs)]
@@ -31,10 +76,6 @@ use crate::{
     de_extension(DynamicDeserialize<__D>)
 )]
 pub struct QueryTracker {
-    // emulating a call stack of particular thread
-    #[serde(skip)]
-    record_stacks_by_thread_id: HashMap<ThreadId, Vec<DynamicBox>>,
-
     // the condition variables used to notify the threads that are waiting for
     // the completion of a particular record
     #[serde(skip)]
@@ -56,15 +97,6 @@ pub struct QueryTracker {
     /// execution.
     #[get = "pub"]
     cyclic_dependencies: Vec<CyclicDependency>,
-}
-
-impl QueryTracker {
-    fn called_from(&self) -> Option<DynamicBox> {
-        let current_thread_id = std::thread::current().id();
-        self.record_stacks_by_thread_id
-            .get(&current_thread_id)
-            .and_then(|x| x.last().cloned())
-    }
 }
 
 /// Stores the error information about a cyclic dependency in the query tracker.
@@ -263,25 +295,16 @@ impl Engine {
 }
 
 impl Engine {
-    /// Queries the value associated with the given key.
-    ///
-    /// # Panics
-    ///
-    /// If the key doesn't have a corresponding [`Executor`] registered in the
-    /// database.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(value)` for successful queries, or `Err(CyclicError)` for
-    /// queries that are part of a strongly connected component (SCC). Queries
-    /// outside the SCC that depend on cyclic queries will receive default
-    /// values.
-    pub fn query<T: Dynamic + Key>(
+    fn query<T: Dynamic + Key>(
         &self,
         key: &T,
+        called_from: Option<&DynamicBox>,
     ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
-        let (result, query_tracker) =
-            self.query_internal(key, self.database.query_tracker.lock());
+        let (result, query_tracker) = self.query_internal(
+            key,
+            called_from,
+            self.database.query_tracker.lock(),
+        );
 
         result?;
 
@@ -312,20 +335,18 @@ impl Engine {
                     return Ok(value);
                 }
 
-                let called_from = query_tracker.called_from();
-
                 // compute it again
                 let (computed_successfully, mut query_tracker) = self
                     .fresh_query(
                         key,
                         &key_smallbox,
-                        called_from.as_ref(),
+                        called_from,
                         query_tracker,
                     );
 
                 if self.check_cyclic(
                     computed_successfully,
-                    called_from.as_ref(),
+                    called_from,
                     &mut query_tracker,
                 ) != Ok(())
                 {
@@ -374,14 +395,13 @@ impl Engine {
     pub(crate) fn query_internal<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
+        called_from: Option<&DynamicBox>,
         mut query_tracker: MutexGuard<'a, QueryTracker>,
     ) -> (
         Result<(), crate::runtime::executor::CyclicError>,
         MutexGuard<'a, QueryTracker>,
     ) {
         let key_smallbox = DynamicBox(key.smallbox_clone());
-
-        let called_from = query_tracker.called_from();
 
         // get the version info for the key.
         let Some(version_info) = query_tracker
@@ -414,13 +434,13 @@ impl Engine {
             let (computed_successfully, mut query_tracker) = self.fresh_query(
                 key,
                 &key_smallbox,
-                called_from.as_ref(),
+                called_from,
                 query_tracker,
             );
 
             if self.check_cyclic(
                 computed_successfully,
-                called_from.as_ref(),
+                called_from,
                 &mut query_tracker,
             ) != Ok(())
             {
@@ -530,7 +550,12 @@ impl Engine {
                                 )
                             });
 
-                        query_tracker = invoke_fn(self, &***dep, query_tracker);
+                        query_tracker = invoke_fn(
+                            self,
+                            &***dep,
+                            called_from,
+                            query_tracker,
+                        );
                     }
 
                     // check if there's need to recompute the value
@@ -555,16 +580,11 @@ impl Engine {
         if recompute {
             // recompute the value
             let (computed_successfully, mut returned_call_graph) = self
-                .fresh_query(
-                    key,
-                    &key_smallbox,
-                    called_from.as_ref(),
-                    query_tracker,
-                );
+                .fresh_query(key, &key_smallbox, called_from, query_tracker);
 
             if self.check_cyclic(
                 computed_successfully,
-                called_from.as_ref(),
+                called_from,
                 &mut returned_call_graph,
             ) != Ok(())
             {
@@ -600,8 +620,6 @@ impl Engine {
                 std::any::type_name::<T>()
             )
         });
-
-        let current_thread_id = std::thread::current().id();
 
         // check for cyclic dependencies
         if let Some(called_from) = called_from {
@@ -688,13 +706,6 @@ impl Engine {
                 .is_none());
         }
 
-        // add the current record to the call stack
-        query_tracker
-            .record_stacks_by_thread_id
-            .entry(current_thread_id)
-            .or_default()
-            .push(DynamicBox(key.smallbox_clone()));
-
         let sync = query_tracker.condvars_by_record.get(key_smallbox).cloned();
 
         // there's an another thread that is computing the same record
@@ -728,16 +739,6 @@ impl Engine {
             ok
         };
 
-        assert!(
-            query_tracker
-                .record_stacks_by_thread_id
-                .get_mut(&current_thread_id)
-                .unwrap()
-                .pop()
-                .unwrap()
-                == *key_smallbox,
-        );
-
         if let Some(called_from) = called_from {
             assert!(query_tracker
                 .current_dependencies_by_dependant
@@ -767,7 +768,11 @@ impl Engine {
         // skipcq: RS-E1021 false positive
         drop(query_tracker); // release the context lock
 
-        let executor_result = executor.execute(self, key.clone());
+        let executor_result = executor.execute(
+            &Tracked { engine: self, called_from: Some(key_smallbox) },
+            key.clone(),
+        );
+
         let ok = executor_result.is_ok();
 
         // re-acquire the context lock

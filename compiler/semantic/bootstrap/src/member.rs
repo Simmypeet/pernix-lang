@@ -5,7 +5,7 @@ use std::sync::Arc;
 use extend::ext;
 use flexstr::SharedStr;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_query::{Engine, Value};
+use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -44,7 +44,7 @@ pub struct Member {
 
 /// Extension trait related to retrieving the members of a symbol.
 #[ext(name = Ext)]
-pub impl Engine {
+pub impl TrackedEngine<'_> {
     /// Gets the members of a symbol with the given ID.
     fn get_members(&self, id: Global<symbol::ID>) -> Arc<Member> {
         self.query(&Key(id)).expect("should have no cyclic dependencies")

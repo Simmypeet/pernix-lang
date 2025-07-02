@@ -225,7 +225,6 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
     }.into()
 }
 
-/// Test bro
 #[proc_macro_derive(Value, attributes(id, ext, value, key))]
 #[allow(clippy::too_many_lines, clippy::redundant_clone)]
 pub fn derive_value(input: TokenStream) -> TokenStream {
@@ -406,7 +405,7 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
                             ) -> #return_type;
                         }
 
-                        impl #trait_name for ::pernixc_query::Engine {
+                        impl #trait_name for ::pernixc_query::TrackedEngine<'_> {
                             fn #method(
                                 &self,
                                 id: #id_type

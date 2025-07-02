@@ -152,7 +152,7 @@ pub fn bootstrap<'l>(
 
     {
         let engine_read = engine.read();
-        let target = engine_read.get_target(TargetID::Local);
+        let target = engine_read.tracked().get_target(TargetID::Local);
         build::symbol_is_more_accessible_than_its_parent_check(
             &engine_read,
             &target.all_symbol_ids,

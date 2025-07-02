@@ -5,7 +5,7 @@ use std::{any::Any, fmt::Debug};
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Related, Report, Severity};
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
-use pernixc_query::Engine;
+use pernixc_query::{Engine, TrackedEngine};
 use pernixc_target::{Global, TargetID};
 
 use crate::{
@@ -80,6 +80,8 @@ impl Report<&Engine> for ItemRedifinition {
         &self,
         engine: &Engine,
     ) -> pernixc_diagnostic::Diagnostic<RelativeLocation> {
+        let engine = engine.tracked();
+
         let existing_symbol_span = engine.get_span(self.existing_id);
         let new_symbol_span = engine.get_span(self.new_id);
         let existing_symbol_name = engine.get_name(self.existing_id);
@@ -178,14 +180,16 @@ impl Report<&Engine> for SymbolNotFound {
 
     fn report(
         &self,
-        table: &Engine,
+        engine: &Engine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let engine = engine.tracked();
+
         let searched_item_id_qualified_name =
-            self.searched_item_id.map(|x| table.get_qualified_name(x));
+            self.searched_item_id.map(|x| engine.get_qualified_name(x));
 
         let did_you_mean = self.searched_item_id.map_or_else(
             || {
-                let target_map = table.get_target_map();
+                let target_map = engine.get_target_map();
                 suggest(
                     &self.name,
                     target_map.keys().map(flexstr::FlexStr::as_str),
@@ -193,9 +197,9 @@ impl Report<&Engine> for SymbolNotFound {
                 .map(ToString::to_string)
             },
             |x| {
-                let members = table.try_get_members(x)?;
+                let members = engine.try_get_members(x)?;
 
-                let kind = table.get_kind(x);
+                let kind = engine.get_kind(x);
 
                 match kind {
                     Kind::Module => suggest(
@@ -205,7 +209,7 @@ impl Report<&Engine> for SymbolNotFound {
                             .keys()
                             .map(flexstr::FlexStr::as_str)
                             .chain(
-                                table
+                                engine
                                     .get_imports(x)
                                     .0
                                     .keys()
@@ -271,11 +275,13 @@ impl Report<&Engine> for SymbolIsNotAccessible {
 
     fn report(
         &self,
-        table: &Engine,
+        engine: &Engine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let engine = engine.tracked();
+
         let referring_site_qualified_name =
-            table.get_qualified_name(self.referring_site);
-        let referred_qualified_name = table.get_qualified_name(self.referred);
+            engine.get_qualified_name(self.referring_site);
+        let referred_qualified_name = engine.get_qualified_name(self.referred);
 
         pernixc_diagnostic::Diagnostic {
             span: Some((
@@ -310,6 +316,8 @@ impl Report<&Engine> for ExpectModule {
         &self,
         engine: &Engine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let engine = engine.tracked();
+
         let found_symbol_qualified_name =
             engine.get_qualified_name(self.found_id);
 
@@ -386,9 +394,11 @@ impl Report<&Engine> for ConflictingUsing {
 
     fn report(
         &self,
-        table: &Engine,
+        engine: &Engine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let module_qualified_name = table.get_qualified_name(self.module_id);
+        let engine = engine.tracked();
+
+        let module_qualified_name = engine.get_qualified_name(self.module_id);
 
         pernixc_diagnostic::Diagnostic {
             span: Some((
@@ -432,7 +442,7 @@ pub struct SymbolIsMoreAccessibleThanParent {
 }
 
 fn accessibility_description(
-    engine: &Engine,
+    engine: &TrackedEngine,
     target_id: TargetID,
     accessibility: Accessibility<symbol::ID>,
 ) -> String {
@@ -454,6 +464,8 @@ impl Report<&Engine> for SymbolIsMoreAccessibleThanParent {
         &self,
         engine: &Engine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let engine = engine.tracked();
+
         let symbol_name = engine.get_name(self.symbol_id);
         let parent_qualified_name = engine.get_qualified_name(self.parent_id);
 
@@ -464,13 +476,13 @@ impl Report<&Engine> for SymbolIsMoreAccessibleThanParent {
         let parent_span = engine.get_span(self.parent_id);
 
         let symbol_accessibility_description = accessibility_description(
-            engine,
+            &engine,
             self.symbol_id.target_id,
             symbol_accessibility,
         );
 
         let parent_accessibility_description = accessibility_description(
-            engine,
+            &engine,
             self.parent_id.target_id,
             parent_accessibility,
         );

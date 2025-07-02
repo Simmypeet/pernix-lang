@@ -2,7 +2,7 @@
 use extend::ext;
 use flexstr::SharedStr;
 use pernixc_handler::Handler;
-use pernixc_query::{Engine, Value};
+use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::{Identifier, SimplePath, SimplePathRoot};
@@ -41,7 +41,7 @@ pub struct Name(pub SharedStr);
 
 /// Extension trait related to retrieving the name of a symbol.
 #[ext(name = Ext)]
-pub impl Engine {
+pub impl TrackedEngine<'_> {
     /// Returns the name of the symbol with the given ID.
     fn get_name(&self, id: Global<symbol::ID>) -> Name {
         self.query(&Key(id)).expect("should have no cyclic dependencies")
