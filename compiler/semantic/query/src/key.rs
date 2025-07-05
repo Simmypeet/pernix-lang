@@ -1,20 +1,9 @@
 //! Contains multiple important traits used by the query system
 
-use std::{any::Any, fmt::Debug, hash::Hash, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
-use pernixc_arena::ID;
 use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::{Identifiable, StableTypeID};
-use pernixc_target::Global;
-
-use crate::fingerprint;
-
-/// A tag struct used for signifying that a key is an input key.
-///
-/// An input key is a key that has the value explicitly set by the user and
-/// can be thought of the starting point of the whole query system.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Input;
+use pernixc_stable_type_id::Identifiable;
 
 /// A trait representing a key that can be used to store and retrieve values
 /// inside a [`map::Map`].

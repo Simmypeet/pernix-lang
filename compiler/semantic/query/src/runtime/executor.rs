@@ -2,7 +2,6 @@
 
 use std::{
     any::{Any, TypeId},
-    pin::Pin,
     sync::Arc,
 };
 

@@ -23,6 +23,10 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{fingerprint, runtime::executor::CyclicError, Engine, Key};
 
+mod input;
+
+pub use input::SetInputLock;
+
 #[derive(Debug, Clone)]
 struct Notification(Arc<(Mutex<bool>, Condvar)>);
 

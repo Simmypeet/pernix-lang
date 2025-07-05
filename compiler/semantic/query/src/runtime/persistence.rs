@@ -1,7 +1,6 @@
 //! Defines the protocol for persistence incremental compilation database.
 
 use pernixc_hash::HashSet;
-use pernixc_stable_hash::Value;
 
 use crate::{
     database::{DynamicKey, ValueVersion},
@@ -9,28 +8,74 @@ use crate::{
 };
 
 impl Engine {
+    #[allow(
+        clippy::extra_unused_type_parameters,
+        clippy::unused_self,
+        clippy::missing_const_for_fn
+    )]
     pub(crate) fn try_load_value<K: Key>(
         &self,
-        value_fingerprint: u128,
+        _value_fingerprint: u128,
     ) -> Option<K::Value> {
         // TODO: implement this
         None
     }
 
+    #[allow(
+        clippy::extra_unused_type_parameters,
+        clippy::unused_self,
+        clippy::missing_const_for_fn
+    )]
     pub(crate) fn try_load_value_version<K: Key>(
         &self,
-        key_fingerprint: u128,
+        _key_fingerprint: u128,
     ) -> Option<ValueVersion> {
         // TODO: implement this
         None
     }
 
+    #[allow(
+        clippy::extra_unused_type_parameters,
+        clippy::unused_self,
+        clippy::missing_const_for_fn
+    )]
     pub(crate) fn try_load_dependencies<K: Key>(
         &self,
-        key_fingerprint: u128,
+        _key_fingerprint: u128,
     ) -> Option<HashSet<DynamicKey>> {
         // TODO: implement this
         None
+    }
+
+    #[allow(
+        clippy::extra_unused_type_parameters,
+        clippy::unused_self,
+        clippy::missing_const_for_fn,
+        clippy::unnecessary_wraps
+    )]
+    pub(crate) fn save_value_version<K: Key>(
+        &self,
+        _key_fingerprint: u128,
+        _version: &ValueVersion,
+    ) -> Result<(), std::io::Error> {
+        // TODO: implement this
+        Ok(())
+    }
+
+    #[allow(
+        clippy::extra_unused_type_parameters,
+        clippy::unused_self,
+        clippy::missing_const_for_fn,
+        clippy::mutable_key_type,
+        clippy::unnecessary_wraps
+    )]
+    pub(crate) fn save_value_dependencies<K: Key>(
+        &self,
+        _key_fingerprint: u128,
+        _dependencies: &HashSet<DynamicKey>,
+    ) -> Result<(), std::io::Error> {
+        // TODO: implement this
+        Ok(())
     }
 }
 /*
