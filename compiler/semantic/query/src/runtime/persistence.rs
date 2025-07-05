@@ -1,11 +1,6 @@
 //! Defines the protocol for persistence incremental compilation database.
 
-use pernixc_hash::HashSet;
-
-use crate::{
-    database::{DynamicKey, ValueVersion},
-    Engine, Key,
-};
+use crate::{database::ValueMetadata, Engine, Key};
 
 impl Engine {
     #[allow(
@@ -26,23 +21,10 @@ impl Engine {
         clippy::unused_self,
         clippy::missing_const_for_fn
     )]
-    pub(crate) fn try_load_value_version<K: Key>(
+    pub(crate) fn try_load_value_metadata<K: Key>(
         &self,
         _key_fingerprint: u128,
-    ) -> Option<ValueVersion> {
-        // TODO: implement this
-        None
-    }
-
-    #[allow(
-        clippy::extra_unused_type_parameters,
-        clippy::unused_self,
-        clippy::missing_const_for_fn
-    )]
-    pub(crate) fn try_load_dependencies<K: Key>(
-        &self,
-        _key_fingerprint: u128,
-    ) -> Option<HashSet<DynamicKey>> {
+    ) -> Option<ValueMetadata> {
         // TODO: implement this
         None
     }
@@ -53,10 +35,10 @@ impl Engine {
         clippy::missing_const_for_fn,
         clippy::unnecessary_wraps
     )]
-    pub(crate) fn save_value_version<K: Key>(
+    pub(crate) fn save_value_metadata<K: Key>(
         &self,
         _key_fingerprint: u128,
-        _version: &ValueVersion,
+        _version: &ValueMetadata,
     ) -> Result<(), std::io::Error> {
         // TODO: implement this
         Ok(())
@@ -69,10 +51,10 @@ impl Engine {
         clippy::mutable_key_type,
         clippy::unnecessary_wraps
     )]
-    pub(crate) fn save_value_dependencies<K: Key>(
+    pub(crate) fn save_value<K: Key>(
         &self,
-        _key_fingerprint: u128,
-        _dependencies: &HashSet<DynamicKey>,
+        _value_fingerprint: u128,
+        _value: &K::Value,
     ) -> Result<(), std::io::Error> {
         // TODO: implement this
         Ok(())

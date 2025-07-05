@@ -1,9 +1,7 @@
 use std::sync::{atomic::AtomicBool, Arc};
 
-use pernixc_hash::HashSet;
-
 use crate::{
-    database::{Completion, DynamicKey, ValueMetadata, ValueVersion},
+    database::{Completion, DynamicKey, InputMetadata, ValueMetadata},
     fingerprint, Engine, Key,
 };
 
@@ -35,45 +33,30 @@ impl Engine {
 impl Drop for SetInputLock<'_> {
     fn drop(&mut self) {
         if self.update_version.load(std::sync::atomic::Ordering::Relaxed) {
-            self.engine.database.version.store(
-                self.current_version,
-                std::sync::atomic::Ordering::Relaxed,
-            );
+            self.engine
+                .database
+                .version
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
     }
+}
+
+struct UpdateSave {
+    update_value: bool,
+    update_metadata: bool,
 }
 
 impl SetInputLock<'_> {
     /// Sets the predefined input value for the given key in the query
     /// database.
+    ///
+    /// Is it also possible to override the value of an existing key using this
+    /// method.
+    ///
+    /// When setting the input, the dependencies of the key are cleared.
     pub fn set_input<K: Key>(&self, key: K, value: Arc<K::Value>) {
         let key_fingerprint = fingerprint::fingerprint(&key);
         let value_fingerprint = fingerprint::fingerprint(&value);
-
-        let update_version = |version: &mut ValueVersion| {
-            let old_version = *version;
-
-            let mut version_no = self.get_version();
-
-            // update the version info if invalidated
-            if Some(value_fingerprint) != version.fingerprint {
-                self.update_version
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-
-                version_no = self.get_version();
-
-                version.updated_at = version_no;
-                version.fingerprint = Some(value_fingerprint);
-            }
-
-            version.verified_at = version_no;
-
-            if version != &old_version {
-                let _ = self
-                    .engine
-                    .save_value_version::<K>(key_fingerprint, version);
-            }
-        };
 
         match self
             .engine
@@ -90,35 +73,51 @@ impl SetInputLock<'_> {
                         )
                     }
                     super::State::Completion(completion) => {
-                        update_version(&mut completion.metadata.version);
-                        let _ = self.engine.save_value_dependencies::<K>(
-                            key_fingerprint,
-                            &HashSet::default(),
+                        let update = self.update_metadata(
+                            &mut completion.metadata,
+                            value_fingerprint,
                         );
 
+                        if update.update_metadata {
+                            let _ = self.engine.save_value_metadata::<K>(
+                                key_fingerprint,
+                                &completion.metadata,
+                            );
+                        }
+
+                        if update.update_value {
+                            let _ = self
+                                .engine
+                                .save_value::<K>(key_fingerprint, &*value);
+                        }
+
                         completion.store = Some(value);
-                        completion.metadata.dependencies =
-                            Some(HashSet::default());
                     }
                 }
             }
 
             dashmap::Entry::Vacant(vacant_entry) => {
                 let version_info =
-                    self.engine.try_load_value_version::<K>(key_fingerprint);
+                    self.engine.try_load_value_metadata::<K>(key_fingerprint);
 
                 if let Some(mut version_info) = version_info {
-                    update_version(&mut version_info);
-                    let _ = self.engine.save_value_dependencies::<K>(
-                        key_fingerprint,
-                        &HashSet::default(),
-                    );
+                    let update = self
+                        .update_metadata(&mut version_info, value_fingerprint);
+
+                    if update.update_metadata {
+                        let _ = self.engine.save_value_metadata::<K>(
+                            key_fingerprint,
+                            &version_info,
+                        );
+                    }
+                    if update.update_value {
+                        let _ = self
+                            .engine
+                            .save_value::<K>(key_fingerprint, &*value);
+                    }
 
                     vacant_entry.insert(super::State::Completion(Completion {
-                        metadata: ValueMetadata {
-                            version: version_info,
-                            dependencies: Some(HashSet::default()),
-                        },
+                        metadata: version_info,
                         store: Some(value),
                     }));
                 } else {
@@ -126,28 +125,66 @@ impl SetInputLock<'_> {
                         .store(true, std::sync::atomic::Ordering::Relaxed);
 
                     let version_no = self.get_version();
-                    let version_info = ValueVersion {
+                    let metadata = ValueMetadata::Input(InputMetadata {
+                        fingerprint: value_fingerprint,
                         updated_at: version_no,
-                        verified_at: version_no,
-                        fingerprint: Some(value_fingerprint),
-                    };
+                    });
 
-                    let _ = self.engine.save_value_version::<K>(
-                        key_fingerprint,
-                        &version_info,
-                    );
-                    let _ = self.engine.save_value_dependencies::<K>(
-                        key_fingerprint,
-                        &HashSet::default(),
-                    );
+                    let _ = self
+                        .engine
+                        .save_value_metadata::<K>(key_fingerprint, &metadata);
+                    let _ =
+                        self.engine.save_value::<K>(key_fingerprint, &*value);
 
                     vacant_entry.insert(super::State::Completion(Completion {
-                        metadata: ValueMetadata {
-                            version: version_info,
-                            dependencies: Some(HashSet::default()),
-                        },
+                        metadata,
                         store: Some(value),
                     }));
+                }
+            }
+        }
+    }
+
+    fn update_metadata(
+        &self,
+        metadata: &mut ValueMetadata,
+        value_fingerprint: u128,
+    ) -> UpdateSave {
+        match metadata {
+            ValueMetadata::Derived(derived_metadata) => {
+                let fingerprint_mismathced = Some(value_fingerprint)
+                    != derived_metadata.version_info.fingerprint;
+
+                let updated_at = if fingerprint_mismathced {
+                    self.update_version
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.get_version()
+                } else {
+                    derived_metadata.version_info.updated_at
+                };
+
+                *metadata = ValueMetadata::Input(InputMetadata {
+                    fingerprint: value_fingerprint,
+                    updated_at,
+                });
+
+                UpdateSave {
+                    update_value: fingerprint_mismathced,
+                    update_metadata: true,
+                }
+            }
+
+            ValueMetadata::Input(input_metadata) => {
+                if input_metadata.fingerprint == value_fingerprint {
+                    UpdateSave { update_value: false, update_metadata: false }
+                } else {
+                    self.update_version
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+
+                    input_metadata.fingerprint = value_fingerprint;
+                    input_metadata.updated_at = self.get_version();
+
+                    UpdateSave { update_value: true, update_metadata: true }
                 }
             }
         }

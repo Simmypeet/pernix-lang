@@ -55,8 +55,8 @@ struct Running {
     is_in_scc: AtomicBool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) struct ValueVersion {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct DerivedVersionInfo {
     verified_at: u64,
     updated_at: u64,
 
@@ -64,13 +64,38 @@ pub(super) struct ValueVersion {
     fingerprint: Option<u128>,
 }
 
-#[derive(Debug)]
-struct ValueMetadata {
-    version: ValueVersion,
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct DerivedMetadata {
+    version_info: DerivedVersionInfo,
+    dependencies: HashSet<DynamicKey>,
+}
 
-    /// The dependencies graph will be loaded lazily, if `None`, the
-    /// dependencies have not been loaded from the persistent storage yet.
-    dependencies: Option<HashSet<DynamicKey>>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct InputMetadata {
+    fingerprint: u128,
+    updated_at: u64,
+}
+
+#[derive(Debug, EnumAsInner)]
+pub(crate) enum ValueMetadata {
+    Derived(DerivedMetadata),
+    Input(InputMetadata),
+}
+
+impl ValueMetadata {
+    const fn value_fingerprint(&self) -> Option<u128> {
+        match self {
+            Self::Derived(derived) => derived.version_info.fingerprint,
+            Self::Input(input) => Some(input.fingerprint),
+        }
+    }
+
+    const fn updated_at(&self) -> u64 {
+        match self {
+            Self::Derived(derived) => derived.version_info.updated_at,
+            Self::Input(input) => input.updated_at,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -98,6 +123,13 @@ pub struct TrackedEngine<'e> {
     engine: &'e Engine,
     dependencies: Option<&'e RwLock<HashSet<DynamicKey>>>,
     call_stack: Option<Vec<DynamicKey>>,
+}
+
+impl Engine {
+    /// Creates a new [`TrackedEngine`] allowing queries to the database.
+    pub const fn tracked(&self) -> TrackedEngine {
+        TrackedEngine { engine: self, dependencies: None, call_stack: None }
+    }
 }
 
 impl TrackedEngine<'_> {
@@ -149,14 +181,12 @@ enum SlowPathDecision<V> {
 }
 
 struct ReVerify {
-    dependencies: HashSet<DynamicKey>,
-    value_version: ValueVersion,
+    derived_metadata: DerivedMetadata,
     value_store: Option<Arc<dyn Value>>,
 }
 
 struct ReExecute {
-    value_version: ValueVersion,
-    dependencies: Option<HashSet<DynamicKey>>,
+    derived_metadata: DerivedMetadata,
 }
 
 enum HandleCompletion<V> {
@@ -239,9 +269,9 @@ impl Engine {
                 }
                 State::Completion(completion) => {
                     // check if the value is up-to-date
-                    if completion.metadata.version.verified_at
-                        == current_version
-                    {
+                    if completion.metadata.as_derived().is_none_or(|x| {
+                        x.version_info.verified_at == current_version
+                    }) {
                         if return_value {
                             match completion.store.as_ref() {
                                 Some(v) => {
@@ -286,12 +316,15 @@ impl Engine {
 
     fn handle_completion<K: Key>(
         &self,
-        key_fingerprint: u128,
         completion: &mut Completion,
         current_version: u64,
         return_value: bool,
     ) -> HandleCompletion<K::Value> {
-        if completion.metadata.version.verified_at == current_version {
+        if completion
+            .metadata
+            .as_derived()
+            .is_none_or(|x| x.version_info.verified_at == current_version)
+        {
             if return_value {
                 if let Some(v) = completion.store.as_ref() {
                     let arc_any =
@@ -302,7 +335,7 @@ impl Engine {
                     ));
                 }
                 let value =
-                    completion.metadata.version.fingerprint.map_or_else(
+                    completion.metadata.value_fingerprint().map_or_else(
                         || Some(K::scc_value()),
                         |fingerprint| {
                             self.try_load_value::<K>(fingerprint).map(Arc::new)
@@ -320,12 +353,23 @@ impl Engine {
                 // in-memory storage,
                 // need to re-execute the query
                 return HandleCompletion::Continuation(
-                    Continuation::ReExecute(ReExecute {
-                        value_version: completion.metadata.version,
-                        dependencies: std::mem::take(
-                            &mut completion.metadata.dependencies,
-                        ),
-                    }),
+                    match &mut completion.metadata {
+                        ValueMetadata::Derived(derived_metadata) => {
+                            Continuation::ReExecute(ReExecute {
+                                derived_metadata: DerivedMetadata {
+                                    dependencies: std::mem::take(
+                                        &mut derived_metadata.dependencies,
+                                    ),
+                                    version_info: derived_metadata.version_info,
+                                },
+                            })
+                        }
+
+                        // somehow, the value is an input but not found in the
+                        // in-memory and persistent storage, we'll try to obtain
+                        // the query a derived value.
+                        ValueMetadata::Input(_) => Continuation::Fresh,
+                    },
                 );
             }
 
@@ -335,26 +379,18 @@ impl Engine {
         }
 
         // need to re-verify the value, check if the dependencies are
-        let dependencies = completion
-            .metadata
-            .dependencies
-            .as_mut()
-            .map(std::mem::take)
-            .or_else(|| self.try_load_dependencies::<K>(key_fingerprint));
+        let derived_metadata = std::mem::take(
+            completion
+                .metadata
+                .as_derived_mut()
+                .expect("should have been a derived value variant"),
+        );
 
-        if let Some(dependencies) = dependencies {
-            // re-verify the value with the dependencies
-            return HandleCompletion::Continuation(Continuation::ReVerify(
-                ReVerify {
-                    dependencies,
-                    value_version: completion.metadata.version,
-                    value_store: std::mem::take(&mut completion.store),
-                },
-            ));
-        }
-
-        // need to create a fresh query, the dependencies are not available
-        HandleCompletion::Continuation(Continuation::Fresh)
+        // re-verify the value with the dependencies
+        HandleCompletion::Continuation(Continuation::ReVerify(ReVerify {
+            derived_metadata,
+            value_store: std::mem::take(&mut completion.store),
+        }))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -376,9 +412,7 @@ impl Engine {
                     State::Running(_) => SlowPathDecision::TryAgain,
 
                     State::Completion(completion) => {
-                        let key_fingerprint = key.fingerprint();
                         let continuation = match self.handle_completion::<K>(
-                            key_fingerprint,
                             completion,
                             current_version,
                             return_value,
@@ -407,28 +441,29 @@ impl Engine {
                 let fingerprint = key.fingerprint();
 
                 // try loading the version from the persistent storage
-                let loaded_version =
-                    self.try_load_value_version::<K>(fingerprint);
+                let loaded_metadata =
+                    self.try_load_value_metadata::<K>(fingerprint);
 
-                if let Some(loaded_version) = loaded_version {
-                    if loaded_version.verified_at == current_version {
+                if let Some(loaded_metadata) = loaded_metadata {
+                    if loaded_metadata.as_derived().is_none_or(|x| {
+                        x.version_info.verified_at == current_version
+                    }) {
                         if return_value {
-                            let value = loaded_version.fingerprint.map_or_else(
-                                || Some(K::scc_value()),
-                                |fingerprint| {
-                                    self.try_load_value::<K>(fingerprint)
-                                        .map(Arc::new)
-                                },
-                            );
+                            let value = loaded_metadata
+                                .value_fingerprint()
+                                .map_or_else(
+                                    || Some(K::scc_value()),
+                                    |fingerprint| {
+                                        self.try_load_value::<K>(fingerprint)
+                                            .map(Arc::new)
+                                    },
+                                );
 
                             if let Some(value) = value {
                                 // store the value in the cache
                                 vacant_entry.insert(State::Completion(
                                     Completion {
-                                        metadata: ValueMetadata {
-                                            version: loaded_version,
-                                            dependencies: None,
-                                        },
+                                        metadata: loaded_metadata,
                                         store: Some(value.clone()),
                                     },
                                 ));
@@ -443,19 +478,25 @@ impl Engine {
                             }));
 
                             return SlowPathDecision::Continuation(
-                                Continuation::ReExecute(ReExecute {
-                                    value_version: loaded_version,
-                                    dependencies: None,
-                                }),
+                                match loaded_metadata {
+                                    ValueMetadata::Derived(
+                                        derived_metadata,
+                                    ) => Continuation::ReExecute(ReExecute {
+                                        derived_metadata,
+                                    }),
+
+                                    // fallback to a fresh query if the input
+                                    // value can't be found
+                                    ValueMetadata::Input(_) => {
+                                        Continuation::Fresh
+                                    }
+                                },
                                 notify,
                             );
                         }
 
                         vacant_entry.insert(State::Completion(Completion {
-                            metadata: ValueMetadata {
-                                version: loaded_version,
-                                dependencies: None,
-                            },
+                            metadata: loaded_metadata,
                             store: None,
                         }));
 
@@ -469,31 +510,17 @@ impl Engine {
                         is_in_scc: AtomicBool::new(false),
                     }));
 
-                    let loaded_dependencies =
-                        self.try_load_dependencies::<K>(fingerprint);
-
-                    match loaded_dependencies {
-                        Some(dependencies) => {
-                            // re-verify the value with the dependencies
-                            return SlowPathDecision::Continuation(
-                                Continuation::ReVerify(ReVerify {
-                                    dependencies,
-                                    value_version: loaded_version,
-                                    value_store: None,
-                                }),
-                                notify,
-                            );
-                        }
-
-                        None => {
-                            // fresh query, the dependencies are not
-                            // available, need to re-execute the query
-                            return SlowPathDecision::Continuation(
-                                Continuation::Fresh,
-                                notify,
-                            );
-                        }
-                    }
+                    // the value is not up-to-date, need to re-verify it
+                    return SlowPathDecision::Continuation(
+                        Continuation::ReVerify(ReVerify {
+                            derived_metadata: loaded_metadata
+                                .as_derived()
+                                .cloned()
+                                .expect("should be a derived value variant"),
+                            value_store: None,
+                        }),
+                        notify,
+                    );
                 }
 
                 // no version found, need to create a fresh query
@@ -542,7 +569,7 @@ impl Engine {
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
             Option<HashSet<DynamicKey>>,
-        ) -> ValueMetadata,
+        ) -> DerivedMetadata,
     ) -> Option<Arc<K::Value>> {
         let original_call_stack_len = call_stack.len();
 
@@ -604,7 +631,9 @@ impl Engine {
         key: &K,
         boxed_value: Result<Arc<dyn Value>, CyclicError>,
         return_value: bool,
-        set_completed: impl FnOnce(Result<&K::Value, CyclicError>) -> ValueMetadata,
+        set_completed: impl FnOnce(
+            Result<&K::Value, CyclicError>,
+        ) -> DerivedMetadata,
     ) -> Option<Arc<K::Value>> {
         let metadata = set_completed(
             boxed_value
@@ -626,7 +655,7 @@ impl Engine {
         self.database.query_states_by_key.insert(
             DynamicKey(key.smallbox_clone()),
             State::Completion(Completion {
-                metadata,
+                metadata: ValueMetadata::Derived(metadata),
                 store: Some(final_value.clone()),
             }),
         );
@@ -656,53 +685,76 @@ impl Engine {
                     true,
                     call_stack,
                     return_value,
-                    |result, tracked_dependencies| ValueMetadata {
-                        version: ValueVersion {
+                    |result, tracked_dependencies| DerivedMetadata {
+                        version_info: DerivedVersionInfo {
                             verified_at: current_version,
                             updated_at: current_version,
                             fingerprint: result
                                 .ok()
                                 .map(fingerprint::fingerprint),
                         },
-                        dependencies: Some(tracked_dependencies.unwrap()),
+                        dependencies: tracked_dependencies.unwrap(),
                     },
                 )
             }
             Continuation::ReVerify(mut re_verify) => {
-                let recompute = if re_verify.value_version.fingerprint.is_none()
+                let recompute = if re_verify
+                    .derived_metadata
+                    .version_info
+                    .fingerprint
+                    .is_none()
                 {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
-                    re_verify.dependencies.par_iter().for_each(|x| {
-                        let mut call_stack_clone = call_stack.clone();
+                    re_verify
+                        .derived_metadata
+                        .dependencies
+                        .par_iter()
+                        .for_each(|x| {
+                            // if the dependency is an input, skip
+                            // re-verification
+                            if self
+                                .database
+                                .query_states_by_key
+                                .get(x)
+                                .is_some_and(|x| {
+                                    x.as_completion()
+                                        .is_some_and(|x| x.metadata.is_input())
+                                })
+                            {
+                                return;
+                            }
 
-                        let dep_ref = &*x.0;
-                        let type_id = dep_ref.any().type_id();
+                            let mut call_stack_clone = call_stack.clone();
 
-                        let re_verify_query = self
-                            .runtime
-                            .executor
-                            .get_entry_with_id(type_id)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "No executor registered for key type `{}`",
-                                    dep_ref.type_name()
-                                )
-                            })
-                            .get_re_verify_query();
+                            let dep_ref = &*x.0;
+                            let type_id = dep_ref.any().type_id();
 
-                        let _ = (re_verify_query)(
-                            self,
-                            dep_ref.any(),
-                            current_version,
-                            &mut call_stack_clone,
-                        );
-                    });
+                            let re_verify_query = self
+                                .runtime
+                                .executor
+                                .get_entry_with_id(type_id)
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "No executor registered for key type \
+                                         `{}`",
+                                        dep_ref.type_name()
+                                    )
+                                })
+                                .get_re_verify_query();
+
+                            let _ = (re_verify_query)(
+                                self,
+                                dep_ref.any(),
+                                current_version,
+                                &mut call_stack_clone,
+                            );
+                        });
 
                     // if any of the dependencies has been updated,
                     // we need to recompute the query
-                    re_verify.dependencies.iter().any(|x| {
+                    re_verify.derived_metadata.dependencies.iter().any(|x| {
                         self.database
                             .query_states_by_key
                             .get(x)
@@ -712,9 +764,11 @@ impl Engine {
                                 "should be completion since it was re-verified",
                             )
                             .metadata
-                            .version
-                            .updated_at
-                            > re_verify.value_version.verified_at
+                            .updated_at()
+                            > re_verify
+                                .derived_metadata
+                                .version_info
+                                .verified_at
                     })
                 };
 
@@ -731,25 +785,29 @@ impl Engine {
                             // if the new fingerprint is different from
                             // the old one, update the value version
                             if re_verify
-                                .value_version
+                                .derived_metadata
+                                .version_info
                                 .fingerprint
                                 .is_none_or(|x| Some(x) != new_fingerprint)
                             {
-                                re_verify.value_version.fingerprint =
-                                    new_fingerprint;
-                                re_verify.value_version.updated_at =
-                                    current_version;
+                                re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .fingerprint = new_fingerprint;
+                                re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .updated_at = current_version;
                             }
 
-                            re_verify.value_version.verified_at =
-                                current_version;
-                            re_verify.dependencies =
+                            re_verify
+                                .derived_metadata
+                                .version_info
+                                .verified_at = current_version;
+                            re_verify.derived_metadata.dependencies =
                                 tracked_dependencies.unwrap();
 
-                            ValueMetadata {
-                                version: re_verify.value_version,
-                                dependencies: Some(re_verify.dependencies),
-                            }
+                            re_verify.derived_metadata
                         },
                     )
                 } else if return_value {
@@ -758,12 +816,9 @@ impl Engine {
                             self.database.query_states_by_key.insert(
                                 DynamicKey(key.smallbox_clone()),
                                 State::Completion(Completion {
-                                    metadata: ValueMetadata {
-                                        version: re_verify.value_version,
-                                        dependencies: Some(
-                                            re_verify.dependencies,
-                                        ),
-                                    },
+                                    metadata: ValueMetadata::Derived(
+                                        re_verify.derived_metadata,
+                                    ),
                                     store: Some(value.clone()),
                                 }),
                             );
@@ -777,16 +832,18 @@ impl Engine {
                                     .expect("Failed to downcast value")
                             });
                         }
-                        None => {
-                            re_verify.value_version.fingerprint.map_or_else(
+                        None => re_verify
+                            .derived_metadata
+                            .version_info
+                            .fingerprint
+                            .map_or_else(
                                 || Some(Err(CyclicError)),
                                 |fingerprint| {
                                     self.try_load_value::<K>(fingerprint).map(
                                         |x| Ok(Arc::new(x) as Arc<dyn Value>),
                                     )
                                 },
-                            )
-                        }
+                            ),
                     };
 
                     match value {
@@ -799,15 +856,15 @@ impl Engine {
                                     result.ok().map(|x| {
                                         fingerprint::fingerprint(x)
                                     }),
-                                    re_verify.value_version.fingerprint,
+                                    re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .fingerprint,
                                     "The fingerprint of the re-executed value \
                                      should match the old one"
                                 );
 
-                                ValueMetadata {
-                                    version: re_verify.value_version,
-                                    dependencies: Some(re_verify.dependencies),
-                                }
+                                re_verify.derived_metadata
                             },
                         ),
                         None => self.compute(
@@ -820,15 +877,15 @@ impl Engine {
                                     value.ok().map(|x| {
                                         fingerprint::fingerprint(x)
                                     }),
-                                    re_verify.value_version.fingerprint,
+                                    re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .fingerprint,
                                     "The fingerprint of the re-executed value \
                                      should match the old one"
                                 );
 
-                                ValueMetadata {
-                                    version: re_verify.value_version,
-                                    dependencies: Some(re_verify.dependencies),
-                                }
+                                re_verify.derived_metadata
                             },
                         ),
                     }
@@ -839,10 +896,9 @@ impl Engine {
                         .get_mut(key as &dyn Dynamic)
                         .expect("should be present") =
                         State::Completion(Completion {
-                            metadata: ValueMetadata {
-                                version: re_verify.value_version,
-                                dependencies: Some(re_verify.dependencies),
-                            },
+                            metadata: ValueMetadata::Derived(
+                                re_verify.derived_metadata,
+                            ),
                             store: re_verify.value_store,
                         });
 
@@ -851,26 +907,18 @@ impl Engine {
             }
             Continuation::ReExecute(re_execute) => self.compute(
                 key,
-                re_execute.dependencies.is_none(),
+                false,
                 call_stack,
                 return_value,
-                |result, tracked_dependencies| {
+                |result, _| {
                     debug_assert_eq!(
                         result.ok().map(|x| { fingerprint::fingerprint(x) }),
-                        re_execute.value_version.fingerprint,
+                        re_execute.derived_metadata.version_info.fingerprint,
                         "The fingerprint of the re-executed value should \
                          match the old one"
                     );
 
-                    ValueMetadata {
-                        version: re_execute.value_version,
-                        dependencies: Some(
-                            re_execute
-                                .dependencies
-                                .or(tracked_dependencies)
-                                .unwrap(),
-                        ),
-                    }
+                    re_execute.derived_metadata
                 },
             ),
         }
@@ -947,6 +995,11 @@ impl Engine {
 
             return Ok(value);
         }
+    }
+
+    /// Returns the current version of the query database.
+    pub fn version(&self) -> u64 {
+        self.database.version.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -1034,10 +1087,13 @@ impl Hash for dyn Dynamic + '_ {
     }
 }
 
-/// A trait allowing to store values in the query system.
+// A trait allowing to store values in the query system.
 pub(super) trait Value:
     Any + Send + Sync + std::fmt::Debug + 'static
 {
 }
 
 impl<T: Any + Send + Sync + std::fmt::Debug + 'static> Value for T {}
+
+#[cfg(test)]
+mod test;
