@@ -239,6 +239,8 @@ impl Engine {
 
                     // found cyclic dependency, mark all the SCCs
                     if let Some(index) = index {
+                        drop(state);
+
                         for key in &call_stack[index..] {
                             self.database
                                 .query_states_by_key
@@ -260,9 +262,20 @@ impl Engine {
                     }
 
                     let notify = running.notify.clone();
+
                     drop(state);
 
+                    let called_from = call_stack.last();
+
+                    println!(
+                        "[FastPath] {called_from:?} is waiting for \
+                         notification for key: {key:?}"
+                    );
                     notify.wait();
+                    println!(
+                        "[FastPath] {called_from:?} received notification for \
+                         key: {key:?}"
+                    );
 
                     // try again and should see the `State::Completion`
                     return Ok(FastPathDecision::TryAgain);
@@ -707,6 +720,8 @@ impl Engine {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
+                    println!("[ReVerify] {key:?} is reverifying {:?}", &re_verify.derived_metadata.dependencies);
+
                     re_verify
                         .derived_metadata
                         .dependencies
@@ -973,6 +988,7 @@ impl Engine {
             );
 
             // notify the waiting tasks that the query has been completed
+            println!("[Query] notified for {key:?}");
             notify.notify();
 
             if let Some(called_from) = call_stack.last() {

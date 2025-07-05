@@ -657,7 +657,6 @@ fn dependent_query_uses_cyclic_default_values() {
     assert_eq!(executor_dependent.get_call_count(), 1);
 }
 
-/*
 // Executor for DependentQuery that depends on conditional cyclic queries
 #[derive(Debug, Default)]
 pub struct ConditionalDependentExecutor {
@@ -703,7 +702,7 @@ impl Executor<DependentQuery> for ConditionalDependentExecutor {
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
-#[scc_value(Default::default())]
+#[scc_value(Arc::default())]
 pub struct ConditionalCyclicQueryA;
 
 #[derive(
@@ -722,7 +721,7 @@ pub struct ConditionalCyclicQueryA;
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
-#[scc_value(Default::default())]
+#[scc_value(Arc::default())]
 pub struct ConditionalCyclicQueryB;
 
 #[derive(
@@ -761,23 +760,24 @@ impl ConditionalCyclicExecutorA {
 impl Executor<ConditionalCyclicQueryA> for ConditionalCyclicExecutorA {
     fn execute(
         &self,
-        engine: &Tracked,
-        _key: ConditionalCyclicQueryA,
-    ) -> Result<i32, CyclicError> {
+        engine: &mut TrackedEngine,
+        _key: &ConditionalCyclicQueryA,
+    ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Read the control variable to determine whether to create a cycle
-        let control_value = engine.query(&CycleControlVariable)?;
+        let control_value = *engine.query(&CycleControlVariable)?;
 
-        if control_value == 1 {
+        Ok(Arc::new(if control_value == 1 {
             // When control_value is 1, create a cycle by querying B
-            let b_value = engine.query(&ConditionalCyclicQueryB)?;
-            Ok(b_value + 10)
+            let b_value = *engine.query(&ConditionalCyclicQueryB)?;
+
+            b_value + 10
         } else {
             // When control_value is not 1, no cycle - just return a computed
             // value
-            Ok(control_value * 100)
-        }
+            control_value * 100
+        }))
     }
 }
 
@@ -799,23 +799,200 @@ impl ConditionalCyclicExecutorB {
 impl Executor<ConditionalCyclicQueryB> for ConditionalCyclicExecutorB {
     fn execute(
         &self,
-        engine: &Tracked,
-        _key: ConditionalCyclicQueryB,
-    ) -> Result<i32, CyclicError> {
+        engine: &mut TrackedEngine,
+        _key: &ConditionalCyclicQueryB,
+    ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Read the control variable to determine whether to create a cycle
-        let control_value = engine.query(&CycleControlVariable)?;
+        let control_value = *engine.query(&CycleControlVariable)?;
 
-        if control_value == 1 {
+        Ok(Arc::new(if control_value == 1 {
             // When control_value is 1, complete the cycle by querying A
-            let a_value = engine.query(&ConditionalCyclicQueryA)?;
-            Ok(a_value + 20)
+            let a_value = *engine.query(&ConditionalCyclicQueryA)?;
+
+            a_value + 20
         } else {
             // When control_value is not 1, no cycle - just return a computed
             // value
-            Ok(control_value * 200)
-        }
+            control_value * 200
+        }))
     }
 }
-*/
+
+#[test]
+#[allow(clippy::similar_names)]
+fn conditional_cyclic_dependency() {
+    let mut engine = Engine::default();
+
+    let executor_a = Arc::new(ConditionalCyclicExecutorA::default());
+    let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
+
+    engine.runtime.executor.register(Arc::clone(&executor_a));
+    engine.runtime.executor.register(Arc::clone(&executor_b));
+
+    // Phase 1: Set control value to create NO cycle (control_value != 1)
+    let input_lock = engine.input_lock();
+    input_lock.set_input(CycleControlVariable, Arc::new(5));
+    drop(input_lock);
+
+    // Query both A and B - they should compute normal values without cycles
+    let result_a = *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+    let result_b = *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+
+    // Expected values: A = 5 * 100 = 500, B = 5 * 200 = 1000
+    assert_eq!(result_a, 500);
+    assert_eq!(result_b, 1000);
+
+    // Both executors should have been called once each
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+
+    // Phase 2: Change control value to CREATE a cycle (control_value == 1)
+    let input_lock = engine.input_lock();
+    input_lock.set_input(CycleControlVariable, Arc::new(1));
+    drop(input_lock);
+
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Query A - this should trigger cycle detection and return default values
+    let result_a_cyclic =
+        *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+    let result_b_cyclic =
+        *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+
+    // Both should return default values (0 for i32) due to cycle detection
+    assert_eq!(result_a_cyclic, 0);
+    assert_eq!(result_b_cyclic, 0);
+
+    // Both executors should be called exactly once during cycle detection
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+
+    // Phase 3: Change control value back to break the cycle (control_value !=
+    // 1)
+    let input_lock = engine.input_lock();
+    input_lock.set_input(CycleControlVariable, Arc::new(3));
+    drop(input_lock);
+
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Query both A and B - they should recompute and return normal values again
+    let result_a_normal =
+        *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+    let result_b_normal =
+        *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+
+    // Expected values: A = 3 * 100 = 300, B = 3 * 200 = 600
+    assert_eq!(result_a_normal, 300);
+    assert_eq!(result_b_normal, 600);
+
+    // Both executors should have been called once each for recomputation
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+
+    // Phase 4: Create cycle again with a different control value
+    // (control_value // == 1)
+    let input_lock = engine.input_lock();
+    input_lock.set_input(CycleControlVariable, Arc::new(1));
+    drop(input_lock);
+
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Query A - cycle should be detected again and default values returned
+    let result_a_cyclic2 =
+        *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+    let result_b_cyclic2 =
+        *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+
+    // Both should return default values (0 for i32) due to cycle detection
+    assert_eq!(result_a_cyclic2, 0);
+    assert_eq!(result_b_cyclic2, 0);
+
+    // Both executors should be called exactly once during cycle detection
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+}
+
+#[test]
+fn conditional_cyclic_with_dependent_query() {
+    let mut engine = Engine::default();
+
+    let executor_a = Arc::new(ConditionalCyclicExecutorA::default());
+    let executor_b = Arc::new(ConditionalCyclicExecutorB::default());
+    let executor_dependent = Arc::new(ConditionalDependentExecutor::default());
+
+    engine.runtime.executor.register(Arc::clone(&executor_a));
+    engine.runtime.executor.register(Arc::clone(&executor_b));
+    engine.runtime.executor.register(Arc::clone(&executor_dependent));
+
+    // Phase 1: No cycle - dependent query should use computed values
+
+    let input_lock = engine.input_lock();
+    input_lock.set_input(CycleControlVariable, Arc::new(2));
+    drop(input_lock);
+
+    let result_dependent = *engine.tracked().query(&DependentQuery).unwrap();
+
+    // DependentQuery = A + B + 100 = (2*100) + (2*200) + 100 = 200 + 400 + 100
+    // = 700
+    assert_eq!(result_dependent, 700);
+
+    // All executors should have been called
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+    assert_eq!(executor_dependent.get_call_count(), 1);
+
+    // Phase 2: Create cycle - dependent query should use default values
+
+    let input_lock = engine.input_lock();
+    input_lock.set_input(CycleControlVariable, Arc::new(1));
+    drop(input_lock);
+
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+
+    // Reset dependent executor call count to track new computation
+    executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+
+    println!("===================");
+
+    let result_dependent_cyclic =
+        *engine.tracked().query(&DependentQuery).unwrap();
+
+    // DependentQuery should use default values: 0 + 0 + 100 = 100
+    assert_eq!(result_dependent_cyclic, 100);
+
+    // Cyclic executors called once each during cycle detection
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+    // Dependent executor called once to compute with new (default) values
+    assert_eq!(executor_dependent.get_call_count(), 1);
+
+    // Phase 3: Break cycle again - dependent query should use computed values
+
+    let input_lock = engine.input_lock();
+    input_lock.set_input(CycleControlVariable, Arc::new(4));
+    drop(input_lock);
+
+    executor_a.reset_call_count();
+    executor_b.reset_call_count();
+    executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst); // Query A and B to ensure they're computed
+    let _debug_a = engine.tracked().query(&ConditionalCyclicQueryA);
+    let _debug_b = engine.tracked().query(&ConditionalCyclicQueryB);
+
+    let result_dependent_normal =
+        *engine.tracked().query(&DependentQuery).unwrap();
+
+    // DependentQuery = A + B + 100 = (4*100) + (4*200) + 100 = 400 + 800 + 100
+    // = 1300
+    assert_eq!(result_dependent_normal, 1300);
+
+    // All executors should have been called for recomputation
+    assert_eq!(executor_a.get_call_count(), 1);
+    assert_eq!(executor_b.get_call_count(), 1);
+    assert_eq!(executor_dependent.get_call_count(), 1);
+}
