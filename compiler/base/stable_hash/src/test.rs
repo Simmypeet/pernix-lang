@@ -30,7 +30,7 @@ fn write_f64_nan_normalization() {
 
 #[test]
 fn sub_hash() {
-    let mut hasher = StableSipHasher::new();
+    let hasher = StableSipHasher::new();
 
     let sub_hash = hasher.sub_hash(&mut |sub| {
         sub.write_u32(42);
