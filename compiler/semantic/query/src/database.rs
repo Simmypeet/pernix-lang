@@ -6,7 +6,6 @@ use std::{
     fmt::Debug,
     hash::Hash,
     ops::Deref,
-    pin::Pin,
     sync::{
         atomic::{AtomicBool, AtomicU64},
         Arc,
@@ -15,22 +14,40 @@ use std::{
 
 use dashmap::DashMap;
 use enum_as_inner::EnumAsInner;
-use parking_lot::RwLock;
+use parking_lot::{Condvar, Mutex, RwLock};
 use pernixc_arena::ID;
 use pernixc_hash::HashSet;
 use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::Global;
-use tokio::sync::Notify;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{
-    fingerprint,
-    runtime::executor::{self, CyclicError},
-    Engine, Key,
-};
+use crate::{fingerprint, runtime::executor::CyclicError, Engine, Key};
+
+#[derive(Debug, Clone)]
+struct Notification(Arc<(Mutex<bool>, Condvar)>);
+
+impl Notification {
+    fn new() -> Self { Self(Arc::new((Mutex::new(false), Condvar::new()))) }
+
+    fn wait(&self) {
+        let (lock, cvar) = &*self.0;
+        let mut notified = lock.lock();
+        while !*notified {
+            cvar.wait(&mut notified);
+        }
+    }
+
+    fn notify(&self) {
+        let (lock, cvar) = &*self.0;
+        let mut notified = lock.lock();
+        *notified = true;
+        cvar.notify_all();
+    }
+}
 
 #[derive(Debug)]
 struct Running {
-    notify: Arc<Notify>,
+    notify: Notification,
     is_in_scc: AtomicBool,
 }
 
@@ -73,20 +90,20 @@ enum State {
 /// allowing the query system to run multiple queries in parallel using
 /// [`tokio::spawn`].
 #[derive(Debug, Clone)]
-pub struct TrackedEngine {
-    engine: Arc<Engine>,
-    dependencies: Option<Arc<RwLock<HashSet<DynamicKey>>>>,
+pub struct TrackedEngine<'e> {
+    engine: &'e Engine,
+    dependencies: Option<&'e RwLock<HashSet<DynamicKey>>>,
     call_stack: Option<Vec<DynamicKey>>,
 }
 
-impl TrackedEngine {
+impl TrackedEngine<'_> {
     /// Queries the value for the given key.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the query is part of a cyclic dependency, which
     /// prevents deadlocks in the query system.
-    pub async fn query<K: Key>(
+    pub fn query<K: Key>(
         &mut self,
         key: &K,
     ) -> Result<Arc<K::Value>, CyclicError> {
@@ -106,12 +123,11 @@ impl TrackedEngine {
         self.engine
             .query_internal(
                 key,
-                self.dependencies.as_deref(),
+                self.dependencies,
                 call_stack,
                 current_version,
                 true,
             )
-            .await
             .map(|x| x.unwrap())
     }
 }
@@ -125,7 +141,7 @@ enum FastPathDecision<V> {
 enum SlowPathDecision<V> {
     TryAgain,
     Return(Option<Arc<V>>),
-    Continuation(Continuation, Arc<Notify>),
+    Continuation(Continuation, Notification),
 }
 
 struct ReVerify {
@@ -158,24 +174,20 @@ pub struct Database {
 }
 
 pub(super) fn re_verify_query<'a, K: Key + 'static>(
-    engine: &'a Arc<Engine>,
+    engine: &'a Engine,
     key: &'a dyn Any,
     current_version: u64,
-    call_stack: &'a mut Vec<DynamicKey>,
-) -> Pin<Box<dyn executor::Future<'a, ()> + 'a>> {
+    call_stack: &mut Vec<DynamicKey>,
+) -> Result<(), CyclicError> {
     let key = key.downcast_ref::<K>().expect("Key type mismatch");
 
-    Box::pin(async move {
-        engine
-            .query_internal(key, None, call_stack, current_version, false)
-            .await?;
+    engine.query_internal(key, None, call_stack, current_version, false)?;
 
-        Ok(())
-    })
+    Ok(())
 }
 
 impl Engine {
-    async fn fast_path<K: Key>(
+    fn fast_path<K: Key>(
         &self,
         key: &K,
         return_value: bool,
@@ -216,7 +228,7 @@ impl Engine {
                     let notify = running.notify.clone();
                     drop(state);
 
-                    notify.notified().await;
+                    notify.wait();
 
                     // try again and should see the `State::Completion`
                     return Ok(FastPathDecision::TryAgain);
@@ -375,7 +387,8 @@ impl Engine {
                             }
                         };
 
-                        let notify = Arc::new(Notify::new());
+                        let notify = Notification::new();
+
                         *occupied_entry.get_mut() = State::Running(Running {
                             notify: notify.clone(),
                             is_in_scc: AtomicBool::new(false),
@@ -419,7 +432,7 @@ impl Engine {
                                 return SlowPathDecision::Return(Some(value));
                             }
 
-                            let notify = Arc::new(Notify::new());
+                            let notify = Notification::new();
                             vacant_entry.insert(State::Running(Running {
                                 notify: notify.clone(),
                                 is_in_scc: AtomicBool::new(false),
@@ -446,7 +459,7 @@ impl Engine {
                         return SlowPathDecision::Return(None);
                     }
 
-                    let notify = Arc::new(Notify::new());
+                    let notify = Notification::new();
                     vacant_entry.insert(State::Running(Running {
                         notify: notify.clone(),
                         is_in_scc: AtomicBool::new(false),
@@ -480,7 +493,7 @@ impl Engine {
                 }
 
                 // no version found, need to create a fresh query
-                let notify = Arc::new(Notify::new());
+                let notify = Notification::new();
                 vacant_entry.insert(State::Running(Running {
                     notify: notify.clone(),
                     is_in_scc: AtomicBool::new(false),
@@ -491,7 +504,7 @@ impl Engine {
         }
     }
 
-    async fn compute_query<K: Key>(
+    fn compute_query<K: Key>(
         tracked_engine: &mut TrackedEngine,
         key: &K,
     ) -> Result<Arc<dyn Value>, CyclicError> {
@@ -513,11 +526,11 @@ impl Engine {
                 },
             );
 
-        (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine).await
+        (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine)
     }
 
-    async fn compute<K: Key>(
-        self: &Arc<Self>,
+    fn compute<K: Key>(
+        &self,
         key: &K,
         track_dependencies: bool,
         call_stack: &mut Vec<DynamicKey>,
@@ -532,14 +545,16 @@ impl Engine {
         // add the key to the call stack
         call_stack.push(DynamicKey(key.smallbox_clone()));
 
+        let tracked_dependencies =
+            track_dependencies.then(|| RwLock::new(HashSet::default()));
+
         let mut tracked_engine = TrackedEngine {
-            engine: self.clone(),
-            dependencies: track_dependencies
-                .then(|| Arc::new(RwLock::new(HashSet::default()))),
+            engine: self,
+            dependencies: tracked_dependencies.as_ref(),
             call_stack: Some(std::mem::take(call_stack)),
         };
 
-        let value = Self::compute_query(&mut tracked_engine, key).await;
+        let value = Self::compute_query(&mut tracked_engine, key);
 
         {
             // remove the key from the call stack.
@@ -575,21 +590,7 @@ impl Engine {
         );
 
         self.handle_computed_value(key, value, return_value, |result| {
-            set_completed(
-                result,
-                tracked_engine
-                    .dependencies
-                    .map(|x| Arc::into_inner(x).map(RwLock::into_inner))
-                    .expect(
-                        "There're still some other places holding the \
-                         `TrackedEngine` dependencies lock; please ensure \
-                         that the `TrackedEngine`s are not held beyond the \
-                         scope of the query `Executor::execute` method, or if \
-                         there's multi-threading involved, please ensure that \
-                         all of the spawned threads are joined before the \
-                         `Executor::execute` method returns",
-                    ),
-            )
+            set_completed(result, tracked_dependencies.map(RwLock::into_inner))
         })
     }
 
@@ -635,8 +636,8 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn continuation<K: Key>(
-        self: &Arc<Self>,
+    fn continuation<K: Key>(
+        &self,
         key: &K,
         continuation: Continuation,
         call_stack: &mut Vec<DynamicKey>,
@@ -662,7 +663,6 @@ impl Engine {
                         dependencies: Some(tracked_dependencies.unwrap()),
                     },
                 )
-                .await
             }
             Continuation::ReVerify(mut re_verify) => {
                 let recompute = if re_verify.value_version.fingerprint.is_none()
@@ -670,54 +670,31 @@ impl Engine {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
-                    let mut join_handles = Vec::new();
-
-                    // re-verify the value with the dependencies
-                    for dep in re_verify.dependencies {
+                    re_verify.dependencies.par_iter().for_each(|x| {
                         let mut call_stack_clone = call_stack.clone();
-                        let engine_cloned = self.clone();
 
-                        join_handles.push(tokio::spawn(async move {
-                            let dep_ref = &*dep.0;
-                            let type_id = dep_ref.any().type_id();
+                        let dep_ref = &*x.0;
+                        let type_id = dep_ref.any().type_id();
 
-                            let re_verify_query = engine_cloned
-                                .runtime
-                                .executor
-                                .get_entry_with_id(type_id)
-                                .unwrap_or_else(|| {
-                                    panic!(
-                                        "No executor registered for key type \
-                                         `{}`",
-                                        dep_ref.type_name()
-                                    )
-                                })
-                                .get_re_verify_query();
-
-                            (
-                                (re_verify_query)(
-                                    &engine_cloned,
-                                    dep_ref.any(),
-                                    re_verify.value_version.verified_at,
-                                    &mut call_stack_clone,
+                        let re_verify_query = self
+                            .runtime
+                            .executor
+                            .get_entry_with_id(type_id)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "No executor registered for key type `{}`",
+                                    dep_ref.type_name()
                                 )
-                                .await,
-                                dep,
-                            )
-                        }));
-                    }
+                            })
+                            .get_re_verify_query();
 
-                    re_verify.dependencies = HashSet::default();
-
-                    // make sure all the re-verify tasks are completed
-                    // before proceeding
-                    for result in join_handles {
-                        let (_, dep) = result
-                            .await
-                            .expect("Failed to join re-verify query task");
-
-                        re_verify.dependencies.insert(dep);
-                    }
+                        let _ = (re_verify_query)(
+                            self,
+                            dep_ref.any(),
+                            current_version,
+                            &mut call_stack_clone,
+                        );
+                    });
 
                     // if any of the dependencies has been updated,
                     // we need to recompute the query
@@ -771,7 +748,6 @@ impl Engine {
                             }
                         },
                     )
-                    .await
                 } else if return_value {
                     let value = match re_verify.value_store {
                         Some(value) => {
@@ -830,32 +806,27 @@ impl Engine {
                                 }
                             },
                         ),
-                        None => {
-                            self.compute(
-                                key,
-                                false,
-                                call_stack,
-                                true,
-                                |value, _| {
-                                    debug_assert_eq!(
-                                        value.ok().map(|x| {
-                                            fingerprint::fingerprint(x)
-                                        }),
-                                        re_verify.value_version.fingerprint,
-                                        "The fingerprint of the re-executed \
-                                         value should match the old one"
-                                    );
+                        None => self.compute(
+                            key,
+                            false,
+                            call_stack,
+                            true,
+                            |value, _| {
+                                debug_assert_eq!(
+                                    value.ok().map(|x| {
+                                        fingerprint::fingerprint(x)
+                                    }),
+                                    re_verify.value_version.fingerprint,
+                                    "The fingerprint of the re-executed value \
+                                     should match the old one"
+                                );
 
-                                    ValueMetadata {
-                                        version: re_verify.value_version,
-                                        dependencies: Some(
-                                            re_verify.dependencies,
-                                        ),
-                                    }
-                                },
-                            )
-                            .await
-                        }
+                                ValueMetadata {
+                                    version: re_verify.value_version,
+                                    dependencies: Some(re_verify.dependencies),
+                                }
+                            },
+                        ),
                     }
                 } else {
                     *self
@@ -874,40 +845,35 @@ impl Engine {
                     None
                 }
             }
-            Continuation::ReExecute(re_execute) => {
-                self.compute(
-                    key,
-                    re_execute.dependencies.is_none(),
-                    call_stack,
-                    return_value,
-                    |result, tracked_dependencies| {
-                        debug_assert_eq!(
-                            result
-                                .ok()
-                                .map(|x| { fingerprint::fingerprint(x) }),
-                            re_execute.value_version.fingerprint,
-                            "The fingerprint of the re-executed value should \
-                             match the old one"
-                        );
+            Continuation::ReExecute(re_execute) => self.compute(
+                key,
+                re_execute.dependencies.is_none(),
+                call_stack,
+                return_value,
+                |result, tracked_dependencies| {
+                    debug_assert_eq!(
+                        result.ok().map(|x| { fingerprint::fingerprint(x) }),
+                        re_execute.value_version.fingerprint,
+                        "The fingerprint of the re-executed value should \
+                         match the old one"
+                    );
 
-                        ValueMetadata {
-                            version: re_execute.value_version,
-                            dependencies: Some(
-                                re_execute
-                                    .dependencies
-                                    .or(tracked_dependencies)
-                                    .unwrap(),
-                            ),
-                        }
-                    },
-                )
-                .await
-            }
+                    ValueMetadata {
+                        version: re_execute.value_version,
+                        dependencies: Some(
+                            re_execute
+                                .dependencies
+                                .or(tracked_dependencies)
+                                .unwrap(),
+                        ),
+                    }
+                },
+            ),
         }
     }
 
-    pub(super) async fn query_internal<K: Key>(
-        self: &Arc<Self>,
+    pub(super) fn query_internal<K: Key>(
+        &self,
         key: &K,
         dependencies: Option<&RwLock<HashSet<DynamicKey>>>,
         call_stack: &mut Vec<DynamicKey>,
@@ -925,10 +891,12 @@ impl Engine {
 
         loop {
             // Fast path: mostly used read lock, lower lock contention
-            match self
-                .fast_path(key, return_value, call_stack, current_version)
-                .await?
-            {
+            match self.fast_path(
+                key,
+                return_value,
+                call_stack,
+                current_version,
+            )? {
                 FastPathDecision::TryAgain => continue,
                 FastPathDecision::ToSlowPath => {}
                 FastPathDecision::Return(value) => return Ok(value),
@@ -944,18 +912,16 @@ impl Engine {
                     }
                 };
 
-            let value = self
-                .continuation(
-                    key,
-                    continuation,
-                    call_stack,
-                    return_value,
-                    current_version,
-                )
-                .await;
+            let value = self.continuation(
+                key,
+                continuation,
+                call_stack,
+                return_value,
+                current_version,
+            );
 
             // notify the waiting tasks that the query has been completed
-            notify.notify_waiters();
+            notify.notify();
 
             if let Some(called_from) = call_stack.last() {
                 let is_in_scc = self

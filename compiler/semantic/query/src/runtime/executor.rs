@@ -48,44 +48,39 @@ pub trait Executor<K: Key>: Any + Send + Sync + std::fmt::Debug {
     /// Returns `Ok(value)` on successful computation, or `Err(CyclicError)`
     /// when the query is part of a strongly connected component (SCC) with
     /// cyclic dependencies.
-    fn execute<'a>(
-        &'a self,
-        engine: &'a mut TrackedEngine,
-        key: &'a K,
-    ) -> impl Future<'a, Arc<K::Value>> + 'a;
+    fn execute(
+        &self,
+        engine: &mut TrackedEngine,
+        key: &K,
+    ) -> Result<Arc<K::Value>, CyclicError>;
 }
 
 fn invoke_executor<'db, E: Executor<K> + 'static, K: Key + 'static>(
     key: &'db dyn Any,
     executor: &'db dyn Any,
     engine: &'db mut TrackedEngine,
-) -> Pin<Box<dyn Future<'db, Arc<dyn database::Value>> + 'db>> {
+) -> Result<Arc<dyn database::Value>, CyclicError> {
     let key = key.downcast_ref::<K>().expect("Key type mismatch");
     let executor =
         executor.downcast_ref::<E>().expect("Executor type mismatch");
 
-    Box::pin(async move {
-        executor
-            .execute(engine, key)
-            .await
-            .map(|x| x as Arc<dyn database::Value>)
-    })
+    executor.execute(engine, key).map(|x| x as Arc<dyn database::Value>)
 }
 
-type InvokeExecutorFn = for<'db> fn(
-    key: &'db dyn Any,
-    executor: &'db dyn Any,
-    engine: &'db mut TrackedEngine,
-) -> Pin<
-    Box<dyn Future<'db, Arc<dyn database::Value>> + 'db>,
->;
+type InvokeExecutorFn =
+    for<'key, 'ex, 'eng> fn(
+        key: &'key dyn Any,
+        executor: &'ex dyn Any,
+        engine: &'eng mut TrackedEngine,
+    )
+        -> Result<Arc<dyn database::Value>, CyclicError>;
 
-type ReVerifyQueryFn = for<'db> fn(
-    engine: &'db Arc<Engine>,
+type ReVerifyQueryFn = for<'db, 'call> fn(
+    engine: &'db Engine,
     key: &'db dyn Any,
     current_version: u64,
-    call_stack: &'db mut Vec<database::DynamicKey>,
-) -> Pin<Box<dyn Future<'db, ()> + 'db>>;
+    call_stack: &'call mut Vec<database::DynamicKey>,
+) -> Result<(), CyclicError>;
 
 /// Contains the [`Executor`] objects for each key type. This struct allows
 /// registering and retrieving executors for different query key types.
