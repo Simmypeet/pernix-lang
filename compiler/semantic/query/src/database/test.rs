@@ -958,8 +958,6 @@ fn conditional_cyclic_with_dependent_query() {
     // Reset dependent executor call count to track new computation
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
-    println!("===================");
-
     let result_dependent_cyclic =
         *engine.tracked().query(&DependentQuery).unwrap();
 

@@ -217,8 +217,6 @@ impl Engine {
                 .is_in_scc
                 .store(true, std::sync::atomic::Ordering::Relaxed);
 
-            println!("b [Cyclic] {key:?} is in SCC");
-
             return true;
         }
 
@@ -239,8 +237,6 @@ impl Engine {
         }
 
         if found {
-            println!("c [Cyclic] {key:?} is in SCC");
-
             running_state
                 .is_in_scc
                 .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -264,8 +260,6 @@ impl Engine {
                     let notify = running.notify.clone();
 
                     if let Some(called_from) = called_from {
-                        println!("a [Cyclic] {called_from:?} is  in SCC");
-
                         let is_in_scc =
                             self.check_cyclic(running, key, called_from);
 
@@ -292,15 +286,7 @@ impl Engine {
 
                     drop(state);
 
-                    println!(
-                        "[FastPath] {called_from:?} is waiting for \
-                         notification for key: {key:?}"
-                    );
                     notify.wait();
-                    println!(
-                        "[FastPath] {called_from:?} received notification for \
-                         key: {key:?}"
-                    );
 
                     // try again and should see the `State::Completion`
                     return Ok(FastPathDecision::TryAgain);
@@ -631,10 +617,6 @@ impl Engine {
         // if `is_in_scc` is `true`, it means that the query is part of a
         // strongly connected component (SCC) and the value should be an error,
         // otherwise, it should be a valid value.
-        println!(
-            "[Query] {key:?} done computed with value {value:?} and is_in_scc \
-             {is_in_scc}"
-        );
 
         assert_eq!(
             is_in_scc,
@@ -740,11 +722,6 @@ impl Engine {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
-                    println!(
-                        "[ReVerify] {key:?} is reverifying {:?}",
-                        &re_verify.derived_metadata.dependencies
-                    );
-
                     re_verify
                         .derived_metadata
                         .dependencies
@@ -949,11 +926,6 @@ impl Engine {
         current_version: u64,
         return_value: bool,
     ) -> Result<Option<Arc<K::Value>>, CyclicError> {
-        println!(
-            "[Query] {called_from:?} -> {key:?} (current version: \
-             {current_version})"
-        );
-
         // insert to the dependencies list if required
         if let Some(called_from) = called_from {
             let state = self
@@ -1002,7 +974,6 @@ impl Engine {
             );
 
             // notify the waiting tasks that the query has been completed
-            println!("[Query] notified for {key:?}");
             notify.notify();
 
             break value;
