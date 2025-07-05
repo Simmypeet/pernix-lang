@@ -5,18 +5,16 @@ use std::{
     borrow::Borrow,
     fmt::Debug,
     hash::Hash,
-    ops::Deref,
     sync::{
         atomic::{AtomicBool, AtomicU64},
         Arc,
     },
 };
 
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
-use parking_lot::{Condvar, Mutex, RwLock};
+use parking_lot::{Condvar, Mutex};
 use pernixc_arena::ID;
-use pernixc_hash::HashSet;
 use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::Global;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -52,6 +50,7 @@ impl Notification {
 #[derive(Debug)]
 struct Running {
     notify: Notification,
+    dependencies: DashSet<DynamicKey>,
     is_in_scc: AtomicBool,
 }
 
@@ -64,10 +63,10 @@ pub(crate) struct DerivedVersionInfo {
     fingerprint: Option<u128>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct DerivedMetadata {
     version_info: DerivedVersionInfo,
-    dependencies: HashSet<DynamicKey>,
+    dependencies: DashSet<DynamicKey>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,15 +119,17 @@ enum State {
 /// [`tokio::spawn`].
 #[derive(Debug, Clone)]
 pub struct TrackedEngine<'e> {
+    // CONSIDER: Should we add another cache layer within the `TrackedEngine`
+    // avoiding to call the `query_internal` method multiple times for the same
+    // key?
     engine: &'e Engine,
-    dependencies: Option<&'e RwLock<HashSet<DynamicKey>>>,
-    call_stack: Option<Vec<DynamicKey>>,
+    called_from: Option<&'e dyn Dynamic>,
 }
 
 impl Engine {
     /// Creates a new [`TrackedEngine`] allowing queries to the database.
     pub const fn tracked(&self) -> TrackedEngine {
-        TrackedEngine { engine: self, dependencies: None, call_stack: None }
+        TrackedEngine { engine: self, called_from: None }
     }
 }
 
@@ -143,13 +144,6 @@ impl TrackedEngine<'_> {
         &mut self,
         key: &K,
     ) -> Result<Arc<K::Value>, CyclicError> {
-        let mut new_call_stack =
-            if self.call_stack.is_none() { Some(Vec::new()) } else { None };
-
-        let call_stack = new_call_stack
-            .as_mut()
-            .unwrap_or_else(|| self.call_stack.as_mut().unwrap());
-
         let current_version = self
             .engine
             .database
@@ -157,13 +151,7 @@ impl TrackedEngine<'_> {
             .load(std::sync::atomic::Ordering::Relaxed);
 
         self.engine
-            .query_internal(
-                key,
-                self.dependencies,
-                call_stack,
-                current_version,
-                true,
-            )
+            .query_internal(key, self.called_from, current_version, true)
             .map(|x| x.unwrap())
     }
 }
@@ -211,21 +199,64 @@ pub(super) fn re_verify_query<'a, K: Key + 'static>(
     engine: &'a Engine,
     key: &'a dyn Any,
     current_version: u64,
-    call_stack: &mut Vec<DynamicKey>,
+    called_from: &'a dyn Dynamic,
 ) -> Result<(), CyclicError> {
     let key = key.downcast_ref::<K>().expect("Key type mismatch");
 
-    engine.query_internal(key, None, call_stack, current_version, false)?;
+    engine.query_internal(key, Some(called_from), current_version, false)?;
 
     Ok(())
 }
 
 impl Engine {
+    fn check_cyclic(
+        &self,
+        running_state: &Running,
+        key: &dyn Dynamic,
+        target: &dyn Dynamic,
+    ) -> bool {
+        if running_state.dependencies.contains(target) {
+            running_state
+                .is_in_scc
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+
+            println!("b [Cyclic] {key:?} is in SCC");
+
+            return true;
+        }
+
+        let mut found = false;
+
+        for dep in running_state.dependencies.iter() {
+            let Some(state) =
+                self.database.query_states_by_key.get(&*dep.key().0)
+            else {
+                continue;
+            };
+
+            let Some(running) = state.as_running() else {
+                continue;
+            };
+
+            found |= self.check_cyclic(running, &*dep.key().0, target);
+        }
+
+        if found {
+            println!("c [Cyclic] {key:?} is in SCC");
+
+            running_state
+                .is_in_scc
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        found
+    }
+
     fn fast_path<K: Key>(
         &self,
         key: &K,
+        called_from: Option<&dyn Dynamic>,
         return_value: bool,
-        call_stack: &[DynamicKey],
         current_version: u64,
     ) -> Result<FastPathDecision<K::Value>, CyclicError> {
         if let Some(state) =
@@ -233,39 +264,36 @@ impl Engine {
         {
             match state.value() {
                 State::Running(running) => {
-                    // check if the query is cyclic, preventing deadlocks
-                    let index =
-                        call_stack.iter().position(|x| x.0.deref().eq(key));
+                    let notify = running.notify.clone();
 
-                    // found cyclic dependency, mark all the SCCs
-                    if let Some(index) = index {
-                        drop(state);
+                    if let Some(called_from) = called_from {
+                        println!("a [Cyclic] {called_from:?} is  in SCC");
 
-                        for key in &call_stack[index..] {
-                            self.database
+                        let is_in_scc =
+                            self.check_cyclic(running, key, called_from);
+
+                        if is_in_scc {
+                            let called_from_state = self
+                                .database
                                 .query_states_by_key
-                                .get(&*key.0 as &dyn Dynamic)
-                                .expect("should be present")
+                                .get(called_from as &dyn Dynamic)
+                                .unwrap();
+
+                            // mark the `called_from` state as being in SCC
+                            called_from_state
                                 .as_running()
-                                .expect(
-                                    "should be running since it appeared in \
-                                     the call stack",
-                                )
+                                .unwrap()
                                 .is_in_scc
                                 .store(
                                     true,
                                     std::sync::atomic::Ordering::Relaxed,
                                 );
-                        }
 
-                        return Err(CyclicError);
+                            return Err(CyclicError);
+                        }
                     }
 
-                    let notify = running.notify.clone();
-
                     drop(state);
-
-                    let called_from = call_stack.last();
 
                     println!(
                         "[FastPath] {called_from:?} is waiting for \
@@ -442,6 +470,7 @@ impl Engine {
 
                         *occupied_entry.get_mut() = State::Running(Running {
                             notify: notify.clone(),
+                            dependencies: DashSet::default(),
                             is_in_scc: AtomicBool::new(false),
                         });
 
@@ -487,6 +516,7 @@ impl Engine {
                             let notify = Notification::new();
                             vacant_entry.insert(State::Running(Running {
                                 notify: notify.clone(),
+                                dependencies: DashSet::default(),
                                 is_in_scc: AtomicBool::new(false),
                             }));
 
@@ -520,6 +550,7 @@ impl Engine {
                     let notify = Notification::new();
                     vacant_entry.insert(State::Running(Running {
                         notify: notify.clone(),
+                        dependencies: DashSet::default(),
                         is_in_scc: AtomicBool::new(false),
                     }));
 
@@ -540,6 +571,7 @@ impl Engine {
                 let notify = Notification::new();
                 vacant_entry.insert(State::Running(Running {
                     notify: notify.clone(),
+                    dependencies: DashSet::default(),
                     is_in_scc: AtomicBool::new(false),
                 }));
 
@@ -576,41 +608,18 @@ impl Engine {
     fn compute<K: Key>(
         &self,
         key: &K,
-        track_dependencies: bool,
-        call_stack: &mut Vec<DynamicKey>,
         return_value: bool,
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
-            Option<HashSet<DynamicKey>>,
+            DashSet<DynamicKey>,
         ) -> DerivedMetadata,
     ) -> Option<Arc<K::Value>> {
-        let original_call_stack_len = call_stack.len();
-
-        // add the key to the call stack
-        call_stack.push(DynamicKey(key.smallbox_clone()));
-
-        let tracked_dependencies =
-            track_dependencies.then(|| RwLock::new(HashSet::default()));
-
         let mut tracked_engine = TrackedEngine {
             engine: self,
-            dependencies: tracked_dependencies.as_ref(),
-            call_stack: Some(std::mem::take(call_stack)),
+            called_from: Some(key as &dyn Dynamic),
         };
 
         let value = Self::compute_query(&mut tracked_engine, key);
-
-        {
-            // remove the key from the call stack.
-            *call_stack = tracked_engine.call_stack.take().unwrap();
-            call_stack.pop();
-
-            assert_eq!(
-                call_stack.len(),
-                original_call_stack_len,
-                "Call stack length mismatch after query computation",
-            );
-        }
 
         let is_in_scc = self
             .database
@@ -625,6 +634,11 @@ impl Engine {
         // if `is_in_scc` is `true`, it means that the query is part of a
         // strongly connected component (SCC) and the value should be an error,
         // otherwise, it should be a valid value.
+        println!(
+            "[Query] {key:?} done computed with value {value:?} and is_in_scc \
+             {is_in_scc}"
+        );
+
         assert_eq!(
             is_in_scc,
             value.is_err(),
@@ -634,7 +648,19 @@ impl Engine {
         );
 
         self.handle_computed_value(key, value, return_value, |result| {
-            set_completed(result, tracked_dependencies.map(RwLock::into_inner))
+            set_completed(
+                result,
+                std::mem::take(
+                    &mut self
+                        .database
+                        .query_states_by_key
+                        .get_mut(key as &dyn Dynamic)
+                        .unwrap()
+                        .as_running_mut()
+                        .unwrap()
+                        .dependencies,
+                ),
+            )
         })
     }
 
@@ -686,7 +712,6 @@ impl Engine {
         &self,
         key: &K,
         continuation: Continuation,
-        call_stack: &mut Vec<DynamicKey>,
         return_value: bool,
         current_version: u64,
     ) -> Option<Arc<K::Value>> {
@@ -695,8 +720,6 @@ impl Engine {
                 // fresh query, compute the value from scratch
                 self.compute(
                     key,
-                    true,
-                    call_stack,
                     return_value,
                     |result, tracked_dependencies| DerivedMetadata {
                         version_info: DerivedVersionInfo {
@@ -706,7 +729,7 @@ impl Engine {
                                 .ok()
                                 .map(fingerprint::fingerprint),
                         },
-                        dependencies: tracked_dependencies.unwrap(),
+                        dependencies: tracked_dependencies,
                     },
                 )
             }
@@ -720,7 +743,10 @@ impl Engine {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
-                    println!("[ReVerify] {key:?} is reverifying {:?}", &re_verify.derived_metadata.dependencies);
+                    println!(
+                        "[ReVerify] {key:?} is reverifying {:?}",
+                        &re_verify.derived_metadata.dependencies
+                    );
 
                     re_verify
                         .derived_metadata
@@ -732,7 +758,7 @@ impl Engine {
                             if self
                                 .database
                                 .query_states_by_key
-                                .get(x)
+                                .get(x.key())
                                 .is_some_and(|x| {
                                     x.as_completion()
                                         .is_some_and(|x| x.metadata.is_input())
@@ -740,8 +766,6 @@ impl Engine {
                             {
                                 return;
                             }
-
-                            let mut call_stack_clone = call_stack.clone();
 
                             let dep_ref = &*x.0;
                             let type_id = dep_ref.any().type_id();
@@ -763,7 +787,7 @@ impl Engine {
                                 self,
                                 dep_ref.any(),
                                 current_version,
-                                &mut call_stack_clone,
+                                key as &dyn Dynamic,
                             );
                         });
 
@@ -772,7 +796,7 @@ impl Engine {
                     re_verify.derived_metadata.dependencies.iter().any(|x| {
                         self.database
                             .query_states_by_key
-                            .get(x)
+                            .get(x.key())
                             .expect("should be present")
                             .as_completion()
                             .expect(
@@ -788,43 +812,35 @@ impl Engine {
                 };
 
                 if recompute {
-                    self.compute(
-                        key,
-                        true,
-                        call_stack,
-                        true,
-                        |value, tracked_dependencies| {
-                            let new_fingerprint =
-                                value.ok().map(fingerprint::fingerprint);
+                    self.compute(key, true, |value, tracked_dependencies| {
+                        let new_fingerprint =
+                            value.ok().map(fingerprint::fingerprint);
 
-                            // if the new fingerprint is different from
-                            // the old one, update the value version
-                            if re_verify
-                                .derived_metadata
-                                .version_info
-                                .fingerprint
-                                .is_none_or(|x| Some(x) != new_fingerprint)
-                            {
-                                re_verify
-                                    .derived_metadata
-                                    .version_info
-                                    .fingerprint = new_fingerprint;
-                                re_verify
-                                    .derived_metadata
-                                    .version_info
-                                    .updated_at = current_version;
-                            }
-
+                        // if the new fingerprint is different from
+                        // the old one, update the value version
+                        if re_verify
+                            .derived_metadata
+                            .version_info
+                            .fingerprint
+                            .is_none_or(|x| Some(x) != new_fingerprint)
+                        {
                             re_verify
                                 .derived_metadata
                                 .version_info
-                                .verified_at = current_version;
-                            re_verify.derived_metadata.dependencies =
-                                tracked_dependencies.unwrap();
+                                .fingerprint = new_fingerprint;
+                            re_verify
+                                .derived_metadata
+                                .version_info
+                                .updated_at = current_version;
+                        }
 
-                            re_verify.derived_metadata
-                        },
-                    )
+                        re_verify.derived_metadata.version_info.verified_at =
+                            current_version;
+                        re_verify.derived_metadata.dependencies =
+                            tracked_dependencies;
+
+                        re_verify.derived_metadata
+                    })
                 } else if return_value {
                     let value = match re_verify.value_store {
                         Some(value) => {
@@ -882,27 +898,21 @@ impl Engine {
                                 re_verify.derived_metadata
                             },
                         ),
-                        None => self.compute(
-                            key,
-                            false,
-                            call_stack,
-                            true,
-                            |value, _| {
-                                debug_assert_eq!(
-                                    value.ok().map(|x| {
-                                        fingerprint::fingerprint(x)
-                                    }),
-                                    re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .fingerprint,
-                                    "The fingerprint of the re-executed value \
-                                     should match the old one"
-                                );
+                        None => self.compute(key, true, |value, _| {
+                            debug_assert_eq!(
+                                value
+                                    .ok()
+                                    .map(|x| { fingerprint::fingerprint(x) }),
+                                re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .fingerprint,
+                                "The fingerprint of the re-executed value \
+                                 should match the old one"
+                            );
 
-                                re_verify.derived_metadata
-                            },
-                        ),
+                            re_verify.derived_metadata
+                        }),
                     }
                 } else {
                     *self
@@ -920,12 +930,8 @@ impl Engine {
                     None
                 }
             }
-            Continuation::ReExecute(re_execute) => self.compute(
-                key,
-                false,
-                call_stack,
-                return_value,
-                |result, _| {
+            Continuation::ReExecute(re_execute) => {
+                self.compute(key, return_value, |result, _| {
                     debug_assert_eq!(
                         result.ok().map(|x| { fingerprint::fingerprint(x) }),
                         re_execute.derived_metadata.version_info.fingerprint,
@@ -934,46 +940,58 @@ impl Engine {
                     );
 
                     re_execute.derived_metadata
-                },
-            ),
+                })
+            }
         }
     }
 
     pub(super) fn query_internal<K: Key>(
         &self,
         key: &K,
-        dependencies: Option<&RwLock<HashSet<DynamicKey>>>,
-        call_stack: &mut Vec<DynamicKey>,
+        called_from: Option<&dyn Dynamic>,
         current_version: u64,
         return_value: bool,
     ) -> Result<Option<Arc<K::Value>>, CyclicError> {
-        // insert to the dependencies list if required
-        if let Some(dependencies) = dependencies {
-            let mut write = dependencies.write();
+        println!(
+            "[Query] {called_from:?} -> {key:?} (current version: \
+             {current_version})"
+        );
 
-            if !write.contains(key as &dyn Dynamic) {
-                write.insert(DynamicKey(key.smallbox_clone()));
+        // insert to the dependencies list if required
+        if let Some(called_from) = called_from {
+            let state = self
+                .database
+                .query_states_by_key
+                .get(called_from as &dyn Dynamic)
+                .expect("should be present");
+
+            let running = state.as_running().expect(
+                "should be running since it appeared in the call stack",
+            );
+
+            if !running.dependencies.contains(called_from) {
+                running.dependencies.insert(DynamicKey(key.smallbox_clone()));
             }
         }
 
-        loop {
+        let value = loop {
             // Fast path: mostly used read lock, lower lock contention
             match self.fast_path(
                 key,
+                called_from,
                 return_value,
-                call_stack,
                 current_version,
             )? {
                 FastPathDecision::TryAgain => continue,
                 FastPathDecision::ToSlowPath => {}
-                FastPathDecision::Return(value) => return Ok(value),
+                FastPathDecision::Return(value) => break value,
             }
 
             // Slow Path: use `entry` obtaining a write lock for state mutation
             let (continuation, notify) =
                 match self.slow_path(key, current_version, return_value) {
                     SlowPathDecision::TryAgain => continue,
-                    SlowPathDecision::Return(value) => return Ok(value),
+                    SlowPathDecision::Return(value) => break value,
                     SlowPathDecision::Continuation(continuation, notify) => {
                         (continuation, notify)
                     }
@@ -982,7 +1000,6 @@ impl Engine {
             let value = self.continuation(
                 key,
                 continuation,
-                call_stack,
                 return_value,
                 current_version,
             );
@@ -991,26 +1008,26 @@ impl Engine {
             println!("[Query] notified for {key:?}");
             notify.notify();
 
-            if let Some(called_from) = call_stack.last() {
-                let is_in_scc = self
-                    .database
-                    .query_states_by_key
-                    .get(&*called_from.0 as &dyn Dynamic)
-                    .expect("should be present with running state")
-                    .as_running()
-                    .expect(
-                        "should be running since it appeared in the call stack",
-                    )
-                    .is_in_scc
-                    .load(std::sync::atomic::Ordering::Relaxed);
+            break value;
+        };
 
-                if is_in_scc {
-                    return Err(CyclicError);
-                }
+        if let Some(called_from) = called_from {
+            let is_in_scc = self
+                .database
+                .query_states_by_key
+                .get(called_from)
+                .expect("should be present with running state")
+                .as_running()
+                .expect("should be running since it appeared in the call stack")
+                .is_in_scc
+                .load(std::sync::atomic::Ordering::Relaxed);
+
+            if is_in_scc {
+                return Err(CyclicError);
             }
-
-            return Ok(value);
         }
+
+        Ok(value)
     }
 
     /// Returns the current version of the query database.
@@ -1031,7 +1048,7 @@ type KeySmallBox<T> = smallbox::SmallBox<T, Global<ID<()>>>;
 /// A trait allowing store multiple types of as a key in a hashmap. This is
 /// automatically implemented for all types that implement the [`Key`] trait.
 #[doc(hidden)]
-trait Dynamic: 'static + Send + Sync + Debug {
+pub(super) trait Dynamic: 'static + Send + Sync + Debug {
     #[doc(hidden)]
     fn any(&self) -> &dyn std::any::Any;
     #[doc(hidden)]

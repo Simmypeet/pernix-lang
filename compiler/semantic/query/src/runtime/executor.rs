@@ -9,7 +9,7 @@ use dashmap::mapref::one::Ref;
 use pernixc_hash::DashMap;
 
 use crate::{
-    database::{self, TrackedEngine},
+    database::{self, Dynamic, TrackedEngine},
     Engine, Key,
 };
 
@@ -74,11 +74,11 @@ type InvokeExecutorFn =
     )
         -> Result<Arc<dyn database::Value>, CyclicError>;
 
-type ReVerifyQueryFn = for<'db, 'call> fn(
-    engine: &'db Engine,
-    key: &'db dyn Any,
+type ReVerifyQueryFn = for<'x> fn(
+    engine: &'x Engine,
+    key: &'x dyn Any,
     current_version: u64,
-    call_stack: &'call mut Vec<database::DynamicKey>,
+    called_from: &'x dyn Dynamic,
 ) -> Result<(), CyclicError>;
 
 /// Contains the [`Executor`] objects for each key type. This struct allows
