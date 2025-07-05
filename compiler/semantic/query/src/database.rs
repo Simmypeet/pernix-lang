@@ -124,12 +124,21 @@ pub struct TrackedEngine<'e> {
     // key?
     engine: &'e Engine,
     called_from: Option<&'e dyn Dynamic>,
+
+    #[cfg(feature = "query_cache")]
+    cache: Option<&'e DashMap<DynamicKey, Arc<dyn Value>>>,
 }
 
 impl Engine {
     /// Creates a new [`TrackedEngine`] allowing queries to the database.
     pub const fn tracked(&self) -> TrackedEngine {
-        TrackedEngine { engine: self, called_from: None }
+        TrackedEngine {
+            engine: self,
+            called_from: None,
+
+            #[cfg(feature = "query_cache")]
+            cache: None,
+        }
     }
 }
 
@@ -141,15 +150,38 @@ impl TrackedEngine<'_> {
     /// Returns an error if the query is part of a cyclic dependency, which
     /// prevents deadlocks in the query system.
     pub fn query<K: Key>(&self, key: &K) -> Result<Arc<K::Value>, CyclicError> {
+        #[cfg(feature = "query_cache")]
+        if let Some(cache) = self.cache {
+            if let Some(value) = cache.get(key as &dyn Dynamic) {
+                let arc_any =
+                    value.clone() as Arc<dyn Any + Send + Sync + 'static>;
+
+                return Ok(arc_any
+                    .downcast()
+                    .expect("Failed to downcast value"));
+            }
+        }
+
         let current_version = self
             .engine
             .database
             .version
             .load(std::sync::atomic::Ordering::Relaxed);
 
-        self.engine
+        let value = self
+            .engine
             .query_internal(key, self.called_from, current_version, true)
-            .map(|x| x.unwrap())
+            .map(|x| x.unwrap())?;
+
+        #[cfg(feature = "query_cache")]
+        if let Some(cache) = self.cache {
+            cache.insert(
+                DynamicKey(smallbox::smallbox!(key.clone())),
+                value.clone(),
+            );
+        }
+
+        Ok(value)
     }
 }
 
@@ -209,7 +241,6 @@ impl Engine {
     fn check_cyclic(
         &self,
         running_state: &Running,
-        key: &dyn Dynamic,
         target: &dyn Dynamic,
     ) -> bool {
         if running_state.dependencies.contains(target) {
@@ -233,7 +264,7 @@ impl Engine {
                 continue;
             };
 
-            found |= self.check_cyclic(running, &*dep.key().0, target);
+            found |= self.check_cyclic(running, target);
         }
 
         if found {
@@ -260,8 +291,7 @@ impl Engine {
                     let notify = running.notify.clone();
 
                     if let Some(called_from) = called_from {
-                        let is_in_scc =
-                            self.check_cyclic(running, key, called_from);
+                        let is_in_scc = self.check_cyclic(running, called_from);
 
                         if is_in_scc {
                             let called_from_state = self
@@ -597,9 +627,15 @@ impl Engine {
             DashSet<DynamicKey>,
         ) -> DerivedMetadata,
     ) -> Option<Arc<K::Value>> {
+        #[cfg(feature = "query_cache")]
+        let cache = DashMap::default();
+
         let mut tracked_engine = TrackedEngine {
             engine: self,
             called_from: Some(key as &dyn Dynamic),
+
+            #[cfg(feature = "query_cache")]
+            cache: Some(&cache),
         };
 
         let value = Self::compute_query(&mut tracked_engine, key);
@@ -626,7 +662,7 @@ impl Engine {
             is_in_scc
         );
 
-        self.handle_computed_value(key, value, return_value, |result| {
+        self.handle_computed_value(key, value, return_value, true, |result| {
             set_completed(
                 result,
                 std::mem::take(
@@ -649,6 +685,7 @@ impl Engine {
         key: &K,
         boxed_value: Result<Arc<dyn Value>, CyclicError>,
         return_value: bool,
+        save_value: bool,
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
         ) -> DerivedMetadata,
@@ -666,6 +703,16 @@ impl Engine {
                 })
                 .ok_or(CyclicError),
         );
+
+        if let (Ok(value), true) = (&boxed_value, save_value) {
+            let value = value.as_ref();
+            let any = value as &dyn Any;
+
+            let _ = self.save_value::<K>(
+                metadata.version_info.fingerprint.unwrap(),
+                any.downcast_ref::<K::Value>().unwrap(),
+            );
+        }
 
         let final_value =
             boxed_value.as_ref().cloned().unwrap_or_else(|_| K::scc_value());
@@ -856,6 +903,7 @@ impl Engine {
                             key,
                             value,
                             return_value,
+                            false,
                             |result| {
                                 debug_assert_eq!(
                                     result.ok().map(|x| {
