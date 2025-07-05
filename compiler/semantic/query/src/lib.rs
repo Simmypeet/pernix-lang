@@ -14,12 +14,8 @@ pub mod __internal {
     pub use pernixc_serialize::{Deserialize, Serialize};
     pub use pernixc_stable_hash::StableHash;
 
-    pub use crate::{
-        database::query_tracker::Tracked as TrackedEngine, key::Key,
-    };
+    pub use crate::key::Key;
 }
-
-pub use crate::database::query_tracker::Tracked as TrackedEngine;
 
 // so that this crate can use derive macro
 extern crate self as pernixc_query;
@@ -45,20 +41,3 @@ pub struct Engine {
     /// serialization components.
     pub runtime: runtime::Runtime,
 }
-
-impl Drop for Engine {
-    fn drop(&mut self) {
-        let database = std::mem::take(&mut self.database);
-        let runtime = std::mem::take(&mut self.runtime);
-
-        rayon::scope(|scope| {
-            scope.spawn(|_| drop(database));
-            scope.spawn(|_| drop(runtime));
-        });
-    }
-}
-
-static_assertions::assert_impl_all!(Engine: Send, Sync);
-
-#[cfg(test)]
-mod test;

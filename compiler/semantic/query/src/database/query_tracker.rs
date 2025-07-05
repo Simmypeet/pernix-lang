@@ -14,7 +14,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 
 use crate::{
     fingerprint,
-    key::{Dynamic, DynamicBox, Key},
+    key::{Dynamic, DynamicKey, Key},
     runtime::{
         executor::Executor,
         persistence::serde::{DynamicDeserialize, DynamicSerialize},
@@ -32,7 +32,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Tracked<'a> {
     engine: &'a Engine,
-    called_from: Option<&'a DynamicBox>,
+    called_from: Option<&'a DynamicKey>,
 }
 
 impl Engine {
@@ -105,19 +105,19 @@ pub struct QueryTracker {
     // the condition variables used to notify the threads that are waiting for
     // the completion of a particular record
     #[serde(skip)]
-    condvars_by_record: HashMap<DynamicBox, Arc<Condvar>>,
+    condvars_by_record: HashMap<DynamicKey, Arc<Condvar>>,
 
     #[serde(skip)]
-    current_dependencies_by_dependant: HashMap<DynamicBox, DynamicBox>,
+    current_dependencies_by_dependant: HashMap<DynamicKey, DynamicKey>,
 
     /// Key representing the query and the value is a set of keys that
     /// the query depends on.
     #[get = "pub"]
-    dependency_graph: HashMap<DynamicBox, HashSet<DynamicBox>>,
+    dependency_graph: HashMap<DynamicKey, HashSet<DynamicKey>>,
 
     /// Representing the version information of when the query was computed
     #[get = "pub"]
-    version_info_by_keys: HashMap<DynamicBox, VersionInfo>,
+    version_info_by_keys: HashMap<DynamicKey, VersionInfo>,
 
     /// List of cyclic dependencies that were detected during the query
     /// execution.
@@ -159,7 +159,7 @@ impl QueryTracker {
 )]
 pub struct CyclicDependency {
     /// The stack of records that caused the cyclic dependency.
-    pub records_stack: Vec<DynamicBox>,
+    pub records_stack: Vec<DynamicKey>,
 }
 
 impl std::fmt::Debug for QueryTracker {
@@ -268,7 +268,7 @@ impl Engine {
 
         let (save_version_info, save_value) = match query_tracker
             .version_info_by_keys
-            .entry(DynamicBox(key.smallbox_clone()))
+            .entry(DynamicKey(key.smallbox_clone()))
         {
             Entry::Occupied(mut occupied_entry) => {
                 let version = occupied_entry.get_mut();
@@ -349,7 +349,7 @@ impl Engine {
     fn query<T: Dynamic + Key>(
         &self,
         key: &T,
-        called_from: Option<&DynamicBox>,
+        called_from: Option<&DynamicKey>,
     ) -> Result<T::Value, crate::runtime::executor::CyclicError> {
         let (result, query_tracker) = self.query_internal(
             key,
@@ -361,7 +361,7 @@ impl Engine {
 
         self.database.map.get(key).map_or_else(
             || {
-                let key_smallbox = DynamicBox(key.smallbox_clone());
+                let key_smallbox = DynamicKey(key.smallbox_clone());
                 let version_info = query_tracker
                     .version_info_by_keys
                     .get(&key_smallbox)
@@ -416,7 +416,7 @@ impl Engine {
 
     fn check_cyclic(
         computed_successfully: bool,
-        called_from: Option<&DynamicBox>,
+        called_from: Option<&DynamicKey>,
         query_tracker: &mut MutexGuard<QueryTracker>,
     ) -> Result<(), crate::runtime::executor::CyclicError> {
         let (Some(called_from), true) = (called_from, !computed_successfully)
@@ -445,13 +445,13 @@ impl Engine {
     pub(crate) fn query_internal<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
-        called_from: Option<&DynamicBox>,
+        called_from: Option<&DynamicKey>,
         mut query_tracker: MutexGuard<'a, QueryTracker>,
     ) -> (
         Result<(), crate::runtime::executor::CyclicError>,
         MutexGuard<'a, QueryTracker>,
     ) {
-        let key_smallbox = DynamicBox(key.smallbox_clone());
+        let key_smallbox = DynamicKey(key.smallbox_clone());
 
         // get the version info for the key.
         let Some(version_info) = query_tracker
@@ -540,7 +540,7 @@ impl Engine {
                     .get(&key_smallbox)
                     .map(|x| {
                         x.iter()
-                            .map(|x| DynamicBox(x.smallbox_clone()))
+                            .map(|x| DynamicKey(x.smallbox_clone()))
                             .collect::<Vec<_>>()
                     })
                     .or_else(|| {
@@ -555,7 +555,7 @@ impl Engine {
 
                         let dependencies_vec = loaded.as_ref().map(|x| {
                             x.iter()
-                                .map(|x| DynamicBox(x.smallbox_clone()))
+                                .map(|x| DynamicKey(x.smallbox_clone()))
                                 .collect::<Vec<_>>()
                         });
 
@@ -654,8 +654,8 @@ impl Engine {
     fn fresh_query<'a, T: Dynamic + Key>(
         &'a self,
         key: &T,
-        key_smallbox: &DynamicBox,
-        called_from: Option<&DynamicBox>,
+        key_smallbox: &DynamicKey,
+        called_from: Option<&DynamicKey>,
         mut query_tracker: MutexGuard<'a, QueryTracker>,
     ) -> (bool, MutexGuard<'a, QueryTracker>) {
         let executor = self.runtime.executor.get::<T>().unwrap_or_else(|| {
@@ -673,10 +673,10 @@ impl Engine {
                 .dependency_graph
                 .get_mut(called_from)
                 .unwrap()
-                .insert(DynamicBox(key.smallbox_clone()));
+                .insert(DynamicKey(key.smallbox_clone()));
 
             // check if `target_record` can go to `called_from`
-            let mut stack = vec![DynamicBox(key.smallbox_clone())];
+            let mut stack = vec![DynamicKey(key.smallbox_clone())];
 
             loop {
                 if stack.last().unwrap() == called_from {
@@ -718,7 +718,7 @@ impl Engine {
                     self.database.map.insert(key.clone(), T::scc_value());
 
                     query_tracker_ref.version_info_by_keys.insert(
-                        DynamicBox(key.smallbox_clone()),
+                        DynamicKey(key.smallbox_clone()),
                         VersionInfo {
                             updated_at_version: query_tracker_ref
                                 .snapshot
@@ -750,7 +750,7 @@ impl Engine {
 
             assert!(query_tracker_ref
                 .current_dependencies_by_dependant
-                .insert(called_from.clone(), DynamicBox(key.smallbox_clone()))
+                .insert(called_from.clone(), DynamicKey(key.smallbox_clone()))
                 .is_none());
         }
 
@@ -806,7 +806,7 @@ impl Engine {
     fn compute<'a, K: Key + Dynamic>(
         &'a self,
         key: &K,
-        key_smallbox: &DynamicBox,
+        key_smallbox: &DynamicKey,
         mut query_tracker: MutexGuard<'a, QueryTracker>,
         executor: &dyn Executor<K>,
     ) -> (MutexGuard<'a, QueryTracker>, bool) {
@@ -839,7 +839,7 @@ impl Engine {
 
                 let (save_database, save_version_info) = match query_tracker_ref
                     .version_info_by_keys
-                    .entry(DynamicBox(key.smallbox_clone()))
+                    .entry(DynamicKey(key.smallbox_clone()))
                 {
                     Entry::Occupied(mut occupied_entry) => {
                         let version_info = occupied_entry.get_mut();
@@ -921,7 +921,7 @@ impl Engine {
             }
             Err(_cyclic_error) => {
                 query_tracker_ref.version_info_by_keys.insert(
-                    DynamicBox(key.smallbox_clone()),
+                    DynamicKey(key.smallbox_clone()),
                     VersionInfo {
                         updated_at_version: query_tracker_ref.snapshot.version,
                         verfied_at_version: query_tracker_ref.snapshot.version,
@@ -934,7 +934,7 @@ impl Engine {
 
                 match query_tracker_ref
                     .version_info_by_keys
-                    .entry(DynamicBox(key.smallbox_clone()))
+                    .entry(DynamicKey(key.smallbox_clone()))
                 {
                     Entry::Occupied(occupied_entry) => {
                         let version_info = occupied_entry.into_mut();

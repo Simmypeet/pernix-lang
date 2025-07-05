@@ -123,7 +123,7 @@ use smallbox::smallbox;
 
 use crate::{
     database::{map::Map, query_tracker::VersionInfo},
-    key::DynamicBox,
+    key::DynamicKey,
     Key,
 };
 
@@ -209,7 +209,7 @@ pub trait DynamicRegistry<S: Serializer<Self>, D: Deserializer<Self>>:
 #[allow(clippy::type_complexity)]
 pub struct SerializationHelper<S: Serializer<E>, E> {
     map_serializer: fn(&Map, &mut S, &E) -> Result<(), S::Error>,
-    dynamic_box_serializer: fn(&DynamicBox, &mut S, &E) -> Result<(), S::Error>,
+    dynamic_box_serializer: fn(&DynamicKey, &mut S, &E) -> Result<(), S::Error>,
     value_serializer: fn(&dyn Any, &mut S, &E) -> Result<(), S::Error>,
     cas_map_serializer: fn(
         &Map,
@@ -219,12 +219,12 @@ pub struct SerializationHelper<S: Serializer<E>, E> {
     ) -> Result<bool, S::Error>,
 
     dependency_graph_serializer: fn(
-        &[(&DynamicBox, &HashSet<DynamicBox>)],
+        &[(&DynamicKey, &HashSet<DynamicKey>)],
         &mut S,
         &E,
     ) -> Result<(), S::Error>,
     version_info_serializer:
-        fn(&[(&DynamicBox, &VersionInfo)], &mut S, &E) -> Result<(), S::Error>,
+        fn(&[(&DynamicKey, &VersionInfo)], &mut S, &E) -> Result<(), S::Error>,
 
     std_type_id: std::any::TypeId,
 }
@@ -262,7 +262,7 @@ pub struct DeserializationHelper<D: Deserializer<E>, E> {
         <D::StructAccess<'m> as StructAccess<E>>::FieldAccess<'v>,
         &E,
     )
-        -> Result<DynamicBox, D::Error>,
+        -> Result<DynamicKey, D::Error>,
     value_deserializer: fn(&mut dyn Any, &mut D, &E) -> Result<(), D::Error>,
 
     std_type_id: std::any::TypeId,
@@ -356,7 +356,7 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for Map {
     }
 }
 
-impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for DynamicBox {
+impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for DynamicKey {
     fn serialize(
         &self,
         serializer: &mut S,
@@ -458,12 +458,12 @@ fn dynamic_box_deserializer<
 >(
     value_access: <D::StructAccess<'_> as StructAccess<E>>::FieldAccess<'_>,
     extension: &E,
-) -> Result<DynamicBox, D::Error> {
+) -> Result<DynamicKey, D::Error> {
     use pernixc_serialize::de::FieldAccess;
 
     let key: K = value_access.deserialize(extension)?;
 
-    Ok(DynamicBox(smallbox!(key)))
+    Ok(DynamicKey(smallbox!(key)))
 }
 
 impl<
@@ -509,7 +509,7 @@ impl<
         };
 
         let dyn_box_serializer =
-            |dyn_box: &DynamicBox, serializer: &mut S, extension: &E| {
+            |dyn_box: &DynamicKey, serializer: &mut S, extension: &E| {
                 serializer.emit_struct(
                     "DynamicBox",
                     2,
@@ -580,7 +580,7 @@ impl<
             };
 
         let dependency_graph_serializer =
-            |entries: &[(&DynamicBox, &HashSet<DynamicBox>)],
+            |entries: &[(&DynamicKey, &HashSet<DynamicKey>)],
              serializer: &mut S,
              extension: &E| {
                 serializer.emit_map(entries.len(), extension, |mut map, _| {
@@ -596,7 +596,7 @@ impl<
             };
 
         let version_info_serializer =
-            |entries: &[(&DynamicBox, &VersionInfo)],
+            |entries: &[(&DynamicKey, &VersionInfo)],
              serializer: &mut S,
              extension: &E| {
                 serializer.emit_map(entries.len(), extension, |mut map, _| {
@@ -768,7 +768,7 @@ where
 }
 
 impl<D: Deserializer<E>, E: DynamicDeserialize<D>>
-    pernixc_serialize::de::Deserialize<D, E> for DynamicBox
+    pernixc_serialize::de::Deserialize<D, E> for DynamicKey
 where
     D::Error: pernixc_serialize::de::Error,
 {

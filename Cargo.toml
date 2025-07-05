@@ -23,11 +23,11 @@ members = [
 
     "compiler/semantic/query",
     "compiler/semantic/query_derive",
-    "compiler/semantic/bootstrap",
+    #"compiler/semantic/bootstrap",
 
-    "compiler/driver",
-    "compiler/main",
-    "compiler/e2e",
+    #"compiler/driver",
+    #"compiler/main",
+    #"compiler/e2e",
 
     # tidy-alphabetical-end
 ]

@@ -1,5 +1,40 @@
 //! Defines the protocol for persistence incremental compilation database.
 
+use pernixc_hash::HashSet;
+use pernixc_stable_hash::Value;
+
+use crate::{
+    database::{DynamicKey, ValueVersion},
+    Engine, Key,
+};
+
+impl Engine {
+    pub(crate) fn try_load_value<K: Key>(
+        &self,
+        value_fingerprint: u128,
+    ) -> Option<K::Value> {
+        // TODO: implement this
+        None
+    }
+
+    pub(crate) fn try_load_value_version<K: Key>(
+        &self,
+        key_fingerprint: u128,
+    ) -> Option<ValueVersion> {
+        // TODO: implement this
+        None
+    }
+
+    pub(crate) fn try_load_dependencies<K: Key>(
+        &self,
+        key_fingerprint: u128,
+    ) -> Option<HashSet<DynamicKey>> {
+        // TODO: implement this
+        None
+    }
+}
+/*
+
 use std::{
     self,
     any::Any,
@@ -25,7 +60,7 @@ use redb::{ReadableTable as _, Table, TableDefinition, WriteTransaction};
 use crate::{
     database::query_tracker::VersionInfo,
     fingerprint,
-    key::DynamicBox,
+    key::DynamicKey,
     runtime::persistence::serde::{DynamicDeserialize, DynamicSerialize},
     Key,
 };
@@ -211,14 +246,14 @@ pub struct Persistence {
         &dyn Any,
         &mut BinaryDeserializer<Reader>,
     )
-        -> Result<HashSet<DynamicBox>, std::io::Error>,
+        -> Result<HashSet<DynamicKey>, std::io::Error>,
     deserialize_version_info: fn(
         &dyn Any,
         &mut BinaryDeserializer<Reader>,
     ) -> Result<VersionInfo, std::io::Error>,
 
     serialize_dependency_graph: fn(
-        &HashSet<DynamicBox>,
+        &HashSet<DynamicKey>,
         &mut BinarySerializer<Writer>,
         &dyn Any,
     ) -> Result<(), std::io::Error>,
@@ -331,7 +366,7 @@ impl Persistence {
                     .downcast_ref::<E>()
                     .expect("serde_extension must match the expected type");
 
-                HashSet::<DynamicBox>::deserialize(
+                HashSet::<DynamicKey>::deserialize(
                     deserializer,
                     serde_extension,
                 )
@@ -521,7 +556,7 @@ impl Persistence {
     pub fn try_load_dependencies<K: Key>(
         &self,
         key_fingerprint: u128,
-    ) -> Result<Option<HashSet<DynamicBox>>, std::io::Error> {
+    ) -> Result<Option<HashSet<DynamicKey>>, std::io::Error> {
         self.load_from_table(
             K::STABLE_TYPE_ID,
             key_fingerprint,
@@ -615,7 +650,7 @@ impl Persistence {
         &self,
         stable_type_id: StableTypeID,
         key_fingerprint: u128,
-        dependencies: &HashSet<DynamicBox>,
+        dependencies: &HashSet<DynamicKey>,
     ) -> Result<(), std::io::Error> {
         self.save_to_table(
             stable_type_id,
@@ -745,7 +780,7 @@ fn serialize_dependency_graph<
         + Sync
         + 'static,
 >(
-    dependency_graph: &HashSet<DynamicBox>,
+    dependency_graph: &HashSet<DynamicKey>,
     serializer: &mut BinarySerializer<Writer>,
     serde_extension: &dyn Any,
 ) -> Result<(), std::io::Error> {
@@ -781,3 +816,5 @@ impl Drop for Persistence {
 
 #[cfg(test)]
 mod test;
+
+*/

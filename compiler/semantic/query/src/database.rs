@@ -1,108 +1,1073 @@
 //! Contains the definition of the [`Database`] struct.
 
-use std::io::{BufReader, BufWriter};
-
-use getset::Getters;
-use parking_lot::Mutex;
-use pernixc_serialize::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
-    Deserialize, Serialize,
+use std::{
+    any::Any,
+    borrow::Borrow,
+    fmt::Debug,
+    hash::Hash,
+    ops::Deref,
+    pin::Pin,
+    sync::{
+        atomic::{AtomicBool, AtomicU64},
+        Arc,
+    },
 };
 
+use dashmap::DashMap;
+use enum_as_inner::EnumAsInner;
+use parking_lot::RwLock;
+use pernixc_arena::ID;
+use pernixc_hash::HashSet;
+use pernixc_stable_type_id::StableTypeID;
+use pernixc_target::Global;
+use tokio::sync::Notify;
+
 use crate::{
-    database::{
-        map::Map,
-        query_tracker::{QueryTracker, Snapshot},
-    },
-    runtime::persistence::{
-        serde::{DynamicDeserialize, DynamicSerialize},
-        Persistence,
-    },
+    fingerprint,
+    runtime::executor::{self, CyclicError},
     Engine, Key,
 };
 
-pub mod map;
-pub mod query_tracker;
+#[derive(Debug)]
+struct Running {
+    notify: Arc<Notify>,
+    is_in_scc: AtomicBool,
+}
 
-/// Represents the main database structure used for storing and managing
-/// compiler state, including mappings, call graphs, and versioning information.
-#[derive(Debug, Default, Serialize, Deserialize, Getters)]
-#[serde(
-    ser_extension(DynamicSerialize<__S>),
-    de_extension(DynamicDeserialize<__D>)
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct ValueVersion {
+    verified_at: u64,
+    updated_at: u64,
+
+    // if `None`, the value is involved in a cycle
+    fingerprint: Option<u128>,
+}
+
+#[derive(Debug)]
+struct ValueMetadata {
+    version: ValueVersion,
+
+    /// The dependencies graph will be loaded lazily, if `None`, the
+    /// dependencies have not been loaded from the persistent storage yet.
+    dependencies: Option<HashSet<DynamicKey>>,
+}
+
+#[derive(Debug)]
+struct Completion {
+    metadata: ValueMetadata,
+    store: Option<Arc<dyn Value>>,
+}
+
+#[derive(Debug, EnumAsInner)]
+enum State {
+    Running(Running),
+    Completion(Completion),
+}
+
+/// A struct that wraps the [`Engine`] and tracks its dependencies and call
+/// stack. These trackings are required by the query system to be able to
+/// correctly handle cyclic dependencies and to provide a way to access the
+/// dependencies of the engine.
+///
+/// The [`TrackedEngine`] can be cloned and shared across multiple threads,
+/// allowing the query system to run multiple queries in parallel using
+/// [`tokio::spawn`].
+#[derive(Debug, Clone)]
+pub struct TrackedEngine {
+    engine: Arc<Engine>,
+    dependencies: Option<Arc<RwLock<HashSet<DynamicKey>>>>,
+    call_stack: Option<Vec<DynamicKey>>,
+}
+
+impl TrackedEngine {
+    /// Queries the value for the given key.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns an error if the query is part of a cyclic dependency, which
+    /// prevents deadlocks in the query system.
+    pub async fn query<K: Key>(
+        &mut self,
+        key: &K,
+    ) -> Result<Arc<K::Value>, CyclicError> {
+        let mut new_call_stack =
+            if self.call_stack.is_none() { Some(Vec::new()) } else { None };
+
+        let call_stack = new_call_stack
+            .as_mut()
+            .unwrap_or_else(|| self.call_stack.as_mut().unwrap());
+
+        let current_version = self
+            .engine
+            .database
+            .version
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        self.engine
+            .query_internal(
+                key,
+                self.dependencies.as_deref(),
+                call_stack,
+                current_version,
+                true,
+            )
+            .await
+            .map(|x| x.unwrap())
+    }
+}
+
+enum FastPathDecision<V> {
+    TryAgain,
+    ToSlowPath,
+    Return(Option<Arc<V>>),
+}
+
+enum SlowPathDecision<V> {
+    TryAgain,
+    Return(Option<Arc<V>>),
+    Continuation(Continuation, Arc<Notify>),
+}
+
+struct ReVerify {
+    dependencies: HashSet<DynamicKey>,
+    value_version: ValueVersion,
+    value_store: Option<Arc<dyn Value>>,
+}
+
+struct ReExecute {
+    value_version: ValueVersion,
+    dependencies: Option<HashSet<DynamicKey>>,
+}
+
+enum HandleCompletion<V> {
+    Return(Option<Arc<V>>),
+    Continuation(Continuation),
+}
+
+enum Continuation {
+    Fresh,
+    ReVerify(ReVerify),
+    ReExecute(ReExecute),
+}
+
+/// The main database struct that holds the query states and their versions.
+#[derive(Debug, Default)]
 pub struct Database {
-    map: map::Map,
-    query_tracker: Mutex<query_tracker::QueryTracker>,
+    query_states_by_key: DashMap<DynamicKey, State>,
+    version: AtomicU64,
 }
 
-impl Drop for Database {
-    fn drop(&mut self) {
-        let map = std::mem::take(&mut self.map);
-        let query_tracker = std::mem::take(&mut self.query_tracker);
+pub(super) fn re_verify_query<'a, K: Key + 'static>(
+    engine: &'a Arc<Engine>,
+    key: &'a dyn Any,
+    current_version: u64,
+    call_stack: &'a mut Vec<DynamicKey>,
+) -> Pin<Box<dyn executor::Future<'a, ()> + 'a>> {
+    let key = key.downcast_ref::<K>().expect("Key type mismatch");
 
-        rayon::scope(|s| {
-            s.spawn(|_| drop(map));
-            s.spawn(|_| drop(query_tracker));
-        });
-    }
-}
+    Box::pin(async move {
+        engine
+            .query_internal(key, None, call_stack, current_version, false)
+            .await?;
 
-impl Database {
-    /// Checks if the database contains a key.
-    pub fn contains_key<K: Key>(&self, key: &K) -> bool {
-        self.map.contains_key(key)
-    }
-}
-
-impl Persistence {
-    /// Loads the incremental compilation database from the persistence
-    /// storage, including the query tracker and version information.
-    pub fn load_database(&self) -> Result<Database, std::io::Error> {
-        let file = std::fs::File::open(self.database_snapshot_path())?;
-
-        let mut binary_deserializer =
-            BinaryDeserializer::new(BufReader::new(file));
-
-        let snapshot = Snapshot::deserialize(&mut binary_deserializer, &())?;
-
-        Ok(Database {
-            map: Map::default(),
-            query_tracker: Mutex::new(QueryTracker::with_snapshot(snapshot)),
-        })
-    }
+        Ok(())
+    })
 }
 
 impl Engine {
-    /// Attempts to save the current database to persistent storage (if
-    /// persistence is configured).
-    pub fn try_save_database(&self) -> Result<(), std::io::Error> {
-        let _span = tracing::trace_span!("save database").entered();
-        let Some(persistence) = self.runtime.persistence.as_ref() else {
-            return Ok(());
-        };
+    async fn fast_path<K: Key>(
+        &self,
+        key: &K,
+        return_value: bool,
+        call_stack: &[DynamicKey],
+        current_version: u64,
+    ) -> Result<FastPathDecision<K::Value>, CyclicError> {
+        if let Some(state) =
+            self.database.query_states_by_key.get(key as &dyn Dynamic)
+        {
+            match state.value() {
+                State::Running(running) => {
+                    // check if the query is cyclic, preventing deadlocks
+                    let index =
+                        call_stack.iter().position(|x| x.0.deref().eq(key));
 
-        let query_tracker = self.database.query_tracker.lock();
+                    // found cyclic dependency, mark all the SCCs
+                    if let Some(index) = index {
+                        for key in &call_stack[index..] {
+                            self.database
+                                .query_states_by_key
+                                .get(&*key.0 as &dyn Dynamic)
+                                .expect("should be present")
+                                .as_running()
+                                .expect(
+                                    "should be running since it appeared in \
+                                     the call stack",
+                                )
+                                .is_in_scc
+                                .store(
+                                    true,
+                                    std::sync::atomic::Ordering::Relaxed,
+                                );
+                        }
 
-        let path = persistence
-            .path()
-            .join(Persistence::QUERY_TRACKER_DIRECTORY)
-            .join(Persistence::DATABASE_SNAPSHOT_FILE);
+                        return Err(CyclicError);
+                    }
 
-        // make sure that the parent directory exists
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
+                    let notify = running.notify.clone();
+                    drop(state);
+
+                    notify.notified().await;
+
+                    // try again and should see the `State::Completion`
+                    return Ok(FastPathDecision::TryAgain);
+                }
+                State::Completion(completion) => {
+                    // check if the value is up-to-date
+                    if completion.metadata.version.verified_at
+                        == current_version
+                    {
+                        if return_value {
+                            match completion.store.as_ref() {
+                                Some(v) => {
+                                    let arc_any = v.clone()
+                                        as Arc<dyn Any + Send + Sync + 'static>;
+
+                                    return Ok(FastPathDecision::Return(Some(
+                                        arc_any
+                                            .downcast()
+                                            .expect("Failed to downcast value"),
+                                    )));
+                                }
+
+                                None => {
+                                    // let's the value is not stored, might be
+                                    // that the value hasn't been loaded from
+                                    // the persistent storage or the query might
+                                    // need to be re-executed, let's the
+                                    // slow-path handle it
+                                    return Ok(FastPathDecision::ToSlowPath);
+                                }
+                            }
+                        }
+
+                        // doesn't require the value and the version is
+                        // verified, nothing to do left, return now
+                        return Ok(FastPathDecision::Return(None));
+                    }
+
+                    // the value is not up-to-date, let's the slow-path
+                    // re-verify the value and update it if
+                    // needed
+                    return Ok(FastPathDecision::ToSlowPath);
+                }
             }
         }
 
-        let file = std::fs::File::create(&path)?;
+        // the query hasn't been computed or loaded yet, go to the slow path
+        // that obtains the write lock.
+        Ok(FastPathDecision::ToSlowPath)
+    }
 
-        let mut serializer = BinarySerializer::new(BufWriter::new(file));
+    fn handle_completion<K: Key>(
+        &self,
+        key_fingerprint: u128,
+        completion: &mut Completion,
+        current_version: u64,
+        return_value: bool,
+    ) -> HandleCompletion<K::Value> {
+        if completion.metadata.version.verified_at == current_version {
+            if return_value {
+                if let Some(v) = completion.store.as_ref() {
+                    let arc_any =
+                        v.clone() as Arc<dyn Any + Send + Sync + 'static>;
 
-        query_tracker.snapshot().serialize(&mut serializer, &())?;
-        persistence.commit()?;
+                    return HandleCompletion::Return(Some(
+                        arc_any.downcast().expect("Failed to downcast value"),
+                    ));
+                }
+                let value =
+                    completion.metadata.version.fingerprint.map_or_else(
+                        || Some(K::scc_value()),
+                        |fingerprint| {
+                            self.try_load_value::<K>(fingerprint).map(Arc::new)
+                        },
+                    );
 
-        Ok(())
+                // successfully loaded the value, store in the cache,
+                // return it
+                if let Some(value) = value {
+                    completion.store = Some(value.clone());
+                    return HandleCompletion::Return(Some(value));
+                }
+
+                // the value is not found in the persistent storage and
+                // in-memory storage,
+                // need to re-execute the query
+                return HandleCompletion::Continuation(
+                    Continuation::ReExecute(ReExecute {
+                        value_version: completion.metadata.version,
+                        dependencies: std::mem::take(
+                            &mut completion.metadata.dependencies,
+                        ),
+                    }),
+                );
+            }
+
+            // the value is up-to-date and doesn't require the value,
+            // nothing to do left, return now
+            return HandleCompletion::Return(None);
+        }
+
+        // need to re-verify the value, check if the dependencies are
+        let dependencies = completion
+            .metadata
+            .dependencies
+            .as_mut()
+            .map(std::mem::take)
+            .or_else(|| self.try_load_dependencies::<K>(key_fingerprint));
+
+        if let Some(dependencies) = dependencies {
+            // re-verify the value with the dependencies
+            return HandleCompletion::Continuation(Continuation::ReVerify(
+                ReVerify {
+                    dependencies,
+                    value_version: completion.metadata.version,
+                    value_store: std::mem::take(&mut completion.store),
+                },
+            ));
+        }
+
+        // need to create a fresh query, the dependencies are not available
+        HandleCompletion::Continuation(Continuation::Fresh)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn slow_path<K: Key>(
+        &self,
+        key: &K,
+        current_version: u64,
+        return_value: bool,
+    ) -> SlowPathDecision<K::Value> {
+        match self
+            .database
+            .query_states_by_key
+            .entry(DynamicKey(key.smallbox_clone()))
+        {
+            dashmap::Entry::Occupied(mut occupied_entry) => {
+                match occupied_entry.get_mut() {
+                    // go back to the fast path if the state is running
+                    // and wait for the notification to be sent
+                    State::Running(_) => SlowPathDecision::TryAgain,
+
+                    State::Completion(completion) => {
+                        let key_fingerprint = key.fingerprint();
+                        let continuation = match self.handle_completion::<K>(
+                            key_fingerprint,
+                            completion,
+                            current_version,
+                            return_value,
+                        ) {
+                            HandleCompletion::Return(value) => {
+                                return SlowPathDecision::Return(value)
+                            }
+                            HandleCompletion::Continuation(continuation) => {
+                                continuation
+                            }
+                        };
+
+                        let notify = Arc::new(Notify::new());
+                        *occupied_entry.get_mut() = State::Running(Running {
+                            notify: notify.clone(),
+                            is_in_scc: AtomicBool::new(false),
+                        });
+
+                        SlowPathDecision::Continuation(continuation, notify)
+                    }
+                }
+            }
+
+            dashmap::Entry::Vacant(vacant_entry) => {
+                let fingerprint = key.fingerprint();
+
+                // try loading the version from the persistent storage
+                let loaded_version =
+                    self.try_load_value_version::<K>(fingerprint);
+
+                if let Some(loaded_version) = loaded_version {
+                    if loaded_version.verified_at == current_version {
+                        if return_value {
+                            let value = loaded_version.fingerprint.map_or_else(
+                                || Some(K::scc_value()),
+                                |fingerprint| {
+                                    self.try_load_value::<K>(fingerprint)
+                                        .map(Arc::new)
+                                },
+                            );
+
+                            if let Some(value) = value {
+                                // store the value in the cache
+                                vacant_entry.insert(State::Completion(
+                                    Completion {
+                                        metadata: ValueMetadata {
+                                            version: loaded_version,
+                                            dependencies: None,
+                                        },
+                                        store: Some(value.clone()),
+                                    },
+                                ));
+
+                                return SlowPathDecision::Return(Some(value));
+                            }
+
+                            let notify = Arc::new(Notify::new());
+                            vacant_entry.insert(State::Running(Running {
+                                notify: notify.clone(),
+                                is_in_scc: AtomicBool::new(false),
+                            }));
+
+                            return SlowPathDecision::Continuation(
+                                Continuation::ReExecute(ReExecute {
+                                    value_version: loaded_version,
+                                    dependencies: None,
+                                }),
+                                notify,
+                            );
+                        }
+
+                        vacant_entry.insert(State::Completion(Completion {
+                            metadata: ValueMetadata {
+                                version: loaded_version,
+                                dependencies: None,
+                            },
+                            store: None,
+                        }));
+
+                        // doesn't need the value, just return
+                        return SlowPathDecision::Return(None);
+                    }
+
+                    let notify = Arc::new(Notify::new());
+                    vacant_entry.insert(State::Running(Running {
+                        notify: notify.clone(),
+                        is_in_scc: AtomicBool::new(false),
+                    }));
+
+                    let loaded_dependencies =
+                        self.try_load_dependencies::<K>(fingerprint);
+
+                    match loaded_dependencies {
+                        Some(dependencies) => {
+                            // re-verify the value with the dependencies
+                            return SlowPathDecision::Continuation(
+                                Continuation::ReVerify(ReVerify {
+                                    dependencies,
+                                    value_version: loaded_version,
+                                    value_store: None,
+                                }),
+                                notify,
+                            );
+                        }
+
+                        None => {
+                            // fresh query, the dependencies are not
+                            // available, need to re-execute the query
+                            return SlowPathDecision::Continuation(
+                                Continuation::Fresh,
+                                notify,
+                            );
+                        }
+                    }
+                }
+
+                // no version found, need to create a fresh query
+                let notify = Arc::new(Notify::new());
+                vacant_entry.insert(State::Running(Running {
+                    notify: notify.clone(),
+                    is_in_scc: AtomicBool::new(false),
+                }));
+
+                SlowPathDecision::Continuation(Continuation::Fresh, notify)
+            }
+        }
+    }
+
+    async fn compute_query<K: Key>(
+        tracked_engine: &mut TrackedEngine,
+        key: &K,
+    ) -> Result<Arc<dyn Value>, CyclicError> {
+        let (executor, invoke) = tracked_engine
+            .engine
+            .runtime
+            .executor
+            .get_entry::<K>()
+            .map_or_else(
+                || {
+                    panic!(
+                        "No executor registered for key type `{}`",
+                        std::any::type_name::<K>()
+                    )
+                },
+                |x| {
+                    let value = x.value();
+                    (value.get_any_executor(), x.get_invoke_executor())
+                },
+            );
+
+        (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine).await
+    }
+
+    async fn compute<K: Key>(
+        self: &Arc<Self>,
+        key: &K,
+        track_dependencies: bool,
+        call_stack: &mut Vec<DynamicKey>,
+        return_value: bool,
+        set_completed: impl FnOnce(
+            Result<&K::Value, CyclicError>,
+            Option<HashSet<DynamicKey>>,
+        ) -> ValueMetadata,
+    ) -> Option<Arc<K::Value>> {
+        let original_call_stack_len = call_stack.len();
+
+        // add the key to the call stack
+        call_stack.push(DynamicKey(key.smallbox_clone()));
+
+        let mut tracked_engine = TrackedEngine {
+            engine: self.clone(),
+            dependencies: track_dependencies
+                .then(|| Arc::new(RwLock::new(HashSet::default()))),
+            call_stack: Some(std::mem::take(call_stack)),
+        };
+
+        let value = Self::compute_query(&mut tracked_engine, key).await;
+
+        {
+            // remove the key from the call stack.
+            *call_stack = tracked_engine.call_stack.take().unwrap();
+            call_stack.pop();
+
+            assert_eq!(
+                call_stack.len(),
+                original_call_stack_len,
+                "Call stack length mismatch after query computation",
+            );
+        }
+
+        let is_in_scc = self
+            .database
+            .query_states_by_key
+            .get(key as &dyn Dynamic)
+            .expect("should be present with running state")
+            .as_running()
+            .expect("should be running since it appeared in the call stack")
+            .is_in_scc
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+        // if `is_in_scc` is `true`, it means that the query is part of a
+        // strongly connected component (SCC) and the value should be an error,
+        // otherwise, it should be a valid value.
+        assert_eq!(
+            is_in_scc,
+            value.is_err(),
+            "Cyclic dependency state mismatch: expected {}, got {}",
+            value.is_err(),
+            is_in_scc
+        );
+
+        self.handle_computed_value(key, value, return_value, |result| {
+            set_completed(
+                result,
+                tracked_engine
+                    .dependencies
+                    .map(|x| Arc::into_inner(x).map(RwLock::into_inner))
+                    .expect(
+                        "There're still some other places holding the \
+                         `TrackedEngine` dependencies lock; please ensure \
+                         that the `TrackedEngine`s are not held beyond the \
+                         scope of the query `Executor::execute` method, or if \
+                         there's multi-threading involved, please ensure that \
+                         all of the spawned threads are joined before the \
+                         `Executor::execute` method returns",
+                    ),
+            )
+        })
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn handle_computed_value<K: Key>(
+        &self,
+        key: &K,
+        boxed_value: Result<Arc<dyn Value>, CyclicError>,
+        return_value: bool,
+        set_completed: impl FnOnce(Result<&K::Value, CyclicError>) -> ValueMetadata,
+    ) -> Option<Arc<K::Value>> {
+        let metadata = set_completed(
+            boxed_value
+                .as_ref()
+                .ok()
+                .map(|x| {
+                    let value = x.as_ref();
+                    let any = value as &dyn Any;
+
+                    any.downcast_ref::<K::Value>()
+                        .expect("Failed to downcast value")
+                })
+                .ok_or(CyclicError),
+        );
+
+        let final_value =
+            boxed_value.as_ref().cloned().unwrap_or_else(|_| K::scc_value());
+
+        self.database.query_states_by_key.insert(
+            DynamicKey(key.smallbox_clone()),
+            State::Completion(Completion {
+                metadata,
+                store: Some(final_value.clone()),
+            }),
+        );
+
+        if return_value {
+            let any = final_value as Arc<dyn Any + Send + Sync + 'static>;
+            Some(any.downcast().unwrap())
+        } else {
+            None
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn continuation<K: Key>(
+        self: &Arc<Self>,
+        key: &K,
+        continuation: Continuation,
+        call_stack: &mut Vec<DynamicKey>,
+        return_value: bool,
+        current_version: u64,
+    ) -> Option<Arc<K::Value>> {
+        match continuation {
+            Continuation::Fresh => {
+                // fresh query, compute the value from scratch
+                self.compute(
+                    key,
+                    true,
+                    call_stack,
+                    return_value,
+                    |result, tracked_dependencies| ValueMetadata {
+                        version: ValueVersion {
+                            verified_at: current_version,
+                            updated_at: current_version,
+                            fingerprint: result
+                                .ok()
+                                .map(fingerprint::fingerprint),
+                        },
+                        dependencies: Some(tracked_dependencies.unwrap()),
+                    },
+                )
+                .await
+            }
+            Continuation::ReVerify(mut re_verify) => {
+                let recompute = if re_verify.value_version.fingerprint.is_none()
+                {
+                    // if the query is a part of SCC, always recompute
+                    true
+                } else {
+                    let mut join_handles = Vec::new();
+
+                    // re-verify the value with the dependencies
+                    for dep in re_verify.dependencies {
+                        let mut call_stack_clone = call_stack.clone();
+                        let engine_cloned = self.clone();
+
+                        join_handles.push(tokio::spawn(async move {
+                            let dep_ref = &*dep.0;
+                            let type_id = dep_ref.any().type_id();
+
+                            let re_verify_query = engine_cloned
+                                .runtime
+                                .executor
+                                .get_entry_with_id(type_id)
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "No executor registered for key type \
+                                         `{}`",
+                                        dep_ref.type_name()
+                                    )
+                                })
+                                .get_re_verify_query();
+
+                            (
+                                (re_verify_query)(
+                                    &engine_cloned,
+                                    dep_ref.any(),
+                                    re_verify.value_version.verified_at,
+                                    &mut call_stack_clone,
+                                )
+                                .await,
+                                dep,
+                            )
+                        }));
+                    }
+
+                    re_verify.dependencies = HashSet::default();
+
+                    // make sure all the re-verify tasks are completed
+                    // before proceeding
+                    for result in join_handles {
+                        let (_, dep) = result
+                            .await
+                            .expect("Failed to join re-verify query task");
+
+                        re_verify.dependencies.insert(dep);
+                    }
+
+                    // if any of the dependencies has been updated,
+                    // we need to recompute the query
+                    re_verify.dependencies.iter().any(|x| {
+                        self.database
+                            .query_states_by_key
+                            .get(x)
+                            .expect("should be present")
+                            .as_completion()
+                            .expect(
+                                "should be completion since it was re-verified",
+                            )
+                            .metadata
+                            .version
+                            .updated_at
+                            > re_verify.value_version.verified_at
+                    })
+                };
+
+                if recompute {
+                    self.compute(
+                        key,
+                        true,
+                        call_stack,
+                        true,
+                        |value, tracked_dependencies| {
+                            let new_fingerprint =
+                                value.ok().map(fingerprint::fingerprint);
+
+                            // if the new fingerprint is different from
+                            // the old one, update the value version
+                            if re_verify
+                                .value_version
+                                .fingerprint
+                                .is_none_or(|x| Some(x) != new_fingerprint)
+                            {
+                                re_verify.value_version.fingerprint =
+                                    new_fingerprint;
+                                re_verify.value_version.updated_at =
+                                    current_version;
+                            }
+
+                            re_verify.value_version.verified_at =
+                                current_version;
+                            re_verify.dependencies =
+                                tracked_dependencies.unwrap();
+
+                            ValueMetadata {
+                                version: re_verify.value_version,
+                                dependencies: Some(re_verify.dependencies),
+                            }
+                        },
+                    )
+                    .await
+                } else if return_value {
+                    let value = match re_verify.value_store {
+                        Some(value) => {
+                            self.database.query_states_by_key.insert(
+                                DynamicKey(key.smallbox_clone()),
+                                State::Completion(Completion {
+                                    metadata: ValueMetadata {
+                                        version: re_verify.value_version,
+                                        dependencies: Some(
+                                            re_verify.dependencies,
+                                        ),
+                                    },
+                                    store: Some(value.clone()),
+                                }),
+                            );
+
+                            return Some({
+                                let arc_any = value
+                                    as Arc<dyn Any + Send + Sync + 'static>;
+
+                                arc_any
+                                    .downcast()
+                                    .expect("Failed to downcast value")
+                            });
+                        }
+                        None => {
+                            re_verify.value_version.fingerprint.map_or_else(
+                                || Some(Err(CyclicError)),
+                                |fingerprint| {
+                                    self.try_load_value::<K>(fingerprint).map(
+                                        |x| Ok(Arc::new(x) as Arc<dyn Value>),
+                                    )
+                                },
+                            )
+                        }
+                    };
+
+                    match value {
+                        Some(value) => self.handle_computed_value(
+                            key,
+                            value,
+                            return_value,
+                            |result| {
+                                debug_assert_eq!(
+                                    result.ok().map(|x| {
+                                        fingerprint::fingerprint(x)
+                                    }),
+                                    re_verify.value_version.fingerprint,
+                                    "The fingerprint of the re-executed value \
+                                     should match the old one"
+                                );
+
+                                ValueMetadata {
+                                    version: re_verify.value_version,
+                                    dependencies: Some(re_verify.dependencies),
+                                }
+                            },
+                        ),
+                        None => {
+                            self.compute(
+                                key,
+                                false,
+                                call_stack,
+                                true,
+                                |value, _| {
+                                    debug_assert_eq!(
+                                        value.ok().map(|x| {
+                                            fingerprint::fingerprint(x)
+                                        }),
+                                        re_verify.value_version.fingerprint,
+                                        "The fingerprint of the re-executed \
+                                         value should match the old one"
+                                    );
+
+                                    ValueMetadata {
+                                        version: re_verify.value_version,
+                                        dependencies: Some(
+                                            re_verify.dependencies,
+                                        ),
+                                    }
+                                },
+                            )
+                            .await
+                        }
+                    }
+                } else {
+                    *self
+                        .database
+                        .query_states_by_key
+                        .get_mut(key as &dyn Dynamic)
+                        .expect("should be present") =
+                        State::Completion(Completion {
+                            metadata: ValueMetadata {
+                                version: re_verify.value_version,
+                                dependencies: Some(re_verify.dependencies),
+                            },
+                            store: re_verify.value_store,
+                        });
+
+                    None
+                }
+            }
+            Continuation::ReExecute(re_execute) => {
+                self.compute(
+                    key,
+                    re_execute.dependencies.is_none(),
+                    call_stack,
+                    return_value,
+                    |result, tracked_dependencies| {
+                        debug_assert_eq!(
+                            result
+                                .ok()
+                                .map(|x| { fingerprint::fingerprint(x) }),
+                            re_execute.value_version.fingerprint,
+                            "The fingerprint of the re-executed value should \
+                             match the old one"
+                        );
+
+                        ValueMetadata {
+                            version: re_execute.value_version,
+                            dependencies: Some(
+                                re_execute
+                                    .dependencies
+                                    .or(tracked_dependencies)
+                                    .unwrap(),
+                            ),
+                        }
+                    },
+                )
+                .await
+            }
+        }
+    }
+
+    pub(super) async fn query_internal<K: Key>(
+        self: &Arc<Self>,
+        key: &K,
+        dependencies: Option<&RwLock<HashSet<DynamicKey>>>,
+        call_stack: &mut Vec<DynamicKey>,
+        current_version: u64,
+        return_value: bool,
+    ) -> Result<Option<Arc<K::Value>>, CyclicError> {
+        // insert to the dependencies list if required
+        if let Some(dependencies) = dependencies {
+            let mut write = dependencies.write();
+
+            if !write.contains(key as &dyn Dynamic) {
+                write.insert(DynamicKey(key.smallbox_clone()));
+            }
+        }
+
+        loop {
+            // Fast path: mostly used read lock, lower lock contention
+            match self
+                .fast_path(key, return_value, call_stack, current_version)
+                .await?
+            {
+                FastPathDecision::TryAgain => continue,
+                FastPathDecision::ToSlowPath => {}
+                FastPathDecision::Return(value) => return Ok(value),
+            }
+
+            // Slow Path: use `entry` obtaining a write lock for state mutation
+            let (continuation, notify) =
+                match self.slow_path(key, current_version, return_value) {
+                    SlowPathDecision::TryAgain => continue,
+                    SlowPathDecision::Return(value) => return Ok(value),
+                    SlowPathDecision::Continuation(continuation, notify) => {
+                        (continuation, notify)
+                    }
+                };
+
+            let value = self
+                .continuation(
+                    key,
+                    continuation,
+                    call_stack,
+                    return_value,
+                    current_version,
+                )
+                .await;
+
+            // notify the waiting tasks that the query has been completed
+            notify.notify_waiters();
+
+            if let Some(called_from) = call_stack.last() {
+                let is_in_scc = self
+                    .database
+                    .query_states_by_key
+                    .get(&*called_from.0 as &dyn Dynamic)
+                    .expect("should be present with running state")
+                    .as_running()
+                    .expect(
+                        "should be running since it appeared in the call stack",
+                    )
+                    .is_in_scc
+                    .load(std::sync::atomic::Ordering::Relaxed);
+
+                if is_in_scc {
+                    return Err(CyclicError);
+                }
+            }
+
+            return Ok(value);
+        }
     }
 }
+
+/// A type alias for a [`smallbox::SmallBox`] with a [`Global<ID<()>>`] as its
+/// size for the local storage.
+///
+/// This smallbox is used mainly for performance reasons to avoid heap
+/// allocation (premature optimization?). Since most of the queries are just
+/// global IDs, the [`Global<ID<()>>`] should be enough to store the data
+/// without allocating a heap object.
+type KeySmallBox<T> = smallbox::SmallBox<T, Global<ID<()>>>;
+
+/// A trait allowing store multiple types of as a key in a hashmap. This is
+/// automatically implemented for all types that implement the [`Key`] trait.
+#[doc(hidden)]
+trait Dynamic: 'static + Send + Sync + Debug {
+    #[doc(hidden)]
+    fn any(&self) -> &dyn std::any::Any;
+    #[doc(hidden)]
+    fn eq(&self, other: &dyn Dynamic) -> bool;
+    #[doc(hidden)]
+    fn hash(&self, state: &mut dyn std::hash::Hasher);
+    #[doc(hidden)]
+    fn fingerprint(&self) -> u128;
+    #[doc(hidden)]
+    fn smallbox_clone(&self) -> KeySmallBox<dyn Dynamic>;
+    #[allow(unused)]
+    #[doc(hidden)]
+    fn stable_type_id(&self) -> StableTypeID;
+    #[doc(hidden)]
+    fn type_name(&self) -> &'static str;
+}
+
+/// A new type wrapper around [`KeySmallBox<dyn Dynamic>`] that allows it to be
+/// serializable and deserializable.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(super) struct DynamicKey(KeySmallBox<dyn Dynamic>);
+
+impl Borrow<dyn Dynamic> for DynamicKey {
+    fn borrow(&self) -> &dyn Dynamic { &*self.0 }
+}
+
+impl Borrow<KeySmallBox<dyn Dynamic>> for DynamicKey {
+    fn borrow(&self) -> &KeySmallBox<dyn Dynamic> { &self.0 }
+}
+
+impl Clone for DynamicKey {
+    fn clone(&self) -> Self { Self(self.0.smallbox_clone()) }
+}
+
+impl<K: Key> Dynamic for K {
+    fn any(&self) -> &dyn std::any::Any { self as &dyn std::any::Any }
+
+    fn eq(&self, other: &dyn Dynamic) -> bool {
+        other.any().downcast_ref::<Self>().is_some_and(|other| self.eq(other))
+    }
+
+    fn hash(&self, mut state: &mut dyn std::hash::Hasher) {
+        let id = std::any::TypeId::of::<Self>();
+
+        id.hash(&mut state);
+        Hash::hash(self, &mut state);
+    }
+
+    fn smallbox_clone(&self) -> KeySmallBox<dyn Dynamic> {
+        smallbox::smallbox!(self.clone())
+    }
+
+    fn stable_type_id(&self) -> StableTypeID { Self::STABLE_TYPE_ID }
+
+    fn type_name(&self) -> &'static str { std::any::type_name::<Self>() }
+
+    fn fingerprint(&self) -> u128 { fingerprint::fingerprint(self) }
+}
+
+impl PartialEq for dyn Dynamic + '_ {
+    fn eq(&self, other: &Self) -> bool { Dynamic::eq(self, other) }
+}
+
+impl Eq for dyn Dynamic + '_ {}
+
+impl Hash for dyn Dynamic + '_ {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Dynamic::hash(self, state);
+    }
+}
+
+/// A trait allowing to store values in the query system.
+pub(super) trait Value:
+    Any + Send + Sync + std::fmt::Debug + 'static
+{
+}
+
+impl<T: Any + Send + Sync + std::fmt::Debug + 'static> Value for T {}

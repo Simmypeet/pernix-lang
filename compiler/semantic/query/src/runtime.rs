@@ -16,11 +16,10 @@ pub mod persistence;
 pub struct Runtime {
     /// Registry for managing query executors.
     pub executor: executor::Registry,
-
-    /// Optional persistence layer for storing and retrieving query data.
-    ///
-    /// Typically, if the incremental directory flag is passed, this field
-    /// will be populated with a `Persistence` instance that manages the
-    /// serialization and deserialization of the query database.
-    pub persistence: Option<persistence::Persistence>,
+    // Optional persistence layer for storing and retrieving query data.
+    //
+    // Typically, if the incremental directory flag is passed, this field
+    // will be populated with a `Persistence` instance that manages the
+    // serialization and deserialization of the query database.
+    // pub persistence: Option<persistence::Persistence>,
 }

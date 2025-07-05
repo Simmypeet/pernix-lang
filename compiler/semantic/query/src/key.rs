@@ -1,6 +1,6 @@
 //! Contains multiple important traits used by the query system
 
-use std::hash::Hash;
+use std::{any::Any, fmt::Debug, hash::Hash, sync::Arc};
 
 use pernixc_arena::ID;
 use pernixc_stable_hash::StableHash;
@@ -29,10 +29,18 @@ pub struct Input;
 /// pub struct MyKey;
 /// ```
 pub trait Key:
-    'static + Send + Sync + Eq + Clone + std::hash::Hash + Identifiable + StableHash
+    'static
+    + Send
+    + Sync
+    + Eq
+    + Clone
+    + std::hash::Hash
+    + Identifiable
+    + StableHash
+    + Debug
 {
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Clone + StableHash;
+    type Value: 'static + Send + Sync + Debug + StableHash;
 
     /// A value returned by the key when the key is a part of a strongly
     /// connected component (SCC) in the cyclic dependencies.
@@ -40,93 +48,10 @@ pub trait Key:
     /// By default, this method panics, as the most queries are not supposed
     /// to allow cyclic dependencies.
     #[must_use]
-    fn scc_value() -> Self::Value {
+    fn scc_value() -> Arc<Self::Value> {
         panic!(
             "SCC `{}` value for cyclic dependencies is not defined",
             std::any::type_name::<Self>()
         )
-    }
-}
-
-/// A type alias for a [`smallbox::SmallBox`] with a [`Global<ID<()>>`] as its
-/// size for the local storage.
-///
-/// This smallbox is used mainly for performance reasons to avoid heap
-/// allocation (premature optimization?). Since most of the queries are just
-/// global IDs, the [`Global<ID<()>>`] should be enough to store the data
-/// without allocating a heap object.
-pub type SmallBox<T> = smallbox::SmallBox<T, Global<ID<()>>>;
-
-/// A trait allowing store multiple types of as a key in a hashmap. This is
-/// automatically implemented for all types that implement the [`Key`] trait.
-#[doc(hidden)]
-pub trait Dynamic: 'static + Send + Sync {
-    #[doc(hidden)]
-    fn any(&self) -> &dyn std::any::Any;
-    #[doc(hidden)]
-    fn eq(&self, other: &dyn Dynamic) -> bool;
-    #[doc(hidden)]
-    fn hash(&self, state: &mut dyn std::hash::Hasher);
-    #[doc(hidden)]
-    fn fingerprint(&self) -> u128;
-    #[doc(hidden)]
-    fn smallbox_clone(&self) -> SmallBox<dyn Dynamic>;
-    #[doc(hidden)]
-    fn stable_type_id(&self) -> StableTypeID;
-    #[doc(hidden)]
-    fn type_name(&self) -> &'static str;
-}
-
-/// A new type wrapper around [`SmallBox<dyn Dynamic>`] that allows it to be
-/// serializable and deserializable.
-#[derive(
-    Debug, PartialEq, Eq, Hash, derive_more::Deref, derive_more::DerefMut,
-)]
-pub struct DynamicBox(pub SmallBox<dyn Dynamic>);
-
-impl Clone for DynamicBox {
-    fn clone(&self) -> Self { Self(self.0.smallbox_clone()) }
-}
-
-impl<K: Key> Dynamic for K {
-    fn any(&self) -> &dyn std::any::Any { self as &dyn std::any::Any }
-
-    fn eq(&self, other: &dyn Dynamic) -> bool {
-        other.any().downcast_ref::<Self>().is_some_and(|other| self.eq(other))
-    }
-
-    fn hash(&self, mut state: &mut dyn std::hash::Hasher) {
-        let id = std::any::TypeId::of::<Self>();
-
-        id.hash(&mut state);
-        Hash::hash(self, &mut state);
-    }
-
-    fn smallbox_clone(&self) -> SmallBox<dyn Dynamic> {
-        smallbox::smallbox!(self.clone())
-    }
-
-    fn stable_type_id(&self) -> StableTypeID { Self::STABLE_TYPE_ID }
-
-    fn type_name(&self) -> &'static str { std::any::type_name::<Self>() }
-
-    fn fingerprint(&self) -> u128 { fingerprint::fingerprint(self) }
-}
-
-impl std::fmt::Debug for dyn Dynamic {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Dynamic").field(&self.any()).finish_non_exhaustive()
-    }
-}
-
-impl PartialEq for dyn Dynamic {
-    fn eq(&self, other: &Self) -> bool { Dynamic::eq(self, other) }
-}
-
-impl Eq for dyn Dynamic {}
-
-impl Hash for dyn Dynamic {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        Dynamic::hash(self, state);
     }
 }

@@ -319,7 +319,7 @@ fn map_basic_round_trip() {
 fn dynamic_box_basic_round_trip() {
     use smallbox::smallbox;
 
-    use crate::key::DynamicBox;
+    use crate::key::DynamicKey;
 
     let mut serde_registry = SelfRegistry::default();
     serde_registry.register::<Variable>();
@@ -327,7 +327,7 @@ fn dynamic_box_basic_round_trip() {
 
     // Test with Variable
     let variable_key = Variable("test_var".to_string());
-    let variable_dynamic_box = DynamicBox(smallbox!(variable_key.clone()));
+    let variable_dynamic_box = DynamicKey(smallbox!(variable_key.clone()));
 
     let mut buffer = Vec::new();
     let mut binary_serializer = BinarySerializer::new(buffer);
@@ -339,8 +339,8 @@ fn dynamic_box_basic_round_trip() {
 
     let mut deserializer =
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
-    let deserialized_variable_box: DynamicBox =
-        DynamicBox::deserialize(&mut deserializer, &serde_registry).unwrap();
+    let deserialized_variable_box: DynamicKey =
+        DynamicKey::deserialize(&mut deserializer, &serde_registry).unwrap();
 
     // Verify the deserialized dynamic box contains the correct value
     assert_eq!(
@@ -353,7 +353,7 @@ fn dynamic_box_basic_round_trip() {
 
     // Test with Constant
     let constant_key = Constant("test_const".to_string());
-    let constant_dynamic_box = DynamicBox(smallbox!(constant_key.clone()));
+    let constant_dynamic_box = DynamicKey(smallbox!(constant_key.clone()));
 
     let mut buffer = Vec::new();
     let mut binary_serializer = BinarySerializer::new(buffer);
@@ -365,8 +365,8 @@ fn dynamic_box_basic_round_trip() {
 
     let mut deserializer =
         BinaryDeserializer::new(std::io::Cursor::new(buffer));
-    let deserialized_constant_box: DynamicBox =
-        DynamicBox::deserialize(&mut deserializer, &serde_registry).unwrap();
+    let deserialized_constant_box: DynamicKey =
+        DynamicKey::deserialize(&mut deserializer, &serde_registry).unwrap();
 
     // Verify the deserialized dynamic box contains the correct value
     assert_eq!(
@@ -382,17 +382,17 @@ fn dynamic_box_basic_round_trip() {
 fn dynamic_box_multiple_types_round_trip() {
     use smallbox::smallbox;
 
-    use crate::key::DynamicBox;
+    use crate::key::DynamicKey;
 
     let mut serde_registry = SelfRegistry::default();
     serde_registry.register::<Variable>();
     serde_registry.register::<Constant>();
 
     // Create multiple dynamic boxes with different types
-    let variable_box = DynamicBox(smallbox!(Variable("var1".to_string())));
-    let constant_box = DynamicBox(smallbox!(Constant("const1".to_string())));
+    let variable_box = DynamicKey(smallbox!(Variable("var1".to_string())));
+    let constant_box = DynamicKey(smallbox!(Constant("const1".to_string())));
     let another_variable_box =
-        DynamicBox(smallbox!(Variable("var2".to_string())));
+        DynamicKey(smallbox!(Variable("var2".to_string())));
 
     let dynamic_boxes =
         vec![&variable_box, &constant_box, &another_variable_box];
@@ -408,8 +408,8 @@ fn dynamic_box_multiple_types_round_trip() {
 
         let mut deserializer =
             BinaryDeserializer::new(std::io::Cursor::new(buffer));
-        let deserialized_box: DynamicBox =
-            DynamicBox::deserialize(&mut deserializer, &serde_registry)
+        let deserialized_box: DynamicKey =
+            DynamicKey::deserialize(&mut deserializer, &serde_registry)
                 .unwrap();
 
         deserialized_boxes.push(deserialized_box);
@@ -521,7 +521,7 @@ fn map_generic_types_round_trip() {
 fn dynamic_box_generic_types_round_trip() {
     use smallbox::smallbox;
 
-    use crate::key::DynamicBox;
+    use crate::key::DynamicKey;
 
     let mut serde_registry = SelfRegistry::default();
 
@@ -541,10 +541,10 @@ fn dynamic_box_generic_types_round_trip() {
     );
 
     // Create dynamic boxes with generic types
-    let generic_box1 = DynamicBox(smallbox!(generic_key1.clone()));
-    let generic_bool_box = DynamicBox(smallbox!(generic_bool_key.clone()));
-    let generic_i32_box = DynamicBox(smallbox!(generic_i32_key.clone()));
-    let multi_generic_box = DynamicBox(smallbox!(multi_generic_key.clone()));
+    let generic_box1 = DynamicKey(smallbox!(generic_key1.clone()));
+    let generic_bool_box = DynamicKey(smallbox!(generic_bool_key.clone()));
+    let generic_i32_box = DynamicKey(smallbox!(generic_i32_key.clone()));
+    let multi_generic_box = DynamicKey(smallbox!(multi_generic_key.clone()));
 
     let dynamic_boxes = vec![
         &generic_box1,
@@ -564,8 +564,8 @@ fn dynamic_box_generic_types_round_trip() {
 
         let mut deserializer =
             BinaryDeserializer::new(std::io::Cursor::new(buffer));
-        let deserialized_box: DynamicBox =
-            DynamicBox::deserialize(&mut deserializer, &serde_registry)
+        let deserialized_box: DynamicKey =
+            DynamicKey::deserialize(&mut deserializer, &serde_registry)
                 .unwrap();
 
         deserialized_boxes.push(deserialized_box);
@@ -623,7 +623,7 @@ fn dynamic_box_generic_types_round_trip() {
 fn dynamic_box_mixed_generic_and_simple_types_round_trip() {
     use smallbox::smallbox;
 
-    use crate::key::DynamicBox;
+    use crate::key::DynamicKey;
 
     let mut serde_registry = SelfRegistry::default();
 
@@ -640,10 +640,10 @@ fn dynamic_box_mixed_generic_and_simple_types_round_trip() {
     let multi_generic_key = MultiGenericKey(I32Wrapper(789), BoolWrapper(true));
 
     // Create dynamic boxes with mixed types
-    let variable_box = DynamicBox(smallbox!(variable.clone()));
-    let constant_box = DynamicBox(smallbox!(constant.clone()));
-    let generic_box = DynamicBox(smallbox!(generic_key.clone()));
-    let multi_generic_box = DynamicBox(smallbox!(multi_generic_key.clone()));
+    let variable_box = DynamicKey(smallbox!(variable.clone()));
+    let constant_box = DynamicKey(smallbox!(constant.clone()));
+    let generic_box = DynamicKey(smallbox!(generic_key.clone()));
+    let multi_generic_box = DynamicKey(smallbox!(multi_generic_key.clone()));
 
     let dynamic_boxes =
         vec![&variable_box, &constant_box, &generic_box, &multi_generic_box];
@@ -659,8 +659,8 @@ fn dynamic_box_mixed_generic_and_simple_types_round_trip() {
 
         let mut deserializer =
             BinaryDeserializer::new(std::io::Cursor::new(buffer));
-        let deserialized_box: DynamicBox =
-            DynamicBox::deserialize(&mut deserializer, &serde_registry)
+        let deserialized_box: DynamicKey =
+            DynamicKey::deserialize(&mut deserializer, &serde_registry)
                 .unwrap();
 
         deserialized_boxes.push(deserialized_box);

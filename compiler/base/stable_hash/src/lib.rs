@@ -280,7 +280,7 @@ pub trait StableHasher {
     ///
     /// The hash value computed by the sub-hasher
     fn sub_hash(
-        &mut self,
+        &self,
         f: &mut dyn FnMut(&mut dyn StableHasher<Hash = Self::Hash>),
     ) -> Self::Hash;
 }
@@ -579,7 +579,7 @@ impl StableHasher for StableSipHasher {
     }
 
     fn sub_hash(
-        &mut self,
+        &self,
         f: &mut dyn FnMut(&mut dyn StableHasher<Hash = Self::Hash>),
     ) -> Self::Hash {
         let mut sub_hasher = Self::new_sub_hasher();
