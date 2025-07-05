@@ -8,7 +8,7 @@ pub use pernixc_stable_type_id::Identifiable;
 
 #[doc(hidden)]
 pub mod __internal {
-    pub use std::result::Result;
+    pub use std::{result::Result, sync::Arc};
 
     pub use pernixc_query_derive::{Key, Value};
     pub use pernixc_serialize::{Deserialize, Serialize};

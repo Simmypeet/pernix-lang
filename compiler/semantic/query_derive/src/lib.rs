@@ -196,7 +196,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 
     let scc_value_fn = scc_value_expr.map(|x| {
         quote::quote! {
-            fn scc_value() -> Self::Value {
+            fn scc_value() -> ::pernixc_query::__internal::Arc<Self::Value> {
                 #x
             }
         }
