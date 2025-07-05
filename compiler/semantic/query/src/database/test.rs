@@ -49,7 +49,7 @@ pub struct NegateVariableExecutor;
 impl Executor<NegateVariable> for NegateVariableExecutor {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         key: &NegateVariable,
     ) -> Result<Arc<i32>, CyclicError> {
         Ok(Arc::new(-*engine.query(&Variable(key.0.to_string()))?))
@@ -84,7 +84,7 @@ pub struct SumNegatedVariableExecutor;
 impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         key: &SumNegatedVariable,
     ) -> Result<Arc<i32>, CyclicError> {
         let a = engine.query(&NegateVariable(key.a.clone()))?;
@@ -179,7 +179,7 @@ impl TrackedExecutor {
 impl Executor<TrackedComputation> for TrackedExecutor {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         key: &TrackedComputation,
     ) -> Result<Arc<i32>, CyclicError> {
         // Increment the call counter to track executor invocations
@@ -293,7 +293,7 @@ impl TrackedAbsExecutor {
 impl Executor<AbsVariable> for TrackedAbsExecutor {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         key: &AbsVariable,
     ) -> Result<Arc<i32>, CyclicError> {
         // Increment the call counter to track executor invocations
@@ -340,7 +340,7 @@ impl TrackedAddTwoAbsExecutor {
 impl Executor<AddTwoAbsVariable> for TrackedAddTwoAbsExecutor {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         key: &AddTwoAbsVariable,
     ) -> Result<Arc<i32>, CyclicError> {
         // Increment the call counter to track executor invocations
@@ -524,7 +524,7 @@ impl CyclicExecutorA {
 impl Executor<CyclicQueryA> for CyclicExecutorA {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         _key: &CyclicQueryA,
     ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -549,7 +549,7 @@ impl CyclicExecutorB {
 impl Executor<CyclicQueryB> for CyclicExecutorB {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         _key: &CyclicQueryB,
     ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -573,7 +573,7 @@ impl DependentExecutor {
 impl Executor<DependentQuery> for DependentExecutor {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         _key: &DependentQuery,
     ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -672,7 +672,7 @@ impl ConditionalDependentExecutor {
 impl Executor<DependentQuery> for ConditionalDependentExecutor {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         _key: &DependentQuery,
     ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -760,7 +760,7 @@ impl ConditionalCyclicExecutorA {
 impl Executor<ConditionalCyclicQueryA> for ConditionalCyclicExecutorA {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         _key: &ConditionalCyclicQueryA,
     ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -799,7 +799,7 @@ impl ConditionalCyclicExecutorB {
 impl Executor<ConditionalCyclicQueryB> for ConditionalCyclicExecutorB {
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         _key: &ConditionalCyclicQueryB,
     ) -> Result<Arc<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);

@@ -140,10 +140,7 @@ impl TrackedEngine<'_> {
     ///
     /// Returns an error if the query is part of a cyclic dependency, which
     /// prevents deadlocks in the query system.
-    pub fn query<K: Key>(
-        &mut self,
-        key: &K,
-    ) -> Result<Arc<K::Value>, CyclicError> {
+    pub fn query<K: Key>(&self, key: &K) -> Result<Arc<K::Value>, CyclicError> {
         let current_version = self
             .engine
             .database

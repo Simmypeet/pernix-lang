@@ -49,7 +49,7 @@ pub trait Executor<K: Key>: Any + Send + Sync + std::fmt::Debug {
     /// cyclic dependencies.
     fn execute(
         &self,
-        engine: &mut TrackedEngine,
+        engine: &TrackedEngine,
         key: &K,
     ) -> Result<Arc<K::Value>, CyclicError>;
 }
