@@ -944,12 +944,11 @@ where
 // Collection Implementations
 // =============================================================================
 
-use std::sync::atomic::AtomicUsize;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::{BuildHasher, Hash},
     ops::Range,
-    sync::atomic::AtomicBool,
+    sync::atomic::{AtomicBool, AtomicUsize},
 };
 
 impl<T, D, E> Deserialize<D, E> for Vec<T>
@@ -1390,7 +1389,7 @@ impl std::fmt::Display for Identifier {
 
 use std::path::PathBuf;
 
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use flexstr::FlexStr;
 
 impl<D, E> Deserialize<D, E> for PathBuf
@@ -1512,6 +1511,35 @@ impl<
             }
 
             Ok(map)
+        })
+    }
+}
+
+impl<
+        D: Deserializer<E>,
+        T: Deserialize<D, E> + Eq + Hash,
+        BH: BuildHasher + Clone + Default,
+        E,
+    > Deserialize<D, E> for DashSet<T, BH>
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        deserializer.expect_seq(extension, |mut seq_access, extension| {
+            use crate::de::SeqAccess;
+
+            let (lower, upper) = seq_access.size_hint();
+            let set = Self::with_capacity_and_hasher(
+                upper.unwrap_or(lower),
+                BH::default(),
+            );
+
+            while let Some(element) = seq_access.next_element(extension)? {
+                set.insert(element);
+            }
+
+            Ok(set)
         })
     }
 }

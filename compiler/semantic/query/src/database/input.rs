@@ -86,15 +86,14 @@ impl SetInputLock<'_> {
                         );
 
                         if update.update_metadata {
-                            let _ = self.engine.save_value_metadata::<K>(
+                            self.engine.save_value_metadata::<K>(
                                 key_fingerprint,
                                 &completion.metadata,
                             );
                         }
 
                         if update.update_value {
-                            let _ = self
-                                .engine
+                            self.engine
                                 .save_value::<K>(key_fingerprint, &*value);
                         }
 
@@ -112,15 +111,13 @@ impl SetInputLock<'_> {
                         .update_metadata(&mut version_info, value_fingerprint);
 
                     if update.update_metadata {
-                        let _ = self.engine.save_value_metadata::<K>(
+                        self.engine.save_value_metadata::<K>(
                             key_fingerprint,
                             &version_info,
                         );
                     }
                     if update.update_value {
-                        let _ = self
-                            .engine
-                            .save_value::<K>(key_fingerprint, &*value);
+                        self.engine.save_value::<K>(key_fingerprint, &*value);
                     }
 
                     vacant_entry.insert(super::State::Completion(Completion {
@@ -137,11 +134,10 @@ impl SetInputLock<'_> {
                         updated_at: version_no,
                     });
 
-                    let _ = self
-                        .engine
+                    self.engine
                         .save_value_metadata::<K>(key_fingerprint, &metadata);
-                    let _ =
-                        self.engine.save_value::<K>(key_fingerprint, &*value);
+
+                    self.engine.save_value::<K>(key_fingerprint, &*value);
 
                     vacant_entry.insert(super::State::Completion(Completion {
                         metadata,

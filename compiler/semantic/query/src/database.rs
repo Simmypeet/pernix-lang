@@ -15,11 +15,19 @@ use dashmap::{DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, Mutex};
 use pernixc_arena::ID;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::Global;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{fingerprint, runtime::executor::CyclicError, Engine, Key};
+use crate::{
+    fingerprint,
+    runtime::{
+        executor::CyclicError,
+        persistence::serde::{DynamicDeserialize, DynamicSerialize},
+    },
+    Engine, Key,
+};
 
 mod input;
 
@@ -54,7 +62,9 @@ struct Running {
     is_in_scc: AtomicBool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize,
+)]
 pub(crate) struct DerivedVersionInfo {
     verified_at: u64,
     updated_at: u64,
@@ -63,19 +73,21 @@ pub(crate) struct DerivedVersionInfo {
     fingerprint: Option<u128>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(ser_extension(DynamicSerialize<__S>), de_extension(DynamicDeserialize<__D>))]
 pub(crate) struct DerivedMetadata {
     version_info: DerivedVersionInfo,
     dependencies: DashSet<DynamicKey>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct InputMetadata {
     fingerprint: u128,
     updated_at: u64,
 }
 
-#[derive(Debug, EnumAsInner)]
+#[derive(Debug, Serialize, Deserialize, EnumAsInner)]
+#[serde(ser_extension(DynamicSerialize<__S>), de_extension(DynamicDeserialize<__D>))]
 pub(crate) enum ValueMetadata {
     Derived(DerivedMetadata),
     Input(InputMetadata),
@@ -222,6 +234,16 @@ enum Continuation {
 pub struct Database {
     query_states_by_key: DashMap<DynamicKey, State>,
     version: AtomicU64,
+}
+
+impl Database {
+    /// Creates a new empty database with the given version.
+    pub fn with_version(version: u64) -> Self {
+        Self {
+            query_states_by_key: DashMap::default(),
+            version: AtomicU64::new(version),
+        }
+    }
 }
 
 pub(super) fn re_verify_query<'a, K: Key + 'static>(
@@ -625,7 +647,7 @@ impl Engine {
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
             DashSet<DynamicKey>,
-        ) -> DerivedMetadata,
+        ) -> (DerivedMetadata, bool),
     ) -> Option<Arc<K::Value>> {
         #[cfg(feature = "query_cache")]
         let cache = DashMap::default();
@@ -688,9 +710,9 @@ impl Engine {
         save_value: bool,
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
-        ) -> DerivedMetadata,
+        ) -> (DerivedMetadata, bool),
     ) -> Option<Arc<K::Value>> {
-        let metadata = set_completed(
+        let (metadata, save_metadata) = set_completed(
             boxed_value
                 .as_ref()
                 .ok()
@@ -708,9 +730,17 @@ impl Engine {
             let value = value.as_ref();
             let any = value as &dyn Any;
 
-            let _ = self.save_value::<K>(
+            self.save_value::<K>(
                 metadata.version_info.fingerprint.unwrap(),
                 any.downcast_ref::<K::Value>().unwrap(),
+            );
+        }
+
+        let final_metadata = ValueMetadata::Derived(metadata);
+        if save_metadata {
+            self.save_value_metadata::<K>(
+                fingerprint::fingerprint(key),
+                &final_metadata,
             );
         }
 
@@ -720,7 +750,7 @@ impl Engine {
         self.database.query_states_by_key.insert(
             DynamicKey(key.smallbox_clone()),
             State::Completion(Completion {
-                metadata: ValueMetadata::Derived(metadata),
+                metadata: final_metadata,
                 store: Some(final_value.clone()),
             }),
         );
@@ -747,15 +777,20 @@ impl Engine {
                 self.compute(
                     key,
                     return_value,
-                    |result, tracked_dependencies| DerivedMetadata {
-                        version_info: DerivedVersionInfo {
-                            verified_at: current_version,
-                            updated_at: current_version,
-                            fingerprint: result
-                                .ok()
-                                .map(fingerprint::fingerprint),
-                        },
-                        dependencies: tracked_dependencies,
+                    |result, tracked_dependencies| {
+                        (
+                            DerivedMetadata {
+                                version_info: DerivedVersionInfo {
+                                    verified_at: current_version,
+                                    updated_at: current_version,
+                                    fingerprint: result
+                                        .ok()
+                                        .map(fingerprint::fingerprint),
+                                },
+                                dependencies: tracked_dependencies,
+                            },
+                            true,
+                        )
                     },
                 )
             }
@@ -860,7 +895,7 @@ impl Engine {
                         re_verify.derived_metadata.dependencies =
                             tracked_dependencies;
 
-                        re_verify.derived_metadata
+                        (re_verify.derived_metadata, true)
                     })
                 } else if return_value {
                     let value = match re_verify.value_store {
@@ -917,7 +952,7 @@ impl Engine {
                                      should match the old one"
                                 );
 
-                                re_verify.derived_metadata
+                                (re_verify.derived_metadata, false)
                             },
                         ),
                         None => self.compute(key, true, |value, _| {
@@ -933,7 +968,7 @@ impl Engine {
                                  should match the old one"
                             );
 
-                            re_verify.derived_metadata
+                            (re_verify.derived_metadata, false)
                         }),
                     }
                 } else {
@@ -961,7 +996,7 @@ impl Engine {
                          match the old one"
                     );
 
-                    re_execute.derived_metadata
+                    (re_execute.derived_metadata, false)
                 })
             }
         }
@@ -1085,7 +1120,7 @@ pub(super) trait Dynamic: 'static + Send + Sync + Debug {
 /// A new type wrapper around [`KeySmallBox<dyn Dynamic>`] that allows it to be
 /// serializable and deserializable.
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub(super) struct DynamicKey(KeySmallBox<dyn Dynamic>);
+pub(super) struct DynamicKey(pub KeySmallBox<dyn Dynamic>);
 
 impl Borrow<dyn Dynamic> for DynamicKey {
     fn borrow(&self) -> &dyn Dynamic { &*self.0 }

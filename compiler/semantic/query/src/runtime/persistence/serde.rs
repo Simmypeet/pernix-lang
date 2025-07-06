@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+
 //! Dynamic serialization and deserialization framework for heterogeneous
 //! collections.
 //!
@@ -110,22 +112,17 @@
 
 use std::any::Any;
 
-use getset::Getters;
-use pernixc_hash::{DashMap, HashMap, HashSet};
+use getset::{CopyGetters, Getters};
+use pernixc_hash::HashMap;
 use pernixc_serialize::{
-    de::{Deserializer, MapAccess, StructAccess},
-    ser::{Map as _, Serializer},
+    de::{Deserializer, StructAccess},
+    ser::Serializer,
     Deserialize, Serialize,
 };
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use smallbox::smallbox;
 
-use crate::{
-    database::{map::Map, query_tracker::VersionInfo},
-    key::DynamicKey,
-    Key,
-};
+use crate::{database::DynamicKey, Key};
 
 /// A trait for types that can provide dynamic serialization capabilities.
 ///
@@ -205,39 +202,15 @@ pub trait DynamicRegistry<S: Serializer<Self>, D: Deserializer<Self>>:
 /// This struct stores the necessary function pointers to serialize both `Map`
 /// instances and `DynamicBox` instances for a specific type. It also stores the
 /// standard library's `TypeId` for runtime type checking.
-#[derive(Debug, Copy)]
+#[derive(Debug, Copy, CopyGetters)]
 #[allow(clippy::type_complexity)]
 pub struct SerializationHelper<S: Serializer<E>, E> {
-    map_serializer: fn(&Map, &mut S, &E) -> Result<(), S::Error>,
-    dynamic_box_serializer: fn(&DynamicKey, &mut S, &E) -> Result<(), S::Error>,
+    #[get_copy = "pub(crate)"]
+    dynamic_key_serializer: fn(&DynamicKey, &mut S, &E) -> Result<(), S::Error>,
+    #[get_copy = "pub(crate)"]
     value_serializer: fn(&dyn Any, &mut S, &E) -> Result<(), S::Error>,
-    cas_map_serializer: fn(
-        &Map,
-        &(dyn Send + Sync + Fn(u128) -> Result<Option<S>, S::Error>),
-        &E,
-        &(dyn Send + Sync + Fn(S, u128) -> Result<(), S::Error>),
-    ) -> Result<bool, S::Error>,
-
-    dependency_graph_serializer: fn(
-        &[(&DynamicKey, &HashSet<DynamicKey>)],
-        &mut S,
-        &E,
-    ) -> Result<(), S::Error>,
-    version_info_serializer:
-        fn(&[(&DynamicKey, &VersionInfo)], &mut S, &E) -> Result<(), S::Error>,
 
     std_type_id: std::any::TypeId,
-}
-
-impl<S: Serializer<E>, E> SerializationHelper<S, E> {
-    pub(super) fn serialize_any_value(
-        &self,
-        value: &dyn Any,
-        serializer: &mut S,
-        extension: &E,
-    ) -> Result<(), S::Error> {
-        (self.value_serializer)(value, serializer, extension)
-    }
 }
 
 /// A helper struct that contains function pointers for deserializing a specific
@@ -249,111 +222,20 @@ impl<S: Serializer<E>, E> SerializationHelper<S, E> {
 ///
 /// The function pointer types are complex due to the lifetime requirements of
 /// the deserialization process.
-#[derive(Debug, Copy)]
+#[derive(Debug, Copy, CopyGetters)]
 #[allow(clippy::type_complexity)]
 pub struct DeserializationHelper<D: Deserializer<E>, E> {
-    map_deserializer: for<'m, 'v> fn(
-        &mut Map,
-        <D::MapAccess<'m> as MapAccess<E>>::ValueAccess<'v>,
-        &E,
-    ) -> Result<(), D::Error>,
-
-    dynamic_box_deserializer: for<'m, 'v> fn(
+    #[get_copy = "pub(crate)"]
+    dynamic_key_deserializer: for<'m, 'v> fn(
         <D::StructAccess<'m> as StructAccess<E>>::FieldAccess<'v>,
         &E,
     )
         -> Result<DynamicKey, D::Error>,
+
+    #[get_copy = "pub(crate)"]
     value_deserializer: fn(&mut dyn Any, &mut D, &E) -> Result<(), D::Error>,
 
     std_type_id: std::any::TypeId,
-}
-
-impl<D: Deserializer<E>, E> DeserializationHelper<D, E> {
-    pub(crate) fn deserialize_any_value(
-        &self,
-        result_buffer: &mut dyn Any,
-        deserializer: &mut D,
-        extension: &E,
-    ) -> Result<(), D::Error> {
-        (self.value_deserializer)(result_buffer, deserializer, extension)
-    }
-}
-
-struct SerializableTypedMap<'s, S: Serializer<E>, E> {
-    map: &'s Map,
-    helper: &'s SerializationHelper<S, E>,
-}
-
-impl<S: Serializer<E>, E> Serialize<S, E> for SerializableTypedMap<'_, S, E> {
-    fn serialize(
-        &self,
-        serializer: &mut S,
-        extension: &E,
-    ) -> Result<(), <S as Serializer<E>>::Error> {
-        (self.helper.map_serializer)(self.map, serializer, extension)
-    }
-}
-
-impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for Map {
-    fn serialize(
-        &self,
-        serializer: &mut S,
-        extension: &E,
-    ) -> Result<(), <S as Serializer<E>>::Error> {
-        use pernixc_serialize::ser::{Error, Map};
-
-        /*
-        Serialize in the form of = {
-            "type_id": {
-                "key1": "value1",
-                "key2": "value2",
-                ...
-            },
-            "type_id2": {
-                "key1": "value1",
-                "key2": "value2",
-                ...
-            },
-            ..
-        }
-         */
-
-        serializer.emit_map(
-            self.type_lens(),
-            extension,
-            |mut map, extension| {
-                let mut serialized_count = 0;
-
-                for (stable_type_id, helper) in
-                    extension.serialization_helper_by_type_id()
-                {
-                    // skip this map type
-                    if !self.has_type_id(helper.std_type_id) {
-                        continue;
-                    }
-
-                    map.serialize_entry(
-                        &stable_type_id,
-                        &SerializableTypedMap { map: self, helper },
-                        extension,
-                    )?;
-
-                    serialized_count += 1;
-                }
-
-                if serialized_count < self.type_lens() {
-                    return Err(S::Error::custom(format!(
-                        "some of the types were not serialized, expected {}, \
-                         got {}; make sure all types are registered",
-                        self.type_lens(),
-                        serialized_count,
-                    )));
-                }
-
-                Ok(())
-            },
-        )
-    }
 }
 
 impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for DynamicKey {
@@ -366,16 +248,16 @@ impl<S: Serializer<E>, E: DynamicSerialize<S>> Serialize<S, E> for DynamicKey {
 
         let helper = extension
             .serialization_helper_by_type_id()
-            .get(&self.stable_type_id())
+            .get(&self.0.stable_type_id())
             .cloned()
             .ok_or_else(|| {
                 Error::custom(format!(
                     "no serialization helper found for {:?}",
-                    self.stable_type_id()
+                    self.0.stable_type_id()
                 ))
             })?;
 
-        (helper.dynamic_box_serializer)(self, serializer, extension)
+        (helper.dynamic_key_serializer)(self, serializer, extension)
     }
 }
 
@@ -427,31 +309,7 @@ impl<S: Serializer<E>, D: Deserializer<E>, E> Default for Registry<S, D, E> {
     }
 }
 
-fn map_deserializer<D: Deserializer<E>, E, K: Key + Deserialize<D, E>>(
-    map: &mut Map,
-    value_access: <D::MapAccess<'_> as MapAccess<E>>::ValueAccess<'_>,
-    extension: &E,
-) -> Result<(), D::Error>
-where
-    K::Value: Deserialize<D, E>,
-{
-    use pernixc_serialize::de::{Error, ValueAccess};
-
-    let typed_map =
-        value_access.deserialize::<DashMap<K, K::Value>>(extension)?;
-
-    // overwrite the existing map or insert a new one
-    if map.insert_typed_map(typed_map).is_some() {
-        return Err(D::Error::custom(format!(
-            "the map for type {} already exists",
-            std::any::type_name::<K>()
-        )));
-    }
-
-    Ok(())
-}
-
-fn dynamic_box_deserializer<
+fn dynamic_key_deserializer<
     D: Deserializer<E>,
     E,
     K: Key + Deserialize<D, E>,
@@ -500,15 +358,7 @@ impl<
     {
         use pernixc_serialize::ser::Struct;
 
-        let map_serializer = |map: &Map, serializer: &mut S, extension: &E| {
-            map.type_storage::<K, _>(|x| {
-                let map = x.expect("should exists");
-
-                map.serialize(serializer, extension)
-            })
-        };
-
-        let dyn_box_serializer =
+        let dynamic_key_serializer =
             |dyn_box: &DynamicKey, serializer: &mut S, extension: &E| {
                 serializer.emit_struct(
                     "DynamicBox",
@@ -517,12 +367,12 @@ impl<
                     |mut st, extension| {
                         st.serialize_field(
                             "stable_type_id",
-                            &dyn_box.stable_type_id(),
+                            &dyn_box.0.stable_type_id(),
                             extension,
                         )?;
 
                         // downcast to the concrete type
-                        let value = dyn_box.any().downcast_ref::<K>().expect(
+                        let value = dyn_box.0.any().downcast_ref::<K>().expect(
                             "the dynamic box should contain a value of the \
                              registered type",
                         );
@@ -544,83 +394,13 @@ impl<
             value.serialize(serializer, extension)
         };
 
-        let cas_map_serializer =
-            |map: &Map,
-             create_serializer: &(dyn Send
-                   + Sync
-                   + Fn(u128) -> Result<Option<S>, S::Error>),
-             extension: &E,
-             post_serialize: &(dyn Send
-                   + Sync
-                   + Fn(S, u128) -> Result<(), S::Error>)| {
-                map.type_storage::<K, _>(|x| {
-                    let Some(x) = x else { return Ok(false) };
-
-                    x.par_iter()
-                        .map(|value| {
-                            let value = value.value();
-                            let fingerprint =
-                                crate::fingerprint::fingerprint(value);
-
-                            let Some(mut serializer) =
-                                create_serializer(fingerprint)?
-                            else {
-                                return Ok(());
-                            };
-
-                            value.serialize(&mut serializer, extension)?;
-                            post_serialize(serializer, fingerprint)?;
-
-                            Ok(())
-                        })
-                        .collect::<Result<(), _>>()?;
-
-                    Ok(true)
-                })
-            };
-
-        let dependency_graph_serializer =
-            |entries: &[(&DynamicKey, &HashSet<DynamicKey>)],
-             serializer: &mut S,
-             extension: &E| {
-                serializer.emit_map(entries.len(), extension, |mut map, _| {
-                    for (key, value) in entries {
-                        let key = (**key).any().downcast_ref::<K>().expect(
-                            "the dynamic box should contain a value of the \
-                             registered type",
-                        );
-                        map.serialize_entry(key, *value, extension)?;
-                    }
-                    Ok(())
-                })
-            };
-
-        let version_info_serializer =
-            |entries: &[(&DynamicKey, &VersionInfo)],
-             serializer: &mut S,
-             extension: &E| {
-                serializer.emit_map(entries.len(), extension, |mut map, _| {
-                    for (key, value) in entries {
-                        let key = (**key).any().downcast_ref::<K>().expect(
-                            "the dynamic box should contain a value of the \
-                             registered type",
-                        );
-                        map.serialize_entry(key, value, extension)?;
-                    }
-                    Ok(())
-                })
-            };
-
         if self
             .serialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, SerializationHelper {
-                map_serializer,
-                dynamic_box_serializer: dyn_box_serializer,
-                cas_map_serializer,
-                dependency_graph_serializer,
-                version_info_serializer,
-                std_type_id: std::any::TypeId::of::<K>(),
+                dynamic_key_serializer,
                 value_serializer,
+
+                std_type_id: std::any::TypeId::of::<K>(),
             })
             .is_some()
         {
@@ -646,8 +426,7 @@ impl<
         if self
             .deserialization_helpers_by_type_id
             .insert(K::STABLE_TYPE_ID, DeserializationHelper {
-                map_deserializer: map_deserializer::<_, _, K>,
-                dynamic_box_deserializer: dynamic_box_deserializer::<_, _, K>,
+                dynamic_key_deserializer: dynamic_key_deserializer::<_, _, K>,
                 std_type_id: std::any::TypeId::of::<K>(),
                 value_deserializer,
             })
@@ -691,12 +470,8 @@ impl<S: Serializer<Self>, D: Deserializer<Self>> std::fmt::Debug
 impl<S: Serializer<E>, E> Clone for SerializationHelper<S, E> {
     fn clone(&self) -> Self {
         Self {
-            map_serializer: self.map_serializer,
-            dynamic_box_serializer: self.dynamic_box_serializer,
+            dynamic_key_serializer: self.dynamic_key_serializer,
             value_serializer: self.value_serializer,
-            cas_map_serializer: self.cas_map_serializer,
-            dependency_graph_serializer: self.dependency_graph_serializer,
-            version_info_serializer: self.version_info_serializer,
             std_type_id: self.std_type_id,
         }
     }
@@ -705,65 +480,10 @@ impl<S: Serializer<E>, E> Clone for SerializationHelper<S, E> {
 impl<D: Deserializer<E>, E> Clone for DeserializationHelper<D, E> {
     fn clone(&self) -> Self {
         Self {
-            map_deserializer: self.map_deserializer,
-            dynamic_box_deserializer: self.dynamic_box_deserializer,
+            dynamic_key_deserializer: self.dynamic_key_deserializer,
             value_deserializer: self.value_deserializer,
             std_type_id: self.std_type_id,
         }
-    }
-}
-
-impl<D: Deserializer<E>, E: DynamicDeserialize<D>>
-    pernixc_serialize::de::Deserialize<D, E> for Map
-where
-    D::Error: pernixc_serialize::de::Error,
-{
-    fn deserialize(
-        deserializer: &mut D,
-        extension: &E,
-    ) -> Result<Self, D::Error> {
-        use pernixc_serialize::de::{Error, MapAccess};
-
-        deserializer.expect_map(extension, |mut map_access, extension| {
-            let mut result_map = Self::default();
-
-            // Deserialize each type's map
-            loop {
-                let done = map_access.next_entry(extension, |entry| {
-                    if let Some((stable_type_id, value_access, extension)) =
-                        entry
-                    {
-                        let helper = extension
-                            .deserialization_helper_by_type_id()
-                            .get(&stable_type_id)
-                            .cloned()
-                            .ok_or_else(|| {
-                                D::Error::custom(format!(
-                                    "no deserialization helper found for \
-                                     {stable_type_id:?}"
-                                ))
-                            })?;
-
-                        // The helper will deserialize the map data for this
-                        // type
-                        (helper.map_deserializer)(
-                            &mut result_map,
-                            value_access,
-                            extension,
-                        )?;
-                        Ok(false) // Continue processing
-                    } else {
-                        Ok(true) // No more entries
-                    }
-                })?;
-
-                if done {
-                    break;
-                }
-            }
-
-            Ok(result_map)
-        })
     }
 }
 
@@ -831,7 +551,7 @@ where
                         return Err(D::Error::custom("expected 'value' field"));
                     }
 
-                    (helper.dynamic_box_deserializer)(value, extension)
+                    (helper.dynamic_key_deserializer)(value, extension)
                 })
             },
         )

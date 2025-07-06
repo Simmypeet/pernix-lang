@@ -1,11 +1,18 @@
 use std::sync::{atomic::AtomicUsize, Arc};
 
+use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
     database::TrackedEngine,
-    runtime::executor::{CyclicError, Executor},
+    runtime::{
+        executor::{CyclicError, Executor},
+        persistence::{
+            serde::{DynamicRegistry as _, SelfRegistry},
+            Persistence,
+        },
+    },
     Engine, Key,
 };
 
@@ -981,4 +988,164 @@ fn conditional_cyclic_with_dependent_query() {
     assert_eq!(executor_a.get_call_count(), 1);
     assert_eq!(executor_b.get_call_count(), 1);
     assert_eq!(executor_dependent.get_call_count(), 1);
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Key,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+#[value(HashMap<String, i32>)]
+pub struct VariableMap;
+
+#[derive(Debug, Default)]
+pub struct VariableMapExecutor {
+    pub call_count: AtomicUsize,
+}
+
+impl Executor<VariableMap> for VariableMapExecutor {
+    fn execute(
+        &self,
+        _: &TrackedEngine,
+        _: &VariableMap,
+    ) -> Result<Arc<HashMap<String, i32>>, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Simulate a complex computation that returns a map of variables
+        let mut result = HashMap::default();
+        result.insert("a".to_string(), 1);
+        result.insert("b".to_string(), 2);
+        result.insert("c".to_string(), 3);
+
+        Ok(Arc::new(result))
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Key,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+#[value(Option<i32>)]
+pub struct GetValue(String);
+
+#[derive(Debug)]
+pub struct GetValueExecutor {
+    pub call_count: AtomicUsize,
+}
+
+impl Executor<GetValue> for GetValueExecutor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        key: &GetValue,
+    ) -> Result<Arc<Option<i32>>, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // Retrieve the value from the VariableMap
+        let variable_map = engine.query(&VariableMap)?;
+        Ok(Arc::new(variable_map.get(&key.0).copied()))
+    }
+}
+
+#[test]
+fn persistence_variable_map_query() {
+    let mut engine = Engine::default();
+
+    // Create and register the VariableMapExecutor
+    let variable_map_executor = Arc::new(VariableMapExecutor::default());
+    engine.runtime.executor.register(variable_map_executor.clone());
+
+    // Create and register the GetValueExecutor
+    let get_value_executor =
+        Arc::new(GetValueExecutor { call_count: AtomicUsize::new(0) });
+    engine.runtime.executor.register(get_value_executor.clone());
+
+    let mut serde_extension = SelfRegistry::default();
+    serde_extension.register::<VariableMap>();
+    serde_extension.register::<GetValue>();
+
+    let tempdir = tempfile::tempdir().unwrap();
+
+    let mut persistence = Persistence::new(
+        tempdir.path().to_path_buf(),
+        Arc::new(serde_extension),
+    )
+    .unwrap();
+    persistence.skip_cache_value::<GetValue>();
+
+    engine.runtime.persistence = Some(persistence);
+
+    let a = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+
+    assert_eq!(a, Some(1));
+    assert_eq!(b, Some(2));
+    assert_eq!(c, Some(3));
+
+    assert_eq!(
+        get_value_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        3
+    ); // Called for a, b, c
+    assert_eq!(
+        variable_map_executor
+            .call_count
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    ); // Called once to compute the VariableMap
+
+    // save to persistence
+    engine.save_database().unwrap();
+
+    // load the persistence
+    let database =
+        engine.runtime.persistence.as_ref().unwrap().load_database().unwrap();
+    engine.database = database;
+
+    // reset the call counts
+    variable_map_executor
+        .call_count
+        .store(0, std::sync::atomic::Ordering::SeqCst);
+    get_value_executor.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+
+    // Query again after loading from persistence
+    let a2 = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b2 = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c2 = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+
+    assert_eq!(a2, a);
+    assert_eq!(b2, b);
+    assert_eq!(c2, c);
+
+    // The GetValueExecutor should be called again for each variable
+    // as it's skipped in persistence
+    assert_eq!(
+        get_value_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        3
+    ); // Called for a, b, c again
+
+    // The VariableMapExecutor should NOT have been called again
+    assert_eq!(
+        variable_map_executor
+            .call_count
+            .load(std::sync::atomic::Ordering::SeqCst),
+        0
+    ); // Should be cached
 }
