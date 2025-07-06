@@ -1,7 +1,5 @@
-//! Contains the definition of the [`Implements`] type.
+//! Contains the definition of the [`Key`] type.
 
-use derive_more::{Deref, DerefMut};
-use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -22,11 +20,9 @@ use crate::symbol;
     Default,
     Serialize,
     Deserialize,
-    Deref,
-    DerefMut,
-    Value,
+    pernixc_query::Key,
     StableHash,
 )]
-#[id(Global<symbol::ID>)]
-#[ext(method(get_implements), unwrap("should have no cyclic dependencies"))]
-pub struct Implements(pub Global<symbol::ID>);
+#[value(Global<symbol::ID>)]
+#[extend(method(get_implements), unwrap("should have no cyclic dependencies"))]
+pub struct Key(pub Global<symbol::ID>);

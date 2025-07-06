@@ -9,7 +9,7 @@ use dashmap::mapref::one::Ref;
 use pernixc_hash::DashMap;
 
 use crate::{
-    database::{self, Dynamic, TrackedEngine},
+    database::{self, Dynamic, DynamicValue, TrackedEngine},
     Engine, Key,
 };
 
@@ -51,19 +51,23 @@ pub trait Executor<K: Key>: Any + Send + Sync + std::fmt::Debug {
         &self,
         engine: &TrackedEngine,
         key: &K,
-    ) -> Result<Arc<K::Value>, CyclicError>;
+    ) -> Result<K::Value, CyclicError>;
 }
 
 fn invoke_executor<'db, E: Executor<K> + 'static, K: Key + 'static>(
     key: &'db dyn Any,
     executor: &'db dyn Any,
     engine: &'db mut TrackedEngine,
-) -> Result<Arc<dyn database::Value>, CyclicError> {
+) -> Result<DynamicValue, CyclicError> {
     let key = key.downcast_ref::<K>().expect("Key type mismatch");
     let executor =
         executor.downcast_ref::<E>().expect("Executor type mismatch");
 
-    executor.execute(engine, key).map(|x| x as Arc<dyn database::Value>)
+    executor.execute(engine, key).map(|x| {
+        let smallbox: DynamicValue = smallbox::smallbox!(x);
+
+        smallbox
+    })
 }
 
 type InvokeExecutorFn =
@@ -71,8 +75,7 @@ type InvokeExecutorFn =
         key: &'key dyn Any,
         executor: &'ex dyn Any,
         engine: &'eng mut TrackedEngine,
-    )
-        -> Result<Arc<dyn database::Value>, CyclicError>;
+    ) -> Result<DynamicValue, CyclicError>;
 
 type ReVerifyQueryFn = for<'x> fn(
     engine: &'x Engine,

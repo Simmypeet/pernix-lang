@@ -16,6 +16,7 @@ members = [
     "compiler/base/identifiable_derive_lib",
     "compiler/base/stable_hash",
     "compiler/base/stable_hash_derive",
+    "compiler/base/extend",
 
     "compiler/syntax/lexical",
     "compiler/syntax/parser",
@@ -23,11 +24,11 @@ members = [
 
     "compiler/semantic/query",
     "compiler/semantic/query_derive",
-    #"compiler/semantic/bootstrap",
+    "compiler/semantic/bootstrap",
 
-    #"compiler/driver",
-    #"compiler/main",
-    #"compiler/e2e",
+    "compiler/driver",
+    "compiler/main",
+    "compiler/e2e",
 
     # tidy-alphabetical-end
 ]
@@ -39,7 +40,8 @@ derive_more = { version = "2.0.1", features = [
     "display",
     "deref",
     "deref_mut",
-    "from", ] }
+    "from",
+] }
 enum-as-inner = "0.6.0"
 thiserror = "2.0.12"
 getset = "0.1.2"
@@ -102,6 +104,7 @@ tracing-subscriber = { version = "0.3.18", features = [
     "fmt",
     "tracing-log",
 ] }
+extfn = { version = "0.1.1" }
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }

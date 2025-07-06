@@ -109,10 +109,16 @@ impl ValueMetadata {
     }
 }
 
+/// A boxed type that can hold dynamic value. This is optimized for storing the
+/// arc inline. Since most of the time, the query will return `Arc` values,
+/// therefore, if we were to use regular `Box` values, it would introduce
+/// unnecessary indirection via `Box<Arc<QueryResult>>`.
+pub(crate) type DynamicValue = smallbox::SmallBox<dyn Value, Arc<dyn Value>>;
+
 #[derive(Debug)]
 struct Completion {
     metadata: ValueMetadata,
-    store: Option<Arc<dyn Value>>,
+    store: Option<DynamicValue>,
 }
 
 #[derive(Debug, EnumAsInner)]
@@ -138,7 +144,7 @@ pub struct TrackedEngine<'e> {
     called_from: Option<&'e dyn Dynamic>,
 
     #[cfg(feature = "query_cache")]
-    cache: Option<&'e DashMap<DynamicKey, Arc<dyn Value>>>,
+    cache: Option<&'e DashMap<DynamicKey, DynamicValue>>,
 }
 
 impl Engine {
@@ -161,16 +167,16 @@ impl TrackedEngine<'_> {
     ///
     /// Returns an error if the query is part of a cyclic dependency, which
     /// prevents deadlocks in the query system.
-    pub fn query<K: Key>(&self, key: &K) -> Result<Arc<K::Value>, CyclicError> {
+    pub fn query<K: Key>(&self, key: &K) -> Result<K::Value, CyclicError> {
         #[cfg(feature = "query_cache")]
         if let Some(cache) = self.cache {
             if let Some(value) = cache.get(key as &dyn Dynamic) {
-                let arc_any =
-                    value.clone() as Arc<dyn Any + Send + Sync + 'static>;
+                let value = (&**value.value() as &dyn Any)
+                    .downcast_ref::<K::Value>()
+                    .expect("Failed to downcast value")
+                    .clone();
 
-                return Ok(arc_any
-                    .downcast()
-                    .expect("Failed to downcast value"));
+                return Ok(value);
             }
         }
 
@@ -189,7 +195,7 @@ impl TrackedEngine<'_> {
         if let Some(cache) = self.cache {
             cache.insert(
                 DynamicKey(smallbox::smallbox!(key.clone())),
-                value.clone(),
+                smallbox::smallbox!(value.clone()),
             );
         }
 
@@ -200,18 +206,18 @@ impl TrackedEngine<'_> {
 enum FastPathDecision<V> {
     TryAgain,
     ToSlowPath,
-    Return(Option<Arc<V>>),
+    Return(Option<V>),
 }
 
 enum SlowPathDecision<V> {
     TryAgain,
-    Return(Option<Arc<V>>),
+    Return(Option<V>),
     Continuation(Continuation, Notification),
 }
 
 struct ReVerify {
     derived_metadata: DerivedMetadata,
-    value_store: Option<Arc<dyn Value>>,
+    value_store: Option<DynamicValue>,
 }
 
 struct ReExecute {
@@ -219,7 +225,7 @@ struct ReExecute {
 }
 
 enum HandleCompletion<V> {
-    Return(Option<Arc<V>>),
+    Return(Option<V>),
     Continuation(Continuation),
 }
 
@@ -352,13 +358,12 @@ impl Engine {
                         if return_value {
                             match completion.store.as_ref() {
                                 Some(v) => {
-                                    let arc_any = v.clone()
-                                        as Arc<dyn Any + Send + Sync + 'static>;
+                                    let any = &**v as &dyn Any;
 
                                     return Ok(FastPathDecision::Return(Some(
-                                        arc_any
-                                            .downcast()
-                                            .expect("Failed to downcast value"),
+                                        any.downcast_ref::<K::Value>()
+                                            .expect("Failed to downcast value")
+                                            .clone(),
                                     )));
                                 }
 
@@ -404,25 +409,24 @@ impl Engine {
         {
             if return_value {
                 if let Some(v) = completion.store.as_ref() {
-                    let arc_any =
-                        v.clone() as Arc<dyn Any + Send + Sync + 'static>;
+                    let any = &**v as &dyn Any;
 
                     return HandleCompletion::Return(Some(
-                        arc_any.downcast().expect("Failed to downcast value"),
+                        any.downcast_ref::<K::Value>()
+                            .expect("Failed to downcast value")
+                            .clone(),
                     ));
                 }
                 let value =
                     completion.metadata.value_fingerprint().map_or_else(
                         || Some(K::scc_value()),
-                        |fingerprint| {
-                            self.try_load_value::<K>(fingerprint).map(Arc::new)
-                        },
+                        |fingerprint| self.try_load_value::<K>(fingerprint),
                     );
 
                 // successfully loaded the value, store in the cache,
                 // return it
                 if let Some(value) = value {
-                    completion.store = Some(value.clone());
+                    completion.store = Some(smallbox::smallbox!(value.clone()));
                     return HandleCompletion::Return(Some(value));
                 }
 
@@ -533,7 +537,6 @@ impl Engine {
                                     || Some(K::scc_value()),
                                     |fingerprint| {
                                         self.try_load_value::<K>(fingerprint)
-                                            .map(Arc::new)
                                     },
                                 );
 
@@ -542,7 +545,9 @@ impl Engine {
                                 vacant_entry.insert(State::Completion(
                                     Completion {
                                         metadata: loaded_metadata,
-                                        store: Some(value.clone()),
+                                        store: Some(smallbox::smallbox!(
+                                            value.clone()
+                                        )),
                                     },
                                 ));
 
@@ -619,7 +624,7 @@ impl Engine {
     fn compute_query<K: Key>(
         tracked_engine: &mut TrackedEngine,
         key: &K,
-    ) -> Result<Arc<dyn Value>, CyclicError> {
+    ) -> Result<DynamicValue, CyclicError> {
         let (executor, invoke) = tracked_engine
             .engine
             .runtime
@@ -649,7 +654,7 @@ impl Engine {
             Result<&K::Value, CyclicError>,
             DashSet<DynamicKey>,
         ) -> (DerivedMetadata, bool),
-    ) -> Option<Arc<K::Value>> {
+    ) -> Option<K::Value> {
         #[cfg(feature = "query_cache")]
         let cache = DashMap::default();
 
@@ -706,20 +711,19 @@ impl Engine {
     fn handle_computed_value<K: Key>(
         &self,
         key: &K,
-        boxed_value: Result<Arc<dyn Value>, CyclicError>,
+        boxed_value: Result<DynamicValue, CyclicError>,
         return_value: bool,
         save_value: bool,
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
         ) -> (DerivedMetadata, bool),
-    ) -> Option<Arc<K::Value>> {
+    ) -> Option<K::Value> {
         let (metadata, save_metadata) = set_completed(
             boxed_value
                 .as_ref()
                 .ok()
                 .map(|x| {
-                    let value = x.as_ref();
-                    let any = value as &dyn Any;
+                    let any = &**x as &dyn Any;
 
                     any.downcast_ref::<K::Value>()
                         .expect("Failed to downcast value")
@@ -728,8 +732,7 @@ impl Engine {
         );
 
         if let (Ok(value), true) = (&boxed_value, save_value) {
-            let value = value.as_ref();
-            let any = value as &dyn Any;
+            let any = &**value as &dyn Any;
 
             self.save_value::<K>(
                 metadata.version_info.fingerprint.unwrap(),
@@ -746,22 +749,24 @@ impl Engine {
         }
 
         let final_value =
-            boxed_value.as_ref().cloned().unwrap_or_else(|_| K::scc_value());
+            boxed_value.unwrap_or_else(|_| smallbox::smallbox!(K::scc_value()));
+
+        let return_value = return_value.then(|| {
+            (&*final_value as &dyn Any)
+                .downcast_ref::<K::Value>()
+                .expect("Failed to downcast value")
+                .clone()
+        });
 
         self.database.query_states_by_key.insert(
             DynamicKey(key.smallbox_clone()),
             State::Completion(Completion {
                 metadata: final_metadata,
-                store: Some(final_value.clone()),
+                store: Some(final_value),
             }),
         );
 
-        if return_value {
-            let any = final_value as Arc<dyn Any + Send + Sync + 'static>;
-            Some(any.downcast().unwrap())
-        } else {
-            None
-        }
+        return_value
     }
 
     #[allow(clippy::too_many_lines)]
@@ -771,7 +776,7 @@ impl Engine {
         continuation: Continuation,
         return_value: bool,
         current_version: u64,
-    ) -> Option<Arc<K::Value>> {
+    ) -> Option<K::Value> {
         match continuation {
             Continuation::Fresh => {
                 // fresh query, compute the value from scratch
@@ -901,24 +906,22 @@ impl Engine {
                 } else if return_value {
                     let value = match re_verify.value_store {
                         Some(value) => {
+                            let return_value = (&*value as &dyn Any)
+                                .downcast_ref::<K::Value>()
+                                .expect("Failed to downcast value")
+                                .clone();
+
                             self.database.query_states_by_key.insert(
                                 DynamicKey(key.smallbox_clone()),
                                 State::Completion(Completion {
                                     metadata: ValueMetadata::Derived(
                                         re_verify.derived_metadata,
                                     ),
-                                    store: Some(value.clone()),
+                                    store: Some(value),
                                 }),
                             );
 
-                            return Some({
-                                let arc_any = value
-                                    as Arc<dyn Any + Send + Sync + 'static>;
-
-                                arc_any
-                                    .downcast()
-                                    .expect("Failed to downcast value")
-                            });
+                            return Some(return_value);
                         }
                         None => re_verify
                             .derived_metadata
@@ -927,9 +930,8 @@ impl Engine {
                             .map_or_else(
                                 || Some(Err(CyclicError)),
                                 |fingerprint| {
-                                    self.try_load_value::<K>(fingerprint).map(
-                                        |x| Ok(Arc::new(x) as Arc<dyn Value>),
-                                    )
+                                    self.try_load_value::<K>(fingerprint)
+                                        .map(Ok)
                                 },
                             ),
                     };
@@ -937,7 +939,12 @@ impl Engine {
                     match value {
                         Some(value) => self.handle_computed_value(
                             key,
-                            value,
+                            value.map(|x| {
+                                let dynamic_value: DynamicValue =
+                                    smallbox::smallbox!(x);
+
+                                dynamic_value
+                            }),
                             return_value,
                             false,
                             |result| {
@@ -1009,7 +1016,7 @@ impl Engine {
         called_from: Option<&dyn Dynamic>,
         current_version: u64,
         return_value: bool,
-    ) -> Result<Option<Arc<K::Value>>, CyclicError> {
+    ) -> Result<Option<K::Value>, CyclicError> {
         // insert to the dependencies list if required
         if let Some(called_from) = called_from {
             let state = self

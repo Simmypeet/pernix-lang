@@ -460,7 +460,7 @@ pub fn run(
 
     let token_trees_by_source_id = DashMap::default();
 
-    let Bootstrap { engine, syntax_errors, semantic_diagnostics } =
+    let Bootstrap { mut engine, syntax_errors, semantic_diagnostics } =
         match pernixc_bootstrap::bootstrap(
             &mut source_map,
             root_source_id,
@@ -557,7 +557,7 @@ pub fn run(
     }
 
     // save the database to the incremental path if it exists
-    if let Err(err) = engine.try_save_database() {
+    if let Err(err) = engine.save_database() {
         let msg = Diagnostic::error().with_message(format!(
             "Failed to save incremental database: {err}"
         ));

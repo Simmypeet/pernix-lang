@@ -1,28 +1,30 @@
-//! Contains the definition of the [`Implemented`] type.
+//! Contains the definition of the [`Key`] type.
 
-use std::collections::HashSet;
+use std::sync::Arc;
 
-use pernixc_query::Value;
+use pernixc_hash::HashSet;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
 use crate::symbol;
 
-/// A set of all the `implements` symbols that implements this symbol.
+/// Used for retrieving a list of `implements` symbols that implement the
+/// given symbol ID.
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
-    Default,
+    PartialOrd,
+    Ord,
+    Hash,
     Serialize,
     Deserialize,
-    derive_more::Deref,
-    derive_more::DerefMut,
-    Value,
     StableHash,
+    pernixc_query::Key,
 )]
-#[id(Global<symbol::ID>)]
-#[ext(method(get_implemented), unwrap("should have no cyclic dependencies"))]
-pub struct Implemented(pub HashSet<Global<symbol::ID>>);
+#[value(Arc<HashSet<Global<symbol::ID>>>)]
+#[extend(method(get_implemented), unwrap("should have no cyclic dependencies"))]
+pub struct Key(pub Global<symbol::ID>);

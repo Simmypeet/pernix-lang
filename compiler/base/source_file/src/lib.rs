@@ -35,7 +35,9 @@ pub enum Error {
 }
 
 /// Represents an source file input for the compiler.
-#[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
+#[derive(
+    Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize, StableHash,
+)]
 pub struct SourceFile {
     content: String,
 

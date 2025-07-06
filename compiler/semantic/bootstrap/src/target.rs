@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use derive_more::{Deref, DerefMut};
-use extend::ext;
 use flexstr::SharedStr;
+use pernixc_extend::extend;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -27,11 +27,7 @@ use crate::symbol;
 )]
 #[id(TargetID)]
 #[value(Arc<Target>)]
-#[ext(
-    method(get_target),
-    unwrap("should have no cyclic dependencies"),
-    trait(Ext)
-)]
+#[extend(method(get_target), unwrap("should have no cyclic dependencies"))]
 pub struct Target {
     /// All the symbol IDs defined in this target.
     pub all_symbol_ids: HashSet<symbol::ID>,
@@ -55,15 +51,12 @@ pub struct Target {
     StableHash,
 )]
 #[id(())]
-#[value(Arc<Map>)]
 #[key(MapKey)]
+#[value(Arc<Map>)]
 pub struct Map(pub HashMap<SharedStr, TargetID>);
 
-/// Extension trait related to retrieving the target information.
-#[ext(name = MapExt)]
-pub impl TrackedEngine<'_> {
-    /// Gets the map from the name of the target to its ID.
-    fn get_target_map(&self) -> Arc<Map> {
-        self.query(&MapKey(())).expect("should have no cyclic dependencies")
-    }
+/// Gets the map from the name of the target to its ID.
+#[extend]
+pub fn get_target_map(self: &TrackedEngine<'_>) -> Arc<Map> {
+    self.query(&MapKey(())).expect("should have no cyclic dependencies")
 }

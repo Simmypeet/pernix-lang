@@ -1,6 +1,6 @@
 //! Contains multiple important traits used by the query system
 
-use std::{fmt::Debug, sync::Arc};
+use std::fmt::Debug;
 
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
@@ -29,7 +29,7 @@ pub trait Key:
     + Debug
 {
     /// The corresponding value type for this key
-    type Value: 'static + Send + Sync + Debug + StableHash;
+    type Value: 'static + Send + Sync + Clone + Debug + StableHash;
 
     /// A value returned by the key when the key is a part of a strongly
     /// connected component (SCC) in the cyclic dependencies.
@@ -37,7 +37,7 @@ pub trait Key:
     /// By default, this method panics, as the most queries are not supposed
     /// to allow cyclic dependencies.
     #[must_use]
-    fn scc_value() -> Arc<Self::Value> {
+    fn scc_value() -> Self::Value {
         panic!(
             "SCC `{}` value for cyclic dependencies is not defined",
             std::any::type_name::<Self>()

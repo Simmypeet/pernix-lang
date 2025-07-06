@@ -3,24 +3,18 @@
 use std::{path::Path, sync::Arc};
 
 use flexstr::SharedStr;
-use parking_lot::lock_api::RwLock;
-use pernixc_handler::Storage;
-use pernixc_hash::{DashMap, HashSet};
+use pernixc_hash::DashMap;
 use pernixc_query::{
-    database::Database,
     runtime::{
         executor,
         persistence::{serde::DynamicRegistry, Persistence},
-        Runtime,
     },
     Engine,
 };
 use pernixc_serialize::{de::Deserializer, ser::Serializer};
 use pernixc_source_file::{GlobalSourceID, SourceMap};
-use pernixc_target::TargetID;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-use crate::{diagnostic::Diagnostic, target::Ext as _};
+use crate::diagnostic::Diagnostic;
 
 pub mod accessibility;
 pub mod diagnostic;
@@ -28,6 +22,7 @@ pub mod implemented;
 pub mod implements;
 pub mod import;
 pub mod kind;
+pub mod load_source_file;
 pub mod member;
 pub mod name;
 pub mod parent;
@@ -37,7 +32,7 @@ pub mod syntax;
 pub mod target;
 pub mod tree;
 
-mod build;
+// mod build;
 
 /// A fatal error that aborts the compilation process.
 #[derive(Debug, thiserror::Error)]
@@ -85,16 +80,17 @@ pub struct Bootstrap {
 /// Setup the query database for the compilation process.
 #[allow(clippy::type_complexity)]
 pub fn bootstrap<'l>(
-    source_map: &mut SourceMap,
-    root_source_id: GlobalSourceID,
-    target_name: SharedStr,
+    _source_map: &mut SourceMap,
+    _root_source_id: GlobalSourceID,
+    _target_name: SharedStr,
     _library_paths: impl IntoIterator<Item = &'l Path>,
-    token_trees_by_source_id: &DashMap<
+    _token_trees_by_source_id: &DashMap<
         GlobalSourceID,
         pernixc_lexical::tree::Tree,
     >,
-    persistence: Option<Persistence>,
+    _persistence: Option<Persistence>,
 ) -> Result<Bootstrap, Error> {
+    /*
     let ((tree, syntax_errors), engine) = rayon::join(
         || tree::parse(root_source_id, source_map, token_trees_by_source_id),
         || {
@@ -163,6 +159,9 @@ pub fn bootstrap<'l>(
         syntax_errors,
         semantic_diagnostics: handler.into_vec(),
     })
+    */
+
+    todo!()
 }
 
 fn bootstrap_executor(executor: &mut executor::Registry) {
@@ -205,12 +204,12 @@ pub fn register_serde<
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
 pub fn skip_persistence(persistence: &mut Persistence) {
-    persistence.register_skip_key::<syntax::FunctionSignatureKey>();
-    persistence.register_skip_key::<syntax::GenericParametersKey>();
-    persistence.register_skip_key::<syntax::WhereClauseKey>();
-    persistence.register_skip_key::<syntax::TypeAliasKey>();
+    persistence.skip_cache_value::<syntax::FunctionSignatureKey>();
+    persistence.skip_cache_value::<syntax::GenericParametersKey>();
+    persistence.skip_cache_value::<syntax::WhereClauseKey>();
+    persistence.skip_cache_value::<syntax::TypeAliasKey>();
     persistence
-        .register_skip_key::<syntax::ImplementationQualifiedIdentifierKey>();
-    persistence.register_skip_key::<syntax::StatementsKey>();
-    persistence.register_skip_key::<syntax::FieldsKey>();
+        .skip_cache_value::<syntax::ImplementationQualifiedIdentifierKey>();
+    persistence.skip_cache_value::<syntax::StatementsKey>();
+    persistence.skip_cache_value::<syntax::FieldsKey>();
 }

@@ -1,6 +1,7 @@
 //! Implements a query system powering the incremental compilation and semantic
 //! analysis
 
+pub use database::TrackedEngine;
 use getset::{CopyGetters, Getters};
 pub use key::Key;
 pub use pernixc_query_derive::{Key, Value};

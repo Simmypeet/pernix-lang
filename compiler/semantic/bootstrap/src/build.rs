@@ -19,19 +19,22 @@ use rayon::iter::{
 };
 
 use crate::{
-    accessibility::{self, Accessibility, Ext},
+    accessibility::{
+        self, accessibility_hierarchy_relationship, get_accessibility,
+        symbol_accessible, Accessibility,
+    },
     diagnostic::{
         ConflictingUsing, Diagnostic, ExpectModule, ItemRedifinition,
         SymbolIsMoreAccessibleThanParent, SymbolIsNotAccessible,
         SymbolNotFound, TargetRootInImportIsNotAllowedwithFrom,
     },
     import::{self, Using},
-    kind::{self, Ext as _, Kind},
-    member::{self, Ext as _, Member},
-    name::{self, Ext as _, Name},
-    span::{self, Ext as _, Span},
+    kind::{self, get_kind, Kind},
+    member::{self, get_members, Member},
+    name::{self, get_name, resolve_simple_path, Name},
+    span::{self, get_span, Span},
     symbol, syntax,
-    target::{Ext as _, MapExt},
+    target::{get_target, get_target_map},
     tree, HierarchyRelationship,
 };
 
@@ -166,7 +169,10 @@ fn process_import_items(
             .alias()
             .as_ref()
             .and_then(pernixc_syntax::item::module::Alias::identifier)
-            .map_or_else(|| engine.tracked().get_name(start).0, |x| x.kind.0);
+            .map_or_else(
+                || engine.tracked().get_name(start).0.clone(),
+                |x| x.kind.0,
+            );
 
         // check if there's existing symbol right now
         let existing = engine
@@ -216,7 +222,7 @@ pub(super) fn symbol_is_more_accessible_than_its_parent_check(
         .copied()
         .map(|x| TargetID::Local.make_global(x))
         .for_each(|symbol_id| {
-            let kind = engine.tracked().get_kind(symbol_id);
+            let kind = *engine.tracked().get_kind(symbol_id);
 
             if kind != Kind::Trait {
                 return;
@@ -280,7 +286,7 @@ pub(super) fn insert_imports(
             };
 
             // must be module
-            if engine.tracked().get_kind(from_id) != Kind::Module {
+            if *engine.tracked().get_kind(from_id) != Kind::Module {
                 handler.receive(Box::new(ExpectModule {
                     module_path: from_simple_path.inner_tree().span(),
                     found_id: from_id,

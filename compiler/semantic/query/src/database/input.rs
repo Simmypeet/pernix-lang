@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::atomic::AtomicBool;
 
 use crate::{
     database::{Completion, DynamicKey, InputMetadata, ValueMetadata},
@@ -61,7 +61,7 @@ impl SetInputLock<'_> {
     /// method.
     ///
     /// When setting the input, the dependencies of the key are cleared.
-    pub fn set_input<K: Key>(&self, key: K, value: Arc<K::Value>) {
+    pub fn set_input<K: Key>(&self, key: K, value: K::Value) {
         let key_fingerprint = fingerprint::fingerprint(&key);
         let value_fingerprint = fingerprint::fingerprint(&value);
 
@@ -94,10 +94,10 @@ impl SetInputLock<'_> {
 
                         if update.update_value {
                             self.engine
-                                .save_value::<K>(key_fingerprint, &*value);
+                                .save_value::<K>(key_fingerprint, &value);
                         }
 
-                        completion.store = Some(value);
+                        completion.store = Some(smallbox::smallbox!(value));
                     }
                 }
             }
@@ -117,12 +117,12 @@ impl SetInputLock<'_> {
                         );
                     }
                     if update.update_value {
-                        self.engine.save_value::<K>(key_fingerprint, &*value);
+                        self.engine.save_value::<K>(key_fingerprint, &value);
                     }
 
                     vacant_entry.insert(super::State::Completion(Completion {
                         metadata: version_info,
-                        store: Some(value),
+                        store: Some(smallbox::smallbox!(value)),
                     }));
                 } else {
                     self.update_version
@@ -137,11 +137,11 @@ impl SetInputLock<'_> {
                     self.engine
                         .save_value_metadata::<K>(key_fingerprint, &metadata);
 
-                    self.engine.save_value::<K>(key_fingerprint, &*value);
+                    self.engine.save_value::<K>(key_fingerprint, &value);
 
                     vacant_entry.insert(super::State::Completion(Completion {
                         metadata,
-                        store: Some(value),
+                        store: Some(smallbox::smallbox!(value)),
                     }));
                 }
             }

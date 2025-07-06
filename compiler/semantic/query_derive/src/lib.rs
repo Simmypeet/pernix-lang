@@ -1,7 +1,7 @@
 //! Contains the procedural macros for the `pernixc_query` crate.
 
 use proc_macro::TokenStream;
-use syn::{parenthesized, parse_quote};
+use syn::{parenthesized, parse_quote, Attribute, Data, DataStruct, Fields};
 
 /// Derives the `Key` trait for structs and enums to be used in the query
 /// system.
@@ -127,7 +127,7 @@ use syn::{parenthesized, parse_quote};
 /// - `Eq` + `PartialEq` - For merge conflict detection
 /// - `Send + Sync + 'static` - For thread safety and type erasure
 /// - `Serialize + Deserialize` - For database serialization
-#[proc_macro_derive(Key, attributes(value, pernixc_query, scc_value))]
+#[proc_macro_derive(Key, attributes(value, pernixc_query, scc_value, extend))]
 #[allow(clippy::too_many_lines)]
 pub fn derive_key(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -152,6 +152,45 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         )
         .to_compile_error()
         .into();
+    };
+
+    let extend = if input.attrs.iter().any(|x| x.path().is_ident("extend")) {
+        let Data::Struct(st) = &input.data else {
+            return syn::Error::new_spanned(
+                name,
+                "the `#[extend]` attribute can only be used on structs",
+            )
+            .to_compile_error()
+            .into();
+        };
+
+        // must be a tuple struct
+        let DataStruct { fields: Fields::Unnamed(unnamed_files), .. } = st
+        else {
+            return syn::Error::new_spanned(
+                name,
+                "the `#[extend]` attribute can only be used on tuple structs",
+            )
+            .to_compile_error()
+            .into();
+        };
+
+        // must have exactly one unnamed field
+        if unnamed_files.unnamed.len() != 1 {
+            return syn::Error::new_spanned(
+                name,
+                "the `#[extend]` attribute can only be used on tuple structs \
+                 with exactly one unnamed field",
+            )
+            .to_compile_error()
+            .into();
+        }
+
+        let field_type = &unnamed_files.unnamed[0].ty;
+
+        get_ext(input.attrs.iter(), &value_type, field_type, &input.ident)
+    } else {
+        None
     };
 
     let pernixc_query_crate: syn::Path = match input
@@ -196,7 +235,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 
     let scc_value_fn = scc_value_expr.map(|x| {
         quote::quote! {
-            fn scc_value() -> ::pernixc_query::__internal::Arc<Self::Value> {
+            fn scc_value() -> Self::Value {
                 #x
             }
         }
@@ -222,6 +261,8 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         }
 
         #impl_identifiable
+
+        #extend
     }.into()
 }
 
@@ -281,7 +322,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// // The key will store values of type UserData instead of User
 /// ```
 ///
-/// ## `#[ext(...)]`
+/// ## `#[extend(...)]`
 ///
 /// Generates an extension trait for convenient value retrieval from the query
 /// engine. This attribute accepts several sub-attributes:
@@ -303,7 +344,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[derive(Value)]
 /// #[id(u32)]
-/// #[ext(method(get_user), trait(UserExt), unwrap("Failed to get user"))]
+/// #[extend(method(get_user), trait(UserExt), unwrap("Failed to get user"))]
 /// struct User {
 ///     name: String,
 /// }
@@ -328,8 +369,8 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 ///    necessary traits for use as a query key, including `Key`, `Hash`,
 ///    `Serialize`, `Deserialize`, and `StableHash`.
 ///
-/// 2. **Extension Trait** (if `#[ext]` is provided): A trait with methods for
-///    convenient value retrieval, implemented for `TrackedEngine`.
+/// 2. **Extension Trait** (if `#[extend]` is provided): A trait with methods
+///    for convenient value retrieval, implemented for `TrackedEngine`.
 ///
 /// # Examples
 ///
@@ -369,7 +410,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[derive(Value)]
 /// #[id(u32)]
-/// #[ext(method(get_user))]
+/// #[extend(method(get_user))]
 /// struct User {
 ///     name: String,
 /// }
@@ -390,7 +431,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// ```ignore
 /// #[derive(Value)]
 /// #[id(u32)]
-/// #[ext(method(get_user), trait(UserExt), unwrap("User not found"))]
+/// #[extend(method(get_user), trait(UserExt), unwrap("User not found"))]
 /// struct User {
 ///     name: String,
 /// }
@@ -423,7 +464,8 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 /// - Validates that generic parameters are not used (value types must be
 ///   concrete)
 /// - Ensures all attribute arguments are well-formed
-/// - Validates that the `method(name)` argument is provided when using `#[ext]`
+/// - Validates that the `method(name)` argument is provided when using
+///   `#[extend]`
 ///
 /// # Generated Trait Implementations
 ///
@@ -447,7 +489,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 ///
 /// The generated key types are thread-safe and can be used across multiple
 /// threads, making them suitable for concurrent query processing.
-#[proc_macro_derive(Value, attributes(id, ext, value, key))]
+#[proc_macro_derive(Value, attributes(id, extend, key, value))]
 #[allow(clippy::too_many_lines, clippy::redundant_clone)]
 pub fn derive_value(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -501,27 +543,65 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
             }
         };
 
-    let value_type: syn::Type =
-        match input.attrs.iter().find(|attr| attr.path().is_ident("value")) {
-            Some(syn) => {
-                let Ok(value) = syn.parse_args::<syn::Type>() else {
-                    return syn::Error::new_spanned(
-                        syn,
-                        "invalid `#[value(Type)]` attribute on value type",
-                    )
-                    .to_compile_error()
-                    .into();
-                };
-                value
-            }
-            None => parse_quote!(#name),
-        };
-
-    let ext = match input.attrs.iter().find(|attr| attr.path().is_ident("ext"))
+    let value_type = if let Some(value_attr) =
+        input.attrs.iter().find(|attr| attr.path().is_ident("value"))
     {
+        let Ok(value_type) = value_attr.parse_args::<syn::Type>() else {
+            return syn::Error::new_spanned(
+                value_attr,
+                "invalid `#[value(Type)]` attribute on value type",
+            )
+            .to_compile_error()
+            .into();
+        };
+        value_type
+    } else {
+        parse_quote!(#name)
+    };
+
+    let ext = get_ext(input.attrs.iter(), &value_type, &id_type, &key_ident);
+
+    let key_struct = quote::quote! {
+        #[doc = concat!(
+            "A key type for the `",
+            stringify!(#name),
+            "` value type. This is used to uniquely identify values in the query database.\n\n",
+            "This key is derived from the `#[id(Type)]` attribute, which specifies the type of the ID used to identify this value."
+        )]
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            ::pernixc_query::__internal::Key,
+            ::pernixc_query::__internal::Serialize,
+            ::pernixc_query::__internal::Deserialize,
+            ::pernixc_query::__internal::StableHash,
+        )]
+        #[value(#value_type)]
+        pub struct #key_ident(pub #id_type);
+    };
+
+    quote::quote! {
+        #key_struct
+        #ext
+    }
+    .into()
+}
+
+fn get_ext<'a>(
+    attributes: impl IntoIterator<Item = &'a Attribute>,
+    return_ty: &impl quote::ToTokens,
+    id_type: &syn::Type,
+    key_ident: &syn::Ident,
+) -> Option<proc_macro2::TokenStream> {
+    match attributes.into_iter().find(|attr| attr.path().is_ident("extend")) {
         Some(attr) => {
             let mut method = None;
-            let mut trait_name = None;
             let mut dot_unwrap = None;
 
             match attr.parse_nested_meta(|meta| {
@@ -538,22 +618,6 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
                     };
 
                     method = Some(ident);
-                    return Ok(());
-                }
-
-                // optional `trait(name)` argument
-                if meta.path.is_ident("trait") {
-                    let ident;
-                    parenthesized!(ident in meta.input);
-
-                    let Ok(ident) = ident.parse::<syn::Ident>() else {
-                        return Err(syn::Error::new(
-                            ident.span(),
-                            "`trait` must be a valid identifier",
-                        ));
-                    };
-
-                    trait_name = Some(ident);
                     return Ok(());
                 }
 
@@ -591,15 +655,14 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
                         .into();
                     };
 
-                    let trait_name =
-                        trait_name.unwrap_or_else(|| parse_quote!(Ext));
-
                     let return_type: syn::Type = if dot_unwrap.is_some() {
-                        value_type.clone()
+                        parse_quote!(
+                            #return_ty
+                        )
                     } else {
                         parse_quote!(
                             ::pernixc_query::__internal::Result<
-                                #value_type,
+                                #return_ty,
                                 ::pernixc_query::runtime::executor::CyclicError
                             >
                         )
@@ -608,17 +671,18 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
                     Some(quote::quote! {
                         #[doc = concat!(
                             "An extension trait for the `",
-                            stringify!(#name),
+                            stringify!(#return_ty),
                             "` value type.\n\n",
                             "This trait provides additional methods for retrieving values from the query database."
                         )]
-                        pub trait #trait_name {
+                        #[allow(non_camel_case_types)]
+                        pub trait #method {
                             #[doc = concat!(
                                 "Retrieves a value of type `",
-                                stringify!(#value_type),
+                                stringify!(#return_type),
                                 "` from the query database using the given ID.\n\n",
                                 "This method is automatically implemented for the `",
-                                stringify!(#name),
+                                stringify!(#return_ty),
                                 "` value type."
                             )]
                             fn #method(
@@ -627,7 +691,7 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
                             ) -> #return_type;
                         }
 
-                        impl #trait_name for ::pernixc_query::TrackedEngine<'_> {
+                        impl #method for ::pernixc_query::TrackedEngine<'_> {
                             fn #method(
                                 &self,
                                 id: #id_type
@@ -639,43 +703,10 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
                         }
                     })
                 }
-                Err(error) => {
-                    return error.to_compile_error().into();
-                }
+                Err(error) => error.to_compile_error().into(),
             }
         }
 
         None => None,
-    };
-
-    let key_struct = quote::quote! {
-        #[doc = concat!(
-            "A key type for the `",
-            stringify!(#name),
-            "` value type. This is used to uniquely identify values in the query database.\n\n",
-            "This key is derived from the `#[id(Type)]` attribute, which specifies the type of the ID used to identify this value."
-        )]
-        #[derive(
-            Debug,
-            Clone,
-            Copy,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            Hash,
-            ::pernixc_query::__internal::Key,
-            ::pernixc_query::__internal::Serialize,
-            ::pernixc_query::__internal::Deserialize,
-            ::pernixc_query::__internal::StableHash,
-        )]
-        #[value(#value_type)]
-        pub struct #key_ident(pub #id_type);
-    };
-
-    quote::quote! {
-        #key_struct
-        #ext
     }
-    .into()
 }

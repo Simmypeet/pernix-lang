@@ -58,8 +58,8 @@ impl Executor<NegateVariable> for NegateVariableExecutor {
         &self,
         engine: &TrackedEngine,
         key: &NegateVariable,
-    ) -> Result<Arc<i32>, CyclicError> {
-        Ok(Arc::new(-*engine.query(&Variable(key.0.to_string()))?))
+    ) -> Result<i32, CyclicError> {
+        Ok(-engine.query(&Variable(key.0.to_string()))?)
     }
 }
 
@@ -93,11 +93,11 @@ impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
         &self,
         engine: &TrackedEngine,
         key: &SumNegatedVariable,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         let a = engine.query(&NegateVariable(key.a.clone()))?;
         let b = engine.query(&NegateVariable(key.b.clone()))?;
 
-        Ok(Arc::new(*a + *b))
+        Ok(a + b)
     }
 }
 
@@ -106,8 +106,8 @@ fn negate_variable() {
     let mut engine = Engine::default();
 
     engine.input_session(|x| {
-        x.set_input(Variable("a".to_string()), Arc::new(100));
-        x.set_input(Variable("b".to_string()), Arc::new(200));
+        x.set_input(Variable("a".to_string()), 100);
+        x.set_input(Variable("b".to_string()), 200);
     });
 
     assert_eq!(engine.version(), 1);
@@ -120,11 +120,11 @@ fn negate_variable() {
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() })
         .unwrap();
 
-    assert_eq!(*value, -300);
+    assert_eq!(value, -300);
 
     engine.input_session(|x| {
-        x.set_input(Variable("a".to_string()), Arc::new(200));
-        x.set_input(Variable("b".to_string()), Arc::new(300));
+        x.set_input(Variable("a".to_string()), 200);
+        x.set_input(Variable("b".to_string()), 300);
     });
 
     assert_eq!(engine.version(), 2);
@@ -134,11 +134,11 @@ fn negate_variable() {
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() })
         .unwrap();
 
-    assert_eq!(*value, -500);
+    assert_eq!(value, -500);
 
     engine.input_session(|x| {
-        x.set_input(Variable("a".to_string()), Arc::new(-300));
-        x.set_input(Variable("b".to_string()), Arc::new(-300));
+        x.set_input(Variable("a".to_string()), -300);
+        x.set_input(Variable("b".to_string()), -300);
     });
 
     assert_eq!(engine.version(), 3);
@@ -147,7 +147,7 @@ fn negate_variable() {
         .query(&SumNegatedVariable { a: "a".to_string(), b: "b".to_string() })
         .unwrap();
 
-    assert_eq!(*value, 600); // -(-300) + -(-300) = 300 + 300 = 600
+    assert_eq!(value, 600); // -(-300) + -(-300) = 300 + 300 = 600
 }
 
 #[derive(
@@ -183,13 +183,13 @@ impl Executor<TrackedComputation> for TrackedExecutor {
         &self,
         engine: &TrackedEngine,
         key: &TrackedComputation,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Perform computation based on input variable
-        let input_value = *engine.query(&Variable(key.0.clone()))?;
-        Ok(Arc::new(input_value * 2))
+        let input_value = engine.query(&Variable(key.0.clone()))?;
+        Ok(input_value * 2)
     }
 }
 
@@ -199,7 +199,7 @@ fn skip_when_input_unchanged() {
 
     // set the initial input
     engine.input_session(|x| {
-        x.set_input(Variable("x".to_string()), Arc::new(42));
+        x.set_input(Variable("x".to_string()), 42);
     });
 
     assert_eq!(engine.version(), 1);
@@ -214,7 +214,7 @@ fn skip_when_input_unchanged() {
     // First query - should compute and call executor
     let result1 =
         engine.tracked().query(&TrackedComputation("x".to_string())).unwrap();
-    assert_eq!(*result1, 84); // 42 * 2
+    assert_eq!(result1, 84); // 42 * 2
     assert_eq!(executor_arc.get_call_count(), 1);
 
     // Second query with same input - should skip computation and return cached
@@ -222,12 +222,12 @@ fn skip_when_input_unchanged() {
     let result2 =
         engine.tracked().query(&TrackedComputation("x".to_string())).unwrap();
 
-    assert_eq!(*result2, 84); // Same result
+    assert_eq!(result2, 84); // Same result
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
     // Now change the input - should trigger recomputation
     engine.input_session(|x| {
-        x.set_input(Variable("x".to_string()), Arc::new(100));
+        x.set_input(Variable("x".to_string()), 100);
     });
 
     assert_eq!(engine.version(), 2); // Version should increment
@@ -235,18 +235,18 @@ fn skip_when_input_unchanged() {
     // Query after input change - should compute and call executor again
     let result4 =
         engine.tracked().query(&TrackedComputation("x".to_string())).unwrap();
-    assert_eq!(*result4, 200); // 100 * 2
+    assert_eq!(result4, 200); // 100 * 2
     assert_eq!(executor_arc.get_call_count(), 2); // Executor called again
 
     // Query again with unchanged input - should skip computation again
     let result5 =
         engine.tracked().query(&TrackedComputation("x".to_string())).unwrap();
-    assert_eq!(*result5, 200); // Same result
+    assert_eq!(result5, 200); // Same result
     assert_eq!(executor_arc.get_call_count(), 2); // Executor NOT called again
 
     engine.input_session(|x| {
         // Set input again but same value
-        x.set_input(Variable("x".to_string()), Arc::new(100));
+        x.set_input(Variable("x".to_string()), 100);
     });
 
     assert_eq!(engine.version(), 2); // Version should NOT increment
@@ -255,7 +255,7 @@ fn skip_when_input_unchanged() {
     let result6 =
         engine.tracked().query(&TrackedComputation("x".to_string())).unwrap();
 
-    assert_eq!(*result6, 200); // Same result
+    assert_eq!(result6, 200); // Same result
     assert_eq!(executor_arc.get_call_count(), 2); // Executor NOT called again
 }
 
@@ -292,14 +292,14 @@ impl Executor<AbsVariable> for TrackedAbsExecutor {
         &self,
         engine: &TrackedEngine,
         key: &AbsVariable,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Compute absolute value
         let input_value = engine.query(&Variable(key.0.to_string()))?;
 
-        Ok(Arc::new(input_value.abs()))
+        Ok(input_value.abs())
     }
 }
 
@@ -339,15 +339,13 @@ impl Executor<AddTwoAbsVariable> for TrackedAddTwoAbsExecutor {
         &self,
         engine: &TrackedEngine,
         key: &AddTwoAbsVariable,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         // Increment the call counter to track executor invocations
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Compute sum of absolute values
-        Ok(Arc::new(
-            *engine.query(&AbsVariable(key.x.clone()))?
-                + *engine.query(&AbsVariable(key.y.clone()))?,
-        ))
+        Ok(engine.query(&AbsVariable(key.x.clone()))?
+            + engine.query(&AbsVariable(key.y.clone()))?)
     }
 }
 
@@ -357,8 +355,8 @@ fn skip_when_intermediate_result_unchanged() {
 
     // Set initial inputs - both positive values
     engine.input_session(|x| {
-        x.set_input(Variable("x".to_string()), Arc::new(400));
-        x.set_input(Variable("y".to_string()), Arc::new(300));
+        x.set_input(Variable("x".to_string()), 400);
+        x.set_input(Variable("y".to_string()), 300);
     });
 
     assert_eq!(engine.version(), 1);
@@ -376,7 +374,7 @@ fn skip_when_intermediate_result_unchanged() {
         .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() })
         .unwrap();
-    assert_eq!(*result1, 700); // abs(400) + abs(300) = 400 + 300 = 700
+    assert_eq!(result1, 700); // abs(400) + abs(300) = 400 + 300 = 700
     assert_eq!(abs_executor.get_call_count(), 2); // Called for both x and y
     assert_eq!(add_executor.get_call_count(), 1); // Called once
 
@@ -386,13 +384,13 @@ fn skip_when_intermediate_result_unchanged() {
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() })
         .unwrap();
 
-    assert_eq!(*result2, 700); // Same result
+    assert_eq!(result2, 700); // Same result
     assert_eq!(abs_executor.get_call_count(), 2); // NOT called again
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again
 
     // Change x from 400 to -400 (abs value stays the same)
     engine.input_session(|x| {
-        x.set_input(Variable("x".to_string()), Arc::new(-400));
+        x.set_input(Variable("x".to_string()), -400);
     });
     assert_eq!(engine.version(), 2); // Version should increment
 
@@ -403,13 +401,13 @@ fn skip_when_intermediate_result_unchanged() {
         .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() })
         .unwrap();
-    assert_eq!(*result3, 700); // abs(-400) + abs(300) = 400 + 300 = 700 (same result!)
+    assert_eq!(result3, 700); // abs(-400) + abs(300) = 400 + 300 = 700 (same result!)
     assert_eq!(abs_executor.get_call_count(), 3); // Called again for x only
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again because abs values are the same
 
     // Change y from 300 to -300 (abs value stays the same)
     engine.input_session(|x| {
-        x.set_input(Variable("y".to_string()), Arc::new(-300));
+        x.set_input(Variable("y".to_string()), -300);
     });
     assert_eq!(engine.version(), 3); // Version should increment again
 
@@ -419,13 +417,13 @@ fn skip_when_intermediate_result_unchanged() {
         .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() })
         .unwrap();
-    assert_eq!(*result4, 700); // abs(-400) + abs(-300) = 400 + 300 = 700 (still same result!)
+    assert_eq!(result4, 700); // abs(-400) + abs(-300) = 400 + 300 = 700 (still same result!)
     assert_eq!(abs_executor.get_call_count(), 4); // Called again for y only
     assert_eq!(add_executor.get_call_count(), 1); // STILL not called because both abs values are the same
 
     // Now change x to a value that actually changes the abs result
     engine.input_session(|x| {
-        x.set_input(Variable("x".to_string()), Arc::new(500));
+        x.set_input(Variable("x".to_string()), 500);
     });
     assert_eq!(engine.version(), 4); // Version should increment
 
@@ -434,7 +432,7 @@ fn skip_when_intermediate_result_unchanged() {
         .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() })
         .unwrap();
-    assert_eq!(*result5, 800); // abs(500) + abs(-300) = 500 + 300 = 800
+    assert_eq!(result5, 800); // abs(500) + abs(-300) = 500 + 300 = 800
     assert_eq!(abs_executor.get_call_count(), 5); // Called for x
     assert_eq!(add_executor.get_call_count(), 2); // Finally called again because abs(x) changed
 
@@ -443,7 +441,7 @@ fn skip_when_intermediate_result_unchanged() {
         .tracked()
         .query(&AddTwoAbsVariable { x: "x".to_string(), y: "y".to_string() })
         .unwrap();
-    assert_eq!(*result6, 800); // Same result
+    assert_eq!(result6, 800); // Same result
     assert_eq!(abs_executor.get_call_count(), 5); // NOT called
     assert_eq!(add_executor.get_call_count(), 2); // NOT called
 }
@@ -465,7 +463,7 @@ fn skip_when_intermediate_result_unchanged() {
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
-#[scc_value(Arc::default())]
+#[scc_value(i32::default())]
 pub struct CyclicQueryA;
 
 #[derive(
@@ -484,7 +482,7 @@ pub struct CyclicQueryA;
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
-#[scc_value(Arc::default())]
+#[scc_value(i32::default())]
 pub struct CyclicQueryB;
 
 #[derive(
@@ -521,12 +519,12 @@ impl Executor<CyclicQueryA> for CyclicExecutorA {
         &self,
         engine: &TrackedEngine,
         _key: &CyclicQueryA,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This creates a cycle: A depends on B, B depends on A
-        let b_value = *engine.query(&CyclicQueryB)?;
+        let b_value = engine.query(&CyclicQueryB)?;
 
-        Ok(Arc::new(b_value + 10))
+        Ok(b_value + 10)
     }
 }
 
@@ -546,11 +544,11 @@ impl Executor<CyclicQueryB> for CyclicExecutorB {
         &self,
         engine: &TrackedEngine,
         _key: &CyclicQueryB,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This completes the cycle: B depends on A, A depends on B
-        let a_value = *engine.query(&CyclicQueryA)?;
-        Ok(Arc::new(a_value + 20))
+        let a_value = engine.query(&CyclicQueryA)?;
+        Ok(a_value + 20)
     }
 }
 
@@ -570,13 +568,13 @@ impl Executor<DependentQuery> for DependentExecutor {
         &self,
         engine: &TrackedEngine,
         _key: &DependentQuery,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This query depends on the cyclic queries
-        let a_value = *engine.query(&CyclicQueryA)?;
-        let b_value = *engine.query(&CyclicQueryB)?;
+        let a_value = engine.query(&CyclicQueryA)?;
+        let b_value = engine.query(&CyclicQueryB)?;
 
-        Ok(Arc::new(a_value + b_value + 100))
+        Ok(a_value + b_value + 100)
     }
 }
 
@@ -592,8 +590,8 @@ fn cyclic_dependency_returns_default_values() {
 
     // When we query CyclicQueryA, it should detect the cycle A -> B -> A
     // and return default values (0 for i32) without calling the executors
-    let result_a = *engine.tracked().query(&CyclicQueryA).unwrap();
-    let result_b = *engine.tracked().query(&CyclicQueryB).unwrap();
+    let result_a = engine.tracked().query(&CyclicQueryA).unwrap();
+    let result_b = engine.tracked().query(&CyclicQueryB).unwrap();
 
     // Both should return default values (0 for i32)
     assert_eq!(result_a, 0);
@@ -623,7 +621,7 @@ fn dependent_query_uses_cyclic_default_values() {
     engine.runtime.executor.register(Arc::clone(&executor_dependent));
 
     // Query the dependent query, which depends on the cyclic queries
-    let result = *engine.tracked().query(&DependentQuery).unwrap();
+    let result = engine.tracked().query(&DependentQuery).unwrap();
 
     // DependentQuery should execute and use the default values from the cyclic
     // queries Default values: CyclicQueryA = 0, CyclicQueryB = 0
@@ -641,7 +639,7 @@ fn dependent_query_uses_cyclic_default_values() {
     assert_eq!(executor_dependent.get_call_count(), 1);
 
     // Try calling the dependent query again
-    let result_again = *engine.tracked().query(&DependentQuery).unwrap();
+    let result_again = engine.tracked().query(&DependentQuery).unwrap();
 
     // It should return the same result without calling the executors again
     assert_eq!(result_again, 100);
@@ -669,13 +667,13 @@ impl Executor<DependentQuery> for ConditionalDependentExecutor {
         &self,
         engine: &TrackedEngine,
         _key: &DependentQuery,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // This query depends on the conditional cyclic queries
-        let a_value = *engine.query(&ConditionalCyclicQueryA)?;
-        let b_value = *engine.query(&ConditionalCyclicQueryB)?;
+        let a_value = engine.query(&ConditionalCyclicQueryA)?;
+        let b_value = engine.query(&ConditionalCyclicQueryB)?;
 
-        Ok(Arc::new(a_value + b_value + 100))
+        Ok(a_value + b_value + 100)
     }
 }
 
@@ -697,7 +695,7 @@ impl Executor<DependentQuery> for ConditionalDependentExecutor {
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
-#[scc_value(Arc::default())]
+#[scc_value(i32::default())]
 pub struct ConditionalCyclicQueryA;
 
 #[derive(
@@ -716,7 +714,7 @@ pub struct ConditionalCyclicQueryA;
 )]
 #[pernixc_query(crate)]
 #[value(i32)]
-#[scc_value(Arc::default())]
+#[scc_value(i32::default())]
 pub struct ConditionalCyclicQueryB;
 
 #[derive(
@@ -757,22 +755,22 @@ impl Executor<ConditionalCyclicQueryA> for ConditionalCyclicExecutorA {
         &self,
         engine: &TrackedEngine,
         _key: &ConditionalCyclicQueryA,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Read the control variable to determine whether to create a cycle
-        let control_value = *engine.query(&CycleControlVariable)?;
+        let control_value = engine.query(&CycleControlVariable)?;
 
-        Ok(Arc::new(if control_value == 1 {
+        Ok(if control_value == 1 {
             // When control_value is 1, create a cycle by querying B
-            let b_value = *engine.query(&ConditionalCyclicQueryB)?;
+            let b_value = engine.query(&ConditionalCyclicQueryB)?;
 
             b_value + 10
         } else {
             // When control_value is not 1, no cycle - just return a computed
             // value
             control_value * 100
-        }))
+        })
     }
 }
 
@@ -796,22 +794,22 @@ impl Executor<ConditionalCyclicQueryB> for ConditionalCyclicExecutorB {
         &self,
         engine: &TrackedEngine,
         _key: &ConditionalCyclicQueryB,
-    ) -> Result<Arc<i32>, CyclicError> {
+    ) -> Result<i32, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Read the control variable to determine whether to create a cycle
-        let control_value = *engine.query(&CycleControlVariable)?;
+        let control_value = engine.query(&CycleControlVariable)?;
 
-        Ok(Arc::new(if control_value == 1 {
+        Ok(if control_value == 1 {
             // When control_value is 1, complete the cycle by querying A
-            let a_value = *engine.query(&ConditionalCyclicQueryA)?;
+            let a_value = engine.query(&ConditionalCyclicQueryA)?;
 
             a_value + 20
         } else {
             // When control_value is not 1, no cycle - just return a computed
             // value
             control_value * 200
-        }))
+        })
     }
 }
 
@@ -828,12 +826,12 @@ fn conditional_cyclic_dependency() {
 
     // Phase 1: Set control value to create NO cycle (control_value != 1)
     engine.input_session(|x| {
-        x.set_input(CycleControlVariable, Arc::new(5));
+        x.set_input(CycleControlVariable, 5);
     });
 
     // Query both A and B - they should compute normal values without cycles
-    let result_a = *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
-    let result_b = *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+    let result_a = engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+    let result_b = engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
 
     // Expected values: A = 5 * 100 = 500, B = 5 * 200 = 1000
     assert_eq!(result_a, 500);
@@ -845,7 +843,7 @@ fn conditional_cyclic_dependency() {
 
     // Phase 2: Change control value to CREATE a cycle (control_value == 1)
     engine.input_session(|x| {
-        x.set_input(CycleControlVariable, Arc::new(1));
+        x.set_input(CycleControlVariable, 1);
     });
 
     executor_a.reset_call_count();
@@ -853,9 +851,9 @@ fn conditional_cyclic_dependency() {
 
     // Query A - this should trigger cycle detection and return default values
     let result_a_cyclic =
-        *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+        engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
     let result_b_cyclic =
-        *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+        engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
 
     // Both should return default values (0 for i32) due to cycle detection
     assert_eq!(result_a_cyclic, 0);
@@ -868,7 +866,7 @@ fn conditional_cyclic_dependency() {
     // Phase 3: Change control value back to break the cycle (control_value !=
     // 1)
     engine.input_session(|x| {
-        x.set_input(CycleControlVariable, Arc::new(3));
+        x.set_input(CycleControlVariable, 3);
     });
 
     executor_a.reset_call_count();
@@ -876,9 +874,9 @@ fn conditional_cyclic_dependency() {
 
     // Query both A and B - they should recompute and return normal values again
     let result_a_normal =
-        *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+        engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
     let result_b_normal =
-        *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+        engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
 
     // Expected values: A = 3 * 100 = 300, B = 3 * 200 = 600
     assert_eq!(result_a_normal, 300);
@@ -891,7 +889,7 @@ fn conditional_cyclic_dependency() {
     // Phase 4: Create cycle again with a different control value
     // (control_value // == 1)
     engine.input_session(|x| {
-        x.set_input(CycleControlVariable, Arc::new(1));
+        x.set_input(CycleControlVariable, 1);
     });
 
     executor_a.reset_call_count();
@@ -899,9 +897,9 @@ fn conditional_cyclic_dependency() {
 
     // Query A - cycle should be detected again and default values returned
     let result_a_cyclic2 =
-        *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
+        engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
     let result_b_cyclic2 =
-        *engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
+        engine.tracked().query(&ConditionalCyclicQueryB).unwrap();
 
     // Both should return default values (0 for i32) due to cycle detection
     assert_eq!(result_a_cyclic2, 0);
@@ -927,10 +925,10 @@ fn conditional_cyclic_with_dependent_query() {
     // Phase 1: No cycle - dependent query should use computed values
 
     engine.input_session(|x| {
-        x.set_input(CycleControlVariable, Arc::new(2));
+        x.set_input(CycleControlVariable, 2);
     });
 
-    let result_dependent = *engine.tracked().query(&DependentQuery).unwrap();
+    let result_dependent = engine.tracked().query(&DependentQuery).unwrap();
 
     // DependentQuery = A + B + 100 = (2*100) + (2*200) + 100 = 200 + 400 + 100
     // = 700
@@ -944,7 +942,7 @@ fn conditional_cyclic_with_dependent_query() {
     // Phase 2: Create cycle - dependent query should use default values
 
     engine.input_session(|x| {
-        x.set_input(CycleControlVariable, Arc::new(1));
+        x.set_input(CycleControlVariable, 1);
     });
 
     executor_a.reset_call_count();
@@ -954,7 +952,7 @@ fn conditional_cyclic_with_dependent_query() {
     executor_dependent.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
     let result_dependent_cyclic =
-        *engine.tracked().query(&DependentQuery).unwrap();
+        engine.tracked().query(&DependentQuery).unwrap();
 
     // DependentQuery should use default values: 0 + 0 + 100 = 100
     assert_eq!(result_dependent_cyclic, 100);
@@ -968,7 +966,7 @@ fn conditional_cyclic_with_dependent_query() {
     // Phase 3: Break cycle again - dependent query should use computed values
 
     engine.input_session(|x| {
-        x.set_input(CycleControlVariable, Arc::new(4));
+        x.set_input(CycleControlVariable, 4);
     });
 
     executor_a.reset_call_count();
@@ -978,7 +976,7 @@ fn conditional_cyclic_with_dependent_query() {
     let _debug_b = engine.tracked().query(&ConditionalCyclicQueryB);
 
     let result_dependent_normal =
-        *engine.tracked().query(&DependentQuery).unwrap();
+        engine.tracked().query(&DependentQuery).unwrap();
 
     // DependentQuery = A + B + 100 = (4*100) + (4*200) + 100 = 400 + 800 + 100
     // = 1300
@@ -1003,7 +1001,7 @@ fn conditional_cyclic_with_dependent_query() {
     Serialize,
     Deserialize,
 )]
-#[value(HashMap<String, i32>)]
+#[value(Arc<HashMap<String, i32>>)]
 pub struct VariableMap;
 
 #[derive(Debug, Default)]
@@ -1055,12 +1053,12 @@ impl Executor<GetValue> for GetValueExecutor {
         &self,
         engine: &TrackedEngine,
         key: &GetValue,
-    ) -> Result<Arc<Option<i32>>, CyclicError> {
+    ) -> Result<Option<i32>, CyclicError> {
         self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Retrieve the value from the VariableMap
         let variable_map = engine.query(&VariableMap)?;
-        Ok(Arc::new(variable_map.get(&key.0).copied()))
+        Ok(variable_map.get(&key.0).copied())
     }
 }
 
@@ -1092,9 +1090,9 @@ fn persistence_variable_map_query() {
 
     engine.runtime.persistence = Some(persistence);
 
-    let a = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
-    let b = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
-    let c = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+    let a = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a, Some(1));
     assert_eq!(b, Some(2));
@@ -1126,9 +1124,9 @@ fn persistence_variable_map_query() {
     get_value_executor.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
     // Query again after loading from persistence
-    let a2 = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
-    let b2 = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
-    let c2 = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+    let a2 = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b2 = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c2 = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a2, a);
     assert_eq!(b2, b);
@@ -1191,9 +1189,9 @@ fn persistence_input_invalidation() {
         );
     });
 
-    let a = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
-    let b = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
-    let c = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+    let a = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a, Some(1));
     assert_eq!(b, Some(2));
@@ -1218,9 +1216,9 @@ fn persistence_input_invalidation() {
     get_value_executor.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
 
     // Query again after loading from persistence
-    let a2 = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
-    let b2 = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
-    let c2 = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+    let a2 = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b2 = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c2 = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a2, a);
     assert_eq!(b2, b);
@@ -1261,9 +1259,9 @@ fn persistence_input_invalidation() {
     });
 
     // Query again after changing the input
-    let a3 = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
-    let b3 = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
-    let c3 = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+    let a3 = engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b3 = engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c3 = engine.tracked().query(&GetValue("c".to_string())).unwrap();
 
     assert_eq!(a3, Some(10));
     assert_eq!(b3, Some(20));

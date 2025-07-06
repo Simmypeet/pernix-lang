@@ -9,14 +9,14 @@ use pernixc_query::{Engine, TrackedEngine};
 use pernixc_target::{Global, TargetID};
 
 use crate::{
-    accessibility::{Accessibility, Ext as _},
-    import::Ext as _,
-    kind::{Ext as _, Kind},
-    member::Ext as _,
-    name::Ext as _,
-    span::Ext as _,
+    accessibility::{get_accessibility, Accessibility},
+    import::get_imports,
+    kind::{get_kind, Kind},
+    member::try_get_members,
+    name::{get_name, get_qualified_name},
+    span::get_span,
     symbol,
-    target::MapExt,
+    target::get_target_map,
 };
 
 /// Implemented all the diagnostic objects and provides type erasure.
@@ -92,8 +92,8 @@ impl Report<&Engine> for ItemRedifinition {
                 .map(|x| (x, Some("redefinition here".to_string()))),
 
             message: format!(
-                "symbol `{}` is already defined in the scope `{}`",
-                *existing_symbol_name, in_name
+                "symbol `{existing_symbol_name}` is already defined in the \
+                 scope `{in_name}`"
             ),
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
@@ -101,8 +101,8 @@ impl Report<&Engine> for ItemRedifinition {
                 .map(|span| pernixc_diagnostic::Related {
                     span,
                     message: format!(
-                        "symbol `{}` is already defined here",
-                        *existing_symbol_name
+                        "symbol `{existing_symbol_name}` is already defined \
+                         here"
                     ),
                 })
                 .into_iter()

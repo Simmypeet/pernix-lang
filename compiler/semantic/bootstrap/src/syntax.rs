@@ -28,10 +28,9 @@ use crate::symbol;
 )]
 #[key(GenericParametersKey)]
 #[id(Global<symbol::ID>)]
-#[ext(
+#[extend(
     method(get_generic_parameters_syntax),
-    unwrap("should have no cyclic dependencies"),
-    trait(GenericParametersExt)
+    unwrap("should have no cyclic dependencies")
 )]
 pub struct GenericParameters(
     pub Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
@@ -57,10 +56,9 @@ pub struct GenericParameters(
 )]
 #[key(TypeAliasKey)]
 #[id(Global<symbol::ID>)]
-#[ext(
+#[extend(
     method(get_type_alias_syntax),
-    unwrap("should have no cyclic dependencies"),
-    trait(TypeAliasExt)
+    unwrap("should have no cyclic dependencies")
 )]
 pub struct TypeAlias(pub Option<pernixc_syntax::r#type::Type>);
 
@@ -82,10 +80,9 @@ pub struct TypeAlias(pub Option<pernixc_syntax::r#type::Type>);
     Value,
     StableHash,
 )]
-#[ext(
+#[extend(
     method(get_implementation_qualified_identifier),
-    unwrap("should have no cyclic dependencies"),
-    trait(ImplementationQualifiedIdentifierExt)
+    unwrap("should have no cyclic dependencies")
 )]
 #[key(ImplementationQualifiedIdentifierKey)]
 #[id(Global<symbol::ID>)]
@@ -112,10 +109,9 @@ pub struct ImplementationQualifiedIdentifier(
 )]
 #[key(WhereClauseKey)]
 #[id(Global<symbol::ID>)]
-#[ext(
+#[extend(
     method(get_where_clause_syntax),
-    unwrap("should have no cyclic dependencies"),
-    trait(WhereClauseExt)
+    unwrap("should have no cyclic dependencies")
 )]
 pub struct WhereClause(
     pub Option<pernixc_syntax::item::where_clause::Predicates>,
@@ -139,10 +135,9 @@ pub struct WhereClause(
 )]
 #[key(FunctionSignatureKey)]
 #[id(Global<symbol::ID>)]
-#[ext(
+#[extend(
     method(get_function_signature_syntax),
-    unwrap("should have no cyclic dependencies"),
-    trait(FunctionSignatureExt)
+    unwrap("should have no cyclic dependencies")
 )]
 pub struct FunctionSignature {
     /// The parameters of the function signature, which can be empty.
@@ -168,10 +163,9 @@ pub struct FunctionSignature {
 )]
 #[key(StatementsKey)]
 #[id(Global<symbol::ID>)]
-#[ext(
+#[extend(
     method(get_statements_syntax),
-    unwrap("should have no cyclic dependencies"),
-    trait(StatementsExt)
+    unwrap("should have no cyclic dependencies")
 )]
 pub struct Statements(
     pub Option<Members<pernixc_syntax::statement::Statement>>,
@@ -195,10 +189,9 @@ pub struct Statements(
 )]
 #[key(FieldsKey)]
 #[id(Global<symbol::ID>)]
-#[ext(
+#[extend(
     method(get_fields_syntax),
-    unwrap("should have no cyclic dependencies"),
-    trait(FieldsExt)
+    unwrap("should have no cyclic dependencies")
 )]
 pub struct Fields(
     pub  Option<
@@ -225,10 +218,9 @@ pub struct Fields(
 )]
 #[key(VariantKey)]
 #[id(Global<symbol::ID>)]
-#[ext(
+#[extend(
     method(get_variant_syntax),
-    unwrap("should have no cyclic dependencies"),
-    trait(VariantExt)
+    unwrap("should have no cyclic dependencies")
 )]
 pub struct Variant(
     pub Option<pernixc_syntax::item::r#enum::VariantAssociation>,
