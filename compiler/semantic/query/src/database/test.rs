@@ -97,12 +97,11 @@ impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
 #[test]
 fn negate_variable() {
     let mut engine = Engine::default();
-    let input_lock = engine.input_lock();
 
-    input_lock.set_input(Variable("a".to_string()), Arc::new(100));
-    input_lock.set_input(Variable("b".to_string()), Arc::new(200));
-
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("a".to_string()), Arc::new(100));
+        x.set_input(Variable("b".to_string()), Arc::new(200));
+    });
 
     assert_eq!(engine.version(), 1);
 
@@ -116,12 +115,10 @@ fn negate_variable() {
 
     assert_eq!(*value, -300);
 
-    let input_lock = engine.input_lock();
-
-    input_lock.set_input(Variable("a".to_string()), Arc::new(200));
-    input_lock.set_input(Variable("b".to_string()), Arc::new(300));
-
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("a".to_string()), Arc::new(200));
+        x.set_input(Variable("b".to_string()), Arc::new(300));
+    });
 
     assert_eq!(engine.version(), 2);
 
@@ -132,12 +129,10 @@ fn negate_variable() {
 
     assert_eq!(*value, -500);
 
-    let input_lock = engine.input_lock();
-
-    input_lock.set_input(Variable("a".to_string()), Arc::new(-300));
-    input_lock.set_input(Variable("b".to_string()), Arc::new(-300));
-
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("a".to_string()), Arc::new(-300));
+        x.set_input(Variable("b".to_string()), Arc::new(-300));
+    });
 
     assert_eq!(engine.version(), 3);
     let value = engine
@@ -195,12 +190,10 @@ impl Executor<TrackedComputation> for TrackedExecutor {
 fn skip_when_input_unchanged() {
     let mut engine = Engine::default();
 
-    let input_lock = engine.input_lock();
-
-    // Set initial input
-    input_lock.set_input(Variable("x".to_string()), Arc::new(42));
-
-    drop(input_lock);
+    // set the initial input
+    engine.input_session(|x| {
+        x.set_input(Variable("x".to_string()), Arc::new(42));
+    });
 
     assert_eq!(engine.version(), 1);
 
@@ -226,10 +219,9 @@ fn skip_when_input_unchanged() {
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
     // Now change the input - should trigger recomputation
-    let input_lock = engine.input_lock();
-    input_lock.set_input(Variable("x".to_string()), Arc::new(100));
-
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("x".to_string()), Arc::new(100));
+    });
 
     assert_eq!(engine.version(), 2); // Version should increment
 
@@ -245,12 +237,10 @@ fn skip_when_input_unchanged() {
     assert_eq!(*result5, 200); // Same result
     assert_eq!(executor_arc.get_call_count(), 2); // Executor NOT called again
 
-    let input_lock = engine.input_lock();
-
-    // Set input again but same value
-    input_lock.set_input(Variable("x".to_string()), Arc::new(100));
-
-    drop(input_lock);
+    engine.input_session(|x| {
+        // Set input again but same value
+        x.set_input(Variable("x".to_string()), Arc::new(100));
+    });
 
     assert_eq!(engine.version(), 2); // Version should NOT increment
 
@@ -358,13 +348,11 @@ impl Executor<AddTwoAbsVariable> for TrackedAddTwoAbsExecutor {
 fn skip_when_intermediate_result_unchanged() {
     let mut engine = Engine::default();
 
-    let input_lock = engine.input_lock();
-
     // Set initial inputs - both positive values
-    input_lock.set_input(Variable("x".to_string()), Arc::new(400));
-    input_lock.set_input(Variable("y".to_string()), Arc::new(300));
-
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("x".to_string()), Arc::new(400));
+        x.set_input(Variable("y".to_string()), Arc::new(300));
+    });
 
     assert_eq!(engine.version(), 1);
 
@@ -396,9 +384,9 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again
 
     // Change x from 400 to -400 (abs value stays the same)
-    let input_lock = engine.input_lock();
-    input_lock.set_input(Variable("x".to_string()), Arc::new(-400));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("x".to_string()), Arc::new(-400));
+    });
     assert_eq!(engine.version(), 2); // Version should increment
 
     // Query after input change - abs executor should be called for x, but add
@@ -413,9 +401,9 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again because abs values are the same
 
     // Change y from 300 to -300 (abs value stays the same)
-    let input_lock = engine.input_lock();
-    input_lock.set_input(Variable("y".to_string()), Arc::new(-300));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("y".to_string()), Arc::new(-300));
+    });
     assert_eq!(engine.version(), 3); // Version should increment again
 
     // Query after second input change - abs executor should be called for y,
@@ -429,9 +417,9 @@ fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // STILL not called because both abs values are the same
 
     // Now change x to a value that actually changes the abs result
-    let input_lock = engine.input_lock();
-    input_lock.set_input(Variable("x".to_string()), Arc::new(500));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(Variable("x".to_string()), Arc::new(500));
+    });
     assert_eq!(engine.version(), 4); // Version should increment
 
     // Query after meaningful change - both executors should be called
@@ -832,9 +820,9 @@ fn conditional_cyclic_dependency() {
     engine.runtime.executor.register(Arc::clone(&executor_b));
 
     // Phase 1: Set control value to create NO cycle (control_value != 1)
-    let input_lock = engine.input_lock();
-    input_lock.set_input(CycleControlVariable, Arc::new(5));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(CycleControlVariable, Arc::new(5));
+    });
 
     // Query both A and B - they should compute normal values without cycles
     let result_a = *engine.tracked().query(&ConditionalCyclicQueryA).unwrap();
@@ -849,9 +837,9 @@ fn conditional_cyclic_dependency() {
     assert_eq!(executor_b.get_call_count(), 1);
 
     // Phase 2: Change control value to CREATE a cycle (control_value == 1)
-    let input_lock = engine.input_lock();
-    input_lock.set_input(CycleControlVariable, Arc::new(1));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(CycleControlVariable, Arc::new(1));
+    });
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -872,9 +860,9 @@ fn conditional_cyclic_dependency() {
 
     // Phase 3: Change control value back to break the cycle (control_value !=
     // 1)
-    let input_lock = engine.input_lock();
-    input_lock.set_input(CycleControlVariable, Arc::new(3));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(CycleControlVariable, Arc::new(3));
+    });
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -895,9 +883,9 @@ fn conditional_cyclic_dependency() {
 
     // Phase 4: Create cycle again with a different control value
     // (control_value // == 1)
-    let input_lock = engine.input_lock();
-    input_lock.set_input(CycleControlVariable, Arc::new(1));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(CycleControlVariable, Arc::new(1));
+    });
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -931,9 +919,9 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 1: No cycle - dependent query should use computed values
 
-    let input_lock = engine.input_lock();
-    input_lock.set_input(CycleControlVariable, Arc::new(2));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(CycleControlVariable, Arc::new(2));
+    });
 
     let result_dependent = *engine.tracked().query(&DependentQuery).unwrap();
 
@@ -948,9 +936,9 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 2: Create cycle - dependent query should use default values
 
-    let input_lock = engine.input_lock();
-    input_lock.set_input(CycleControlVariable, Arc::new(1));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(CycleControlVariable, Arc::new(1));
+    });
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -972,9 +960,9 @@ fn conditional_cyclic_with_dependent_query() {
 
     // Phase 3: Break cycle again - dependent query should use computed values
 
-    let input_lock = engine.input_lock();
-    input_lock.set_input(CycleControlVariable, Arc::new(4));
-    drop(input_lock);
+    engine.input_session(|x| {
+        x.set_input(CycleControlVariable, Arc::new(4));
+    });
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
