@@ -28,6 +28,13 @@ impl Engine {
             update_version: AtomicBool::new(false),
         }
     }
+
+    /// A helper method allowing setting the input queries via [`SetInputLock`]
+    pub fn input_session<'x>(&'x mut self, f: impl FnOnce(&SetInputLock<'x>)) {
+        let input_lock = self.input_lock();
+        f(&input_lock);
+        drop(input_lock);
+    }
 }
 
 impl Drop for SetInputLock<'_> {
