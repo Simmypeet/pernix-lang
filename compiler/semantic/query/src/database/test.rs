@@ -1149,3 +1149,132 @@ fn persistence_variable_map_query() {
         0
     ); // Should be cached
 }
+
+#[test]
+fn persistence_input_invalidation() {
+    let mut engine = Engine::default();
+
+    // Create and register the GetValueExecutor
+    let get_value_executor =
+        Arc::new(GetValueExecutor { call_count: AtomicUsize::new(0) });
+    engine.runtime.executor.register(get_value_executor.clone());
+
+    let mut serde_extension = SelfRegistry::default();
+    serde_extension.register::<VariableMap>();
+    serde_extension.register::<GetValue>();
+
+    let tempdir = tempfile::tempdir().unwrap();
+
+    let mut persistence = Persistence::new(
+        tempdir.path().to_path_buf(),
+        Arc::new(serde_extension),
+    )
+    .unwrap();
+
+    // Don't save variable map to persistence
+    persistence.skip_cache_value::<VariableMap>();
+
+    engine.runtime.persistence = Some(persistence);
+
+    engine.input_session(|x| {
+        x.set_input(
+            VariableMap,
+            Arc::new(
+                [
+                    ("a".to_string(), 1),
+                    ("b".to_string(), 2),
+                    ("c".to_string(), 3),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+    });
+
+    let a = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+
+    assert_eq!(a, Some(1));
+    assert_eq!(b, Some(2));
+    assert_eq!(c, Some(3));
+
+    assert_eq!(
+        get_value_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        3
+    ); // Called for a, b, c
+
+    let first_version = engine.version();
+
+    // save to persistence
+    engine.save_database().unwrap();
+
+    // load the persistence
+    let database =
+        engine.runtime.persistence.as_ref().unwrap().load_database().unwrap();
+    engine.database = database;
+
+    // reset the call counts
+    get_value_executor.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+
+    // Query again after loading from persistence
+    let a2 = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b2 = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c2 = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+
+    assert_eq!(a2, a);
+    assert_eq!(b2, b);
+    assert_eq!(c2, c);
+
+    // The GetValueExecutor should NOT have been called again since the
+    // VariableMap hasn't changed
+    assert_eq!(
+        get_value_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+
+    // version should be the same as before saving
+    assert_eq!(engine.version(), first_version);
+
+    // save the current state to persistence
+    engine.save_database().unwrap();
+
+    // load it back again
+    let database =
+        engine.runtime.persistence.as_ref().unwrap().load_database().unwrap();
+    engine.database = database;
+
+    // change the input for VariableMap
+    engine.input_session(|x| {
+        x.set_input(
+            VariableMap,
+            Arc::new(
+                [
+                    ("a".to_string(), 10),
+                    ("b".to_string(), 20),
+                    ("c".to_string(), 30),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+    });
+
+    // Query again after changing the input
+    let a3 = *engine.tracked().query(&GetValue("a".to_string())).unwrap();
+    let b3 = *engine.tracked().query(&GetValue("b".to_string())).unwrap();
+    let c3 = *engine.tracked().query(&GetValue("c".to_string())).unwrap();
+
+    assert_eq!(a3, Some(10));
+    assert_eq!(b3, Some(20));
+    assert_eq!(c3, Some(30));
+
+    // The GetValueExecutor should be called again for each variable
+    assert_eq!(
+        get_value_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        3
+    ); // Called for a, b, c again
+
+    // version should be incremented
+    assert!(engine.version() > first_version);
+}

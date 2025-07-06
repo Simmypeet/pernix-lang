@@ -238,6 +238,7 @@ pub struct Database {
 
 impl Database {
     /// Creates a new empty database with the given version.
+    #[must_use]
     pub fn with_version(version: u64) -> Self {
         Self {
             query_states_by_key: DashMap::default(),
