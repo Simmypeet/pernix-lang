@@ -98,7 +98,7 @@ pub trait Seq<E> {
     /// # Errors
     ///
     /// Returns an error if the element cannot be serialized.
-    fn serialize_element<T: Serialize<Self::Parent, E>>(
+    fn serialize_element<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -130,7 +130,7 @@ pub trait Tuple<E> {
     /// # Errors
     ///
     /// Returns an error if the element cannot be serialized.
-    fn serialize_element<T: Serialize<Self::Parent, E>>(
+    fn serialize_element<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -161,7 +161,7 @@ pub trait TupleStruct<E> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -196,7 +196,7 @@ pub trait Struct<E> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         name: &'static str,
         value: &T,
@@ -248,8 +248,8 @@ pub trait Map<E> {
     ///
     /// Returns an error if the key or value cannot be serialized.
     fn serialize_entry<
-        K: Serialize<Self::Parent, E>,
-        V: Serialize<Self::Parent, E>,
+        K: Serialize<Self::Parent, E> + ?Sized,
+        V: Serialize<Self::Parent, E> + ?Sized,
     >(
         &mut self,
         key: &K,
@@ -282,7 +282,7 @@ pub trait TupleVariant<E> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -317,7 +317,7 @@ pub trait StructVariant<E> {
     /// # Errors
     ///
     /// Returns an error if the field cannot be serialized.
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         name: &'static str,
         value: &T,

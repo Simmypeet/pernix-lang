@@ -22,7 +22,7 @@ pub mod implemented;
 pub mod implements;
 pub mod import;
 pub mod kind;
-pub mod load_source_file;
+pub mod source_file;
 pub mod member;
 pub mod name;
 pub mod parent;

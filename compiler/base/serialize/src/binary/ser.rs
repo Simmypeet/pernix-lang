@@ -200,7 +200,7 @@ pub struct BinarySeq<'a, W> {
 impl<W: Write + 'static, E> Seq<E> for BinarySeq<'_, W> {
     type Parent = BinarySerializer<W>;
 
-    fn serialize_element<T: crate::ser::Serialize<Self::Parent, E>>(
+    fn serialize_element<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -216,7 +216,7 @@ pub struct BinaryTuple<'a, W> {
 impl<W: Write + 'static, E> Tuple<E> for BinaryTuple<'_, W> {
     type Parent = BinarySerializer<W>;
 
-    fn serialize_element<T: crate::ser::Serialize<Self::Parent, E>>(
+    fn serialize_element<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -232,7 +232,7 @@ pub struct BinaryTupleStruct<'a, W> {
 impl<W: Write + 'static, E> TupleStruct<E> for BinaryTupleStruct<'_, W> {
     type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E>>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -248,7 +248,7 @@ pub struct BinaryStruct<'a, W> {
 impl<W: Write + 'static, E> Struct<E> for BinaryStruct<'_, W> {
     type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E>>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         _name: &'static str,
         value: &T,
@@ -275,8 +275,8 @@ impl<W: Write + 'static, E> Map<E> for BinaryMap<'_, W> {
     type Parent = BinarySerializer<W>;
 
     fn serialize_entry<
-        K: crate::ser::Serialize<Self::Parent, E>,
-        V: crate::ser::Serialize<Self::Parent, E>,
+        K: crate::ser::Serialize<Self::Parent, E> + ?Sized,
+        V: crate::ser::Serialize<Self::Parent, E> + ?Sized,
     >(
         &mut self,
         key: &K,
@@ -295,7 +295,7 @@ pub struct BinaryTupleVariant<'a, W> {
 impl<W: Write + 'static, E> TupleVariant<E> for BinaryTupleVariant<'_, W> {
     type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E>>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -311,7 +311,7 @@ pub struct BinaryStructVariant<'a, W> {
 impl<W: Write + 'static, E> StructVariant<E> for BinaryStructVariant<'_, W> {
     type Parent = BinarySerializer<W>;
 
-    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E>>(
+    fn serialize_field<T: crate::ser::Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         _name: &'static str,
         value: &T,

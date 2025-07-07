@@ -549,7 +549,7 @@ fn serialize_element_with_formatting<W: Write + 'static>(
 fn serialize_sequence_element<
     W: Write + 'static,
     E,
-    T: Serialize<RonSerializer<W>, E>,
+    T: Serialize<RonSerializer<W>, E> + ?Sized,
 >(
     serializer: &mut RonSerializer<W>,
     value: &T,
@@ -588,7 +588,7 @@ impl<'a, W: Write> RonSeq<'a, W> {
 impl<W: Write + 'static, E> Seq<E> for RonSeq<'_, W> {
     type Parent = RonSerializer<W>;
 
-    fn serialize_element<T: Serialize<Self::Parent, E>>(
+    fn serialize_element<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -621,7 +621,7 @@ impl<'a, W: Write> RonTuple<'a, W> {
 impl<W: Write + 'static, E> Tuple<E> for RonTuple<'_, W> {
     type Parent = RonSerializer<W>;
 
-    fn serialize_element<T: Serialize<Self::Parent, E>>(
+    fn serialize_element<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -654,7 +654,7 @@ impl<'a, W: Write> RonTupleStruct<'a, W> {
 impl<W: Write + 'static, E> TupleStruct<E> for RonTupleStruct<'_, W> {
     type Parent = RonSerializer<W>;
 
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -687,7 +687,7 @@ impl<'a, W: Write> RonStruct<'a, W> {
 impl<W: Write + 'static, E> Struct<E> for RonStruct<'_, W> {
     type Parent = RonSerializer<W>;
 
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         name: &'static str,
         value: &T,
@@ -741,8 +741,8 @@ impl<W: Write + 'static, E> Map<E> for RonMap<'_, W> {
     type Parent = RonSerializer<W>;
 
     fn serialize_entry<
-        K: Serialize<Self::Parent, E>,
-        V: Serialize<Self::Parent, E>,
+        K: Serialize<Self::Parent, E> + ?Sized,
+        V: Serialize<Self::Parent, E> + ?Sized,
     >(
         &mut self,
         key: &K,
@@ -790,7 +790,7 @@ impl<'a, W: Write> RonTupleVariant<'a, W> {
 impl<W: Write + 'static, E> TupleVariant<E> for RonTupleVariant<'_, W> {
     type Parent = RonSerializer<W>;
 
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         value: &T,
         extension: &E,
@@ -823,7 +823,7 @@ impl<'a, W: Write> RonStructVariant<'a, W> {
 impl<W: Write + 'static, E> StructVariant<E> for RonStructVariant<'_, W> {
     type Parent = RonSerializer<W>;
 
-    fn serialize_field<T: Serialize<Self::Parent, E>>(
+    fn serialize_field<T: Serialize<Self::Parent, E> + ?Sized>(
         &mut self,
         name: &'static str,
         value: &T,
