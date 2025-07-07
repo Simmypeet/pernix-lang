@@ -801,11 +801,12 @@ impl Engine {
                 )
             }
             Continuation::ReVerify(mut re_verify) => {
-                let recompute = if re_verify
-                    .derived_metadata
-                    .version_info
-                    .fingerprint
-                    .is_none()
+                let recompute = if K::ALWAYS_REVERIFY
+                    || re_verify
+                        .derived_metadata
+                        .version_info
+                        .fingerprint
+                        .is_none()
                 {
                     // if the query is a part of SCC, always recompute
                     true

@@ -35,6 +35,14 @@ impl Engine {
         f(&input_lock);
         drop(input_lock);
     }
+
+    /// Forcefully increments the version of the query database, making all the
+    /// queries re-verify their values. This works together with the
+    /// [`Key::ALWAYS_REVERIFY`] constant, which allows the queries to work with
+    /// impure inputs.
+    pub fn increment_version(&mut self) {
+        *self.database.version.get_mut() += 1;
+    }
 }
 
 impl Drop for SetInputLock<'_> {
