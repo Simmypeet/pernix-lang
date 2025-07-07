@@ -19,25 +19,12 @@ use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
+use pernixc_stable_hash::{StableHash, Value};
 use pernixc_target::{Global, TargetID};
-use thiserror::Error;
-
-/// Represents an error that occurs when loading/creating a source file.
-#[derive(Debug, Error)]
-#[allow(missing_docs)]
-pub enum Error {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    Utf8(#[from] std::str::Utf8Error),
-}
+use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 
 /// Represents an source file input for the compiler.
-#[derive(
-    Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize, StableHash,
-)]
+#[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
 pub struct SourceFile {
     content: String,
 
@@ -48,6 +35,34 @@ pub struct SourceFile {
     /// The byte ranges for each line in the source file (including the
     /// newline)
     lines: Vec<Range<usize>>,
+}
+
+/// Parallel hash function for the content of the source file.
+fn file_content_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+    content: &str,
+    hasher: &mut H,
+) -> H::Hash {
+    content
+        .as_bytes()
+        .par_chunks(1024)
+        .map(|chunk| {
+            hasher.sub_hash(&mut |x| {
+                chunk.stable_hash(x);
+            })
+        })
+        .reduce(H::Hash::default, H::Hash::wrapping_add)
+}
+
+impl StableHash for SourceFile {
+    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        let file_content_hash = file_content_hash(&self.content, state);
+        file_content_hash.stable_hash(state);
+
+        self.full_path.stable_hash(state);
+    }
 }
 
 impl AsRef<str> for SourceFile {
@@ -310,11 +325,9 @@ impl SourceFile {
     /// - [`Error::Io`]: Error occurred when mapping the file to memory.
     /// - [`Error::Utf8`]: Error occurred when converting the mapped bytes to a
     ///   string.
-    pub fn load(mut file: File, path: PathBuf) -> Result<Self, Error> {
-        let mut string = Vec::new();
-        file.read_to_end(&mut string)?;
-
-        let string = String::from_utf8(string).map_err(|x| x.utf8_error())?;
+    pub fn load(mut file: File, path: PathBuf) -> Result<Self, std::io::Error> {
+        let mut string = String::new();
+        file.read_to_string(&mut string)?;
 
         Ok(Self::new(string, path))
     }

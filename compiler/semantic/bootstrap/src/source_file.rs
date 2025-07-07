@@ -13,7 +13,17 @@ use pernixc_stable_hash::StableHash;
 /// the persistence layer to trigger the re-verification of the query that
 /// depends on it.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Identifiable, StableHash,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Identifiable,
+    StableHash,
 )]
 pub struct Key {
     /// The path to load the source file.

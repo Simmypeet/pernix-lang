@@ -3,6 +3,7 @@
 use std::{
     collections::hash_map::Entry,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use enum_as_inner::EnumAsInner;
@@ -13,8 +14,10 @@ use pernixc_handler::Storage;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_parser::abstract_tree::AbstractTree;
+use pernixc_query::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap, Span};
+use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
 
@@ -474,4 +477,29 @@ pub fn parse(
         ),
         storage.into_vec(),
     )
+}
+
+/// Query for parsing a token tree from the given source file path.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct Key {
+    /// The path to the main source file that stems the module tree.
+    pub main_file_path: Arc<Path>,
+
+    /// The target name that requested the source file.
+    pub target_name: SharedStr,
+
+    /// The ID to the source file in the global source map.
+    pub global_source_id: GlobalSourceID,
 }

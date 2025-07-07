@@ -40,7 +40,7 @@ pub mod __internal {}
 /// stable hashing. Types implementing this trait must support default
 /// construction, stable hashing of themselves, and wrapping addition for
 /// combining hash values.
-pub trait Value: Default + StableHash {
+pub trait Value: Default + StableHash + Send + Sync + 'static {
     /// Performs wrapping addition of two values.
     ///
     /// This is used to combine hash values in a way that doesn't panic on
@@ -76,7 +76,7 @@ pub trait Value: Default + StableHash {
 /// hasher.write_str("hello");
 /// let hash = hasher.finish();
 /// ```
-pub trait StableHasher {
+pub trait StableHasher: Send + Sync + 'static {
     /// The type of hash value produced by this hasher.
     ///
     /// This associated type must implement [`Value`], which allows hash values

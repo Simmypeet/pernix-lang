@@ -498,19 +498,19 @@ pub fn run(
     let mut sortable_semantic_diagnostics = Vec::new();
     for diagnostic in syntax_errors {
         let codespan_reporting = match diagnostic {
-            pernixc_bootstrap::tree::Error::Lexical(error) => {
+            pernixc_bootstrap::module_tree::Error::Lexical(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(
                     error.report(&source_map),
                 )
             }
 
-            pernixc_bootstrap::tree::Error::Syntax(error) => {
+            pernixc_bootstrap::module_tree::Error::Syntax(error) => {
                 pernix_diagnostic_to_codespan_diagnostic(error.report(
                     &token_trees_by_source_id.get(&error.source_id).unwrap(),
                 ))
             }
 
-            pernixc_bootstrap::tree::Error::RootSubmoduleConflict(
+            pernixc_bootstrap::module_tree::Error::RootSubmoduleConflict(
                 root_submodule_conflict,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 root_submodule_conflict.report(()),
@@ -518,14 +518,14 @@ pub fn run(
                 &token_trees_by_source_id,
             ),
 
-            pernixc_bootstrap::tree::Error::SourceFileLoadFail(
+            pernixc_bootstrap::module_tree::Error::SourceFileLoadFail(
                 source_file_load_fail,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 source_file_load_fail.report(()),
                 &source_map,
                 &token_trees_by_source_id,
             ),
-            pernixc_bootstrap::tree::Error::ModuleRedefinition(
+            pernixc_bootstrap::module_tree::Error::ModuleRedefinition(
                 module_redefinition,
             ) => rel_pernix_diagnostic_to_codespan_diagnostic(
                 module_redefinition.report(()),

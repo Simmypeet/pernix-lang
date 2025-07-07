@@ -23,6 +23,7 @@ pub mod implements;
 pub mod import;
 pub mod kind;
 pub mod member;
+pub mod module_tree;
 pub mod name;
 pub mod parent;
 pub mod source_file;
@@ -32,7 +33,6 @@ pub mod syntax;
 pub mod syntax_tree;
 pub mod target;
 pub mod token_tree;
-pub mod tree;
 
 // mod build;
 
@@ -73,7 +73,7 @@ pub struct Bootstrap {
 
     /// The syntax errors that were encountered during the parsing of the
     /// source code.
-    pub syntax_errors: Vec<tree::Error>,
+    pub syntax_errors: Vec<module_tree::Error>,
 
     /// The semantic diagnostics that were generated during the bootstrapping
     pub semantic_diagnostics: Vec<Box<dyn Diagnostic>>,
@@ -170,8 +170,8 @@ fn bootstrap_executor(executor: &mut executor::Registry) {
     executor.register(Arc::new(source_file::Executor));
     executor.register(Arc::new(token_tree::Executor));
     executor.register(Arc::new(syntax_tree::Executor));
-    executor.register(Arc::new(parent::IntermediateExecutor));
-    executor.register(Arc::new(parent::Executor));
+    // executor.register(Arc::new(parent::IntermediateExecutor));
+    // executor.register(Arc::new(parent::Executor));
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -184,37 +184,45 @@ pub fn register_serde<
 ) where
     S::Error: Send + Sync,
 {
-    serde_registry.register::<accessibility::Key>();
-    serde_registry.register::<implemented::Key>();
-    serde_registry.register::<implements::Key>();
-    serde_registry.register::<kind::Key>();
-    serde_registry.register::<member::Key>();
-    serde_registry.register::<name::Key>();
-    serde_registry.register::<parent::Key>();
-    serde_registry.register::<parent::IntermediateKey>();
-    serde_registry.register::<target::Key>();
-    serde_registry.register::<target::MapKey>();
-    serde_registry.register::<span::Key>();
-    serde_registry.register::<import::Key>();
+    serde_registry.register::<source_file::Key>();
+    serde_registry.register::<token_tree::Key>();
+    serde_registry.register::<syntax_tree::Key>();
 
-    serde_registry.register::<syntax::FunctionSignatureKey>();
-    serde_registry.register::<syntax::GenericParametersKey>();
-    serde_registry.register::<syntax::WhereClauseKey>();
-    serde_registry.register::<syntax::TypeAliasKey>();
-    serde_registry.register::<syntax::ImplementationQualifiedIdentifierKey>();
-    serde_registry.register::<syntax::StatementsKey>();
-    serde_registry.register::<syntax::FieldsKey>();
+    // serde_registry.register::<accessibility::Key>();
+    // serde_registry.register::<implemented::Key>();
+    // serde_registry.register::<implements::Key>();
+    // serde_registry.register::<kind::Key>();
+    // serde_registry.register::<member::Key>();
+    // serde_registry.register::<name::Key>();
+    // serde_registry.register::<parent::Key>();
+    // serde_registry.register::<parent::IntermediateKey>();
+    // serde_registry.register::<target::Key>();
+    // serde_registry.register::<target::MapKey>();
+    // serde_registry.register::<span::Key>();
+    // serde_registry.register::<import::Key>();
+
+    // serde_registry.register::<syntax::FunctionSignatureKey>();
+    // serde_registry.register::<syntax::GenericParametersKey>();
+    // serde_registry.register::<syntax::WhereClauseKey>();
+    // serde_registry.register::<syntax::TypeAliasKey>();
+    // serde_registry.
+    // register::<syntax::ImplementationQualifiedIdentifierKey>();
+    // serde_registry.register::<syntax::StatementsKey>();
+    // serde_registry.register::<syntax::FieldsKey>();
 }
 
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
 pub fn skip_persistence(persistence: &mut Persistence) {
-    persistence.skip_cache_value::<syntax::FunctionSignatureKey>();
-    persistence.skip_cache_value::<syntax::GenericParametersKey>();
-    persistence.skip_cache_value::<syntax::WhereClauseKey>();
-    persistence.skip_cache_value::<syntax::TypeAliasKey>();
-    persistence
-        .skip_cache_value::<syntax::ImplementationQualifiedIdentifierKey>();
-    persistence.skip_cache_value::<syntax::StatementsKey>();
-    persistence.skip_cache_value::<syntax::FieldsKey>();
+    persistence.skip_cache_value::<source_file::Key>();
+    persistence.skip_cache_value::<token_tree::Key>();
+
+    // persistence.skip_cache_value::<syntax::FunctionSignatureKey>();
+    // persistence.skip_cache_value::<syntax::GenericParametersKey>();
+    // persistence.skip_cache_value::<syntax::WhereClauseKey>();
+    // persistence.skip_cache_value::<syntax::TypeAliasKey>();
+    // persistence
+    //     .skip_cache_value::<syntax::ImplementationQualifiedIdentifierKey>();
+    // persistence.skip_cache_value::<syntax::StatementsKey>();
+    // persistence.skip_cache_value::<syntax::FieldsKey>();
 }

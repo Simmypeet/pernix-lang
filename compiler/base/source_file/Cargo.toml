@@ -17,6 +17,7 @@ thiserror = { workspace = true }
 derive_more = { workspace = true }
 codespan-reporting = { workspace = true }
 fnv = { workspace = true }
+rayon = { workspace = true }
 
 [lints]
 workspace = true
