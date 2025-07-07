@@ -1,7 +1,9 @@
 //! Contains the procedural macros for the `pernixc_query` crate.
 
 use proc_macro::TokenStream;
-use syn::{parenthesized, parse_quote, Attribute, Data, DataStruct, Fields};
+use syn::{
+    parenthesized, parse_quote, Attribute, Data, DataStruct, Fields, Meta,
+};
 
 /// Derives the `Key` trait for structs and enums to be used in the query
 /// system.
@@ -127,7 +129,10 @@ use syn::{parenthesized, parse_quote, Attribute, Data, DataStruct, Fields};
 /// - `Eq` + `PartialEq` - For merge conflict detection
 /// - `Send + Sync + 'static` - For thread safety and type erasure
 /// - `Serialize + Deserialize` - For database serialization
-#[proc_macro_derive(Key, attributes(value, pernixc_query, scc_value, extend))]
+#[proc_macro_derive(
+    Key,
+    attributes(value, pernixc_query, scc_value, extend, always_reverify)
+)]
 #[allow(clippy::too_many_lines)]
 pub fn derive_key(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -193,6 +198,27 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
         None
     };
 
+    let re_verify_attr =
+        input.attrs.iter().find(|attr| attr.path().is_ident("always_reverify"));
+
+    if let Some(attr @ Attribute { meta, .. }) = re_verify_attr {
+        // only plain ident is allowed
+        if !matches!(meta, Meta::Path(_)) {
+            return syn::Error::new_spanned(
+                attr,
+                "`#[always_reverify]` attribute must be a plain identifier",
+            )
+            .into_compile_error()
+            .into();
+        }
+    }
+
+    let re_verify = re_verify_attr.is_some().then(|| {
+        quote::quote! {
+            const ALWAYS_REVERIFY: bool = true;
+        }
+    });
+
     let pernixc_query_crate: syn::Path = match input
         .attrs
         .iter()
@@ -255,6 +281,8 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 
     quote::quote! {
         impl #impl_generics #pernixc_query_crate::key::Key for #name #ty_generics #where_clause {
+            #re_verify
+
             type Value = #value_type;
 
             #scc_value_fn
@@ -489,7 +517,7 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
 ///
 /// The generated key types are thread-safe and can be used across multiple
 /// threads, making them suitable for concurrent query processing.
-#[proc_macro_derive(Value, attributes(id, extend, key, value))]
+#[proc_macro_derive(Value, attributes(id, extend, key, value, always_reverify))]
 #[allow(clippy::too_many_lines, clippy::redundant_clone)]
 pub fn derive_value(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -559,6 +587,27 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
         parse_quote!(#name)
     };
 
+    let re_verify_attr =
+        input.attrs.iter().find(|attr| attr.path().is_ident("always_reverify"));
+
+    if let Some(attr @ Attribute { meta, .. }) = re_verify_attr {
+        // only plain ident is allowed
+        if !matches!(meta, Meta::Path(_)) {
+            return syn::Error::new_spanned(
+                attr,
+                "`#[always_reverify]` attribute must be a plain identifier",
+            )
+            .into_compile_error()
+            .into();
+        }
+    }
+
+    let re_verify = re_verify_attr.is_some().then(|| {
+        quote::quote! {
+            #[always_reverify]
+        }
+    });
+
     let ext = get_ext(input.attrs.iter(), &value_type, &id_type, &key_ident);
 
     let key_struct = quote::quote! {
@@ -583,6 +632,7 @@ pub fn derive_value(input: TokenStream) -> TokenStream {
             ::pernixc_query::__internal::StableHash,
         )]
         #[value(#value_type)]
+        #re_verify
         pub struct #key_ident(pub #id_type);
     };
 

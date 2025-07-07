@@ -1,4 +1,7 @@
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::sync::{
+    atomic::{AtomicI32, AtomicUsize},
+    Arc,
+};
 
 use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -1275,4 +1278,169 @@ fn persistence_input_invalidation() {
 
     // version should be incremented
     assert!(engine.version() > first_version);
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Key,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
+#[value(i32)]
+#[always_reverify]
+pub struct ImpureKey;
+
+#[derive(Debug)]
+pub struct ImpureExecutor {
+    pub call_count: AtomicI32,
+}
+
+impl Executor<ImpureKey> for ImpureExecutor {
+    fn execute(
+        &self,
+        _engine: &TrackedEngine,
+        _key: &ImpureKey,
+    ) -> Result<i32, CyclicError> {
+        // Increment the call counter to track executor invocations
+        let value =
+            self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        // The value is based on the external state, so it can change
+        // between calls, simulating an impure function
+        Ok(value)
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    Key,
+)]
+#[value(i32)]
+pub struct DoubleImpureKey;
+
+#[derive(Debug)]
+pub struct DoubleImpureExecutor {
+    pub call_count: AtomicI32,
+}
+
+impl Executor<DoubleImpureKey> for DoubleImpureExecutor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        _: &DoubleImpureKey,
+    ) -> Result<i32, CyclicError> {
+        self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let value = engine.query(&ImpureKey)?;
+
+        Ok(value * 2)
+    }
+}
+
+#[test]
+fn always_reverify_impure() {
+    let mut engine = Engine::default();
+    let mut serde_extension = SelfRegistry::default();
+
+    serde_extension.register::<ImpureKey>();
+    serde_extension.register::<DoubleImpureKey>();
+
+    let tempdir = tempfile::tempdir().unwrap();
+    let mut persistence = Persistence::new(
+        tempdir.path().to_path_buf(),
+        Arc::new(serde_extension),
+    )
+    .unwrap();
+
+    persistence.skip_cache_value::<ImpureKey>();
+
+    engine.runtime.persistence = Some(persistence);
+
+    let impure_executor =
+        Arc::new(ImpureExecutor { call_count: AtomicI32::new(0) });
+    let double_impure_executor =
+        Arc::new(DoubleImpureExecutor { call_count: AtomicI32::new(0) });
+
+    engine.runtime.executor.register(Arc::clone(&impure_executor));
+    engine.runtime.executor.register(Arc::clone(&double_impure_executor));
+
+    let result = engine.tracked().query(&DoubleImpureKey);
+
+    assert_eq!(result.unwrap(), 0); // First call, should return 0
+
+    let result = engine.tracked().query(&DoubleImpureKey);
+
+    assert_eq!(result.unwrap(), 0); // Second call, should still return 0
+
+    assert_eq!(
+        impure_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        1
+    ); // Impure executor called once
+    assert_eq!(
+        double_impure_executor
+            .call_count
+            .load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+
+    // Now forcefully increment the database version
+    engine.increment_version();
+
+    let result = engine.tracked().query(&DoubleImpureKey).unwrap();
+    assert_eq!(result, 2);
+    let result = engine.tracked().query(&DoubleImpureKey).unwrap();
+    assert_eq!(result, 2); // Should still return 2
+
+    assert_eq!(
+        impure_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        2
+    ); // Impure executor called again
+    assert_eq!(
+        double_impure_executor
+            .call_count
+            .load(std::sync::atomic::Ordering::SeqCst),
+        2
+    ); // Double impure executor called again
+
+    // Save the database to persistence
+    engine.save_database().unwrap();
+
+    // load the persistence
+    engine.database =
+        engine.runtime.persistence.as_ref().unwrap().load_database().unwrap();
+
+    // Forcefully increment the database version again
+    engine.increment_version();
+
+    let result = engine.tracked().query(&DoubleImpureKey).unwrap();
+    assert_eq!(result, 4); // Should return 4 after re-evaluation
+    let result = engine.tracked().query(&DoubleImpureKey).unwrap();
+    assert_eq!(result, 4); // Should still return 4
+
+    assert_eq!(
+        impure_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        3
+    ); // Impure executor called again
+    assert_eq!(
+        double_impure_executor
+            .call_count
+            .load(std::sync::atomic::Ordering::SeqCst),
+        3
+    ); // Double impure executor called again
 }
