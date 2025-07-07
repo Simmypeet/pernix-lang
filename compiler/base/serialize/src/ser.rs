@@ -1142,7 +1142,7 @@ impl<S: Serializer<E>, E> Serialize<S, E> for AtomicUsize {
 
 impl<T, S, E> Serialize<S, E> for std::sync::Arc<T>
 where
-    T: Serialize<S, E>,
+    T: Serialize<S, E> + ?Sized,
     S: Serializer<E>,
 {
     fn serialize(&self, serializer: &mut S, e: &E) -> Result<(), S::Error> {
@@ -1153,7 +1153,7 @@ where
 
 impl<T, S, E> Serialize<S, E> for std::rc::Rc<T>
 where
-    T: Serialize<S, E>,
+    T: Serialize<S, E> + ?Sized,
     S: Serializer<E>,
 {
     fn serialize(&self, serializer: &mut S, e: &E) -> Result<(), S::Error> {

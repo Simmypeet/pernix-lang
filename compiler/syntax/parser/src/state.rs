@@ -6,6 +6,8 @@ use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use pernixc_arena::ID;
 use pernixc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     abstract_tree::AbstractTree,
@@ -92,7 +94,19 @@ pub struct Checkpoint {
 }
 
 /// Used for representing the position where the parser is in the token tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct Cursor {
     /// In which branch of the token tree the parser is currently in.
     pub branch_id: ID<pernixc_lexical::tree::Branch>,

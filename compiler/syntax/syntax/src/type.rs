@@ -110,7 +110,7 @@ abstract_tree::abstract_tree! {
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct Array {
         pub r#type: Type = ast::<Type>(),
-        pub x: Identifier = expect::IdentifierValue("x"),
+        pub x: Identifier = expect::IdentifierValue::X,
         pub numeric: Numeric = expect::Numeric,
     }
 }

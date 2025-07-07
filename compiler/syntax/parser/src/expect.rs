@@ -1,12 +1,14 @@
 //! contains the definition of [`Expect`] trait and its implementations for
 //! various token types.
 
-use derive_more::From;
+use derive_more::{Display, From};
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::{
     kind, token,
     tree::{DelimiterKind, RelativeLocation},
 };
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 use crate::output::{One, Output};
 
@@ -18,7 +20,20 @@ pub trait Expect: Output + Into<Expected> {
 }
 
 /// Expecting the token to be an identifier;
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct Identifier;
 
 impl Output for Identifier {
@@ -46,9 +61,36 @@ impl Expect for Identifier {
     }
 }
 
-/// Expecting the token to be an identifier of the given value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct IdentifierValue(pub &'static str);
+/// Expects an identifier with pre-defined value.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Display,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
+#[allow(missing_docs)]
+pub enum IdentifierValue {
+    #[display("x")]
+    X,
+}
+
+impl IdentifierValue {
+    /// Gets the string that the identifier must have.
+    #[must_use]
+    pub const fn expected_string(&self) -> &'static str {
+        match self {
+            Self::X => "x",
+        }
+    }
+}
 
 impl Output for IdentifierValue {
     type Extract = One;
@@ -59,25 +101,42 @@ impl Output for IdentifierValue {
         node: &'a crate::concrete_tree::Node,
     ) -> Option<Self::Output<'a>> {
         node.as_leaf().and_then(|x| {
-            x.kind.as_identifier().cloned().filter(|y| y.0 == self.0).map(|y| {
-                token::Token {
+            x.kind
+                .as_identifier()
+                .cloned()
+                .filter(|y| y.0 == self.expected_string())
+                .map(|y| token::Token {
                     kind: y,
                     span: x.span,
                     prior_insignificant: x.prior_insignificant,
-                }
-            })
+                })
         })
     }
 }
 
 impl Expect for IdentifierValue {
     fn expect(&self, terminal: &token::Kind<RelativeLocation>) -> bool {
-        terminal.kind.as_identifier().is_some_and(|x| x.0.as_str() == self.0)
+        terminal
+            .kind
+            .as_identifier()
+            .is_some_and(|x| x.0.as_str() == self.expected_string())
     }
 }
 
 /// Expecting the token to be a string token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct String;
 
 impl Output for String {
@@ -105,7 +164,19 @@ impl Expect for String {
 }
 
 /// Expecting the token to be a character token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct Character;
 
 impl Output for Character {
@@ -133,7 +204,19 @@ impl Expect for Character {
 }
 
 /// Expecting the token to be a numeric token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct Numeric;
 
 impl Output for Numeric {
@@ -190,7 +273,19 @@ impl Expect for Punctuation {
 }
 
 /// Expecting the token to be a newline token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct NewLine;
 
 impl Output for NewLine {
@@ -247,7 +342,19 @@ impl Expect for Keyword {
 }
 
 /// See [`Ext::no_prior_insignificant`] for more information.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct NoPriorInsignificant<T>(pub T);
 
 impl<T: Output> Output for NoPriorInsignificant<T> {
@@ -293,7 +400,19 @@ impl<T: Sized + Expect> Ext for T {
 
 /// An enumeration of what kind of fragment that the state machine can step
 /// into.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 #[allow(missing_docs)]
 pub enum Fragment {
     Indentation,
@@ -302,7 +421,19 @@ pub enum Fragment {
 
 /// An enumeration of all the possible expected token types.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    From,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 #[allow(missing_docs)]
 pub enum Expected {

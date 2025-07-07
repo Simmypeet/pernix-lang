@@ -2,7 +2,7 @@
 
 use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
-use pernixc_handler::Storage;
+use pernixc_parser::abstract_tree::AbstractTree;
 use pernixc_query::{runtime::executor::CyclicError, Identifiable};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::GlobalSourceID;
@@ -10,7 +10,8 @@ use pernixc_stable_hash::StableHash;
 
 use crate::source_file::LoadSourceFileError;
 
-/// Query for parsing a token tree from the given source file path.
+/// Query for parsing a [`pernixc_syntax::item::module::Module`] from the given
+/// source file path.
 #[derive(
     Debug,
     Clone,
@@ -36,15 +37,15 @@ pub struct Key<P, T> {
     pub global_source_id: GlobalSourceID,
 }
 
-/// A result from loading a source file and parse it to a [`TokenTree`] with its
-/// errors.
+/// A result from loading a source file and parse it to a
+/// [`pernixc_syntax::item::module::Module`] with its errors.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-pub struct TokenTree {
-    /// The parsed token tree from the source code.
-    pub token_tree: Arc<pernixc_lexical::tree::Tree>,
+pub struct FileSyntaxTree {
+    /// The parsed syntax tree from the source code.
+    pub syntax_tree: Option<pernixc_syntax::item::module::Module>,
 
     /// The list of errors that occurred while parsing the source code.
-    pub errors: Arc<[pernixc_lexical::error::Error]>,
+    pub errors: Arc<[pernixc_parser::error::Error]>,
 }
 
 impl<
@@ -70,10 +71,11 @@ impl<
             + 'static,
     > pernixc_query::Key for Key<P, T>
 {
-    type Value = Result<TokenTree, LoadSourceFileError>;
+    type Value = Result<FileSyntaxTree, LoadSourceFileError>;
 }
 
-/// An executor for parsing a token tree from the source code string.
+/// An executor for parsing a [`pernixc_syntax::item::module::Module`] from the
+/// source file.
 #[derive(
     Debug,
     Clone,
@@ -116,27 +118,24 @@ impl<
         &self,
         tracked_engine: &pernixc_query::TrackedEngine,
         key: &Key<P, T>,
-    ) -> Result<Result<TokenTree, LoadSourceFileError>, CyclicError> {
-        // load the source file
-        let source_code =
-            match tracked_engine.query(&crate::source_file::Key {
+    ) -> Result<Result<FileSyntaxTree, LoadSourceFileError>, CyclicError> {
+        // load the token tree
+        let token_tree =
+            match tracked_engine.query(&crate::token_tree::Key {
                 path: key.path.clone(),
                 target_name: key.target_name.clone(),
+                global_source_id: key.global_source_id,
             })? {
                 Ok(source_code) => source_code,
                 Err(error) => return Ok(Err(error)),
             };
 
-        let storage = Storage::<pernixc_lexical::error::Error>::default();
-        let tree = pernixc_lexical::tree::Tree::from_source(
-            &source_code,
-            key.global_source_id,
-            &storage,
-        );
+        let (module, errors) =
+            pernixc_syntax::item::module::Module::parse(&token_tree.token_tree);
 
-        Ok(Ok(TokenTree {
-            token_tree: Arc::new(tree),
-            errors: Arc::from(storage.into_vec()),
+        Ok(Ok(FileSyntaxTree {
+            syntax_tree: module,
+            errors: Arc::from(errors),
         }))
     }
 }

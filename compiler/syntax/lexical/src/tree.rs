@@ -46,6 +46,7 @@ pub mod arbitrary;
     EnumIter,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub enum DelimiterKind {
     /// A parenthesis: `(`.
@@ -68,6 +69,7 @@ pub enum DelimiterKind {
     Serialize,
     Deserialize,
     EnumAsInner,
+    StableHash,
 )]
 pub enum FragmentKind {
     /// The token nodes are enclosed by a pair of delimiters.
@@ -80,7 +82,16 @@ pub enum FragmentKind {
 /// Represents a delimiter pair such as `( ... )`, `{ ... }`, or `[ ... ]`
 /// delimiters.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 pub struct Delimiter {
     /// The opening delimiter.
@@ -96,7 +107,16 @@ pub struct Delimiter {
 /// The token stream is grouped by having the same indentation level. The
 /// indentation group is started by a colon followed by a newline character.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 pub struct Indentation {
     /// The indentation level of the group (in space or tab characters count,
@@ -178,6 +198,7 @@ pub type RelativeSpan = Span<RelativeLocation>;
     Serialize,
     Deserialize,
     EnumAsInner,
+    StableHash,
 )]
 #[allow(missing_docs)]
 pub enum Node {
@@ -187,7 +208,16 @@ pub enum Node {
 
 /// Represents a branch that has a [`FragmentKind`] as its kind.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 pub struct FragmentBranch {
     /// The kind of fragment this branch represents.
@@ -212,6 +242,7 @@ pub struct FragmentBranch {
     Serialize,
     Deserialize,
     EnumAsInner,
+    StableHash,
 )]
 #[allow(missing_docs, clippy::large_enum_variant)]
 pub enum BranchKind {
@@ -223,7 +254,16 @@ pub enum BranchKind {
 
 /// Represents a branch node in the token tree.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 pub struct Branch {
     /// The kind of branch this is.
@@ -263,6 +303,16 @@ pub struct Tree {
 
     #[serde(skip)]
     end_location_cache: DashMap<ID<Branch>, ByteIndex>,
+}
+
+impl StableHash for Tree {
+    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        self.source_id.stable_hash(state);
+        self.arena.stable_hash(state);
+    }
 }
 
 impl PartialEq for Tree {

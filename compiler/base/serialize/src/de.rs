@@ -948,7 +948,10 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, LinkedList, VecDeque},
     hash::{BuildHasher, Hash},
     ops::Range,
-    sync::atomic::{AtomicBool, AtomicUsize},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize},
+        Arc,
+    },
 };
 
 impl<T, D, E> Deserialize<D, E> for Vec<T>
@@ -1640,6 +1643,43 @@ where
     ) -> Result<Self, D::Error> {
         let value = T::deserialize(deserializer, extension)?;
         Ok(std::sync::Arc::new(value))
+    }
+}
+
+impl<T, D, E> Deserialize<D, E> for std::sync::Arc<[T]>
+where
+    T: Deserialize<D, E>,
+    D: Deserializer<E>,
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &E,
+    ) -> Result<Self, D::Error> {
+        Vec::deserialize(deserializer, extension).map(std::sync::Arc::from)
+    }
+}
+
+impl<D, E> Deserialize<D, E> for std::sync::Arc<str>
+where
+    D: Deserializer<E>,
+{
+    fn deserialize(
+        deserializer: &mut D,
+        _: &E,
+    ) -> Result<Self, D::Error> {
+        deserializer.expect_str().map(|s| std::sync::Arc::from(s.to_string()))
+    }
+}
+
+impl<D, E> Deserialize<D, E> for std::sync::Arc<std::path::Path>
+where
+    D: Deserializer<E>,
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &E,
+    ) -> Result<Self, D::Error> {
+        std::path::PathBuf::deserialize(deserializer, extension).map(Arc::from)
     }
 }
 

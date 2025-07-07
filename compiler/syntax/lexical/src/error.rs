@@ -3,14 +3,27 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use getset::Getters;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{AbsoluteSpan, ByteIndex, SourceMap};
+use pernixc_stable_hash::StableHash;
 
 use crate::tree::DelimiterKind;
 
 /// The delimiter is not closed by its corresponding closing pair.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct UndelimitedDelimiter {
     /// The span of the opening delimiter.
     pub opening_span: AbsoluteSpan,
@@ -47,7 +60,19 @@ impl Report<&SourceMap> for UndelimitedDelimiter {
 }
 
 /// The source code contains an unterminated string literal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct UnterminatedStringLiteral {
     /// The span of the unclosed double quote that starts the string literal.
     pub span: AbsoluteSpan,
@@ -71,7 +96,19 @@ impl Report<&SourceMap> for UnterminatedStringLiteral {
 }
 
 /// The source code contains an invalid escape sequence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct InvalidEscapeSequence {
     /// The span of the invalid escape sequence (including the backslash).
     pub span: AbsoluteSpan,
@@ -92,7 +129,19 @@ impl Report<&SourceMap> for InvalidEscapeSequence {
 }
 
 /// The available indentation level that can be used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct AvailableIndentation {
     /// The span of the colon that starts the indentation level.
     pub colon_span: AbsoluteSpan,
@@ -102,7 +151,18 @@ pub struct AvailableIndentation {
 }
 
 /// Found a token in an invalid indentation level.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct InvalidIndentation {
     /// The span of the invalid indentation.
     pub span: AbsoluteSpan,
@@ -142,7 +202,19 @@ impl Report<&SourceMap> for InvalidIndentation {
 }
 
 /// A new indentation level was expected, but the source code does not
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct ExpectIndentation {
     /// The span of the expected indentation.
     pub span: AbsoluteSpan,
@@ -180,7 +252,19 @@ impl Report<&SourceMap> for ExpectIndentation {
 }
 
 /// The source code contains an invalid new indentation level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct InvalidNewIndentationLevel {
     /// The span of the invalid new indentation level.
     pub span: AbsoluteSpan,
@@ -227,7 +311,19 @@ impl Report<&SourceMap> for InvalidNewIndentationLevel {
 
 /// The closing delimiter (e.g. `)`, `}`, or `]`) was found without any prior
 /// opening delimiter (e.g. `(`, `{`, or `[`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct UnexpectedClosingDelimiter {
     /// The span of the closing delimiter.
     pub span: AbsoluteSpan,
@@ -256,7 +352,19 @@ impl Report<&SourceMap> for UnexpectedClosingDelimiter {
 }
 
 /// The closing delimiter does not match the opening delimiter.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Getters)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct MismatchedClosingDelimiter {
     /// The span of the closing delimiter.
     pub span: AbsoluteSpan,
@@ -316,7 +424,18 @@ impl Report<&SourceMap> for MismatchedClosingDelimiter {
 /// Is an enumeration containing all kinds of lexical errors that can occur
 /// while tokenizing the source code.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, From,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    From,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 #[allow(missing_docs)]
 pub enum Error {

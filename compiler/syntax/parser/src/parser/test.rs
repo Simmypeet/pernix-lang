@@ -405,7 +405,7 @@ abstract_tree! {
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     struct Array {
         r#type: Type = ast::<Type>(),
-        x: token::Identifier<RelativeLocation> = expect::IdentifierValue("x"),
+        x: token::Identifier<RelativeLocation> = expect::IdentifierValue::X,
         length: token::Numeric<RelativeLocation> = expect::Numeric,
     }
 }
@@ -723,17 +723,10 @@ proptest::proptest! {
 abstract_tree! {
     #[derive(Debug)]
     struct Abcd {
-        a: token::Identifier<RelativeLocation>
-            = expect::IdentifierValue("a"),
-
-        b: token::Identifier<RelativeLocation>
-            = expect::IdentifierValue("b"),
-
-        c: token::Identifier<RelativeLocation>
-            = expect::IdentifierValue("c"),
-
-        d: token::Identifier<RelativeLocation>
-            = expect::IdentifierValue("d"),
+        a: token::Punctuation<RelativeLocation> = '+',
+        b: token::Punctuation<RelativeLocation> = '-',
+        c: token::Punctuation<RelativeLocation> = '*',
+        d: token::Punctuation<RelativeLocation> = '/',
 
         semicolon: token::Punctuation<RelativeLocation>
             = ';'
@@ -743,14 +736,9 @@ abstract_tree! {
 abstract_tree! {
     #[derive(Debug)]
     struct Abc {
-        a: token::Identifier<RelativeLocation>
-            = expect::IdentifierValue("a"),
-
-        b: token::Identifier<RelativeLocation>
-            = expect::IdentifierValue("b"),
-
-        c: token::Identifier<RelativeLocation>
-            = expect::IdentifierValue("c"),
+        a: token::Punctuation<RelativeLocation> = '+',
+        b: token::Punctuation<RelativeLocation> = '-',
+        c: token::Punctuation<RelativeLocation> = '*',
 
         semicolon: token::Punctuation<RelativeLocation>
             = ';'
@@ -791,10 +779,10 @@ fn error_choice_choose_most_progress() {
             .and_then(|x| x.kind.as_identifier())
             .is_some_and(|x| x.as_str() == "e")));
 
-    assert_eq!(tree.a().map(|x| x.kind.0), Some("a".into()));
-    assert_eq!(tree.b().map(|x| x.kind.0), Some("b".into()));
-    assert_eq!(tree.c().map(|x| x.kind.0), Some("c".into()));
-    assert_eq!(tree.d().map(|x| x.kind.0), Some("d".into()));
+    assert_eq!(tree.a().map(|x| x.kind.0), Some('a'));
+    assert_eq!(tree.b().map(|x| x.kind.0), Some('b'));
+    assert_eq!(tree.c().map(|x| x.kind.0), Some('c'));
+    assert_eq!(tree.d().map(|x| x.kind.0), Some('d'));
 
     assert!(tree.semicolon().is_none());
 }

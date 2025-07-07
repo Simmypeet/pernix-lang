@@ -11,7 +11,9 @@ use pernixc_lexical::{
         ROOT_BRANCH_ID,
     },
 };
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     expect::{self, Expected},
@@ -20,7 +22,9 @@ use crate::{
 
 /// Represents an error of encountering an unexpected token at a certain
 /// possition at its possible expected tokens.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+)]
 pub struct Error {
     /// The tokens that are expected at the cursor position.
     pub expecteds: HashSet<Expected>,
@@ -94,11 +98,12 @@ fn found_node_string(
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn expected_string(expected: &Expected) -> String {
     match expected {
         Expected::Identifier(_) => "identifier".to_string(),
         Expected::IdentifierValue(identifier_value) => {
-            format!("`{} identifier`, ", identifier_value.0)
+            format!("`{} identifier`, ", identifier_value.expected_string())
         }
         Expected::String(_) => "string literal".to_string(),
         Expected::Character(_) => "character literal".to_string(),

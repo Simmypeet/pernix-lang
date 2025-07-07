@@ -4,6 +4,7 @@ use std::marker::PhantomData;
 
 use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 use crate::ID;
 
@@ -58,6 +59,7 @@ pub trait Rebind<T, U>: State<T> {
     Default,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct Default;
 
