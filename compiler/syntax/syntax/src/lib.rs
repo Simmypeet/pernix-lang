@@ -60,7 +60,8 @@ abstract_tree::abstract_tree! {
         Hash,
         EnumAsInner,
         Serialize,
-        Deserialize
+        Deserialize,
+        StableHash
     )]
     pub enum AccessModifier {
         Public(Keyword = expect::Keyword::Public),

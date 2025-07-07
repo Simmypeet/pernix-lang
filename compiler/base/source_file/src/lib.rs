@@ -30,7 +30,7 @@ pub struct SourceFile {
 
     /// Gets the full path to the source file.
     #[get = "pub"]
-    full_path: PathBuf,
+    path: PathBuf,
 
     /// The byte ranges for each line in the source file (including the
     /// newline)
@@ -61,7 +61,7 @@ impl StableHash for SourceFile {
         let file_content_hash = file_content_hash(&self.content, state);
         file_content_hash.stable_hash(state);
 
-        self.full_path.stable_hash(state);
+        self.path.stable_hash(state);
     }
 }
 
@@ -77,9 +77,7 @@ impl PartialOrd for SourceFile {
 
 impl Ord for SourceFile {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.full_path
-            .cmp(&other.full_path)
-            .then(self.content.cmp(&other.content))
+        self.path.cmp(&other.path).then(self.content.cmp(&other.content))
     }
 }
 
@@ -87,7 +85,7 @@ impl Ord for SourceFile {
 impl Debug for SourceFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SourceFile")
-            .field("full_path", &self.full_path)
+            .field("full_path", &self.path)
             .field("lines", &self.lines)
             .finish()
     }
@@ -98,7 +96,7 @@ impl SourceFile {
     #[must_use]
     pub fn new(content: String, full_path: PathBuf) -> Self {
         let lines = get_line_byte_positions(&content);
-        Self { content, full_path, lines }
+        Self { content, path: full_path, lines }
     }
 
     /// Gets the content of the source file.
@@ -616,7 +614,7 @@ impl SourceMap {
         target_id: TargetID,
         source: SourceFile,
     ) -> LocalSourceID {
-        let patb = &source.full_path;
+        let patb = &source.path;
         let mut hasher = FnvHasher::default();
         patb.hash(&mut hasher);
 
@@ -699,7 +697,7 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap {
             .get(&id)
             .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
-        Ok(DisplayPathBuf(source.map(|x| x.full_path())))
+        Ok(DisplayPathBuf(source.map(|x| x.path())))
     }
 
     fn source(

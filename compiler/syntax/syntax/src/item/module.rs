@@ -27,7 +27,8 @@ abstract_tree::abstract_tree! {
         Ord,
         Hash,
         Serialize,
-        Deserialize
+        Deserialize,
+        StableHash
     )]
     pub struct Signature {
         pub module_keyword: Keyword = expect::Keyword::Module,
@@ -122,7 +123,7 @@ abstract_tree::abstract_tree! {
         Hash,
         Serialize,
         Deserialize,
-        Default,
+        StableHash,
     )]
     pub struct Content {
         pub members: #[multi] Passable<Member>

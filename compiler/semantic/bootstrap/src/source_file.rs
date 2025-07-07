@@ -5,6 +5,7 @@ use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 use flexstr::SharedStr;
 use pernixc_query::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_source_file::SourceFile;
 use pernixc_stable_hash::StableHash;
 
 /// Query for loading source files content from the file system.
@@ -57,17 +58,21 @@ impl pernixc_query::Key for Key {
 
     /// The [`Ok`] value represents the source file content, while the [`Err`]
     /// is the string to report the error.
-    type Value = Result<Arc<String>, LoadSourceFileError>;
+    type Value = Result<Arc<SourceFile>, LoadSourceFileError>;
 }
 
 /// The executor used by the [`Key`] to load the source file
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Executor;
 
-fn load_source_file(path: &Path) -> Result<Arc<String>, LoadSourceFileError> {
-    std::fs::read_to_string(path)
+fn load_source_file(
+    path: &Path,
+) -> Result<Arc<SourceFile>, LoadSourceFileError> {
+    std::fs::File::open(path)
+        .and_then(|file| {
+            Ok(Arc::new(SourceFile::load(file, path.to_path_buf())?))
+        })
         .map_err(|x| LoadSourceFileError(Arc::from(x.to_string())))
-        .map(Arc::new)
 }
 
 impl pernixc_query::runtime::executor::Executor<Key> for Executor {
@@ -76,7 +81,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         _: &pernixc_query::TrackedEngine,
         key: &Key,
     ) -> Result<
-        Result<Arc<String>, LoadSourceFileError>,
+        Result<Arc<SourceFile>, LoadSourceFileError>,
         pernixc_query::runtime::executor::CyclicError,
     > {
         Ok(load_source_file(key.path.as_ref()))

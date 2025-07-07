@@ -2,32 +2,47 @@
 
 use std::{
     collections::hash_map::Entry,
+    hash::{Hash as _, Hasher as _},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use enum_as_inner::EnumAsInner;
-use flexstr::SharedStr;
+use flexstr::{FlexStr, SharedStr};
+use fnv::FnvHasher;
 use parking_lot::RwLock;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
-use pernixc_handler::Storage;
-use pernixc_hash::{DashMap, HashMap};
+use pernixc_handler::{Handler, Storage};
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
-use pernixc_parser::abstract_tree::AbstractTree;
-use pernixc_query::Identifiable;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{GlobalSourceID, SourceFile, SourceMap, Span};
-use pernixc_stable_hash::StableHash;
+use pernixc_source_file::{GlobalSourceID, LocalSourceID, SourceFile, Span};
+use pernixc_stable_hash::{StableHash, Value};
 use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+use crate::source_file::LoadSourceFileError;
 
 /// An enumeration of all the errors that can occur during the module tree
 /// parsing.
-#[derive(Debug, EnumAsInner, derive_more::From)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    Serialize,
+    Deserialize,
+    StableHash,
+    derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum Error {
-    Lexical(pernixc_lexical::error::Error),
-    Syntax(pernixc_parser::error::Error),
     RootSubmoduleConflict(RootSubmoduleConflict),
     SourceFileLoadFail(SourceFileLoadFail),
     ModuleRedefinition(ModuleRedefinition),
@@ -35,7 +50,18 @@ pub enum Error {
 
 /// The submodule of the root source file ends up pointing to the root source
 /// file itself.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct RootSubmoduleConflict {
     /// The root source file.
     pub root: GlobalSourceID,
@@ -74,10 +100,21 @@ impl Report<()> for RootSubmoduleConflict {
 }
 
 /// Failed to load a source file for the submodule.
-#[derive(Debug)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct SourceFileLoadFail {
     /// The string representation of the source error.
-    pub source_error: pernixc_source_file::Error,
+    pub source_error: String,
 
     /// The submodule that submodule stems from.
     pub submodule: Span<RelativeLocation>,
@@ -106,7 +143,19 @@ impl Report<()> for SourceFileLoadFail {
 }
 
 /// A module with the given name already exists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
 pub struct ModuleRedefinition {
     /// The span of the existing module.
     pub existing_module_span: Option<Span<RelativeLocation>>,
@@ -150,8 +199,8 @@ impl Report<()> for ModuleRedefinition {
 }
 
 /// The tree structure of the compilation module.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct Tree {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModuleTree {
     /// The signature of the module, if it exists.
     pub signature: Option<pernixc_syntax::item::module::Signature>,
 
@@ -165,318 +214,69 @@ pub struct Tree {
     pub submodules_by_name: HashMap<SharedStr, Self>,
 }
 
-#[derive(Debug, Clone)]
-enum Input {
-    Inline {
-        module_content: pernixc_syntax::item::module::Content,
-        module_name: SharedStr,
-        signature: pernixc_syntax::item::module::Signature,
-        access_modifier: Option<pernixc_syntax::AccessModifier>,
-        in_source_id: GlobalSourceID,
-    },
-    File {
-        source_id: GlobalSourceID,
-        access_modifier: Option<pernixc_syntax::AccessModifier>,
-        signature: Option<pernixc_syntax::item::module::Signature>,
-        root: bool,
-    },
-}
+impl StableHash for ModuleTree {
+    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        let inner_tree = self.content.inner_tree();
 
-/// A supertrait for all the handlers that are required to parse the module
-/// tree syntax.
-pub trait Handler:
-    pernixc_handler::Handler<pernixc_parser::error::Error>
-    + pernixc_handler::Handler<pernixc_lexical::error::Error>
-    + pernixc_handler::Handler<SourceFileLoadFail>
-    + pernixc_handler::Handler<RootSubmoduleConflict>
-    + pernixc_handler::Handler<ModuleRedefinition>
-{
-}
+        self.signature.stable_hash(state);
+        self.access_modifier.stable_hash(state);
+        inner_tree.ast_info.stable_hash(state);
 
-impl<
-        T: pernixc_handler::Handler<pernixc_parser::error::Error>
-            + pernixc_handler::Handler<pernixc_lexical::error::Error>
-            + pernixc_handler::Handler<SourceFileLoadFail>
-            + pernixc_handler::Handler<RootSubmoduleConflict>
-            + pernixc_handler::Handler<ModuleRedefinition>,
-    > Handler for T
-{
-}
-
-impl Tree {
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    fn parse_submodule(
-        source_map: &pernixc_source_file::SourceMap,
-        submodule_current_directory: &Path,
-        submodule: pernixc_syntax::item::module::Module,
-        current_module_name: &str,
-        is_root: bool,
-        token_trees_by_source_id: &DashMap<
-            GlobalSourceID,
-            pernixc_lexical::tree::Tree,
-        >,
-        in_source_id: GlobalSourceID,
-        handler: &dyn Handler,
-    ) -> Option<(SharedStr, Self)> {
-        let signature = submodule.signature()?;
-
-        let ident_span_rel = signature.identifier()?.span;
-        let ident_span_abs = {
-            let token_tree =
-                token_trees_by_source_id.get(&in_source_id).unwrap();
-            token_tree.absolute_span_of(&ident_span_rel)
-        };
-
-        // get the current module name from the source map
-        let submodule_name: SharedStr =
-            source_map.get(ident_span_abs.source_id).unwrap().content()
-                [ident_span_abs.range()]
-            .into();
-
-        let module_tree = if let Some(inline_body) = submodule.inline_body() {
-            Self::parse_input(
-                Input::Inline {
-                    module_content: inline_body.content()?,
-                    module_name: submodule_name.clone(),
-                    signature,
-                    in_source_id,
-                    access_modifier: submodule.access_modifier(),
-                },
-                submodule_current_directory,
-                source_map,
-                token_trees_by_source_id,
-                handler,
-            )
-        } else {
-            // ended up pointing to the same file
-            if is_root && current_module_name == submodule_name.as_str() {
-                handler.receive(RootSubmoduleConflict {
-                    root: ident_span_abs.source_id,
-                    submodule_span: ident_span_rel,
-                    load_path: submodule_current_directory
-                        .join(submodule_name.as_str())
-                        .with_extension("pnx"),
+        let (tree_hash, tree_count) = inner_tree
+            .nodes
+            .par_iter()
+            .map(|x| {
+                let sub_hash = state.sub_hash(&mut |h| {
+                    x.stable_hash(h);
                 });
-                return None;
-            }
 
-            let mut source_file_path =
-                submodule_current_directory.join(submodule_name.as_str());
-            source_file_path.set_extension("pnx");
-
-            // load the source file
-            let source_id = match std::fs::File::open(&source_file_path)
-                .map_err(Into::into)
-                .and_then(|file| {
-                    SourceFile::load(file, source_file_path.clone())
-                }) {
-                Ok(source_file) => TargetID::Local.make_global(
-                    source_map.register(TargetID::Local, source_file),
-                ),
-                Err(source_error) => {
-                    handler.receive(SourceFileLoadFail {
-                        source_error,
-                        submodule: ident_span_rel,
-                        path: source_file_path,
-                    });
-                    return None;
-                }
-            };
-
-            let submodule_current_directory = &submodule_current_directory;
-
-            Self::parse_input(
-                Input::File {
-                    source_id,
-                    access_modifier: submodule.access_modifier(),
-                    signature: Some(signature),
-                    root: false,
+                (sub_hash, 1)
+            })
+            .reduce(
+                || (H::Hash::default(), 0),
+                |(l_hash, l_count), (r_hash, r_count)| {
+                    (l_hash.wrapping_add(r_hash), r_count + l_count)
                 },
-                submodule_current_directory,
-                source_map,
-                token_trees_by_source_id,
-                handler,
-            )
-        };
+            );
 
-        Some((submodule_name, module_tree))
-    }
+        tree_hash.stable_hash(state);
+        tree_count.stable_hash(state);
 
-    #[allow(clippy::too_many_lines)]
-    fn parse_input(
-        input: Input,
-        current_directory: &Path,
-        source_map: &SourceMap,
-        token_trees_by_source_id: &DashMap<
-            GlobalSourceID,
-            pernixc_lexical::tree::Tree,
-        >,
-        handler: &dyn Handler,
-    ) -> Self {
-        let (
-            content,
-            source_file,
-            current_module_name,
-            is_root,
-            signature,
-            access_modifier,
-        ) = match input {
-            Input::Inline {
-                module_content,
-                module_name,
-                in_source_id,
-                signature,
-                access_modifier,
-            } => (
-                module_content,
-                in_source_id,
-                module_name,
-                false,
-                Some(signature),
-                access_modifier,
-            ),
+        self.submodules_by_name.len().stable_hash(state);
 
-            Input::File { source_id, root, access_modifier, signature } => {
-                let token_tree = pernixc_lexical::tree::Tree::from_source(
-                    source_map.get(source_id).unwrap().content(),
-                    source_id,
-                    handler,
-                );
+        let module_hash = self
+            .submodules_by_name
+            .par_iter()
+            .map(|(k, v)| {
+                state.sub_hash(&mut |h| {
+                    k.stable_hash(h);
+                    v.stable_hash(h);
+                })
+            })
+            .reduce(H::Hash::default, pernixc_stable_hash::Value::wrapping_add);
 
-                let (module_content, errors) =
-                    pernixc_syntax::item::module::Content::parse(&token_tree);
-
-                for error in errors {
-                    handler.receive(error);
-                }
-
-                token_trees_by_source_id.insert(source_id, token_tree);
-
-                (
-                    module_content.unwrap_or_else(
-                        pernixc_syntax::item::module::Content::default,
-                    ),
-                    source_id,
-                    source_map
-                        .get(source_id)
-                        .unwrap()
-                        .full_path()
-                        .file_stem()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .into(),
-                    root,
-                    signature,
-                    access_modifier,
-                )
-            }
-        };
-
-        let submodule_current_directory = if is_root {
-            current_directory.to_path_buf()
-        } else {
-            current_directory.join(current_module_name.as_str())
-        };
-
-        let parsing_result = RwLock::new(Vec::new());
-
-        let parsing_result_ref = &parsing_result;
-        let submodule_current_directory_ref = &submodule_current_directory;
-        let current_module_name_ref = &current_module_name;
-
-        rayon::scope(|scope| {
-            for (index, member) in content.members().enumerate() {
-                let Passable::Line(
-                    pernixc_syntax::item::module::Member::Module(submodule),
-                ) = member
-                else {
-                    continue;
-                };
-
-                scope.spawn(move |_| {
-                    let result = Self::parse_submodule(
-                        source_map,
-                        submodule_current_directory_ref,
-                        submodule,
-                        current_module_name_ref,
-                        is_root,
-                        token_trees_by_source_id,
-                        source_file,
-                        handler,
-                    );
-
-                    parsing_result_ref.write().push((index, result));
-                });
-            }
-        });
-
-        let mut submodules_by_name = HashMap::<SharedStr, Self>::default();
-        let mut parsing_result = parsing_result.into_inner();
-        parsing_result.sort_by_key(|x| x.0);
-
-        for (name, module_tree) in
-            parsing_result.into_iter().filter_map(|x| x.1)
-        {
-            match submodules_by_name.entry(name) {
-                Entry::Occupied(occupied_entry) => {
-                    handler.receive(ModuleRedefinition {
-                        existing_module_span: occupied_entry
-                            .get()
-                            .signature
-                            .as_ref()
-                            .map(|x| x.inner_tree().span()),
-                        redefinition_submodule_span: module_tree
-                            .signature
-                            .map(|x| x.inner_tree().span()),
-                    });
-                }
-                Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(module_tree);
-                }
-            }
-        }
-
-        Self { signature, access_modifier, content, submodules_by_name }
+        module_hash.stable_hash(state);
     }
 }
 
-/// Parses the whole module tree for the target program from the given root
-/// source file.
-#[must_use]
-pub fn parse(
-    source_id: GlobalSourceID,
-    source_map: &SourceMap,
-    token_trees_by_source_id: &DashMap<
-        GlobalSourceID,
-        pernixc_lexical::tree::Tree,
-    >,
-) -> (Tree, Vec<Error>) {
-    let storage = Storage::<Error>::default();
+/// The result of parsing an entire module tree for a compilation target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+pub struct Parse {
+    /// The root module tree starting from the root file path.
+    pub root_module_tree: Arc<ModuleTree>,
 
-    let path = source_map
-        .get(source_id)
-        .unwrap()
-        .full_path()
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .to_path_buf();
+    /// The errors occurred during bracnching the module tree.
+    ///
+    /// This doesn't include the errors that occurred during parsing
+    /// the source files.
+    pub branching_errors: Arc<[Error]>,
 
-    (
-        Tree::parse_input(
-            Input::File {
-                source_id,
-                access_modifier: None,
-                root: true,
-                signature: None,
-            },
-            &path,
-            source_map,
-            token_trees_by_source_id,
-            &storage,
-        ),
-        storage.into_vec(),
-    )
+    /// The source files that were loaded during the parsing of the module
+    /// tree, indexed by their global source IDs.
+    pub source_files_by_id: Arc<HashMap<GlobalSourceID, Arc<SourceFile>>>,
 }
 
 /// Query for parsing a token tree from the given source file path.
@@ -491,8 +291,9 @@ pub fn parse(
     StableHash,
     Serialize,
     Deserialize,
-    Identifiable,
+    pernixc_query::Key,
 )]
+#[value(Result<Parse, LoadSourceFileError>)]
 pub struct Key {
     /// The path to the main source file that stems the module tree.
     pub main_file_path: Arc<Path>,
@@ -502,4 +303,293 @@ pub struct Key {
 
     /// The ID to the source file in the global source map.
     pub global_source_id: GlobalSourceID,
+}
+
+/// An executor for parsing a module tree for a compilation target.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Executor;
+
+fn add_source_file(
+    source_file: Arc<SourceFile>,
+    source_files_by_id: &mut HashMap<GlobalSourceID, Arc<SourceFile>>,
+) -> LocalSourceID {
+    let path = source_file.path();
+    let mut hasher = FnvHasher::default();
+    path.hash(&mut hasher);
+
+    let finalize_hash = |hasher: FnvHasher| {
+        let mut attempt = 0;
+        loop {
+            // for some reason, FnvHasher doesn't implement `Clone` trait.
+            // this is the work around to clone
+            let mut final_hasher = FnvHasher::with_key(hasher.finish());
+            attempt.hash(&mut final_hasher);
+
+            let candidate_branch_id =
+                pernixc_arena::ID::new(final_hasher.finish());
+
+            // avoid hash collision
+            if !source_files_by_id
+                .contains_key(&TargetID::Local.make_global(candidate_branch_id))
+            {
+                return candidate_branch_id;
+            }
+
+            attempt += 1;
+        }
+    };
+
+    let hash = finalize_hash(hasher);
+
+    // insert the source file into the map
+    assert!(source_files_by_id
+        .insert(TargetID::Local.make_global(hash), source_file)
+        .is_none());
+
+    hash
+}
+
+fn parse_module_tree(
+    tracked_engine: &TrackedEngine,
+    source_files_by_id: &mut HashMap<GlobalSourceID, Arc<SourceFile>>,
+    path: Arc<Path>,
+    target_name: SharedStr,
+) -> Result<(crate::syntax_tree::SyntaxTree, GlobalSourceID), LoadSourceFileError>
+{
+    let source_file = tracked_engine
+        .query(&crate::source_file::Key {
+            path: path.clone(),
+            target_name: target_name.clone(),
+        })
+        .expect("should have no cyclic dependencies")?;
+
+    let id = add_source_file(source_file, source_files_by_id);
+
+    let module_tree = tracked_engine
+        .query(&crate::syntax_tree::Key {
+            path,
+            target_name,
+            global_source_id: TargetID::Local.make_global(id),
+        })
+        .expect("should have no cyclic dependencies")
+        .expect("should be able to load the source file");
+
+    Ok((module_tree, TargetID::Local.make_global(id)))
+}
+
+struct Context<'a> {
+    root_directory: &'a Path,
+    root_file_path: &'a Path,
+    root_file_source_id: GlobalSourceID,
+    handler: &'a dyn Handler<Error>,
+    source_files_by_id: &'a RwLock<HashMap<GlobalSourceID, Arc<SourceFile>>>,
+    tracked_engine: &'a TrackedEngine<'a>,
+}
+
+impl Context<'_> {
+    #[allow(clippy::too_many_lines)]
+    fn branch_module_tree(
+        &self,
+        content: pernixc_syntax::item::module::Content,
+        signature: Option<pernixc_syntax::item::module::Signature>,
+        access_modifier: Option<pernixc_syntax::AccessModifier>,
+        current_name_space: &[SharedStr],
+    ) -> ModuleTree {
+        let next_submodules = RwLock::new(Vec::new());
+
+        // generate a parallel processes to parse files
+        rayon::scope(|scope| {
+            let next_submodules = &next_submodules;
+
+            for (index, member) in content.members().enumerate() {
+                scope.spawn(move |_| {
+                    let Passable::Line(
+                        pernixc_syntax::item::module::Member::Module(submodule),
+                    ) = member
+                    else {
+                        return;
+                    };
+
+                    let next_signature = submodule.signature();
+                    let Some(next_identifier) =
+                        next_signature.as_ref().and_then(
+                            pernixc_syntax::item::module::Signature::identifier,
+                        )
+                    else {
+                        return;
+                    };
+
+                    let next_name = next_identifier.kind.0.clone();
+                    let next_access_modifier = submodule.access_modifier();
+                    let next_name_space = current_name_space
+                        .iter()
+                        .cloned()
+                        .chain(std::iter::once(next_name.clone()))
+                        .collect::<Vec<_>>();
+
+                    // Found inline module content, take the content right away
+                    if let Some(member) = submodule.inline_body() {
+                        if let Some(content) = member.content() {
+                            let next_submodule = self.branch_module_tree(
+                                content,
+                                next_signature,
+                                next_access_modifier,
+                                &next_name_space,
+                            );
+
+                            next_submodules.write().push((
+                                index,
+                                next_name,
+                                next_submodule,
+                            ));
+                        }
+                    }
+                    // Otherwise, open a file and parse it
+                    else {
+                        let mut path = self.root_directory.to_path_buf();
+
+                        path.extend(
+                            next_name_space.iter().skip(1).map(FlexStr::as_str),
+                        );
+                        path.set_extension("pnx");
+
+                        if path == self.root_file_path {
+                            // pointing to the root file itself
+                            self.handler.receive(Error::RootSubmoduleConflict(
+                                RootSubmoduleConflict {
+                                    root: self.root_file_source_id,
+                                    submodule_span: next_identifier.span,
+                                    load_path: path.clone(),
+                                },
+                            ));
+                            return;
+                        }
+
+                        let (content, _) = match parse_module_tree(
+                            self.tracked_engine,
+                            &mut self.source_files_by_id.write(),
+                            Arc::from(path.clone()),
+                            next_name.clone(),
+                        ) {
+                            Ok(content) => content,
+                            Err(error) => {
+                                self.handler.receive(
+                                    Error::SourceFileLoadFail(
+                                        SourceFileLoadFail {
+                                            source_error: error.0.to_string(),
+                                            submodule: next_identifier.span,
+                                            path,
+                                        },
+                                    ),
+                                );
+                                return;
+                            }
+                        };
+
+                        let next_submodule = self.branch_module_tree(
+                            content.syntax_tree,
+                            next_signature,
+                            next_access_modifier,
+                            &next_name_space,
+                        );
+
+                        next_submodules.write().push((
+                            index,
+                            next_name,
+                            next_submodule,
+                        ));
+                    }
+                });
+            }
+        });
+
+        let mut next_submodules = next_submodules.into_inner();
+        next_submodules.sort_by_key(|x| x.0);
+
+        let mut submodules_by_name =
+            HashMap::<SharedStr, ModuleTree>::default();
+
+        for (name, module_tree) in
+            next_submodules.into_iter().map(|x| (x.1, x.2))
+        {
+            match submodules_by_name.entry(name) {
+                Entry::Occupied(occupied_entry) => {
+                    self.handler.receive(Error::ModuleRedefinition(
+                        ModuleRedefinition {
+                            existing_module_span: occupied_entry
+                                .get()
+                                .signature
+                                .as_ref()
+                                .map(|x| x.inner_tree().span()),
+                            redefinition_submodule_span: module_tree
+                                .signature
+                                .map(|x| x.inner_tree().span()),
+                        },
+                    ));
+                }
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(module_tree);
+                }
+            }
+        }
+
+        ModuleTree { signature, access_modifier, content, submodules_by_name }
+    }
+}
+
+fn start(
+    tracked_engine: &TrackedEngine,
+    root_file_path: &Arc<Path>,
+    target_name: SharedStr,
+) -> Result<Parse, LoadSourceFileError> {
+    let mut source_files_by_id =
+        HashMap::<GlobalSourceID, Arc<SourceFile>>::default();
+
+    let (module_content, root_file_source_id) = parse_module_tree(
+        tracked_engine,
+        &mut source_files_by_id,
+        root_file_path.clone(),
+        target_name.clone(),
+    )?;
+
+    let storage = Storage::<Error>::default();
+    let source_files_by_id = RwLock::new(source_files_by_id);
+
+    let context = Context {
+        root_directory: &Arc::from(
+            root_file_path.parent().unwrap_or(Path::new("")),
+        ),
+        root_file_path,
+        root_file_source_id,
+        handler: &storage,
+        source_files_by_id: &source_files_by_id,
+        tracked_engine,
+    };
+
+    let root_module_tree =
+        context.branch_module_tree(module_content.syntax_tree, None, None, &[
+            target_name,
+        ]);
+
+    Ok(Parse {
+        root_module_tree: Arc::new(root_module_tree),
+        branching_errors: Arc::from(storage.into_vec()),
+        source_files_by_id: Arc::new(source_files_by_id.into_inner()),
+    })
+}
+
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+    fn execute(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        key: &Key,
+    ) -> Result<
+        Result<Parse, LoadSourceFileError>,
+        pernixc_query::runtime::executor::CyclicError,
+    > {
+        match start(engine, &key.main_file_path, key.target_name.clone()) {
+            Ok(result) => Ok(Ok(result)),
+            Err(error) => Ok(Err(error)),
+        }
+    }
 }

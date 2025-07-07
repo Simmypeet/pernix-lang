@@ -4,7 +4,7 @@ use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
 use flexstr::SharedStr;
 use pernixc_parser::abstract_tree::AbstractTree;
-use pernixc_query::{runtime::executor::CyclicError, Identifiable};
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::StableHash;
@@ -24,8 +24,9 @@ use crate::source_file::LoadSourceFileError;
     StableHash,
     Serialize,
     Deserialize,
-    Identifiable,
+    pernixc_query::Key,
 )]
+#[value(Result<SyntaxTree, LoadSourceFileError>)]
 pub struct Key {
     /// The path to load the source file.
     pub path: Arc<Path>,
@@ -42,14 +43,10 @@ pub struct Key {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
 pub struct SyntaxTree {
     /// The parsed syntax tree from the source code.
-    pub syntax_tree: pernixc_syntax::item::module::Module,
+    pub syntax_tree: pernixc_syntax::item::module::Content,
 
     /// The list of errors that occurred while parsing the source code.
     pub errors: Arc<[pernixc_parser::error::Error]>,
-}
-
-impl pernixc_query::Key for Key {
-    type Value = Result<SyntaxTree, LoadSourceFileError>;
 }
 
 /// An executor for parsing a [`pernixc_syntax::item::module::Module`] from the
@@ -86,8 +83,9 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
                 Err(error) => return Ok(Err(error)),
             };
 
-        let (module, errors) =
-            pernixc_syntax::item::module::Module::parse(&token_tree.token_tree);
+        let (module, errors) = pernixc_syntax::item::module::Content::parse(
+            &token_tree.token_tree,
+        );
 
         Ok(Ok(SyntaxTree {
             syntax_tree: module.unwrap(),

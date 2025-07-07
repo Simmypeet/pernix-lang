@@ -4,7 +4,7 @@ use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
 use flexstr::SharedStr;
 use pernixc_handler::Storage;
-use pernixc_query::{runtime::executor::CyclicError, Identifiable};
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::StableHash;
@@ -23,8 +23,9 @@ use crate::source_file::LoadSourceFileError;
     StableHash,
     Serialize,
     Deserialize,
-    Identifiable,
+    pernixc_query::Key,
 )]
+#[value(Result<TokenTree, LoadSourceFileError>)]
 pub struct Key {
     /// The path to load the source file.
     pub path: Arc<Path>,
@@ -47,24 +48,8 @@ pub struct TokenTree {
     pub errors: Arc<[pernixc_lexical::error::Error]>,
 }
 
-impl pernixc_query::Key for Key {
-    type Value = Result<TokenTree, LoadSourceFileError>;
-}
-
 /// An executor for parsing a token tree from the source code string.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Executor;
 
 impl pernixc_query::runtime::executor::Executor<Key> for Executor {
@@ -74,7 +59,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         key: &Key,
     ) -> Result<Result<TokenTree, LoadSourceFileError>, CyclicError> {
         // load the source file
-        let source_code =
+        let source_file =
             match tracked_engine.query(&crate::source_file::Key {
                 path: key.path.clone(),
                 target_name: key.target_name.clone(),
@@ -85,7 +70,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 
         let storage = Storage::<pernixc_lexical::error::Error>::default();
         let tree = pernixc_lexical::tree::Tree::from_source(
-            &source_code,
+            source_file.content(),
             key.global_source_id,
             &storage,
         );

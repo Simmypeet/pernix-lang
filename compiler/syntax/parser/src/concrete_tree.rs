@@ -103,7 +103,6 @@ pub struct AstInfo {
     Hash,
     Serialize,
     Deserialize,
-    Default,
     StableHash,
 )]
 pub struct Tree {
