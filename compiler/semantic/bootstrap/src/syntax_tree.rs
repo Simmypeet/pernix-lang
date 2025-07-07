@@ -2,6 +2,7 @@
 
 use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
+use flexstr::SharedStr;
 use pernixc_parser::abstract_tree::AbstractTree;
 use pernixc_query::{runtime::executor::CyclicError, Identifiable};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -20,18 +21,17 @@ use crate::source_file::LoadSourceFileError;
     PartialOrd,
     Ord,
     Hash,
-    Default,
     StableHash,
     Serialize,
     Deserialize,
     Identifiable,
 )]
-pub struct Key<P, T> {
+pub struct Key {
     /// The path to load the source file.
-    pub path: P,
+    pub path: Arc<Path>,
 
     /// The target name that requested the source file.
-    pub target_name: T,
+    pub target_name: SharedStr,
 
     /// The ID to the source file in the global source map.
     pub global_source_id: GlobalSourceID,
@@ -40,38 +40,16 @@ pub struct Key<P, T> {
 /// A result from loading a source file and parse it to a
 /// [`pernixc_syntax::item::module::Module`] with its errors.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-pub struct FileSyntaxTree {
+pub struct SyntaxTree {
     /// The parsed syntax tree from the source code.
-    pub syntax_tree: Option<pernixc_syntax::item::module::Module>,
+    pub syntax_tree: pernixc_syntax::item::module::Module,
 
     /// The list of errors that occurred while parsing the source code.
     pub errors: Arc<[pernixc_parser::error::Error]>,
 }
 
-impl<
-        P: AsRef<Path>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        T: AsRef<str>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-    > pernixc_query::Key for Key<P, T>
-{
-    type Value = Result<FileSyntaxTree, LoadSourceFileError>;
+impl pernixc_query::Key for Key {
+    type Value = Result<SyntaxTree, LoadSourceFileError>;
 }
 
 /// An executor for parsing a [`pernixc_syntax::item::module::Module`] from the
@@ -91,34 +69,12 @@ impl<
 )]
 pub struct Executor;
 
-impl<
-        P: AsRef<Path>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        T: AsRef<str>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-    > pernixc_query::runtime::executor::Executor<Key<P, T>> for Executor
-{
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     fn execute(
         &self,
         tracked_engine: &pernixc_query::TrackedEngine,
-        key: &Key<P, T>,
-    ) -> Result<Result<FileSyntaxTree, LoadSourceFileError>, CyclicError> {
+        key: &Key,
+    ) -> Result<Result<SyntaxTree, LoadSourceFileError>, CyclicError> {
         // load the token tree
         let token_tree =
             match tracked_engine.query(&crate::token_tree::Key {
@@ -133,8 +89,8 @@ impl<
         let (module, errors) =
             pernixc_syntax::item::module::Module::parse(&token_tree.token_tree);
 
-        Ok(Ok(FileSyntaxTree {
-            syntax_tree: module,
+        Ok(Ok(SyntaxTree {
+            syntax_tree: module.unwrap(),
             errors: Arc::from(errors),
         }))
     }

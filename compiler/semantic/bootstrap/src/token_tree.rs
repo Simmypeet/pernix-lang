@@ -2,6 +2,7 @@
 
 use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
+use flexstr::SharedStr;
 use pernixc_handler::Storage;
 use pernixc_query::{runtime::executor::CyclicError, Identifiable};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -19,18 +20,17 @@ use crate::source_file::LoadSourceFileError;
     PartialOrd,
     Ord,
     Hash,
-    Default,
     StableHash,
     Serialize,
     Deserialize,
     Identifiable,
 )]
-pub struct Key<P, T> {
+pub struct Key {
     /// The path to load the source file.
-    pub path: P,
+    pub path: Arc<Path>,
 
     /// The target name that requested the source file.
-    pub target_name: T,
+    pub target_name: SharedStr,
 
     /// The ID to the source file in the global source map.
     pub global_source_id: GlobalSourceID,
@@ -47,29 +47,7 @@ pub struct TokenTree {
     pub errors: Arc<[pernixc_lexical::error::Error]>,
 }
 
-impl<
-        P: AsRef<Path>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        T: AsRef<str>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-    > pernixc_query::Key for Key<P, T>
-{
+impl pernixc_query::Key for Key {
     type Value = Result<TokenTree, LoadSourceFileError>;
 }
 
@@ -89,33 +67,11 @@ impl<
 )]
 pub struct Executor;
 
-impl<
-        P: AsRef<Path>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        T: AsRef<str>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-    > pernixc_query::runtime::executor::Executor<Key<P, T>> for Executor
-{
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     fn execute(
         &self,
         tracked_engine: &pernixc_query::TrackedEngine,
-        key: &Key<P, T>,
+        key: &Key,
     ) -> Result<Result<TokenTree, LoadSourceFileError>, CyclicError> {
         // load the source file
         let source_code =

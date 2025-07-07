@@ -23,13 +23,13 @@ pub mod implements;
 pub mod import;
 pub mod kind;
 pub mod member;
-pub mod file_syntax_tree;
 pub mod name;
 pub mod parent;
 pub mod source_file;
 pub mod span;
 pub mod symbol;
 pub mod syntax;
+pub mod syntax_tree;
 pub mod target;
 pub mod token_tree;
 pub mod tree;
@@ -167,6 +167,9 @@ pub fn bootstrap<'l>(
 }
 
 fn bootstrap_executor(executor: &mut executor::Registry) {
+    executor.register(Arc::new(source_file::Executor));
+    executor.register(Arc::new(token_tree::Executor));
+    executor.register(Arc::new(syntax_tree::Executor));
     executor.register(Arc::new(parent::IntermediateExecutor));
     executor.register(Arc::new(parent::Executor));
 }

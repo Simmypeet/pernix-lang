@@ -2,6 +2,7 @@
 
 use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
+use flexstr::SharedStr;
 use pernixc_query::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -14,12 +15,12 @@ use pernixc_stable_hash::StableHash;
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Identifiable, StableHash,
 )]
-pub struct Key<P, T> {
+pub struct Key {
     /// The path to load the source file.
-    pub path: P,
+    pub path: Arc<Path>,
 
     /// The target name that requested the source file.
-    pub target_name: T,
+    pub target_name: SharedStr,
 }
 
 /// The string formatted error from the [`std::io::Error`] when loading
@@ -39,29 +40,11 @@ pub struct Key<P, T> {
 )]
 pub struct LoadSourceFileError(pub Arc<str>);
 
-impl<
-        P: AsRef<Path>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        T: AsRef<str>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-    > pernixc_query::Key for Key<P, T>
-{
+impl pernixc_query::Key for Key {
+    // Loading source files is an impure operation, so it should be
+    // re-evaluated every time
+    const ALWAYS_REVERIFY: bool = true;
+
     /// The [`Ok`] value represents the source file content, while the [`Err`]
     /// is the string to report the error.
     type Value = Result<Arc<String>, LoadSourceFileError>;
@@ -77,33 +60,11 @@ fn load_source_file(path: &Path) -> Result<Arc<String>, LoadSourceFileError> {
         .map(Arc::new)
 }
 
-impl<
-        P: AsRef<Path>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-        T: AsRef<str>
-            + Debug
-            + StableHash
-            + Identifiable
-            + Hash
-            + Eq
-            + Clone
-            + Send
-            + Sync
-            + 'static,
-    > pernixc_query::runtime::executor::Executor<Key<P, T>> for Executor
-{
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     fn execute(
         &self,
         _: &pernixc_query::TrackedEngine,
-        key: &Key<P, T>,
+        key: &Key,
     ) -> Result<
         Result<Arc<String>, LoadSourceFileError>,
         pernixc_query::runtime::executor::CyclicError,
