@@ -17,13 +17,13 @@ members = [
     "compiler/base/stable_hash",
     "compiler/base/stable_hash_derive",
     "compiler/base/extend",
+    "compiler/base/query",
+    "compiler/base/query_derive",
 
     "compiler/syntax/lexical",
     "compiler/syntax/parser",
     "compiler/syntax/syntax",
 
-    "compiler/semantic/query",
-    "compiler/semantic/query_derive",
     "compiler/semantic/bootstrap",
 
     "compiler/driver",

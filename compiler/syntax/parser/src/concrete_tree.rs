@@ -13,6 +13,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, Span};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::StableTypeID;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 /// An enumeration of the different types of nodes that can be found in
 /// the concrete syntax tree.
@@ -118,6 +119,12 @@ pub struct Tree {
     ///
     /// The [`Self::nodes`] must not be empty
     pub nodes: Vec<Node>,
+}
+
+impl Drop for Tree {
+    fn drop(&mut self) {
+        std::mem::take(&mut self.nodes).into_par_iter().for_each(drop);
+    }
 }
 
 impl Tree {
