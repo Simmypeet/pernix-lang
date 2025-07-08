@@ -168,6 +168,7 @@ pub fn skip_persistence(persistence: &mut Persistence) {
     persistence.skip_cache_value::<arguments::Key>();
     persistence.skip_cache_value::<source_file::Key>();
     persistence.skip_cache_value::<token_tree::Key>();
+    persistence.skip_cache_value::<module_tree::Key>();
 
     // persistence.skip_cache_value::<syntax::FunctionSignatureKey>();
     // persistence.skip_cache_value::<syntax::GenericParametersKey>();

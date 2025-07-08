@@ -18,7 +18,9 @@ use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::Global;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 use crate::{
     fingerprint,
@@ -1187,6 +1189,13 @@ pub(super) trait Value:
 }
 
 impl<T: Any + Send + Sync + std::fmt::Debug + 'static> Value for T {}
+
+impl Drop for Database {
+    fn drop(&mut self) {
+        let map = std::mem::take(&mut self.query_states_by_key);
+        map.into_par_iter().for_each(drop); // parallel drop the entries
+    }
+}
 
 #[cfg(test)]
 mod test;

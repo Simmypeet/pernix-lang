@@ -5,6 +5,7 @@ use std::{
     hash::{Hash as _, Hasher as _},
     path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 
 use enum_as_inner::EnumAsInner;
@@ -341,7 +342,9 @@ fn add_source_file(
 
 fn parse_module_tree(
     tracked_engine: &TrackedEngine,
-    source_files_by_id: &mut HashMap<pernixc_arena::ID<SourceFile>, Arc<Path>>,
+    source_files_by_id: &RwLock<
+        HashMap<pernixc_arena::ID<SourceFile>, Arc<Path>>,
+    >,
     path: Arc<Path>,
     target_id: TargetID,
 ) -> Result<(crate::syntax_tree::SyntaxTree, GlobalSourceID), LoadSourceFileError>
@@ -350,7 +353,7 @@ fn parse_module_tree(
         .query(&crate::source_file::Key { path: path.clone(), target_id })
         .expect("should have no cyclic dependencies")?;
 
-    let id = add_source_file(path.clone(), source_files_by_id);
+    let id = add_source_file(path.clone(), &mut source_files_by_id.write());
 
     let module_tree = tracked_engine
         .query(&crate::syntax_tree::Key {
@@ -389,32 +392,36 @@ impl Context<'_> {
         // generate a parallel processes to parse files
         rayon::scope(|scope| {
             let next_submodules = &next_submodules;
+            let start = Instant::now();
 
             for (index, member) in content.members().enumerate() {
+                let Passable::Line(
+                    pernixc_syntax::item::module::Member::Module(submodule),
+                ) = member
+                else {
+                    continue;
+                };
+
+                let next_signature = submodule.signature();
+                let Some(next_identifier) = next_signature.as_ref().and_then(
+                    pernixc_syntax::item::module::Signature::identifier,
+                ) else {
+                    continue;
+                };
+
+                let next_name = next_identifier.kind.0.clone();
+                let next_access_modifier = submodule.access_modifier();
+                let next_name_space = current_name_space
+                    .iter()
+                    .cloned()
+                    .chain(std::iter::once(next_name.clone()))
+                    .collect::<Vec<_>>();
+
                 scope.spawn(move |_| {
-                    let Passable::Line(
-                        pernixc_syntax::item::module::Member::Module(submodule),
-                    ) = member
-                    else {
-                        return;
-                    };
-
-                    let next_signature = submodule.signature();
-                    let Some(next_identifier) =
-                        next_signature.as_ref().and_then(
-                            pernixc_syntax::item::module::Signature::identifier,
-                        )
-                    else {
-                        return;
-                    };
-
-                    let next_name = next_identifier.kind.0.clone();
-                    let next_access_modifier = submodule.access_modifier();
-                    let next_name_space = current_name_space
-                        .iter()
-                        .cloned()
-                        .chain(std::iter::once(next_name.clone()))
-                        .collect::<Vec<_>>();
+                    println!(
+                        "{next_name_space:?} started at {:?}",
+                        start.elapsed()
+                    );
 
                     // Found inline module content, take the content right away
                     if let Some(member) = submodule.inline_body() {
@@ -454,9 +461,14 @@ impl Context<'_> {
                             return;
                         }
 
+                        println!(
+                            "{next_name_space:?} started parsing at {:?}",
+                            start.elapsed()
+                        );
+
                         let (content, _) = match parse_module_tree(
                             self.tracked_engine,
-                            &mut self.source_files_by_id.write(),
+                            self.source_files_by_id,
                             Arc::from(path.clone()),
                             self.target_id,
                         ) {
@@ -532,17 +544,16 @@ fn start(
     target_name: SharedStr,
     target_id: TargetID,
 ) -> Result<Parse, LoadSourceFileError> {
-    let mut source_files_by_id = HashMap::default();
+    let source_files_by_id = RwLock::new(HashMap::default());
 
     let (module_content, root_file_source_id) = parse_module_tree(
         tracked_engine,
-        &mut source_files_by_id,
+        &source_files_by_id,
         root_file_path.clone(),
         target_id,
     )?;
 
     let storage = Storage::<Error>::default();
-    let source_files_by_id = RwLock::new(source_files_by_id);
 
     let context = Context {
         root_directory: &Arc::from(
