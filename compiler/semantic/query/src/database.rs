@@ -217,11 +217,13 @@ enum SlowPathDecision<V> {
     Continuation(Continuation, Notification),
 }
 
+#[derive(Debug)]
 struct ReVerify {
     derived_metadata: DerivedMetadata,
     value_store: Option<DynamicValue>,
 }
 
+#[derive(Debug)]
 struct ReExecute {
     derived_metadata: DerivedMetadata,
 }
@@ -231,6 +233,7 @@ enum HandleCompletion<V> {
     Continuation(Continuation),
 }
 
+#[derive(Debug)]
 enum Continuation {
     Fresh,
     ReVerify(ReVerify),
@@ -528,6 +531,12 @@ impl Engine {
                 let loaded_metadata =
                     self.try_load_value_metadata::<K>(fingerprint);
 
+                tracing::debug!(
+                    "Loaded metadata for `{}`: {:?}",
+                    key.type_name(),
+                    loaded_metadata
+                );
+
                 if let Some(loaded_metadata) = loaded_metadata {
                     if loaded_metadata.as_derived().is_none_or(|x| {
                         x.version_info.verified_at == current_version
@@ -598,6 +607,11 @@ impl Engine {
                     }));
 
                     // the value is not up-to-date, need to re-verify it
+                    tracing::debug!(
+                        "Re-verifying query for `{}` with metadata: {:?}",
+                        key.type_name(),
+                        loaded_metadata
+                    );
                     return SlowPathDecision::Continuation(
                         Continuation::ReVerify(ReVerify {
                             derived_metadata: loaded_metadata
@@ -618,6 +632,11 @@ impl Engine {
                     is_in_scc: AtomicBool::new(false),
                 }));
 
+                tracing::debug!(
+                    "Fresh query for `{}` with metadata: {:?}",
+                    key.type_name(),
+                    loaded_metadata
+                );
                 SlowPathDecision::Continuation(Continuation::Fresh, notify)
             }
         }
@@ -743,6 +762,7 @@ impl Engine {
         }
 
         let final_metadata = ValueMetadata::Derived(metadata);
+
         if save_metadata {
             self.save_value_metadata::<K>(
                 fingerprint::fingerprint(key),
@@ -889,6 +909,17 @@ impl Engine {
                             .fingerprint
                             .is_none_or(|x| Some(x) != new_fingerprint)
                         {
+                            tracing::debug!(
+                                "Re-computed value for `{}` with a new \
+                                 fingerprint: {:?} -> {:?}",
+                                key.type_name(),
+                                re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .fingerprint,
+                                new_fingerprint
+                            );
+
                             re_verify
                                 .derived_metadata
                                 .version_info
@@ -1059,6 +1090,12 @@ impl Engine {
                         (continuation, notify)
                     }
                 };
+
+            tracing::debug!(
+                "Executing query for `{}` with continuation: {:?}",
+                key.type_name(),
+                continuation
+            );
 
             let value = self.continuation(
                 key,

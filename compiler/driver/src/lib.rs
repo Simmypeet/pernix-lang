@@ -295,7 +295,7 @@ pub fn run(
 
     pernixc_bootstrap::register_serde(&mut serde_registry);
 
-    let engine = match pernixc_bootstrap::bootstrap(
+    let mut engine = match pernixc_bootstrap::bootstrap(
         argument,
         Arc::new(serde_registry),
     ) {
@@ -354,6 +354,8 @@ pub fn run(
             return ExitCode::FAILURE;
         }
     };
+
+    engine.save_database();
 
     ExitCode::SUCCESS
 }

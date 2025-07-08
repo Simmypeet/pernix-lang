@@ -49,7 +49,15 @@ impl Engine {
         let persistence = self.runtime.persistence.as_ref()?;
 
         match persistence.load_value::<K>(value_fingerprint) {
-            Ok(value) => value,
+            Ok(value) => {
+                tracing::debug!(
+                    "Loaded value for key {} with value fingerprint {}",
+                    std::any::type_name::<K>(),
+                    value_fingerprint,
+                );
+
+                value
+            }
             Err(error) => {
                 tracing::error!(
                     "Failed to load value for key {} with fingerprint {}: \
@@ -69,7 +77,16 @@ impl Engine {
         let persistence = self.runtime.persistence.as_ref()?;
 
         match persistence.load_value_metadata::<K>(key_fingerprint) {
-            Ok(value_metadata) => value_metadata,
+            Ok(value_metadata) => {
+                tracing::debug!(
+                    "Loaded metadata for key {} with key fingerprint {} got \
+                     {value_metadata:?}",
+                    std::any::type_name::<K>(),
+                    key_fingerprint,
+                );
+
+                value_metadata
+            }
             Err(error) => {
                 tracing::error!(
                     "Failed to load value metadata for key {} with \
@@ -449,7 +466,7 @@ impl Persistence {
     }
 
     fn load_from_table<K: redb::Key, Q: for<'k> Borrow<K::SelfType<'k>>, V>(
-        table: &mut redb::Table<'_, K, &[u8]>,
+        table: &redb::Table<'_, K, &[u8]>,
         key: Q,
         deserialize: impl FnOnce(
             &mut BinaryDeserializer<Reader>,
@@ -489,24 +506,22 @@ impl Persistence {
         value
     }
 
-    fn save_to_table<K: redb::Key, Q: for<'k> Borrow<K::SelfType<'k>>>(
-        table: &mut redb::Table<'_, K, &[u8]>,
+    fn save_to_table(
         serialize: impl FnOnce(
             &mut BinarySerializer<Writer>,
-        ) -> Result<Q, std::io::Error>,
+        ) -> Result<(), std::io::Error>,
+        save: impl FnOnce(&[u8]) -> Result<(), redb::Error>,
     ) -> Result<(), std::io::Error> {
         let buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
 
         let mut serializer = BinarySerializer::new(Writer::Vec(buffer));
 
-        let key = serialize(&mut serializer)?;
+        serialize(&mut serializer)?;
 
         let mut buffer = serializer.into_inner().into_vec().unwrap();
 
-        table.insert(key, buffer.as_slice()).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to insert value into table: {e}",
-            ))
+        save(&buffer).map_err(|x| {
+            std::io::Error::other(format!("Failed to save value to table: {x}"))
         })?;
 
         BUFFER.with(|b| {
@@ -531,18 +546,27 @@ impl Persistence {
 
         let tx = Self::ensure_write_transaction(&self.db, &self.transaction)?;
 
-        tx.with_cache_table(|x| {
-            Self::save_to_table(&mut x.write(), |serializer| {
+        Self::save_to_table(
+            |serializer| {
                 (self.serialize_dynamic_value)(
                     serializer,
                     K::STABLE_TYPE_ID,
                     std::any::type_name::<K::Value>(),
                     value,
                     self.serde_extension.as_ref(),
-                )?;
-                Ok((K::STABLE_TYPE_ID.as_u128(), value_fingerprint))
-            })
-        })
+                )
+            },
+            |buffer| {
+                tx.with_cache_table(|x| {
+                    x.write().insert(
+                        (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
+                        buffer,
+                    )?;
+
+                    Ok(())
+                })
+            },
+        )
     }
 
     fn save_value_metadata<K: Key>(
@@ -552,17 +576,32 @@ impl Persistence {
     ) -> Result<(), std::io::Error> {
         let tx = Self::ensure_write_transaction(&self.db, &self.transaction)?;
 
-        tx.with_metadata_table(|x| {
-            Self::save_to_table(&mut x.write(), |serializer| {
+        Self::save_to_table(
+            |serializer| {
                 (self.serialize_value_metadata)(
                     serializer,
                     value_metadata,
                     self.serde_extension.as_ref(),
-                )?;
+                )
+            },
+            |buffer| {
+                tx.with_metadata_table(|x| {
+                    x.write().insert(
+                        (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
+                        buffer,
+                    )?;
 
-                Ok((K::STABLE_TYPE_ID.as_u128(), key_fingerprint))
-            })
-        })
+                    tracing::debug!(
+                        "Saving value metadata for key {} with fingerprint \
+                         {}: {value_metadata:?}",
+                        std::any::type_name::<K>(),
+                        key_fingerprint,
+                    );
+
+                    Ok(())
+                })
+            },
+        )
     }
 
     fn load_value_metadata<K: Key>(
@@ -573,7 +612,7 @@ impl Persistence {
 
         tx.with_metadata_table(|x| {
             Self::load_from_table(
-                &mut x.write(),
+                &x.read(),
                 (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
                 |deserializer| {
                     (self.deserialize_value_metadata)(
@@ -597,7 +636,7 @@ impl Persistence {
 
         tx.with_cache_table(|x| {
             Self::load_from_table(
-                &mut x.write(),
+                &x.read(),
                 (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
                 |deserializer| {
                     let mut buffer: Option<K::Value> = None;

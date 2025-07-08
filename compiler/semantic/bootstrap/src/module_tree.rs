@@ -5,7 +5,6 @@ use std::{
     hash::{Hash as _, Hasher as _},
     path::{Path, PathBuf},
     sync::Arc,
-    time::Instant,
 };
 
 use enum_as_inner::EnumAsInner;
@@ -392,7 +391,6 @@ impl Context<'_> {
         // generate a parallel processes to parse files
         rayon::scope(|scope| {
             let next_submodules = &next_submodules;
-            let start = Instant::now();
 
             for (index, member) in content.members().enumerate() {
                 let Passable::Line(
@@ -418,11 +416,6 @@ impl Context<'_> {
                     .collect::<Vec<_>>();
 
                 scope.spawn(move |_| {
-                    println!(
-                        "{next_name_space:?} started at {:?}",
-                        start.elapsed()
-                    );
-
                     // Found inline module content, take the content right away
                     if let Some(member) = submodule.inline_body() {
                         if let Some(content) = member.content() {
@@ -460,11 +453,6 @@ impl Context<'_> {
                             ));
                             return;
                         }
-
-                        println!(
-                            "{next_name_space:?} started parsing at {:?}",
-                            start.elapsed()
-                        );
 
                         let (content, _) = match parse_module_tree(
                             self.tracked_engine,
