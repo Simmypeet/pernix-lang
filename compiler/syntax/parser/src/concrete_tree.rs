@@ -11,11 +11,9 @@ use pernixc_lexical::{
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, Span};
-use pernixc_stable_hash::{StableHash, Value};
+use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 /// An enumeration of the different types of nodes that can be found in
 /// the concrete syntax tree.
@@ -97,7 +95,16 @@ pub struct AstInfo {
 
 /// A typeless concrete syntax tree built by the parser.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
 )]
 pub struct Tree {
     /// The info of where which AST created this tree.
@@ -112,30 +119,6 @@ pub struct Tree {
     ///
     /// The [`Self::nodes`] must not be empty
     pub nodes: Vec<Node>,
-}
-
-impl StableHash for Tree {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
-        self.ast_info.stable_hash(state);
-
-        // parallelize the stable hashing of nodes
-        self.nodes.len().stable_hash(state);
-
-        let sub_hash = self
-            .nodes
-            .par_iter()
-            .map(|x| {
-                state.sub_hash(&mut |hash| {
-                    x.stable_hash(hash);
-                })
-            })
-            .reduce(H::Hash::default, Value::wrapping_add);
-
-        sub_hash.stable_hash(state);
-    }
 }
 
 impl Drop for Tree {
