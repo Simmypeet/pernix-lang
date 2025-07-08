@@ -21,10 +21,13 @@ use pernixc_source_file::{GlobalSourceID, LocalSourceID, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{
+    IntoParallelIterator as _, IntoParallelRefIterator, ParallelIterator,
+};
 
 use crate::{
     arguments::get_invocation_arguments, source_file::LoadSourceFileError,
+    syntax_tree::ModuleContent,
 };
 
 /// An enumeration of all the errors that can occur during the module tree
@@ -210,7 +213,7 @@ pub struct ModuleTree {
     pub access_modifier: Option<pernixc_syntax::AccessModifier>,
 
     /// The content of the module, which contains the members and other
-    pub content: Option<pernixc_syntax::item::module::Content>,
+    pub content: Option<ModuleContent>,
 
     /// The submodules of the module, indexed by their names.
     pub submodules_by_name: HashMap<SharedStr, Self>,
@@ -221,35 +224,13 @@ impl StableHash for ModuleTree {
         &self,
         state: &mut H,
     ) {
-        let inner_tree = self.content.inner_tree();
-
         self.signature.stable_hash(state);
         self.access_modifier.stable_hash(state);
-        inner_tree.ast_info.stable_hash(state);
-
-        let (tree_hash, tree_count) = inner_tree
-            .nodes
-            .par_iter()
-            .map(|x| {
-                let sub_hash = state.sub_hash(&mut |h| {
-                    x.stable_hash(h);
-                });
-
-                (sub_hash, 1)
-            })
-            .reduce(
-                || (H::Hash::default(), 0),
-                |(l_hash, l_count), (r_hash, r_count)| {
-                    (l_hash.wrapping_add(r_hash), r_count + l_count)
-                },
-            );
-
-        tree_hash.stable_hash(state);
-        tree_count.stable_hash(state);
+        self.content.stable_hash(state);
 
         self.submodules_by_name.len().stable_hash(state);
 
-        let module_hash = self
+        let sub_module_hash = self
             .submodules_by_name
             .par_iter()
             .map(|(k, v)| {
@@ -260,7 +241,17 @@ impl StableHash for ModuleTree {
             })
             .reduce(H::Hash::default, pernixc_stable_hash::Value::wrapping_add);
 
-        module_hash.stable_hash(state);
+        sub_module_hash.stable_hash(state);
+    }
+}
+
+impl Drop for ModuleTree {
+    fn drop(&mut self) {
+        // ensure that the submodules are dropped in the correct order
+        // to avoid cyclic dependencies
+        std::mem::take(&mut self.submodules_by_name)
+            .into_par_iter()
+            .for_each(drop);
     }
 }
 
@@ -381,7 +372,7 @@ impl Context<'_> {
     #[allow(clippy::too_many_lines)]
     fn branch_module_tree(
         &self,
-        content: Option<pernixc_syntax::item::module::Content>,
+        content: Option<ModuleContent>,
         signature: Option<pernixc_syntax::item::module::Signature>,
         access_modifier: Option<pernixc_syntax::AccessModifier>,
         current_name_space: &[SharedStr],
@@ -428,7 +419,7 @@ impl Context<'_> {
                     // Found inline module content, take the content right away
                     if let Some(member) = submodule.inline_body() {
                         let next_submodule = self.branch_module_tree(
-                            member.content(),
+                            member.content().map(ModuleContent),
                             next_signature,
                             next_access_modifier,
                             &next_name_space,
@@ -519,6 +510,7 @@ impl Context<'_> {
                                 .map(|x| x.inner_tree().span()),
                             redefinition_submodule_span: module_tree
                                 .signature
+                                .as_ref()
                                 .map(|x| x.inner_tree().span()),
                         },
                     ));

@@ -6,8 +6,9 @@ use pernixc_parser::abstract_tree::AbstractTree;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::GlobalSourceID;
-use pernixc_stable_hash::StableHash;
+use pernixc_stable_hash::{StableHash, Value as _};
 use pernixc_target::TargetID;
+use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 
 use crate::source_file::LoadSourceFileError;
 
@@ -38,12 +39,56 @@ pub struct Key {
     pub global_source_id: GlobalSourceID,
 }
 
+/// A wrapper over the [`pernixc_syntax::item::module::Content`] that is
+/// specifically used for parallel hashing.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+pub struct ModuleContent(pub pernixc_syntax::item::module::Content);
+
+impl StableHash for ModuleContent {
+    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        let inner_tree = &self.0.inner_tree();
+        inner_tree.ast_info.stable_hash(state);
+
+        let (tree_hash, tree_count) = inner_tree
+            .nodes
+            .par_iter()
+            .map(|x| {
+                let sub_hash = state.sub_hash(&mut |h| {
+                    x.stable_hash(h);
+                });
+
+                (sub_hash, 1)
+            })
+            .reduce(
+                || (H::Hash::default(), 0),
+                |(l_hash, l_count), (r_hash, r_count)| {
+                    (l_hash.wrapping_add(r_hash), r_count + l_count)
+                },
+            );
+
+        tree_hash.stable_hash(state);
+        tree_count.stable_hash(state);
+    }
+}
+
 /// A result from loading a source file and parse it to a
 /// [`pernixc_syntax::item::module::Module`] with its errors.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
 pub struct SyntaxTree {
     /// The parsed syntax tree from the source code.
-    pub syntax_tree: Option<pernixc_syntax::item::module::Content>,
+    pub syntax_tree: Option<ModuleContent>,
 
     /// The list of errors that occurred while parsing the source code.
     pub errors: Arc<[pernixc_parser::error::Error]>,
@@ -87,6 +132,9 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             &token_tree.token_tree,
         );
 
-        Ok(Ok(SyntaxTree { syntax_tree: module, errors: Arc::from(errors) }))
+        Ok(Ok(SyntaxTree {
+            syntax_tree: module.map(ModuleContent),
+            errors: Arc::from(errors),
+        }))
     }
 }
