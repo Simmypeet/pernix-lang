@@ -43,7 +43,7 @@ pub struct Key {
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
 pub struct SyntaxTree {
     /// The parsed syntax tree from the source code.
-    pub syntax_tree: pernixc_syntax::item::module::Content,
+    pub syntax_tree: Option<pernixc_syntax::item::module::Content>,
 
     /// The list of errors that occurred while parsing the source code.
     pub errors: Arc<[pernixc_parser::error::Error]>,
@@ -87,9 +87,6 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             &token_tree.token_tree,
         );
 
-        Ok(Ok(SyntaxTree {
-            syntax_tree: module.unwrap(),
-            errors: Arc::from(errors),
-        }))
+        Ok(Ok(SyntaxTree { syntax_tree: module, errors: Arc::from(errors) }))
     }
 }

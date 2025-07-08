@@ -18,7 +18,7 @@ use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, LocalSourceID, SourceFile, Span};
-use pernixc_stable_hash::{StableHash, Value};
+use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -210,7 +210,7 @@ pub struct ModuleTree {
     pub access_modifier: Option<pernixc_syntax::AccessModifier>,
 
     /// The content of the module, which contains the members and other
-    pub content: pernixc_syntax::item::module::Content,
+    pub content: Option<pernixc_syntax::item::module::Content>,
 
     /// The submodules of the module, indexed by their names.
     pub submodules_by_name: HashMap<SharedStr, Self>,
@@ -359,11 +359,20 @@ impl Context<'_> {
     #[allow(clippy::too_many_lines)]
     fn branch_module_tree(
         &self,
-        content: pernixc_syntax::item::module::Content,
+        content: Option<pernixc_syntax::item::module::Content>,
         signature: Option<pernixc_syntax::item::module::Signature>,
         access_modifier: Option<pernixc_syntax::AccessModifier>,
         current_name_space: &[SharedStr],
     ) -> ModuleTree {
+        let Some(content) = content else {
+            return ModuleTree {
+                signature,
+                access_modifier,
+                content,
+                submodules_by_name: HashMap::default(),
+            };
+        };
+
         let next_submodules = RwLock::new(Vec::new());
 
         // generate a parallel processes to parse files
@@ -396,20 +405,18 @@ impl Context<'_> {
                 scope.spawn(move |_| {
                     // Found inline module content, take the content right away
                     if let Some(member) = submodule.inline_body() {
-                        if let Some(content) = member.content() {
-                            let next_submodule = self.branch_module_tree(
-                                content,
-                                next_signature,
-                                next_access_modifier,
-                                &next_name_space,
-                            );
+                        let next_submodule = self.branch_module_tree(
+                            member.content(),
+                            next_signature,
+                            next_access_modifier,
+                            &next_name_space,
+                        );
 
-                            next_submodules.write().push((
-                                index,
-                                next_name,
-                                next_submodule,
-                            ));
-                        }
+                        next_submodules.write().push((
+                            index,
+                            next_name,
+                            next_submodule,
+                        ));
                     }
                     // Otherwise, open a file and parse it
                     else {
@@ -500,7 +507,12 @@ impl Context<'_> {
             }
         }
 
-        ModuleTree { signature, access_modifier, content, submodules_by_name }
+        ModuleTree {
+            signature,
+            access_modifier,
+            content: Some(content),
+            submodules_by_name,
+        }
     }
 }
 
