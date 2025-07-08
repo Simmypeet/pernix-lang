@@ -48,40 +48,41 @@ pub struct Key {
     Eq,
     Serialize,
     Deserialize,
+    StableHash,
     derive_more::Deref,
     derive_more::DerefMut,
 )]
 pub struct ModuleContent(pub pernixc_syntax::item::module::Content);
 
-impl StableHash for ModuleContent {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
-        let inner_tree = &self.0.inner_tree();
-        inner_tree.ast_info.stable_hash(state);
+// impl StableHash for ModuleContent {
+//     fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+//         &self,
+//         state: &mut H,
+//     ) {
+//         let inner_tree = &self.0.inner_tree();
+//         inner_tree.ast_info.stable_hash(state);
 
-        let (tree_hash, tree_count) = inner_tree
-            .nodes
-            .par_iter()
-            .map(|x| {
-                let sub_hash = state.sub_hash(&mut |h| {
-                    x.stable_hash(h);
-                });
+//         let (tree_hash, tree_count) = inner_tree
+//             .nodes
+//             .par_iter()
+//             .map(|x| {
+//                 let sub_hash = state.sub_hash(&mut |h| {
+//                     x.stable_hash(h);
+//                 });
 
-                (sub_hash, 1)
-            })
-            .reduce(
-                || (H::Hash::default(), 0),
-                |(l_hash, l_count), (r_hash, r_count)| {
-                    (l_hash.wrapping_add(r_hash), r_count + l_count)
-                },
-            );
+//                 (sub_hash, 1)
+//             })
+//             .reduce(
+//                 || (H::Hash::default(), 0),
+//                 |(l_hash, l_count), (r_hash, r_count)| {
+//                     (l_hash.wrapping_add(r_hash), r_count + l_count)
+//                 },
+//             );
 
-        tree_hash.stable_hash(state);
-        tree_count.stable_hash(state);
-    }
-}
+//         tree_hash.stable_hash(state);
+//         tree_count.stable_hash(state);
+//     }
+// }
 
 /// A result from loading a source file and parse it to a
 /// [`pernixc_syntax::item::module::Module`] with its errors.

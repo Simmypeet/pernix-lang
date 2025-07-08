@@ -1299,12 +1299,12 @@ pub(super) trait Value:
 
 impl<T: Any + Send + Sync + std::fmt::Debug + 'static> Value for T {}
 
-impl Drop for Database {
-    fn drop(&mut self) {
-        let map = std::mem::take(&mut self.query_states_by_key);
-        map.into_par_iter().for_each(drop); // parallel drop the entries
-    }
-}
+// impl Drop for Database {
+//     fn drop(&mut self) {
+//         let map = std::mem::take(&mut self.query_states_by_key);
+//         map.into_par_iter().for_each(drop); // parallel drop the entries
+//     }
+// }
 
 #[cfg(test)]
 mod test;

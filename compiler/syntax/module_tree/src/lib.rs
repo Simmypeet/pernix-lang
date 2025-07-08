@@ -286,7 +286,7 @@ impl<T> Report<T> for ModuleRedefinition {
 }
 
 /// The tree structure of the compilation module.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
 pub struct ModuleTree {
     /// The signature of the module, if it exists.
     pub signature: Option<pernixc_syntax::item::module::Signature>,
@@ -303,42 +303,6 @@ pub struct ModuleTree {
 
     /// The submodules of the module, indexed by their names.
     pub submodules_by_name: HashMap<SharedStr, Self>,
-}
-
-impl StableHash for ModuleTree {
-    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
-        &self,
-        state: &mut H,
-    ) {
-        self.signature.stable_hash(state);
-        self.access_modifier.stable_hash(state);
-        self.content.stable_hash(state);
-
-        self.submodules_by_name.len().stable_hash(state);
-
-        let sub_module_hash = self
-            .submodules_by_name
-            .par_iter()
-            .map(|(k, v)| {
-                state.sub_hash(&mut |h| {
-                    k.stable_hash(h);
-                    v.stable_hash(h);
-                })
-            })
-            .reduce(H::Hash::default, pernixc_stable_hash::Value::wrapping_add);
-
-        sub_module_hash.stable_hash(state);
-    }
-}
-
-impl Drop for ModuleTree {
-    fn drop(&mut self) {
-        // ensure that the submodules are dropped in the correct order
-        // to avoid cyclic dependencies
-        std::mem::take(&mut self.submodules_by_name)
-            .into_par_iter()
-            .for_each(drop);
-    }
 }
 
 /// The result of parsing an entire module tree for a compilation target.
