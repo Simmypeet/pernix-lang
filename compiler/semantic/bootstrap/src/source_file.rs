@@ -48,7 +48,9 @@ pub struct Key {
     Deserialize,
     Identifiable,
     StableHash,
+    thiserror::Error,
 )]
+#[error("{0}")]
 pub struct LoadSourceFileError(pub Arc<str>);
 
 impl pernixc_query::Key for Key {

@@ -14,7 +14,7 @@ use codespan_reporting::{
         termcolor::{self, StandardStream},
     },
 };
-use pernixc_driver::argument::Arguments;
+use pernixc_bootstrap::arguments::Arguments;
 use pernixc_serialize::{
     ron::{
         self,

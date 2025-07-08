@@ -156,6 +156,12 @@ impl SetInputLock<'_> {
         }
     }
 
+    /// After the input session is done, always increment the database version
+    /// regardless whether or not there're any changes in the input
+    pub fn always_reverify(&self) {
+        self.update_version.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn update_metadata(
         &self,
         metadata: &mut ValueMetadata,

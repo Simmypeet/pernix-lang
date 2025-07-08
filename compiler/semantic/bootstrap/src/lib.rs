@@ -1,20 +1,24 @@
 //! Crate responsible for starting and setting up the query engine for the
 //! compilation process.
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
-use flexstr::SharedStr;
-use pernixc_hash::DashMap;
 use pernixc_query::{
     runtime::{
         executor,
-        persistence::{serde::DynamicRegistry, Persistence},
+        persistence::{
+            serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+            Persistence, Reader, Writer,
+        },
     },
     Engine,
 };
-use pernixc_serialize::{de::Deserializer, ser::Serializer};
-use pernixc_source_file::{GlobalSourceID, SourceMap};
+use pernixc_serialize::{
+    binary::{de::BinaryDeserializer, ser::BinarySerializer},
+    de::Deserializer,
+    ser::Serializer,
+};
 
-use crate::diagnostic::Diagnostic;
+use crate::arguments::Arguments;
 
 pub mod accessibility;
 pub mod arguments;
@@ -42,11 +46,10 @@ pub mod token_tree;
 #[allow(missing_docs)]
 pub enum Error {
     #[error(transparent)]
-    OpenIncrementalFileIO(std::io::Error),
+    SetupPersistence(std::io::Error),
+
     #[error(transparent)]
-    ReadIncrementalFileIO(std::io::Error),
-    #[error(transparent)]
-    IncrementalFileDeserialize(std::io::Error),
+    LoadIncrementalDatabase(std::io::Error),
 }
 
 /// Describes the relationship between two symbols in the hierarchy.
@@ -65,106 +68,51 @@ pub enum HierarchyRelationship {
     Unrelated,
 }
 
-/// The result of the bootstrap process, containing the engine, syntax errors,
-/// and bootstrapping semantic diagnostics.
-#[derive(Debug)]
-pub struct Bootstrap {
-    /// The query engine where all the initial inputs are bootstrapped.
-    pub engine: Engine,
-
-    /// The syntax errors that were encountered during the parsing of the
-    /// source code.
-    pub syntax_errors: Vec<module_tree::Error>,
-
-    /// The semantic diagnostics that were generated during the bootstrapping
-    pub semantic_diagnostics: Vec<Box<dyn Diagnostic>>,
-}
-
 /// Setup the query database for the compilation process.
 #[allow(clippy::type_complexity)]
-pub fn bootstrap<'l>(
-    _source_map: &mut SourceMap,
-    _root_source_id: GlobalSourceID,
-    _target_name: SharedStr,
-    _library_paths: impl IntoIterator<Item = &'l Path>,
-    _token_trees_by_source_id: &DashMap<
-        GlobalSourceID,
-        pernixc_lexical::tree::Tree,
-    >,
-    _persistence: Option<Persistence>,
-) -> Result<Bootstrap, Error> {
-    /*
-    let ((tree, syntax_errors), engine) = rayon::join(
-        || tree::parse(root_source_id, source_map, token_trees_by_source_id),
-        || {
-            let mut runtime = Runtime {
-                executor: executor::Registry::default(),
-                persistence,
-            };
+pub fn bootstrap<
+    Registry: DynamicRegistry<BinarySerializer<Writer>, BinaryDeserializer<Reader>>
+        + DynamicSerialize<BinarySerializer<Writer>>
+        + DynamicDeserialize<BinaryDeserializer<Reader>>
+        + Send
+        + Sync
+        + 'static,
+>(
+    arguments: Arguments,
+    serder_registry: Arc<Registry>,
+) -> Result<Engine, Error> {
+    let mut engine = Engine::default();
 
-            bootstrap_executor(&mut runtime.executor);
+    if let Some(incremental_path) = &arguments.command.input().incremental_path
+    {
+        let mut persistence =
+            Persistence::new(incremental_path.clone(), serder_registry)
+                .map_err(Error::SetupPersistence)?;
 
-            let database = runtime
-                .persistence
-                .as_mut()
-                .map_or_else(Database::default, |persistence| {
-                    persistence.load_database().unwrap_or_default()
-                });
+        engine.database = persistence
+            .load_database()
+            .map_err(Error::LoadIncrementalDatabase)?;
 
-            Engine { database, runtime }
-        },
-    );
+        skip_persistence(&mut persistence);
 
-    engine.set_input(
-        &target::MapKey(()),
-        Arc::new(target::Map(
-            std::iter::once((target_name.clone(), TargetID::Local)).collect(),
-        )),
-    );
+        engine.runtime.persistence = Some(persistence);
+    }
 
-    let generated_ids_rw = RwLock::new(HashSet::default());
-    let handler = Storage::<Box<dyn Diagnostic>>::new();
-    let imports = DashMap::default();
+    // register all the required executor
+    bootstrap_executor(&mut engine.runtime.executor);
 
-    let context =
-        build::Context::new(&engine, &generated_ids_rw, &imports, &handler);
+    engine.input_session(|x| {
+        // always re-verify the inputs for incremental database
+        x.always_reverify();
 
-    context.create_module(target_name, tree, None, &[]);
-
-    engine.set_input(
-        &target::Key(TargetID::Local),
-        Arc::new(target::Target {
-            all_symbol_ids: generated_ids_rw.into_inner(),
-            linked_targets: HashSet::default(),
-        }),
-    );
-
-    imports.into_par_iter().for_each(|import| {
-        build::insert_imports(
-            &engine,
-            TargetID::Local.make_global(import.0),
-            import.1,
-            &handler,
+        // set the arguments as the initial input
+        x.set_input(
+            arguments::Key(pernixc_target::TargetID::Local),
+            Arc::new(arguments),
         );
     });
 
-    {
-        let target = engine.tracked().get_target(TargetID::Local);
-        build::symbol_is_more_accessible_than_its_parent_check(
-            &engine,
-            &target.all_symbol_ids,
-            &handler,
-        );
-    }
-
-    Ok(Bootstrap {
-        engine,
-        syntax_errors,
-        semantic_diagnostics: handler.into_vec(),
-    })
-    */
-
-    todo!()
+    Ok(engine)
 }
 
 fn bootstrap_executor(executor: &mut executor::Registry) {

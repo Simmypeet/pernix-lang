@@ -1,39 +1,27 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{fs::File, path::PathBuf, process::ExitCode, sync::Arc};
+use std::{process::ExitCode, sync::Arc};
 
-use argument::Arguments;
-use clap::Args;
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
-use flexstr::SharedStr;
-use pernixc_bootstrap::Bootstrap;
-use pernixc_diagnostic::Report;
+use pernixc_bootstrap::arguments::{get_invocation_arguments, Arguments};
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
-    runtime::persistence::{
-        serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
-        Persistence, Reader, Writer,
+    runtime::persistence::serde::{
+        DynamicDeserialize, DynamicRegistry, DynamicSerialize,
     },
     Key,
 };
 use pernixc_serialize::{
-    binary::{de::BinaryDeserializer, ser::BinarySerializer},
-    de::Deserializer,
-    ser::Serializer,
-    Deserialize, Serialize,
+    de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
-use pernixc_source_file::{
-    ByteIndex, GlobalSourceID, Location, SourceFile, SourceMap,
-};
+use pernixc_source_file::{ByteIndex, GlobalSourceID, Location, SourceMap};
 use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::TargetID;
-use term::get_coonfig;
 
-pub mod argument;
 pub mod term;
 
 struct ReportTerm<'a> {
@@ -163,79 +151,6 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
     } else {
         result
     }
-}
-
-fn create_root_source_file(
-    argument: &Arguments,
-    source_map: &mut SourceMap,
-    report_term: &mut ReportTerm,
-) -> Option<GlobalSourceID> {
-    let file = match File::open(&argument.command.input().file) {
-        Ok(file) => file,
-        Err(error) => {
-            let msg = Diagnostic::error().with_message(format!(
-                "{}: {error}",
-                argument.command.input().file.display()
-            ));
-            report_term.report(source_map, &msg);
-
-            return None;
-        }
-    };
-
-    let source_file =
-        match SourceFile::load(file, argument.command.input().file.clone()) {
-            Ok(file) => file,
-            Err(pernixc_source_file::Error::Io(error)) => {
-                let msg = Diagnostic::error().with_message(format!(
-                    "{}: {error}",
-                    argument.command.input().file.display()
-                ));
-                report_term.report(source_map, &msg);
-
-                return None;
-            }
-            Err(pernixc_source_file::Error::Utf8(error)) => {
-                let msg = Diagnostic::error().with_message(format!(
-                    "{}: {error}",
-                    argument.command.input().file.display()
-                ));
-                report_term.report(source_map, &msg);
-
-                return None;
-            }
-        };
-
-    let id = source_map.register(TargetID::Local, source_file);
-
-    Some(TargetID::Local.make_global(id))
-}
-
-/// The input to the compiler.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Args)]
-pub struct Input {
-    /// The input file to compile.
-    ///
-    /// This file is the root source file of the compilation; the module will
-    /// stem from this file.
-    pub file: PathBuf,
-
-    /// The name of the target; if not specified, the target name will be
-    /// inferred from the file name.
-    #[clap(short = 't', long = "target")]
-    pub target_name: Option<String>,
-
-    /// The paths to the `plib` library to link to the target.
-    #[clap(short = 'l', long = "link")]
-    pub library_paths: Vec<PathBuf>,
-
-    /// The path to the incremental compilation data.
-    #[clap(long = "inc")]
-    pub incremental_path: Option<PathBuf>,
-
-    /// Whether to show the progress of the compilation.
-    #[clap(long)]
-    pub show_progress: bool,
 }
 
 /// An object for serialization support
@@ -374,196 +289,71 @@ pub fn run(
     err_writer: &mut dyn WriteColor,
     _out_writer: &mut dyn WriteColor,
 ) -> ExitCode {
-    let mut report_term = ReportTerm { config: get_coonfig(), err_writer };
-    let mut source_map = SourceMap::new();
+    let mut serde_registry = SerdeExtension::default();
+    let report_config = term::get_coonfig();
+    let simple_file = codespan_reporting::files::SimpleFile::new("", "");
 
-    let Some(root_source_id) =
-        create_root_source_file(&argument, &mut source_map, &mut report_term)
-    else {
-        return ExitCode::FAILURE;
-    };
+    pernixc_bootstrap::register_serde(&mut serde_registry);
 
-    let target_name: SharedStr =
-        argument.command.input().target_name.clone().map_or_else(
-            || {
-                source_map
-                    .get(root_source_id)
-                    .unwrap()
-                    .full_path()
-                    .file_stem()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string()
-                    .into()
-            },
-            Into::into,
-        );
+    let engine = match pernixc_bootstrap::bootstrap(
+        argument,
+        Arc::new(serde_registry),
+    ) {
+        Ok(engine) => engine,
+        Err(error) => {
+            let diag = match error {
+                pernixc_bootstrap::Error::SetupPersistence(io_error) => {
+                    codespan_reporting::diagnostic::Diagnostic::error()
+                        .with_message(format!(
+                            "Failed to setup persistence: {io_error}"
+                        ))
+                }
+                pernixc_bootstrap::Error::LoadIncrementalDatabase(io_error) => {
+                    codespan_reporting::diagnostic::Diagnostic::error()
+                        .with_message(format!(
+                            "Failed to load incremental database: {io_error}"
+                        ))
+                }
+            };
 
-    // check if the incremental path is a directory and create it if it does not
-    // exist
-    if let Some(incremental_path) = &argument.command.input().incremental_path {
-        let exists = incremental_path.exists();
+            codespan_reporting::term::emit(
+                err_writer,
+                &report_config,
+                &simple_file,
+                &diag,
+            )
+            .unwrap();
 
-        if exists && incremental_path.is_file() {
-            let msg = Diagnostic::error().with_message(format!(
-                "Incremental path `{}` is a file, not a directory.",
-                incremental_path.display()
-            ));
-            report_term.report(&mut source_map, &msg);
             return ExitCode::FAILURE;
         }
+    };
 
-        if !exists {
-            if let Err(error) = std::fs::create_dir_all(incremental_path) {
-                let msg = Diagnostic::error().with_message(format!(
-                    "Failed to create incremental directory `{}`: {error}",
-                    incremental_path.display()
+    let tracked_engine = engine.tracked();
+    let argument = tracked_engine.get_invocation_arguments(TargetID::Local);
+    let parse = engine
+        .tracked()
+        .query(&pernixc_bootstrap::module_tree::Key(TargetID::Local))
+        .unwrap();
+
+    let _parse = match parse {
+        Ok(parse) => parse,
+        Err(error) => {
+            let diag = codespan_reporting::diagnostic::Diagnostic::error()
+                .with_message(format!(
+                    "Failed to load source file at `{}`: {error}",
+                    argument.command.input().file.display()
                 ));
-                report_term.report(&mut source_map, &msg);
-                return ExitCode::FAILURE;
-            }
-        }
-    }
 
-    let persistence = match argument
-        .command
-        .input()
-        .incremental_path
-        .as_ref()
-        .map(|x| {
-            let mut serde_extension = SerdeExtension::<
-                BinarySerializer<Writer>,
-                BinaryDeserializer<Reader>,
-            >::default();
-
-            // register the serde extension with the persistence
-            pernixc_bootstrap::register_serde(&mut serde_extension);
-
-            let mut persistence =
-                Persistence::new(x.clone(), Arc::new(serde_extension))?;
-
-            pernixc_bootstrap::skip_persistence(&mut persistence);
-
-            Ok::<_, redb::DatabaseError>(persistence)
-        })
-        .transpose()
-    {
-        Ok(persistence) => persistence,
-        Err(err) => {
-            let msg = Diagnostic::error().with_message(format!(
-                "Failed to create persistence layer: {err}"
-            ));
-            report_term.report(&mut source_map, &msg);
+            codespan_reporting::term::emit(
+                err_writer,
+                &report_config,
+                &simple_file,
+                &diag,
+            )
+            .unwrap();
             return ExitCode::FAILURE;
         }
     };
-
-    let token_trees_by_source_id = DashMap::default();
-
-    let Bootstrap { mut engine, syntax_errors, semantic_diagnostics } =
-        match pernixc_bootstrap::bootstrap(
-            &mut source_map,
-            root_source_id,
-            target_name,
-            argument.command.input().library_paths.iter().map(PathBuf::as_path),
-            &token_trees_by_source_id,
-            persistence,
-        ) {
-            Ok(database) => database,
-            Err(error) => {
-                let msg = match error {
-                    pernixc_bootstrap::Error::OpenIncrementalFileIO(error) => {
-                        Diagnostic::error().with_message(format!(
-                            "Failed to open incremental file: {error}"
-                        ))
-                    }
-                    pernixc_bootstrap::Error::IncrementalFileDeserialize(
-                        error_kind,
-                    ) => Diagnostic::error().with_message(format!(
-                        "Failed to load (deserialize) incremental file: \
-                         {error_kind}"
-                    )),
-                    pernixc_bootstrap::Error::ReadIncrementalFileIO(error) => {
-                        Diagnostic::error().with_message(format!(
-                            "Failed to read incremental file: {error}"
-                        ))
-                    }
-                };
-
-                report_term.report(&mut source_map, &msg);
-                return ExitCode::FAILURE;
-            }
-        };
-
-    let mut sortable_semantic_diagnostics = Vec::new();
-    for diagnostic in syntax_errors {
-        let codespan_reporting = match diagnostic {
-            pernixc_bootstrap::module_tree::Error::Lexical(error) => {
-                pernix_diagnostic_to_codespan_diagnostic(
-                    error.report(&source_map),
-                )
-            }
-
-            pernixc_bootstrap::module_tree::Error::Syntax(error) => {
-                pernix_diagnostic_to_codespan_diagnostic(error.report(
-                    &token_trees_by_source_id.get(&error.source_id).unwrap(),
-                ))
-            }
-
-            pernixc_bootstrap::module_tree::Error::RootSubmoduleConflict(
-                root_submodule_conflict,
-            ) => rel_pernix_diagnostic_to_codespan_diagnostic(
-                root_submodule_conflict.report(()),
-                &source_map,
-                &token_trees_by_source_id,
-            ),
-
-            pernixc_bootstrap::module_tree::Error::SourceFileLoadFail(
-                source_file_load_fail,
-            ) => rel_pernix_diagnostic_to_codespan_diagnostic(
-                source_file_load_fail.report(()),
-                &source_map,
-                &token_trees_by_source_id,
-            ),
-            pernixc_bootstrap::module_tree::Error::ModuleRedefinition(
-                module_redefinition,
-            ) => rel_pernix_diagnostic_to_codespan_diagnostic(
-                module_redefinition.report(()),
-                &source_map,
-                &token_trees_by_source_id,
-            ),
-        };
-
-        sortable_semantic_diagnostics
-            .push(SortableDiagnostic(codespan_reporting));
-    }
-
-    for diagnostic in semantic_diagnostics {
-        let rel_pernixc_diagnostic = diagnostic.report(&engine);
-        let codespan_reporting = rel_pernix_diagnostic_to_codespan_diagnostic(
-            rel_pernixc_diagnostic,
-            &source_map,
-            &token_trees_by_source_id,
-        );
-
-        sortable_semantic_diagnostics
-            .push(SortableDiagnostic(codespan_reporting));
-    }
-
-    sortable_semantic_diagnostics.sort_unstable();
-
-    for diagnostic in sortable_semantic_diagnostics {
-        report_term.report(&mut source_map, &diagnostic.0);
-    }
-
-    // save the database to the incremental path if it exists
-    if let Err(err) = engine.save_database() {
-        let msg = Diagnostic::error().with_message(format!(
-            "Failed to save incremental database: {err}"
-        ));
-        report_term.report(&mut source_map, &msg);
-        return ExitCode::FAILURE;
-    }
 
     ExitCode::SUCCESS
 }
