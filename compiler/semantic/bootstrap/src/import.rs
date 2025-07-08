@@ -49,5 +49,5 @@ pub struct Using {
     StableHash,
 )]
 #[id(Global<symbol::ID>)]
-#[extend(method(get_imports), unwrap("should have no cyclic dependencies"))]
+#[extend(method(get_imports), no_cyclic)]
 pub struct Import(pub HashMap<SharedStr, Using>);

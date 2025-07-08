@@ -2,11 +2,11 @@
 
 use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
-use flexstr::SharedStr;
 use pernixc_query::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceFile;
 use pernixc_stable_hash::StableHash;
+use pernixc_target::TargetID;
 
 /// Query for loading source files content from the file system.
 ///
@@ -30,8 +30,8 @@ pub struct Key {
     /// The path to load the source file.
     pub path: Arc<Path>,
 
-    /// The target name that requested the source file.
-    pub target_name: SharedStr,
+    /// The target that requested the source file loading
+    pub target_id: TargetID,
 }
 
 /// The string formatted error from the [`std::io::Error`] when loading
@@ -84,6 +84,13 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         Result<Arc<SourceFile>, LoadSourceFileError>,
         pernixc_query::runtime::executor::CyclicError,
     > {
+        assert_eq!(
+            key.target_id,
+            TargetID::Local,
+            "detected an attempt to load the source file outside the local \
+             compilation process"
+        );
+
         Ok(load_source_file(key.path.as_ref()))
     }
 }

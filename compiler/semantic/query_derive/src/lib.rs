@@ -671,20 +671,9 @@ fn get_ext<'a>(
                     return Ok(());
                 }
 
-                // optional `unwrap("msg")` argument
-                if meta.path.is_ident("unwrap") {
-                    let msg;
-                    parenthesized!(msg in meta.input);
-
-                    let Ok(msg) = msg.parse::<syn::LitStr>() else {
-                        return Err(syn::Error::new(
-                            msg.span(),
-                            "`unwrap` must be a string literal",
-                        ));
-                    };
-
+                if meta.path.is_ident("no_cyclic") {
                     dot_unwrap = Some(quote::quote! {
-                        .expect(#msg)
+                        .expect("should have no cyclic dependencies")
                     });
                     return Ok(());
                 }

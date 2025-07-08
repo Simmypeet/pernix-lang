@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_query = { path = "../query" }
+pernixc_query_derive = { path = "../query_derive" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_lexical = { path = "../../syntax/lexical" }
@@ -33,6 +34,7 @@ flexstr = { workspace = true }
 typed-builder = { workspace = true }
 derive-new = { workspace = true }
 strsim = { workspace = true }
+clap = { workspace = true }
 
 [lints]
 workspace = true

@@ -39,7 +39,7 @@ use crate::{
     pernixc_query::Key,
 )]
 #[value(Option<symbol::ID>)]
-#[extend(method(get_parent), unwrap("should have no cyclic dependencies"))]
+#[extend(method(get_parent), no_cyclic)]
 pub struct Key(pub Global<symbol::ID>);
 
 /// The executor for the [`Parent`] component.

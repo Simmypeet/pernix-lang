@@ -23,7 +23,9 @@ use pernixc_syntax::Passable;
 use pernixc_target::TargetID;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::source_file::LoadSourceFileError;
+use crate::{
+    arguments::get_invocation_arguments, source_file::LoadSourceFileError,
+};
 
 /// An enumeration of all the errors that can occur during the module tree
 /// parsing.
@@ -274,15 +276,17 @@ pub struct Parse {
     /// the source files.
     pub branching_errors: Arc<[Error]>,
 
-    /// The source files that were loaded during the parsing of the module
-    /// tree, indexed by their global source IDs.
-    pub source_files_by_id: Arc<HashMap<GlobalSourceID, Arc<SourceFile>>>,
+    /// A map between the source file ID to its path. This allows retrival of
+    /// the source file using a numeric ID.
+    pub source_file_paths_by_id:
+        Arc<HashMap<pernixc_arena::ID<SourceFile>, Arc<Path>>>,
 }
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -294,26 +298,16 @@ pub struct Parse {
     pernixc_query::Key,
 )]
 #[value(Result<Parse, LoadSourceFileError>)]
-pub struct Key {
-    /// The path to the main source file that stems the module tree.
-    pub main_file_path: Arc<Path>,
-
-    /// The target name that requested the source file.
-    pub target_name: SharedStr,
-
-    /// The ID to the source file in the global source map.
-    pub global_source_id: GlobalSourceID,
-}
+pub struct Key(pub TargetID);
 
 /// An executor for parsing a module tree for a compilation target.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Executor;
 
 fn add_source_file(
-    source_file: Arc<SourceFile>,
-    source_files_by_id: &mut HashMap<GlobalSourceID, Arc<SourceFile>>,
+    path: Arc<Path>,
+    source_files_by_id: &mut HashMap<pernixc_arena::ID<SourceFile>, Arc<Path>>,
 ) -> LocalSourceID {
-    let path = source_file.path();
     let mut hasher = FnvHasher::default();
     path.hash(&mut hasher);
 
@@ -329,9 +323,7 @@ fn add_source_file(
                 pernixc_arena::ID::new(final_hasher.finish());
 
             // avoid hash collision
-            if !source_files_by_id
-                .contains_key(&TargetID::Local.make_global(candidate_branch_id))
-            {
+            if !source_files_by_id.contains_key(&candidate_branch_id) {
                 return candidate_branch_id;
             }
 
@@ -342,33 +334,28 @@ fn add_source_file(
     let hash = finalize_hash(hasher);
 
     // insert the source file into the map
-    assert!(source_files_by_id
-        .insert(TargetID::Local.make_global(hash), source_file)
-        .is_none());
+    assert!(source_files_by_id.insert(hash, path).is_none());
 
     hash
 }
 
 fn parse_module_tree(
     tracked_engine: &TrackedEngine,
-    source_files_by_id: &mut HashMap<GlobalSourceID, Arc<SourceFile>>,
+    source_files_by_id: &mut HashMap<pernixc_arena::ID<SourceFile>, Arc<Path>>,
     path: Arc<Path>,
-    target_name: SharedStr,
+    target_id: TargetID,
 ) -> Result<(crate::syntax_tree::SyntaxTree, GlobalSourceID), LoadSourceFileError>
 {
-    let source_file = tracked_engine
-        .query(&crate::source_file::Key {
-            path: path.clone(),
-            target_name: target_name.clone(),
-        })
+    tracked_engine
+        .query(&crate::source_file::Key { path: path.clone(), target_id })
         .expect("should have no cyclic dependencies")?;
 
-    let id = add_source_file(source_file, source_files_by_id);
+    let id = add_source_file(path.clone(), source_files_by_id);
 
     let module_tree = tracked_engine
         .query(&crate::syntax_tree::Key {
             path,
-            target_name,
+            target_id,
             global_source_id: TargetID::Local.make_global(id),
         })
         .expect("should have no cyclic dependencies")
@@ -382,8 +369,10 @@ struct Context<'a> {
     root_file_path: &'a Path,
     root_file_source_id: GlobalSourceID,
     handler: &'a dyn Handler<Error>,
-    source_files_by_id: &'a RwLock<HashMap<GlobalSourceID, Arc<SourceFile>>>,
+    source_files_by_id:
+        &'a RwLock<HashMap<pernixc_arena::ID<SourceFile>, Arc<Path>>>,
     tracked_engine: &'a TrackedEngine<'a>,
+    target_id: TargetID,
 }
 
 impl Context<'_> {
@@ -469,7 +458,7 @@ impl Context<'_> {
                             self.tracked_engine,
                             &mut self.source_files_by_id.write(),
                             Arc::from(path.clone()),
-                            next_name.clone(),
+                            self.target_id,
                         ) {
                             Ok(content) => content,
                             Err(error) => {
@@ -541,15 +530,15 @@ fn start(
     tracked_engine: &TrackedEngine,
     root_file_path: &Arc<Path>,
     target_name: SharedStr,
+    target_id: TargetID,
 ) -> Result<Parse, LoadSourceFileError> {
-    let mut source_files_by_id =
-        HashMap::<GlobalSourceID, Arc<SourceFile>>::default();
+    let mut source_files_by_id = HashMap::default();
 
     let (module_content, root_file_source_id) = parse_module_tree(
         tracked_engine,
         &mut source_files_by_id,
         root_file_path.clone(),
-        target_name.clone(),
+        target_id,
     )?;
 
     let storage = Storage::<Error>::default();
@@ -564,6 +553,7 @@ fn start(
         handler: &storage,
         source_files_by_id: &source_files_by_id,
         tracked_engine,
+        target_id,
     };
 
     let root_module_tree =
@@ -574,7 +564,7 @@ fn start(
     Ok(Parse {
         root_module_tree: Arc::new(root_module_tree),
         branching_errors: Arc::from(storage.into_vec()),
-        source_files_by_id: Arc::new(source_files_by_id.into_inner()),
+        source_file_paths_by_id: Arc::new(source_files_by_id.into_inner()),
     })
 }
 
@@ -587,7 +577,23 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         Result<Parse, LoadSourceFileError>,
         pernixc_query::runtime::executor::CyclicError,
     > {
-        match start(engine, &key.main_file_path, key.target_name.clone()) {
+        let arguments = engine.get_invocation_arguments(key.0);
+
+        let arguments_input = arguments.command.input();
+
+        let root_path: Arc<Path> = Arc::from(arguments_input.file.clone());
+
+        let target_name = arguments_input.target_name.as_ref().map_or_else(
+            || {
+                root_path.file_stem().map_or_else(
+                    || SharedStr::from_static("placeholder"),
+                    |x| x.to_string_lossy().as_ref().into(),
+                )
+            },
+            SharedStr::from,
+        );
+
+        match start(engine, &root_path, target_name, key.0) {
             Ok(result) => Ok(Ok(result)),
             Err(error) => Ok(Err(error)),
         }

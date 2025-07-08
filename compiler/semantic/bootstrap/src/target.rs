@@ -27,7 +27,7 @@ use crate::symbol;
 )]
 #[id(TargetID)]
 #[value(Arc<Target>)]
-#[extend(method(get_target), unwrap("should have no cyclic dependencies"))]
+#[extend(method(get_target), no_cyclic)]
 pub struct Target {
     /// All the symbol IDs defined in this target.
     pub all_symbol_ids: HashSet<symbol::ID>,

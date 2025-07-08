@@ -29,7 +29,7 @@ use crate::symbol;
 )]
 #[allow(missing_docs)]
 #[id(Global<symbol::ID>)]
-#[extend(method(get_kind), unwrap("should've no cyclic dependency"))]
+#[extend(method(get_kind), no_cyclic)]
 pub enum Kind {
     #[default]
     Module,

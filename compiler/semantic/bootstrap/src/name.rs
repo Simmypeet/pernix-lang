@@ -36,7 +36,7 @@ use crate::{
     pernixc_query::Key,
 )]
 #[value(SharedStr)]
-#[extend(method(get_name), unwrap("should have no cyclic dependencies"))]
+#[extend(method(get_name), no_cyclic)]
 pub struct Key(pub Global<symbol::ID>);
 
 /// Gets the qualified name of the symbol such as `module::function`.

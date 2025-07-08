@@ -2,12 +2,12 @@
 
 use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
-use flexstr::SharedStr;
 use pernixc_parser::abstract_tree::AbstractTree;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::StableHash;
+use pernixc_target::TargetID;
 
 use crate::source_file::LoadSourceFileError;
 
@@ -31,8 +31,8 @@ pub struct Key {
     /// The path to load the source file.
     pub path: Arc<Path>,
 
-    /// The target name that requested the source file.
-    pub target_name: SharedStr,
+    /// The target ID that requested the source file parsing.
+    pub target_id: TargetID,
 
     /// The ID to the source file in the global source map.
     pub global_source_id: GlobalSourceID,
@@ -76,7 +76,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         let token_tree =
             match tracked_engine.query(&crate::token_tree::Key {
                 path: key.path.clone(),
-                target_name: key.target_name.clone(),
+                target_id: key.target_id,
                 global_source_id: key.global_source_id,
             })? {
                 Ok(source_code) => source_code,

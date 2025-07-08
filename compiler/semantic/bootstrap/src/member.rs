@@ -31,7 +31,7 @@ use crate::{
 )]
 #[id(Global<symbol::ID>)]
 #[value(Arc<Member>)]
-#[extend(method(get_members), unwrap("should have no cyclic dependencies"))]
+#[extend(method(get_members), no_cyclic)]
 pub struct Member {
     /// A map from the member name to its ID.
     ///

@@ -17,6 +17,7 @@ use pernixc_source_file::{GlobalSourceID, SourceMap};
 use crate::diagnostic::Diagnostic;
 
 pub mod accessibility;
+pub mod arguments;
 pub mod diagnostic;
 pub mod implemented;
 pub mod implements;
@@ -170,6 +171,7 @@ fn bootstrap_executor(executor: &mut executor::Registry) {
     executor.register(Arc::new(source_file::Executor));
     executor.register(Arc::new(token_tree::Executor));
     executor.register(Arc::new(syntax_tree::Executor));
+    executor.register(Arc::new(module_tree::Executor));
     // executor.register(Arc::new(parent::IntermediateExecutor));
     // executor.register(Arc::new(parent::Executor));
 }
@@ -184,6 +186,7 @@ pub fn register_serde<
 ) where
     S::Error: Send + Sync,
 {
+    serde_registry.register::<arguments::Key>();
     serde_registry.register::<source_file::Key>();
     serde_registry.register::<token_tree::Key>();
     serde_registry.register::<syntax_tree::Key>();
@@ -214,6 +217,7 @@ pub fn register_serde<
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
 pub fn skip_persistence(persistence: &mut Persistence) {
+    persistence.skip_cache_value::<arguments::Key>();
     persistence.skip_cache_value::<source_file::Key>();
     persistence.skip_cache_value::<token_tree::Key>();
 

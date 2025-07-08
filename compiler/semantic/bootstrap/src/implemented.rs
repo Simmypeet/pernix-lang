@@ -26,5 +26,5 @@ use crate::symbol;
     pernixc_query::Key,
 )]
 #[value(Arc<HashSet<Global<symbol::ID>>>)]
-#[extend(method(get_implemented), unwrap("should have no cyclic dependencies"))]
+#[extend(method(get_implemented), no_cyclic)]
 pub struct Key(pub Global<symbol::ID>);

@@ -24,5 +24,5 @@ use crate::symbol;
     StableHash,
 )]
 #[value(Global<symbol::ID>)]
-#[extend(method(get_implements), unwrap("should have no cyclic dependencies"))]
+#[extend(method(get_implements), no_cyclic)]
 pub struct Key(pub Global<symbol::ID>);
