@@ -6,12 +6,9 @@ use std::{
     process::ExitCode,
 };
 
-use clap::Parser;
+use clap::Parser as _;
 use insta::assert_snapshot;
-use pernixc_driver::{
-    argument::{Arguments, Check, Command},
-    Input,
-};
+use pernixc_bootstrap::arguments::{Arguments, Check, Command, Input};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 #[test]

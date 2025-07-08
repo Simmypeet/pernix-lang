@@ -221,31 +221,9 @@ impl StableHash for ModuleTree {
         &self,
         state: &mut H,
     ) {
-        let inner_tree = self.content.inner_tree();
-
         self.signature.stable_hash(state);
         self.access_modifier.stable_hash(state);
-        inner_tree.ast_info.stable_hash(state);
-
-        let (tree_hash, tree_count) = inner_tree
-            .nodes
-            .par_iter()
-            .map(|x| {
-                let sub_hash = state.sub_hash(&mut |h| {
-                    x.stable_hash(h);
-                });
-
-                (sub_hash, 1)
-            })
-            .reduce(
-                || (H::Hash::default(), 0),
-                |(l_hash, l_count), (r_hash, r_count)| {
-                    (l_hash.wrapping_add(r_hash), r_count + l_count)
-                },
-            );
-
-        tree_hash.stable_hash(state);
-        tree_count.stable_hash(state);
+        self.content.stable_hash(state);
 
         self.submodules_by_name.len().stable_hash(state);
 

@@ -14,6 +14,7 @@ tempfile = { workspace = true }
 insta = { workspace = true }
 codespan-reporting = { workspace = true }
 pernixc_driver = { path = "../driver" }
+pernixc_bootstrap = { path = "../semantic/bootstrap" }
 clap = { workspace = true }
 termcolor = { workspace = true }
 

@@ -355,7 +355,19 @@ pub fn run(
         }
     };
 
-    engine.save_database();
+    if let Err(error) = engine.save_database() {
+        let diag = codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message(format!("Failed to save database: {error}"));
+
+        codespan_reporting::term::emit(
+            err_writer,
+            &report_config,
+            &simple_file,
+            &diag,
+        )
+        .unwrap();
+        return ExitCode::FAILURE;
+    }
 
     ExitCode::SUCCESS
 }
