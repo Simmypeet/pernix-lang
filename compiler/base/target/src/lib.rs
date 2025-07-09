@@ -5,7 +5,12 @@ use std::{path::PathBuf, sync::Arc};
 use clap::{builder::styling, Args, Subcommand};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_query::runtime::persistence::{
+    serde::DynamicRegistry, Persistence,
+};
+use pernixc_serialize::{
+    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+};
 use pernixc_stable_hash::StableHash;
 
 /// Represents an identifier for a target.
@@ -399,4 +404,23 @@ const fn get_styles() -> clap::builder::Styles {
                 styling::AnsiColor::White,
             ))),
         )
+}
+
+/// Registers all the necessary runtime information for the query engine.
+pub fn register_serde<
+    S: Serializer<Registry>,
+    D: Deserializer<Registry>,
+    Registry: DynamicRegistry<S, D> + Send + Sync,
+>(
+    serde_registry: &mut Registry,
+) where
+    S::Error: Send + Sync,
+{
+    serde_registry.register::<Key>();
+}
+
+/// Registers the keys that should be skipped during serialization and
+/// deserialization in the query engine's persistence layer
+pub fn skip_persistence(persistence: &mut Persistence) {
+    persistence.skip_cache_value::<Key>();
 }

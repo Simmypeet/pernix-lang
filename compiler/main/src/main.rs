@@ -14,7 +14,6 @@ use codespan_reporting::{
         termcolor::{self, StandardStream},
     },
 };
-use pernixc_bootstrap::arguments::Arguments;
 use pernixc_serialize::{
     ron::{
         self,
@@ -22,6 +21,7 @@ use pernixc_serialize::{
     },
     Deserialize, Serialize,
 };
+use pernixc_target::Arguments;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;

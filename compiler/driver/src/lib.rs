@@ -6,21 +6,21 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
-use pernixc_bootstrap::arguments::{get_invocation_arguments, Arguments};
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::{
-    runtime::persistence::serde::{
-        DynamicDeserialize, DynamicRegistry, DynamicSerialize,
+    runtime::persistence::{
+        serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
+        Persistence,
     },
-    Key,
+    Engine, Key,
 };
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
 use pernixc_source_file::{ByteIndex, GlobalSourceID, Location, SourceMap};
 use pernixc_stable_type_id::StableTypeID;
-use pernixc_target::TargetID;
+use pernixc_target::{get_invocation_arguments, Arguments, TargetID};
 
 pub mod term;
 
@@ -293,46 +293,84 @@ pub fn run(
     let report_config = term::get_coonfig();
     let simple_file = codespan_reporting::files::SimpleFile::new("", "");
 
-    pernixc_bootstrap::register_serde(&mut serde_registry);
+    // all the serialization/deserialization runtime information must be
+    // registered before creating a persistence layer
+    pernixc_target::register_serde(&mut serde_registry);
+    pernixc_module_tree::register_serde(&mut serde_registry);
 
-    let mut engine = match pernixc_bootstrap::bootstrap(
-        argument,
-        Arc::new(serde_registry),
-    ) {
-        Ok(engine) => engine,
-        Err(error) => {
-            let diag = match error {
-                pernixc_bootstrap::Error::SetupPersistence(io_error) => {
-                    codespan_reporting::diagnostic::Diagnostic::error()
-                        .with_message(format!(
-                            "Failed to setup persistence: {io_error}"
-                        ))
-                }
-                pernixc_bootstrap::Error::LoadIncrementalDatabase(io_error) => {
-                    codespan_reporting::diagnostic::Diagnostic::error()
-                        .with_message(format!(
-                            "Failed to load incremental database: {io_error}"
-                        ))
-                }
-            };
+    let mut engine = Engine::default();
 
-            codespan_reporting::term::emit(
-                err_writer,
-                &report_config,
-                &simple_file,
-                &diag,
-            )
-            .unwrap();
+    // setup the persistence layer if the incremental setting is set
+    if let Some(incremental_path) = &argument.command.input().incremental_path {
+        let mut persistence = match Persistence::new(
+            incremental_path.clone(),
+            Arc::new(serde_registry),
+        ) {
+            Ok(persistence) => persistence,
+            Err(error) => {
+                let diag = Diagnostic::error().with_message(format!(
+                    "Failed to setup persistence: {error}"
+                ));
 
-            return ExitCode::FAILURE;
-        }
-    };
+                codespan_reporting::term::emit(
+                    err_writer,
+                    &report_config,
+                    &simple_file,
+                    &diag,
+                )
+                .unwrap();
+
+                return ExitCode::FAILURE;
+            }
+        };
+
+        // load the database from the persistence layer
+        engine.database = match persistence.load_database() {
+            Ok(database) => database,
+            Err(error) => {
+                let diag = Diagnostic::error().with_message(format!(
+                    "Failed to load incremental database: {error}"
+                ));
+
+                codespan_reporting::term::emit(
+                    err_writer,
+                    &report_config,
+                    &simple_file,
+                    &diag,
+                )
+                .unwrap();
+
+                return ExitCode::FAILURE;
+            }
+        };
+
+        engine.runtime.persistence = Some(persistence);
+    }
+
+    // if persistence is set, setup the value that will be skipped from saving
+    // into the persistence layer.
+    if let Some(persistence) = engine.runtime.persistence.as_mut() {
+        pernixc_target::skip_persistence(persistence);
+        pernixc_module_tree::skip_persistence(persistence);
+    }
+
+    // final step, setup the query executors for the engine
+    pernixc_module_tree::register_executors(&mut engine.runtime.executor);
+
+    // set the initial input, the invocation arguments
+    engine.input_session(|x| {
+        x.always_reverify();
+
+        x.set_input(pernixc_target::Key(TargetID::Local), Arc::new(argument));
+    });
+
+    // now the query can start ...
 
     let tracked_engine = engine.tracked();
     let argument = tracked_engine.get_invocation_arguments(TargetID::Local);
     let parse = engine
         .tracked()
-        .query(&pernixc_bootstrap::module_tree::Key(TargetID::Local))
+        .query(&pernixc_module_tree::Key(TargetID::Local))
         .unwrap();
 
     let _parse = match parse {
