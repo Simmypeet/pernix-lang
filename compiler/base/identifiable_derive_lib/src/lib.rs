@@ -10,6 +10,7 @@ pub fn implements_identifiable(
     name: &syn::Ident,
     mut generics: Generics,
     identifiable_trait: Option<&syn::Path>,
+    stable_type_id: Option<&syn::Path>,
 ) -> proc_macro2::TokenStream {
     // should not have lifetime or constant parameters, only type parameters are
     // allowed
@@ -28,6 +29,16 @@ pub fn implements_identifiable(
         .to_compile_error();
     }
 
+    let default_trait_path: syn::Path =
+        syn::parse_quote!(::pernixc_stable_type_id::Identifiable);
+
+    let default_stable_type_id_path: syn::Path =
+        syn::parse_quote!(::pernixc_stable_type_id::StableTypeID);
+
+    let identifiable_trait = identifiable_trait.unwrap_or(&default_trait_path);
+
+    let stable_type_id = stable_type_id.unwrap_or(&default_stable_type_id_path);
+
     let stable_type_id_computation = if generics.params.is_empty() {
         quote::quote! {
             {
@@ -40,7 +51,7 @@ pub fn implements_identifiable(
                     "::",
                     stringify!(#name)
                 );
-                ::pernixc_stable_type_id::StableTypeID::from_unique_type_name(
+                #stable_type_id::from_unique_type_name(
                     unique_type_name
                 )
             }
@@ -65,12 +76,12 @@ pub fn implements_identifiable(
                     "::",
                     stringify!(#name),
                 );
-                let mut hash = pernixc_stable_type_id::StableTypeID::from_unique_type_name(
+                let mut hash = #stable_type_id::from_unique_type_name(
                     unique_type_name
                 );
 
                 #(
-                    hash = <#type_params as pernixc_stable_type_id::Identifiable>::STABLE_TYPE_ID
+                    hash = <#type_params as #identifiable_trait>::STABLE_TYPE_ID
                         .combine(hash);
                 )*
 
@@ -81,17 +92,12 @@ pub fn implements_identifiable(
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let default_path: syn::Path =
-        syn::parse_quote!(::pernixc_stable_type_id::Identifiable);
-
-    let identifiable_trait = identifiable_trait.unwrap_or(&default_path);
-
     quote::quote! {
         #[allow(clippy::trait_duplication_in_bounds)]
         impl #impl_generics
             #identifiable_trait for #name #ty_generics #where_clause
         {
-            const STABLE_TYPE_ID: ::pernixc_stable_type_id::StableTypeID
+            const STABLE_TYPE_ID: #stable_type_id
                 = #stable_type_id_computation;
         }
     }

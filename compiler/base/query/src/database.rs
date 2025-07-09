@@ -14,10 +14,8 @@ use std::{
 use dashmap::{DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, Mutex};
-use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
-use pernixc_target::Global;
 use rayon::iter::{
     IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
@@ -1142,7 +1140,7 @@ impl Engine {
 /// allocation (premature optimization?). Since most of the queries are just
 /// global IDs, the [`Global<ID<()>>`] should be enough to store the data
 /// without allocating a heap object.
-type KeySmallBox<T> = smallbox::SmallBox<T, Global<ID<()>>>;
+type KeySmallBox<T> = smallbox::SmallBox<T, (u64, u64, u64)>;
 
 /// A trait allowing store multiple types of as a key in a hashmap. This is
 /// automatically implemented for all types that implement the [`Key`] trait.

@@ -234,7 +234,7 @@ pub fn derive_identifiable(input: TokenStream) -> TokenStream {
     let generics = input.generics;
 
     pernixc_identifiable_derive_lib::implements_identifiable(
-        &name, generics, None,
+        &name, generics, None, None,
     )
     .into()
 }

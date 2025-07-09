@@ -9,8 +9,11 @@ rust-version.workspace = true
 [dependencies]
 pernixc_serialize = { path = "../serialize" }
 pernixc_stable_hash = { path = "../stable_hash" }
+pernixc_query = { path = "../query/" }
 derive_more = { workspace = true }
 derive-new = { workspace = true }
+clap = { workspace = true }
+enum-as-inner = { workspace = true }
 
 [lints]
 workspace = true

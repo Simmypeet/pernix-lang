@@ -1,5 +1,5 @@
 [package]
-name = "pernixc_bootstrap"
+name = "pernixc_module_tree"
 version.workspace = true
 authors.workspace = true
 description.workspace = true

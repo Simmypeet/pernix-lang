@@ -5,7 +5,7 @@ pub use database::TrackedEngine;
 use getset::{CopyGetters, Getters};
 pub use key::Key;
 pub use pernixc_query_derive::{Key, Value};
-pub use pernixc_stable_type_id::Identifiable;
+pub use pernixc_stable_type_id::{Identifiable, StableTypeID};
 
 #[doc(hidden)]
 pub mod __internal {

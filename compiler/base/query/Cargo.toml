@@ -12,8 +12,6 @@ default = ["query_cache"]
 
 [dependencies]
 pernixc_stable_hash = { path = "../../base/stable_hash" }
-pernixc_arena = { path = "../../base/arena" }
-pernixc_target = { path = "../../base/target" }
 pernixc_query_derive = { path = "../query_derive" }
 pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 pernixc_serialize = { path = "../../base/serialize" }

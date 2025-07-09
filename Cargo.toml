@@ -23,8 +23,7 @@ members = [
     "compiler/syntax/lexical",
     "compiler/syntax/parser",
     "compiler/syntax/syntax",
-
-    "compiler/semantic/bootstrap",
+    "compiler/syntax/module_tree",
 
     "compiler/driver",
     "compiler/main",

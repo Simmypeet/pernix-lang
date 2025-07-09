@@ -15,11 +15,11 @@ pernixc_handler = { path = "../base/handler" }
 pernixc_arena = { path = "../base/arena" }
 pernixc_target = { path = "../base/target" }
 pernixc_query = { path = "../base/query" }
-pernixc_bootstrap = { path = "../semantic/bootstrap" }
 pernixc_lexical = { path = "../syntax/lexical" }
 pernixc_serialize = { path = "../base/serialize/" }
 pernixc_hash = { path = "../base/hash" }
 pernixc_stable_type_id = { path = "../base/stable_type_id" }
+pernixc_module_tree = { path = "../syntax/module_tree" }
 clap = { workspace = true }
 codespan-reporting = { workspace = true }
 dashmap = { workspace = true }
