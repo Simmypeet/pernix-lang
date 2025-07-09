@@ -285,6 +285,7 @@ macro_rules! abstract_tree {
     } => {
         $( #[$struct_meta] )*
         #[derive($crate::abstract_tree::__stable_type_id::Identifiable)]
+        #[pernixc_stable_type_id($crate::abstract_tree::__stable_type_id)]
         $struct_vis
         struct
         $struct_name
@@ -525,6 +526,7 @@ macro_rules! abstract_tree {
     } => {
         $( #[$enum_meta] )*
         #[derive($crate::abstract_tree::__stable_type_id::Identifiable)]
+        #[pernixc_stable_type_id($crate::abstract_tree::__stable_type_id)]
         $enum_vis
         enum
         $enum_name

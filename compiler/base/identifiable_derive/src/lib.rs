@@ -226,15 +226,45 @@ use proc_macro::TokenStream;
 /// The stable ID computation happens entirely at compile time and has zero
 /// runtime cost. The generated constant can be used directly without any
 /// function calls or allocations.
-#[proc_macro_derive(Identifiable)]
+#[proc_macro_derive(Identifiable, attributes(pernixc_stable_type_id))]
 #[allow(clippy::too_many_lines)]
 pub fn derive_identifiable(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     let name = input.ident.clone();
     let generics = input.generics;
 
+    let pernixc_stable_type_id_crate: syn::Path = match input
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("pernixc_stable_type_id"))
+    {
+        Some(attr) => {
+            let Ok(value) = attr.parse_args::<syn::Path>() else {
+                return syn::Error::new_spanned(
+                    attr,
+                    "invalid `#[pernixc_query]` attribute on key type",
+                )
+                .to_compile_error()
+                .into();
+            };
+
+            value
+        }
+        None => {
+            syn::parse_quote!(::pernixc_stable_type_id)
+        }
+    };
+
+    let identifiable_path =
+        syn::parse_quote!(#pernixc_stable_type_id_crate::Identifiable);
+    let stable_type_id =
+        syn::parse_quote!(#pernixc_stable_type_id_crate::StableTypeID);
+
     pernixc_identifiable_derive_lib::implements_identifiable(
-        &name, generics, None, None,
+        &name,
+        generics,
+        Some(&identifiable_path),
+        Some(&stable_type_id),
     )
     .into()
 }

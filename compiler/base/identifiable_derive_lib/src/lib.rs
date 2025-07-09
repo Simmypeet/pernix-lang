@@ -59,7 +59,7 @@ pub fn implements_identifiable(
     } else {
         for ty_param in generics.type_params_mut() {
             ty_param.bounds.push(syn::parse_quote!(
-                ::pernixc_stable_type_id::Identifiable
+                #identifiable_trait
             ));
         }
 
