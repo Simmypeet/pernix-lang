@@ -39,6 +39,7 @@ use crate::{source_file::LoadSourceFileError, syntax_tree::ModuleContent};
 pub mod source_file;
 pub mod syntax_tree;
 pub mod token_tree;
+pub mod source_map;
 
 /// Describes the relationship between two symbols in the hierarchy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

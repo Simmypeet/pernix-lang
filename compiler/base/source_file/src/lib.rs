@@ -104,6 +104,10 @@ impl SourceFile {
     #[allow(clippy::missing_const_for_fn)]
     pub fn content(&self) -> &str { &self.content }
 
+    /// Returns ranges of byte indices for each line in the source file.
+    #[must_use]
+    pub fn lines(&self) -> &[Range<usize>] { &self.lines }
+
     /// Gets the content of the source file as a string.
     #[must_use]
     pub const fn content_string(&self) -> &String { &self.content }
