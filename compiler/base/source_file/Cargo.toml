@@ -13,8 +13,6 @@ pernixc_serialize = { path = "../serialize" }
 pernixc_stable_hash = { path = "../stable_hash" }
 dashmap = { workspace = true }
 getset = { workspace = true }
-thiserror = { workspace = true }
-derive_more = { workspace = true }
 codespan-reporting = { workspace = true }
 fnv = { workspace = true }
 rayon = { workspace = true }

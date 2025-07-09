@@ -2,10 +2,10 @@
 
 use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 
-use pernixc_query::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceFile;
 use pernixc_stable_hash::StableHash;
+use pernixc_stable_type_id::Identifiable;
 use pernixc_target::TargetID;
 
 /// Query for loading source files content from the file system.

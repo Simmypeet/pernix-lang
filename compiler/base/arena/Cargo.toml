@@ -10,9 +10,7 @@ rust-version.workspace = true
 pernixc_stable_hash = { path = "../stable_hash" }
 pernixc_serialize = { path = "../serialize" }
 pernixc_hash = { path = "../hash" }
-derive_more = { workspace = true }
 proptest = { workspace = true }
-fnv = { workspace = true }
 
 [lints]
 workspace = true

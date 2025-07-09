@@ -221,7 +221,7 @@ pub trait AbstractTree:
 ///             parse_ast::<AccessModifier>().optional(),
 ///        pub keyword = expect::Keyword,
 ///        pub name: token::Kind<RelativeSpan> =
-///             expect::Identifier,  
+///             expect::Identifier,
 ///     }
 /// }
 ///
@@ -303,8 +303,7 @@ macro_rules! abstract_tree {
 
         // output verification
         const _: () = {
-            struct __Verify
-            $(<
+            struct __Verify $(<
                 $($generic_param ),*
             >(
                 $crate::abstract_tree::__std::marker::PhantomData<(

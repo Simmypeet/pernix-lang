@@ -17,18 +17,14 @@ pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_hash = { path = "../../base/hash" }
 parking_lot = { workspace = true }
-static_assertions = { workspace = true }
 smallbox = { workspace = true }
 getset = { workspace = true }
-derive_more = { workspace = true }
 enum-as-inner = { workspace = true }
 dashmap = { workspace = true }
 rayon = { workspace = true }
 redb = { workspace = true }
-strsim = { workspace = true }
 tracing = { workspace = true }
 ouroboros = { workspace = true }
-tokio = { workspace = true }
 
 [dev-dependencies]
 ron = { workspace = true }

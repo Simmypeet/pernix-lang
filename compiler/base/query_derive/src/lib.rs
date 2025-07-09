@@ -268,10 +268,10 @@ pub fn derive_key(input: TokenStream) -> TokenStream {
     });
 
     let identifiable_path: syn::Path =
-        syn::parse_quote!(#pernixc_query_crate::Identifiable);
+        syn::parse_quote!(#pernixc_query_crate::__internal::Identifiable);
 
     let stable_type_id: syn::Path =
-        syn::parse_quote!(#pernixc_query_crate::StableTypeID);
+        syn::parse_quote!(#pernixc_query_crate::__internal::StableTypeID);
 
     let impl_identifiable =
         pernixc_identifiable_derive_lib::implements_identifiable(

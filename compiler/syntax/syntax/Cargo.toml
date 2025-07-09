@@ -17,9 +17,9 @@ arbitrary = [
 pernixc_lexical = { path = "../lexical" }
 pernixc_parser = { path = "../parser" }
 pernixc_test_input = { path = "../../base/test_input", optional = true }
-pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 proptest = { workspace = true, optional = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
