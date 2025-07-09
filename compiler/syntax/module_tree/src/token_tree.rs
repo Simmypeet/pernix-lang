@@ -99,6 +99,7 @@ impl pernixc_query::runtime::executor::Executor<Parse> for ParseExecutor {
     pernixc_query::Key,
 )]
 #[value(Arc<pernixc_lexical::tree::Tree>)]
+#[extend(method(get_source_file_token_tree), no_cyclic)]
 pub struct Key(pub GlobalSourceID);
 
 /// An executor for the [`Key`] query that retrieves the token tree from the

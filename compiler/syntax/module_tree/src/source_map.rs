@@ -53,6 +53,7 @@ impl AsRef<str> for SourceFileStr {
     pernixc_query::Key,
 )]
 #[value(Arc<SourceFile>)]
+#[extend(method(get_source_file), no_cyclic)]
 pub struct Key(pub GlobalSourceID);
 
 /// An executor for the [`Key`] query that retrieves the source file from the

@@ -123,6 +123,18 @@ pub enum Error {
     ModuleRedefinition(ModuleRedefinition),
 }
 
+impl<T> Report<T> for Error {
+    type Location = RelativeLocation;
+
+    fn report(&self, context: T) -> Diagnostic<RelativeLocation> {
+        match self {
+            Self::RootSubmoduleConflict(error) => error.report(context),
+            Self::SourceFileLoadFail(error) => error.report(context),
+            Self::ModuleRedefinition(error) => error.report(context),
+        }
+    }
+}
+
 /// The submodule of the root source file ends up pointing to the root source
 /// file itself.
 #[derive(
@@ -148,10 +160,10 @@ pub struct RootSubmoduleConflict {
     pub load_path: PathBuf,
 }
 
-impl Report<()> for RootSubmoduleConflict {
+impl<T> Report<T> for RootSubmoduleConflict {
     type Location = RelativeLocation;
 
-    fn report(&self, (): ()) -> Diagnostic<RelativeLocation> {
+    fn report(&self, _: T) -> Diagnostic<RelativeLocation> {
         Diagnostic {
             severity: Severity::Error,
             message: "the submodule of the root source file ends up pointing \
@@ -198,10 +210,10 @@ pub struct SourceFileLoadFail {
     pub path: PathBuf,
 }
 
-impl Report<()> for SourceFileLoadFail {
+impl<T> Report<T> for SourceFileLoadFail {
     type Location = RelativeLocation;
 
-    fn report(&self, (): ()) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((self.submodule, None)),
             message: "failed to load the source file for the submodule"
@@ -239,10 +251,10 @@ pub struct ModuleRedefinition {
     pub redefinition_submodule_span: Option<Span<RelativeLocation>>,
 }
 
-impl Report<()> for ModuleRedefinition {
+impl<T> Report<T> for ModuleRedefinition {
     type Location = RelativeLocation;
 
-    fn report(&self, (): ()) -> Diagnostic<RelativeLocation> {
+    fn report(&self, _: T) -> Diagnostic<RelativeLocation> {
         Diagnostic {
             severity: Severity::Error,
             message: "a module with the given name already exists".to_string(),

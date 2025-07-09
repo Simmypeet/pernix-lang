@@ -1,21 +1,24 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{process::ExitCode, sync::Arc};
+use std::{ops::Not, process::ExitCode, sync::Arc};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
 use pernixc_diagnostic::Report;
-use pernixc_hash::{DashMap, HashMap};
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
-use pernixc_module_tree::source_map::SourceMap;
+use pernixc_module_tree::{
+    source_map::{get_source_file, SourceMap},
+    token_tree::get_source_file_token_tree,
+};
 use pernixc_query::{
     runtime::persistence::{
         serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
         Persistence,
     },
-    Engine, Key,
+    Engine, Key, TrackedEngine,
 };
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
@@ -32,9 +35,10 @@ struct ReportTerm<'a> {
 }
 
 impl ReportTerm<'_> {
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     fn report(
         &mut self,
-        source_map: &mut SourceMap,
+        source_map: &SourceMap,
         diagnostic: &Diagnostic<GlobalSourceID>,
     ) {
         let _ = codespan_reporting::term::emit(
@@ -89,12 +93,8 @@ fn pernix_diagnostic_to_codespan_diagnostic(
 }
 
 fn rel_pernix_diagnostic_to_codespan_diagnostic(
+    engine: &TrackedEngine,
     diagostic: pernixc_diagnostic::Diagnostic<RelativeLocation>,
-    source_map: &SourceMap,
-    token_trees_by_source_id: &DashMap<
-        GlobalSourceID,
-        pernixc_lexical::tree::Tree,
-    >,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
     let mut result = match diagostic.severity {
         pernixc_diagnostic::Severity::Error => {
@@ -112,11 +112,10 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
     if let Some((span, label)) = diagostic.span {
         result = result.with_labels(
             std::iter::once({
-                let token_tree = token_trees_by_source_id
-                    .get(&span.source_id)
-                    .expect("Source ID not found in token trees");
+                let source_file = engine.get_source_file(span.source_id);
+                let token_tree =
+                    engine.get_source_file_token_tree(span.source_id);
 
-                let source_file = source_map.get(span.source_id).unwrap();
                 let begin =
                     span.start.to_absolute_index(&source_file, &token_tree);
                 let end = span.end.to_absolute_index(&source_file, &token_tree);
@@ -130,11 +129,9 @@ fn rel_pernix_diagnostic_to_codespan_diagnostic(
                 primary
             })
             .chain(diagostic.related.into_iter().map(|x| {
-                let token_tree = token_trees_by_source_id
-                    .get(&x.span.source_id)
-                    .expect("Source ID not found in token trees");
-
-                let source_file = source_map.get(x.span.source_id).unwrap();
+                let source_file = engine.get_source_file(x.span.source_id);
+                let token_tree =
+                    engine.get_source_file_token_tree(x.span.source_id);
 
                 let begin =
                     x.span.start.to_absolute_index(&source_file, &token_tree);
@@ -304,7 +301,7 @@ pub fn run(
 
     // setup the persistence layer if the incremental setting is set
     if let Some(incremental_path) = &argument.command.input().incremental_path {
-        let mut persistence = match Persistence::new(
+        let persistence = match Persistence::new(
             incremental_path.clone(),
             Arc::new(serde_registry),
         ) {
@@ -406,9 +403,30 @@ pub fn run(
     }
 
     for error in module_tree_errors.syntax_tree.iter().flat_map(|x| x.iter()) {
+        let token_tree =
+            source_map.0.get_source_file_token_tree(error.source_id);
+
         diagnostics.push(SortableDiagnostic(
-            pernix_diagnostic_to_codespan_diagnostic(error.report(&source_map)),
+            pernix_diagnostic_to_codespan_diagnostic(error.report(&token_tree)),
         ));
+    }
+
+    for error in module_tree_errors.branching.iter() {
+        diagnostics.push(SortableDiagnostic(
+            rel_pernix_diagnostic_to_codespan_diagnostic(
+                source_map.0,
+                error.report(()),
+            ),
+        ));
+    }
+
+    diagnostics.sort();
+
+    for diagnostic in &diagnostics {
+        let mut report_term =
+            ReportTerm { config: report_config.clone(), err_writer };
+
+        report_term.report(&source_map, &diagnostic.0);
     }
 
     if let Err(error) = engine.save_database() {
@@ -423,6 +441,22 @@ pub fn run(
         )
         .unwrap();
         return ExitCode::FAILURE;
+    }
+
+    if !diagnostics.is_empty() {
+        let diag = codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message(format!(
+                "Compilation aborted due to {} error(s)",
+                diagnostics.len()
+            ));
+
+        codespan_reporting::term::emit(
+            err_writer,
+            &report_config,
+            &simple_file,
+            &diag,
+        )
+        .unwrap();
     }
 
     ExitCode::SUCCESS
