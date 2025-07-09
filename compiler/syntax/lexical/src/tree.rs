@@ -57,6 +57,28 @@ pub enum DelimiterKind {
     Bracket,
 }
 
+impl DelimiterKind {
+    /// Gets the opening character of the delimiter kind.
+    #[must_use]
+    pub const fn opening_character(self) -> char {
+        match self {
+            Self::Parenthesis => '(',
+            Self::Brace => '{',
+            Self::Bracket => '[',
+        }
+    }
+
+    /// Gets the closing character of the delimiter kind.
+    #[must_use]
+    pub const fn closing_character(self) -> char {
+        match self {
+            Self::Parenthesis => ')',
+            Self::Brace => '}',
+            Self::Bracket => ']',
+        }
+    }
+}
+
 /// The represents how the token nodes are structured in a fragment.
 #[derive(
     Debug,
@@ -1047,7 +1069,10 @@ impl Converter<'_, '_> {
         } else {
             // unexpected closing delimiter
             self.handler.receive(error::Error::UnexpectedClosingDelimiter(
-                UnexpectedClosingDelimiter { span: token_span },
+                UnexpectedClosingDelimiter {
+                    span: token_span,
+                    closing_delimiter: expected_delimiter,
+                },
             ));
         }
     }

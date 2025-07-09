@@ -1,12 +1,17 @@
+//! A module that provides a wrapper around [`TrackedEngine`] to implement
+//! `codespan_reporting::files::Files` for use with `codespan_reporting`.
+
 use std::{fmt::Display, path::Path, sync::Arc};
 
 use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{GlobalSourceID, SourceFile};
+use pernixc_stable_hash::StableHash;
 
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.
 #[derive(Debug, Clone, Copy)]
-pub struct SourceMap<'a>(&'a TrackedEngine<'a>);
+pub struct SourceMap<'a>(pub &'a TrackedEngine<'a>);
 
 /// A wrapper around [`Arc<Path>`] to implement `Display` for use with
 /// `codespan_reporting`.
@@ -22,10 +27,63 @@ impl Display for PathDisplay {
 /// A wrapper around [`Arc<SourceFile>`] to implement `AsRef<str>` for use with
 /// `codespan_reporting`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SourceFileDisplay(Arc<SourceFile>);
+pub struct SourceFileStr(Arc<SourceFile>);
 
-impl AsRef<str> for SourceFileDisplay {
+impl AsRef<str> for SourceFileStr {
     fn as_ref(&self) -> &str { self.0.content() }
+}
+
+/// Query for retrieving a [`Arc<SourceFile>`] from the given
+/// [`GlobalSourceID`].
+///
+/// The given [`GlobalSourceID`] must be a valid ID and obtained from the module
+/// tree.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(Arc<SourceFile>)]
+pub struct Key(pub GlobalSourceID);
+
+/// An executor for the [`Key`] query that retrieves the source file from the
+/// module tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Executor;
+
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        key: &Key,
+    ) -> Result<Arc<SourceFile>, pernixc_query::runtime::executor::CyclicError>
+    {
+        // Since the `GlobalSourceID` provided is always a valid ID derived from
+        // the `ModuleTree`, we can safely unwrap the query result.
+        let map =
+            engine.query(&crate::path::Key(key.0.target_id)).unwrap().unwrap();
+
+        let path = map.get(&key.0.id).unwrap();
+
+        let source_file = engine
+            .query(&crate::load_source_file::Key {
+                path: path.clone(),
+                target_id: key.0.target_id,
+            })
+            .unwrap()
+            .unwrap();
+
+        Ok(source_file)
+    }
 }
 
 impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
@@ -33,7 +91,7 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
 
     type Name = PathDisplay;
 
-    type Source = SourceFileDisplay;
+    type Source = SourceFileStr;
 
     fn name(
         &'a self,
@@ -58,17 +116,16 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
         id: Self::FileId,
     ) -> Result<Self::Source, codespan_reporting::files::Error> {
         let path = self.name(id)?;
-
         let source_file = self
             .0
-            .query(&crate::source_file::Key {
+            .query(&crate::load_source_file::Key {
                 path: path.0,
                 target_id: id.target_id,
             })
             .unwrap()
             .map_err(|_| codespan_reporting::files::Error::FileMissing)?;
 
-        Ok(SourceFileDisplay(source_file))
+        Ok(SourceFileStr(source_file))
     }
 
     fn line_index(

@@ -9,7 +9,7 @@ use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
-use crate::source_file::LoadSourceFileError;
+use crate::load_source_file::LoadSourceFileError;
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(
@@ -26,7 +26,7 @@ use crate::source_file::LoadSourceFileError;
     pernixc_query::Key,
 )]
 #[value(Result<TokenTree, LoadSourceFileError>)]
-pub struct Key {
+pub struct Parse {
     /// The path to load the source file.
     pub path: Arc<Path>,
 
@@ -50,17 +50,17 @@ pub struct TokenTree {
 
 /// An executor for parsing a token tree from the source code string.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Executor;
+pub struct ParseExecutor;
 
-impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+impl pernixc_query::runtime::executor::Executor<Parse> for ParseExecutor {
     fn execute(
         &self,
         tracked_engine: &pernixc_query::TrackedEngine,
-        key: &Key,
+        key: &Parse,
     ) -> Result<Result<TokenTree, LoadSourceFileError>, CyclicError> {
         // load the source file
         let source_file =
-            match tracked_engine.query(&crate::source_file::Key {
+            match tracked_engine.query(&crate::load_source_file::Key {
                 path: key.path.clone(),
                 target_id: key.target_id,
             })? {
@@ -79,5 +79,58 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             token_tree: Arc::new(tree),
             errors: Arc::from(storage.into_vec()),
         }))
+    }
+}
+
+/// A key for the retrieving a [`TokenTree`] that has been parsed from a
+/// [`ModuleTree`] building process.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(Arc<pernixc_lexical::tree::Tree>)]
+pub struct Key(pub GlobalSourceID);
+
+/// An executor for the [`Key`] query that retrieves the token tree from the
+/// module tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct KeyExecutor;
+
+impl pernixc_query::runtime::executor::Executor<Key> for KeyExecutor {
+    fn execute(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        key: &Key,
+    ) -> Result<
+        Arc<pernixc_lexical::tree::Tree>,
+        pernixc_query::runtime::executor::CyclicError,
+    > {
+        // Since the `GlobalSourceID` provided is always a valid ID derived from
+        // the `ModuleTree`, we can safely unwrap the query result.
+        let map =
+            engine.query(&crate::path::Key(key.0.target_id)).unwrap().unwrap();
+
+        let path =
+            map.get(&key.0.id).expect("GlobalSourceID should always be valid");
+
+        let token_tree = engine
+            .query(&Parse {
+                path: path.clone(),
+                target_id: key.0.target_id,
+                global_source_id: key.0,
+            })
+            .unwrap();
+
+        Ok(token_tree.unwrap().token_tree)
     }
 }

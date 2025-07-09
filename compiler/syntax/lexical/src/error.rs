@@ -5,7 +5,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, SourceMap};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID};
 use pernixc_stable_hash::StableHash;
 
 use crate::tree::DelimiterKind;
@@ -32,10 +32,10 @@ pub struct UndelimitedDelimiter {
     pub delimiter: DelimiterKind,
 }
 
-impl Report<&SourceMap> for UndelimitedDelimiter {
+impl<T> Report<T> for UndelimitedDelimiter {
     type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.opening_span,
@@ -78,10 +78,10 @@ pub struct UnterminatedStringLiteral {
     pub span: AbsoluteSpan,
 }
 
-impl Report<&SourceMap> for UnterminatedStringLiteral {
+impl<T> Report<T> for UnterminatedStringLiteral {
     type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
@@ -114,10 +114,10 @@ pub struct InvalidEscapeSequence {
     pub span: AbsoluteSpan,
 }
 
-impl Report<&SourceMap> for InvalidEscapeSequence {
+impl<T> Report<T> for InvalidEscapeSequence {
     type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((self.span, None)),
             message: "found an invalid escape sequence".to_string(),
@@ -174,10 +174,10 @@ pub struct InvalidIndentation {
     pub available_indentations: Vec<AvailableIndentation>,
 }
 
-impl Report<&SourceMap> for InvalidIndentation {
+impl<T> Report<T> for InvalidIndentation {
     type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
@@ -223,25 +223,29 @@ pub struct ExpectIndentation {
     pub indentation_start: AbsoluteSpan,
 }
 
-impl Report<&SourceMap> for ExpectIndentation {
+impl<'a, T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>>
+    Report<&'a T> for ExpectIndentation
+{
     type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
+        let source_file = source_map
+            .source(self.span.source_id)
+            .expect("source map should contain the source code");
+
         Diagnostic {
             span: Some((
                 self.span,
                 Some(format!(
                     "`{}` is not indented",
-                    &source_map.get(self.span.source_id).unwrap().content()
-                        [self.span.range()]
+                    &source_file.as_ref()[self.span.range()]
                 )),
             )),
             message: "expect an indentation".to_string(),
             severity: Severity::Error,
             help_message: Some(format!(
                 "add spaces before `{}` to indent",
-                &source_map.get(self.span.source_id).unwrap().content()
-                    [self.span.range()]
+                &source_file.as_ref()[self.indentation_start.range()]
             )),
             related: vec![Related {
                 span: self.indentation_start,
@@ -279,10 +283,10 @@ pub struct InvalidNewIndentationLevel {
     pub found_indentation: usize,
 }
 
-impl Report<&SourceMap> for InvalidNewIndentationLevel {
+impl<T> Report<T> for InvalidNewIndentationLevel {
     type Location = ByteIndex;
 
-    fn report(&self, _: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
@@ -327,20 +331,22 @@ impl Report<&SourceMap> for InvalidNewIndentationLevel {
 pub struct UnexpectedClosingDelimiter {
     /// The span of the closing delimiter.
     pub span: AbsoluteSpan,
+
+    /// The kind of the closing delimiter.
+    pub closing_delimiter: DelimiterKind,
 }
 
-impl Report<&SourceMap> for UnexpectedClosingDelimiter {
+impl<T> Report<T> for UnexpectedClosingDelimiter {
     type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
                 Some(format!(
                     "this closing delimiter `{}` does not have a \
                      corresponding opening delimiter",
-                    &source_map.get(self.span.source_id).unwrap().content()
-                        [self.span.range()]
+                    self.closing_delimiter.closing_character()
                 )),
             )),
             message: "found an unexpected closing delimiter".to_string(),
@@ -379,42 +385,30 @@ pub struct MismatchedClosingDelimiter {
     pub opening_delimiter: DelimiterKind,
 }
 
-impl Report<&SourceMap> for MismatchedClosingDelimiter {
+impl<T> Report<T> for MismatchedClosingDelimiter {
     type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+        let opening_delimiter_p = self.opening_delimiter.opening_character();
+        let closing_delimiter_p = self.closing_delimiter.closing_character();
         Diagnostic {
             span: Some((
                 self.span,
                 Some(format!(
-                    "this closing delimiter `{}` does not match the opening \
-                     delimiter `{}`",
-                    &source_map.get(self.span.source_id).unwrap().content()
-                        [self.span.range()],
-                    &source_map
-                        .get(self.opening_span.source_id)
-                        .unwrap()
-                        .content()[self.opening_span.range()]
+                    "this closing delimiter `{closing_delimiter_p}` does not \
+                     match the opening delimiter `{opening_delimiter_p}`",
                 )),
             )),
             message: "found a mismatched closing delimiter".to_string(),
             severity: Severity::Error,
             help_message: Some(format!(
                 "replace with `{}` instead",
-                match self.opening_delimiter {
-                    DelimiterKind::Parenthesis => ')',
-                    DelimiterKind::Brace => '}',
-                    DelimiterKind::Bracket => ']',
-                }
+                self.opening_delimiter.closing_character()
             )),
             related: vec![Related {
                 span: self.opening_span,
                 message: format!(
-                    "has an opening delimiter `{}`",
-                    &source_map
-                        .get(self.opening_span.source_id)
-                        .unwrap()
-                        .content()[self.opening_span.range()]
+                    "has an opening delimiter `{opening_delimiter_p}`",
                 ),
             }],
         }
@@ -466,10 +460,12 @@ impl Error {
     }
 }
 
-impl Report<&SourceMap> for Error {
+impl<'a, T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>>
+    Report<&'a T> for Error
+{
     type Location = ByteIndex;
 
-    fn report(&self, source_map: &SourceMap) -> Diagnostic<Self::Location> {
+    fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
         match self {
             Self::UndelimitedDelimiter(err) => err.report(source_map),
             Self::UnterminatedStringLiteral(err) => err.report(source_map),

@@ -1,4 +1,4 @@
-//! Manages a module tree creation and syntatic information of the compilation
+//! Manages a module tree creation and syntactic information of the compilation
 //! target.
 
 use std::{
@@ -12,6 +12,7 @@ use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use fnv::FnvHasher;
 use parking_lot::RwLock;
+use pernixc_arena::ID;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
@@ -34,12 +35,16 @@ use rayon::iter::{
     IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
 
-use crate::{source_file::LoadSourceFileError, syntax_tree::ModuleContent};
+use crate::{
+    load_source_file::LoadSourceFileError, syntax_tree::ModuleContent,
+};
 
-pub mod source_file;
+pub mod errors;
+pub mod load_source_file;
+pub mod path;
+pub mod source_map;
 pub mod syntax_tree;
 pub mod token_tree;
-pub mod source_map;
 
 /// Describes the relationship between two symbols in the hierarchy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -49,9 +54,7 @@ pub enum HierarchyRelationship {
 
     /// The first symbol is the child of the second symbol.
     Child,
-
-    /// Both symbols are two equivalent symbols.
-    Equivalent,
+    /// Both symbols are two equivalent symbols.  Equivalent,
 
     /// Both symbols are defined in different hierarchy scope.
     Unrelated,
@@ -59,9 +62,13 @@ pub enum HierarchyRelationship {
 
 /// Registers all the required executors to run the queries.
 pub fn register_executors(executor: &mut executor::Registry) {
-    executor.register(Arc::new(source_file::Executor));
-    executor.register(Arc::new(token_tree::Executor));
+    executor.register(Arc::new(load_source_file::Executor));
+    executor.register(Arc::new(source_map::Executor));
+    executor.register(Arc::new(path::Executor));
+    executor.register(Arc::new(token_tree::ParseExecutor));
+    executor.register(Arc::new(token_tree::KeyExecutor));
     executor.register(Arc::new(syntax_tree::Executor));
+    executor.register(Arc::new(errors::Executor));
     executor.register(Arc::new(Executor));
 }
 
@@ -75,17 +82,21 @@ pub fn register_serde<
 ) where
     S::Error: Send + Sync,
 {
-    serde_registry.register::<source_file::Key>();
+    serde_registry.register::<load_source_file::Key>();
+    serde_registry.register::<source_map::Key>();
+    serde_registry.register::<path::Key>();
+    serde_registry.register::<token_tree::Parse>();
     serde_registry.register::<token_tree::Key>();
     serde_registry.register::<syntax_tree::Key>();
+    serde_registry.register::<errors::Key>();
     serde_registry.register::<Key>();
 }
 
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
 pub fn skip_persistence(persistence: &mut Persistence) {
-    persistence.skip_cache_value::<source_file::Key>();
-    persistence.skip_cache_value::<token_tree::Key>();
+    persistence.skip_cache_value::<load_source_file::Key>();
+    persistence.skip_cache_value::<source_map::Key>();
     persistence.skip_cache_value::<Key>();
 }
 
@@ -274,6 +285,10 @@ pub struct ModuleTree {
     /// The content of the module, which contains the members and other
     pub content: Option<ModuleContent>,
 
+    /// If the module was created from opening a source file, this is the ID of
+    /// the source file.
+    pub created_from_source_id: Option<ID<SourceFile>>,
+
     /// The submodules of the module, indexed by their names.
     pub submodules_by_name: HashMap<SharedStr, Self>,
 }
@@ -396,10 +411,10 @@ fn parse_module_tree(
     >,
     path: Arc<Path>,
     target_id: TargetID,
-) -> Result<(crate::syntax_tree::SyntaxTree, GlobalSourceID), LoadSourceFileError>
+) -> Result<(crate::syntax_tree::SyntaxTree, ID<SourceFile>), LoadSourceFileError>
 {
     tracked_engine
-        .query(&crate::source_file::Key { path: path.clone(), target_id })
+        .query(&crate::load_source_file::Key { path: path.clone(), target_id })
         .expect("should have no cyclic dependencies")?;
 
     let id = add_source_file(path.clone(), &mut source_files_by_id.write());
@@ -413,13 +428,13 @@ fn parse_module_tree(
         .expect("should have no cyclic dependencies")
         .expect("should be able to load the source file");
 
-    Ok((module_tree, TargetID::Local.make_global(id)))
+    Ok((module_tree, id))
 }
 
 struct Context<'a> {
     root_directory: &'a Path,
     root_file_path: &'a Path,
-    root_file_source_id: GlobalSourceID,
+    root_file_source_id: ID<SourceFile>,
     handler: &'a dyn Handler<Error>,
     source_files_by_id:
         &'a RwLock<HashMap<pernixc_arena::ID<SourceFile>, Arc<Path>>>,
@@ -431,6 +446,7 @@ impl Context<'_> {
     #[allow(clippy::too_many_lines)]
     fn branch_module_tree(
         &self,
+        created_from_source_id: Option<ID<SourceFile>>,
         content: Option<ModuleContent>,
         signature: Option<pernixc_syntax::item::module::Signature>,
         access_modifier: Option<pernixc_syntax::AccessModifier>,
@@ -440,6 +456,7 @@ impl Context<'_> {
             return ModuleTree {
                 signature,
                 access_modifier,
+                created_from_source_id,
                 content,
                 submodules_by_name: HashMap::default(),
             };
@@ -478,6 +495,7 @@ impl Context<'_> {
                     // Found inline module content, take the content right away
                     if let Some(member) = submodule.inline_body() {
                         let next_submodule = self.branch_module_tree(
+                            None,
                             member.content().map(ModuleContent),
                             next_signature,
                             next_access_modifier,
@@ -506,7 +524,8 @@ impl Context<'_> {
                             // pointing to the root file itself
                             self.handler.receive(Error::RootSubmoduleConflict(
                                 RootSubmoduleConflict {
-                                    root: self.root_file_source_id,
+                                    root: TargetID::Local
+                                        .make_global(self.root_file_source_id),
                                     submodule_span: next_identifier.span,
                                     load_path: path.clone(),
                                 },
@@ -514,7 +533,7 @@ impl Context<'_> {
                             return;
                         }
 
-                        let (content, _) = match parse_module_tree(
+                        let (content, source_id) = match parse_module_tree(
                             self.tracked_engine,
                             self.source_files_by_id,
                             Arc::from(path.clone()),
@@ -536,6 +555,7 @@ impl Context<'_> {
                         };
 
                         let next_submodule = self.branch_module_tree(
+                            Some(source_id),
                             content.syntax_tree,
                             next_signature,
                             next_access_modifier,
@@ -588,6 +608,7 @@ impl Context<'_> {
             access_modifier,
             content: Some(content),
             submodules_by_name,
+            created_from_source_id,
         }
     }
 }
@@ -621,10 +642,13 @@ fn start(
         target_id,
     };
 
-    let root_module_tree =
-        context.branch_module_tree(module_content.syntax_tree, None, None, &[
-            target_name,
-        ]);
+    let root_module_tree = context.branch_module_tree(
+        Some(root_file_source_id),
+        module_content.syntax_tree,
+        None,
+        None,
+        &[target_name],
+    );
 
     Ok(Parse {
         root_module_tree: Arc::new(root_module_tree),

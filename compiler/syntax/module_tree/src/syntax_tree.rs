@@ -10,7 +10,7 @@ use pernixc_stable_hash::{StableHash, Value as _};
 use pernixc_target::TargetID;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 
-use crate::source_file::LoadSourceFileError;
+use crate::load_source_file::LoadSourceFileError;
 
 /// Query for parsing a [`pernixc_syntax::item::module::Module`] from the given
 /// source file path.
@@ -119,7 +119,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     ) -> Result<Result<SyntaxTree, LoadSourceFileError>, CyclicError> {
         // load the token tree
         let token_tree =
-            match tracked_engine.query(&crate::token_tree::Key {
+            match tracked_engine.query(&crate::token_tree::Parse {
                 path: key.path.clone(),
                 target_id: key.target_id,
                 global_source_id: key.global_source_id,

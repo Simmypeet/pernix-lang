@@ -6,8 +6,10 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
+use pernixc_diagnostic::Report;
 use pernixc_hash::{DashMap, HashMap};
 use pernixc_lexical::tree::RelativeLocation;
+use pernixc_module_tree::source_map::SourceMap;
 use pernixc_query::{
     runtime::persistence::{
         serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
@@ -18,7 +20,7 @@ use pernixc_query::{
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
-use pernixc_source_file::{ByteIndex, GlobalSourceID, Location, SourceMap};
+use pernixc_source_file::{ByteIndex, GlobalSourceID, Location};
 use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::{get_invocation_arguments, Arguments, TargetID};
 
@@ -45,9 +47,9 @@ impl ReportTerm<'_> {
 }
 
 fn pernix_diagnostic_to_codespan_diagnostic(
-    diagostic: pernixc_diagnostic::Diagnostic<ByteIndex>,
+    diagnostic: pernixc_diagnostic::Diagnostic<ByteIndex>,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
-    let mut result = match diagostic.severity {
+    let mut result = match diagnostic.severity {
         pernixc_diagnostic::Severity::Error => {
             codespan_reporting::diagnostic::Diagnostic::error()
         }
@@ -58,9 +60,9 @@ fn pernix_diagnostic_to_codespan_diagnostic(
             codespan_reporting::diagnostic::Diagnostic::note()
         }
     }
-    .with_message(diagostic.message);
+    .with_message(diagnostic.message);
 
-    if let Some((span, label)) = diagostic.span {
+    if let Some((span, label)) = diagnostic.span {
         result = result.with_labels(
             std::iter::once({
                 let mut primary = Label::primary(span.source_id, span.range());
@@ -71,7 +73,7 @@ fn pernix_diagnostic_to_codespan_diagnostic(
 
                 primary
             })
-            .chain(diagostic.related.into_iter().map(|x| {
+            .chain(diagnostic.related.into_iter().map(|x| {
                 Label::secondary(x.span.source_id, x.span.range())
                     .with_message(x.message)
             }))
@@ -79,7 +81,7 @@ fn pernix_diagnostic_to_codespan_diagnostic(
         );
     }
 
-    if let Some(msg) = diagostic.help_message {
+    if let Some(msg) = diagnostic.help_message {
         result.with_notes(vec![msg])
     } else {
         result
@@ -368,12 +370,12 @@ pub fn run(
 
     let tracked_engine = engine.tracked();
     let argument = tracked_engine.get_invocation_arguments(TargetID::Local);
-    let parse = engine
+    let errors = engine
         .tracked()
-        .query(&pernixc_module_tree::Key(TargetID::Local))
+        .query(&pernixc_module_tree::errors::Key(TargetID::Local))
         .unwrap();
 
-    let _parse = match parse {
+    let module_tree_errors = match errors {
         Ok(parse) => parse,
         Err(error) => {
             let diag = codespan_reporting::diagnostic::Diagnostic::error()
@@ -392,6 +394,22 @@ pub fn run(
             return ExitCode::FAILURE;
         }
     };
+
+    let mut diagnostics = Vec::new();
+
+    let source_map = SourceMap(&tracked_engine);
+
+    for error in module_tree_errors.token_tree.iter().flat_map(|x| x.iter()) {
+        diagnostics.push(SortableDiagnostic(
+            pernix_diagnostic_to_codespan_diagnostic(error.report(&source_map)),
+        ));
+    }
+
+    for error in module_tree_errors.syntax_tree.iter().flat_map(|x| x.iter()) {
+        diagnostics.push(SortableDiagnostic(
+            pernix_diagnostic_to_codespan_diagnostic(error.report(&source_map)),
+        ));
+    }
 
     if let Err(error) = engine.save_database() {
         let diag = codespan_reporting::diagnostic::Diagnostic::error()
