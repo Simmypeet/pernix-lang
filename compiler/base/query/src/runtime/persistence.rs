@@ -108,7 +108,7 @@ impl Engine {
             return;
         };
 
-        tracing::info!(
+        tracing::debug!(
             "Saving value metadata for key {} with fingerprint \
              {key_fingerprint}: {value_metadata:?}",
             std::any::type_name::<K>()
@@ -634,6 +634,11 @@ impl Persistence {
         &self,
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
+        let type_name = std::any::type_name::<K>();
+        let _tracing =
+            tracing::info_span!("Loading value", type_name, value_fingerprint,)
+                .entered();
+
         if self.skip_keys.contains(&K::STABLE_TYPE_ID) {
             return Ok(None);
         }

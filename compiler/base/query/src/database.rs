@@ -684,7 +684,12 @@ impl Engine {
                 },
             );
 
-        tracing::info!("Computing query for `{}` `{key:?}`", key.type_name());
+        let _span = tracing::info_span!(
+            "compute_query",
+            key_type = key.type_name(),
+            key = ?key,
+        )
+        .entered();
         (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine)
     }
 
@@ -856,7 +861,7 @@ impl Engine {
                 )
             }
             Continuation::ReVerify(mut re_verify) => {
-                tracing::info!(
+                tracing::debug!(
                     "Re-verifying query for `{}` `{key:?}` with metadata: {:?}",
                     key.type_name(),
                     re_verify.derived_metadata
@@ -875,7 +880,7 @@ impl Engine {
                     // Sadly, rayon thread pool is not applicable as it could
                     // cause thread pool starvation deadlocks.
                     for x in re_verify.derived_metadata.dependencies.iter() {
-                        tracing::info!(
+                        tracing::debug!(
                             "Start re-verifying dependency `{}` `{:?} for \
                              `{}` `{key:?}`",
                             x.0.type_name(),
@@ -1004,7 +1009,7 @@ impl Engine {
                             current_version;
 
                         // update the dependencies with the tracked one
-                        tracing::info!(
+                        tracing::debug!(
                             "Dependencies updated for `{}` `{key:?}`: {:?}",
                             key.type_name(),
                             tracked_dependencies
@@ -1233,7 +1238,7 @@ impl Engine {
             );
 
             if !running.dependencies.contains(called_from) {
-                tracing::info!(
+                tracing::debug!(
                     "Inserting `{}` `{key:?}` to the dependencies of `{}`",
                     key.type_name(),
                     called_from.type_name(),

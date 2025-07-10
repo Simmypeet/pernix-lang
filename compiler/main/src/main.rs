@@ -22,6 +22,7 @@ use pernixc_serialize::{
     Deserialize, Serialize,
 };
 use pernixc_target::Arguments;
+use tracing_subscriber::EnvFilter;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -33,7 +34,7 @@ fn main() -> ExitCode {
     setup_panic();
 
     tracing_subscriber::fmt()
-        .with_env_filter("pernixc=info")
+        .with_env_filter(EnvFilter::from_env("PERNIXC_LOG"))
         .with_thread_ids(true)
         .with_thread_names(true)
         .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
