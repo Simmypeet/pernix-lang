@@ -8,16 +8,24 @@ use std::{
 use flexstr::SharedStr;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_module_tree::{get_module_tree, ModuleTree};
-use pernixc_query::Value;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_query::{
+    runtime::{
+        executor,
+        persistence::{serde::DynamicRegistry, Persistence},
+    },
+    Value,
+};
+use pernixc_serialize::{
+    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::AccessModifier;
 use pernixc_target::TargetID;
 
 use crate::{
     accessibility::Accessibility, diagnostic::ItemRedifinition, kind::Kind,
-    span::Span,
 };
 
 pub mod accessibility;
@@ -75,7 +83,7 @@ pub struct Entry {
 
     /// The span of the symbol in the source code, if available. This is used
     /// for error reporting and code navigation.
-    pub span: Span,
+    pub span: Option<RelativeSpan>,
 }
 
 /// The final result of building the symbol table. It contains all the
@@ -195,7 +203,7 @@ impl MemberBuilder<'_, '_, '_> {
                     Accessibility::Public
                 }
             }),
-            span: Span(Some(new_symbol.name.span)),
+            span: Some(new_symbol.name.span),
         };
 
         let id = generate_id(
@@ -482,15 +490,11 @@ impl Context<'_> {
 
                 None | Some(AccessModifier::Public(_)) => Accessibility::Public,
             }),
-            span: Span(
-                syntax_tree
-                    .signature
-                    .as_ref()
-                    .and_then(
-                        pernixc_syntax::item::module::Signature::identifier,
-                    )
-                    .map(|x| x.span),
-            ),
+            span: syntax_tree
+                .signature
+                .as_ref()
+                .and_then(pernixc_syntax::item::module::Signature::identifier)
+                .map(|x| x.span),
         };
 
         let current_module_id = if parent_module_id.is_some() {
@@ -780,4 +784,44 @@ fn generate_id<'a>(
             }
         }
     }
+}
+
+/// Registers all the required executors to run the queries.
+pub fn register_executors(executor: &mut executor::Registry) {
+    executor.register(Arc::new(accessibility::Executor));
+    executor.register(Arc::new(kind::Executor));
+    executor.register(Arc::new(member::Executor));
+    executor.register(Arc::new(name::Executor));
+    executor.register(Arc::new(parent::Executor));
+    executor.register(Arc::new(parent::IntermediateExecutor));
+    executor.register(Arc::new(span::Executor));
+    executor.register(Arc::new(diagnostic::Executor));
+    executor.register(Arc::new(Executor));
+}
+
+/// Registers all the necessary runtime information for the query engine.
+pub fn register_serde<
+    S: Serializer<Registry>,
+    D: Deserializer<Registry>,
+    Registry: DynamicRegistry<S, D> + Send + Sync,
+>(
+    serde_registry: &mut Registry,
+) where
+    S::Error: Send + Sync,
+{
+    serde_registry.register::<accessibility::Key>();
+    serde_registry.register::<kind::Key>();
+    serde_registry.register::<member::Key>();
+    serde_registry.register::<name::Key>();
+    serde_registry.register::<parent::Key>();
+    serde_registry.register::<parent::IntermediateKey>();
+    serde_registry.register::<span::Key>();
+    serde_registry.register::<diagnostic::Key>();
+    serde_registry.register::<Key>();
+}
+
+/// Registers the keys that should be skipped during serialization and
+/// deserialization in the query engine's persistence layer
+pub fn skip_persistence(persistence: &mut Persistence) {
+    persistence.skip_cache_value::<Key>();
 }

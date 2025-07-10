@@ -1,6 +1,6 @@
 //! Contains all the diagnostics related creating a new compilation target.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
 use flexstr::SharedStr;
 use pernixc_diagnostic::Report;
@@ -8,13 +8,54 @@ use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
+use pernixc_target::{Global, TargetID};
 
 use crate::{
     name::{get_name, get_qualified_name},
     span::get_span,
     ID,
 };
+
+/// Query for retrieving all the diagnostics encountered during the symbol table
+/// construction.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[ItemRedifinition]>)]
+pub struct Key(pub TargetID);
+
+/// An executor for the [`Key`] query that retrieves all the diagnostics
+/// encountered during the symbol table construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Executor;
+
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+    fn execute(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        &Key(id): &Key,
+    ) -> Result<
+        Arc<[ItemRedifinition]>,
+        pernixc_query::runtime::executor::CyclicError,
+    > {
+        let table = engine
+            .query(&crate::Key(id))
+            .expect("should have no cyclic dependencies");
+
+        Ok(table.redefinition_errors.clone())
+    }
+}
 
 /// The item symbol with the same name already exists in the given scope.
 #[derive(

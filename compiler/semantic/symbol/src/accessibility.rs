@@ -1,11 +1,20 @@
 //! Contains the definition of tyhe [`Accessibility`] enum.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_extend::extend;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
-use crate::ID;
+use crate::{
+    kind::{get_kind, Kind},
+    parent::{
+        get_closest_module_id, get_parent, symbol_hierarchy_relationship,
+        HierarchyRelationship,
+    },
+    ID,
+};
 
 /// The key type used with [`TrackedEngine`] to access the accessibility of a
 /// symbol.
@@ -64,7 +73,34 @@ impl Accessibility<ID> {
     }
 }
 
-/*
+/// An executor for the [`Key`] query that retrieves the accessibility of a
+/// symbol with the given ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Executor;
+
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        &Key(id): &Key,
+    ) -> Result<Accessibility<ID>, pernixc_query::runtime::executor::CyclicError>
+    {
+        let table = engine
+            .query(&crate::Key(id.target_id))
+            .expect("should have no cyclic dependencies");
+
+        Ok(table
+            .entries_by_id
+            .get(&id.id)
+            .expect("invalid symbol ID")
+            .accessibility
+            .expect(
+                "the symbol doesn't have an explicit accessibility set, use \
+                 the `get_accessibility` extension method to retrieve it",
+            ))
+    }
+}
+
 /// Computes the [`HierarchyRelationship`] between the two given
 /// accessibilities.
 ///
@@ -74,8 +110,8 @@ impl Accessibility<ID> {
 pub fn accessibility_hierarchy_relationship(
     self: &TrackedEngine<'_>,
     target_id: TargetID,
-    first: Accessibility<symbol::ID>,
-    second: Accessibility<symbol::ID>,
+    first: Accessibility<ID>,
+    second: Accessibility<ID>,
 ) -> HierarchyRelationship {
     match (first, second) {
         (Accessibility::Public, Accessibility::Public) => {
@@ -97,8 +133,8 @@ pub fn accessibility_hierarchy_relationship(
 #[extend]
 pub fn get_accessibility(
     self: &TrackedEngine<'_>,
-    id: Global<symbol::ID>,
-) -> Accessibility<symbol::ID> {
+    id: Global<ID>,
+) -> Accessibility<ID> {
     match self.get_kind(id) {
         Kind::Module
         | Kind::Struct
@@ -130,7 +166,8 @@ pub fn get_accessibility(
         | Kind::PositiveMarkerImplementation
         | Kind::NegativeMarkerImplementation
         | Kind::AdtImplementation => {
-            self.get_accessibility(self.get_implements(id))
+            // self.get_accessibility(self.get_implements(id))
+            todo!()
         }
     }
 }
@@ -143,8 +180,8 @@ pub fn get_accessibility(
 #[extend]
 pub fn symbol_accessible(
     self: &TrackedEngine<'_>,
-    referring_site: Global<symbol::ID>,
-    referred: Global<symbol::ID>,
+    referring_site: Global<ID>,
+    referred: Global<ID>,
 ) -> bool {
     let referred_accessibility = self.get_accessibility(referred);
 
@@ -161,9 +198,9 @@ pub fn symbol_accessible(
 #[extend]
 pub fn is_accessible_from(
     self: &TrackedEngine<'_>,
-    referring_site: symbol::ID,
+    referring_site: ID,
     referred_target_id: TargetID,
-    referred_accessibility: Accessibility<symbol::ID>,
+    referred_accessibility: Accessibility<ID>,
 ) -> bool {
     match referred_accessibility {
         Accessibility::Public => true,
@@ -185,4 +222,3 @@ pub fn is_accessible_from(
         }
     }
 }
-*/

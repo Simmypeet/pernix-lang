@@ -38,6 +38,34 @@ pub struct Member {
     pub redefinitions: HashSet<ID>,
 }
 
+/// An executor for the [`Key`] query that retrieves the members of the symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Executor;
+
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+    fn execute(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        &Key(id): &Key,
+    ) -> Result<Arc<Member>, pernixc_query::runtime::executor::CyclicError>
+    {
+        let table = engine
+            .query(&crate::Key(id.target_id))
+            .expect("should have no cyclic dependencies");
+
+        Ok(table
+            .entries_by_id
+            .get(&id.id)
+            .expect("invalid symbol ID")
+            .members
+            .clone()
+            .expect(
+                "this symbol doesn't have members, use `try_get_members` for \
+                 failable retrieval",
+            ))
+    }
+}
+
 /*
 /// Tries retrieve the member component of the given symbol ID (if has).
 #[extend]

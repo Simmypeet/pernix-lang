@@ -1,7 +1,7 @@
 //! Defines the [`Name`] type.
 use flexstr::SharedStr;
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -54,6 +54,28 @@ pub fn get_qualified_name(
     }
 
     qualified_name
+}
+
+/// An executor for the [`Key`] query that retrieves the name of the symbol
+/// with the given ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Executor;
+
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine<'_>,
+        &Key(id): &Key,
+    ) -> Result<SharedStr, CyclicError> {
+        let symbol_table = engine.query(&crate::Key(id.target_id)).unwrap();
+
+        Ok(symbol_table
+            .entries_by_id
+            .get(&id.id)
+            .expect("invalid symbol ID")
+            .name
+            .clone())
+    }
 }
 
 /*

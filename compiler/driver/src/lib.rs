@@ -367,8 +367,7 @@ pub fn run(
 
     let tracked_engine = engine.tracked();
     let argument = tracked_engine.get_invocation_arguments(TargetID::Local);
-    let errors = engine
-        .tracked()
+    let errors = tracked_engine
         .query(&pernixc_module_tree::errors::Key(TargetID::Local))
         .unwrap();
 
@@ -391,6 +390,10 @@ pub fn run(
             return ExitCode::FAILURE;
         }
     };
+
+    let symbol_table_diagnostics = tracked_engine
+        .query(&pernixc_symbol::diagnostic::Key(TargetID::Local))
+        .unwrap();
 
     let mut diagnostics = Vec::new();
 
@@ -416,6 +419,15 @@ pub fn run(
             rel_pernix_diagnostic_to_codespan_diagnostic(
                 source_map.0,
                 error.report(()),
+            ),
+        ));
+    }
+
+    for error in symbol_table_diagnostics.iter() {
+        diagnostics.push(SortableDiagnostic(
+            rel_pernix_diagnostic_to_codespan_diagnostic(
+                source_map.0,
+                error.report(&tracked_engine),
             ),
         ));
     }
