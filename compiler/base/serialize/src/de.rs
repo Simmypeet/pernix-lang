@@ -1392,7 +1392,7 @@ impl std::fmt::Display for Identifier {
 
 use std::path::PathBuf;
 
-use dashmap::{DashMap, DashSet};
+use dashmap::{DashMap, DashSet, ReadOnlyView};
 use flexstr::FlexStr;
 
 impl<D, E> Deserialize<D, E> for PathBuf
@@ -1514,6 +1514,46 @@ impl<
             }
 
             Ok(map)
+        })
+    }
+}
+
+impl<
+        D: Deserializer<E>,
+        K: Deserialize<D, E> + Eq + Hash,
+        V: Deserialize<D, E>,
+        BH: BuildHasher + Clone + Default,
+        E,
+    > Deserialize<D, E> for ReadOnlyView<K, V, BH>
+{
+    fn deserialize(
+        deserializer: &mut D,
+        extension: &E,
+    ) -> Result<Self, <D as Deserializer<E>>::Error> {
+        deserializer.expect_map(extension, |mut map_access, extension| {
+            let (lower, upper) = map_access.size_hint();
+            let map = DashMap::with_capacity_and_hasher(
+                upper.unwrap_or(lower),
+                BH::default(),
+            );
+
+            loop {
+                let done = map_access.next_entry(extension, |entry| {
+                    if let Some((key, value_access, extension)) = entry {
+                        let value = value_access.deserialize(extension)?;
+                        map.insert(key, value);
+                        Ok(false) // Continue
+                    } else {
+                        Ok(true) // Done
+                    }
+                })?;
+
+                if done {
+                    break;
+                }
+            }
+
+            Ok(map.into_read_only())
         })
     }
 }
@@ -1663,10 +1703,7 @@ impl<D, E> Deserialize<D, E> for std::sync::Arc<str>
 where
     D: Deserializer<E>,
 {
-    fn deserialize(
-        deserializer: &mut D,
-        _: &E,
-    ) -> Result<Self, D::Error> {
+    fn deserialize(deserializer: &mut D, _: &E) -> Result<Self, D::Error> {
         deserializer.expect_str().map(|s| std::sync::Arc::from(s.to_string()))
     }
 }

@@ -270,3 +270,24 @@ impl Kind {
         matches!(self, Self::Function | Self::AdtImplementationFunction)
     }
 }
+
+/// An executor for the [`Kind`] query that retrieves the kind of a symbol from
+/// the symbol table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Executor;
+
+impl pernixc_query::runtime::executor::Executor<Key> for Executor {
+    fn execute(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        key: &Key,
+    ) -> Result<Kind, pernixc_query::runtime::executor::CyclicError> {
+        let symbol_table = engine.query(&crate::Key(key.0.target_id))?;
+
+        Ok(symbol_table
+            .entries_by_id
+            .get(&key.0.id)
+            .expect("invalid symbol ID")
+            .kind)
+    }
+}

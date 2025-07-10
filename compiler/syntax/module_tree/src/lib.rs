@@ -47,20 +47,6 @@ pub mod source_map;
 pub mod syntax_tree;
 pub mod token_tree;
 
-/// Describes the relationship between two symbols in the hierarchy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum HierarchyRelationship {
-    /// The first symbol is the parent of the second symbol.
-    Parent,
-
-    /// The first symbol is the child of the second symbol.
-    Child,
-    /// Both symbols are two equivalent symbols.  Equivalent,
-
-    /// Both symbols are defined in different hierarchy scope.
-    Unrelated,
-}
-
 /// Registers all the required executors to run the queries.
 pub fn register_executors(executor: &mut executor::Registry) {
     executor.register(Arc::new(load_source_file::Executor));
@@ -347,6 +333,9 @@ impl Drop for ModuleTree {
 pub struct Parse {
     /// The root module tree starting from the root file path.
     pub root_module_tree: Arc<ModuleTree>,
+
+    /// The name of the target for which the module tree was parsed.
+    pub target_name: SharedStr,
 
     /// The errors occurred during bracnching the module tree.
     ///
@@ -652,11 +641,12 @@ fn start(
         module_content.syntax_tree,
         None,
         None,
-        &[target_name],
+        &[target_name.clone()],
     );
 
     Ok(Parse {
         root_module_tree: Arc::new(root_module_tree),
+        target_name,
         branching_errors: Arc::from(storage.into_vec()),
         source_file_paths_by_id: Arc::new(source_files_by_id.into_inner()),
     })

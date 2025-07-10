@@ -979,7 +979,7 @@ where
 
 use std::path::Path;
 
-use dashmap::{DashMap, DashSet};
+use dashmap::{DashMap, DashSet, ReadOnlyView};
 use flexstr::FlexStr;
 
 impl<S, E> Serialize<S, E> for Path
@@ -1023,6 +1023,29 @@ impl<
         serializer.emit_map(self.len(), e, |mut map, e| {
             for entry in self.iter() {
                 map.serialize_entry(entry.key(), entry.value(), e)?;
+            }
+
+            Ok(())
+        })
+    }
+}
+
+impl<
+        S: Serializer<E>,
+        K: Serialize<S, E> + Eq + Hash,
+        V: Serialize<S, E>,
+        BH: BuildHasher + Clone,
+        E,
+    > Serialize<S, E> for ReadOnlyView<K, V, BH>
+{
+    fn serialize(
+        &self,
+        serializer: &mut S,
+        e: &E,
+    ) -> Result<(), <S as Serializer<E>>::Error> {
+        serializer.emit_map(self.len(), e, |mut map, e| {
+            for entry in self.iter() {
+                map.serialize_entry(entry.0, entry.1, e)?;
             }
 
             Ok(())

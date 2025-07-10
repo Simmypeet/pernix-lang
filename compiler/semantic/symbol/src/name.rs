@@ -1,11 +1,12 @@
 //! Defines the [`Name`] type.
 use flexstr::SharedStr;
 use pernixc_extend::extend;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::ID;
+use crate::{parent::get_parent, ID};
 
 /// A simple name identifier given to a symbol.
 #[derive(
@@ -27,12 +28,11 @@ use crate::ID;
 #[extend(method(get_name), no_cyclic)]
 pub struct Key(pub Global<ID>);
 
-/*
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
 pub fn get_qualified_name(
     self: &TrackedEngine<'_>,
-    mut id: Global<symbol::ID>,
+    mut id: Global<ID>,
 ) -> String {
     let mut qualified_name = String::new();
 
@@ -55,6 +55,8 @@ pub fn get_qualified_name(
 
     qualified_name
 }
+
+/*
 
 /// Gets the [`Global<symbol::ID>`] of the symbol with the given sequence of
 /// qualified names.

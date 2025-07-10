@@ -7,8 +7,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::symbol;
-
+use crate::ID;
 /// Points to the particular location span in the source code where the given
 /// symbol is defined, typically used for diagnostics and error reporting.
 ///
@@ -29,6 +28,6 @@ use crate::symbol;
     Value,
     StableHash,
 )]
-#[id(Global<symbol::ID>)]
+#[id(Global<ID>)]
 #[extend(method(get_span), no_cyclic)]
 pub struct Span(pub Option<RelativeSpan>);

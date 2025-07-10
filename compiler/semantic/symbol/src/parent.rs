@@ -12,12 +12,24 @@ use pernixc_target::{Global, TargetID};
 
 use crate::{
     kind::{get_kind, Kind},
-    member::try_get_members,
-    name::get_name,
-    symbol,
-    target::get_target,
-    HierarchyRelationship,
+    ID,
 };
+
+/// Describes the relationship between two symbols in the hierarchy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HierarchyRelationship {
+    /// The first symbol is the parent of the second symbol.
+    Parent,
+
+    /// The first symbol is the child of the second symbol.
+    Child,
+
+    /// Both symbols are two equivalent symbols.  
+    Equivalent,
+
+    /// Both symbols are defined in different hierarchy scope.
+    Unrelated,
+}
 
 /// Query for retrieving the parent symbol of the given symbol ID in the
 /// qualified-identifier hierarchy.
@@ -38,9 +50,9 @@ use crate::{
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Option<symbol::ID>)]
+#[value(Option<ID>)]
 #[extend(method(get_parent), no_cyclic)]
-pub struct Key(pub Global<symbol::ID>);
+pub struct Key(pub Global<ID>);
 
 /// The executor for the [`Parent`] component.
 
@@ -52,8 +64,8 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         &self,
         engine: &TrackedEngine,
         key: &Key,
-    ) -> Result<Option<symbol::ID>, pernixc_query::runtime::executor::CyclicError>
-    {
+    ) -> Result<Option<ID>, pernixc_query::runtime::executor::CyclicError> {
+        /*
         if key.0.id == symbol::ID::ROOT_MODULE {
             return Ok(None);
         }
@@ -71,6 +83,8 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             });
 
         Ok(Some(parent_id))
+        */
+        todo!()
     }
 }
 
@@ -92,7 +106,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 #[key(IntermediateKey)]
 #[value(Arc<Intermediate>)]
 #[doc(hidden)]
-pub struct Intermediate(pub HashMap<symbol::ID, symbol::ID>);
+pub struct Intermediate(pub HashMap<ID, ID>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[doc(hidden)]
@@ -107,6 +121,7 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
         key: &IntermediateKey,
     ) -> Result<Arc<Intermediate>, pernixc_query::runtime::executor::CyclicError>
     {
+        /*
         let mut result = HashMap::default();
         let target = engine.get_target(key.0);
 
@@ -128,6 +143,9 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
         }
 
         Ok(Arc::new(Intermediate(result)))
+        */
+
+        todo!()
     }
 }
 
@@ -139,12 +157,12 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
 #[derive(Debug, Clone)]
 pub struct ScopeWalker<'a> {
     engine: &'a TrackedEngine<'a>,
-    current_id: Option<symbol::ID>,
+    current_id: Option<ID>,
     target_id: TargetID,
 }
 
 impl Iterator for ScopeWalker<'_> {
-    type Item = symbol::ID;
+    type Item = ID;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_id {
@@ -165,10 +183,7 @@ impl Iterator for ScopeWalker<'_> {
 ///
 /// See [`ScopeWalker`] for more information.
 #[extend]
-pub fn scope_walker(
-    self: &TrackedEngine<'_>,
-    id: Global<symbol::ID>,
-) -> ScopeWalker {
+pub fn scope_walker(self: &TrackedEngine<'_>, id: Global<ID>) -> ScopeWalker {
     ScopeWalker {
         engine: self,
         current_id: Some(id.id),
@@ -183,8 +198,8 @@ pub fn scope_walker(
 pub fn symbol_hierarchy_relationship(
     self: &TrackedEngine<'_>,
     target_id: TargetID,
-    first: symbol::ID,
-    second: symbol::ID,
+    first: ID,
+    second: ID,
 ) -> HierarchyRelationship {
     // the two symbols are the same.
     if first == second {
@@ -211,8 +226,8 @@ pub fn symbol_hierarchy_relationship(
 #[extend]
 pub fn get_closest_module_id(
     self: &TrackedEngine<'_>,
-    mut id: Global<symbol::ID>,
-) -> symbol::ID {
+    mut id: Global<ID>,
+) -> ID {
     loop {
         if self.get_kind(id) == Kind::Module {
             return id.id;

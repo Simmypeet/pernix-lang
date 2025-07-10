@@ -888,6 +888,24 @@ impl<K: StableHash + Eq + Hash, V: StableHash, B: BuildHasher + Clone>
     }
 }
 
+impl<K: StableHash + Eq + Hash, V: StableHash, B: BuildHasher + Clone>
+    StableHash for dashmap::ReadOnlyView<K, V, B>
+{
+    fn stable_hash<H: StableHasher + ?Sized>(&self, state: &mut H) {
+        self.len().stable_hash(state);
+        let mut combined = H::Hash::default();
+
+        for entry in self.iter() {
+            combined = combined.wrapping_add(state.sub_hash(&mut |sub| {
+                entry.0.stable_hash(sub);
+                entry.1.stable_hash(sub);
+            }));
+        }
+
+        combined.stable_hash(state);
+    }
+}
+
 impl<T: StableHash + Eq + Hash, B: BuildHasher + Clone> StableHash
     for dashmap::DashSet<T, B>
 {

@@ -1,87 +1,53 @@
 //! Contains all the diagnostics related creating a new compilation target.
 
-use std::{any::Any, fmt::Debug};
+use std::fmt::Debug;
 
 use flexstr::SharedStr;
-use pernixc_diagnostic::{Related, Report, Severity};
+use pernixc_diagnostic::Report;
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
-use pernixc_query::{Engine, TrackedEngine};
-use pernixc_target::{Global, TargetID};
+use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
 
 use crate::{
-    accessibility::{get_accessibility, Accessibility},
-    import::get_imports,
-    kind::{get_kind, Kind},
-    member::try_get_members,
     name::{get_name, get_qualified_name},
     span::get_span,
-    symbol,
-    target::get_target_map,
+    ID,
 };
 
-/// Implemented all the diagnostic objects and provides type erasure.
-pub trait Diagnostic:
-    for<'a> Report<&'a Engine, Location = RelativeLocation>
-    + Debug
-    + Send
-    + Sync
-    + 'static
-{
-    #[allow(missing_docs)]
-    fn as_any(&self) -> &dyn Any;
-
-    #[allow(missing_docs)]
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
-
-impl<
-        U: for<'a> Report<&'a Engine, Location = RelativeLocation>
-            + Debug
-            + Any
-            + Send
-            + Sync
-            + 'static,
-    > Diagnostic for U
-{
-    fn as_any(&self) -> &dyn Any { self }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
-}
-
-impl<
-        U: for<'a> Report<&'a Engine, Location = RelativeLocation>
-            + Debug
-            + Any
-            + Send
-            + Sync
-            + 'static,
-    > From<U> for Box<dyn Diagnostic>
-{
-    fn from(value: U) -> Self { Box::new(value) }
-}
-
 /// The item symbol with the same name already exists in the given scope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct ItemRedifinition {
     /// The ID of the existing symbol.
-    pub existing_id: Global<symbol::ID>,
+    pub existing_id: Global<ID>,
 
     /// The ID of the new symbol.
-    pub new_id: Global<symbol::ID>,
+    pub new_id: Global<ID>,
 
     /// The scope in which the duplication occurred.
-    pub in_id: Global<symbol::ID>,
+    pub in_id: Global<ID>,
 }
 
-impl Report<&Engine> for ItemRedifinition {
+impl Report<&TrackedEngine<'_>> for ItemRedifinition {
     type Location = RelativeLocation;
 
     fn report(
         &self,
-        engine: &Engine,
+        engine: &TrackedEngine<'_>,
     ) -> pernixc_diagnostic::Diagnostic<RelativeLocation> {
-        let engine = engine.tracked();
-
         let existing_symbol_span = engine.get_span(self.existing_id);
         let new_symbol_span = engine.get_span(self.new_id);
         let existing_symbol_name = engine.get_name(self.existing_id);
@@ -116,7 +82,7 @@ impl Report<&Engine> for ItemRedifinition {
 pub struct SymbolNotFound {
     /// The [`GlobalID`] where the symbol was searched in. If `None`, the root
     /// module was searched.
-    pub searched_item_id: Option<Global<symbol::ID>>,
+    pub searched_item_id: Option<Global<ID>>,
 
     /// The span where the symbol was searched from.
     pub resolution_span: RelativeSpan,
@@ -125,7 +91,7 @@ pub struct SymbolNotFound {
     pub name: SharedStr,
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, unused)]
 fn suggest<'a>(
     not_found_name: &str,
     available_names: impl IntoIterator<Item = &'a str>,
@@ -175,6 +141,7 @@ fn suggest<'a>(
     }
 }
 
+/*
 impl Report<&Engine> for SymbolNotFound {
     type Location = RelativeLocation;
 
@@ -518,3 +485,5 @@ impl Report<&Engine> for SymbolIsMoreAccessibleThanParent {
         }
     }
 }
+
+*/
