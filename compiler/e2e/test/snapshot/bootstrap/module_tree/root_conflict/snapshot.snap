@@ -1,6 +1,6 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: assert_string
+expression: clean_run
 ---
 stderr:
 error: the submodule of the root source file ends up pointing to the root source file itself
@@ -10,6 +10,8 @@ error: the submodule of the root source file ends up pointing to the root source
   │               ^^^^ this ends up loading the file `bootstrap/module_tree/root_conflict/main.pnx`, which is the current module itself
   │
   = consider renaming the submodule name to avoid this conflict
+
+error: Compilation aborted due to 1 error(s)
 
 
 

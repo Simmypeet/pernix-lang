@@ -1,6 +1,6 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: assert_string
+expression: clean_run
 ---
 stderr:
 error: failed to load the source file for the submodule
@@ -10,6 +10,8 @@ error: failed to load the source file for the submodule
   │               ^^^^^^^^
   │
   = failed to load the source file for the submodule at `bootstrap/module_tree/not_found/notFound.pnx`: general IO error (os error 2)
+
+error: Compilation aborted due to 1 error(s)
 
 
 

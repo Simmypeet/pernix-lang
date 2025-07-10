@@ -11,14 +11,12 @@ use std::{
     },
 };
 
-use dashmap::{DashMap, DashSet};
+use dashmap::{rayon::read_only, DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, Mutex};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
     fingerprint,
@@ -42,6 +40,7 @@ impl Notification {
     fn wait(&self) {
         let (lock, cvar) = &*self.0;
         let mut notified = lock.lock();
+
         while !*notified {
             cvar.wait(&mut notified);
         }
@@ -348,7 +347,29 @@ impl Engine {
 
                     drop(state);
 
+                    tracing::debug!(
+                        "Fast path `{}` `{:?}` is waiting for notification \
+                         from `{}` `{:?}`",
+                        called_from
+                            .as_ref()
+                            .map_or_else(|| "None", |x| x.type_name()),
+                        called_from,
+                        key.type_name(),
+                        key
+                    );
+
                     notify.wait();
+
+                    tracing::debug!(
+                        "Fast path `{}` `{:?}` received notification from \
+                         `{}` `{:?}`",
+                        called_from
+                            .as_ref()
+                            .map_or_else(|| "None", |x| x.type_name()),
+                        called_from,
+                        key.type_name(),
+                        key
+                    );
 
                     // try again and should see the `State::Completion`
                     return Ok(FastPathDecision::TryAgain);
@@ -605,11 +626,6 @@ impl Engine {
                     }));
 
                     // the value is not up-to-date, need to re-verify it
-                    tracing::debug!(
-                        "Re-verifying query for `{}` with metadata: {:?}",
-                        key.type_name(),
-                        loaded_metadata
-                    );
                     return SlowPathDecision::Continuation(
                         Continuation::ReVerify(ReVerify {
                             derived_metadata: loaded_metadata
@@ -821,6 +837,12 @@ impl Engine {
                 )
             }
             Continuation::ReVerify(mut re_verify) => {
+                tracing::debug!(
+                    "Re-verifying query for `{}` `{key:?}` with metadata: {:?}",
+                    key.type_name(),
+                    re_verify.derived_metadata
+                );
+
                 let recompute = if K::ALWAYS_REVERIFY
                     || re_verify
                         .derived_metadata
@@ -831,48 +853,73 @@ impl Engine {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
-                    re_verify
-                        .derived_metadata
-                        .dependencies
-                        .par_iter()
-                        .for_each(|x| {
-                            // if the dependency is an input, skip
-                            // re-verification
-                            if self
-                                .database
-                                .query_states_by_key
-                                .get(x.key())
-                                .is_some_and(|x| {
-                                    x.as_completion()
-                                        .is_some_and(|x| x.metadata.is_input())
-                                })
-                            {
-                                return;
-                            }
+                    rayon::scope(|s| {
+                        for x in re_verify.derived_metadata.dependencies.iter()
+                        {
+                            (s.spawn(move |_| {
+                                tracing::debug!(
+                                    "Start re-verifying dependency `{}` `{:?} \
+                                     for `{}` `{key:?}`",
+                                    x.0.type_name(),
+                                    x.0,
+                                    key.type_name(),
+                                );
 
-                            let dep_ref = &*x.0;
-                            let type_id = dep_ref.any().type_id();
+                                let dep_ref = &*x.0;
+                                let type_id = dep_ref.any().type_id();
 
-                            let re_verify_query = self
-                                .runtime
-                                .executor
-                                .get_entry_with_id(type_id)
-                                .unwrap_or_else(|| {
-                                    panic!(
-                                        "No executor registered for key type \
-                                         `{}`",
-                                        dep_ref.type_name()
-                                    )
-                                })
-                                .get_re_verify_query();
+                                // if the dependency is an input, skip
+                                // re-verification
+                                if self
+                                    .database
+                                    .query_states_by_key
+                                    .get(x.key())
+                                    .is_some_and(|x| {
+                                        x.as_completion().is_some_and(|x| {
+                                            x.metadata.is_input()
+                                        })
+                                    })
+                                {
+                                    tracing::debug!(
+                                        "Re-verification completed dependency \
+                                         `{}` `{:?} for `{}` `{key:?}`",
+                                        dep_ref.type_name(),
+                                        dep_ref,
+                                        key.type_name(),
+                                    );
+                                    return;
+                                }
 
-                            let _ = (re_verify_query)(
-                                self,
-                                dep_ref.any(),
-                                current_version,
-                                key as &dyn Dynamic,
-                            );
-                        });
+                                let re_verify_query = self
+                                    .runtime
+                                    .executor
+                                    .get_entry_with_id(type_id)
+                                    .unwrap_or_else(|| {
+                                        panic!(
+                                            "No executor registered for key \
+                                             type `{}`",
+                                            dep_ref.type_name()
+                                        )
+                                    })
+                                    .get_re_verify_query();
+
+                                let _ = (re_verify_query)(
+                                    self,
+                                    dep_ref.any(),
+                                    current_version,
+                                    key as &dyn Dynamic,
+                                );
+
+                                tracing::debug!(
+                                    "Re-verification completed dependency \
+                                     `{}` `{:?} for `{}` `{key:?}`",
+                                    dep_ref.type_name(),
+                                    dep_ref,
+                                    key.type_name(),
+                                );
+                            }));
+                        }
+                    });
 
                     // if any of the dependencies has been updated,
                     // we need to recompute the query
@@ -894,7 +941,18 @@ impl Engine {
                     })
                 };
 
+                // update the version info to the current version
+                re_verify.derived_metadata.version_info.verified_at =
+                    current_version;
+
                 if recompute {
+                    tracing::debug!(
+                        "Re-computing value for `{}` `{key:?}` with metadata: \
+                         {:?}",
+                        key.type_name(),
+                        re_verify.derived_metadata
+                    );
+
                     self.compute(key, true, |value, tracked_dependencies| {
                         let new_fingerprint =
                             value.ok().map(fingerprint::fingerprint);
@@ -1028,6 +1086,11 @@ impl Engine {
                 }
             }
             Continuation::ReExecute(re_execute) => {
+                tracing::debug!(
+                    "Re-executing query for `{}` `{key:?}` with metadata: {:?}",
+                    key.type_name(),
+                    re_execute.derived_metadata
+                );
                 self.compute(key, return_value, |result, _| {
                     debug_assert_eq!(
                         result.ok().map(|x| { fingerprint::fingerprint(x) }),
@@ -1076,8 +1139,19 @@ impl Engine {
             )? {
                 FastPathDecision::TryAgain => continue,
                 FastPathDecision::ToSlowPath => {}
-                FastPathDecision::Return(value) => break value,
+                FastPathDecision::Return(value) => {
+                    tracing::debug!(
+                        "`{}` `{key:?}` returned `FastPathDecision::Return`",
+                        key.type_name()
+                    );
+                    break value;
+                }
             }
+
+            tracing::debug!(
+                "`{}` `{key:?}` returned `ToSlowPath`, executing slow path",
+                key.type_name()
+            );
 
             // Slow Path: use `entry` obtaining a write lock for state mutation
             let (continuation, notify) =

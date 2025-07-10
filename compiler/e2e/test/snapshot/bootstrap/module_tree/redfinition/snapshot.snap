@@ -1,6 +1,6 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: assert_string
+expression: clean_run
 ---
 stderr:
 error: a module with the given name already exists
@@ -12,6 +12,8 @@ error: a module with the given name already exists
   │        ^^^^^^^^^^^^^^^^ this module redefines an existing module
   │
   = can not have more than one module with the same name in the same scope
+
+error: Compilation aborted due to 1 error(s)
 
 
 

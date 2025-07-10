@@ -6,7 +6,6 @@ use std::{
 };
 
 use backtrace::Backtrace;
-use clap::Parser;
 use codespan_reporting::{
     diagnostic::Diagnostic,
     term::{
@@ -21,7 +20,7 @@ use pernixc_serialize::{
     },
     Deserialize, Serialize,
 };
-use pernixc_target::Arguments;
+use pernixc_target::{Arguments, Check, Command, Input};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -37,7 +36,7 @@ fn main() -> ExitCode {
         .with_thread_ids(true)
         .with_thread_names(true)
         .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-        .with_max_level(tracing::Level::ERROR)
+        .with_max_level(tracing::Level::DEBUG)
         .init();
 
     let mut stderr =
@@ -49,7 +48,23 @@ fn main() -> ExitCode {
             termcolor::ColorChoice::Always,
         );
 
-    pernixc_driver::run(Arguments::parse(), &mut stderr, &mut stdout)
+    pernixc_driver::run(
+        Arguments {
+            command: Command::Check(Check {
+                input: Input {
+                    file: "compiler/e2e/test/snapshot/bootstrap/module_tree/\
+                           redfinition/main.pnx"
+                        .into(),
+                    target_name: None,
+                    library_paths: Vec::new(),
+                    incremental_path: Some(".out/".into()),
+                    show_progress: false,
+                },
+            }),
+        },
+        &mut stderr,
+        &mut stdout,
+    )
 }
 
 /// The struct capturing the information about an ICE (Internal Compiler Error)
