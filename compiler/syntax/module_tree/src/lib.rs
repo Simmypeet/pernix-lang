@@ -84,8 +84,6 @@ pub fn register_serde<
 pub fn skip_persistence(persistence: &mut Persistence) {
     persistence.skip_cache_value::<load_source_file::Key>();
     persistence.skip_cache_value::<source_map::Key>();
-    persistence.skip_cache_value::<syntax_tree::Key>();
-    persistence.skip_cache_value::<token_tree::Parse>();
     persistence.skip_cache_value::<Key>();
 }
 

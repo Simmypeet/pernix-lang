@@ -35,6 +35,7 @@ pub mod member;
 pub mod name;
 pub mod parent;
 pub mod span;
+pub mod symbols;
 
 /// Represents a unique identifier for the symbols in the compilation target.
 /// This ID is only unique within the context of a single target. If wants to
@@ -799,6 +800,7 @@ pub fn register_executors(executor: &mut executor::Registry) {
     executor.register(Arc::new(parent::IntermediateExecutor));
     executor.register(Arc::new(span::Executor));
     executor.register(Arc::new(diagnostic::Executor));
+    executor.register(Arc::new(symbols::Executor));
     executor.register(Arc::new(Executor));
 }
 
@@ -820,6 +822,7 @@ pub fn register_serde<
     serde_registry.register::<parent::IntermediateKey>();
     serde_registry.register::<span::Key>();
     serde_registry.register::<diagnostic::Key>();
+    serde_registry.register::<symbols::Key>();
     serde_registry.register::<Key>();
 }
 
@@ -827,4 +830,5 @@ pub fn register_serde<
 /// deserialization in the query engine's persistence layer
 pub fn skip_persistence(persistence: &mut Persistence) {
     persistence.skip_cache_value::<Key>();
+    persistence.skip_cache_value::<parent::IntermediateKey>();
 }

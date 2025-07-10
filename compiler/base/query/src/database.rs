@@ -255,6 +255,12 @@ impl Database {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct SaveConfig {
+    save_value: bool,
+    save_metadata: bool,
+}
+
 pub(super) fn re_verify_query<'a, K: Key + 'static>(
     engine: &'a Engine,
     key: &'a dyn Any,
@@ -678,6 +684,7 @@ impl Engine {
                 },
             );
 
+        tracing::info!("Computing query for `{}` `{key:?}`", key.type_name());
         (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine)
     }
 
@@ -700,6 +707,17 @@ impl Engine {
             #[cfg(feature = "query_cache")]
             cache: Some(&cache),
         };
+
+        // make sure that the dependencies that are added by re-verification
+        // are not added to the current query
+        self.database
+            .query_states_by_key
+            .get_mut(key as &dyn Dynamic)
+            .unwrap()
+            .as_running_mut()
+            .unwrap()
+            .dependencies
+            .clear();
 
         let value = Self::compute_query(&mut tracked_engine, key);
 
@@ -725,8 +743,8 @@ impl Engine {
             is_in_scc
         );
 
-        self.handle_computed_value(key, value, return_value, true, |result| {
-            set_completed(
+        self.handle_computed_value(key, value, return_value, |result| {
+            let result = set_completed(
                 result,
                 std::mem::take(
                     &mut self
@@ -738,7 +756,9 @@ impl Engine {
                         .unwrap()
                         .dependencies,
                 ),
-            )
+            );
+
+            (result.0, SaveConfig { save_value: true, save_metadata: result.1 })
         })
     }
 
@@ -748,12 +768,11 @@ impl Engine {
         key: &K,
         boxed_value: Result<DynamicValue, CyclicError>,
         return_value: bool,
-        save_value: bool,
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
-        ) -> (DerivedMetadata, bool),
+        ) -> (DerivedMetadata, SaveConfig),
     ) -> Option<K::Value> {
-        let (metadata, save_metadata) = set_completed(
+        let (metadata, save_config) = set_completed(
             boxed_value
                 .as_ref()
                 .ok()
@@ -766,7 +785,7 @@ impl Engine {
                 .ok_or(CyclicError),
         );
 
-        if let (Ok(value), true) = (&boxed_value, save_value) {
+        if let (Ok(value), true) = (&boxed_value, save_config.save_value) {
             let any = &**value as &dyn Any;
 
             self.save_value::<K>(
@@ -777,7 +796,7 @@ impl Engine {
 
         let final_metadata = ValueMetadata::Derived(metadata);
 
-        if save_metadata {
+        if save_config.save_metadata {
             self.save_value_metadata::<K>(
                 fingerprint::fingerprint(key),
                 &final_metadata,
@@ -837,7 +856,7 @@ impl Engine {
                 )
             }
             Continuation::ReVerify(mut re_verify) => {
-                tracing::debug!(
+                tracing::info!(
                     "Re-verifying query for `{}` `{key:?}` with metadata: {:?}",
                     key.type_name(),
                     re_verify.derived_metadata
@@ -856,7 +875,7 @@ impl Engine {
                     // Sadly, rayon thread pool is not applicable as it could
                     // cause thread pool starvation deadlocks.
                     for x in re_verify.derived_metadata.dependencies.iter() {
-                        tracing::debug!(
+                        tracing::info!(
                             "Start re-verifying dependency `{}` `{:?} for \
                              `{}` `{key:?}`",
                             x.0.type_name(),
@@ -983,6 +1002,14 @@ impl Engine {
 
                         re_verify.derived_metadata.version_info.verified_at =
                             current_version;
+
+                        // update the dependencies with the tracked one
+                        tracing::info!(
+                            "Dependencies updated for `{}` `{key:?}`: {:?}",
+                            key.type_name(),
+                            tracked_dependencies
+                        );
+
                         re_verify.derived_metadata.dependencies =
                             tracked_dependencies;
 
@@ -996,12 +1023,19 @@ impl Engine {
                                 .expect("Failed to downcast value")
                                 .clone();
 
+                            let final_metadata = ValueMetadata::Derived(
+                                re_verify.derived_metadata,
+                            );
+
+                            self.save_value_metadata::<K>(
+                                fingerprint::fingerprint(key),
+                                &final_metadata,
+                            );
+
                             self.database.query_states_by_key.insert(
                                 DynamicKey(key.smallbox_clone()),
                                 State::Completion(Completion {
-                                    metadata: ValueMetadata::Derived(
-                                        re_verify.derived_metadata,
-                                    ),
+                                    metadata: final_metadata,
                                     store: Some(value),
                                 }),
                             );
@@ -1031,10 +1065,53 @@ impl Engine {
                                 dynamic_value
                             }),
                             return_value,
-                            false,
                             |result| {
                                 let new_fingerprint =
                                     result.ok().map(fingerprint::fingerprint);
+
+                                let save_value = if new_fingerprint
+                                    == re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .fingerprint
+                                {
+                                    false
+                                } else {
+                                    tracing::debug!(
+                                        "Value fingerprint updated for `{}` \
+                                         `{key:?}` with a new fingerprint: \
+                                         {:?} -> {:?}",
+                                        key.type_name(),
+                                        re_verify
+                                            .derived_metadata
+                                            .version_info
+                                            .fingerprint,
+                                        new_fingerprint
+                                    );
+
+                                    re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .fingerprint = new_fingerprint;
+                                    re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .updated_at = current_version;
+
+                                    true
+                                };
+
+                                (re_verify.derived_metadata, SaveConfig {
+                                    save_value,
+                                    save_metadata: true,
+                                })
+                            },
+                        ),
+                        None => {
+                            self.compute(key, true, |value, dependencies| {
+                                let new_fingerprint =
+                                    value.ok().map(fingerprint::fingerprint);
+
                                 if new_fingerprint
                                     != re_verify
                                         .derived_metadata
@@ -1061,55 +1138,31 @@ impl Engine {
                                         .derived_metadata
                                         .version_info
                                         .updated_at = current_version;
+
+                                    re_verify.derived_metadata.dependencies =
+                                        dependencies;
                                 }
 
-                                (re_verify.derived_metadata, false)
-                            },
-                        ),
-                        None => self.compute(key, true, |value, _| {
-                            let new_fingerprint =
-                                value.ok().map(fingerprint::fingerprint);
-                            if new_fingerprint
-                                != re_verify
-                                    .derived_metadata
-                                    .version_info
-                                    .fingerprint
-                            {
-                                tracing::debug!(
-                                    "Value fingerprint updated for `{}` \
-                                     `{key:?}` with a new fingerprint: {:?} \
-                                     -> {:?}",
-                                    key.type_name(),
-                                    re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .fingerprint,
-                                    new_fingerprint
-                                );
-
-                                re_verify
-                                    .derived_metadata
-                                    .version_info
-                                    .fingerprint = new_fingerprint;
-                                re_verify
-                                    .derived_metadata
-                                    .version_info
-                                    .updated_at = current_version;
-                            }
-
-                            (re_verify.derived_metadata, false)
-                        }),
+                                (re_verify.derived_metadata, true)
+                            })
+                        }
                     }
                 } else {
+                    let final_metadata =
+                        ValueMetadata::Derived(re_verify.derived_metadata);
+
+                    self.save_value_metadata::<K>(
+                        fingerprint::fingerprint(key),
+                        &final_metadata,
+                    );
+
                     *self
                         .database
                         .query_states_by_key
                         .get_mut(key as &dyn Dynamic)
                         .expect("should be present") =
                         State::Completion(Completion {
-                            metadata: ValueMetadata::Derived(
-                                re_verify.derived_metadata,
-                            ),
+                            metadata: final_metadata,
                             store: re_verify.value_store,
                         });
 
@@ -1122,9 +1175,10 @@ impl Engine {
                     key.type_name(),
                     re_execute.derived_metadata
                 );
-                self.compute(key, return_value, |result, _| {
+                self.compute(key, return_value, |result, dependencies| {
                     let new_fingerprint =
                         result.ok().map(fingerprint::fingerprint);
+
                     if new_fingerprint
                         != re_execute.derived_metadata.version_info.fingerprint
                     {
@@ -1143,9 +1197,17 @@ impl Engine {
                             new_fingerprint;
                         re_execute.derived_metadata.version_info.updated_at =
                             current_version;
+
+                        tracing::debug!(
+                            "Dependencies updated for `{}` `{key:?}`: {:?}",
+                            key.type_name(),
+                            dependencies
+                        );
                     }
 
-                    (re_execute.derived_metadata, false)
+                    re_execute.derived_metadata.dependencies = dependencies;
+
+                    (re_execute.derived_metadata, true)
                 })
             }
         }
@@ -1171,6 +1233,11 @@ impl Engine {
             );
 
             if !running.dependencies.contains(called_from) {
+                tracing::info!(
+                    "Inserting `{}` `{key:?}` to the dependencies of `{}`",
+                    key.type_name(),
+                    called_from.type_name(),
+                );
                 running.dependencies.insert(DynamicKey(key.smallbox_clone()));
             }
         }

@@ -9,6 +9,7 @@ use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     kind::{get_kind, Kind},
@@ -120,30 +121,27 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
         key: &IntermediateKey,
     ) -> Result<Arc<Intermediate>, pernixc_query::runtime::executor::CyclicError>
     {
-        let table = engine
-            .query(&crate::Key(key.0))
+        let symbols = engine
+            .query(&crate::symbols::Key(key.0))
             .expect("should have no cyclic dependencies");
+        let symbols = symbols.as_ref();
 
-        let mut result = HashMap::default();
-
-        for (symbol, member) in table
-            .entries_by_id
-            .iter()
-            .map(|x| *x.0)
-            .map(|x| key.0.make_global(x))
-            .filter_map(|x| engine.try_get_members(x).map(|y| (x, y)))
-        {
-            for member_id in member
-                .member_ids_by_name
-                .values()
-                .copied()
-                .chain(member.redefinitions.iter().copied())
-            {
-                result.insert(member_id, symbol.id);
-            }
-        }
-
-        Ok(Arc::new(Intermediate(result)))
+        Ok(Arc::new(Intermediate(
+            symbols
+                .par_iter()
+                .map(|x| key.0.make_global(*x))
+                .filter_map(|x| engine.try_get_members(x).map(|y| (x, y)))
+                .flat_map_iter(|(symbol, member)| {
+                    member
+                        .member_ids_by_name
+                        .values()
+                        .copied()
+                        .chain(member.redefinitions.iter().copied())
+                        .map(move |member_id| (member_id, symbol.id))
+                        .collect::<Vec<_>>()
+                })
+                .collect(),
+        )))
     }
 }
 

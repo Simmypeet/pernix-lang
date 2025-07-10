@@ -108,6 +108,12 @@ impl Engine {
             return;
         };
 
+        tracing::info!(
+            "Saving value metadata for key {} with fingerprint \
+             {key_fingerprint}: {value_metadata:?}",
+            std::any::type_name::<K>()
+        );
+
         if let Err(error) = persistence
             .save_value_metadata::<K>(key_fingerprint, value_metadata)
         {

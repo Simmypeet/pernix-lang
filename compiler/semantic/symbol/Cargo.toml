@@ -26,6 +26,7 @@ enum-as-inner = { workspace = true }
 dashmap = { workspace = true }
 typed-builder = { workspace = true }
 derive_more = { workspace = true }
+rayon = { workspace = true }
 
 
 [lints]

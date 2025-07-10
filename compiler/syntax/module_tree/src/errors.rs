@@ -8,6 +8,7 @@ use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
 use crate::{load_source_file::LoadSourceFileError, ModuleTree, Parse};
+
 /// List of errors that occurred while building the module tree.
 #[derive(
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash, Value,
