@@ -4,7 +4,7 @@ expression: clean_run
 ---
 stderr:
 error: a module with the given name already exists
-  ╭─ bootstrap/module_tree/redfinition/main.pnx:2:8
+  ╭─ module_tree/redfinition/main.pnx:2:8
   │
 1 │ public module submodule
   │        ---------------- existing module with the same name
