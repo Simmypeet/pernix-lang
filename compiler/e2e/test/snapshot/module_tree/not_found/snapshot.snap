@@ -4,12 +4,12 @@ expression: clean_run
 ---
 stderr:
 error: failed to load the source file for the submodule
-  ╭─ bootstrap/module_tree/not_found/main.pnx:1:15
+  ╭─ module_tree/not_found/main.pnx:1:15
   │
 1 │ public module notFound
   │               ^^^^^^^^
   │
-  = failed to load the source file for the submodule at `bootstrap/module_tree/not_found/notFound.pnx`: general IO error (os error 2)
+  = failed to load the source file for the submodule at `module_tree/not_found/notFound.pnx`: general IO error (os error 2)
 
 error: Compilation aborted due to 1 error(s)
 
