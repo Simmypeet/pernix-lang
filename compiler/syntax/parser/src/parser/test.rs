@@ -759,7 +759,7 @@ abstract_tree! {
 #[test]
 fn error_choice_choose_most_progress() {
     let mut source_map = SourceMap::new();
-    let (token_tree, _) = parse_token_tree(&mut source_map, "a b c d e");
+    let (token_tree, _) = parse_token_tree(&mut source_map, "+ - * / ?");
 
     let (tree, errors) = AbcOrAbcd::parse(&token_tree);
     let tree = tree.unwrap().into_abcd().unwrap();
@@ -776,13 +776,13 @@ fn error_choice_choose_most_progress() {
         .get(errors[0].at.node_index)
         .is_some_and(|x| x
             .as_leaf()
-            .and_then(|x| x.kind.as_identifier())
-            .is_some_and(|x| x.as_str() == "e")));
+            .and_then(|x| x.kind.as_punctuation())
+            .is_some_and(|x| x.0 == '?')));
 
-    assert_eq!(tree.a().map(|x| x.kind.0), Some('a'));
-    assert_eq!(tree.b().map(|x| x.kind.0), Some('b'));
-    assert_eq!(tree.c().map(|x| x.kind.0), Some('c'));
-    assert_eq!(tree.d().map(|x| x.kind.0), Some('d'));
+    assert_eq!(tree.a().map(|x| x.kind.0), Some('+'));
+    assert_eq!(tree.b().map(|x| x.kind.0), Some('-'));
+    assert_eq!(tree.c().map(|x| x.kind.0), Some('*'));
+    assert_eq!(tree.d().map(|x| x.kind.0), Some('/'));
 
     assert!(tree.semicolon().is_none());
 }
