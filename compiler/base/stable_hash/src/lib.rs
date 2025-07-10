@@ -954,7 +954,7 @@ impl StableHasher for siphasher::sip128::SipHasher {
 
     fn finish(&self) -> Self::Hash { self.finish128().into() }
 
-    fn write(&mut self, bytes: &[u8]) { self.hash(bytes); }
+    fn write(&mut self, bytes: &[u8]) { std::hash::Hasher::write(self, bytes); }
 
     fn sub_hash(
         &self,
