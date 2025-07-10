@@ -1,6 +1,6 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{ops::Not, process::ExitCode, sync::Arc};
+use std::{process::ExitCode, sync::Arc};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},

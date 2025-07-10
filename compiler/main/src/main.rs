@@ -6,6 +6,7 @@ use std::{
 };
 
 use backtrace::Backtrace;
+use clap::Parser;
 use codespan_reporting::{
     diagnostic::Diagnostic,
     term::{
@@ -20,7 +21,7 @@ use pernixc_serialize::{
     },
     Deserialize, Serialize,
 };
-use pernixc_target::{Arguments, Check, Command, Input};
+use pernixc_target::Arguments;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -48,23 +49,7 @@ fn main() -> ExitCode {
             termcolor::ColorChoice::Always,
         );
 
-    pernixc_driver::run(
-        Arguments {
-            command: Command::Check(Check {
-                input: Input {
-                    file: "compiler/e2e/test/snapshot/bootstrap/module_tree/\
-                           redfinition/main.pnx"
-                        .into(),
-                    target_name: None,
-                    library_paths: Vec::new(),
-                    incremental_path: Some(".out/".into()),
-                    show_progress: false,
-                },
-            }),
-        },
-        &mut stderr,
-        &mut stdout,
-    )
+    pernixc_driver::run(Arguments::parse(), &mut stderr, &mut stdout)
 }
 
 /// The struct capturing the information about an ICE (Internal Compiler Error)
