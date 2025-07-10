@@ -284,10 +284,9 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     ) -> Result<Kind, pernixc_query::runtime::executor::CyclicError> {
         let symbol_table = engine.query(&crate::Key(key.0.target_id))?;
 
-        Ok(symbol_table
-            .entries_by_id
+        Ok(symbol_table.entries_by_id
             .get(&key.0.id)
-            .expect("invalid symbol ID")
+            .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id))
             .kind)
     }
 }

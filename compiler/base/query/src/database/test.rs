@@ -1581,17 +1581,6 @@ fn reverify_change_dependencies() {
     let result = engine.tracked().query(&DoubleAll).unwrap();
     assert_eq!(result, 36); // (5*2) + (6*2) + (7*2) = 36
 
-    // Check that the DoubleKey executor was called for the new dependencies
-    assert_eq!(
-        double_key_executor
-            .executed
-            .iter()
-            .map(|x| *x.key())
-            .collect::<HashSet<_>>(),
-        // 1, 2, 3, 4 were included here because of the reverify
-        [1, 2, 3, 4, 5, 6, 7].into_iter().collect()
-    );
-
     double_key_executor.executed.clear();
 
     // increment the version to force re-verification for `always_reverify`
@@ -1612,4 +1601,99 @@ fn reverify_change_dependencies() {
             .collect::<HashSet<_>>(),
         [5, 6, 7].into_iter().collect()
     ); // Only the new dependencies should be executed
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, StableHash, Key)]
+#[value(Arc<str>)]
+pub struct ReadKey;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, StableHash, Key)]
+#[value(i32)]
+pub struct GetVariableMap;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct GetVariableMapExecutor;
+
+impl Executor<GetVariableMap> for GetVariableMapExecutor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        _key: &GetVariableMap,
+    ) -> Result<i32, CyclicError> {
+        let read_key = engine.query(&ReadKey)?;
+        engine.query(&IndexValue(read_key))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, StableHash, Key)]
+#[value(i32)]
+pub struct IndexValue(pub Arc<str>);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct IndexValueExecutor;
+
+impl Executor<IndexValue> for IndexValueExecutor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        key: &IndexValue,
+    ) -> Result<i32, CyclicError> {
+        // Read the VariableMap and return the value for the given key
+        let variable_map = engine.query(&VariableMap)?;
+        let value = variable_map.get(key.0.as_ref()).unwrap();
+
+        Ok(*value)
+    }
+}
+
+#[test]
+fn panic_indexing() {
+    let mut engine = Engine::default();
+
+    engine.input_session(|x| {
+        x.set_input(
+            VariableMap,
+            Arc::new(
+                [
+                    ("a".to_string(), 1),
+                    ("b".to_string(), 2),
+                    ("c".to_string(), 3),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+
+        x.set_input(ReadKey, "a".to_string().into());
+    });
+
+    engine.runtime.executor.register(Arc::new(GetVariableMapExecutor));
+    engine.runtime.executor.register(Arc::new(IndexValueExecutor));
+
+    // Query the GetVariableMap executor
+    let result = engine.tracked().query(&GetVariableMap);
+
+    assert_eq!(result.unwrap(), 1); // Should return the value for "a"
+
+    engine.input_session(|x| {
+        x.set_input(
+            VariableMap,
+            Arc::new(
+                [
+                    ("c".to_string(), 1),
+                    ("d".to_string(), 2),
+                    ("e".to_string(), 3),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        );
+
+        x.set_input(ReadKey, "e".to_string().into());
+    });
+
+    // Query again after changing the VariableMap
+    let result = engine.tracked().query(&GetVariableMap);
+
+    assert_eq!(result.unwrap(), 3); // Should return the value for "e"
 }

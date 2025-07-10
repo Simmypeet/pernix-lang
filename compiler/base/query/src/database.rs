@@ -13,7 +13,7 @@ use std::{
 
 use dashmap::{DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
-use parking_lot::{Condvar, Mutex};
+use parking_lot::{Condvar, Mutex, RwLock};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -57,7 +57,8 @@ impl Notification {
 #[derive(Debug)]
 struct Running {
     notify: Notification,
-    dependencies: DashSet<DynamicKey>,
+    dependencies_order: RwLock<Vec<DynamicKey>>,
+    dependencies_set: DashSet<DynamicKey>,
     is_in_scc: AtomicBool,
 }
 
@@ -76,7 +77,7 @@ pub(crate) struct DerivedVersionInfo {
 #[serde(ser_extension(DynamicSerialize<__S>), de_extension(DynamicDeserialize<__D>))]
 pub(crate) struct DerivedMetadata {
     version_info: DerivedVersionInfo,
-    dependencies: DashSet<DynamicKey>,
+    dependencies: Vec<DynamicKey>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,7 +281,7 @@ impl Engine {
         running_state: &Running,
         target: &dyn Dynamic,
     ) -> bool {
-        if running_state.dependencies.contains(target) {
+        if running_state.dependencies_set.contains(target) {
             running_state
                 .is_in_scc
                 .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -290,9 +291,8 @@ impl Engine {
 
         let mut found = false;
 
-        for dep in running_state.dependencies.iter() {
-            let Some(state) =
-                self.database.query_states_by_key.get(&*dep.key().0)
+        for dep in running_state.dependencies_set.iter() {
+            let Some(state) = self.database.query_states_by_key.get(&*dep.0)
             else {
                 continue;
             };
@@ -540,7 +540,8 @@ impl Engine {
 
                         *occupied_entry.get_mut() = State::Running(Running {
                             notify: notify.clone(),
-                            dependencies: DashSet::default(),
+                            dependencies_order: RwLock::default(),
+                            dependencies_set: DashSet::default(),
                             is_in_scc: AtomicBool::new(false),
                         });
 
@@ -593,7 +594,8 @@ impl Engine {
                             let notify = Notification::new();
                             vacant_entry.insert(State::Running(Running {
                                 notify: notify.clone(),
-                                dependencies: DashSet::default(),
+                                dependencies_order: RwLock::default(),
+                                dependencies_set: DashSet::default(),
                                 is_in_scc: AtomicBool::new(false),
                             }));
 
@@ -627,7 +629,8 @@ impl Engine {
                     let notify = Notification::new();
                     vacant_entry.insert(State::Running(Running {
                         notify: notify.clone(),
-                        dependencies: DashSet::default(),
+                        dependencies_order: RwLock::default(),
+                        dependencies_set: DashSet::default(),
                         is_in_scc: AtomicBool::new(false),
                     }));
 
@@ -648,7 +651,8 @@ impl Engine {
                 let notify = Notification::new();
                 vacant_entry.insert(State::Running(Running {
                     notify: notify.clone(),
-                    dependencies: DashSet::default(),
+                    dependencies_order: RwLock::default(),
+                    dependencies_set: DashSet::default(),
                     is_in_scc: AtomicBool::new(false),
                 }));
 
@@ -699,7 +703,7 @@ impl Engine {
         return_value: bool,
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
-            DashSet<DynamicKey>,
+            Vec<DynamicKey>,
         ) -> (DerivedMetadata, bool),
     ) -> Option<K::Value> {
         #[cfg(feature = "query_cache")]
@@ -715,14 +719,20 @@ impl Engine {
 
         // make sure that the dependencies that are added by re-verification
         // are not added to the current query
-        self.database
-            .query_states_by_key
-            .get_mut(key as &dyn Dynamic)
-            .unwrap()
-            .as_running_mut()
-            .unwrap()
-            .dependencies
-            .clear();
+        {
+            let mut running = self
+                .database
+                .query_states_by_key
+                .get_mut(key as &dyn Dynamic)
+                .unwrap();
+
+            let running = running.as_running_mut().expect(
+                "should be running since it appeared in the call stack",
+            );
+
+            running.dependencies_order.get_mut().clear();
+            running.dependencies_set.clear();
+        }
 
         let value = Self::compute_query(&mut tracked_engine, key);
 
@@ -759,7 +769,8 @@ impl Engine {
                         .unwrap()
                         .as_running_mut()
                         .unwrap()
-                        .dependencies,
+                        .dependencies_order
+                        .write(),
                 ),
             );
 
@@ -829,6 +840,74 @@ impl Engine {
         return_value
     }
 
+    fn need_recompute<K: Key>(
+        &self,
+        re_verify: &ReVerify,
+        key: &K,
+        current_version: u64,
+    ) -> bool {
+        // Sadly, rayon thread pool is not applicable as it could
+        // cause thread pool starvation deadlocks.
+        for x in &re_verify.derived_metadata.dependencies {
+            tracing::debug!(
+                "Start re-verifying dependency `{}` `{:?} for `{}` `{key:?}`",
+                x.0.type_name(),
+                x.0,
+                key.type_name(),
+            );
+
+            let dep_ref = &*x.0;
+            let type_id = dep_ref.any().type_id();
+
+            // if the dependency is an input, skip
+            // re-verification
+            if !self.database.query_states_by_key.get(x).is_some_and(|x| {
+                x.as_completion().is_some_and(|x| x.metadata.is_input())
+            }) {
+                let re_verify_query = self
+                    .runtime
+                    .executor
+                    .get_entry_with_id(type_id)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "No executor registered for key type `{}`",
+                            dep_ref.type_name()
+                        )
+                    })
+                    .get_re_verify_query();
+
+                let _ = (re_verify_query)(
+                    self,
+                    dep_ref.any(),
+                    current_version,
+                    key as &dyn Dynamic,
+                );
+            }
+
+            tracing::debug!(
+                "Re-verification completed dependency `{}` `{:?} for `{}` \
+                 `{key:?}`",
+                dep_ref.type_name(),
+                dep_ref,
+                key.type_name(),
+            );
+
+            if let Some(state) = self.database.query_states_by_key.get(x) {
+                if state
+                    .as_completion()
+                    .expect("should be completion since it was re-verified")
+                    .metadata
+                    .updated_at()
+                    > re_verify.derived_metadata.version_info.verified_at
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     #[allow(clippy::too_many_lines)]
     fn continuation<K: Key>(
         &self,
@@ -877,87 +956,7 @@ impl Engine {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
-                    // Sadly, rayon thread pool is not applicable as it could
-                    // cause thread pool starvation deadlocks.
-                    for x in re_verify.derived_metadata.dependencies.iter() {
-                        tracing::debug!(
-                            "Start re-verifying dependency `{}` `{:?} for \
-                             `{}` `{key:?}`",
-                            x.0.type_name(),
-                            x.0,
-                            key.type_name(),
-                        );
-
-                        let dep_ref = &*x.0;
-                        let type_id = dep_ref.any().type_id();
-
-                        // if the dependency is an input, skip
-                        // re-verification
-                        if self
-                            .database
-                            .query_states_by_key
-                            .get(x.key())
-                            .is_some_and(|x| {
-                                x.as_completion()
-                                    .is_some_and(|x| x.metadata.is_input())
-                            })
-                        {
-                            tracing::debug!(
-                                "Re-verification completed dependency `{}` \
-                                 `{:?} for `{}` `{key:?}`",
-                                dep_ref.type_name(),
-                                dep_ref,
-                                key.type_name(),
-                            );
-                            continue;
-                        }
-
-                        let re_verify_query = self
-                            .runtime
-                            .executor
-                            .get_entry_with_id(type_id)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "No executor registered for key type `{}`",
-                                    dep_ref.type_name()
-                                )
-                            })
-                            .get_re_verify_query();
-
-                        let _ = (re_verify_query)(
-                            self,
-                            dep_ref.any(),
-                            current_version,
-                            key as &dyn Dynamic,
-                        );
-
-                        tracing::debug!(
-                            "Re-verification completed dependency `{}` `{:?} \
-                             for `{}` `{key:?}`",
-                            dep_ref.type_name(),
-                            dep_ref,
-                            key.type_name(),
-                        );
-                    }
-
-                    // if any of the dependencies has been updated,
-                    // we need to recompute the query
-                    re_verify.derived_metadata.dependencies.iter().any(|x| {
-                        self.database
-                            .query_states_by_key
-                            .get(x.key())
-                            .expect("should be present")
-                            .as_completion()
-                            .expect(
-                                "should be completion since it was re-verified",
-                            )
-                            .metadata
-                            .updated_at()
-                            > re_verify
-                                .derived_metadata
-                                .version_info
-                                .verified_at
-                    })
+                    self.need_recompute(&re_verify, key, current_version)
                 };
 
                 // update the version info to the current version
@@ -1184,9 +1183,11 @@ impl Engine {
                     let new_fingerprint =
                         result.ok().map(fingerprint::fingerprint);
 
-                    if new_fingerprint
-                        != re_execute.derived_metadata.version_info.fingerprint
+                    let update = if new_fingerprint
+                        == re_execute.derived_metadata.version_info.fingerprint
                     {
+                        false
+                    } else {
                         tracing::debug!(
                             "Value fingerprint updated for `{}` `{key:?}` \
                              with a new fingerprint: {:?} -> {:?}",
@@ -1202,17 +1203,12 @@ impl Engine {
                             new_fingerprint;
                         re_execute.derived_metadata.version_info.updated_at =
                             current_version;
+                        re_execute.derived_metadata.dependencies = dependencies;
 
-                        tracing::debug!(
-                            "Dependencies updated for `{}` `{key:?}`: {:?}",
-                            key.type_name(),
-                            dependencies
-                        );
-                    }
+                        true
+                    };
 
-                    re_execute.derived_metadata.dependencies = dependencies;
-
-                    (re_execute.derived_metadata, true)
+                    (re_execute.derived_metadata, update)
                 })
             }
         }
@@ -1237,13 +1233,19 @@ impl Engine {
                 "should be running since it appeared in the call stack",
             );
 
-            if !running.dependencies.contains(called_from) {
+            if !running.dependencies_set.contains(called_from) {
                 tracing::debug!(
                     "Inserting `{}` `{key:?}` to the dependencies of `{}`",
                     key.type_name(),
                     called_from.type_name(),
                 );
-                running.dependencies.insert(DynamicKey(key.smallbox_clone()));
+                running
+                    .dependencies_order
+                    .write()
+                    .push(DynamicKey(key.smallbox_clone()));
+                running
+                    .dependencies_set
+                    .insert(DynamicKey(key.smallbox_clone()));
             }
         }
 
