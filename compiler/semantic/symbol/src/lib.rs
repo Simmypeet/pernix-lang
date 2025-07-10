@@ -524,21 +524,24 @@ impl Context<'_> {
                 .iter()
                 .map(|(name, module_tree)| {
                     scope.spawn(|| {
-                        self.create_module(
-                            name,
-                            module_tree,
-                            parent_module_id,
-                            parent_names,
+                        (
+                            name.clone(),
+                            self.create_module(
+                                name,
+                                module_tree,
+                                Some(current_module_id),
+                                &current_module_names,
+                            ),
                         )
                     })
                 })
                 .collect::<Vec<_>>()
                 .into_iter()
                 .for_each(|handle| {
-                    let id = handle.join().unwrap();
+                    let (name, id) = handle.join().unwrap();
 
                     assert!(
-                        members.insert(name.clone(), id).is_none(),
+                        members.insert(name, id).is_none(),
                         "should've handled the redefinition earlier"
                     );
                 });

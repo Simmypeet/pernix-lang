@@ -12,6 +12,8 @@ use pernixc_target::{Global, TargetID};
 
 use crate::{
     kind::{get_kind, Kind},
+    member::try_get_members,
+    name::get_name,
     ID,
 };
 
@@ -65,8 +67,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         engine: &TrackedEngine,
         key: &Key,
     ) -> Result<Option<ID>, pernixc_query::runtime::executor::CyclicError> {
-        /*
-        if key.0.id == symbol::ID::ROOT_MODULE {
+        if key.0.id == ID::ROOT_MODULE {
             return Ok(None);
         }
 
@@ -83,8 +84,6 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             });
 
         Ok(Some(parent_id))
-        */
-        todo!()
     }
 }
 
@@ -121,14 +120,16 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
         key: &IntermediateKey,
     ) -> Result<Arc<Intermediate>, pernixc_query::runtime::executor::CyclicError>
     {
-        /*
-        let mut result = HashMap::default();
-        let target = engine.get_target(key.0);
+        let table = engine
+            .query(&crate::Key(key.0))
+            .expect("should have no cyclic dependencies");
 
-        for (symbol, member) in target
-            .all_symbol_ids
+        let mut result = HashMap::default();
+
+        for (symbol, member) in table
+            .entries_by_id
             .iter()
-            .copied()
+            .map(|x| *x.0)
             .map(|x| key.0.make_global(x))
             .filter_map(|x| engine.try_get_members(x).map(|y| (x, y)))
         {
@@ -143,9 +144,6 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
         }
 
         Ok(Arc::new(Intermediate(result)))
-        */
-
-        todo!()
     }
 }
 

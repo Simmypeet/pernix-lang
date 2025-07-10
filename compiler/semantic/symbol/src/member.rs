@@ -5,12 +5,12 @@ use std::sync::Arc;
 use flexstr::SharedStr;
 use pernixc_extend::extend;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_query::Value;
+use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::ID;
+use crate::{kind::get_kind, ID};
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(
@@ -66,12 +66,11 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     }
 }
 
-/*
 /// Tries retrieve the member component of the given symbol ID (if has).
 #[extend]
 pub fn try_get_members(
     self: &TrackedEngine<'_>,
-    id: Global<symbol::ID>,
+    id: Global<ID>,
 ) -> Option<Arc<Member>> {
     let symbol_kind = self.get_kind(id);
     if !symbol_kind.has_member() {
@@ -80,6 +79,8 @@ pub fn try_get_members(
 
     Some(self.query(&Key(id)).expect("should have no cyclic dependencies"))
 }
+
+/*
 
 /// Retrieves the next member of a symbol that is accessed by using the
 /// `::name` syntax. This function doesn't check if the member is

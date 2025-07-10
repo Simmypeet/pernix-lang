@@ -1,6 +1,6 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: assert_string
+expression: clean_run
 ---
 stderr:
 error: symbol `First` is already defined in the scope `main`
@@ -78,6 +78,8 @@ error: symbol `Second` is already defined in the scope `main::RedefinitionInEnum
 37 │     First(int32)
 38 │     Second(int32)
    │     ^^^^^^ redefinition here
+
+error: Compilation aborted due to 9 error(s)
 
 
 
