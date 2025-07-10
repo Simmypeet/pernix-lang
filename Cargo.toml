@@ -59,7 +59,7 @@ derive-new = "0.7.0"
 memmap2 = "0.9.3"
 ouroboros = "0.18.0"
 take_mut = "0.2.2"
-rayon = "1.8.0"
+rayon = { version="1.8.0"}
 clap = { version = "4.4.0", features = ["derive"] }
 bitflags = "2.4.1"
 drain_filter_polyfill = "0.1.3"

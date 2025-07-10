@@ -11,7 +11,7 @@ use std::{
     },
 };
 
-use dashmap::{rayon::read_only, DashMap, DashSet};
+use dashmap::{DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
 use parking_lot::{Condvar, Mutex};
 use pernixc_serialize::{Deserialize, Serialize};
@@ -853,73 +853,68 @@ impl Engine {
                     // if the query is a part of SCC, always recompute
                     true
                 } else {
-                    rayon::scope(|s| {
-                        for x in re_verify.derived_metadata.dependencies.iter()
+                    // Sadly, rayon thread pool is not applicable as it could
+                    // cause thread pool starvation deadlocks.
+                    for x in re_verify.derived_metadata.dependencies.iter() {
+                        tracing::debug!(
+                            "Start re-verifying dependency `{}` `{:?} for \
+                             `{}` `{key:?}`",
+                            x.0.type_name(),
+                            x.0,
+                            key.type_name(),
+                        );
+
+                        let dep_ref = &*x.0;
+                        let type_id = dep_ref.any().type_id();
+
+                        // if the dependency is an input, skip
+                        // re-verification
+                        if self
+                            .database
+                            .query_states_by_key
+                            .get(x.key())
+                            .is_some_and(|x| {
+                                x.as_completion()
+                                    .is_some_and(|x| x.metadata.is_input())
+                            })
                         {
-                            (s.spawn(move |_| {
-                                tracing::debug!(
-                                    "Start re-verifying dependency `{}` `{:?} \
-                                     for `{}` `{key:?}`",
-                                    x.0.type_name(),
-                                    x.0,
-                                    key.type_name(),
-                                );
-
-                                let dep_ref = &*x.0;
-                                let type_id = dep_ref.any().type_id();
-
-                                // if the dependency is an input, skip
-                                // re-verification
-                                if self
-                                    .database
-                                    .query_states_by_key
-                                    .get(x.key())
-                                    .is_some_and(|x| {
-                                        x.as_completion().is_some_and(|x| {
-                                            x.metadata.is_input()
-                                        })
-                                    })
-                                {
-                                    tracing::debug!(
-                                        "Re-verification completed dependency \
-                                         `{}` `{:?} for `{}` `{key:?}`",
-                                        dep_ref.type_name(),
-                                        dep_ref,
-                                        key.type_name(),
-                                    );
-                                    return;
-                                }
-
-                                let re_verify_query = self
-                                    .runtime
-                                    .executor
-                                    .get_entry_with_id(type_id)
-                                    .unwrap_or_else(|| {
-                                        panic!(
-                                            "No executor registered for key \
-                                             type `{}`",
-                                            dep_ref.type_name()
-                                        )
-                                    })
-                                    .get_re_verify_query();
-
-                                let _ = (re_verify_query)(
-                                    self,
-                                    dep_ref.any(),
-                                    current_version,
-                                    key as &dyn Dynamic,
-                                );
-
-                                tracing::debug!(
-                                    "Re-verification completed dependency \
-                                     `{}` `{:?} for `{}` `{key:?}`",
-                                    dep_ref.type_name(),
-                                    dep_ref,
-                                    key.type_name(),
-                                );
-                            }));
+                            tracing::debug!(
+                                "Re-verification completed dependency `{}` \
+                                 `{:?} for `{}` `{key:?}`",
+                                dep_ref.type_name(),
+                                dep_ref,
+                                key.type_name(),
+                            );
+                            continue;
                         }
-                    });
+
+                        let re_verify_query = self
+                            .runtime
+                            .executor
+                            .get_entry_with_id(type_id)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "No executor registered for key type `{}`",
+                                    dep_ref.type_name()
+                                )
+                            })
+                            .get_re_verify_query();
+
+                        let _ = (re_verify_query)(
+                            self,
+                            dep_ref.any(),
+                            current_version,
+                            key as &dyn Dynamic,
+                        );
+
+                        tracing::debug!(
+                            "Re-verification completed dependency `{}` `{:?} \
+                             for `{}` `{key:?}`",
+                            dep_ref.type_name(),
+                            dep_ref,
+                            key.type_name(),
+                        );
+                    }
 
                     // if any of the dependencies has been updated,
                     // we need to recompute the query
@@ -1299,12 +1294,12 @@ pub(super) trait Value:
 
 impl<T: Any + Send + Sync + std::fmt::Debug + 'static> Value for T {}
 
-// impl Drop for Database {
-//     fn drop(&mut self) {
-//         let map = std::mem::take(&mut self.query_states_by_key);
-//         map.into_par_iter().for_each(drop); // parallel drop the entries
-//     }
-// }
+impl Drop for Database {
+    fn drop(&mut self) {
+        let map = std::mem::take(&mut self.query_states_by_key);
+        map.into_par_iter().for_each(drop); // parallel drop the entries
+    }
+}
 
 #[cfg(test)]
 mod test;

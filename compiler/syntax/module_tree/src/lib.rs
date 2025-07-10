@@ -31,9 +31,6 @@ use pernixc_source_file::{GlobalSourceID, LocalSourceID, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
 use pernixc_target::{get_invocation_arguments, TargetID};
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
 
 use crate::{
     load_source_file::LoadSourceFileError, syntax_tree::ModuleContent,
@@ -438,13 +435,11 @@ impl Context<'_> {
             };
         };
 
-        let next_submodules = RwLock::new(Vec::new());
-
         // generate a parallel processes to parse files
-        rayon::scope(|scope| {
-            let next_submodules = &next_submodules;
+        let submodules_by_name = std::thread::scope(|scope| {
+            let mut join_handles = Vec::new();
 
-            for (index, member) in content.members().enumerate() {
+            for member in content.members() {
                 let Passable::Line(
                     pernixc_syntax::item::module::Member::Module(submodule),
                 ) = member
@@ -467,7 +462,7 @@ impl Context<'_> {
                     .chain(std::iter::once(next_name.clone()))
                     .collect::<Vec<_>>();
 
-                scope.spawn(move |_| {
+                join_handles.push(scope.spawn(move || {
                     // Found inline module content, take the content right away
                     if let Some(member) = submodule.inline_body() {
                         let next_submodule = self.branch_module_tree(
@@ -478,11 +473,7 @@ impl Context<'_> {
                             &next_name_space,
                         );
 
-                        next_submodules.write().push((
-                            index,
-                            next_name,
-                            next_submodule,
-                        ));
+                        Some((next_name, next_submodule))
                     }
                     // Otherwise, open a file and parse it
                     else {
@@ -506,7 +497,7 @@ impl Context<'_> {
                                     load_path: path.clone(),
                                 },
                             ));
-                            return;
+                            return None;
                         }
 
                         let (content, source_id) = match parse_module_tree(
@@ -526,7 +517,7 @@ impl Context<'_> {
                                         },
                                     ),
                                 );
-                                return;
+                                return None;
                             }
                         };
 
@@ -538,46 +529,43 @@ impl Context<'_> {
                             &next_name_space,
                         );
 
-                        next_submodules.write().push((
-                            index,
-                            next_name,
-                            next_submodule,
+                        Some((next_name, next_submodule))
+                    }
+                }));
+            }
+
+            let mut submodules_by_name =
+                HashMap::<SharedStr, ModuleTree>::default();
+
+            for (name, module_tree) in join_handles
+                .into_iter()
+                .filter_map(|x| x.join().unwrap())
+                .map(|x| (x.0, x.1))
+            {
+                match submodules_by_name.entry(name) {
+                    Entry::Occupied(occupied_entry) => {
+                        self.handler.receive(Error::ModuleRedefinition(
+                            ModuleRedefinition {
+                                existing_module_span: occupied_entry
+                                    .get()
+                                    .signature
+                                    .as_ref()
+                                    .map(|x| x.inner_tree().span()),
+                                redefinition_submodule_span: module_tree
+                                    .signature
+                                    .as_ref()
+                                    .map(|x| x.inner_tree().span()),
+                            },
                         ));
                     }
-                });
+                    Entry::Vacant(vacant_entry) => {
+                        vacant_entry.insert(module_tree);
+                    }
+                }
             }
+
+            submodules_by_name
         });
-
-        let mut next_submodules = next_submodules.into_inner();
-        next_submodules.sort_by_key(|x| x.0);
-
-        let mut submodules_by_name =
-            HashMap::<SharedStr, ModuleTree>::default();
-
-        for (name, module_tree) in
-            next_submodules.into_iter().map(|x| (x.1, x.2))
-        {
-            match submodules_by_name.entry(name) {
-                Entry::Occupied(occupied_entry) => {
-                    self.handler.receive(Error::ModuleRedefinition(
-                        ModuleRedefinition {
-                            existing_module_span: occupied_entry
-                                .get()
-                                .signature
-                                .as_ref()
-                                .map(|x| x.inner_tree().span()),
-                            redefinition_submodule_span: module_tree
-                                .signature
-                                .as_ref()
-                                .map(|x| x.inner_tree().span()),
-                        },
-                    ));
-                }
-                Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(module_tree);
-                }
-            }
-        }
 
         ModuleTree {
             signature,
