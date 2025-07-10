@@ -28,8 +28,11 @@ use std::{
     mem::Discriminant,
 };
 
+pub use siphasher::sip128::SipHasher as Sip128Hasher;
+
 extern crate self as pernixc_stable_hash;
 pub use pernixc_stable_hash_derive::StableHash;
+use siphasher::sip128::Hasher128;
 
 #[doc(hidden)]
 pub mod __internal {}
@@ -355,237 +358,6 @@ impl Value for u128 {
 
 impl Value for usize {
     fn wrapping_add(self, other: Self) -> Self { self.wrapping_add(other) }
-}
-
-/// A stable hash function implementation based on the `SipHash` algorithm.
-///
-/// `StableSipHasher` provides a concrete implementation of the [`StableHasher`]
-/// trait using a modified version of the `SipHash` algorithm. Unlike the
-/// standard library's hasher, this implementation uses fixed keys to ensure
-/// consistent hash values across different program runs.
-///
-/// The hasher produces 128-bit hash values and is designed to be
-/// cryptographically secure while maintaining excellent performance
-/// characteristics.
-///
-/// ## Features
-///
-/// - **Deterministic**: Always produces the same hash for the same input
-/// - **Fast**: Optimized for performance with minimal overhead
-/// - **Secure**: Based on the cryptographically secure `SipHash` algorithm
-/// - **Cross-platform**: Consistent results across different architectures
-///
-/// ## Example
-///
-/// ```rust
-/// use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
-///
-/// let mut hasher = StableSipHasher::new();
-/// "hello world".stable_hash(&mut hasher);
-/// let hash = hasher.finish();
-/// println!("Hash: {:x}", hash);
-/// ```
-#[derive(Clone, Copy, Debug)]
-pub struct StableSipHasher {
-    v0: u64,
-    v1: u64,
-    v2: u64,
-    v3: u64,
-    tail: u64,
-    ntail: usize,
-    processed: usize,
-}
-
-impl StableSipHasher {
-    /// Creates a new `StableSipHasher` with default keys.
-    ///
-    /// This constructor uses fixed, predetermined keys to ensure that hash
-    /// values are consistent across different program runs. The default keys
-    /// are chosen to provide good hash distribution while maintaining
-    /// stability.
-    ///
-    /// # Returns
-    ///
-    /// A new `StableSipHasher` instance ready for use
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use pernixc_stable_hash::{StableHasher, StableSipHasher};
-    ///
-    /// let mut hasher = StableSipHasher::new();
-    /// hasher.write_u32(42);
-    /// let hash = hasher.finish();
-    /// ```
-    #[must_use]
-    pub const fn new() -> Self {
-        Self::new_with_keys(0x736f_6d65_7073_6575, 0x646f_7261_6e64_6f6d)
-    }
-
-    /// Creates a new `StableSipHasher` with custom keys.
-    ///
-    /// This constructor allows you to specify custom keys for the hasher.
-    /// Different keys will produce different hash values for the same input,
-    /// but the same keys will always produce consistent results.
-    ///
-    /// # Arguments
-    ///
-    /// * `key0` - The first 64-bit key for the hash function
-    /// * `key1` - The second 64-bit key for the hash function
-    ///
-    /// # Returns
-    ///
-    /// A new `StableSipHasher` instance initialized with the provided keys
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use pernixc_stable_hash::{StableHasher, StableSipHasher};
-    ///
-    /// let mut hasher = StableSipHasher::new_with_keys(
-    ///     0x1234_5678_9abc_def0,
-    ///     0xfedc_ba98_7654_3210,
-    /// );
-    /// hasher.write_str("test");
-    /// let hash = hasher.finish();
-    /// ```
-    #[must_use]
-    pub const fn new_with_keys(key0: u64, key1: u64) -> Self {
-        let mut hasher = Self {
-            v0: key0 ^ 0x736f_6d65_7073_6575,
-            v1: key1 ^ 0x646f_7261_6e64_6f6d,
-            v2: key0 ^ 0x6c79_6765_6e65_7261,
-            v3: key1 ^ 0x7465_6462_7974_6573,
-            tail: 0,
-            ntail: 0,
-            processed: 0,
-        };
-
-        hasher.v1 ^= 0xee;
-
-        hasher
-    }
-
-    const fn new_sub_hasher() -> Self {
-        Self::new_with_keys(0x0123_4567_89ab_cdef, 0xfedc_ba98_7654_3210)
-    }
-
-    #[inline]
-    const fn sipround(&mut self) {
-        self.v0 = self.v0.wrapping_add(self.v1);
-        self.v1 = self.v1.rotate_left(13);
-        self.v1 ^= self.v0;
-        self.v0 = self.v0.rotate_left(32);
-
-        self.v2 = self.v2.wrapping_add(self.v3);
-        self.v3 = self.v3.rotate_left(16);
-        self.v3 ^= self.v2;
-
-        self.v0 = self.v0.wrapping_add(self.v3);
-        self.v3 = self.v3.rotate_left(21);
-        self.v3 ^= self.v0;
-
-        self.v2 = self.v2.wrapping_add(self.v1);
-        self.v1 = self.v1.rotate_left(17);
-        self.v1 ^= self.v2;
-        self.v2 = self.v2.rotate_left(32);
-    }
-
-    #[inline]
-    const fn process_block(&mut self, block: u64) {
-        self.v3 ^= block;
-
-        self.sipround();
-        self.sipround();
-
-        self.v0 ^= block;
-    }
-
-    fn finish_128(&self) -> u128 {
-        let mut hasher = *self;
-
-        let mut tail = hasher.tail;
-        tail |= (hasher.processed.wrapping_add(hasher.ntail) as u64) << 56;
-
-        hasher.process_block(tail);
-
-        hasher.v2 ^= 0xff;
-
-        hasher.sipround();
-        hasher.sipround();
-        hasher.sipround();
-        hasher.sipround();
-
-        let first_half = hasher.v0 ^ hasher.v1 ^ hasher.v2 ^ hasher.v3;
-
-        hasher.v1 ^= 0xdd;
-
-        hasher.sipround();
-        hasher.sipround();
-        hasher.sipround();
-        hasher.sipround();
-
-        let second_half = hasher.v0 ^ hasher.v1 ^ hasher.v2 ^ hasher.v3;
-
-        (u128::from(second_half) << 64) | u128::from(first_half)
-    }
-}
-
-impl Default for StableSipHasher {
-    fn default() -> Self { Self::new() }
-}
-
-impl StableHasher for StableSipHasher {
-    type Hash = u128;
-
-    fn finish(&self) -> u128 { self.finish_128() }
-
-    fn write(&mut self, bytes: &[u8]) {
-        let mut bytes = bytes;
-
-        if self.ntail > 0 {
-            let needed = 8 - self.ntail;
-            let available = bytes.len().min(needed);
-
-            for &byte in &bytes[..available] {
-                self.tail |= u64::from(byte) << (8 * self.ntail);
-                self.ntail += 1;
-            }
-
-            if self.ntail == 8 {
-                self.process_block(self.tail);
-                self.processed = self.processed.wrapping_add(8);
-                self.tail = 0;
-                self.ntail = 0;
-            }
-
-            bytes = &bytes[available..];
-        }
-
-        while bytes.len() >= 8 {
-            let block = u64::from_le_bytes([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
-                bytes[6], bytes[7],
-            ]);
-            self.process_block(block);
-            self.processed = self.processed.wrapping_add(8);
-            bytes = &bytes[8..];
-        }
-
-        for (i, &byte) in bytes.iter().enumerate() {
-            self.tail |= u64::from(byte) << (8 * i);
-        }
-        self.ntail = bytes.len();
-    }
-
-    fn sub_hash(
-        &self,
-        f: &mut dyn FnMut(&mut dyn StableHasher<Hash = Self::Hash>),
-    ) -> Self::Hash {
-        let mut sub_hasher = Self::new_sub_hasher();
-        f(&mut sub_hasher);
-        sub_hasher.finish()
-    }
 }
 
 impl StableHash for u8 {
@@ -1157,6 +929,23 @@ impl<T> StableHash for Discriminant<T> {
 
 impl<T> StableHash for std::marker::PhantomData<T> {
     fn stable_hash<H: StableHasher + ?Sized>(&self, _state: &mut H) {}
+}
+
+impl StableHasher for siphasher::sip128::SipHasher {
+    type Hash = u128;
+
+    fn finish(&self) -> Self::Hash { self.finish128().into() }
+
+    fn write(&mut self, bytes: &[u8]) { self.hash(bytes); }
+
+    fn sub_hash(
+        &self,
+        f: &mut dyn FnMut(&mut dyn StableHasher<Hash = Self::Hash>),
+    ) -> Self::Hash {
+        let mut sub_hasher = *self;
+        f(&mut sub_hasher);
+        sub_hasher.finish128().into()
+    }
 }
 
 #[cfg(test)]

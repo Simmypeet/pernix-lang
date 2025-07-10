@@ -961,8 +961,8 @@ impl Engine {
                             .is_none_or(|x| Some(x) != new_fingerprint)
                         {
                             tracing::debug!(
-                                "Re-computed value for `{}` with a new \
-                                 fingerprint: {:?} -> {:?}",
+                                "Value fingerprint updated for `{}` `{key:?}` \
+                                 with a new fingerprint: {:?} -> {:?}",
                                 key.type_name(),
                                 re_verify
                                     .derived_metadata

@@ -58,8 +58,8 @@ impl StableHash for SourceFile {
         &self,
         state: &mut H,
     ) {
-        let file_content_hash = file_content_hash(&self.content, state);
-        file_content_hash.stable_hash(state);
+        let hash = file_content_hash(self.content(), state);
+        hash.stable_hash(state);
 
         self.path.stable_hash(state);
     }

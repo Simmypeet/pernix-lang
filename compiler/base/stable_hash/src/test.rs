@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn write_f32_nan_normalization() {
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     hasher1.write_f32(f32::NAN);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     hasher2.write_f32(f32::from_bits(0x7fc0_0001)); // A different NaN representation
     let hash2 = hasher2.finish();
 
@@ -16,11 +16,11 @@ fn write_f32_nan_normalization() {
 
 #[test]
 fn write_f64_nan_normalization() {
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     hasher1.write_f64(f64::NAN);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     hasher2.write_f64(f64::from_bits(0x7ff8_0000_0000_0001)); // A different NaN representation
     let hash2 = hasher2.finish();
 
@@ -30,7 +30,7 @@ fn write_f64_nan_normalization() {
 
 #[test]
 fn sub_hash() {
-    let hasher = StableSipHasher::new();
+    let hasher = Sip128Hasher::new();
 
     let sub_hash = hasher.sub_hash(&mut |sub| {
         sub.write_u32(42);
@@ -60,11 +60,11 @@ fn stable_hash_hashmap() {
     map2.insert("key2", "value2");
     map2.insert("key1", "value1");
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     map1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     map2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
@@ -84,11 +84,11 @@ fn stable_hash_hashset() {
     set2.insert("item2");
     set2.insert("item1");
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     set1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     set2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
@@ -108,11 +108,11 @@ fn stable_hash_btreemap() {
     map2.insert("key2", "value2");
     map2.insert("key1", "value1");
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     map1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     map2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
@@ -132,11 +132,11 @@ fn stable_hash_btreeset() {
     set2.insert("item2");
     set2.insert("item1");
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     set1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     set2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
@@ -150,15 +150,15 @@ fn stable_hash_references() {
     let ref_value = &value;
     let mut_ref_value = &mut 42u32;
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     value.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     ref_value.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     mut_ref_value.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
@@ -171,11 +171,11 @@ fn stable_hash_references() {
 fn large_data_handling() {
     let large_data = vec![0u8; 10000];
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     hasher1.write(&large_data);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     // Write in chunks
     for chunk in large_data.chunks(1000) {
         hasher2.write(chunk);
@@ -257,11 +257,11 @@ fn derive_unit_struct() {
     let s1 = UnitStruct;
     let s2 = UnitStruct;
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     s1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     s2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
@@ -274,15 +274,15 @@ fn derive_tuple_struct() {
     let s2 = TupleStruct(42, "test".to_string());
     let s3 = TupleStruct(43, "test".to_string());
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     s1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     s2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     s3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
@@ -296,15 +296,15 @@ fn derive_named_struct() {
     let s2 = NamedStruct { id: 1, name: "Alice".to_string(), active: true };
     let s3 = NamedStruct { id: 2, name: "Alice".to_string(), active: true };
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     s1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     s2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     s3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
@@ -318,15 +318,15 @@ fn derive_generic_struct() {
     let s2 = GenericStruct { first: 42u32, second: "test".to_string() };
     let s3 = GenericStruct { first: 43u32, second: "test".to_string() };
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     s1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     s2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     s3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
@@ -349,15 +349,15 @@ fn derive_nested_struct() {
     let s3 =
         NestedStruct { point: (10, 20), values: vec![1, 2, 3], optional: None };
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     s1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     s2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     s3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
@@ -371,15 +371,15 @@ fn derive_simple_enum() {
     let e2 = SimpleEnum::A;
     let e3 = SimpleEnum::B;
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     e1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     e2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     e3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
@@ -394,19 +394,19 @@ fn derive_tuple_enum() {
     let e3 = TupleEnum::Variant1(43);
     let e4 = TupleEnum::Variant2("test".to_string(), true);
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     e1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     e2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     e3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
-    let mut hasher4 = StableSipHasher::new();
+    let mut hasher4 = Sip128Hasher::new();
     e4.stable_hash(&mut hasher4);
     let hash4 = hasher4.finish();
 
@@ -422,19 +422,19 @@ fn derive_struct_enum() {
     let e3 = StructEnum::Variant1 { x: 11, y: 20 };
     let e4 = StructEnum::Unit;
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     e1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     e2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     e3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
-    let mut hasher4 = StableSipHasher::new();
+    let mut hasher4 = Sip128Hasher::new();
     e4.stable_hash(&mut hasher4);
     let hash4 = hasher4.finish();
 
@@ -450,19 +450,19 @@ fn derive_generic_enum() {
     let e3 = GenericEnum::Some(43u32);
     let e4 = GenericEnum::<u32>::None;
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     e1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     e2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     e3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
-    let mut hasher4 = StableSipHasher::new();
+    let mut hasher4 = Sip128Hasher::new();
     e4.stable_hash(&mut hasher4);
     let hash4 = hasher4.finish();
 
@@ -478,19 +478,19 @@ fn derive_mixed_enum() {
     let e3 = MixedEnum::Tuple(42, "test".to_string());
     let e4 = MixedEnum::Struct { field: true };
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     e1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     e2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 
-    let mut hasher3 = StableSipHasher::new();
+    let mut hasher3 = Sip128Hasher::new();
     e3.stable_hash(&mut hasher3);
     let hash3 = hasher3.finish();
 
-    let mut hasher4 = StableSipHasher::new();
+    let mut hasher4 = Sip128Hasher::new();
     e4.stable_hash(&mut hasher4);
     let hash4 = hasher4.finish();
 
@@ -511,7 +511,7 @@ fn derive_deterministic_hashing() {
 
     let mut hashes = Vec::new();
     for _ in 0..10 {
-        let mut stable_hasher = StableSipHasher::new();
+        let mut stable_hasher = Sip128Hasher::new();
         data.stable_hash(&mut stable_hasher);
         hashes.push(stable_hasher.finish());
     }
@@ -554,11 +554,11 @@ fn derive_complex_nested_structure() {
         generic: GenericStruct { first: 42, second: "generic".to_string() },
     };
 
-    let mut hasher1 = StableSipHasher::new();
+    let mut hasher1 = Sip128Hasher::new();
     c1.stable_hash(&mut hasher1);
     let hash1 = hasher1.finish();
 
-    let mut hasher2 = StableSipHasher::new();
+    let mut hasher2 = Sip128Hasher::new();
     c2.stable_hash(&mut hasher2);
     let hash2 = hasher2.finish();
 

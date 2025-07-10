@@ -10,6 +10,7 @@ rust-version.workspace = true
 static_assertions = { workspace = true }
 dashmap = { workspace = true }
 flexstr = { workspace = true }
+siphasher = { workspace = true }
 pernixc_stable_hash_derive = { path = "../stable_hash_derive" }
 
 [lints]
