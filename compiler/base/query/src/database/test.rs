@@ -3,7 +3,8 @@ use std::sync::{
     Arc,
 };
 
-use pernixc_hash::HashMap;
+use dashmap::DashSet;
+use pernixc_hash::{HashMap, HashSet};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -1443,4 +1444,172 @@ fn always_reverify_impure() {
             .load(std::sync::atomic::Ordering::SeqCst),
         3
     ); // Double impure executor called again
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Key,
+    StableHash,
+)]
+#[value(Arc<[i32]>)]
+pub struct DependencyListKey;
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Key,
+    StableHash,
+)]
+#[value(i32)]
+#[always_reverify]
+pub struct DoubleKey(pub i32);
+
+#[derive(Debug, Default)]
+pub struct DoubleKeyExecutor {
+    pub executed: DashSet<i32>,
+}
+
+impl Executor<DoubleKey> for DoubleKeyExecutor {
+    fn execute(
+        &self,
+        _engine: &TrackedEngine,
+        key: &DoubleKey,
+    ) -> Result<i32, CyclicError> {
+        // Simulate some computation
+        let value = key.0 * 2;
+
+        // Track which keys have been executed
+        self.executed.insert(key.0);
+
+        Ok(value)
+    }
+}
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Key,
+    StableHash,
+)]
+#[value(i32)]
+pub struct DoubleAll;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct DoubleAllExecutor;
+
+impl Executor<DoubleAll> for DoubleAllExecutor {
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        _key: &DoubleAll,
+    ) -> Result<i32, CyclicError> {
+        // Query the DependencyListKey to get the list of dependencies
+        let dependencies = engine.query(&DependencyListKey)?;
+        let mut total = 0;
+
+        for &value in dependencies.iter() {
+            // For each dependency, query the DoubleKey executor
+            let double_value = engine.query(&DoubleKey(value))?;
+            total += double_value;
+        }
+
+        Ok(total)
+    }
+}
+
+#[test]
+fn reverify_change_dependencies() {
+    let mut engine = Engine::default();
+
+    // Register the executors
+    let double_key_executor = Arc::new(DoubleKeyExecutor::default());
+    let double_all_executor = Arc::new(DoubleAllExecutor);
+
+    engine.runtime.executor.register(Arc::clone(&double_key_executor));
+    engine.runtime.executor.register(Arc::clone(&double_all_executor));
+
+    engine.input_session(|x| {
+        // Set initial dependencies
+        x.set_input(DependencyListKey, Arc::new([1, 2, 3, 4]));
+    });
+
+    // Query DoubleAll, which should compute the sum of double values
+    let result = engine.tracked().query(&DoubleAll).unwrap();
+    assert_eq!(result, 20); // (1*2) + (2*2) + (3*2) + (4*2) = 20
+
+    // Check that the DoubleKey executor was called for each dependency
+    assert_eq!(
+        double_key_executor
+            .executed
+            .iter()
+            .map(|x| *x.key())
+            .collect::<HashSet<_>>(),
+        [1, 2, 3, 4].into_iter().collect()
+    );
+
+    // Reset the executed set for the next test
+    double_key_executor.executed.clear();
+
+    // Change the dependencies to a new set
+    engine.input_session(|x| {
+        x.set_input(DependencyListKey, Arc::new([5, 6, 7]));
+    });
+
+    // Query DoubleAll again, which should now compute the new dependencies
+    let result = engine.tracked().query(&DoubleAll).unwrap();
+    assert_eq!(result, 36); // (5*2) + (6*2) + (7*2) = 36
+
+    // Check that the DoubleKey executor was called for the new dependencies
+    assert_eq!(
+        double_key_executor
+            .executed
+            .iter()
+            .map(|x| *x.key())
+            .collect::<HashSet<_>>(),
+        // 1, 2, 3, 4 were included here because of the reverify
+        [1, 2, 3, 4, 5, 6, 7].into_iter().collect()
+    );
+
+    double_key_executor.executed.clear();
+
+    // increment the version to force re-verification for `always_reverify`
+    engine.increment_version();
+
+    // Query DoubleAll again, which should recompute the dependencies
+    let result = engine.tracked().query(&DoubleAll).unwrap();
+
+    assert_eq!(result, 36); // Should still return 36 since dependencies didn't change
+
+    // Check that the DoubleKey executor was called again for the new
+    // dependencies
+    assert_eq!(
+        double_key_executor
+            .executed
+            .iter()
+            .map(|x| *x.key())
+            .collect::<HashSet<_>>(),
+        [5, 6, 7].into_iter().collect()
+    ); // Only the new dependencies should be executed
 }
