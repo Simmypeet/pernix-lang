@@ -7,7 +7,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::symbol;
+use crate::ID;
 
 /// An enumeration used to identify the kind of a symbol in the Pernix. This
 /// value should be set to every symbol that is defined in the compilation
@@ -28,7 +28,7 @@ use crate::symbol;
     Value,
 )]
 #[allow(missing_docs)]
-#[id(Global<symbol::ID>)]
+#[id(Global<ID>)]
 #[extend(method(get_kind), no_cyclic)]
 pub enum Kind {
     #[default]

@@ -1,20 +1,11 @@
 //! Contains the definition of tyhe [`Accessibility`] enum.
 
 use enum_as_inner::EnumAsInner;
-use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
-use crate::{
-    implements::get_implements,
-    kind::{get_kind, Kind},
-    parent::{
-        get_closest_module_id, get_parent, symbol_hierarchy_relationship,
-    },
-    symbol, HierarchyRelationship,
-};
+use crate::ID;
 
 /// The key type used with [`TrackedEngine`] to access the accessibility of a
 /// symbol.
@@ -32,8 +23,8 @@ use crate::{
     pernixc_query::Key,
     StableHash,
 )]
-#[value(Accessibility<symbol::ID>)]
-pub struct Key(pub Global<symbol::ID>);
+#[value(Accessibility<ID>)]
+pub struct Key(pub Global<ID>);
 
 /// The accessibility defined to a symbol
 #[derive(
@@ -60,13 +51,10 @@ pub enum Accessibility<ID> {
     Scoped(ID),
 }
 
-impl Accessibility<symbol::ID> {
+impl Accessibility<ID> {
     /// Converts the accessibility into a [`Accessibility<Global<ID>>`].
     #[must_use]
-    pub fn into_global(
-        self,
-        target_id: TargetID,
-    ) -> Accessibility<Global<symbol::ID>> {
+    pub fn into_global(self, target_id: TargetID) -> Accessibility<Global<ID>> {
         match self {
             Self::Public => Accessibility::Public,
             Self::Scoped(id) => {
@@ -75,6 +63,8 @@ impl Accessibility<symbol::ID> {
         }
     }
 }
+
+/*
 /// Computes the [`HierarchyRelationship`] between the two given
 /// accessibilities.
 ///
@@ -195,3 +185,4 @@ pub fn is_accessible_from(
         }
     }
 }
+*/

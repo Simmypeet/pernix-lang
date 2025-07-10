@@ -1,23 +1,11 @@
 //! Defines the [`Name`] type.
 use flexstr::SharedStr;
 use pernixc_extend::extend;
-use pernixc_handler::Handler;
-use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_syntax::{Identifier, SimplePath, SimplePathRoot};
 use pernixc_target::Global;
 
-use crate::{
-    accessibility::symbol_accessible,
-    diagnostic::{Diagnostic, SymbolIsNotAccessible, SymbolNotFound},
-    import::get_imports,
-    kind::get_kind as _,
-    member::{get_member_of, get_members},
-    parent::{get_closest_module_id, get_parent},
-    symbol::{self, ID},
-    target::{get_target, get_target_map},
-};
+use crate::ID;
 
 /// A simple name identifier given to a symbol.
 #[derive(
@@ -37,8 +25,9 @@ use crate::{
 )]
 #[value(SharedStr)]
 #[extend(method(get_name), no_cyclic)]
-pub struct Key(pub Global<symbol::ID>);
+pub struct Key(pub Global<ID>);
 
+/*
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
 pub fn get_qualified_name(
@@ -229,3 +218,4 @@ pub fn resolve_sequence<'a>(
 
     Some(lastest_resolution)
 }
+*/

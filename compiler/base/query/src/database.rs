@@ -1033,33 +1033,69 @@ impl Engine {
                             return_value,
                             false,
                             |result| {
-                                debug_assert_eq!(
-                                    result.ok().map(|x| {
-                                        fingerprint::fingerprint(x)
-                                    }),
+                                let new_fingerprint =
+                                    result.ok().map(fingerprint::fingerprint);
+                                if new_fingerprint
+                                    != re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .fingerprint
+                                {
+                                    tracing::debug!(
+                                        "Value fingerprint updated for `{}` \
+                                         `{key:?}` with a new fingerprint: \
+                                         {:?} -> {:?}",
+                                        key.type_name(),
+                                        re_verify
+                                            .derived_metadata
+                                            .version_info
+                                            .fingerprint,
+                                        new_fingerprint
+                                    );
+
                                     re_verify
                                         .derived_metadata
                                         .version_info
-                                        .fingerprint,
-                                    "The fingerprint of the re-executed value \
-                                     should match the old one"
-                                );
+                                        .fingerprint = new_fingerprint;
+                                    re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .updated_at = current_version;
+                                }
 
                                 (re_verify.derived_metadata, false)
                             },
                         ),
                         None => self.compute(key, true, |value, _| {
-                            debug_assert_eq!(
-                                value
-                                    .ok()
-                                    .map(|x| { fingerprint::fingerprint(x) }),
+                            let new_fingerprint =
+                                value.ok().map(fingerprint::fingerprint);
+                            if new_fingerprint
+                                != re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .fingerprint
+                            {
+                                tracing::debug!(
+                                    "Value fingerprint updated for `{}` \
+                                     `{key:?}` with a new fingerprint: {:?} \
+                                     -> {:?}",
+                                    key.type_name(),
+                                    re_verify
+                                        .derived_metadata
+                                        .version_info
+                                        .fingerprint,
+                                    new_fingerprint
+                                );
+
                                 re_verify
                                     .derived_metadata
                                     .version_info
-                                    .fingerprint,
-                                "The fingerprint of the re-executed value \
-                                 should match the old one"
-                            );
+                                    .fingerprint = new_fingerprint;
+                                re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .updated_at = current_version;
+                            }
 
                             (re_verify.derived_metadata, false)
                         }),
@@ -1080,19 +1116,34 @@ impl Engine {
                     None
                 }
             }
-            Continuation::ReExecute(re_execute) => {
+            Continuation::ReExecute(mut re_execute) => {
                 tracing::debug!(
                     "Re-executing query for `{}` `{key:?}` with metadata: {:?}",
                     key.type_name(),
                     re_execute.derived_metadata
                 );
                 self.compute(key, return_value, |result, _| {
-                    debug_assert_eq!(
-                        result.ok().map(|x| { fingerprint::fingerprint(x) }),
-                        re_execute.derived_metadata.version_info.fingerprint,
-                        "The fingerprint of the re-executed value should \
-                         match the old one"
-                    );
+                    let new_fingerprint =
+                        result.ok().map(fingerprint::fingerprint);
+                    if new_fingerprint
+                        != re_execute.derived_metadata.version_info.fingerprint
+                    {
+                        tracing::debug!(
+                            "Value fingerprint updated for `{}` `{key:?}` \
+                             with a new fingerprint: {:?} -> {:?}",
+                            key.type_name(),
+                            re_execute
+                                .derived_metadata
+                                .version_info
+                                .fingerprint,
+                            new_fingerprint
+                        );
+
+                        re_execute.derived_metadata.version_info.fingerprint =
+                            new_fingerprint;
+                        re_execute.derived_metadata.version_info.updated_at =
+                            current_version;
+                    }
 
                     (re_execute.derived_metadata, false)
                 })

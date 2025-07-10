@@ -1,0 +1,27 @@
+[package]
+name = "pernixc_symbol"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_serialize = { path = "../../base/serialize" }
+pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_module_tree = { path = "../../syntax/module_tree" }
+pernixc_target = { path = "../../base/target" }
+pernixc_query = { path = "../../base/query" }
+pernixc_extend = { path = "../../base/extend" }
+pernixc_handler = { path = "../../base/handler" }
+pernixc_syntax = { path = "../../syntax/syntax" }
+pernixc_hash = { path = "../../base/hash" }
+siphasher = { workspace = true }
+parking_lot = { workspace = true }
+flexstr = { workspace = true }
+enum-as-inner = { workspace = true }
+dashmap = { workspace = true }
+
+
+[lints]
+workspace = true

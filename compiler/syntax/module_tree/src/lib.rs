@@ -376,6 +376,7 @@ pub struct Parse {
     pernixc_query::Key,
 )]
 #[value(Result<Parse, LoadSourceFileError>)]
+#[extend(method(get_module_tree), no_cyclic)]
 pub struct Key(pub TargetID);
 
 /// An executor for parsing a module tree for a compilation target.

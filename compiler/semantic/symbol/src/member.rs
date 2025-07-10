@@ -5,17 +5,12 @@ use std::sync::Arc;
 use flexstr::SharedStr;
 use pernixc_extend::extend;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_query::{TrackedEngine, Value};
+use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{
-    implemented::get_implemented,
-    import::get_imports,
-    kind::{get_kind, Kind},
-    symbol,
-};
+use crate::ID;
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(
@@ -29,7 +24,7 @@ use crate::{
     Value,
     StableHash,
 )]
-#[id(Global<symbol::ID>)]
+#[id(Global<ID>)]
 #[value(Arc<Member>)]
 #[extend(method(get_members), no_cyclic)]
 pub struct Member {
@@ -37,12 +32,13 @@ pub struct Member {
     ///
     /// In case of the redefinition, the firs encounter is recorded in this
     /// map. The redefinition is recorded in the [`Self::redefinitions`] field.
-    pub member_ids_by_name: HashMap<SharedStr, symbol::ID>,
+    pub member_ids_by_name: HashMap<SharedStr, ID>,
 
     /// A set of redefinitions of the members of this symbol.
-    pub redefinitions: HashSet<symbol::ID>,
+    pub redefinitions: HashSet<ID>,
 }
 
+/*
 /// Tries retrieve the member component of the given symbol ID (if has).
 #[extend]
 pub fn try_get_members(
@@ -101,3 +97,4 @@ pub fn get_member_of(
         _ => None,
     }
 }
+*/

@@ -14,3 +14,7 @@ pub type DashMap<T, V> = dashmap::DashMap<T, V, fnv::FnvBuildHasher>;
 
 /// A type alias for a dash set that uses the `fnv` hash function.
 pub type DashSet<T> = dashmap::DashSet<T, fnv::FnvBuildHasher>;
+
+/// A type alias for a read-only view of a dash map that uses the `fnv` hash
+/// function.
+pub type ReadOnlyView<K, V> = dashmap::ReadOnlyView<K, V, fnv::FnvBuildHasher>;

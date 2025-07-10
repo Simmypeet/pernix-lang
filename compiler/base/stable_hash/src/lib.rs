@@ -9,7 +9,7 @@
 //!
 //! - [`StableHash`] trait: Defines how types can be hashed in a stable manner
 //! - [`StableHasher`] trait: Defines the interface for stable hash functions
-//! - [`StableSipHasher`] struct: A concrete implementation using the `SipHash`
+//! - [`Sip128Hasher`] struct: A concrete implementation using the `SipHash`
 //!   algorithm
 //! - [`Value`] trait: Represents hash output values that can be combined
 //!

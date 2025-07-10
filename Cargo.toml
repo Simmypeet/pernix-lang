@@ -25,6 +25,8 @@ members = [
     "compiler/syntax/syntax",
     "compiler/syntax/module_tree",
 
+    "compiler/semantic/symbol",
+
     "compiler/driver",
     "compiler/main",
     "compiler/e2e",
