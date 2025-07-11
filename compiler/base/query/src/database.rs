@@ -77,7 +77,7 @@ pub(crate) struct DerivedVersionInfo {
 #[serde(ser_extension(DynamicSerialize<__S>), de_extension(DynamicDeserialize<__D>))]
 pub(crate) struct DerivedMetadata {
     version_info: DerivedVersionInfo,
-    dependencies: Vec<DynamicKey>,
+    dependencies: Arc<[DynamicKey]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,7 +86,7 @@ pub(crate) struct InputMetadata {
     updated_at: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, EnumAsInner)]
+#[derive(Debug, Clone, Serialize, Deserialize, EnumAsInner)]
 #[serde(ser_extension(DynamicSerialize<__S>), de_extension(DynamicDeserialize<__D>))]
 pub(crate) enum ValueMetadata {
     Derived(DerivedMetadata),
@@ -805,8 +805,8 @@ impl Engine {
             let any = &**value as &dyn Any;
 
             self.save_value::<K>(
-                metadata.version_info.fingerprint.unwrap(),
-                any.downcast_ref::<K::Value>().unwrap(),
+                Some(metadata.version_info.fingerprint.unwrap()),
+                any.downcast_ref::<K::Value>().unwrap().clone(),
             );
         }
 
@@ -815,7 +815,7 @@ impl Engine {
         if save_config.save_metadata {
             self.save_value_metadata::<K>(
                 fingerprint::fingerprint(key),
-                &final_metadata,
+                final_metadata.clone(),
             );
         }
 
@@ -848,7 +848,7 @@ impl Engine {
     ) -> bool {
         // Sadly, rayon thread pool is not applicable as it could
         // cause thread pool starvation deadlocks.
-        for x in &re_verify.derived_metadata.dependencies {
+        for x in re_verify.derived_metadata.dependencies.as_ref() {
             tracing::debug!(
                 "Start re-verifying dependency `{}` `{:?} for `{}` `{key:?}`",
                 x.0.type_name(),
@@ -932,7 +932,7 @@ impl Engine {
                                         .ok()
                                         .map(fingerprint::fingerprint),
                                 },
-                                dependencies: tracked_dependencies,
+                                dependencies: tracked_dependencies.into(),
                             },
                             true,
                         )
@@ -1015,7 +1015,7 @@ impl Engine {
                         );
 
                         re_verify.derived_metadata.dependencies =
-                            tracked_dependencies;
+                            tracked_dependencies.into();
 
                         (re_verify.derived_metadata, true)
                     })
@@ -1033,7 +1033,7 @@ impl Engine {
 
                             self.save_value_metadata::<K>(
                                 fingerprint::fingerprint(key),
-                                &final_metadata,
+                                final_metadata.clone(),
                             );
 
                             self.database.query_states_by_key.insert(
@@ -1144,7 +1144,7 @@ impl Engine {
                                         .updated_at = current_version;
 
                                     re_verify.derived_metadata.dependencies =
-                                        dependencies;
+                                        dependencies.into();
                                 }
 
                                 (re_verify.derived_metadata, true)
@@ -1157,7 +1157,7 @@ impl Engine {
 
                     self.save_value_metadata::<K>(
                         fingerprint::fingerprint(key),
-                        &final_metadata,
+                        final_metadata.clone(),
                     );
 
                     *self
@@ -1203,7 +1203,8 @@ impl Engine {
                             new_fingerprint;
                         re_execute.derived_metadata.version_info.updated_at =
                             current_version;
-                        re_execute.derived_metadata.dependencies = dependencies;
+                        re_execute.derived_metadata.dependencies =
+                            dependencies.into();
 
                         true
                     };

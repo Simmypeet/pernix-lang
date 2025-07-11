@@ -25,6 +25,7 @@ rayon = { workspace = true }
 redb = { workspace = true }
 tracing = { workspace = true }
 ouroboros = { workspace = true }
+crossbeam = { workspace = true }
 
 [dev-dependencies]
 ron = { workspace = true }

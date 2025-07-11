@@ -96,13 +96,15 @@ impl SetInputLock<'_> {
                         if update.update_metadata {
                             self.engine.save_value_metadata::<K>(
                                 key_fingerprint,
-                                &completion.metadata,
+                                completion.metadata.clone(),
                             );
                         }
 
                         if update.update_value {
-                            self.engine
-                                .save_value::<K>(key_fingerprint, &value);
+                            self.engine.save_value::<K>(
+                                Some(value_fingerprint),
+                                value.clone(),
+                            );
                         }
 
                         completion.store = Some(smallbox::smallbox!(value));
@@ -121,11 +123,14 @@ impl SetInputLock<'_> {
                     if update.update_metadata {
                         self.engine.save_value_metadata::<K>(
                             key_fingerprint,
-                            &version_info,
+                            version_info.clone(),
                         );
                     }
                     if update.update_value {
-                        self.engine.save_value::<K>(key_fingerprint, &value);
+                        self.engine.save_value::<K>(
+                            Some(value_fingerprint),
+                            value.clone(),
+                        );
                     }
 
                     vacant_entry.insert(super::State::Completion(Completion {
@@ -142,10 +147,15 @@ impl SetInputLock<'_> {
                         updated_at: version_no,
                     });
 
-                    self.engine
-                        .save_value_metadata::<K>(key_fingerprint, &metadata);
+                    self.engine.save_value_metadata::<K>(
+                        key_fingerprint,
+                        metadata.clone(),
+                    );
 
-                    self.engine.save_value::<K>(key_fingerprint, &value);
+                    self.engine.save_value::<K>(
+                        Some(value_fingerprint),
+                        value.clone(),
+                    );
 
                     vacant_entry.insert(super::State::Completion(Completion {
                         metadata,

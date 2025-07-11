@@ -107,6 +107,7 @@ tracing-subscriber = { version = "0.3.18", features = [
 ] }
 extfn = { version = "0.1.1" }
 siphasher = "1.0.1"
+crossbeam = "0.8.4"
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }
