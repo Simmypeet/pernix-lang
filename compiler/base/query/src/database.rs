@@ -893,13 +893,24 @@ impl Engine {
             );
 
             if let Some(state) = self.database.query_states_by_key.get(x) {
-                if state
+                let updated_at = state
                     .as_completion()
                     .expect("should be completion since it was re-verified")
                     .metadata
-                    .updated_at()
-                    > re_verify.derived_metadata.version_info.verified_at
-                {
+                    .updated_at();
+                let key_verified_at =
+                    re_verify.derived_metadata.version_info.verified_at;
+
+                if updated_at > key_verified_at {
+                    tracing::info!(
+                        "Re-verification of `{}` `{key:?}` is required since \
+                         dependency `{}` `{:?}` has been updated; dependency \
+                         was updated at `{updated_at}` but the key was \
+                         verified at `{key_verified_at}`",
+                        key.type_name(),
+                        x.0.type_name(),
+                        x.0,
+                    );
                     return true;
                 }
             }
@@ -954,6 +965,10 @@ impl Engine {
                         .is_none()
                 {
                     // if the query is a part of SCC, always recompute
+                    tracing::info!(
+                        "Always recomputing `{}` `{key:?}`",
+                        key.type_name()
+                    );
                     true
                 } else {
                     self.need_recompute(&re_verify, key, current_version)
@@ -964,7 +979,7 @@ impl Engine {
                     current_version;
 
                 if recompute {
-                    tracing::debug!(
+                    tracing::info!(
                         "Re-computing value for `{}` `{key:?}` with metadata: \
                          {:?}",
                         key.type_name(),
@@ -1016,6 +1031,13 @@ impl Engine {
 
                         re_verify.derived_metadata.dependencies =
                             tracked_dependencies.into();
+
+                        tracing::info!(
+                            "Re-computed value for `{}` `{key:?}` with \
+                             metadata: {:?}",
+                            key.type_name(),
+                            re_verify.derived_metadata
+                        );
 
                         (re_verify.derived_metadata, true)
                     })

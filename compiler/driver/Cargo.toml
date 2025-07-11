@@ -27,6 +27,7 @@ indicatif = { workspace = true }
 parking_lot = { workspace = true }
 inkwell = { workspace = true }
 enum-as-inner = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

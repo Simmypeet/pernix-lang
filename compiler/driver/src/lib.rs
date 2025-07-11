@@ -304,6 +304,11 @@ pub fn run(
         x.set_input(pernixc_target::Key(TargetID::Local), Arc::new(argument));
     });
 
+    tracing::info!(
+        "Starting compilation with database version: {}",
+        engine.version()
+    );
+
     // now the query can start ...
 
     let tracked_engine = engine.tracked();

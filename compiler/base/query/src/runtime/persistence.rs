@@ -672,6 +672,12 @@ impl Persistence {
 
         self.ensure_background_writer().new_serialize_task(
             move |mut buffer| {
+                let _span = tracing::info_span!(
+                    "Saving value metadata",
+                    type_name = std::any::type_name::<K>(),
+                    key_fingerprint,
+                );
+
                 let mut serializer = BinarySerializer::new(Writer::Vec(buffer));
 
                 let result = (serialize_value_metadata)(

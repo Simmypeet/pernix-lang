@@ -260,6 +260,8 @@ impl Writer {
                 // if the batch is not full, just continue
             }
         }
+
+        std::mem::take(&mut *batch.lock()).write_batch(database, buffer_pool);
     }
 }
 
