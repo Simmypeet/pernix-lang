@@ -150,45 +150,116 @@ impl Writer {
         }
     }
 
+    fn write_to_table(
+        table: &mut redb::Table<'_, (u128, u128), &[u8]>,
+        batch: &mut Vec<SerializeResult>,
+        pool_buffer: &BufferPool,
+    ) {
+        for result in batch.drain(..) {
+            let key = (result.stable_type_id.as_u128(), result.fingerprint);
+
+            if let Err(e) = table.insert(key, result.buffer.as_slice()) {
+                tracing::error!("Failed to write {result:?} to database: {e}");
+            }
+
+            // return the buffer to the pool
+            pool_buffer.put(result.buffer);
+        }
+    }
+
+    fn write_batch(
+        database: &super::Database,
+        batch: &mut Vec<SerializeResult>,
+        table: Table,
+        buffer_pool: &BufferPool,
+    ) {
+        let write = match database.write_transaction() {
+            Ok(write) => write,
+            Err(e) => {
+                tracing::error!("Failed to get write transaction: {e}");
+
+                for result in batch.drain(..) {
+                    // return the buffer to the pool
+                    buffer_pool.put(result.buffer);
+                }
+
+                return;
+            }
+        };
+
+        match table {
+            Table::Value => write.with_cache_table(|x| {
+                Self::write_to_table(&mut x.write(), batch, buffer_pool);
+            }),
+            Table::Metadata => write.with_metadata_table(|x| {
+                Self::write_to_table(&mut x.write(), batch, buffer_pool);
+            }),
+        }
+    }
+
     fn write_worker_loop(
         receiver_task: &crossbeam::channel::Receiver<SerializeResult>,
         buffer_pool: &BufferPool,
         database: &super::Database,
     ) {
+        // the number of `Vec<u8>` can held before writing to the database
+        const BATCH_SIZE: usize = 50;
+        // the maximum size of bytes that can be held before writing to the
+        // database
+        const MAX_BUFFER_SIZE: usize = 1024 * 1024 * 5;
+
+        let mut current_buffer_size = 0;
+
+        let mut cache_batch = Vec::with_capacity(BATCH_SIZE);
+        let mut metadata_batch = Vec::with_capacity(BATCH_SIZE);
+
         loop {
             let Ok(result) = receiver_task.recv() else {
-                return;
+                break;
             };
 
-            let write = match database.write_transaction() {
-                Ok(write) => write,
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to get write transaction for {result:?}: {e}"
-                    );
-                    buffer_pool.put(result.buffer);
+            current_buffer_size += result.buffer.len();
 
-                    continue;
-                }
-            };
-
-            let key = (result.stable_type_id.as_u128(), result.fingerprint);
-            let ok: Result<(), redb::Error> = match result.table {
-                Table::Value => write.with_cache_table(|x| {
-                    x.write().insert(key, result.buffer.as_slice())?;
-                    Ok(())
-                }),
-                Table::Metadata => write.with_metadata_table(|x| {
-                    x.write().insert(key, result.buffer.as_slice())?;
-                    Ok(())
-                }),
-            };
-
-            if let Err(e) = ok {
-                tracing::error!("Failed to write {result:?} to database: {e}");
+            if result.table == Table::Value {
+                cache_batch.push(result);
+            } else {
+                metadata_batch.push(result);
             }
 
-            buffer_pool.put(result.buffer);
+            // check if we have enough data to write to the database
+            if cache_batch.len() + metadata_batch.len() >= BATCH_SIZE
+                || current_buffer_size >= MAX_BUFFER_SIZE
+            {
+                Self::write_batch(
+                    database,
+                    &mut cache_batch,
+                    Table::Value,
+                    buffer_pool,
+                );
+                Self::write_batch(
+                    database,
+                    &mut metadata_batch,
+                    Table::Metadata,
+                    buffer_pool,
+                );
+                current_buffer_size = 0;
+            }
+        }
+
+        // write any remaining data in the batch
+        if !cache_batch.is_empty() || !metadata_batch.is_empty() {
+            Self::write_batch(
+                database,
+                &mut cache_batch,
+                Table::Value,
+                buffer_pool,
+            );
+            Self::write_batch(
+                database,
+                &mut metadata_batch,
+                Table::Metadata,
+                buffer_pool,
+            );
         }
     }
 }
