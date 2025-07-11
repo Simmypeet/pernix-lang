@@ -3,10 +3,12 @@
 use std::{fmt::Debug, sync::Arc};
 
 use flexstr::SharedStr;
-use pernixc_diagnostic::Report;
-use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
-use pernixc_query::TrackedEngine;
+use pernixc_diagnostic::{Diagnostic, Report};
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_module_tree::source_map::to_absolute_span;
+use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
@@ -83,20 +85,24 @@ pub struct ItemRedifinition {
 }
 
 impl Report<&TrackedEngine<'_>> for ItemRedifinition {
-    type Location = RelativeLocation;
+    type Location = ByteIndex;
 
     fn report(
         &self,
         engine: &TrackedEngine<'_>,
-    ) -> pernixc_diagnostic::Diagnostic<RelativeLocation> {
+    ) -> pernixc_diagnostic::Diagnostic<ByteIndex> {
         let existing_symbol_span = engine.get_span(self.existing_id);
         let new_symbol_span = engine.get_span(self.new_id);
         let existing_symbol_name = engine.get_name(self.existing_id);
         let in_name = engine.get_qualified_name(self.in_id);
 
         pernixc_diagnostic::Diagnostic {
-            span: new_symbol_span
-                .map(|x| (x, Some("redefinition here".to_string()))),
+            span: new_symbol_span.as_ref().map(|x| {
+                (
+                    engine.to_absolute_span(x),
+                    Some("redefinition here".to_string()),
+                )
+            }),
 
             message: format!(
                 "symbol `{existing_symbol_name}` is already defined in the \
@@ -105,8 +111,9 @@ impl Report<&TrackedEngine<'_>> for ItemRedifinition {
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
             related: existing_symbol_span
+                .as_ref()
                 .map(|span| pernixc_diagnostic::Related {
-                    span,
+                    span: engine.to_absolute_span(span),
                     message: format!(
                         "symbol `{existing_symbol_name}` is already defined \
                          here"
@@ -179,6 +186,40 @@ fn suggest<'a>(
         best_candidate
     } else {
         None
+    }
+}
+
+/// A list of errors that has been rendered in a form of [`Diagnostic`] from the
+/// [`Errors`]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash, Value,
+)]
+#[id(TargetID)]
+#[key(RenderedKey)]
+#[value(Rendered)]
+#[extend(method(get_symbol_table_rendered_errors), no_cyclic)]
+pub struct Rendered(pub Arc<[Diagnostic<ByteIndex>]>);
+
+/// An executor for rendering errors from the symbol table construction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct RenderedExecutor;
+
+impl pernixc_query::runtime::executor::Executor<RenderedKey>
+    for RenderedExecutor
+{
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        key: &RenderedKey,
+    ) -> Result<Rendered, pernixc_query::runtime::executor::CyclicError> {
+        let mut diagnostics = Vec::new();
+        let errors = engine.query(&Key(key.0))?;
+
+        for error in errors.iter() {
+            diagnostics.push(error.report(engine));
+        }
+
+        Ok(Rendered(diagnostics.into()))
     }
 }
 

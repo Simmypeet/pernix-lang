@@ -2,12 +2,17 @@
 
 use std::sync::Arc;
 
+use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
-use crate::{load_source_file::LoadSourceFileError, ModuleTree, Parse};
+use crate::{
+    load_source_file::LoadSourceFileError, source_map::SourceMap,
+    token_tree::get_source_file_token_tree, ModuleTree, Parse,
+};
 
 /// List of errors that occurred while building the module tree.
 #[derive(
@@ -123,5 +128,57 @@ impl Errors {
                 target_id,
             );
         }
+    }
+}
+
+/// A list of errors that has been rendered in a form of [`Diagnostic`] from the
+/// [`Errors`]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash, Value,
+)]
+#[id(TargetID)]
+#[key(RenderedKey)]
+#[value(Result<Rendered, LoadSourceFileError>)]
+#[extend(method(get_module_tree_rendered_errors), no_cyclic)]
+pub struct Rendered(pub Arc<[Diagnostic<ByteIndex>]>);
+
+/// An executor for rendering errors from the module tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct RenderedExecutor;
+
+impl pernixc_query::runtime::executor::Executor<RenderedKey>
+    for RenderedExecutor
+{
+    fn execute(
+        &self,
+        engine: &TrackedEngine,
+        key: &RenderedKey,
+    ) -> Result<
+        Result<Rendered, LoadSourceFileError>,
+        pernixc_query::runtime::executor::CyclicError,
+    > {
+        let errors = match engine.query(&Key(key.0)).unwrap() {
+            Ok(errors) => errors,
+            Err(err) => return Ok(Err(err)),
+        };
+
+        let mut diagnostics = Vec::new();
+
+        let source_map = SourceMap(engine);
+
+        for err in errors.token_tree.as_ref().iter().flat_map(|x| x.iter()) {
+            diagnostics.push(err.report(&source_map));
+        }
+
+        for err in errors.syntax_tree.as_ref().iter().flat_map(|x| x.iter()) {
+            let token_tree = engine.get_source_file_token_tree(err.source_id);
+            diagnostics.push(err.report(&token_tree));
+        }
+
+        for err in errors.branching.as_ref() {
+            diagnostics.push(err.report(source_map.0));
+        }
+
+        Ok(Ok(Rendered(diagnostics.into())))
     }
 }

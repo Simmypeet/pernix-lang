@@ -27,7 +27,9 @@ use pernixc_query::{
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
-use pernixc_source_file::{GlobalSourceID, LocalSourceID, SourceFile, Span};
+use pernixc_source_file::{
+    ByteIndex, GlobalSourceID, LocalSourceID, SourceFile, Span,
+};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
 use pernixc_target::{get_invocation_arguments, TargetID};
@@ -37,7 +39,8 @@ use rayon::iter::{
 };
 
 use crate::{
-    load_source_file::LoadSourceFileError, syntax_tree::ModuleContent,
+    load_source_file::LoadSourceFileError, source_map::to_absolute_span,
+    syntax_tree::ModuleContent,
 };
 
 pub mod errors;
@@ -56,6 +59,7 @@ pub fn register_executors(executor: &mut executor::Registry) {
     executor.register(Arc::new(token_tree::KeyExecutor));
     executor.register(Arc::new(syntax_tree::Executor));
     executor.register(Arc::new(errors::Executor));
+    executor.register(Arc::new(errors::RenderedExecutor));
     executor.register(Arc::new(Executor));
 }
 
@@ -76,6 +80,7 @@ pub fn register_serde<
     serde_registry.register::<token_tree::Key>();
     serde_registry.register::<syntax_tree::Key>();
     serde_registry.register::<errors::Key>();
+    serde_registry.register::<errors::RenderedKey>();
     serde_registry.register::<Key>();
 }
 
@@ -110,14 +115,14 @@ pub enum Error {
     ModuleRedefinition(ModuleRedefinition),
 }
 
-impl<T> Report<T> for Error {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine<'_>> for Error {
+    type Location = ByteIndex;
 
-    fn report(&self, context: T) -> Diagnostic<RelativeLocation> {
+    fn report(&self, engine: &TrackedEngine<'_>) -> Diagnostic<ByteIndex> {
         match self {
-            Self::RootSubmoduleConflict(error) => error.report(context),
-            Self::SourceFileLoadFail(error) => error.report(context),
-            Self::ModuleRedefinition(error) => error.report(context),
+            Self::RootSubmoduleConflict(error) => error.report(engine),
+            Self::SourceFileLoadFail(error) => error.report(engine),
+            Self::ModuleRedefinition(error) => error.report(engine),
         }
     }
 }
@@ -147,17 +152,17 @@ pub struct RootSubmoduleConflict {
     pub load_path: PathBuf,
 }
 
-impl<T> Report<T> for RootSubmoduleConflict {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine<'_>> for RootSubmoduleConflict {
+    type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<RelativeLocation> {
+    fn report(&self, engine: &TrackedEngine<'_>) -> Diagnostic<ByteIndex> {
         Diagnostic {
             severity: Severity::Error,
             message: "the submodule of the root source file ends up pointing \
                       to the root source file itself"
                 .to_string(),
             span: Some((
-                self.submodule_span,
+                engine.to_absolute_span(&self.submodule_span),
                 Some(format!(
                     "this ends up loading the file `{}`, which is the current \
                      module itself",
@@ -197,12 +202,12 @@ pub struct SourceFileLoadFail {
     pub path: PathBuf,
 }
 
-impl<T> Report<T> for SourceFileLoadFail {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine<'_>> for SourceFileLoadFail {
+    type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    fn report(&self, engine: &TrackedEngine<'_>) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((self.submodule, None)),
+            span: Some((engine.to_absolute_span(&self.submodule), None)),
             message: "failed to load the source file for the submodule"
                 .to_string(),
             severity: Severity::Error,
@@ -238,17 +243,17 @@ pub struct ModuleRedefinition {
     pub redefinition_submodule_span: Option<Span<RelativeLocation>>,
 }
 
-impl<T> Report<T> for ModuleRedefinition {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine<'_>> for ModuleRedefinition {
+    type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<RelativeLocation> {
+    fn report(&self, engine: &TrackedEngine<'_>) -> Diagnostic<Self::Location> {
         Diagnostic {
             severity: Severity::Error,
             message: "a module with the given name already exists".to_string(),
 
-            span: self.redefinition_submodule_span.map(|x| {
+            span: self.redefinition_submodule_span.as_ref().map(|x| {
                 (
-                    x,
+                    engine.to_absolute_span(x),
                     Some(
                         "this module redefines an existing module".to_string(),
                     ),
@@ -262,8 +267,9 @@ impl<T> Report<T> for ModuleRedefinition {
             ),
             related: self
                 .existing_module_span
+                .as_ref()
                 .map(|span| Related {
-                    span,
+                    span: engine.to_absolute_span(span),
                     message: "existing module with the same name".to_string(),
                 })
                 .into_iter()

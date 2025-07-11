@@ -800,6 +800,7 @@ pub fn register_executors(executor: &mut executor::Registry) {
     executor.register(Arc::new(parent::IntermediateExecutor));
     executor.register(Arc::new(span::Executor));
     executor.register(Arc::new(diagnostic::Executor));
+    executor.register(Arc::new(diagnostic::RenderedExecutor));
     executor.register(Arc::new(symbols::Executor));
     executor.register(Arc::new(Executor));
 }
@@ -822,6 +823,7 @@ pub fn register_serde<
     serde_registry.register::<parent::IntermediateKey>();
     serde_registry.register::<span::Key>();
     serde_registry.register::<diagnostic::Key>();
+    serde_registry.register::<diagnostic::RenderedKey>();
     serde_registry.register::<symbols::Key>();
     serde_registry.register::<Key>();
 }

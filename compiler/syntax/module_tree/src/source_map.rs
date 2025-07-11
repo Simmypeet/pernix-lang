@@ -3,10 +3,16 @@
 
 use std::{fmt::Display, path::Path, sync::Arc};
 
+use pernixc_extend::extend;
+use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{GlobalSourceID, SourceFile};
+use pernixc_source_file::{ByteIndex, GlobalSourceID, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
+
+use crate::{
+    path::get_source_file_path, token_tree::get_source_file_token_tree,
+};
 
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.
@@ -68,16 +74,11 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         key: &Key,
     ) -> Result<Arc<SourceFile>, pernixc_query::runtime::executor::CyclicError>
     {
-        // Since the `GlobalSourceID` provided is always a valid ID derived from
-        // the `ModuleTree`, we can safely unwrap the query result.
-        let map =
-            engine.query(&crate::path::Key(key.0.target_id)).unwrap().unwrap();
-
-        let path = map.get(&key.0.id).unwrap();
+        let path = engine.get_source_file_path(key.0);
 
         let source_file = engine
             .query(&crate::load_source_file::Key {
-                path: path.clone(),
+                path,
                 target_id: key.0.target_id,
             })
             .unwrap()
@@ -98,35 +99,14 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
         &'a self,
         id: Self::FileId,
     ) -> Result<Self::Name, codespan_reporting::files::Error> {
-        let module_tree = self
-            .0
-            .query(&crate::Key(id.target_id))
-            .unwrap()
-            .map_err(|_| codespan_reporting::files::Error::FileMissing)?;
-
-        let path = module_tree
-            .source_file_paths_by_id
-            .get(&id.id)
-            .ok_or(codespan_reporting::files::Error::FileMissing)?;
-
-        Ok(PathDisplay(path.clone()))
+        Ok(PathDisplay(self.0.get_source_file_path(id)))
     }
 
     fn source(
         &'a self,
         id: Self::FileId,
     ) -> Result<Self::Source, codespan_reporting::files::Error> {
-        let path = self.name(id)?;
-        let source_file = self
-            .0
-            .query(&crate::load_source_file::Key {
-                path: path.0,
-                target_id: id.target_id,
-            })
-            .unwrap()
-            .map_err(|_| codespan_reporting::files::Error::FileMissing)?;
-
-        Ok(SourceFileStr(source_file))
+        Ok(SourceFileStr(self.0.get_source_file(id)))
     }
 
     fn line_index(
@@ -178,4 +158,18 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
 
         Ok(line_range.clone())
     }
+}
+
+/// Converts the given relative span to an absolute span.
+///
+/// This method uses the token tree in order to calculate an absolute position.
+#[extend]
+pub fn to_absolute_span(
+    self: &TrackedEngine<'_>,
+    relative_span: &Span<RelativeLocation>,
+) -> Span<ByteIndex> {
+    let source_file = self.get_source_file(relative_span.source_id);
+    let token_tree = self.get_source_file_token_tree(relative_span.source_id);
+
+    relative_span.to_absolute_span(&source_file, &token_tree)
 }

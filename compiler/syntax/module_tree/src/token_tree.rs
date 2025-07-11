@@ -9,7 +9,9 @@ use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
-use crate::load_source_file::LoadSourceFileError;
+use crate::{
+    load_source_file::LoadSourceFileError, path::get_source_file_path,
+};
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(
@@ -116,17 +118,11 @@ impl pernixc_query::runtime::executor::Executor<Key> for KeyExecutor {
         Arc<pernixc_lexical::tree::Tree>,
         pernixc_query::runtime::executor::CyclicError,
     > {
-        // Since the `GlobalSourceID` provided is always a valid ID derived from
-        // the `ModuleTree`, we can safely unwrap the query result.
-        let map =
-            engine.query(&crate::path::Key(key.0.target_id)).unwrap().unwrap();
-
-        let path =
-            map.get(&key.0.id).expect("GlobalSourceID should always be valid");
+        let path = engine.get_source_file_path(key.0);
 
         let token_tree = engine
             .query(&Parse {
-                path: path.clone(),
+                path,
                 target_id: key.0.target_id,
                 global_source_id: key.0,
             })

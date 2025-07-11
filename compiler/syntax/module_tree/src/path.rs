@@ -1,14 +1,11 @@
+#![allow(clippy::type_complexity)]
+
 //! Provides a query to retrieve the source file paths mapping from
-//! [`ID<SourceFile>`] to [`Arc<Path>`] in a particular target's module tree.
+//! [`GlobalSourceID`] to [`Arc<Path>`] in a particular target's module tree.
 
 use std::{path::Path, sync::Arc};
 
-use pernixc_arena::ID;
-use pernixc_hash::HashMap;
-use pernixc_source_file::SourceFile;
-use pernixc_target::TargetID;
-
-use crate::load_source_file::LoadSourceFileError;
+use pernixc_source_file::GlobalSourceID;
 
 /// A query key for retrieving a map from the [`ID<SourceFile>`] to the
 /// [`Arc<Path>`] which the source file belongs to.
@@ -27,8 +24,9 @@ use crate::load_source_file::LoadSourceFileError;
     pernixc_serialize::Deserialize,
     pernixc_stable_hash::StableHash,
 )]
-#[value(Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, LoadSourceFileError>)]
-pub struct Key(pub TargetID);
+#[value(Arc<Path>)]
+#[extend(method(get_source_file_path), no_cyclic)]
+pub struct Key(pub GlobalSourceID);
 
 /// An executor for the [`Key`] query that retrieves the source file paths from
 /// the module tree.
@@ -40,15 +38,19 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         &self,
         engine: &pernixc_query::TrackedEngine,
         key: &Key,
-    ) -> Result<
-        Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, LoadSourceFileError>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
-        let module_tree = match engine.query(&crate::Key(key.0)).unwrap() {
-            Ok(module_tree) => module_tree,
-            Err(error) => return Ok(Err(error)),
-        };
+    ) -> Result<Arc<Path>, pernixc_query::runtime::executor::CyclicError> {
+        let module_tree =
+            match engine.query(&crate::Key(key.0.target_id)).unwrap() {
+                Ok(module_tree) => module_tree,
+                Err(error) => panic!("the `GlobalSourceID` error {error}"),
+            };
 
-        Ok(Ok(module_tree.source_file_paths_by_id))
+        Ok(module_tree
+            .source_file_paths_by_id
+            .get(&key.0.id)
+            .unwrap_or_else(|| {
+                panic!("`GlobalSourceID` {:?} not found", key.0.id)
+            })
+            .clone())
     }
 }

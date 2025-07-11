@@ -6,25 +6,23 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
-use pernixc_diagnostic::Report;
 use pernixc_hash::HashMap;
-use pernixc_lexical::tree::RelativeLocation;
 use pernixc_module_tree::{
-    source_map::{get_source_file, SourceMap},
-    token_tree::get_source_file_token_tree,
+    errors::get_module_tree_rendered_errors, source_map::SourceMap,
 };
 use pernixc_query::{
     runtime::persistence::{
         serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
         Persistence,
     },
-    Engine, Key, TrackedEngine,
+    Engine, Key,
 };
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
-use pernixc_source_file::{ByteIndex, GlobalSourceID, Location};
+use pernixc_source_file::{ByteIndex, GlobalSourceID};
 use pernixc_stable_type_id::StableTypeID;
+use pernixc_symbol::diagnostic::get_symbol_table_rendered_errors;
 use pernixc_target::{get_invocation_arguments, Arguments, TargetID};
 
 pub mod term;
@@ -51,7 +49,7 @@ impl ReportTerm<'_> {
 }
 
 fn pernix_diagnostic_to_codespan_diagnostic(
-    diagnostic: pernixc_diagnostic::Diagnostic<ByteIndex>,
+    diagnostic: &pernixc_diagnostic::Diagnostic<ByteIndex>,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
     let mut result = match diagnostic.severity {
         pernixc_diagnostic::Severity::Error => {
@@ -64,9 +62,9 @@ fn pernix_diagnostic_to_codespan_diagnostic(
             codespan_reporting::diagnostic::Diagnostic::note()
         }
     }
-    .with_message(diagnostic.message);
+    .with_message(diagnostic.message.to_string());
 
-    if let Some((span, label)) = diagnostic.span {
+    if let Some((span, label)) = &diagnostic.span {
         result = result.with_labels(
             std::iter::once({
                 let mut primary = Label::primary(span.source_id, span.range());
@@ -77,76 +75,16 @@ fn pernix_diagnostic_to_codespan_diagnostic(
 
                 primary
             })
-            .chain(diagnostic.related.into_iter().map(|x| {
+            .chain(diagnostic.related.iter().map(|x| {
                 Label::secondary(x.span.source_id, x.span.range())
-                    .with_message(x.message)
+                    .with_message(x.message.to_string())
             }))
             .collect(),
         );
     }
 
-    if let Some(msg) = diagnostic.help_message {
-        result.with_notes(vec![msg])
-    } else {
-        result
-    }
-}
-
-fn rel_pernix_diagnostic_to_codespan_diagnostic(
-    engine: &TrackedEngine,
-    diagostic: pernixc_diagnostic::Diagnostic<RelativeLocation>,
-) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
-    let mut result = match diagostic.severity {
-        pernixc_diagnostic::Severity::Error => {
-            codespan_reporting::diagnostic::Diagnostic::error()
-        }
-        pernixc_diagnostic::Severity::Warning => {
-            codespan_reporting::diagnostic::Diagnostic::warning()
-        }
-        pernixc_diagnostic::Severity::Info => {
-            codespan_reporting::diagnostic::Diagnostic::note()
-        }
-    }
-    .with_message(diagostic.message);
-
-    if let Some((span, label)) = diagostic.span {
-        result = result.with_labels(
-            std::iter::once({
-                let source_file = engine.get_source_file(span.source_id);
-                let token_tree =
-                    engine.get_source_file_token_tree(span.source_id);
-
-                let begin =
-                    span.start.to_absolute_index(&source_file, &token_tree);
-                let end = span.end.to_absolute_index(&source_file, &token_tree);
-
-                let mut primary = Label::primary(span.source_id, begin..end);
-
-                if let Some(label_message) = label {
-                    primary = primary.with_message(label_message);
-                }
-
-                primary
-            })
-            .chain(diagostic.related.into_iter().map(|x| {
-                let source_file = engine.get_source_file(x.span.source_id);
-                let token_tree =
-                    engine.get_source_file_token_tree(x.span.source_id);
-
-                let begin =
-                    x.span.start.to_absolute_index(&source_file, &token_tree);
-                let end =
-                    x.span.end.to_absolute_index(&source_file, &token_tree);
-
-                Label::secondary(x.span.source_id, begin..end)
-                    .with_message(x.message)
-            }))
-            .collect(),
-        );
-    }
-
-    if let Some(msg) = diagostic.help_message {
-        result.with_notes(vec![msg])
+    if let Some(msg) = &diagnostic.help_message {
+        result.with_notes(vec![msg.to_string()])
     } else {
         result
     }
@@ -370,9 +308,8 @@ pub fn run(
 
     let tracked_engine = engine.tracked();
     let argument = tracked_engine.get_invocation_arguments(TargetID::Local);
-    let errors = tracked_engine
-        .query(&pernixc_module_tree::errors::Key(TargetID::Local))
-        .unwrap();
+    let errors =
+        tracked_engine.get_module_tree_rendered_errors(TargetID::Local);
 
     let module_tree_errors = match errors {
         Ok(parse) => parse,
@@ -394,44 +331,23 @@ pub fn run(
         }
     };
 
-    let symbol_table_diagnostics = tracked_engine
-        .query(&pernixc_symbol::diagnostic::Key(TargetID::Local))
-        .unwrap();
-
     let mut diagnostics = Vec::new();
 
     let source_map = SourceMap(&tracked_engine);
 
-    for error in module_tree_errors.token_tree.iter().flat_map(|x| x.iter()) {
+    for diag in module_tree_errors.0.as_ref() {
         diagnostics.push(SortableDiagnostic(
-            pernix_diagnostic_to_codespan_diagnostic(error.report(&source_map)),
+            pernix_diagnostic_to_codespan_diagnostic(diag),
         ));
     }
 
-    for error in module_tree_errors.syntax_tree.iter().flat_map(|x| x.iter()) {
-        let token_tree =
-            source_map.0.get_source_file_token_tree(error.source_id);
-
+    for diag in tracked_engine
+        .get_symbol_table_rendered_errors(TargetID::Local)
+        .0
+        .as_ref()
+    {
         diagnostics.push(SortableDiagnostic(
-            pernix_diagnostic_to_codespan_diagnostic(error.report(&token_tree)),
-        ));
-    }
-
-    for error in module_tree_errors.branching.iter() {
-        diagnostics.push(SortableDiagnostic(
-            rel_pernix_diagnostic_to_codespan_diagnostic(
-                source_map.0,
-                error.report(()),
-            ),
-        ));
-    }
-
-    for error in symbol_table_diagnostics.iter() {
-        diagnostics.push(SortableDiagnostic(
-            rel_pernix_diagnostic_to_codespan_diagnostic(
-                source_map.0,
-                error.report(&tracked_engine),
-            ),
+            pernix_diagnostic_to_codespan_diagnostic(diag),
         ));
     }
 
