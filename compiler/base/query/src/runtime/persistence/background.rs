@@ -75,11 +75,9 @@ impl Default for Batch {
 }
 
 impl Batch {
-    // the number of `Vec<u8>` can held before writing to the database
-    const BATCH_SIZE: usize = 50;
     // the maximum size of bytes that can be held before writing to the
     // database
-    const MAX_BUFFER_SIZE: usize = 1024 * 1024 * 5;
+    const MAX_BUFFER_SIZE: usize = 1024 * 1024 * 10;
 
     pub fn new() -> Self { Self::default() }
 
@@ -163,9 +161,7 @@ impl Batch {
             self.metadata.push(result);
         }
 
-        if self.cache.len() + self.metadata.len() >= Self::BATCH_SIZE
-            || self.current_buffer_size >= Self::MAX_BUFFER_SIZE
-        {
+        if self.current_buffer_size >= Self::MAX_BUFFER_SIZE {
             let batch = std::mem::take(self);
             Some(batch)
         } else {
@@ -273,7 +269,6 @@ impl Drop for Writer {
         // all the senders are dropped (which is the only one here),
         // so all the serializer workers will exit which will cause the
         // only write worker to exit as well
-
         for worker in self.serialize_workers.drain(..) {
             worker.join().unwrap();
         }
