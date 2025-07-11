@@ -780,7 +780,7 @@ impl Persistence {
                 with_writer.replace(background::Writer::new(
                     std::thread::available_parallelism()
                         .map_or_else(|_| 4, std::num::NonZero::get),
-                    self.database.clone(),
+                    &self.database,
                 ));
             }
         }

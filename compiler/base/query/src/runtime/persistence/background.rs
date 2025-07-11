@@ -54,120 +54,60 @@ impl BufferPool {
 /// to the redb writer for writing to the persistent storage.
 pub(super) struct Writer {
     serialize_workers: Vec<std::thread::JoinHandle<()>>,
-    write_worker: Option<std::thread::JoinHandle<()>>,
 
     send_serialize_task: Option<crossbeam::channel::Sender<SerializeTask>>,
 }
 
-impl Writer {
-    pub(crate) fn new(
-        serializer_count: usize,
-        database: Arc<super::Database>,
-    ) -> Self {
-        let buffer_pool = BufferPool::new();
+struct Batch {
+    cache: Vec<SerializeResult>,
+    metadata: Vec<SerializeResult>,
+    current_buffer_size: usize,
+}
 
-        let (send_serialize_task, receiver_task) =
-            crossbeam::channel::unbounded();
-        let (send_serialize_result, receiver_serialize_result) =
-            crossbeam::channel::unbounded();
-
-        let workers = (0..serializer_count)
-            .map(|i| {
-                let receiver_task = receiver_task.clone();
-                let buffer_pool = buffer_pool.clone();
-                let send_serialize_result = send_serialize_result.clone();
-
-                std::thread::Builder::new()
-                    .name(format!("serialize-worker-{i}"))
-                    .spawn(move || {
-                        Self::work_loop(
-                            &receiver_task,
-                            &send_serialize_result,
-                            &buffer_pool,
-                        );
-                    })
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
-
+impl Default for Batch {
+    fn default() -> Self {
         Self {
-            write_worker: {
-                Some(
-                    std::thread::Builder::new()
-                        .name("write-worker".to_string())
-                        .spawn(move || {
-                            Self::write_worker_loop(
-                                &receiver_serialize_result,
-                                &buffer_pool,
-                                &database,
-                            );
-                        })
-                        .unwrap(),
-                )
-            },
-            serialize_workers: workers,
-            // NOTE: make sure only one sender is held at a time
-            send_serialize_task: Some(send_serialize_task),
+            cache: Vec::with_capacity(50),
+            metadata: Vec::with_capacity(50),
+            current_buffer_size: 0,
         }
     }
+}
 
-    pub(super) fn new_serialize_task<F>(&self, task: F)
-    where
-        F: FnOnce(Buffer) -> Result<SerializeResult, Buffer> + Send + 'static,
-    {
-        self.send_serialize_task
-            .as_ref()
-            .unwrap()
-            .send(Box::new(task))
-            .unwrap();
-    }
+impl Batch {
+    // the number of `Vec<u8>` can held before writing to the database
+    const BATCH_SIZE: usize = 50;
+    // the maximum size of bytes that can be held before writing to the
+    // database
+    const MAX_BUFFER_SIZE: usize = 1024 * 1024 * 5;
 
-    fn work_loop(
-        receiver_task: &crossbeam::channel::Receiver<SerializeTask>,
-        send_serialize_result: &crossbeam::channel::Sender<SerializeResult>,
+    pub fn new() -> Self { Self::default() }
+
+    pub fn write_batch(
+        mut self,
+        database: &super::Database,
         buffer_pool: &BufferPool,
     ) {
-        loop {
-            // receive the task to serialize
-            let Ok(task) = receiver_task.recv() else {
-                break;
-            };
-
-            let buffer = buffer_pool.get();
-            let result = match task(buffer) {
-                Ok(result) => result,
-                Err(buffer) => {
-                    // if the task failed, return the buffer to the pool
-                    buffer_pool.put(buffer);
-
-                    continue;
-                }
-            };
-
-            send_serialize_result
-                .send(result)
-                .expect("Failed to send serialize result");
+        if self.cache.is_empty() && self.metadata.is_empty() {
+            return;
         }
+
+        // write the batch to the database
+        Self::write_batch_internal(
+            database,
+            &mut self.cache,
+            Table::Value,
+            buffer_pool,
+        );
+        Self::write_batch_internal(
+            database,
+            &mut self.metadata,
+            Table::Metadata,
+            buffer_pool,
+        );
     }
 
-    fn write_to_table(
-        table: &mut redb::Table<'_, (u128, u128), &[u8]>,
-        batch: &mut Vec<SerializeResult>,
-        pool_buffer: &BufferPool,
-    ) {
-        for result in batch.drain(..) {
-            let key = (result.stable_type_id.as_u128(), result.fingerprint);
-
-            if let Err(e) = table.insert(key, result.buffer.as_slice()) {
-                tracing::error!("Failed to write {result:?} to database: {e}");
-            }
-
-            // return the buffer to the pool
-            pool_buffer.put(result.buffer);
-        }
-    }
-
-    fn write_batch(
+    fn write_batch_internal(
         database: &super::Database,
         batch: &mut Vec<SerializeResult>,
         table: Table,
@@ -197,69 +137,128 @@ impl Writer {
         }
     }
 
-    fn write_worker_loop(
-        receiver_task: &crossbeam::channel::Receiver<SerializeResult>,
+    fn write_to_table(
+        table: &mut redb::Table<'_, (u128, u128), &[u8]>,
+        batch: &mut Vec<SerializeResult>,
         buffer_pool: &BufferPool,
-        database: &super::Database,
     ) {
-        // the number of `Vec<u8>` can held before writing to the database
-        const BATCH_SIZE: usize = 50;
-        // the maximum size of bytes that can be held before writing to the
-        // database
-        const MAX_BUFFER_SIZE: usize = 1024 * 1024 * 5;
+        for result in batch.drain(..) {
+            let key = (result.stable_type_id.as_u128(), result.fingerprint);
 
-        let mut current_buffer_size = 0;
+            if let Err(e) = table.insert(key, result.buffer.as_slice()) {
+                tracing::error!("Failed to write {result:?} to database: {e}");
+            }
 
-        let mut cache_batch = Vec::with_capacity(BATCH_SIZE);
-        let mut metadata_batch = Vec::with_capacity(BATCH_SIZE);
+            // return the buffer to the pool
+            buffer_pool.put(result.buffer);
+        }
+    }
 
+    pub fn push(&mut self, result: SerializeResult) -> Option<Self> {
+        self.current_buffer_size += result.buffer.len();
+
+        if result.table == Table::Value {
+            self.cache.push(result);
+        } else {
+            self.metadata.push(result);
+        }
+
+        if self.cache.len() + self.metadata.len() >= Self::BATCH_SIZE
+            || self.current_buffer_size >= Self::MAX_BUFFER_SIZE
+        {
+            let batch = std::mem::take(self);
+            Some(batch)
+        } else {
+            None
+        }
+    }
+}
+
+impl Writer {
+    pub(crate) fn new(
+        serializer_count: usize,
+        database: &Arc<super::Database>,
+    ) -> Self {
+        let buffer_pool = BufferPool::new();
+
+        let (send_serialize_task, receiver_task) =
+            crossbeam::channel::unbounded();
+
+        let batch = Arc::new(Mutex::new(Batch::new()));
+
+        let workers = (0..serializer_count)
+            .map(|i| {
+                let receiver_task = receiver_task.clone();
+                let buffer_pool = buffer_pool.clone();
+                let batch = batch.clone();
+                let database = database.clone();
+
+                std::thread::Builder::new()
+                    .name(format!("serialize-worker-{i}"))
+                    .spawn(move || {
+                        Self::work_loop(
+                            &receiver_task,
+                            &buffer_pool,
+                            &batch,
+                            &database,
+                        );
+                    })
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            serialize_workers: workers,
+            // NOTE: make sure only one sender is held at a time
+            send_serialize_task: Some(send_serialize_task),
+        }
+    }
+
+    pub(super) fn new_serialize_task<F>(&self, task: F)
+    where
+        F: FnOnce(Buffer) -> Result<SerializeResult, Buffer> + Send + 'static,
+    {
+        self.send_serialize_task
+            .as_ref()
+            .unwrap()
+            .send(Box::new(task))
+            .unwrap();
+    }
+
+    fn work_loop(
+        receiver_task: &crossbeam::channel::Receiver<SerializeTask>,
+        buffer_pool: &BufferPool,
+        batch: &Arc<Mutex<Batch>>,
+        database: &Arc<super::Database>,
+    ) {
         loop {
-            let Ok(result) = receiver_task.recv() else {
+            // receive the task to serialize
+            let Ok(task) = receiver_task.recv() else {
                 break;
             };
 
-            current_buffer_size += result.buffer.len();
+            let buffer = buffer_pool.get();
+            let result = match task(buffer) {
+                Ok(result) => result,
+                Err(buffer) => {
+                    // if the task failed, return the buffer to the pool
+                    buffer_pool.put(buffer);
 
-            if result.table == Table::Value {
-                cache_batch.push(result);
+                    continue;
+                }
+            };
+
+            let batch_result = {
+                let mut batch = batch.lock();
+                batch.push(result)
+            };
+
+            if let Some(batch) = batch_result {
+                // if the batch is full, write it to the database
+                batch.write_batch(database, buffer_pool);
             } else {
-                metadata_batch.push(result);
+                // if the batch is not full, just continue
             }
-
-            // check if we have enough data to write to the database
-            if cache_batch.len() + metadata_batch.len() >= BATCH_SIZE
-                || current_buffer_size >= MAX_BUFFER_SIZE
-            {
-                Self::write_batch(
-                    database,
-                    &mut cache_batch,
-                    Table::Value,
-                    buffer_pool,
-                );
-                Self::write_batch(
-                    database,
-                    &mut metadata_batch,
-                    Table::Metadata,
-                    buffer_pool,
-                );
-                current_buffer_size = 0;
-            }
-        }
-
-        // write any remaining data in the batch
-        if !cache_batch.is_empty() || !metadata_batch.is_empty() {
-            Self::write_batch(
-                database,
-                &mut cache_batch,
-                Table::Value,
-                buffer_pool,
-            );
-            Self::write_batch(
-                database,
-                &mut metadata_batch,
-                Table::Metadata,
-                buffer_pool,
-            );
         }
     }
 }
@@ -273,7 +272,6 @@ impl Drop for Writer {
         // so all the serializer workers will exit which will cause the
         // only write worker to exit as well
 
-        self.write_worker.take().unwrap().join().unwrap();
         for worker in self.serialize_workers.drain(..) {
             worker.join().unwrap();
         }
