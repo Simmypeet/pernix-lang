@@ -17,6 +17,7 @@ use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
+use pernixc_parser::from_node::FromNode;
 use pernixc_query::{
     runtime::{
         executor,
@@ -469,24 +470,32 @@ impl Context<'_> {
             };
         };
 
-        // generate a parallel processes to parse files
-        let submodules_by_name = std::thread::scope(|scope| {
-            let mut join_handles = Vec::new();
-
-            for member in content.members() {
-                let Passable::Line(
+        let submodules = content
+            .inner_tree()
+            .nodes
+            .par_iter()
+            .filter_map(|node| {
+                let Some(Passable::Line(
                     pernixc_syntax::item::module::Member::Module(submodule),
-                ) = member
+                )) =
+                    Passable::<pernixc_syntax::item::module::Member>::from_node(
+                        node,
+                    )
                 else {
-                    continue;
+                    return None;
                 };
 
+                Some(submodule)
+            })
+            .collect::<Vec<_>>();
+
+        let handles = submodules
+            .into_par_iter()
+            .filter_map(|submodule| {
                 let next_signature = submodule.signature();
-                let Some(next_identifier) = next_signature.as_ref().and_then(
+                let next_identifier = next_signature.as_ref().and_then(
                     pernixc_syntax::item::module::Signature::identifier,
-                ) else {
-                    continue;
-                };
+                )?;
 
                 let next_name = next_identifier.kind.0.clone();
                 let next_access_modifier = submodule.access_modifier();
@@ -495,111 +504,97 @@ impl Context<'_> {
                     .cloned()
                     .chain(std::iter::once(next_name.clone()))
                     .collect::<Vec<_>>();
+                // Found inline module content, take the content right away
+                if let Some(member) = submodule.inline_body() {
+                    let next_submodule = self.branch_module_tree(
+                        None,
+                        member.content().map(ModuleContent),
+                        next_signature,
+                        next_access_modifier,
+                        &next_name_space,
+                    );
 
-                join_handles.push(scope.spawn(move || {
-                    // Found inline module content, take the content right away
-                    if let Some(member) = submodule.inline_body() {
-                        let next_submodule = self.branch_module_tree(
-                            None,
-                            member.content().map(ModuleContent),
-                            next_signature,
-                            next_access_modifier,
-                            &next_name_space,
-                        );
+                    Some((next_name, next_submodule))
+                }
+                // Otherwise, open a file and parse it
+                else {
+                    let mut path = self.root_directory.to_path_buf();
 
-                        Some((next_name, next_submodule))
+                    path.extend(
+                        next_name_space.iter().skip(1).map(SharedStr::as_str),
+                    );
+                    path.set_extension("pnx");
+
+                    if path == self.root_file_path {
+                        // pointing to the root file itself
+                        self.handler.receive(Error::RootSubmoduleConflict(
+                            RootSubmoduleConflict {
+                                root: TargetID::Local
+                                    .make_global(self.root_file_source_id),
+                                submodule_span: next_identifier.span,
+                                load_path: path.clone(),
+                            },
+                        ));
+                        return None;
                     }
-                    // Otherwise, open a file and parse it
-                    else {
-                        let mut path = self.root_directory.to_path_buf();
 
-                        path.extend(
-                            next_name_space
-                                .iter()
-                                .skip(1)
-                                .map(SharedStr::as_str),
-                        );
-                        path.set_extension("pnx");
-
-                        if path == self.root_file_path {
-                            // pointing to the root file itself
-                            self.handler.receive(Error::RootSubmoduleConflict(
-                                RootSubmoduleConflict {
-                                    root: TargetID::Local
-                                        .make_global(self.root_file_source_id),
-                                    submodule_span: next_identifier.span,
-                                    load_path: path.clone(),
+                    let (content, source_id) = match parse_module_tree(
+                        self.tracked_engine,
+                        self.source_files_by_id,
+                        Arc::from(path.clone()),
+                        self.target_id,
+                    ) {
+                        Ok(content) => content,
+                        Err(error) => {
+                            self.handler.receive(Error::SourceFileLoadFail(
+                                SourceFileLoadFail {
+                                    source_error: error.0.to_string(),
+                                    submodule: next_identifier.span,
+                                    path,
                                 },
                             ));
                             return None;
                         }
+                    };
 
-                        let (content, source_id) = match parse_module_tree(
-                            self.tracked_engine,
-                            self.source_files_by_id,
-                            Arc::from(path.clone()),
-                            self.target_id,
-                        ) {
-                            Ok(content) => content,
-                            Err(error) => {
-                                self.handler.receive(
-                                    Error::SourceFileLoadFail(
-                                        SourceFileLoadFail {
-                                            source_error: error.0.to_string(),
-                                            submodule: next_identifier.span,
-                                            path,
-                                        },
-                                    ),
-                                );
-                                return None;
-                            }
-                        };
+                    let next_submodule = self.branch_module_tree(
+                        Some(source_id),
+                        content.syntax_tree,
+                        next_signature,
+                        next_access_modifier,
+                        &next_name_space,
+                    );
 
-                        let next_submodule = self.branch_module_tree(
-                            Some(source_id),
-                            content.syntax_tree,
-                            next_signature,
-                            next_access_modifier,
-                            &next_name_space,
-                        );
+                    Some((next_name, next_submodule))
+                }
+            })
+            .collect::<Vec<_>>();
 
-                        Some((next_name, next_submodule))
-                    }
-                }));
-            }
+        let mut submodules_by_name =
+            HashMap::<SharedStr, ModuleTree>::default();
 
-            let mut submodules_by_name =
-                HashMap::<SharedStr, ModuleTree>::default();
-
-            for (name, module_tree) in join_handles
-                .into_iter()
-                .filter_map(|x| x.join().unwrap())
-                .map(|x| (x.0, x.1))
-            {
-                match submodules_by_name.entry(name) {
-                    Entry::Occupied(occupied_entry) => {
-                        self.handler.receive(Error::ModuleRedefinition(
-                            ModuleRedefinition {
-                                existing_module_span: occupied_entry
-                                    .get()
-                                    .signature
-                                    .as_ref()
-                                    .map(|x| x.inner_tree().span()),
-                                redefinition_submodule_span: module_tree
-                                    .signature
-                                    .as_ref()
-                                    .map(|x| x.inner_tree().span()),
-                            },
-                        ));
-                    }
-                    Entry::Vacant(vacant_entry) => {
-                        vacant_entry.insert(module_tree);
-                    }
+        for (name, module_tree) in handles.into_iter().map(|x| (x.0, x.1)) {
+            match submodules_by_name.entry(name) {
+                Entry::Occupied(occupied_entry) => {
+                    self.handler.receive(Error::ModuleRedefinition(
+                        ModuleRedefinition {
+                            existing_module_span: occupied_entry
+                                .get()
+                                .signature
+                                .as_ref()
+                                .map(|x| x.inner_tree().span()),
+                            redefinition_submodule_span: module_tree
+                                .signature
+                                .as_ref()
+                                .map(|x| x.inner_tree().span()),
+                        },
+                    ));
+                }
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(module_tree);
                 }
             }
-
-            submodules_by_name
-        });
+        }
 
         ModuleTree {
             signature,
