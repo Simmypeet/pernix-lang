@@ -11,7 +11,7 @@ use std::{
 use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_hash::HashMap;
+use pernixc_hash::{DashMap, HashMap, ReadOnlyView};
 use pernixc_query::{
     runtime::{
         executor,
@@ -27,6 +27,7 @@ use pernixc_source_file::{GlobalSourceID, SourceFile};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
 use pernixc_target::{get_invocation_arguments, TargetID};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{load::Error, syntax_tree::ModuleContent};
 
@@ -130,7 +131,7 @@ pub struct Node {
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Result<Node, Error>)]
+#[value(Result<Arc<Node>, Error>)]
 pub enum Key {
     /// A root node for the module tree.
     Root(TargetID),
@@ -231,7 +232,7 @@ fn parse_node_from_module_content(
 pub fn node_executor(
     key: &Key,
     engine: &TrackedEngine,
-) -> Result<Result<Node, Error>, CyclicError> {
+) -> Result<Result<Arc<Node>, Error>, CyclicError> {
     let (path, target_id, is_root) = match key {
         Key::Root(target_id) => {
             let invocation_argument =
@@ -262,12 +263,12 @@ pub fn node_executor(
         Err(error) => return Ok(Err(Error(Arc::from(error.to_string())))),
     };
 
-    Ok(Ok(parse_node_from_module_content(
+    Ok(Ok(Arc::new(parse_node_from_module_content(
         syntax_tree.syntax_tree,
         &path,
         is_root,
         target_id,
-    )))
+    ))))
 }
 
 /// A query for mapping [`GlobalSourceID`] to the source file paths in a
@@ -286,19 +287,34 @@ pub fn node_executor(
     Deserialize,
     pernixc_query::Key,
 )]
-#[value(Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, Error>)]
+#[value(Result<Arc<ReadOnlyView<ID<SourceFile>, Arc<Path>>>, Error>)]
 pub struct MapKey(pub TargetID);
 
 fn scan_file_tree(
     engine: &TrackedEngine,
-    source_file_paths_by_id: &mut HashMap<ID<SourceFile>, Arc<Path>>,
+    source_file_paths_by_id: &DashMap<ID<SourceFile>, Arc<Path>>,
     node: &Node,
 ) -> Result<(), CyclicError> {
-    for (_, submodule) in node.submodules_by_name.iter() {
+    node.submodules_by_name.par_iter().try_for_each(|(_, submodule)| {
         // add the submodule name to the source file paths map
         if let Submodule::SourceFile { path, .. } = submodule {
-            source_file_paths_by_id
-                .insert(engine.calculate_path_id(path), path.clone());
+            match source_file_paths_by_id.entry(engine.calculate_path_id(path))
+            {
+                dashmap::Entry::Occupied(entry) => {
+                    assert_eq!(
+                        entry.get(),
+                        path,
+                        "possible hash collision for the source file path: {} \
+                         vs {}, try deleting the incremental directory and \
+                         re-running the compilation",
+                        entry.get().display(),
+                        path.display()
+                    );
+                }
+                dashmap::Entry::Vacant(entry) => {
+                    entry.insert(path.clone());
+                }
+            }
         }
 
         // recursively scan the submodule node
@@ -312,13 +328,15 @@ fn scan_file_tree(
                     target_id: *target_id,
                 })?
                 else {
-                    continue;
+                    return Ok(());
                 };
 
                 scan_file_tree(engine, source_file_paths_by_id, &node)?;
             }
         }
-    }
+
+        Ok(())
+    })?;
 
     Ok(())
 }
@@ -328,17 +346,19 @@ fn scan_file_tree(
 pub fn map_executor(
     &MapKey(target_id): &MapKey,
     engine: &TrackedEngine,
-) -> Result<Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, Error>, CyclicError>
-{
+) -> Result<
+    Result<Arc<ReadOnlyView<ID<SourceFile>, Arc<Path>>>, Error>,
+    CyclicError,
+> {
     let module_tree = match engine.query(&Key::Root(target_id))? {
         Ok(module_tree) => module_tree,
         Err(result) => return Ok(Err(result)),
     };
 
-    let mut source_file_paths_by_id = HashMap::default();
-    scan_file_tree(engine, &mut source_file_paths_by_id, &module_tree)?;
+    let source_file_paths_by_id = DashMap::default();
+    scan_file_tree(engine, &source_file_paths_by_id, &module_tree)?;
 
-    Ok(Ok(Arc::new(source_file_paths_by_id)))
+    Ok(Ok(Arc::new(source_file_paths_by_id.into_read_only())))
 }
 
 /// A query key for retrieving a map from the [`ID<SourceFile>`] to the

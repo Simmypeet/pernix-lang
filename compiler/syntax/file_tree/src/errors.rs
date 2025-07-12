@@ -58,12 +58,12 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 
         let syntactic_errors = file_map
             .par_iter()
-            .filter_map(|(&source_id, path)| {
+            .filter_map(|x| {
                 let Ok(token_tree) = engine
                     .query(&crate::token_tree::ErrorKey {
-                        path: path.clone(),
+                        path: x.value().clone(),
                         target_id: key.0,
-                        global_source_id: key.0.make_global(source_id),
+                        global_source_id: key.0.make_global(*x.key()),
                     })
                     .unwrap()
                 else {
@@ -72,9 +72,9 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 
                 let Ok(syntax_tree) = engine
                     .query(&crate::syntax_tree::ErrorKey {
-                        path: path.clone(),
+                        path: x.value().clone(),
                         target_id: key.0,
-                        global_source_id: key.0.make_global(source_id),
+                        global_source_id: key.0.make_global(*x.key()),
                     })
                     .unwrap()
                 else {

@@ -33,6 +33,7 @@ typed-builder = { workspace = true }
 derive-new = { workspace = true }
 strsim = { workspace = true }
 siphasher = { workspace = true }
+dashmap = { workspace = true }
 
 [lints]
 workspace = true
