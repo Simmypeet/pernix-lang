@@ -24,7 +24,7 @@ use crate::{
     database::ValueMetadata,
     fingerprint,
     runtime::persistence::{
-        background::Table,
+        background::{SaveTask, Table},
         serde::{DynamicDeserialize, DynamicSerialize},
     },
     Engine, Key,
@@ -619,9 +619,16 @@ impl Persistence {
         let serializer_fn = self.serialize_dynamic_value;
         let serde_extension = self.serde_extension.clone();
 
-        self.ensure_background_writer().new_serialize_task(
-            move |mut buffer| {
-                let mut serializer = BinarySerializer::new(Writer::Vec(buffer));
+        self.ensure_background_writer().new_serialize_task(SaveTask {
+            key: (
+                K::STABLE_TYPE_ID.as_u128(),
+                value_fingerprint
+                    .unwrap_or_else(|| fingerprint::fingerprint(&value)),
+            ),
+            table: Table::Value,
+            write: Box::new(move |buffer| {
+                let mut serializer =
+                    BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
 
                 // if the fingerprint is not provided, calculate it
                 let fingerprint = value_fingerprint
@@ -635,7 +642,7 @@ impl Persistence {
                     serde_extension.as_ref(),
                 );
 
-                buffer = serializer.into_inner().into_vec().unwrap();
+                *buffer = serializer.into_inner().into_vec().unwrap();
 
                 match result {
                     Ok(()) => {}
@@ -648,18 +655,13 @@ impl Persistence {
                         );
 
                         // return the buffer to the pool
-                        return Err(buffer);
+                        return false;
                     }
                 }
 
-                Ok(background::SerializeResult {
-                    table: Table::Value,
-                    stable_type_id: K::STABLE_TYPE_ID,
-                    fingerprint,
-                    buffer,
-                })
-            },
-        );
+                true
+            }),
+        });
     }
 
     fn save_value_metadata<K: Key>(
@@ -670,15 +672,18 @@ impl Persistence {
         let serialize_value_metadata = self.serialize_value_metadata;
         let serde_extension = self.serde_extension.clone();
 
-        self.ensure_background_writer().new_serialize_task(
-            move |mut buffer| {
+        self.ensure_background_writer().new_serialize_task(SaveTask {
+            key: (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
+            table: Table::Metadata,
+            write: Box::new(move |buffer| {
                 let _span = tracing::info_span!(
                     "Saving value metadata",
                     type_name = std::any::type_name::<K>(),
                     key_fingerprint,
                 );
 
-                let mut serializer = BinarySerializer::new(Writer::Vec(buffer));
+                let mut serializer =
+                    BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
 
                 let result = (serialize_value_metadata)(
                     &mut serializer,
@@ -686,7 +691,7 @@ impl Persistence {
                     serde_extension.as_ref(),
                 );
 
-                buffer = serializer.into_inner().into_vec().unwrap();
+                *buffer = serializer.into_inner().into_vec().unwrap();
 
                 match result {
                     Ok(()) => {}
@@ -699,18 +704,13 @@ impl Persistence {
                         );
 
                         // return the buffer to the pool
-                        return Err(buffer);
+                        return false;
                     }
                 }
 
-                Ok(background::SerializeResult {
-                    table: Table::Metadata,
-                    stable_type_id: K::STABLE_TYPE_ID,
-                    fingerprint: key_fingerprint,
-                    buffer,
-                })
-            },
-        );
+                true
+            }),
+        });
     }
 
     fn load_value_metadata<K: Key>(
