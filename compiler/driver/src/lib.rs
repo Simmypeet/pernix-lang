@@ -23,6 +23,7 @@ use pernixc_serialize::{
 use pernixc_source_file::{ByteIndex, GlobalSourceID};
 use pernixc_stable_type_id::StableTypeID;
 use pernixc_target::{get_invocation_arguments, Arguments, TargetID};
+use tracing::instrument;
 
 pub mod term;
 
@@ -220,6 +221,7 @@ impl Ord for SortableDiagnostic {
 /// Runs the program with the given arguments.
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
+#[instrument(skip(err_writer, _out_writer))]
 pub fn run(
     argument: Arguments,
     err_writer: &mut dyn WriteColor,

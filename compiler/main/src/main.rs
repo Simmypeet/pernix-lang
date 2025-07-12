@@ -1,7 +1,7 @@
 //! The executable for the Pernix programming language.
 
 use std::{
-    fmt::Write as _, fs::File, io::BufWriter, mem, path::PathBuf,
+    fmt::Write as _, fs::File, io::Write as _, mem, path::PathBuf,
     process::ExitCode,
 };
 
@@ -14,15 +14,11 @@ use codespan_reporting::{
         termcolor::{self, StandardStream},
     },
 };
-use pernixc_serialize::{
-    ron::{
-        self,
-        ser::{RonConfig, RonSerializer},
-    },
-    Deserialize, Serialize,
-};
 use pernixc_target::Arguments;
-use tracing_subscriber::EnvFilter;
+use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
+use tracing_subscriber::{
+    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -32,16 +28,9 @@ fn main() -> ExitCode {
     // nicely print the error message and exit.
     #[cfg(not(debug_assertions))]
     setup_panic();
+    let argument = Arguments::parse();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_env("PERNIXC_LOG")
-                .unwrap_or_else(|_| "ERROR".into()),
-        )
-        .with_thread_ids(true)
-        .with_thread_names(true)
-        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
-        .init();
+    let _guard = init_tracing(argument.command.input().chrome_tracing);
 
     let mut stderr =
         codespan_reporting::term::termcolor::StandardStream::stderr(
@@ -52,12 +41,75 @@ fn main() -> ExitCode {
             termcolor::ColorChoice::Always,
         );
 
-    pernixc_driver::run(Arguments::parse(), &mut stderr, &mut stdout)
+    pernixc_driver::run(argument, &mut stderr, &mut stdout)
+}
+
+fn init_tracing(chrome_tracing: bool) -> Option<FlushGuard> {
+    let registry = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .with_thread_ids(true)
+            .with_thread_names(true)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            .with_filter(
+                EnvFilter::try_from_env("PERNIXC_LOG")
+                    .unwrap_or_else(|_| "ERROR".into()),
+            ),
+    );
+
+    if chrome_tracing {
+        // Create chrome layer that outputs to a file
+        let (chrome_layer, guard) = ChromeLayerBuilder::new()
+            .name_fn(Box::new(|event_or_span| match event_or_span {
+                tracing_chrome::EventOrSpan::Event(event) => {
+                    format!(
+                        "{}.{}-{}",
+                        event.metadata().target(),
+                        event.metadata().name(),
+                        event
+                            .metadata()
+                            .fields()
+                            .iter()
+                            .map(|x| format!("{}={:?}", x.name(), x.callsite()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }
+                tracing_chrome::EventOrSpan::Span(span) => {
+                    format!(
+                        "{}.{}-{}",
+                        span.metadata().target(),
+                        span.metadata().name(),
+                        span.metadata()
+                            .fields()
+                            .iter()
+                            .map(|x| format!("{}={:?}", x.name(), x.callsite()))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                }
+            }))
+            .build();
+
+        registry.with(chrome_layer).init();
+
+        Some(guard)
+    } else {
+        registry.init();
+        None
+    }
 }
 
 /// The struct capturing the information about an ICE (Internal Compiler Error)
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 pub struct IceReport {
     /// The **payload** of the panic info.
@@ -92,14 +144,16 @@ impl IceReport {
         );
         let file_path = temp_dir.join(&file_name);
 
-        let file = std::fs::File::create(&file_path)?;
-        let mut binary_serializer = RonSerializer::with_config(
-            BufWriter::new(file),
-            RonConfig::Pretty("    ".to_string()),
-        );
-        self.serialize(&mut binary_serializer, &())?;
+        let mut file = std::fs::File::create(&file_path)?;
+        let toml_string = toml::to_string_pretty(self).map_err(|x| {
+            std::io::Error::other(format!(
+                "failed to serialize the ICE report: {x}"
+            ))
+        })?;
 
-        Ok((binary_serializer.into_inner().into_inner()?, file_path))
+        file.write_all(toml_string.as_bytes())?;
+
+        Ok((file, file_path))
     }
 }
 
@@ -194,11 +248,7 @@ fn setup_panic() {
 
             eprintln!(
                 "```\n{}```",
-                ron::ser::to_ron_string_with_config(
-                    &ice_report,
-                    RonConfig::Pretty("    ".to_string()),
-                )
-                .unwrap()
+                toml::to_string_pretty(&ice_report,).unwrap()
             );
         }
 

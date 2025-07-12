@@ -112,9 +112,12 @@ pub struct Input {
     #[clap(long = "inc")]
     pub incremental_path: Option<PathBuf>,
 
-    /// Whether to show the progress of the compilation.
-    #[clap(long)]
-    pub show_progress: bool,
+    /// Produces the chrome tracing format for the compilation.
+    ///
+    /// This is primarily used for debugging purposes and can be viewed in
+    /// the Chrome browser.
+    #[clap(long = "chrome")]
+    pub chrome_tracing: bool,
 }
 
 impl Input {

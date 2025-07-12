@@ -719,7 +719,7 @@ impl Engine {
             );
 
         let _span = tracing::info_span!(
-            "compute_query",
+            "compute_query {} ",
             key_type = key.type_name(),
             key = ?key,
         )
