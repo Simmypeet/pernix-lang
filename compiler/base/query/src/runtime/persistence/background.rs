@@ -72,13 +72,20 @@ impl BatchWriteTransaction {
         table: Table,
         invoke: impl FnOnce(&mut redb::Table<(u128, u128), &'static [u8]>) -> usize,
     ) {
-        if self.written_bytes.load(std::sync::atomic::Ordering::Relaxed)
-            >= Self::COMMIT_THRESHOLD
-        {
+        let total_bytes =
+            self.written_bytes.load(std::sync::atomic::Ordering::Relaxed);
+
+        if total_bytes >= Self::COMMIT_THRESHOLD {
             // commit the current write transaction if the threshold is reached
             let mut write = self.write.write();
 
             if let Some(write) = write.take() {
+                let _span = tracing::info_span!(
+                    "commit_write_transaction",
+                    total_bytes
+                )
+                .entered();
+
                 if let Err(e) = write.commit() {
                     tracing::error!("Failed to commit write transaction: {e}");
                 }

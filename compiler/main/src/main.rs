@@ -1,8 +1,7 @@
 //! The executable for the Pernix programming language.
 
 use std::{
-    fmt::Write as _, fs::File, io::Write as _, mem, path::PathBuf,
-    process::ExitCode,
+    fmt::Write, fs::File, io::Write as _, mem, path::PathBuf, process::ExitCode,
 };
 
 use backtrace::Backtrace;
@@ -57,40 +56,34 @@ fn init_tracing(chrome_tracing: bool) -> Option<FlushGuard> {
     );
 
     if chrome_tracing {
-        // Create chrome layer that outputs to a file
+        // Create chrome layer with field value support
         let (chrome_layer, guard) = ChromeLayerBuilder::new()
+            .include_args(true) // This includes field values in the trace
             .name_fn(Box::new(|event_or_span| match event_or_span {
                 tracing_chrome::EventOrSpan::Event(event) => {
                     format!(
-                        "{}.{}-{}",
+                        "{}-{}",
                         event.metadata().target(),
-                        event.metadata().name(),
-                        event
-                            .metadata()
-                            .fields()
-                            .iter()
-                            .map(|x| format!("{}={:?}", x.name(), x.callsite()))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        event.metadata().name()
                     )
                 }
                 tracing_chrome::EventOrSpan::Span(span) => {
                     format!(
-                        "{}.{}-{}",
+                        "{}-{}",
                         span.metadata().target(),
-                        span.metadata().name(),
-                        span.metadata()
-                            .fields()
-                            .iter()
-                            .map(|x| format!("{}={:?}", x.name(), x.callsite()))
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                        span.metadata().name()
                     )
                 }
             }))
             .build();
 
-        registry.with(chrome_layer).init();
+        registry
+            .with(chrome_layer)
+            .with(
+                EnvFilter::try_from_env("PERNIXC_CHROME")
+                    .unwrap_or_else(|_| "ERROR".into()),
+            )
+            .init();
 
         Some(guard)
     } else {

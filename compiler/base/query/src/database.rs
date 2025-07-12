@@ -19,6 +19,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use tracing::instrument;
 
 use crate::{
     fingerprint,
@@ -696,6 +697,14 @@ impl Engine {
         }
     }
 
+    #[instrument(
+        fields(
+            key_name = std::any::type_name::<K>(),
+            key = ?key
+        ),
+        level = "info",
+        skip_all
+    )]
     fn compute_query<K: Key>(
         tracked_engine: &mut TrackedEngine,
         key: &K,
@@ -718,12 +727,6 @@ impl Engine {
                 },
             );
 
-        let _span = tracing::info_span!(
-            "compute_query {} ",
-            key_type = key.type_name(),
-            key = ?key,
-        )
-        .entered();
         (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine)
     }
 

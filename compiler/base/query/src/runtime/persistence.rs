@@ -19,6 +19,7 @@ use pernixc_serialize::{
 use pernixc_stable_type_id::StableTypeID;
 use rand::Rng;
 use redb::{Result, TableDefinition, TableHandle};
+use tracing::instrument;
 
 use crate::{
     database::ValueMetadata,
@@ -559,6 +560,12 @@ impl Persistence {
             key: (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
             table: Table::Value,
             write: Box::new(move |buffer| {
+                let _span = tracing::info_span!(
+                    "save_value",
+                    type_name = std::any::type_name::<K>(),
+                    value_fingerprint = value_fingerprint,
+                )
+                .entered();
                 let mut serializer =
                     BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
 
@@ -606,11 +613,12 @@ impl Persistence {
             key: (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
             table: Table::Metadata,
             write: Box::new(move |buffer| {
-                let _span = tracing::debug_span!(
-                    "Saving value metadata",
+                let _span = tracing::info_span!(
+                    "save_value_metadata",
                     type_name = std::any::type_name::<K>(),
                     key_fingerprint,
-                );
+                )
+                .entered();
 
                 let mut serializer =
                     BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
@@ -643,6 +651,14 @@ impl Persistence {
         });
     }
 
+    #[instrument(
+        fields(
+            key_name = std::any::type_name::<K>(),
+            key_fingerprint = key_fingerprint,
+        ),
+        level = "info",
+        skip_all
+    )]
     fn load_value_metadata<K: Key>(
         &self,
         key_fingerprint: u128,
@@ -660,18 +676,18 @@ impl Persistence {
         )
     }
 
+    #[instrument(
+        fields(
+            key_name = std::any::type_name::<K>(),
+            value_fingerprint = value_fingerprint,
+        ),
+        level = "info",
+        skip_all
+    )]
     fn load_value<K: Key>(
         &self,
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
-        let type_name = std::any::type_name::<K>();
-        let _tracing = tracing::debug_span!(
-            "Loading value",
-            type_name,
-            value_fingerprint,
-        )
-        .entered();
-
         if self.skip_keys.contains(&K::STABLE_TYPE_ID) {
             return Ok(None);
         }

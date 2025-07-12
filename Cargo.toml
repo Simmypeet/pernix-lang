@@ -109,6 +109,8 @@ extfn = { version = "0.1.1" }
 siphasher = "1.0.1"
 crossbeam = "0.8.4"
 rand = { version = "0.8.5", features = ["std"] }
+tracing-chrome = "0.5.0"
+serde = { version = "1.0.219", features = ["derive", "std"] }
 
 [patch.crates-io]
 inkwell = { git = "https://github.com/Simmypeet/inkwell", rev = "4366f7b37b4e732b4c567494077f3d871e2a2a60" }
