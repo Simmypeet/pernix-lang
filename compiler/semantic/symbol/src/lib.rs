@@ -23,6 +23,7 @@ use pernixc_serialize::{
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::AccessModifier;
 use pernixc_target::TargetID;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     accessibility::Accessibility, diagnostic::ItemRedifinition, kind::Kind,
@@ -235,11 +236,11 @@ impl MemberBuilder<'_, '_, '_> {
 
 impl Context<'_> {
     #[allow(clippy::too_many_lines)]
-    fn create_trait<'s: 'scope, 'scope, 'env>(
+    fn create_trait<'s: 'scope, 'scope>(
         &'s self,
         module_member: &mut MemberBuilder,
         tr: pernixc_syntax::item::r#trait::Trait,
-        scope: &'scope std::thread::Scope<'scope, 'env>,
+        scope: &rayon::Scope<'scope>,
     ) {
         let Some(identifier) = tr.signature().and_then(|x| x.identifier())
         else {
@@ -264,7 +265,7 @@ impl Context<'_> {
         let mut trait_names = module_member.current_names.to_vec();
         trait_names.push(identifier.kind.0);
 
-        scope.spawn(move || {
+        scope.spawn(move |_| {
             // spawn a parallel task to handle trait members
             let mut member_ids_by_name = HashMap::<SharedStr, ID>::default();
             let mut redefinitions = HashSet::default();
@@ -387,11 +388,11 @@ impl Context<'_> {
         });
     }
 
-    fn create_enum<'s: 'scope, 'scope, 'env>(
+    fn create_enum<'s: 'scope, 'scope>(
         &'s self,
         module_member: &mut MemberBuilder,
         en: pernixc_syntax::item::r#enum::Enum,
-        scope: &'scope std::thread::Scope<'scope, 'env>,
+        scope: &rayon::Scope<'scope>,
     ) {
         let Some(identifier) = en.signature().and_then(|x| x.identifier())
         else {
@@ -416,7 +417,7 @@ impl Context<'_> {
         let mut enum_names = module_member.current_names.to_vec();
         enum_names.push(identifier.kind.0);
 
-        scope.spawn(move || {
+        scope.spawn(move |_| {
             // spawn a parallel task to handle trait members
             let mut members = HashMap::<SharedStr, ID>::default();
             let mut redefinitions = HashSet::default();
@@ -519,34 +520,28 @@ impl Context<'_> {
         let mut members = HashMap::default();
         let mut redefinitions = HashSet::default();
 
-        std::thread::scope(|scope| {
-            syntax_tree
-                .submodules_by_name
-                .iter()
-                .map(|(name, module_tree)| {
-                    scope.spawn(|| {
-                        (
-                            name.clone(),
-                            self.create_module(
-                                name,
-                                module_tree,
-                                Some(current_module_id),
-                                &current_module_names,
-                            ),
-                        )
-                    })
-                })
-                .collect::<Vec<_>>()
-                .into_iter()
-                .for_each(|handle| {
-                    let (name, id) = handle.join().unwrap();
-
-                    assert!(
-                        members.insert(name, id).is_none(),
-                        "should've handled the redefinition earlier"
-                    );
-                });
-        });
+        syntax_tree
+            .submodules_by_name
+            .par_iter()
+            .map(|(name, module_tree)| {
+                (
+                    name.clone(),
+                    self.create_module(
+                        name,
+                        module_tree,
+                        Some(current_module_id),
+                        &current_module_names,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .for_each(|(name, id)| {
+                assert!(
+                    members.insert(name, id).is_none(),
+                    "should've handled the redefinition earlier"
+                );
+            });
 
         let mut member_builder = MemberBuilder {
             current_names: &current_module_names,
@@ -555,7 +550,7 @@ impl Context<'_> {
             redefinitions: &mut redefinitions,
         };
 
-        std::thread::scope(|scope| {
+        rayon::scope(|scope| {
             for item in syntax_tree.content.iter().flat_map(|content| {
                 content.members().filter_map(|x| x.into_line().ok())
             }) {
