@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use pernixc_hash::HashMap;
+use redb::TableDefinition;
 
 mod frame;
 
@@ -9,6 +10,17 @@ mod frame;
 pub(super) enum Table {
     Value,
     Metadata,
+}
+
+impl Table {
+    pub const fn definition(
+        self,
+    ) -> TableDefinition<'static, (u128, u128), &'static [u8]> {
+        match self {
+            Self::Value => super::VALUE_CACHE,
+            Self::Metadata => super::VALUE_METADATA,
+        }
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -29,7 +41,7 @@ pub(super) struct Writer {
 impl Writer {
     pub(crate) fn new(
         serializer_count: usize,
-        database: &Arc<super::Database>,
+        database: &Arc<redb::Database>,
     ) -> Self {
         let (send_serialize_task, receiver_task) =
             crossbeam::channel::unbounded();
@@ -61,7 +73,7 @@ impl Writer {
 
     fn work_loop(
         receiver_task: &crossbeam::channel::Receiver<SaveTask>,
-        database: &Arc<super::Database>,
+        database: &redb::Database,
     ) {
         const FLUSH_BATCH_SIZE: usize = 5 * 1024 * 1024; // 1 MiB
         let mut buffers = HashMap::<Table, frame::Buffer>::default();
@@ -78,38 +90,67 @@ impl Writer {
             buffer.write(task.key, |buffer| (task.write)(buffer));
 
             if buffer.byte_size() >= FLUSH_BATCH_SIZE {
-                match task.table {
-                    Table::Value => database
-                        .write_transaction()
-                        .unwrap()
-                        .with_cache_table(|x| {
-                            buffer.flush(&mut x.write());
-                        }),
-                    Table::Metadata => database
-                        .write_transaction()
-                        .unwrap()
-                        .with_metadata_table(|x| {
-                            buffer.flush(&mut x.write());
-                        }),
+                let write = match database.begin_write() {
+                    Ok(write) => write,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to begin write transaction: {e}"
+                        );
+                        continue;
+                    }
+                };
+
+                let mut table = match write.open_table(task.table.definition())
+                {
+                    Ok(table) => table,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to open table {:?} for writing: {e}",
+                            task.table
+                        );
+                        continue;
+                    }
+                };
+
+                buffer.flush(&mut table);
+
+                drop(table);
+
+                if let Err(e) = write.commit() {
+                    tracing::error!("Failed to commit write transaction: {e}");
                 }
             }
         }
 
         for (&key, buffer) in &mut buffers {
             if buffer.byte_size() != 0 {
-                match key {
-                    Table::Value => database
-                        .write_transaction()
-                        .unwrap()
-                        .with_cache_table(|x| {
-                            buffer.flush(&mut x.write());
-                        }),
-                    Table::Metadata => database
-                        .write_transaction()
-                        .unwrap()
-                        .with_metadata_table(|x| {
-                            buffer.flush(&mut x.write());
-                        }),
+                let write = match database.begin_write() {
+                    Ok(write) => write,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to begin write transaction: {e}"
+                        );
+                        continue;
+                    }
+                };
+
+                let mut table = match write.open_table(key.definition()) {
+                    Ok(table) => table,
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to open table {:?} for writing: {e}",
+                            key
+                        );
+                        continue;
+                    }
+                };
+
+                buffer.flush(&mut table);
+
+                drop(table);
+
+                if let Err(e) = write.commit() {
+                    tracing::error!("Failed to commit write transaction: {e}");
                 }
             }
         }

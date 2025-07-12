@@ -10,7 +10,6 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
-use ouroboros::self_referencing;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use pernixc_hash::HashSet;
 use pernixc_serialize::{
@@ -18,7 +17,7 @@ use pernixc_serialize::{
     Deserialize as _, Serialize as _,
 };
 use pernixc_stable_type_id::StableTypeID;
-use redb::{ReadableTable, Result, TableDefinition, WriteTransaction};
+use redb::{Result, TableDefinition, TableHandle};
 
 use crate::{
     database::ValueMetadata,
@@ -33,99 +32,6 @@ use crate::{
 pub mod serde;
 
 mod background;
-
-struct Database {
-    database: redb::Database,
-    transaction: RwLock<Option<WriteTransactionWithTable>>,
-}
-
-impl Database {
-    fn commit(&self) -> Result<(), std::io::Error> {
-        let mut write_transaction = self.transaction.write();
-
-        if let Some(transaction) = write_transaction.take() {
-            let transaction = transaction.into_heads();
-            transaction.write_transaction.commit().map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to commit write transaction: {e}",
-                ))
-            })?;
-        }
-
-        Ok(())
-    }
-
-    fn write_transaction(
-        &self,
-    ) -> Result<
-        MappedRwLockReadGuard<'_, WriteTransactionWithTable>,
-        std::io::Error,
-    > {
-        loop {
-            let transaction = self.transaction.read();
-            if let Ok(value) = RwLockReadGuard::try_map(
-                transaction,
-                |x: &Option<WriteTransactionWithTable>| x.as_ref(),
-            ) {
-                return Ok(value);
-            }
-
-            let mut with_table = self.transaction.write();
-            let write_transaction =
-                self.database.begin_write().map_err(|e| {
-                    std::io::Error::other(format!(
-                        "Failed to begin write transaction: {e}",
-                    ))
-                })?;
-
-            if with_table.as_mut().is_none() {
-                with_table.replace(
-                    WriteTransactionWithTableTryBuilder {
-                        write_transaction,
-                        cache_table_builder: |tx| {
-                            tx.open_table(VALUE_CACHE)
-                                .map_err(|e| {
-                                    std::io::Error::other(format!(
-                                        "Failed to open value cache table: {e}",
-                                    ))
-                                })
-                                .map(RwLock::new)
-                        },
-
-                        metadata_table_builder: |tx| {
-                            tx.open_table(VALUE_METADATA)
-                                .map_err(|e| {
-                                    std::io::Error::other(format!(
-                                        "Failed to open value metadata table: \
-                                         {e}",
-                                    ))
-                                })
-                                .map(RwLock::new)
-                        },
-                    }
-                    .try_build()?,
-                );
-            }
-        }
-    }
-}
-
-#[self_referencing]
-struct WriteTransactionWithTable {
-    write_transaction: WriteTransaction,
-
-    #[borrows(write_transaction)]
-    #[not_covariant]
-    cache_table: RwLock<redb::Table<'this, (u128, u128), &'static [u8]>>,
-
-    #[borrows(write_transaction)]
-    #[not_covariant]
-    metadata_table: RwLock<redb::Table<'this, (u128, u128), &'static [u8]>>,
-}
-
-impl Drop for Database {
-    fn drop(&mut self) { self.transaction.write().take(); }
-}
 
 impl Engine {
     pub(crate) fn try_load_value<K: Key>(
@@ -336,7 +242,9 @@ impl std::io::Read for Reader {
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
 pub struct Persistence {
-    database: Arc<Database>,
+    database: Arc<redb::Database>,
+    read_transaction: Option<redb::ReadTransaction>,
+
     background_writer: RwLock<Option<background::Writer>>,
 
     skip_keys: HashSet<StableTypeID>,
@@ -375,14 +283,10 @@ pub struct Persistence {
     serde_extension: Arc<dyn std::any::Any + Send + Sync>,
 }
 
-impl Drop for Persistence {
-    fn drop(&mut self) { self.database.transaction.write().take(); }
-}
-
 impl std::fmt::Debug for Persistence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Persistence")
-            .field("database", &self.database.database)
+            .field("database", &self.database)
             .finish_non_exhaustive()
     }
 }
@@ -503,19 +407,47 @@ impl Persistence {
         }
 
         let database_path = directory_path.join(Self::DATABASE_FILE);
+        let database = redb::Database::create(&database_path).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to create database at path {}: {e}",
+                database_path.display()
+            ))
+        })?;
+
+        // create the tables if they do not exist
+        let write = database.begin_write().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to begin write transaction: {e}",
+            ))
+        })?;
+
+        write.open_table(VALUE_CACHE).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to open table {}: {e}",
+                VALUE_CACHE.name()
+            ))
+        })?;
+        write.open_table(VALUE_METADATA).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to open table {}: {e}",
+                VALUE_METADATA.name()
+            ))
+        })?;
+
+        write.commit().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to commit write transaction: {e}",
+            ))
+        })?;
 
         Ok(Self {
-            database: Arc::new(Database {
-                database: redb::Database::create(&database_path).map_err(
-                    |e| {
-                        std::io::Error::other(format!(
-                            "Failed to create database at path {}: {e}",
-                            database_path.display()
-                        ))
-                    },
-                )?,
-                transaction: RwLock::new(None),
-            }),
+            read_transaction: Some(database.begin_read().map_err(|e| {
+                std::io::Error::other(format!(
+                    "Failed to begin read transaction: {e}",
+                ))
+            })?),
+            database: Arc::new(database),
+
             background_writer: RwLock::new(None),
 
             skip_keys: HashSet::default(),
@@ -537,13 +469,21 @@ impl Persistence {
     }
 
     fn load_from_table<K: redb::Key, Q: for<'k> Borrow<K::SelfType<'k>>, V>(
-        table: &redb::Table<'_, K, &[u8]>,
+        read: &redb::ReadTransaction,
+        table_def: TableDefinition<'static, K, &'static [u8]>,
         key: Q,
         deserialize: impl FnOnce(
             &mut BinaryDeserializer<Reader>,
         ) -> Result<V, std::io::Error>,
     ) -> Result<Option<V>, std::io::Error> {
-        let value = if let Some(value_access) = table.get(key).map_err(|e| {
+        let read = read.open_table(table_def).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to open table {}: {e}",
+                table_def.name()
+            ))
+        })?;
+
+        let value = if let Some(value_access) = read.get(key).map_err(|e| {
             std::io::Error::other(format!(
                 "Failed to get value from table: {e}",
             ))
@@ -717,20 +657,17 @@ impl Persistence {
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<ValueMetadata>, std::io::Error> {
-        let tx = self.database.write_transaction()?;
-
-        tx.with_metadata_table(|x| {
-            Self::load_from_table(
-                &x.read(),
-                (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
-                |deserializer| {
-                    (self.deserialize_value_metadata)(
-                        deserializer,
-                        self.serde_extension.as_ref(),
-                    )
-                },
-            )
-        })
+        Self::load_from_table(
+            self.read_transaction.as_ref().unwrap(),
+            VALUE_METADATA,
+            (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
+            |deserializer| {
+                (self.deserialize_value_metadata)(
+                    deserializer,
+                    self.serde_extension.as_ref(),
+                )
+            },
+        )
     }
 
     fn load_value<K: Key>(
@@ -746,27 +683,24 @@ impl Persistence {
             return Ok(None);
         }
 
-        let tx = self.database.write_transaction()?;
+        Self::load_from_table(
+            self.read_transaction.as_ref().unwrap(),
+            VALUE_CACHE,
+            (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
+            |deserializer| {
+                let mut buffer: Option<K::Value> = None;
 
-        tx.with_cache_table(|x| {
-            Self::load_from_table(
-                &x.read(),
-                (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
-                |deserializer| {
-                    let mut buffer: Option<K::Value> = None;
+                (self.deserialize_dynamic_value)(
+                    &mut buffer,
+                    deserializer,
+                    K::STABLE_TYPE_ID,
+                    std::any::type_name::<K::Value>(),
+                    self.serde_extension.as_ref(),
+                )?;
 
-                    (self.deserialize_dynamic_value)(
-                        &mut buffer,
-                        deserializer,
-                        K::STABLE_TYPE_ID,
-                        std::any::type_name::<K::Value>(),
-                        self.serde_extension.as_ref(),
-                    )?;
-
-                    Ok(buffer.unwrap())
-                },
-            )
-        })
+                Ok(buffer.unwrap())
+            },
+        )
     }
 
     fn ensure_background_writer(
@@ -792,17 +726,12 @@ impl Persistence {
         }
     }
 
-    fn commit(&mut self) -> Result<(), std::io::Error> {
+    fn commit(&mut self) {
         // drop the old background writer that makes sure that all the tasks
         // are completed
         self.background_writer.write().take();
 
-        // commit the database
-        self.database.commit()?;
-
         tracing::info!("Persistence database committed successfully");
-
-        Ok(())
     }
 }
 
@@ -819,7 +748,7 @@ impl Engine {
             persistence.directory_path.join(Persistence::VERSION_SNAPSHOT_FILE),
         )?;
 
-        persistence.commit()?;
+        persistence.commit();
 
         let version = self.version();
 
