@@ -616,7 +616,7 @@ impl Persistence {
             key: (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
             table: Table::Metadata,
             write: Box::new(move |buffer| {
-                let _span = tracing::info_span!(
+                let _span = tracing::debug_span!(
                     "Saving value metadata",
                     type_name = std::any::type_name::<K>(),
                     key_fingerprint,
@@ -675,9 +675,12 @@ impl Persistence {
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
         let type_name = std::any::type_name::<K>();
-        let _tracing =
-            tracing::info_span!("Loading value", type_name, value_fingerprint,)
-                .entered();
+        let _tracing = tracing::debug_span!(
+            "Loading value",
+            type_name,
+            value_fingerprint,
+        )
+        .entered();
 
         if self.skip_keys.contains(&K::STABLE_TYPE_ID) {
             return Ok(None);

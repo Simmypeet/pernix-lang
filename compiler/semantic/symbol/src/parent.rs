@@ -13,7 +13,6 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     kind::{get_kind, Kind},
-    member::try_get_members,
     name::get_name,
     ID,
 };
@@ -121,23 +120,29 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
         key: &IntermediateKey,
     ) -> Result<Arc<Intermediate>, pernixc_query::runtime::executor::CyclicError>
     {
-        let symbols = engine
-            .query(&crate::symbols::Key(key.0))
-            .expect("should have no cyclic dependencies");
+        let symbols = engine.query(&crate::symbols::Key(key.0))?;
+        let table = engine.query(&crate::Key(key.0))?;
         let symbols = symbols.as_ref();
 
         Ok(Arc::new(Intermediate(
             symbols
                 .par_iter()
-                .map(|x| key.0.make_global(*x))
-                .filter_map(|x| engine.try_get_members(x).map(|y| (x, y)))
+                .filter_map(|x| {
+                    table
+                        .entries_by_id
+                        .get(x)
+                        .unwrap()
+                        .members
+                        .clone()
+                        .map(|members| (x, members))
+                })
                 .flat_map_iter(|(symbol, member)| {
                     member
                         .member_ids_by_name
                         .values()
                         .copied()
                         .chain(member.redefinitions.iter().copied())
-                        .map(move |member_id| (member_id, symbol.id))
+                        .map(move |member_id| (member_id, *symbol))
                         .collect::<Vec<_>>()
                 })
                 .collect(),
