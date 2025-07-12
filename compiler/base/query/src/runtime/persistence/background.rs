@@ -190,10 +190,6 @@ impl StealingWorker {
         let backoff = Backoff::new();
 
         loop {
-            if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-                break; // Exit the loop if shutdown is requested.
-            }
-
             // Pop a task from the local queue, if not empty.
             let task = local.pop().or_else(|| {
                 // Otherwise, we need to look for a task elsewhere.
@@ -213,29 +209,25 @@ impl StealingWorker {
                 .and_then(Steal::success)
             });
 
-            match task {
-                Some(task) => {
-                    backoff.reset(); // Reset backoff on successful task retrieval
+            if let Some(task) = task {
+                backoff.reset(); // Reset backoff on successful task retrieval
 
-                    let buffer = buffers.entry(task.table).or_default();
+                let buffer = buffers.entry(task.table).or_default();
 
-                    // Write the task to the frame buffer for batching.
-                    Self::process_task(task, batch_transaction, buffer);
+                // Write the task to the frame buffer for batching.
+                Self::process_task(task, batch_transaction, buffer);
+            } else {
+                if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                    break; // Exit the loop if shutdown is requested.
                 }
-                None => {
-                    backoff.snooze();
-                }
+
+                backoff.snooze();
             }
         }
 
         // Flush any remaining tasks in the buffers before exiting.
         for (&key, buffer) in &mut buffers {
-            if buffer.byte_size() != 0 {
-                batch_transaction.open_table(key, |table| {
-                    buffer.flush(table);
-                    buffer.byte_size()
-                });
-            }
+            batch_transaction.open_table(key, |table| buffer.flush(table));
         }
     }
 
@@ -249,10 +241,8 @@ impl StealingWorker {
         buffer_frame.write(task.key, |buffer| (task.write)(buffer));
 
         if buffer_frame.byte_size() >= Self::FLUSH_BATCH_SIZE {
-            batch_transaction.open_table(task.table, |table| {
-                buffer_frame.flush(table);
-                buffer_frame.byte_size()
-            });
+            batch_transaction
+                .open_table(task.table, |table| buffer_frame.flush(table));
         }
     }
 }

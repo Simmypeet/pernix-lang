@@ -732,6 +732,12 @@ impl Persistence {
         self.background_writer.write().take();
 
         tracing::info!("Persistence database committed successfully");
+
+        self.read_transaction = Some(
+            self.database
+                .begin_read()
+                .expect("Failed to begin read transaction"),
+        );
     }
 }
 

@@ -34,6 +34,7 @@ impl Buffer {
 
         if success {
             let end = self.buffer.len();
+
             self.frames.push(Frame { end, key });
         } else {
             // truncate the buffer to the beginning
@@ -41,7 +42,11 @@ impl Buffer {
         }
     }
 
-    pub fn flush(&mut self, table: &mut redb::Table<'_, (u128, u128), &[u8]>) {
+    pub fn flush(
+        &mut self,
+        table: &mut redb::Table<'_, (u128, u128), &[u8]>,
+    ) -> usize {
+        let written_bytes = self.buffer.len();
         let mut begin = 0;
 
         for frame in &self.frames {
@@ -60,6 +65,8 @@ impl Buffer {
         // uses clear to keep the capacity of the buffer
         self.frames.clear();
         self.buffer.clear();
+
+        written_bytes
     }
 
     #[must_use]
