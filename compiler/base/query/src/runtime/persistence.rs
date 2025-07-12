@@ -245,7 +245,7 @@ pub struct Persistence {
     database: Arc<redb::Database>,
     read_transaction: Option<redb::ReadTransaction>,
 
-    background_writer: RwLock<Option<background::Writer>>,
+    background_writer: RwLock<Option<background::StealingWorker>>,
 
     skip_keys: HashSet<StableTypeID>,
     directory_path: PathBuf,
@@ -559,7 +559,7 @@ impl Persistence {
         let serializer_fn = self.serialize_dynamic_value;
         let serde_extension = self.serde_extension.clone();
 
-        self.ensure_background_writer().new_serialize_task(SaveTask {
+        self.ensure_background_writer().new_save_task(SaveTask {
             key: (
                 K::STABLE_TYPE_ID.as_u128(),
                 value_fingerprint
@@ -612,7 +612,7 @@ impl Persistence {
         let serialize_value_metadata = self.serialize_value_metadata;
         let serde_extension = self.serde_extension.clone();
 
-        self.ensure_background_writer().new_serialize_task(SaveTask {
+        self.ensure_background_writer().new_save_task(SaveTask {
             key: (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
             table: Table::Metadata,
             write: Box::new(move |buffer| {
@@ -705,19 +705,19 @@ impl Persistence {
 
     fn ensure_background_writer(
         &self,
-    ) -> MappedRwLockReadGuard<'_, background::Writer> {
+    ) -> MappedRwLockReadGuard<'_, background::StealingWorker> {
         loop {
             let background_writer = self.background_writer.read();
             if let Ok(value) = RwLockReadGuard::try_map(
                 background_writer,
-                |x: &Option<background::Writer>| x.as_ref(),
+                |x: &Option<background::StealingWorker>| x.as_ref(),
             ) {
                 return value;
             }
 
             let mut with_writer = self.background_writer.write();
             if with_writer.as_mut().is_none() {
-                with_writer.replace(background::Writer::new(
+                with_writer.replace(background::StealingWorker::new(
                     std::thread::available_parallelism()
                         .map_or_else(|_| 4, std::num::NonZero::get),
                     &self.database,

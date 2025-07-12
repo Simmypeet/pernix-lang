@@ -1,5 +1,13 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize},
+    Arc,
+};
 
+use crossbeam::{
+    deque::{Injector, Steal, Stealer, Worker},
+    utils::Backoff,
+};
+use parking_lot::{Mutex, RwLock};
 use pernixc_hash::HashMap;
 use redb::TableDefinition;
 
@@ -30,143 +38,238 @@ pub struct SaveTask {
     pub(super) write: Box<dyn FnOnce(&mut Vec<u8>) -> bool + Send>,
 }
 
-/// A struct that helps serializing data in a background thread and sending it
-/// to the redb writer for writing to the persistent storage.
-pub(super) struct Writer {
-    serialize_workers: Vec<std::thread::JoinHandle<()>>,
+pub struct BatchWriteTransaction {
+    pub(super) table: Arc<redb::Database>,
 
-    send_serialize_task: Option<crossbeam::channel::Sender<SaveTask>>,
+    pub(super) write: RwLock<Option<redb::WriteTransaction>>,
+    pub(super) table_lockcs: HashMap<Table, Mutex<()>>,
+
+    pub(super) written_bytes: AtomicUsize,
 }
 
-impl Writer {
-    pub(crate) fn new(
-        serializer_count: usize,
-        database: &Arc<redb::Database>,
-    ) -> Self {
-        let (send_serialize_task, receiver_task) =
-            crossbeam::channel::unbounded();
+impl BatchWriteTransaction {
+    const COMMIT_THRESHOLD: usize = 12 * 1024 * 1024; // 5 MiB
 
-        let workers = (0..serializer_count)
-            .map(|i| {
-                let receiver_task = receiver_task.clone();
-                let database = database.clone();
-
-                std::thread::Builder::new()
-                    .name(format!("serialize-worker-{i}"))
-                    .spawn(move || {
-                        Self::work_loop(&receiver_task, &database);
-                    })
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
+    pub fn new(table: Arc<redb::Database>) -> Self {
+        let write =
+            table.begin_write().expect("Failed to begin write transaction");
 
         Self {
-            serialize_workers: workers,
-            // NOTE: make sure only one sender is held at a time
-            send_serialize_task: Some(send_serialize_task),
+            table,
+            write: RwLock::new(Some(write)),
+            table_lockcs: [
+                (Table::Value, Mutex::new(())),
+                (Table::Metadata, Mutex::new(())),
+            ]
+            .into_iter()
+            .collect(),
+            written_bytes: AtomicUsize::new(0),
         }
     }
 
-    pub(super) fn new_serialize_task(&self, task: SaveTask) {
-        self.send_serialize_task.as_ref().unwrap().send(task).unwrap();
-    }
-
-    fn work_loop(
-        receiver_task: &crossbeam::channel::Receiver<SaveTask>,
-        database: &redb::Database,
+    pub fn open_table(
+        &self,
+        table: Table,
+        invoke: impl FnOnce(&mut redb::Table<(u128, u128), &'static [u8]>) -> usize,
     ) {
-        const FLUSH_BATCH_SIZE: usize = 5 * 1024 * 1024; // 1 MiB
-        let mut buffers = HashMap::<Table, frame::Buffer>::default();
+        if self.written_bytes.load(std::sync::atomic::Ordering::Relaxed)
+            >= Self::COMMIT_THRESHOLD
+        {
+            // commit the current write transaction if the threshold is reached
+            let mut write = self.write.write();
 
-        loop {
-            // receive the task to serialize
-            let Ok(task) = receiver_task.recv() else {
-                break;
-            };
-
-            let buffer = buffers.entry(task.table).or_default();
-
-            // write the task to the frame buffer for batching
-            buffer.write(task.key, |buffer| (task.write)(buffer));
-
-            if buffer.byte_size() >= FLUSH_BATCH_SIZE {
-                let write = match database.begin_write() {
-                    Ok(write) => write,
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to begin write transaction: {e}"
-                        );
-                        continue;
-                    }
-                };
-
-                let mut table = match write.open_table(task.table.definition())
-                {
-                    Ok(table) => table,
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to open table {:?} for writing: {e}",
-                            task.table
-                        );
-                        continue;
-                    }
-                };
-
-                buffer.flush(&mut table);
-
-                drop(table);
-
+            if let Some(write) = write.take() {
                 if let Err(e) = write.commit() {
                     tracing::error!("Failed to commit write transaction: {e}");
                 }
             }
+
+            *write = Some(
+                self.table
+                    .begin_write()
+                    .expect("Failed to begin write transaction"),
+            );
+
+            self.written_bytes.store(0, std::sync::atomic::Ordering::Relaxed);
         }
 
-        for (&key, buffer) in &mut buffers {
-            if buffer.byte_size() != 0 {
-                let write = match database.begin_write() {
-                    Ok(write) => write,
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to begin write transaction: {e}"
-                        );
-                        continue;
-                    }
-                };
+        let lock = self.table_lockcs.get(&table).unwrap();
+        let _guard = lock.lock();
 
-                let mut table = match write.open_table(key.definition()) {
-                    Ok(table) => table,
-                    Err(e) => {
-                        tracing::error!(
-                            "Failed to open table {:?} for writing: {e}",
-                            key
-                        );
-                        continue;
-                    }
-                };
+        let write = self.write.read();
+        let mut table = write
+            .as_ref()
+            .expect("Write transaction is not initialized")
+            .open_table(table.definition())
+            .expect("Failed to open table for writing");
 
-                buffer.flush(&mut table);
+        let written_bytes = invoke(&mut table);
+        self.written_bytes
+            .fetch_add(written_bytes, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
-                drop(table);
+impl Drop for BatchWriteTransaction {
+    fn drop(&mut self) {
+        let mut write = self.write.write();
 
-                if let Err(e) = write.commit() {
-                    tracing::error!("Failed to commit write transaction: {e}");
-                }
+        if let Some(write) = write.take() {
+            if let Err(e) = write.commit() {
+                tracing::error!("Failed to commit write transaction: {e}");
             }
         }
     }
 }
 
-impl Drop for Writer {
-    fn drop(&mut self) {
-        // drop the sender to stop the workers
-        self.send_serialize_task.take();
+pub struct StealingWorker {
+    injector: Arc<Injector<SaveTask>>,
+    shutdown: Arc<AtomicBool>,
 
-        // all the senders are dropped (which is the only one here),
-        // so all the serializer workers will exit which will cause the
-        // only write worker to exit as well
-        for worker in self.serialize_workers.drain(..) {
-            worker.join().unwrap();
+    thread_handles: Vec<std::thread::JoinHandle<()>>,
+}
+
+impl StealingWorker {
+    pub fn new(worker_count: usize, database: &Arc<redb::Database>) -> Self {
+        let injector = Arc::new(Injector::new());
+        let shutdown = Arc::new(AtomicBool::new(false));
+
+        let mut thread_handles = Vec::with_capacity(worker_count);
+
+        let workers =
+            (0..worker_count).map(|_| Worker::new_fifo()).collect::<Vec<_>>();
+        let stealers =
+            workers.iter().map(Worker::stealer).collect::<Arc<[_]>>();
+
+        let batch_transaction =
+            Arc::new(BatchWriteTransaction::new(database.clone()));
+
+        for (i, worker) in workers.into_iter().enumerate() {
+            let injector = injector.clone();
+            let stealers = stealers.clone();
+            let shutdown = shutdown.clone();
+            let batch_transaction = batch_transaction.clone();
+
+            let handle = std::thread::Builder::new()
+                .name(format!("stealing-worker-{i}"))
+                .spawn(move || {
+                    Self::worker_loop(
+                        &worker,
+                        &injector,
+                        &stealers,
+                        &shutdown,
+                        &batch_transaction,
+                    );
+                })
+                .expect("Failed to spawn stealing worker thread");
+
+            thread_handles.push(handle);
+        }
+
+        Self { injector, shutdown, thread_handles }
+    }
+
+    pub fn new_save_task(&self, task: SaveTask) {
+        // Push the task to the injector, which will be processed by one of the
+        // worker threads.
+        self.injector.push(task);
+
+        for thread in &self.thread_handles {
+            // Wake up the worker thread to process the task.
+            thread.thread().unpark();
+        }
+    }
+
+    fn worker_loop(
+        local: &Worker<SaveTask>,
+        global: &Injector<SaveTask>,
+        stealers: &[Stealer<SaveTask>],
+        shutdown: &AtomicBool,
+        batch_transaction: &BatchWriteTransaction,
+    ) {
+        let mut buffers = HashMap::<Table, frame::Buffer>::default();
+        let backoff = Backoff::new();
+
+        loop {
+            if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                break; // Exit the loop if shutdown is requested.
+            }
+
+            // Pop a task from the local queue, if not empty.
+            let task = local.pop().or_else(|| {
+                // Otherwise, we need to look for a task elsewhere.
+                std::iter::repeat_with(|| {
+                    // Try stealing a batch of tasks from the global queue.
+                    global
+                        .steal_batch_and_pop(local)
+                        // Or try stealing a task from one of the other threads.
+                        .or_else(|| {
+                            stealers.iter().map(Stealer::steal).collect()
+                        })
+                })
+                // Loop while no task was stolen and any steal operation needs
+                // to be retried.
+                .find(|s| !s.is_retry())
+                // Extract the stolen task, if there is one.
+                .and_then(Steal::success)
+            });
+
+            match task {
+                Some(task) => {
+                    backoff.reset(); // Reset backoff on successful task retrieval
+
+                    let buffer = buffers.entry(task.table).or_default();
+
+                    // Write the task to the frame buffer for batching.
+                    Self::process_task(task, batch_transaction, buffer);
+                }
+                None => {
+                    backoff.snooze();
+                }
+            }
+        }
+
+        // Flush any remaining tasks in the buffers before exiting.
+        for (&key, buffer) in &mut buffers {
+            if buffer.byte_size() != 0 {
+                batch_transaction.open_table(key, |table| {
+                    buffer.flush(table);
+                    buffer.byte_size()
+                });
+            }
+        }
+    }
+
+    const FLUSH_BATCH_SIZE: usize = 1024 * 1024;
+
+    fn process_task(
+        task: SaveTask,
+        batch_transaction: &BatchWriteTransaction,
+        buffer_frame: &mut frame::Buffer,
+    ) {
+        buffer_frame.write(task.key, |buffer| (task.write)(buffer));
+
+        if buffer_frame.byte_size() >= Self::FLUSH_BATCH_SIZE {
+            batch_transaction.open_table(task.table, |table| {
+                buffer_frame.flush(table);
+                buffer_frame.byte_size()
+            });
+        }
+    }
+}
+
+impl Drop for StealingWorker {
+    fn drop(&mut self) {
+        // Signal shutdown to all worker threads.
+        self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        // Unpark all worker threads to ensure they exit.
+        for thread in &self.thread_handles {
+            thread.thread().unpark();
+        }
+
+        // Wait for all worker threads to finish.
+        for thread in self.thread_handles.drain(..) {
+            thread.join().expect("Failed to join stealing worker thread");
         }
     }
 }
