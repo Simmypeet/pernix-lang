@@ -6,10 +6,10 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
-use pernixc_hash::HashMap;
-use pernixc_module_tree::{
-    errors::get_module_tree_rendered_errors, source_map::SourceMap,
+use pernixc_file_tree::{
+    errors::get_file_tree_rendered_errors, source_map::SourceMap,
 };
+use pernixc_hash::HashMap;
 use pernixc_query::{
     runtime::persistence::{
         serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
@@ -22,7 +22,6 @@ use pernixc_serialize::{
 };
 use pernixc_source_file::{ByteIndex, GlobalSourceID};
 use pernixc_stable_type_id::StableTypeID;
-use pernixc_symbol::diagnostic::get_symbol_table_rendered_errors;
 use pernixc_target::{get_invocation_arguments, Arguments, TargetID};
 
 pub mod term;
@@ -233,8 +232,8 @@ pub fn run(
     // all the serialization/deserialization runtime information must be
     // registered before creating a persistence layer
     pernixc_target::register_serde(&mut serde_registry);
-    pernixc_module_tree::register_serde(&mut serde_registry);
-    pernixc_symbol::register_serde(&mut serde_registry);
+    pernixc_file_tree::register_serde(&mut serde_registry);
+    // pernixc_symbol::register_serde(&mut serde_registry);
 
     let mut engine = Engine::default();
 
@@ -289,13 +288,13 @@ pub fn run(
     // into the persistence layer.
     if let Some(persistence) = engine.runtime.persistence.as_mut() {
         pernixc_target::skip_persistence(persistence);
-        pernixc_module_tree::skip_persistence(persistence);
-        pernixc_symbol::skip_persistence(persistence);
+        pernixc_file_tree::skip_persistence(persistence);
+        // pernixc_symbol::skip_persistence(persistence);
     }
 
     // final step, setup the query executors for the engine
-    pernixc_module_tree::register_executors(&mut engine.runtime.executor);
-    pernixc_symbol::register_executors(&mut engine.runtime.executor);
+    pernixc_file_tree::register_executors(&mut engine.runtime.executor);
+    // pernixc_symbol::register_executors(&mut engine.runtime.executor);
 
     // set the initial input, the invocation arguments
     engine.input_session(|x| {
@@ -327,8 +326,7 @@ pub fn run(
 
     let tracked_engine = engine.tracked();
     let argument = tracked_engine.get_invocation_arguments(TargetID::Local);
-    let errors =
-        tracked_engine.get_module_tree_rendered_errors(TargetID::Local);
+    let errors = tracked_engine.get_file_tree_rendered_errors(TargetID::Local);
 
     let module_tree_errors = match errors {
         Ok(parse) => parse,
@@ -355,16 +353,6 @@ pub fn run(
     let source_map = SourceMap(&tracked_engine);
 
     for diag in module_tree_errors.0.as_ref() {
-        diagnostics.push(SortableDiagnostic(
-            pernix_diagnostic_to_codespan_diagnostic(diag),
-        ));
-    }
-
-    for diag in tracked_engine
-        .get_symbol_table_rendered_errors(TargetID::Local)
-        .0
-        .as_ref()
-    {
         diagnostics.push(SortableDiagnostic(
             pernix_diagnostic_to_codespan_diagnostic(diag),
         ));

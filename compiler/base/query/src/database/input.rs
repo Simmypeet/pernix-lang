@@ -70,8 +70,10 @@ impl SetInputLock<'_> {
     ///
     /// When setting the input, the dependencies of the key are cleared.
     pub fn set_input<K: Key>(&self, key: K, value: K::Value) {
-        let key_fingerprint = fingerprint::fingerprint(&key);
-        let value_fingerprint = fingerprint::fingerprint(&value);
+        let key_fingerprint =
+            fingerprint::fingerprint(self.engine.database.random_seed, &key);
+        let value_fingerprint =
+            fingerprint::fingerprint(self.engine.database.random_seed, &value);
 
         match self
             .engine
@@ -102,7 +104,7 @@ impl SetInputLock<'_> {
 
                         if update.update_value {
                             self.engine.save_value::<K>(
-                                Some(value_fingerprint),
+                                value_fingerprint,
                                 value.clone(),
                             );
                         }
@@ -127,10 +129,8 @@ impl SetInputLock<'_> {
                         );
                     }
                     if update.update_value {
-                        self.engine.save_value::<K>(
-                            Some(value_fingerprint),
-                            value.clone(),
-                        );
+                        self.engine
+                            .save_value::<K>(value_fingerprint, value.clone());
                     }
 
                     vacant_entry.insert(super::State::Completion(Completion {
@@ -152,10 +152,8 @@ impl SetInputLock<'_> {
                         metadata.clone(),
                     );
 
-                    self.engine.save_value::<K>(
-                        Some(value_fingerprint),
-                        value.clone(),
-                    );
+                    self.engine
+                        .save_value::<K>(value_fingerprint, value.clone());
 
                     vacant_entry.insert(super::State::Completion(Completion {
                         metadata,

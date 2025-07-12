@@ -10,9 +10,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{ByteIndex, GlobalSourceID, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
 
-use crate::{
-    path::get_source_file_path, token_tree::get_source_file_token_tree,
-};
+use crate::{get_source_file_path, token_tree::get_source_file_token_tree};
 
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.

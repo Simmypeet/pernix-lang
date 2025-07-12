@@ -1,4 +1,4 @@
-//! Contains the definition of the [`Database`] struct.
+//! Contains the definition of the [`Database`] struct,
 
 use std::{
     any::Any,
@@ -13,9 +13,11 @@ use std::{
 
 use dashmap::{DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
+use getset::CopyGetters;
 use parking_lot::{Condvar, Mutex, RwLock};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
+use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
@@ -201,6 +203,13 @@ impl TrackedEngine<'_> {
 
         Ok(value)
     }
+
+    /// The random seed used by the query engine to calculate fingerprints.
+    ///
+    /// It can also be used to generate a stable hash that varies with the
+    /// different compilation sessions.
+    #[must_use]
+    pub const fn random_seed(&self) -> u64 { self.engine.database.random_seed }
 }
 
 enum FastPathDecision<V> {
@@ -239,18 +248,39 @@ enum Continuation {
 }
 
 /// The main database struct that holds the query states and their versions.
-#[derive(Debug, Default)]
+#[derive(Debug, CopyGetters)]
 pub struct Database {
     query_states_by_key: DashMap<DynamicKey, State>,
+
+    /// The random seed primiarily used for the initial state of any hashing
+    /// and fingerprinting operations.
+    ///
+    /// In incremental compilation setting, the random seed is also saved and
+    /// loaded from the persistentst storage, ensuring deterministic behavior
+    /// across different runs of the compiler.
+    #[get_copy = "pub"]
+    random_seed: u64,
+
     version: AtomicU64,
+}
+
+impl Default for Database {
+    fn default() -> Self {
+        Self {
+            query_states_by_key: DashMap::default(),
+            random_seed: rand::thread_rng().gen(),
+            version: AtomicU64::new(0),
+        }
+    }
 }
 
 impl Database {
     /// Creates a new empty database with the given version.
     #[must_use]
-    pub fn with_version(version: u64) -> Self {
+    pub fn with_state(random_seed: u64, version: u64) -> Self {
         Self {
             query_states_by_key: DashMap::default(),
+            random_seed,
             version: AtomicU64::new(version),
         }
     }
@@ -551,7 +581,7 @@ impl Engine {
             }
 
             dashmap::Entry::Vacant(vacant_entry) => {
-                let fingerprint = key.fingerprint();
+                let fingerprint = key.fingerprint(self.database.random_seed);
 
                 // try loading the version from the persistent storage
                 let loaded_metadata =
@@ -805,7 +835,7 @@ impl Engine {
             let any = &**value as &dyn Any;
 
             self.save_value::<K>(
-                Some(metadata.version_info.fingerprint.unwrap()),
+                metadata.version_info.fingerprint.unwrap(),
                 any.downcast_ref::<K::Value>().unwrap().clone(),
             );
         }
@@ -814,7 +844,7 @@ impl Engine {
 
         if save_config.save_metadata {
             self.save_value_metadata::<K>(
-                fingerprint::fingerprint(key),
+                fingerprint::fingerprint(self.database.random_seed, key),
                 final_metadata.clone(),
             );
         }
@@ -939,9 +969,12 @@ impl Engine {
                                 version_info: DerivedVersionInfo {
                                     verified_at: current_version,
                                     updated_at: current_version,
-                                    fingerprint: result
-                                        .ok()
-                                        .map(fingerprint::fingerprint),
+                                    fingerprint: result.ok().map(|x| {
+                                        fingerprint::fingerprint(
+                                            self.database.random_seed,
+                                            x,
+                                        )
+                                    }),
                                 },
                                 dependencies: tracked_dependencies.into(),
                             },
@@ -987,8 +1020,12 @@ impl Engine {
                     );
 
                     self.compute(key, true, |value, tracked_dependencies| {
-                        let new_fingerprint =
-                            value.ok().map(fingerprint::fingerprint);
+                        let new_fingerprint = value.ok().map(|x| {
+                            fingerprint::fingerprint(
+                                self.database.random_seed,
+                                x,
+                            )
+                        });
 
                         // if the new fingerprint is different from
                         // the old one, update the value version
@@ -1054,7 +1091,10 @@ impl Engine {
                             );
 
                             self.save_value_metadata::<K>(
-                                fingerprint::fingerprint(key),
+                                fingerprint::fingerprint(
+                                    self.database.random_seed,
+                                    key,
+                                ),
                                 final_metadata.clone(),
                             );
 
@@ -1092,8 +1132,12 @@ impl Engine {
                             }),
                             return_value,
                             |result| {
-                                let new_fingerprint =
-                                    result.ok().map(fingerprint::fingerprint);
+                                let new_fingerprint = result.ok().map(|x| {
+                                    fingerprint::fingerprint(
+                                        self.database.random_seed,
+                                        x,
+                                    )
+                                });
 
                                 let save_value = if new_fingerprint
                                     == re_verify
@@ -1135,8 +1179,12 @@ impl Engine {
                         ),
                         None => {
                             self.compute(key, true, |value, dependencies| {
-                                let new_fingerprint =
-                                    value.ok().map(fingerprint::fingerprint);
+                                let new_fingerprint = value.ok().map(|x| {
+                                    fingerprint::fingerprint(
+                                        self.database.random_seed,
+                                        x,
+                                    )
+                                });
 
                                 if new_fingerprint
                                     != re_verify
@@ -1178,7 +1226,10 @@ impl Engine {
                         ValueMetadata::Derived(re_verify.derived_metadata);
 
                     self.save_value_metadata::<K>(
-                        fingerprint::fingerprint(key),
+                        fingerprint::fingerprint(
+                            self.database.random_seed,
+                            key,
+                        ),
                         final_metadata.clone(),
                     );
 
@@ -1202,8 +1253,9 @@ impl Engine {
                     re_execute.derived_metadata
                 );
                 self.compute(key, return_value, |result, dependencies| {
-                    let new_fingerprint =
-                        result.ok().map(fingerprint::fingerprint);
+                    let new_fingerprint = result.ok().map(|x| {
+                        fingerprint::fingerprint(self.database.random_seed, x)
+                    });
 
                     let update = if new_fingerprint
                         == re_execute.derived_metadata.version_info.fingerprint
@@ -1370,7 +1422,7 @@ pub(super) trait Dynamic: 'static + Send + Sync + Debug {
     #[doc(hidden)]
     fn hash(&self, state: &mut dyn std::hash::Hasher);
     #[doc(hidden)]
-    fn fingerprint(&self) -> u128;
+    fn fingerprint(&self, random_seed: u64) -> u128;
     #[doc(hidden)]
     fn smallbox_clone(&self) -> KeySmallBox<dyn Dynamic>;
     #[allow(unused)]
@@ -1419,7 +1471,9 @@ impl<K: Key> Dynamic for K {
 
     fn type_name(&self) -> &'static str { std::any::type_name::<Self>() }
 
-    fn fingerprint(&self) -> u128 { fingerprint::fingerprint(self) }
+    fn fingerprint(&self, random_seed: u64) -> u128 {
+        fingerprint::fingerprint(random_seed, self)
+    }
 }
 
 impl PartialEq for dyn Dynamic + '_ {

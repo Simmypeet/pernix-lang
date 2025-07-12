@@ -17,11 +17,11 @@ use pernixc_serialize::{
     Deserialize as _, Serialize as _,
 };
 use pernixc_stable_type_id::StableTypeID;
+use rand::Rng;
 use redb::{Result, TableDefinition, TableHandle};
 
 use crate::{
     database::ValueMetadata,
-    fingerprint,
     runtime::persistence::{
         background::{SaveTask, Table},
         serde::{DynamicDeserialize, DynamicSerialize},
@@ -105,7 +105,7 @@ impl Engine {
 
     pub(crate) fn save_value<K: Key>(
         &self,
-        fingerprint: Option<u128>,
+        fingerprint: u128,
         value: K::Value,
     ) {
         let Some(persistence) = self.runtime.persistence.as_ref() else {
@@ -546,11 +546,7 @@ impl Persistence {
         Ok(())
     }
 
-    fn save_value<K: Key>(
-        &self,
-        value_fingerprint: Option<u128>,
-        value: K::Value,
-    ) {
+    fn save_value<K: Key>(&self, value_fingerprint: u128, value: K::Value) {
         // skip saving if the key is wPin the skip list
         if self.skip_keys.contains(&K::STABLE_TYPE_ID) {
             return;
@@ -560,19 +556,13 @@ impl Persistence {
         let serde_extension = self.serde_extension.clone();
 
         self.ensure_background_writer().new_save_task(SaveTask {
-            key: (
-                K::STABLE_TYPE_ID.as_u128(),
-                value_fingerprint
-                    .unwrap_or_else(|| fingerprint::fingerprint(&value)),
-            ),
+            key: (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
             table: Table::Value,
             write: Box::new(move |buffer| {
                 let mut serializer =
                     BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
 
                 // if the fingerprint is not provided, calculate it
-                let fingerprint = value_fingerprint
-                    .unwrap_or_else(|| fingerprint::fingerprint(&value));
 
                 let result = (serializer_fn)(
                     &mut serializer,
@@ -591,7 +581,7 @@ impl Persistence {
                             "Failed to serialize value for key {} with \
                              fingerprint {}: {err}",
                             std::any::type_name::<K>(),
-                            fingerprint,
+                            value_fingerprint,
                         );
 
                         // return the buffer to the pool
@@ -759,10 +749,10 @@ impl Engine {
 
         persistence.commit();
 
-        let version = self.version();
+        let state = (self.database.random_seed(), self.version());
 
         let mut serializer = BinarySerializer::new(BufWriter::new(file));
-        version.serialize(&mut serializer, &())?;
+        state.serialize(&mut serializer, &())?;
 
         Ok(())
     }
@@ -776,18 +766,18 @@ impl Persistence {
         let snapshot_file_path =
             self.directory_path.join(Self::VERSION_SNAPSHOT_FILE);
 
-        let version = if snapshot_file_path.exists() {
+        let (random_seed, version) = if snapshot_file_path.exists() {
             let file = std::fs::File::open(&snapshot_file_path)?;
 
             let reader = BufReader::new(file);
             let mut deserializer =
                 BinaryDeserializer::new(Reader::File(reader));
 
-            u64::deserialize(&mut deserializer, &())?
+            <(u64, u64)>::deserialize(&mut deserializer, &())?
         } else {
-            0
+            (rand::thread_rng().gen(), 0)
         };
 
-        Ok(crate::database::Database::with_version(version))
+        Ok(crate::database::Database::with_state(random_seed, version))
     }
 }

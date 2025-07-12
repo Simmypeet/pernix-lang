@@ -9,9 +9,7 @@ use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
-use crate::{
-    load_source_file::LoadSourceFileError, path::get_source_file_path,
-};
+use crate::{get_source_file_path, load_source_file::LoadSourceFileError};
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(

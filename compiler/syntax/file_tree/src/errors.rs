@@ -2,21 +2,29 @@
 
 use std::sync::Arc;
 
-use pernixc_arena::ID;
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{ByteIndex, SourceFile};
+use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     load_source_file::LoadSourceFileError, source_map::SourceMap,
-    token_tree::get_source_file_token_tree, ModuleTree,
+    token_tree::get_source_file_token_tree,
 };
+
+/// Contains all the errors that occurred building the syntax tree in a
+/// particular file.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct Syntactic {
+    /// The list of lexical errors that occurred while parsing the
+    pub lexicals: Arc<[pernixc_lexical::error::Error]>,
+
+    /// The list of parser errors that occurred while parsing the
+    pub parsers: Arc<[pernixc_parser::error::Error]>,
+}
 
 /// List of errors that occurred while building the module tree.
 #[derive(
@@ -28,16 +36,7 @@ use crate::{
 pub struct Errors {
     /// The list of lexical and parser errors that occurred while parsing the
     /// token tree.
-    pub syntactic_errors: Arc<
-        [(
-            Arc<[pernixc_lexical::error::Error]>,
-            Arc<[pernixc_parser::error::Error]>,
-        )],
-    >,
-
-    /// The list of branching errors that occurred while branching the module
-    /// tree.
-    pub branching: Arc<[crate::Error]>,
+    pub syntactic_errors: Arc<[Syntactic]>,
 }
 
 /// An executor for collecting errors from the module tree.
@@ -53,27 +52,17 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         Result<Errors, LoadSourceFileError>,
         pernixc_query::runtime::executor::CyclicError,
     > {
-        let parse = match engine.query(&crate::Key(key.0)).unwrap() {
-            Ok(module_tree) => module_tree,
-            Err(error) => return Ok(Err(error)),
+        let file_map = match engine.query(&crate::MapKey(key.0))? {
+            Ok(file_map) => file_map,
+            Err(err) => return Ok(Err(err)),
         };
 
-        let mut module_tree_with_source_file = Vec::new();
-        collect_source_files(
-            &mut module_tree_with_source_file,
-            &parse.root_module_tree,
-        );
-
-        let syntactic_errors = module_tree_with_source_file
-            .into_par_iter()
-            .flat_map(|source_id| {
+        let syntactic_errors = file_map
+            .par_iter()
+            .filter_map(|(&source_id, path)| {
                 let Ok(token_tree) = engine
                     .query(&crate::token_tree::Parse {
-                        path: parse
-                            .source_file_paths_by_id
-                            .get(&source_id)
-                            .cloned()
-                            .unwrap(),
+                        path: path.clone(),
                         target_id: key.0,
                         global_source_id: key.0.make_global(source_id),
                     })
@@ -84,11 +73,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 
                 let Ok(syntax_tree) = engine
                     .query(&crate::syntax_tree::Key {
-                        path: parse
-                            .source_file_paths_by_id
-                            .get(&source_id)
-                            .cloned()
-                            .unwrap(),
+                        path: path.clone(),
                         target_id: key.0,
                         global_source_id: key.0.make_global(source_id),
                     })
@@ -97,27 +82,14 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
                     return None;
                 };
 
-                Some((token_tree.errors, syntax_tree.errors))
+                Some(Syntactic {
+                    lexicals: token_tree.errors,
+                    parsers: syntax_tree.errors,
+                })
             })
             .collect::<Vec<_>>();
 
-        Ok(Ok(Errors {
-            branching: parse.branching_errors.clone(),
-            syntactic_errors: syntactic_errors.into(),
-        }))
-    }
-}
-
-fn collect_source_files(
-    module_tree_with_source_file: &mut Vec<ID<SourceFile>>,
-    module_tree: &ModuleTree,
-) {
-    if let Some(source_file) = module_tree.created_from_source_id {
-        module_tree_with_source_file.push(source_file);
-    }
-
-    for submodule in module_tree.submodules_by_name.values() {
-        collect_source_files(module_tree_with_source_file, submodule);
+        Ok(Ok(Errors { syntactic_errors: syntactic_errors.into() }))
     }
 }
 
@@ -129,7 +101,7 @@ fn collect_source_files(
 #[id(TargetID)]
 #[key(RenderedKey)]
 #[value(Result<Rendered, LoadSourceFileError>)]
-#[extend(method(get_module_tree_rendered_errors), no_cyclic)]
+#[extend(method(get_file_tree_rendered_errors), no_cyclic)]
 pub struct Rendered(pub Arc<[Diagnostic<ByteIndex>]>);
 
 /// An executor for rendering errors from the module tree.
@@ -159,23 +131,17 @@ impl pernixc_query::runtime::executor::Executor<RenderedKey>
             .as_ref()
             .par_iter()
             .flat_map(|x| {
-                let (lexical_errors, parser_errors) = x;
+                let Syntactic { lexicals, parsers } = x;
 
-                lexical_errors
+                lexicals
                     .par_iter()
                     .map(|error| error.report(&source_map))
-                    .chain(parser_errors.par_iter().map(|error| {
+                    .chain(parsers.par_iter().map(|error| {
                         let token_tree =
                             engine.get_source_file_token_tree(error.source_id);
                         error.report(&token_tree)
                     }))
             })
-            .chain(
-                errors
-                    .branching
-                    .par_iter()
-                    .map(|error| error.report(source_map.0)),
-            )
             .collect::<Vec<_>>();
 
         Ok(Ok(Rendered(errors.into())))
