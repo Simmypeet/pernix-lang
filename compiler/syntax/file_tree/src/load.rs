@@ -51,7 +51,7 @@ pub struct Key {
     thiserror::Error,
 )]
 #[error("{0}")]
-pub struct LoadSourceFileError(pub Arc<str>);
+pub struct Error(pub Arc<str>);
 
 impl pernixc_query::Key for Key {
     // Loading source files is an impure operation, so it should be
@@ -60,21 +60,19 @@ impl pernixc_query::Key for Key {
 
     /// The [`Ok`] value represents the source file content, while the [`Err`]
     /// is the string to report the error.
-    type Value = Result<Arc<SourceFile>, LoadSourceFileError>;
+    type Value = Result<Arc<SourceFile>, Error>;
 }
 
 /// The executor used by the [`Key`] to load the source file
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Executor;
 
-fn load_source_file(
-    path: &Path,
-) -> Result<Arc<SourceFile>, LoadSourceFileError> {
+fn load_source_file(path: &Path) -> Result<Arc<SourceFile>, Error> {
     std::fs::File::open(path)
         .and_then(|file| {
             Ok(Arc::new(SourceFile::load(file, path.to_path_buf())?))
         })
-        .map_err(|x| LoadSourceFileError(Arc::from(x.to_string())))
+        .map_err(|x| Error(Arc::from(x.to_string())))
 }
 
 impl pernixc_query::runtime::executor::Executor<Key> for Executor {
@@ -83,7 +81,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         _: &pernixc_query::TrackedEngine,
         key: &Key,
     ) -> Result<
-        Result<Arc<SourceFile>, LoadSourceFileError>,
+        Result<Arc<SourceFile>, Error>,
         pernixc_query::runtime::executor::CyclicError,
     > {
         assert_eq!(

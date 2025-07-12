@@ -11,8 +11,7 @@ use pernixc_target::TargetID;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
-    load_source_file::LoadSourceFileError, source_map::SourceMap,
-    token_tree::get_source_file_token_tree,
+    load::Error, source_map::SourceMap, token_tree::get_source_file_token_tree,
 };
 
 /// Contains all the errors that occurred building the syntax tree in a
@@ -31,7 +30,7 @@ pub struct Syntactic {
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash, Value,
 )]
 #[id(TargetID)]
-#[value(Result<Errors, LoadSourceFileError>)]
+#[value(Result<Errors, Error>)]
 #[allow(clippy::type_complexity)]
 pub struct Errors {
     /// The list of lexical and parser errors that occurred while parsing the
@@ -49,7 +48,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         engine: &pernixc_query::TrackedEngine,
         key: &Key,
     ) -> Result<
-        Result<Errors, LoadSourceFileError>,
+        Result<Errors, Error>,
         pernixc_query::runtime::executor::CyclicError,
     > {
         let file_map = match engine.query(&crate::MapKey(key.0))? {
@@ -61,7 +60,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             .par_iter()
             .filter_map(|(&source_id, path)| {
                 let Ok(token_tree) = engine
-                    .query(&crate::token_tree::Parse {
+                    .query(&crate::token_tree::ErrorKey {
                         path: path.clone(),
                         target_id: key.0,
                         global_source_id: key.0.make_global(source_id),
@@ -72,7 +71,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
                 };
 
                 let Ok(syntax_tree) = engine
-                    .query(&crate::syntax_tree::Key {
+                    .query(&crate::syntax_tree::ErrorKey {
                         path: path.clone(),
                         target_id: key.0,
                         global_source_id: key.0.make_global(source_id),
@@ -82,10 +81,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
                     return None;
                 };
 
-                Some(Syntactic {
-                    lexicals: token_tree.errors,
-                    parsers: syntax_tree.errors,
-                })
+                Some(Syntactic { lexicals: token_tree, parsers: syntax_tree })
             })
             .collect::<Vec<_>>();
 
@@ -100,7 +96,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 )]
 #[id(TargetID)]
 #[key(RenderedKey)]
-#[value(Result<Rendered, LoadSourceFileError>)]
+#[value(Result<Rendered, Error>)]
 #[extend(method(get_file_tree_rendered_errors), no_cyclic)]
 pub struct Rendered(pub Arc<[Diagnostic<ByteIndex>]>);
 
@@ -116,7 +112,7 @@ impl pernixc_query::runtime::executor::Executor<RenderedKey>
         engine: &TrackedEngine,
         key: &RenderedKey,
     ) -> Result<
-        Result<Rendered, LoadSourceFileError>,
+        Result<Rendered, Error>,
         pernixc_query::runtime::executor::CyclicError,
     > {
         let errors = match engine.query(&Key(key.0)).unwrap() {

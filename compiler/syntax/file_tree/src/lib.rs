@@ -1,7 +1,8 @@
 //! Manages a module tree creation and syntactic information of the compilation
 //! target.
 
-use std::{ collections::hash_map::Entry,
+use std::{
+    collections::hash_map::Entry,
     hash::{BuildHasher, BuildHasherDefault},
     path::{Path, PathBuf},
     sync::Arc,
@@ -27,26 +28,26 @@ use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
 use pernixc_target::{get_invocation_arguments, TargetID};
 
-use crate::{
-    load_source_file::LoadSourceFileError, syntax_tree::ModuleContent,
-};
+use crate::{load::Error, syntax_tree::ModuleContent};
 
 pub mod errors;
 pub mod file_tree;
-pub mod load_source_file;
+pub mod load;
 pub mod source_map;
 pub mod syntax_tree;
 pub mod token_tree;
 
 /// Registers all the required executors to run the queries.
 pub fn register_executors(executor: &mut executor::Registry) {
-    executor.register(Arc::new(load_source_file::Executor));
+    executor.register(Arc::new(load::Executor));
     executor.register(Arc::new(source_map::Executor));
 
     executor.register(Arc::new(token_tree::ParseExecutor));
     executor.register(Arc::new(token_tree::KeyExecutor));
+    executor.register(Arc::new(token_tree::ErrorExecutor));
 
     executor.register(Arc::new(syntax_tree::Executor));
+    executor.register(Arc::new(syntax_tree::ErrorExecutor));
 
     executor.register(Arc::new(errors::Executor));
     executor.register(Arc::new(errors::RenderedExecutor));
@@ -66,14 +67,16 @@ pub fn register_serde<
 ) where
     S::Error: Send + Sync,
 {
-    serde_registry.register::<load_source_file::Key>();
+    serde_registry.register::<load::Key>();
 
     serde_registry.register::<source_map::Key>();
 
     serde_registry.register::<token_tree::Parse>();
     serde_registry.register::<token_tree::Key>();
+    serde_registry.register::<token_tree::ErrorKey>();
 
     serde_registry.register::<syntax_tree::Key>();
+    serde_registry.register::<syntax_tree::ErrorKey>();
 
     serde_registry.register::<errors::Key>();
     serde_registry.register::<errors::RenderedKey>();
@@ -86,7 +89,7 @@ pub fn register_serde<
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
 pub fn skip_persistence(persistence: &mut Persistence) {
-    persistence.skip_cache_value::<load_source_file::Key>();
+    persistence.skip_cache_value::<load::Key>();
     persistence.skip_cache_value::<source_map::Key>();
 }
 
@@ -128,7 +131,7 @@ pub struct Node {
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Result<Node, LoadSourceFileError>)]
+#[value(Result<Node, Error>)]
 pub enum Key {
     /// A root node for the module tree.
     Root(TargetID),
@@ -229,7 +232,7 @@ fn parse_node_from_module_content(
 pub fn node_executor(
     key: &Key,
     engine: &TrackedEngine,
-) -> Result<Result<Node, LoadSourceFileError>, CyclicError> {
+) -> Result<Result<Node, Error>, CyclicError> {
     let (path, target_id, is_root) = match key {
         Key::Root(target_id) => {
             let invocation_argument =
@@ -257,9 +260,7 @@ pub fn node_executor(
         global_source_id: target_id.make_global(source_id),
     })? {
         Ok(syntax_tree) => syntax_tree,
-        Err(error) => {
-            return Ok(Err(LoadSourceFileError(Arc::from(error.to_string()))))
-        }
+        Err(error) => return Ok(Err(Error(Arc::from(error.to_string())))),
     };
 
     Ok(Ok(parse_node_from_module_content(
@@ -286,7 +287,7 @@ pub fn node_executor(
     Deserialize,
     pernixc_query::Key,
 )]
-#[value(Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, LoadSourceFileError>)]
+#[value(Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, Error>)]
 pub struct MapKey(pub TargetID);
 
 fn scan_file_tree(
@@ -328,10 +329,8 @@ fn scan_file_tree(
 pub fn map_executor(
     &MapKey(target_id): &MapKey,
     engine: &TrackedEngine,
-) -> Result<
-    Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, LoadSourceFileError>,
-    CyclicError,
-> {
+) -> Result<Result<Arc<HashMap<ID<SourceFile>, Arc<Path>>>, Error>, CyclicError>
+{
     let module_tree = match engine.query(&Key::Root(target_id))? {
         Ok(module_tree) => module_tree,
         Err(result) => return Ok(Err(result)),

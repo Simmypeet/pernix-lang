@@ -10,7 +10,7 @@ use pernixc_stable_hash::{StableHash, Value as _};
 use pernixc_target::TargetID;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 
-use crate::load_source_file::LoadSourceFileError;
+use crate::load::Error;
 
 /// Query for parsing a [`pernixc_syntax::item::module::Module`] from the given
 /// source file path.
@@ -27,7 +27,7 @@ use crate::load_source_file::LoadSourceFileError;
     Deserialize,
     pernixc_query::Key,
 )]
-#[value(Result<SyntaxTree, LoadSourceFileError>)]
+#[value(Result<SyntaxTree, Error>)]
 pub struct Key {
     /// The path to load the source file.
     pub path: Arc<Path>,
@@ -116,7 +116,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         &self,
         tracked_engine: &pernixc_query::TrackedEngine,
         key: &Key,
-    ) -> Result<Result<SyntaxTree, LoadSourceFileError>, CyclicError> {
+    ) -> Result<Result<SyntaxTree, Error>, CyclicError> {
         // load the token tree
         let token_tree =
             match tracked_engine.query(&crate::token_tree::Parse {
@@ -137,4 +137,49 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             errors: Arc::from(errors),
         }))
     }
+}
+
+/// A query for retrieving the syntax errors that occurred while parsing
+/// the source file.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(Result<Arc<[pernixc_parser::error::Error]>, Error>)]
+pub struct ErrorKey {
+    /// The path to load the source file.
+    pub path: Arc<Path>,
+
+    /// The target ID that requested the source file parsing.
+    pub target_id: TargetID,
+
+    /// The ID to the source file in the global source map.
+    pub global_source_id: GlobalSourceID,
+}
+
+#[pernixc_query::executor(name(ErrorExecutor), key(ErrorKey))]
+pub fn error_executor(
+    key: &ErrorKey,
+    tracked_engine: &pernixc_query::TrackedEngine,
+) -> Result<Result<Arc<[pernixc_parser::error::Error]>, Error>, CyclicError> {
+    // load the syntax tree
+    let syntax_tree = match tracked_engine.query(&Key {
+        path: key.path.clone(),
+        target_id: key.target_id,
+        global_source_id: key.global_source_id,
+    })? {
+        Ok(syntax_tree) => syntax_tree,
+        Err(error) => return Ok(Err(error)),
+    };
+
+    Ok(Ok(Arc::from(syntax_tree.errors.as_ref())))
 }

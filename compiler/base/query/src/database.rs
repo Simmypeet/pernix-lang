@@ -1012,7 +1012,7 @@ impl Engine {
                     current_version;
 
                 if recompute {
-                    tracing::info!(
+                    tracing::warn!(
                         "Re-computing value for `{}` `{key:?}` with metadata: \
                          {:?}",
                         key.type_name(),

@@ -9,7 +9,7 @@ use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
-use crate::{get_source_file_path, load_source_file::LoadSourceFileError};
+use crate::{get_source_file_path, load::Error};
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(
@@ -25,7 +25,7 @@ use crate::{get_source_file_path, load_source_file::LoadSourceFileError};
     Deserialize,
     pernixc_query::Key,
 )]
-#[value(Result<TokenTree, LoadSourceFileError>)]
+#[value(Result<TokenTree, Error>)]
 pub struct Parse {
     /// The path to load the source file.
     pub path: Arc<Path>,
@@ -57,10 +57,10 @@ impl pernixc_query::runtime::executor::Executor<Parse> for ParseExecutor {
         &self,
         tracked_engine: &pernixc_query::TrackedEngine,
         key: &Parse,
-    ) -> Result<Result<TokenTree, LoadSourceFileError>, CyclicError> {
+    ) -> Result<Result<TokenTree, Error>, CyclicError> {
         // load the source file
         let source_file =
-            match tracked_engine.query(&crate::load_source_file::Key {
+            match tracked_engine.query(&crate::load::Key {
                 path: key.path.clone(),
                 target_id: key.target_id,
             })? {
@@ -80,6 +80,53 @@ impl pernixc_query::runtime::executor::Executor<Parse> for ParseExecutor {
             errors: Arc::from(storage.into_vec()),
         }))
     }
+}
+
+/// A key for retrieving the errors that occurred while parsing the token tree
+/// from the source file.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(Result<Arc<[pernixc_lexical::error::Error]>, Error>)]
+pub struct ErrorKey {
+    /// The path to load the source file.
+    pub path: Arc<Path>,
+
+    /// The target ID that requested the source file parsing.
+    pub target_id: TargetID,
+
+    /// The ID to the source file in the global source map.
+    pub global_source_id: GlobalSourceID,
+}
+
+#[pernixc_query::executor(key(ErrorKey), name(ErrorExecutor))]
+pub fn error_executor(
+    key: &ErrorKey,
+    engine: &pernixc_query::TrackedEngine,
+) -> Result<
+    Result<Arc<[pernixc_lexical::error::Error]>, Error>,
+    CyclicError,
+> {
+    let token_tree = match engine.query(&Parse {
+        path: key.path.clone(),
+        target_id: key.target_id,
+        global_source_id: key.global_source_id,
+    })? {
+        Ok(token_tree) => token_tree,
+        Err(error) => return Ok(Err(error)),
+    };
+
+    Ok(Ok(token_tree.errors))
 }
 
 /// A key for the retrieving a [`TokenTree`] that has been parsed from a
