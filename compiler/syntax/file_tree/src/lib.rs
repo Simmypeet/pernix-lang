@@ -31,7 +31,6 @@ use pernixc_target::{get_invocation_arguments, TargetID};
 use crate::{load::Error, syntax_tree::ModuleContent};
 
 pub mod errors;
-pub mod file_tree;
 pub mod load;
 pub mod source_map;
 pub mod syntax_tree;
