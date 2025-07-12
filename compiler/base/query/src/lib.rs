@@ -4,7 +4,7 @@
 pub use database::TrackedEngine;
 use getset::{CopyGetters, Getters};
 pub use key::Key;
-pub use pernixc_query_derive::{Key, Value};
+pub use pernixc_query_derive::{executor, Key, Value};
 
 #[doc(hidden)]
 pub mod __internal {

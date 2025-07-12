@@ -1,6 +1,6 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: assert_string
+expression: clean_run
 ---
 stderr:
 error: the using statement conflicts with an existing name in the module
@@ -78,6 +78,8 @@ error: the symbol could not be found
    │
 29 │ import main::unknown
    │              ^^^^^^^ the symbol named `unknown` does not exist in `main`
+
+error: Compilation aborted due to 11 error(s)
 
 
 

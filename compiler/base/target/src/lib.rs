@@ -1,12 +1,16 @@
 //! This crate contains the information about the target of the compilation.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use clap::{builder::styling, Args, Subcommand};
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
-use pernixc_query::runtime::persistence::{
-    serde::DynamicRegistry, Persistence,
+use flexstr::SharedStr;
+use pernixc_extend::extend;
+use pernixc_hash::HashSet;
+use pernixc_query::{
+    runtime::persistence::{serde::DynamicRegistry, Persistence},
+    TrackedEngine,
 };
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
@@ -111,6 +115,23 @@ pub struct Input {
     /// Whether to show the progress of the compilation.
     #[clap(long)]
     pub show_progress: bool,
+}
+
+impl Input {
+    /// Returns the target name of the input file.
+    #[must_use]
+    pub fn target_name(&self) -> SharedStr {
+        self.target_name
+            .clone()
+            .unwrap_or_else(|| {
+                self.file
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .into()
+    }
 }
 
 /// The output of the compiler.
@@ -417,10 +438,59 @@ pub fn register_serde<
     S::Error: Send + Sync,
 {
     serde_registry.register::<Key>();
+    serde_registry.register::<LinkKey>();
+    serde_registry.register::<MapKey>();
 }
 
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
 pub fn skip_persistence(persistence: &mut Persistence) {
     persistence.skip_cache_value::<Key>();
+    persistence.skip_cache_value::<LinkKey>();
+    persistence.skip_cache_value::<MapKey>();
 }
+
+/// A query input for mapping names to their target IDs.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<HashMap<SharedStr, TargetID>>)]
+pub struct MapKey;
+
+/// Gets the map from the name of the target to its ID.
+#[extend]
+pub fn get_target_map(
+    self: &TrackedEngine<'_>,
+) -> Arc<HashMap<SharedStr, TargetID>> {
+    self.query(&MapKey).expect("should have no cyclic dependencies")
+}
+
+/// A query for retrieving the linked targets of a given target ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<HashSet<TargetID>>)]
+#[extend(method(get_linked_targets), no_cyclic)]
+pub struct LinkKey(pub TargetID);

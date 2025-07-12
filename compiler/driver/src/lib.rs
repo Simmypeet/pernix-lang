@@ -301,6 +301,20 @@ pub fn run(
     engine.input_session(|x| {
         x.always_reverify();
 
+        x.set_input(
+            pernixc_target::LinkKey(TargetID::Local),
+            Arc::new(std::iter::empty().collect()),
+        );
+        x.set_input(
+            pernixc_target::MapKey,
+            Arc::new(
+                std::iter::once((
+                    argument.command.input().target_name(),
+                    TargetID::Local,
+                ))
+                .collect(),
+            ),
+        );
         x.set_input(pernixc_target::Key(TargetID::Local), Arc::new(argument));
     });
 

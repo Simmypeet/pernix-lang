@@ -31,12 +31,14 @@ use crate::{
 
 pub mod accessibility;
 pub mod diagnostic;
+pub mod import;
 pub mod kind;
 pub mod member;
 pub mod name;
 pub mod parent;
 pub mod span;
 pub mod symbols;
+pub mod syntax;
 
 /// Represents a unique identifier for the symbols in the compilation target.
 /// This ID is only unique within the context of a single target. If wants to
@@ -86,6 +88,9 @@ pub struct Entry {
     /// The span of the symbol in the source code, if available. This is used
     /// for error reporting and code navigation.
     pub span: Option<RelativeSpan>,
+
+    /// The list of imports that were declared in the module.
+    pub imports: Option<Arc<[pernixc_syntax::item::module::Import]>>,
 }
 
 /// The final result of building the symbol table. It contains all the
@@ -124,14 +129,8 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 
         let storage = Storage::<ItemRedifinition>::default();
         let entries = DashMap::<ID, Entry>::default();
-        let imports_by_global_id =
-            DashMap::<ID, Vec<pernixc_syntax::item::module::Import>>::default();
 
-        let context = Context {
-            entries: &entries,
-            imports_by_global_id: &imports_by_global_id,
-            handler: &storage,
-        };
+        let context = Context { entries: &entries, handler: &storage };
 
         context.create_module(
             &module_tree.target_name,
@@ -149,8 +148,6 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
 
 struct Context<'a> {
     entries: &'a DashMap<ID, Entry>,
-    imports_by_global_id:
-        &'a DashMap<ID, Vec<pernixc_syntax::item::module::Import>>,
     handler: &'a dyn Handler<ItemRedifinition>,
 }
 
@@ -206,6 +203,7 @@ impl MemberBuilder<'_, '_, '_> {
                 }
             }),
             span: Some(new_symbol.name.span),
+            imports: None,
         };
 
         let id = generate_id(
@@ -481,6 +479,7 @@ impl Context<'_> {
             kind: Kind::Module,
             name: name.clone(),
             members: None,
+
             accessibility: Some(match syntax_tree.access_modifier {
                 Some(AccessModifier::Internal(_)) => {
                     Accessibility::Scoped(ID::ROOT_MODULE)
@@ -497,6 +496,8 @@ impl Context<'_> {
                 .as_ref()
                 .and_then(pernixc_syntax::item::module::Signature::identifier)
                 .map(|x| x.span),
+
+            imports: None,
         };
 
         let current_module_id = if parent_module_id.is_some() {
@@ -513,9 +514,6 @@ impl Context<'_> {
             assert!(self.entries.insert(id, entry).is_none());
             id
         };
-
-        // make sure atleast has an empty import list
-        self.imports_by_global_id.entry(current_module_id).or_default();
 
         let mut members = HashMap::default();
         let mut redefinitions = HashSet::default();
@@ -543,6 +541,7 @@ impl Context<'_> {
                 );
             });
 
+        let mut imports = Vec::new();
         let mut member_builder = MemberBuilder {
             current_names: &current_module_names,
             current_symbol_id: current_module_id,
@@ -724,10 +723,7 @@ impl Context<'_> {
                     }
 
                     pernixc_syntax::item::module::Member::Import(im) => {
-                        self.imports_by_global_id
-                            .entry(current_module_id)
-                            .or_default()
-                            .push(im);
+                        imports.push(im);
                     }
 
                     pernixc_syntax::item::module::Member::Module(_)
@@ -738,10 +734,12 @@ impl Context<'_> {
         });
 
         let mut entry = self.entries.get_mut(&current_module_id).unwrap();
+
         entry.members = Some(Arc::new(member::Member {
             member_ids_by_name: members,
             redefinitions,
         }));
+        entry.imports = Some(imports.into());
 
         current_module_id
     }
@@ -797,6 +795,11 @@ pub fn register_executors(executor: &mut executor::Registry) {
     executor.register(Arc::new(diagnostic::Executor));
     executor.register(Arc::new(diagnostic::RenderedExecutor));
     executor.register(Arc::new(symbols::Executor));
+
+    executor.register(Arc::new(syntax::ImportExecutor));
+    executor.register(Arc::new(import::WithDiagnosticExecutor));
+    executor.register(Arc::new(import::Executor));
+
     executor.register(Arc::new(Executor));
 }
 
@@ -820,6 +823,11 @@ pub fn register_serde<
     serde_registry.register::<diagnostic::Key>();
     serde_registry.register::<diagnostic::RenderedKey>();
     serde_registry.register::<symbols::Key>();
+
+    serde_registry.register::<syntax::ImportKey>();
+    serde_registry.register::<import::WithDiagnosticKey>();
+    serde_registry.register::<import::Key>();
+
     serde_registry.register::<Key>();
 }
 

@@ -1,12 +1,26 @@
-//! Defines the [`Name`] type.
+//! Contains the definition of query related to naming symbols and provides
+//! basic naming resolution functionality.
+
 use flexstr::SharedStr;
 use pernixc_extend::extend;
+use pernixc_handler::Handler;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
+use pernixc_syntax::{Identifier, SimplePath, SimplePathRoot};
+use pernixc_target::{get_linked_targets, get_target_map, Global};
 
-use crate::{parent::get_parent, ID};
+use crate::{
+    accessibility::symbol_accessible,
+    import::get_imports,
+    kind::get_kind,
+    member::{get_member_of, get_members},
+    name::diagnostic::{Diagnostic, SymbolIsNotAccessible, SymbolNotFound},
+    parent::{get_closest_module_id, get_parent},
+    ID,
+};
+
+pub mod diagnostic;
 
 /// A simple name identifier given to a symbol.
 #[derive(
@@ -78,16 +92,14 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     }
 }
 
-/*
-
 /// Gets the [`Global<symbol::ID>`] of the symbol with the given sequence of
 /// qualified names.
 #[extend]
 pub fn get_by_qualified_name<'a>(
     self: &TrackedEngine<'_>,
     qualified_names: impl IntoIterator<Item = &'a str>,
-) -> Option<Global<symbol::ID>> {
-    let mut current_id: Option<Global<symbol::ID>> = None;
+) -> Option<Global<ID>> {
+    let mut current_id: Option<Global<ID>> = None;
 
     for name in qualified_names {
         match current_id {
@@ -126,13 +138,13 @@ pub fn get_by_qualified_name<'a>(
 pub fn resolve_simple_path(
     self: &TrackedEngine<'_>,
     simple_path: &SimplePath,
-    referring_site: Global<symbol::ID>,
+    referring_site: Global<ID>,
     start_from_root: bool,
     use_imports: bool,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Option<Global<symbol::ID>> {
+    handler: &dyn Handler<Diagnostic>,
+) -> Option<Global<ID>> {
     // simple path should always have root tough
-    let root: Global<symbol::ID> = match simple_path.root()? {
+    let root: Global<ID> = match simple_path.root()? {
         SimplePathRoot::Target(_) => {
             Global::new(referring_site.target_id, ID::ROOT_MODULE)
         }
@@ -144,18 +156,20 @@ pub fn resolve_simple_path(
                     .copied()
                     .filter(|x| {
                         x == &referring_site.target_id || {
-                            let target =
-                                self.get_target(referring_site.target_id);
+                            let target = self
+                                .get_linked_targets(referring_site.target_id);
 
-                            target.linked_targets.contains(x)
+                            target.contains(x)
                         }
                     })
                 else {
-                    handler.receive(Box::new(SymbolNotFound {
-                        searched_item_id: None,
-                        resolution_span: ident.span,
-                        name: ident.kind.0,
-                    }));
+                    handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: None,
+                            resolution_span: ident.span,
+                            name: ident.kind.0,
+                        },
+                    ));
 
                     return None;
                 };
@@ -179,11 +193,13 @@ pub fn resolve_simple_path(
                             .map(|x| x.id)
                     })
                 else {
-                    handler.receive(Box::new(SymbolNotFound {
-                        searched_item_id: Some(global_closest_module_id),
-                        resolution_span: ident.span,
-                        name: ident.kind.0,
-                    }));
+                    handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: Some(global_closest_module_id),
+                            resolution_span: ident.span,
+                            name: ident.kind.0,
+                        },
+                    ));
 
                     return None;
                 };
@@ -207,11 +223,11 @@ pub fn resolve_simple_path(
 pub fn resolve_sequence<'a>(
     self: &TrackedEngine<'_>,
     simple_path: impl Iterator<Item = Identifier>,
-    referring_site: Global<symbol::ID>,
-    root: Global<symbol::ID>,
+    referring_site: Global<ID>,
+    root: Global<ID>,
     use_imports: bool,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Option<Global<symbol::ID>> {
+    handler: &dyn Handler<Diagnostic>,
+) -> Option<Global<ID>> {
     let mut lastest_resolution = root;
     for identifier in simple_path {
         let Some(new_id) = self.get_member_of(
@@ -219,7 +235,7 @@ pub fn resolve_sequence<'a>(
             use_imports,
             identifier.kind.0.as_str(),
         ) else {
-            handler.receive(Box::new(SymbolNotFound {
+            handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
                 searched_item_id: Some(lastest_resolution),
                 resolution_span: identifier.span,
                 name: identifier.kind.0,
@@ -230,11 +246,13 @@ pub fn resolve_sequence<'a>(
 
         // non-fatal error, no need to return early
         if !self.symbol_accessible(referring_site, new_id) {
-            handler.receive(Box::new(SymbolIsNotAccessible {
-                referring_site,
-                referred: new_id,
-                referred_span: identifier.span,
-            }));
+            handler.receive(Diagnostic::SymbolIsNotAccessible(
+                SymbolIsNotAccessible {
+                    referring_site,
+                    referred: new_id,
+                    referred_span: identifier.span,
+                },
+            ));
         }
 
         lastest_resolution = new_id;
@@ -242,4 +260,3 @@ pub fn resolve_sequence<'a>(
 
     Some(lastest_resolution)
 }
-*/

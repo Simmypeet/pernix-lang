@@ -1,6 +1,6 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-expression: assert_string
+expression: clean_run
 ---
 stderr:
 error: the symbol could not be found
@@ -26,6 +26,8 @@ error: the symbol could not be found
   │                       ^^^^ the symbol named `Thir` does not exist in `main::inner`
   │
   = did you mean `Third`?
+
+error: Compilation aborted due to 3 error(s)
 
 
 

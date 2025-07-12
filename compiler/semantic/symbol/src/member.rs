@@ -10,7 +10,11 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{kind::get_kind, ID};
+use crate::{
+    import::get_imports,
+    kind::{get_kind, Kind},
+    ID,
+};
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(
@@ -80,8 +84,6 @@ pub fn try_get_members(
     Some(self.query(&Key(id)).expect("should have no cyclic dependencies"))
 }
 
-/*
-
 /// Retrieves the next member of a symbol that is accessed by using the
 /// `::name` syntax. This function doesn't check if the member is
 /// accessible or not.
@@ -89,10 +91,10 @@ pub fn try_get_members(
 #[allow(missing_docs)]
 pub fn get_member_of(
     self: &TrackedEngine<'_>,
-    id: Global<symbol::ID>,
+    id: Global<ID>,
     use_imports: bool,
     name: &str,
-) -> Option<Global<symbol::ID>> {
+) -> Option<Global<ID>> {
     // directly get the member from the symbol
     if let Some(member) = self
         .try_get_members(id)
@@ -104,10 +106,11 @@ pub fn get_member_of(
     let symbol_kind = self.get_kind(id);
 
     match (symbol_kind == Kind::Module, symbol_kind.is_adt(), use_imports) {
-        (true, false, true) => self.get_imports(id).0.get(name).map(|x| x.id),
+        (true, false, true) => self.get_imports(id).get(name).map(|x| x.id),
 
         // serach for the member of implementations
         (false, true, _) => {
+            /*
             let implements = self.get_implemented(id);
 
             for implementation_id in implements.iter().copied() {
@@ -120,10 +123,11 @@ pub fn get_member_of(
                 }
             }
 
+            */
+
             None
         }
 
         _ => None,
     }
 }
-*/

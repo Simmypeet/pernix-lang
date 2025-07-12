@@ -87,7 +87,18 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        StableHash
+    )]
     pub struct Import {
         pub from: From = ast::<From>().optional(),
         pub import_keyword: Keyword = expect::Keyword::Import,

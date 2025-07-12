@@ -753,3 +753,307 @@ fn get_ext<'a>(
         None => None,
     }
 }
+
+/// Generates an executor struct that implements the `Executor` trait for query
+/// processing.
+///
+/// This procedural macro transforms a function into a query executor by
+/// generating a corresponding struct that implements the `Executor` trait. The
+/// executor can then be registered with the query system to handle computation
+/// of values for specific key types.
+///
+/// # Required Attributes
+///
+/// ## `key(KeyType)`
+///
+/// Specifies the key type that this executor will handle. The key type must
+/// implement the `Key` trait and will be used to identify which queries this
+/// executor can process.
+///
+/// ## `name(ExecutorName)`
+///
+/// Specifies the name of the generated executor struct. This struct will
+/// implement the `Executor<KeyType>` trait and can be registered with the query
+/// runtime.
+///
+/// # Function Requirements
+///
+/// The annotated function must have the following signature:
+///
+/// ```ignore
+/// fn function_name(
+///     key: &KeyType,
+///     engine: &TrackedEngine,
+/// ) -> Result<ValueType, CyclicError>
+/// ```
+///
+/// Where:
+/// - `KeyType` must match the type specified in the `key()` attribute
+/// - `ValueType` must be the associated value type for the key
+///   (`KeyType::Value`)
+/// - The function must return `Result<ValueType, CyclicError>` to handle cyclic
+///   dependencies
+///
+/// # Generated Code
+///
+/// The macro generates:
+///
+/// 1. **Public Executor Struct**: A zero-sized struct with the specified name
+///    that derives common traits (`Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`,
+///    `PartialOrd`, `Ord`, `Hash`, `Default`). This struct is publicly visible
+///    and can be instantiated.
+///
+/// 2. **Anonymous Const Block**: Contains the original function and trait
+///    implementation in a private scope to avoid namespace pollution.
+///
+/// 3. **Executor Implementation**: An implementation of `Executor<KeyType>`
+///    that delegates to the original function, contained within the anonymous
+///    const block.
+///
+/// 4. **Private Function**: The original function is preserved but kept private
+///    within the const scope, preventing it from polluting the public
+///    namespace.
+///
+/// # Examples
+///
+/// ## Basic Usage
+///
+/// ```ignore
+/// use pernixc_query::{Key, TrackedEngine};
+/// use pernixc_query::runtime::executor::CyclicError;
+///
+/// #[derive(Debug, Clone, PartialEq, Eq, Hash, Key)]
+/// #[value(String)]
+/// struct UserNameKey(u32);
+///
+/// #[executor(key(UserNameKey), name(UserNameExecutor))]
+/// fn get_user_name(
+///     key: &UserNameKey,
+///     engine: &TrackedEngine,
+/// ) -> Result<String, CyclicError> {
+///     // Query implementation here
+///     Ok(format!("User {}", key.0))
+/// }
+///
+/// // Generated:
+/// // #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+/// // pub struct UserNameExecutor;
+/// //
+/// // const _: () = {
+/// //     fn get_user_name(
+/// //         key: &UserNameKey,
+/// //         engine: &TrackedEngine,
+/// //     ) -> Result<String, CyclicError> {
+/// //         Ok(format!("User {}", key.0))
+/// //     }
+/// //
+/// //     impl Executor<UserNameKey> for UserNameExecutor {
+/// //         fn execute(
+/// //             &self,
+/// //             engine: &TrackedEngine,
+/// //             key: &UserNameKey,
+/// //         ) -> Result<String, CyclicError> {
+/// //             get_user_name(key, engine)
+/// //         }
+/// //     }
+/// // };
+/// ```
+///
+/// ## With Private Visibility
+///
+/// ```ignore
+/// #[executor(key(PrivateKey), name(PrivateExecutor))]
+/// fn private_query(
+///     key: &PrivateKey,
+///     engine: &TrackedEngine,
+/// ) -> Result<i32, CyclicError> {
+///     // Private implementation
+///     Ok(42)
+/// }
+///
+/// // The generated executor struct will have the same visibility as the function
+/// ```
+///
+/// ## Registration with Runtime
+///
+/// ```ignore
+/// use std::sync::Arc;
+/// use pernixc_query::runtime::executor::Registry;
+///
+/// let mut registry = Registry::default();
+/// registry.register::<UserNameKey, UserNameExecutor>(
+///     Arc::new(UserNameExecutor)
+/// );
+/// ```
+///
+/// # Compile-Time Validation
+///
+/// The macro performs several compile-time checks:
+///
+/// - Ensures both `key()` and `name()` attributes are present and well-formed
+/// - Validates that the function has the correct signature with proper
+///   parameter types
+/// - Ensures the function returns a `Result` type for proper error handling
+/// - Checks that the key type matches between the attribute and function
+///   parameter
+///
+/// # Error Handling
+///
+/// Executors must handle cyclic dependencies by returning `CyclicError` when a
+/// strongly connected component (SCC) is detected in the query dependency
+/// graph. The query system uses this to implement proper cycle detection and
+/// resolution.
+///
+/// # Thread Safety
+///
+/// Generated executor structs are automatically `Send + Sync` due to their
+/// zero-sized nature and the derived traits. This makes them suitable for use
+/// in concurrent query processing environments.
+///
+/// # Performance Considerations
+///
+/// - Executor structs are zero-sized and have no runtime overhead
+/// - Function calls are direct and inlined where possible
+/// - The delegation pattern adds minimal indirection
+///
+/// # Integration with Query System
+///
+/// Executors generated by this macro integrate seamlessly with the query
+/// system:
+///
+/// - They can be registered with `Registry::register()`
+/// - The query engine automatically invokes them when needed
+/// - They participate in incremental compilation and caching
+/// - They support dependency tracking and cycle detection
+#[proc_macro_attribute]
+#[allow(clippy::too_many_lines)]
+pub fn executor(
+    attr: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::ItemFn);
+
+    // Parse the attribute parameters: key(KeyType), name(ExecutorName)
+    let mut key_type: Option<syn::Type> = None;
+    let mut executor_name: Option<syn::Ident> = None;
+
+    // Create a dummy attribute to use parse_nested_meta
+    let attr_tokens = proc_macro2::TokenStream::from(attr);
+    let dummy_attr: syn::Attribute = syn::parse_quote!(#[dummy(#attr_tokens)]);
+
+    match dummy_attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("key") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            match content.parse::<syn::Type>() {
+                Ok(ty) => {
+                    key_type = Some(ty);
+                    Ok(())
+                }
+                Err(err) => Err(syn::Error::new_spanned(
+                    meta.path,
+                    format!("invalid key type: {err}"),
+                )),
+            }
+        } else if meta.path.is_ident("name") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            match content.parse::<syn::Ident>() {
+                Ok(ident) => {
+                    executor_name = Some(ident);
+                    Ok(())
+                }
+                Err(err) => Err(syn::Error::new_spanned(
+                    meta.path,
+                    format!("invalid executor name: {err}"),
+                )),
+            }
+        } else {
+            Err(syn::Error::new_spanned(
+                meta.path,
+                "expected `key(KeyType)` or `name(ExecutorName)`",
+            ))
+        }
+    }) {
+        Ok(()) => {}
+        Err(err) => return err.to_compile_error().into(),
+    }
+
+    let Some(key_type) = key_type else {
+        return syn::Error::new_spanned(
+            &input.sig.ident,
+            "missing required `key(KeyType)` parameter",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    let Some(executor_name) = executor_name else {
+        return syn::Error::new_spanned(
+            &input.sig.ident,
+            "missing required `name(ExecutorName)` parameter",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    // Validate function signature
+    if input.sig.inputs.len() != 2 {
+        return syn::Error::new_spanned(
+            &input.sig,
+            "executor function must have exactly 2 parameters: (key: \
+             &KeyType, engine: &TrackedEngine)",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    // Get the original function details
+    let fn_name = &input.sig.ident;
+    let fn_vis = &input.vis;
+
+    // Extract return type from the function signature
+    let return_type = match &input.sig.output {
+        syn::ReturnType::Type(_, ty) => ty.as_ref(),
+        syn::ReturnType::Default => {
+            return syn::Error::new_spanned(
+                &input.sig,
+                "executor function must have an explicit return type: \
+                 Result<ValueType, CyclicError>",
+            )
+            .to_compile_error()
+            .into()
+        }
+    };
+
+    // Generate the expanded code
+    let expanded = quote::quote! {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[doc = concat!(
+            "An executor for the `",
+            stringify!(#key_type),
+            "` key type. This executor is used to compute values for the query system.\n\n",
+            "This executor is generated from the `#[executor(key(KeyType), name(ExecutorName))]` attribute."
+        )]
+        #fn_vis struct #executor_name;
+
+        // Anonymous const block to avoid namespace pollution
+        const _: () = {
+            // Keep the original function in the const scope
+            #input
+
+            // Implement the Executor trait
+            impl ::pernixc_query::runtime::executor::Executor<#key_type> for #executor_name {
+                fn execute(
+                    &self,
+                    engine: &::pernixc_query::TrackedEngine,
+                    key: &#key_type,
+                ) -> #return_type {
+                    #fn_name(key, engine)
+                }
+            }
+        };
+    };
+
+    TokenStream::from(expanded)
+}

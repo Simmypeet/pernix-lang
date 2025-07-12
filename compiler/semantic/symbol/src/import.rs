@@ -1,15 +1,36 @@
 //! Contains the definition of the [`Import`] struct
 
+use std::sync::Arc;
+
 use flexstr::SharedStr;
+use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
-use pernixc_query::Value;
+use pernixc_query::{executor, runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::Span;
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
+use pernixc_syntax::{item::module::ImportItems, SimplePathRoot};
+use pernixc_target::{get_linked_targets, get_target_map, Global};
 
-use crate::symbol;
+use crate::{
+    accessibility::symbol_accessible,
+    import::diagnostic::{
+        ConflictingUsing, TargetRootInImportIsNotAllowedwithFrom,
+    },
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::{
+        self,
+        diagnostic::{ExpectModule, SymbolIsNotAccessible, SymbolNotFound},
+        get_name, resolve_simple_path,
+    },
+    span::get_span,
+    syntax::get_module_imports_syntax,
+    ID,
+};
+
+pub mod diagnostic;
 
 /// Represents a single `import ...` statement.
 #[derive(
@@ -27,7 +48,7 @@ use crate::symbol;
 )]
 pub struct Using {
     /// The ID of the symbol being imported.
-    pub id: Global<symbol::ID>,
+    pub id: Global<ID>,
 
     /// The span to the `import ... (as ...)?` statement in the source code.
     pub span: Span<RelativeLocation>,
@@ -43,11 +64,299 @@ pub struct Using {
     Default,
     Serialize,
     Deserialize,
-    Value,
-    derive_more::Deref,
-    derive_more::DerefMut,
     StableHash,
+    pernixc_query::Value,
 )]
-#[id(Global<symbol::ID>)]
+#[id(Global<ID>)]
+#[key(WithDiagnosticKey)]
+pub struct WithDiagnostic {
+    /// A map from the name of the imported symbol to its ID and span.
+    ///
+    /// The span is the span of the `import ... (as ...)?` statement in the
+    /// source code.
+    pub imports: Arc<HashMap<SharedStr, Using>>,
+
+    /// The diagnostics that were generated while processing the import
+    pub diagnostics: Arc<[diagnostic::Diagnostic]>,
+}
+
+#[allow(clippy::too_many_lines)]
+fn process_import_items(
+    engine: &TrackedEngine,
+    defined_in_module_id: Global<ID>,
+    import: &pernixc_syntax::item::module::Import,
+    import_item: &ImportItems,
+    start_from: Option<Global<ID>>,
+    import_component: &mut HashMap<SharedStr, Using>,
+    handler: &dyn Handler<diagnostic::Diagnostic>,
+) {
+    'item: for import_item in import_item.items() {
+        // if start from , then all the import items can't have `target` as
+        // it root path
+
+        let (Some(root), Some(simple_path)) = (
+            import_item.simple_path().and_then(|x| x.root()),
+            import_item.simple_path(),
+        ) else {
+            continue;
+        };
+
+        if root.is_target() && import.from().is_some() {
+            handler.receive(
+                diagnostic::Diagnostic::TargetRootInImportIsNotAllowedwithFrom(
+                    TargetRootInImportIsNotAllowedwithFrom {
+                        target_root_span: root.span(),
+                    },
+                ),
+            );
+            continue;
+        }
+
+        let mut start = match start_from {
+            Some(current) => {
+                let identifier_root = root.as_identifier().unwrap();
+
+                let Some(id) = engine
+                    .get_members(current)
+                    .member_ids_by_name
+                    .get(identifier_root.kind.0.as_str())
+                    .copied()
+                else {
+                    handler.receive(
+                        SymbolNotFound {
+                            searched_item_id: Some(current),
+                            resolution_span: root.span(),
+                            name: identifier_root.kind.0.clone(),
+                        }
+                        .into(),
+                    );
+                    continue;
+                };
+
+                let result = Global::new(current.target_id, id);
+                if !engine.symbol_accessible(defined_in_module_id, result) {
+                    handler.receive(
+                        SymbolIsNotAccessible {
+                            referring_site: defined_in_module_id,
+                            referred: Global::new(current.target_id, id),
+                            referred_span: root.span(),
+                        }
+                        .into(),
+                    );
+                }
+
+                result
+            }
+
+            None => match root {
+                SimplePathRoot::Target(_) => {
+                    Global::new(defined_in_module_id.target_id, ID::ROOT_MODULE)
+                }
+                SimplePathRoot::Identifier(identifier) => {
+                    let target_map = engine.get_target_map();
+
+                    let Some(id) = target_map
+                        .get(identifier.kind.0.as_str())
+                        .copied()
+                        .filter(|x| {
+                            x == &defined_in_module_id.target_id
+                                || engine
+                                    .get_linked_targets(
+                                        defined_in_module_id.target_id,
+                                    )
+                                    .contains(x)
+                        })
+                    else {
+                        handler.receive(
+                            SymbolNotFound {
+                                searched_item_id: None,
+                                resolution_span: identifier.span,
+                                name: identifier.kind.0.clone(),
+                            }
+                            .into(),
+                        );
+                        continue;
+                    };
+
+                    Global::new(id, ID::ROOT_MODULE)
+                }
+            },
+        };
+
+        for rest in simple_path.subsequences().filter_map(|x| x.identifier()) {
+            let Some(next) = engine
+                .get_members(start)
+                .member_ids_by_name
+                .get(rest.kind.0.as_str())
+                .copied()
+            else {
+                handler.receive(
+                    SymbolNotFound {
+                        searched_item_id: Some(start),
+                        resolution_span: rest.span,
+                        name: rest.kind.0.clone(),
+                    }
+                    .into(),
+                );
+                continue 'item;
+            };
+
+            let next_id = Global::new(start.target_id, next);
+
+            if !engine.symbol_accessible(defined_in_module_id, next_id) {
+                handler.receive(
+                    SymbolIsNotAccessible {
+                        referring_site: defined_in_module_id,
+                        referred: next_id,
+                        referred_span: rest.span,
+                    }
+                    .into(),
+                );
+            }
+
+            start = next_id;
+        }
+
+        let name = import_item
+            .alias()
+            .as_ref()
+            .and_then(pernixc_syntax::item::module::Alias::identifier)
+            .map_or_else(|| engine.get_name(start), |x| x.kind.0);
+
+        // check if there's existing symbol right now
+        let existing = engine
+            .get_members(defined_in_module_id)
+            .member_ids_by_name
+            .get(&name)
+            .map(|x| {
+                engine.get_span(Global::new(defined_in_module_id.target_id, *x))
+            })
+            .or_else(|| {
+                import_component.get(name.as_str()).map(|x| Some(x.span))
+            });
+
+        if let Some(existing) = existing {
+            handler.receive(diagnostic::Diagnostic::ConflictingUsing(
+                ConflictingUsing {
+                    using_span: import_item.alias().as_ref().map_or_else(
+                        || import_item.span(),
+                        SourceElement::span,
+                    ),
+                    name: name.clone(),
+                    module_id: defined_in_module_id,
+                    conflicting_span: existing,
+                },
+            ));
+        } else {
+            import_component.insert(name, Using {
+                id: start,
+                span: import_item
+                    .alias()
+                    .as_ref()
+                    .map_or_else(|| import_item.span(), SourceElement::span),
+            });
+        }
+    }
+}
+
+#[executor(key(WithDiagnosticKey), name(WithDiagnosticExecutor))]
+#[allow(clippy::unnecessary_wraps)]
+pub fn import_with_diagnostic_executor(
+    &WithDiagnosticKey(id): &WithDiagnosticKey,
+    engine: &TrackedEngine,
+) -> Result<WithDiagnostic, CyclicError> {
+    let imports = engine.get_module_imports_syntax(id);
+    let storage = Storage::<diagnostic::Diagnostic>::new();
+
+    let mut import_map = HashMap::default();
+
+    for import in imports.as_ref() {
+        let start_from = if let Some(from_simple_path) =
+            import.from().and_then(|x| x.simple_path())
+        {
+            let Some(from_id) = engine.resolve_simple_path(
+                &from_simple_path,
+                id,
+                true,
+                false,
+                &storage,
+            ) else {
+                continue;
+            };
+
+            // must be module
+            if engine.get_kind(from_id) != Kind::Module {
+                storage.receive(diagnostic::Diagnostic::Naming(
+                    name::diagnostic::Diagnostic::ExpectModule(ExpectModule {
+                        module_path: from_simple_path.inner_tree().span(),
+                        found_id: from_id,
+                    }),
+                ));
+                continue;
+            }
+
+            Some(from_id)
+        } else {
+            None
+        };
+
+        let import_items = import.items().into_iter().flat_map(|x| {
+            let test: Option<ImportItems> = match x {
+            pernixc_syntax::item::module::ImportItemsKind::Regular(
+                import_items,
+            ) => Some(import_items),
+
+            pernixc_syntax::item::module::ImportItemsKind::Parenthesized(i) => {
+                i.import_items()
+            }
+        };
+
+            test.into_iter()
+        });
+
+        for import_item in import_items {
+            process_import_items(
+                engine,
+                id,
+                import,
+                &import_item,
+                start_from,
+                &mut import_map,
+                &storage,
+            );
+        }
+    }
+
+    Ok(WithDiagnostic {
+        imports: Arc::new(import_map),
+        diagnostics: storage.into_vec().into(),
+    })
+}
+
+/// A key for retrieving the import map from the module symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<HashMap<SharedStr, Using>>)]
 #[extend(method(get_imports), no_cyclic)]
-pub struct Import(pub HashMap<SharedStr, Using>);
+pub struct Key(pub Global<ID>);
+
+#[executor(key(Key), name(Executor))]
+#[allow(clippy::unnecessary_wraps)]
+pub fn import_executor(
+    &Key(id): &Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<HashMap<SharedStr, Using>>, CyclicError> {
+    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id))?;
+
+    Ok(import_with_diagnostic.imports)
+}

@@ -6,13 +6,17 @@ use flexstr::SharedStr;
 use pernixc_diagnostic::{Diagnostic, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_module_tree::source_map::to_absolute_span;
-use pernixc_query::{TrackedEngine, Value};
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
+use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 use crate::{
+    import,
     name::{get_name, get_qualified_name},
     span::get_span,
     ID,
@@ -23,7 +27,6 @@ use crate::{
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -32,10 +35,18 @@ use crate::{
     Serialize,
     Deserialize,
     StableHash,
-    pernixc_query::Key,
+    pernixc_query::Value,
 )]
-#[value(Arc<[ItemRedifinition]>)]
-pub struct Key(pub TargetID);
+#[id(TargetID)]
+pub struct Diagnostics {
+    /// A list of redefinition errors encountered during the symbol table
+    /// construction.
+    pub redefinition: Arc<[ItemRedifinition]>,
+
+    /// A list of import diagnostics encountered during the symbol table
+    /// construction.
+    pub import: Arc<[Arc<[import::diagnostic::Diagnostic]>]>,
+}
 
 /// An executor for the [`Key`] query that retrieves all the diagnostics
 /// encountered during the symbol table construction.
@@ -46,16 +57,30 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     fn execute(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        &Key(id): &Key,
-    ) -> Result<
-        Arc<[ItemRedifinition]>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
-        let table = engine
-            .query(&crate::Key(id))
-            .expect("should have no cyclic dependencies");
+        &Key(target_id): &Key,
+    ) -> Result<Diagnostics, pernixc_query::runtime::executor::CyclicError>
+    {
+        let table = engine.query(&crate::Key(target_id))?;
 
-        Ok(table.redefinition_errors.clone())
+        let import = table
+            .entries_by_id
+            .iter()
+            .filter_map(|x| x.1.imports.is_some().then_some(x.0))
+            .collect::<Vec<_>>()
+            .into_par_iter()
+            .map(|x| {
+                let imports = engine.query(&import::WithDiagnosticKey(
+                    target_id.make_global(*x),
+                ))?;
+
+                Ok(imports.diagnostics)
+            })
+            .collect::<Result<Arc<[_]>, CyclicError>>()?;
+
+        Ok(Diagnostics {
+            redefinition: table.redefinition_errors.clone(),
+            import,
+        })
     }
 }
 
@@ -139,56 +164,6 @@ pub struct SymbolNotFound {
     pub name: SharedStr,
 }
 
-#[allow(clippy::cast_precision_loss, unused)]
-fn suggest<'a>(
-    not_found_name: &str,
-    available_names: impl IntoIterator<Item = &'a str>,
-) -> Option<&'a str> {
-    // Calculate appropriate maximum distance based on input length
-    let max_distance = match not_found_name.len() {
-        0..=3 => 1,   // Very short: allow only 1 char difference
-        4..=6 => 2,   // Short: allow 2 char difference
-        7..=10 => 3,  // Medium: allow 3 char difference
-        11..=15 => 4, // Long: allow 4 char difference
-        _ => not_found_name.len() / 4, // Very long: allow 25% difference
-    };
-
-    let mut best_candidate = None;
-    let mut best_score = f64::NEG_INFINITY;
-
-    for candidate in available_names {
-        let distance = strsim::levenshtein(not_found_name, candidate);
-
-        // Skip if distance is too large
-        if distance > max_distance {
-            continue;
-        }
-
-        // Skip exact matches (shouldn't happen in real usage)
-        if distance == 0 {
-            continue;
-        }
-
-        // Calculate confidence score
-        let max_len = not_found_name.len().max(candidate.len()) as f64;
-        let base_score = 1.0 - (distance as f64 / max_len);
-
-        // Apply bonus for common typo patterns
-
-        if base_score > best_score {
-            best_score = base_score;
-            best_candidate = Some(candidate);
-        }
-    }
-
-    // Only return suggestion if confidence is reasonable
-    if best_score > 0.4 {
-        best_candidate
-    } else {
-        None
-    }
-}
-
 /// A list of errors that has been rendered in a form of [`Diagnostic`] from the
 /// [`Errors`]
 #[derive(
@@ -212,274 +187,27 @@ impl pernixc_query::runtime::executor::Executor<RenderedKey>
         engine: &TrackedEngine,
         key: &RenderedKey,
     ) -> Result<Rendered, pernixc_query::runtime::executor::CyclicError> {
-        let mut diagnostics = Vec::new();
         let errors = engine.query(&Key(key.0))?;
 
-        for error in errors.iter() {
-            diagnostics.push(error.report(engine));
-        }
-
-        Ok(Rendered(diagnostics.into()))
+        Ok(Rendered(
+            errors
+                .redefinition
+                .par_iter()
+                .map(|error| error.report(engine))
+                .chain(
+                    errors
+                        .import
+                        .par_iter()
+                        .flat_map(|x| x.par_iter())
+                        .map(|error| error.report(engine)),
+                )
+                .collect::<Vec<_>>()
+                .into(),
+        ))
     }
 }
 
 /*
-impl Report<&Engine> for SymbolNotFound {
-    type Location = RelativeLocation;
-
-    fn report(
-        &self,
-        engine: &Engine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let engine = engine.tracked();
-
-        let searched_item_id_qualified_name =
-            self.searched_item_id.map(|x| engine.get_qualified_name(x));
-
-        let did_you_mean = self.searched_item_id.map_or_else(
-            || {
-                let target_map = engine.get_target_map();
-                suggest(
-                    &self.name,
-                    target_map.keys().map(flexstr::FlexStr::as_str),
-                )
-                .map(ToString::to_string)
-            },
-            |x| {
-                let members = engine.try_get_members(x)?;
-
-                let kind = engine.get_kind(x);
-
-                match kind {
-                    Kind::Module => suggest(
-                        &self.name,
-                        members
-                            .member_ids_by_name
-                            .keys()
-                            .map(flexstr::FlexStr::as_str)
-                            .chain(
-                                engine
-                                    .get_imports(x)
-                                    .0
-                                    .keys()
-                                    .map(flexstr::FlexStr::as_str),
-                            ),
-                    )
-                    .map(ToString::to_string),
-
-                    _ => suggest(
-                        &self.name,
-                        members
-                            .member_ids_by_name
-                            .keys()
-                            .map(flexstr::FlexStr::as_str),
-                    )
-                    .map(ToString::to_string),
-                }
-            },
-        );
-
-        let span_message = searched_item_id_qualified_name.map_or_else(
-            || {
-                format!(
-                    "the target named `{}` is not found",
-                    self.name.as_str()
-                )
-            },
-            |x| {
-                format!(
-                    "the symbol named `{}` does not exist in `{x}`",
-                    self.name.as_str(),
-                )
-            },
-        );
-
-        pernixc_diagnostic::Diagnostic {
-            span: Some((self.resolution_span, Some(span_message))),
-            message: "the symbol could not be found".to_string(),
-            severity: Severity::Error,
-            help_message: did_you_mean
-                .as_ref()
-                .map(|suggestion| format!("did you mean `{suggestion}`?")),
-            related: Vec::new(),
-        }
-    }
-}
-
-/// The symbol is not accessible from the referring site.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SymbolIsNotAccessible {
-    /// [`Global`] ID where the [`Self::referred`] is referred.
-    pub referring_site: Global<symbol::ID>,
-
-    /// The symbol that was referred and is not accessible.
-    pub referred: Global<symbol::ID>,
-
-    /// The span where the [`Self::referred`] is referred from.
-    pub referred_span: RelativeSpan,
-}
-
-impl Report<&Engine> for SymbolIsNotAccessible {
-    type Location = RelativeLocation;
-
-    fn report(
-        &self,
-        engine: &Engine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let engine = engine.tracked();
-
-        let referring_site_qualified_name =
-            engine.get_qualified_name(self.referring_site);
-        let referred_qualified_name = engine.get_qualified_name(self.referred);
-
-        pernixc_diagnostic::Diagnostic {
-            span: Some((
-                self.referred_span,
-                Some(format!(
-                    "the symbol `{referred_qualified_name}` is not accessible \
-                     from `{referring_site_qualified_name}`",
-                )),
-            )),
-            message: "the symbol is not accessible".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
-    }
-}
-
-/// Expected a module in the module path, but found other kind of symbol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ExpectModule {
-    /// The module path that was expected to be a module.
-    pub module_path: RelativeSpan,
-
-    /// The ID of the symbol that was found instead of a module.
-    pub found_id: Global<symbol::ID>,
-}
-
-impl Report<&Engine> for ExpectModule {
-    type Location = RelativeLocation;
-
-    fn report(
-        &self,
-        engine: &Engine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let engine = engine.tracked();
-
-        let found_symbol_qualified_name =
-            engine.get_qualified_name(self.found_id);
-
-        let kind = engine.get_kind(self.found_id);
-
-        pernixc_diagnostic::Diagnostic {
-            span: Some((self.module_path, None)),
-            message: format!(
-                "expected a module in the module path, but found `{} {}`",
-                kind.kind_str(),
-                found_symbol_qualified_name
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
-    }
-}
-
-/// The import items that have a `from` clause cannot have the `target` as the
-/// root path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TargetRootInImportIsNotAllowedwithFrom {
-    /// The span where the target root is found.
-    pub target_root_span: RelativeSpan,
-}
-
-impl Report<&Engine> for TargetRootInImportIsNotAllowedwithFrom {
-    type Location = RelativeLocation;
-
-    fn report(
-        &self,
-        _: &Engine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
-            span: Some((
-                self.target_root_span,
-                Some(
-                    "the `target` root path is not allowed with `from` clause"
-                        .to_string(),
-                ),
-            )),
-            message: "import items that have a `from` clause cannot have the \
-                      `target` as the root path"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        }
-    }
-}
-
-/// The name is already exists in the given module.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ConflictingUsing {
-    /// The span of the using statement.
-    pub using_span: RelativeSpan,
-
-    /// The name that conflicts with the existing name in the module.
-    pub name: SharedStr,
-
-    /// The module where the name is already defined.
-    pub module_id: Global<symbol::ID>,
-
-    /// The span of the conflicting name.
-    ///
-    /// This can either be the span to the declared symbol or the previous
-    /// using that uses the given name.
-    pub conflicting_span: Option<RelativeSpan>,
-}
-
-impl Report<&Engine> for ConflictingUsing {
-    type Location = RelativeLocation;
-
-    fn report(
-        &self,
-        engine: &Engine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let engine = engine.tracked();
-
-        let module_qualified_name = engine.get_qualified_name(self.module_id);
-
-        pernixc_diagnostic::Diagnostic {
-            span: Some((
-                self.using_span,
-                Some(format!(
-                    "the using `{name}` conflicts with the existing name in \
-                     the module `{module_qualified_name}`",
-                    name = self.name
-                )),
-            )),
-            message: "the using statement conflicts with an existing name in \
-                      the module"
-                .to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: self
-                .conflicting_span
-                .as_ref()
-                .map(|span| {
-                    vec![Related {
-                        span: *span,
-                        message: format!(
-                            "this symbol already defined the name `{}`",
-                            self.name
-                        ),
-                    }]
-                })
-                .unwrap_or_default(),
-        }
-    }
-}
-
 /// The symbol is more accessible than the parent symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SymbolIsMoreAccessibleThanParent {
