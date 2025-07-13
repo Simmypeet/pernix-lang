@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 
@@ -44,7 +44,35 @@ pub struct BatchWriteTransaction {
     pub(super) write: RwLock<Option<redb::WriteTransaction>>,
     pub(super) table_lockcs: HashMap<Table, Mutex<()>>,
 
-    pub(super) written_bytes: AtomicUsize,
+    written_bytes: AtomicCounter,
+}
+
+#[derive(Debug, Default)]
+struct AtomicCounter(AtomicUsize);
+
+impl AtomicCounter {
+    fn greater_than_and_reset(&self, threshold: usize) -> bool {
+        self.0
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+                if current >= threshold {
+                    Some(0)
+                } else {
+                    None
+                }
+            })
+            .is_ok()
+    }
+
+    // Forward other methods you need
+    fn load(&self, ordering: Ordering) -> usize { self.0.load(ordering) }
+
+    fn store(&self, value: usize, ordering: Ordering) {
+        self.0.store(value, ordering);
+    }
+
+    fn fetch_add(&self, val: usize, ordering: Ordering) -> usize {
+        self.0.fetch_add(val, ordering)
+    }
 }
 
 impl BatchWriteTransaction {
@@ -63,7 +91,7 @@ impl BatchWriteTransaction {
             ]
             .into_iter()
             .collect(),
-            written_bytes: AtomicUsize::new(0),
+            written_bytes: AtomicCounter::default(),
         }
     }
 
@@ -72,17 +100,17 @@ impl BatchWriteTransaction {
         table: Table,
         invoke: impl FnOnce(&mut redb::Table<(u128, u128), &'static [u8]>) -> usize,
     ) {
-        let total_bytes =
+        let written_bytes =
             self.written_bytes.load(std::sync::atomic::Ordering::Relaxed);
 
-        if total_bytes >= Self::COMMIT_THRESHOLD {
+        if self.written_bytes.greater_than_and_reset(Self::COMMIT_THRESHOLD) {
             // commit the current write transaction if the threshold is reached
             let mut write = self.write.write();
 
             if let Some(write) = write.take() {
                 let _span = tracing::info_span!(
                     "commit_write_transaction",
-                    total_bytes
+                    written_bytes
                 )
                 .entered();
 
