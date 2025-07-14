@@ -4,7 +4,7 @@ use std::sync::{
 };
 
 use crossbeam::{
-    deque::{Injector, Steal, Stealer, Worker},
+    deque::{Injector, Steal, Stealer},
     utils::Backoff,
 };
 use parking_lot::{Mutex, RwLock};
@@ -156,24 +156,27 @@ impl Drop for BatchWriteTransaction {
     }
 }
 
-pub struct StealingWorker {
+pub struct Worker {
     injector: Arc<Injector<SaveTask>>,
     shutdown: Arc<AtomicBool>,
 
     thread_handles: Vec<std::thread::JoinHandle<()>>,
 }
 
-impl StealingWorker {
+impl Worker {
     pub fn new(worker_count: usize, database: &Arc<redb::Database>) -> Self {
         let injector = Arc::new(Injector::new());
         let shutdown = Arc::new(AtomicBool::new(false));
 
         let mut thread_handles = Vec::with_capacity(worker_count);
 
-        let workers =
-            (0..worker_count).map(|_| Worker::new_fifo()).collect::<Vec<_>>();
-        let stealers =
-            workers.iter().map(Worker::stealer).collect::<Arc<[_]>>();
+        let workers = (0..worker_count)
+            .map(|_| crossbeam::deque::Worker::new_fifo())
+            .collect::<Vec<_>>();
+        let stealers = workers
+            .iter()
+            .map(crossbeam::deque::Worker::stealer)
+            .collect::<Arc<[_]>>();
 
         let batch_transaction =
             Arc::new(BatchWriteTransaction::new(database.clone()));
@@ -185,7 +188,7 @@ impl StealingWorker {
             let batch_transaction = batch_transaction.clone();
 
             let handle = std::thread::Builder::new()
-                .name(format!("stealing-worker-{i}"))
+                .name(format!("persistence-worker-{i}"))
                 .spawn(move || {
                     Self::worker_loop(
                         &worker,
@@ -215,7 +218,7 @@ impl StealingWorker {
     }
 
     fn worker_loop(
-        local: &Worker<SaveTask>,
+        local: &crossbeam::deque::Worker<SaveTask>,
         global: &Injector<SaveTask>,
         stealers: &[Stealer<SaveTask>],
         shutdown: &AtomicBool,
@@ -282,7 +285,7 @@ impl StealingWorker {
     }
 }
 
-impl Drop for StealingWorker {
+impl Drop for Worker {
     fn drop(&mut self) {
         // Signal shutdown to all worker threads.
         self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);

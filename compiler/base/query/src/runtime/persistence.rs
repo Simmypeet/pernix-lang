@@ -246,7 +246,7 @@ pub struct Persistence {
     database: Arc<redb::Database>,
     read_transaction: Option<redb::ReadTransaction>,
 
-    background_writer: RwLock<Option<background::StealingWorker>>,
+    background_writer: RwLock<Option<background::Worker>>,
 
     skip_keys: HashSet<StableTypeID>,
     directory_path: PathBuf,
@@ -714,19 +714,19 @@ impl Persistence {
 
     fn ensure_background_writer(
         &self,
-    ) -> MappedRwLockReadGuard<'_, background::StealingWorker> {
+    ) -> MappedRwLockReadGuard<'_, background::Worker> {
         loop {
             let background_writer = self.background_writer.read();
             if let Ok(value) = RwLockReadGuard::try_map(
                 background_writer,
-                |x: &Option<background::StealingWorker>| x.as_ref(),
+                |x: &Option<background::Worker>| x.as_ref(),
             ) {
                 return value;
             }
 
             let mut with_writer = self.background_writer.write();
             if with_writer.as_mut().is_none() {
-                with_writer.replace(background::StealingWorker::new(
+                with_writer.replace(background::Worker::new(
                     std::thread::available_parallelism()
                         .map_or_else(|_| 4, std::num::NonZero::get),
                     &self.database,
