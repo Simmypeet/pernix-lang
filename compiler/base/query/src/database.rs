@@ -987,27 +987,47 @@ impl Engine {
                 )
             }
             Continuation::ReVerify(mut re_verify) => {
-                tracing::debug!(
-                    "Re-verifying query for `{}` `{key:?}` with metadata: {:?}",
-                    key.type_name(),
-                    re_verify.derived_metadata
-                );
+                let _span = tracing::info_span!(
+                    "Re-verifying query",
+                    key_type_name = key.type_name(),
+                    key = ?key,
+                    metadata = ?re_verify.derived_metadata,
+                )
+                .entered();
 
-                let recompute = if K::ALWAYS_REVERIFY
-                    || re_verify
-                        .derived_metadata
-                        .version_info
-                        .fingerprint
-                        .is_none()
-                {
-                    // if the query is a part of SCC, always recompute
-                    tracing::info!(
-                        "Always recomputing `{}` `{key:?}`",
-                        key.type_name()
-                    );
-                    true
-                } else {
-                    self.need_recompute(&re_verify, key, current_version)
+                let recompute = {
+                    let _span = tracing::info_span!(
+                        "Checking if re-computation is needed",
+                        key_type_name = key.type_name(),
+                        key = ?key,
+                        metadata = ?re_verify.derived_metadata,
+                    )
+                    .entered();
+
+                    if K::ALWAYS_REVERIFY
+                        || re_verify
+                            .derived_metadata
+                            .version_info
+                            .fingerprint
+                            .is_none()
+                    {
+                        // if the query is a part of SCC, always recompute
+                        tracing::info!(
+                            "Always recomputing `{}` `{key:?}`",
+                            key.type_name()
+                        );
+                        true
+                    } else {
+                        let _span = tracing::info_span!(
+                            "Checking each dependency",
+                            key_type_name = key.type_name(),
+                            key = ?key,
+                            metadata = ?re_verify.derived_metadata,
+                        )
+                        .entered();
+
+                        self.need_recompute(&re_verify, key, current_version)
+                    }
                 };
 
                 // update the version info to the current version
@@ -1015,12 +1035,13 @@ impl Engine {
                     current_version;
 
                 if recompute {
-                    tracing::warn!(
-                        "Re-computing value for `{}` `{key:?}` with metadata: \
-                         {:?}",
-                        key.type_name(),
-                        re_verify.derived_metadata
-                    );
+                    let _span = tracing::info_span!(
+                        "Re-computing value for query",
+                        key_type_name = key.type_name(),
+                        key = ?key,
+                        metadata = ?re_verify.derived_metadata,
+                    )
+                    .entered();
 
                     self.compute(key, true, |value, tracked_dependencies| {
                         let new_fingerprint = value.ok().map(|x| {
