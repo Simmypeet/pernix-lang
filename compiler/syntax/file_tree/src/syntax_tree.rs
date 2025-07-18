@@ -5,7 +5,6 @@ use std::{fmt::Debug, hash::Hash, path::Path, sync::Arc};
 use pernixc_parser::abstract_tree::AbstractTree;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::GlobalSourceID;
 use pernixc_stable_hash::{StableHash, Value as _};
 use pernixc_target::TargetID;
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};

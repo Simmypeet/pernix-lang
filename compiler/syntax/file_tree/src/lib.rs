@@ -385,9 +385,7 @@ fn scan_file_tree(
         )
         .is_none());
 
-    let Ok(child_files) =
-        engine.query(&Key::File { path: file_path, target_id })?
-    else {
+    let Ok(child_files) = engine.query(key)? else {
         return Ok(());
     };
 

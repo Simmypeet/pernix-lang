@@ -1,4 +1,0 @@
-public module notFound
-
-public function main():
-    pass
