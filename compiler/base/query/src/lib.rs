@@ -42,3 +42,26 @@ pub struct Engine {
     /// serialization components.
     pub runtime: runtime::Runtime,
 }
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let _span = tracing::info_span!("dropping the query engine").entered();
+
+        // apparently, these two instances take very long time to drop, so we
+        // need to explicitly drop them in parallel
+        rayon::scope(|sp| {
+            sp.spawn(|_| {
+                let _span = tracing::info_span!("dropping the query database")
+                    .entered();
+
+                std::mem::drop(std::mem::take(&mut self.database));
+            });
+            sp.spawn(|_| {
+                let _span =
+                    tracing::info_span!("dropping the query runtime").entered();
+
+                std::mem::drop(std::mem::take(&mut self.runtime));
+            });
+        });
+    }
+}
