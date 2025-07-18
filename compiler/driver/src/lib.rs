@@ -295,6 +295,7 @@ pub fn run(
     }
 
     // final step, setup the query executors for the engine
+    pernixc_target::register_executors(&mut engine.runtime.executor);
     pernixc_file_tree::register_executors(&mut engine.runtime.executor);
     // pernixc_symbol::register_executors(&mut engine.runtime.executor);
 

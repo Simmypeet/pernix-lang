@@ -16,6 +16,7 @@ use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
 use pernixc_stable_hash::StableHash;
+use rand::Rng;
 
 /// Represents an identifier for a target.
 #[derive(
@@ -430,6 +431,13 @@ const fn get_styles() -> clap::builder::Styles {
         )
 }
 
+/// Registers all the required executors to run the queries.
+pub fn register_executors(
+    executor: &mut pernixc_query::runtime::executor::Registry,
+) {
+    executor.register(Arc::new(SeedExecutor));
+}
+
 /// Registers all the necessary runtime information for the query engine.
 pub fn register_serde<
     S: Serializer<Registry>,
@@ -443,6 +451,7 @@ pub fn register_serde<
     serde_registry.register::<Key>();
     serde_registry.register::<LinkKey>();
     serde_registry.register::<MapKey>();
+    serde_registry.register::<SeedKey>();
 }
 
 /// Registers the keys that should be skipped during serialization and
@@ -497,3 +506,32 @@ pub fn get_target_map(
 #[value(Arc<HashSet<TargetID>>)]
 #[extend(method(get_linked_targets), no_cyclic)]
 pub struct LinkKey(pub TargetID);
+
+/// A query for retrieving the linked targets of a given target ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(u64)]
+#[extend(method(get_target_seed), no_cyclic)]
+pub struct SeedKey(pub TargetID);
+
+/// Gets the initial random seed for ID generation.
+#[pernixc_query::executor(key(SeedKey), name(SeedExecutor))]
+#[allow(clippy::unnecessary_wraps)]
+pub fn target_seed_executor(
+    _: &SeedKey,
+    _: &TrackedEngine<'_>,
+) -> Result<u64, pernixc_query::runtime::executor::CyclicError> {
+    Ok(rand::thread_rng().gen())
+}

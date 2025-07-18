@@ -6,7 +6,7 @@ use flexstr::SharedStr;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::TargetID;
+use pernixc_target::{get_invocation_arguments, TargetID};
 
 use crate::ID;
 
@@ -76,13 +76,29 @@ pub struct TableKey(pub Key);
 )]
 pub struct Table {}
 
+enum ModuleKind {}
+
 #[pernixc_query::executor(key(TableKey), name(TableExecutor))]
 pub fn table_executor(
-    key: &TableKey,
+    TableKey(key): &TableKey,
     engine: &TrackedEngine,
 ) -> Result<
     Result<Arc<Table>, pernixc_file_tree::load::Error>,
     pernixc_query::runtime::executor::CyclicError,
 > {
-    todo!()
+    match key {
+        Key::Root(target_id) => {
+            let invocation_arguments =
+                engine.get_invocation_arguments(*target_id);
+
+            engine.query(&pernixc_file_tree::syntax_tree::Key {
+                path: invocation_arguments.command.input().file.clone().into(),
+                target_id: *target_id,
+            });
+
+            todo!()
+        }
+
+        Key::Submodule { external_submodule, target_id } => todo!(),
+    };
 }

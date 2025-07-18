@@ -3,13 +3,13 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the submodule of the root source file ends up pointing to the root source file itself
+error: the module declaration ened up loading the current file `module_tree/root_conflict/main.pnx`
   ╭─ module_tree/root_conflict/main.pnx:3:15
   │
 3 │ public module main
-  │               ^^^^ this ends up loading the file `module_tree/root_conflict/main.pnx`, which is the current module itself
+  │               ^^^^ this module declaration causes recursive loading
   │
-  = consider renaming the submodule name to avoid this conflict
+  = try changing the module name from `main` to something else that is not the same as the file name
 
 error: Compilation aborted due to 1 error(s)
 

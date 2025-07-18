@@ -34,9 +34,6 @@ pub struct Key {
 
     /// The target ID that requested the source file parsing.
     pub target_id: TargetID,
-
-    /// The ID to the source file in the global source map.
-    pub global_source_id: GlobalSourceID,
 }
 
 /// A wrapper over the [`pernixc_syntax::item::module::Content`] that is
@@ -122,7 +119,6 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             match tracked_engine.query(&crate::token_tree::Parse {
                 path: key.path.clone(),
                 target_id: key.target_id,
-                global_source_id: key.global_source_id,
             })? {
                 Ok(source_code) => source_code,
                 Err(error) => return Ok(Err(error)),
@@ -161,9 +157,6 @@ pub struct ErrorKey {
 
     /// The target ID that requested the source file parsing.
     pub target_id: TargetID,
-
-    /// The ID to the source file in the global source map.
-    pub global_source_id: GlobalSourceID,
 }
 
 #[pernixc_query::executor(name(ErrorExecutor), key(ErrorKey))]
@@ -172,11 +165,9 @@ pub fn error_executor(
     tracked_engine: &pernixc_query::TrackedEngine,
 ) -> Result<Result<Arc<[pernixc_parser::error::Error]>, Error>, CyclicError> {
     // load the syntax tree
-    let syntax_tree = match tracked_engine.query(&Key {
-        path: key.path.clone(),
-        target_id: key.target_id,
-        global_source_id: key.global_source_id,
-    })? {
+    let syntax_tree = match tracked_engine
+        .query(&Key { path: key.path.clone(), target_id: key.target_id })?
+    {
         Ok(syntax_tree) => syntax_tree,
         Err(error) => return Ok(Err(error)),
     };

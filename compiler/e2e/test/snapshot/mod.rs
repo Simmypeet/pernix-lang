@@ -154,7 +154,7 @@ fn test(file_path: &Path) {
                     target_name: None,
                     library_paths: Vec::new(),
                     incremental_path: None,
-                    show_progress: false,
+                    chrome_tracing: false,
                 },
             }),
         },
@@ -182,7 +182,7 @@ fn test(file_path: &Path) {
                             target_name: None,
                             library_paths: Vec::new(),
                             incremental_path: None,
-                            show_progress: false,
+                            chrome_tracing: false,
                         },
                     }),
                 }

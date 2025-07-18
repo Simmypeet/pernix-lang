@@ -204,13 +204,6 @@ impl TrackedEngine<'_> {
 
         Ok(value)
     }
-
-    /// The random seed used by the query engine to calculate fingerprints.
-    ///
-    /// It can also be used to generate a stable hash that varies with the
-    /// different compilation sessions.
-    #[must_use]
-    pub const fn random_seed(&self) -> u64 { self.engine.database.random_seed }
 }
 
 enum FastPathDecision<V> {

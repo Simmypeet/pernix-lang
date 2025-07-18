@@ -12,6 +12,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     load::Error, source_map::SourceMap, token_tree::get_source_file_token_tree,
+    RecursiveFileRequest,
 };
 
 /// Contains all the errors that occurred building the syntax tree in a
@@ -36,6 +37,11 @@ pub struct Errors {
     /// The list of lexical and parser errors that occurred while parsing the
     /// token tree.
     pub syntactic_errors: Arc<[Syntactic]>,
+
+    /// The recursive request error, if any.
+    ///
+    /// This can only appar in the root of the file tree
+    pub recursive_request_error: Option<Arc<RecursiveFileRequest>>,
 }
 
 /// An executor for collecting errors from the module tree.
@@ -46,15 +52,20 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     fn execute(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        key: &Key,
+        &Key(target_id): &Key,
     ) -> Result<
         Result<Errors, Error>,
         pernixc_query::runtime::executor::CyclicError,
     > {
-        let file_map = match engine.query(&crate::MapKey(key.0))? {
+        let file_map = match engine.query(&crate::MapKey(target_id))? {
             Ok(file_map) => file_map,
             Err(err) => return Ok(Err(err)),
         };
+
+        let recursive_request_error = engine
+            .query(&crate::Key::Root(target_id))?
+            .ok()
+            .and_then(|x| x.recursive_request_error.clone());
 
         let syntactic_errors = file_map
             .par_iter()
@@ -62,8 +73,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
                 let Ok(token_tree) = engine
                     .query(&crate::token_tree::ErrorKey {
                         path: x.value().clone(),
-                        target_id: key.0,
-                        global_source_id: key.0.make_global(*x.key()),
+                        target_id,
                     })
                     .unwrap()
                 else {
@@ -73,8 +83,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
                 let Ok(syntax_tree) = engine
                     .query(&crate::syntax_tree::ErrorKey {
                         path: x.value().clone(),
-                        target_id: key.0,
-                        global_source_id: key.0.make_global(*x.key()),
+                        target_id,
                     })
                     .unwrap()
                 else {
@@ -85,7 +94,10 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             })
             .collect::<Vec<_>>();
 
-        Ok(Ok(Errors { syntactic_errors: syntactic_errors.into() }))
+        Ok(Ok(Errors {
+            syntactic_errors: syntactic_errors.into(),
+            recursive_request_error,
+        }))
     }
 }
 
@@ -138,6 +150,12 @@ impl pernixc_query::runtime::executor::Executor<RenderedKey>
                         error.report(&token_tree)
                     }))
             })
+            .chain(
+                errors
+                    .recursive_request_error
+                    .as_ref()
+                    .map(|x| x.report(engine)),
+            )
             .collect::<Vec<_>>();
 
         Ok(Ok(Rendered(errors.into())))

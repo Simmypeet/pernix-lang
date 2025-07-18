@@ -2,16 +2,16 @@
 //! target.
 
 use std::{
-    collections::hash_map::Entry,
     hash::{BuildHasher, BuildHasherDefault},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use flexstr::SharedStr;
 use pernixc_arena::ID;
+use pernixc_diagnostic::Report;
 use pernixc_extend::extend;
-use pernixc_hash::{DashMap, HashMap, ReadOnlyView};
+use pernixc_hash::{DashMap, ReadOnlyView};
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
     runtime::{
         executor,
@@ -23,13 +23,15 @@ use pernixc_query::{
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
-use pernixc_source_file::{GlobalSourceID, SourceFile};
+use pernixc_source_file::{ByteIndex, GlobalSourceID, SourceFile};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::Passable;
-use pernixc_target::{get_invocation_arguments, TargetID};
+use pernixc_target::{get_invocation_arguments, get_target_seed, TargetID};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
-use crate::{load::Error, syntax_tree::ModuleContent};
+use crate::{
+    load::Error, source_map::to_absolute_span, syntax_tree::ModuleContent,
+};
 
 pub mod errors;
 pub mod load;
@@ -93,30 +95,6 @@ pub fn skip_persistence(persistence: &mut Persistence) {
     persistence.skip_cache_value::<source_map::Key>();
 }
 
-/// Enumeration of either a submodule defined inline in the current
-/// module file, or a submodule that is defined in a separate source file.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
-pub enum Submodule {
-    /// A submodule that is defined inline in the current module file.
-    Node(Node),
-
-    /// A submodule is defined in a separate source file.
-    SourceFile {
-        /// The path to the source that it must load
-        path: Arc<Path>,
-
-        /// The target that requested the source file loading
-        target_id: TargetID,
-    },
-}
-
-/// Represents a node in the module tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
-pub struct Node {
-    /// A map of submodules defined in the current node.
-    pub submodules_by_name: Arc<HashMap<SharedStr, Submodule>>,
-}
-
 /// A query for retrieving a node in the file tree.
 #[derive(
     Debug,
@@ -131,7 +109,7 @@ pub struct Node {
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Result<Arc<Node>, Error>)]
+#[value(Result<Arc<ChildFiles>, Error>)]
 pub enum Key {
     /// A root node for the module tree.
     Root(TargetID),
@@ -146,11 +124,96 @@ pub enum Key {
     },
 }
 
+/// The `public module someFile` ended up requesting the current file itself.
+/// This only happens at the root of the file tree, where the file name is the
+/// same as the submodule name.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct RecursiveFileRequest {
+    /// The span of the submodule declaration in the root file.
+    pub submodule_span: RelativeSpan,
+
+    /// The path to the source file that was requested.
+    pub path: PathBuf,
+}
+
+impl Report<&TrackedEngine<'_>> for RecursiveFileRequest {
+    type Location = ByteIndex;
+
+    fn report(
+        &self,
+        engine: &TrackedEngine<'_>,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        pernixc_diagnostic::Diagnostic {
+            span: Some((
+                engine.to_absolute_span(&self.submodule_span),
+                Some(
+                    "this module declaration causes recursive loading"
+                        .to_string(),
+                ),
+            )),
+            message: format!(
+                "the module declaration ened up loading the current file `{}`",
+                self.path.display()
+            ),
+            severity: pernixc_diagnostic::Severity::Error,
+            help_message: Some(format!(
+                "try changing the module name from `{}` to something else \
+                 that is not the same as the file name",
+                self.path.file_stem().unwrap_or_default().to_string_lossy()
+            )),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Represents the collection of files that current file declares as its
+/// children.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
+pub struct ChildFiles {
+    /// The list of child files in the file tree.
+    pub files: Arc<[Arc<Path>]>,
+
+    /// The recursive request error, if any.
+    ///
+    /// This can only appar in the root of the file tree
+    pub recursive_request_error: Option<Arc<RecursiveFileRequest>>,
+}
+
+/// Calculates the ID of the source file based on their path.
+///
+/// Internally this uses a hash function to derive a stable ID for the source
+/// file.
 #[extend]
-fn calculate_path_id(self: &TrackedEngine<'_>, path: &Path) -> ID<SourceFile> {
+pub fn calculate_path_id(
+    self: &TrackedEngine<'_>,
+    path: &Path,
+    target_id: TargetID,
+) -> ID<SourceFile> {
     ID::new(
         BuildHasherDefault::<siphasher::sip::SipHasher24>::default()
-            .hash_one((self.random_seed(), path)),
+            .hash_one((self.get_target_seed(target_id), path)),
     )
 }
 
@@ -159,14 +222,14 @@ fn parse_node_from_module_content(
     content: Option<ModuleContent>,
     current_path: &Path,
     is_root: bool,
-    target_id: TargetID,
-) -> Node {
+) -> (Vec<Arc<Path>>, Option<Arc<RecursiveFileRequest>>) {
     // empty file/module
     let Some(content) = content else {
-        return Node { submodules_by_name: Arc::new(HashMap::default()) };
+        return (vec![], None);
     };
 
-    let mut sub_modules_by_name = HashMap::<SharedStr, Submodule>::default();
+    let mut child_files = vec![];
+    let mut recursive_request_error = None;
 
     for member in content.members() {
         let Passable::Line(pernixc_syntax::item::module::Member::Module(
@@ -206,33 +269,47 @@ fn parse_node_from_module_content(
         };
         next_path.set_extension("pnx");
 
-        let module_content = match content {
-            Some(module) => Submodule::Node(parse_node_from_module_content(
-                module.content().map(ModuleContent),
-                &next_path,
-                false,
-                target_id,
-            )),
-            None => {
-                Submodule::SourceFile { path: Arc::from(next_path), target_id }
-            }
-        };
+        if let Some(module) = content {
+            child_files.append(
+                &mut parse_node_from_module_content(
+                    module.content().map(ModuleContent),
+                    &next_path,
+                    false,
+                )
+                .0,
+            );
+        } else {
+            if is_root {
+                let root_file_name = current_path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy();
 
-        if let Entry::Vacant(entry) =
-            sub_modules_by_name.entry(next_identifier.kind.0.clone())
-        {
-            entry.insert(module_content);
+                if next_identifier.kind.0 == root_file_name.as_ref() {
+                    recursive_request_error =
+                        Some(Arc::new(RecursiveFileRequest {
+                            submodule_span: next_identifier.span,
+                            path: next_path,
+                        }));
+
+                    // don't add the file to the list of child files, will cause
+                    // loop
+                    continue;
+                }
+            }
+
+            child_files.push(Arc::from(next_path));
         }
     }
 
-    Node { submodules_by_name: Arc::new(sub_modules_by_name) }
+    (child_files, recursive_request_error)
 }
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 pub fn node_executor(
     key: &Key,
     engine: &TrackedEngine,
-) -> Result<Result<Arc<Node>, Error>, CyclicError> {
+) -> Result<Result<Arc<ChildFiles>, Error>, CyclicError> {
     let (path, target_id, is_root) = match key {
         Key::Root(target_id) => {
             let invocation_argument =
@@ -248,27 +325,20 @@ pub fn node_executor(
         Key::File { path, target_id } => (path.clone(), *target_id, false),
     };
 
-    // NOTE: the source file ID is derived from the path hash, so it is
-    // stable across the compilation run (same session).
-    //
-    // There's slight chance of hash collision though
-    let source_id = engine.calculate_path_id(&path);
-
-    let syntax_tree = match engine.query(&syntax_tree::Key {
-        path: path.clone(),
-        target_id,
-        global_source_id: target_id.make_global(source_id),
-    })? {
+    let syntax_tree = match engine
+        .query(&syntax_tree::Key { path: path.clone(), target_id })?
+    {
         Ok(syntax_tree) => syntax_tree,
         Err(error) => return Ok(Err(Error(Arc::from(error.to_string())))),
     };
 
-    Ok(Ok(Arc::new(parse_node_from_module_content(
-        syntax_tree.syntax_tree,
-        &path,
-        is_root,
-        target_id,
-    ))))
+    let result =
+        parse_node_from_module_content(syntax_tree.syntax_tree, &path, is_root);
+
+    Ok(Ok(Arc::new(ChildFiles {
+        files: Arc::from(result.0),
+        recursive_request_error: result.1,
+    })))
 }
 
 /// A query for mapping [`GlobalSourceID`] to the source file paths in a
@@ -293,49 +363,41 @@ pub struct MapKey(pub TargetID);
 fn scan_file_tree(
     engine: &TrackedEngine,
     source_file_paths_by_id: &DashMap<ID<SourceFile>, Arc<Path>>,
-    node: &Node,
+    key: &Key,
 ) -> Result<(), CyclicError> {
-    node.submodules_by_name.par_iter().try_for_each(|(_, submodule)| {
-        // add the submodule name to the source file paths map
-        if let Submodule::SourceFile { path, .. } = submodule {
-            match source_file_paths_by_id.entry(engine.calculate_path_id(path))
-            {
-                dashmap::Entry::Occupied(entry) => {
-                    assert_eq!(
-                        entry.get(),
-                        path,
-                        "possible hash collision for the source file path: {} \
-                         vs {}, try deleting the incremental directory and \
-                         re-running the compilation",
-                        entry.get().display(),
-                        path.display()
-                    );
-                }
-                dashmap::Entry::Vacant(entry) => {
-                    entry.insert(path.clone());
-                }
-            }
+    let (file_path, target_id) = match key {
+        Key::Root(target_id) => {
+            let invocation_arguments =
+                engine.get_invocation_arguments(*target_id);
+
+            (
+                Arc::from(invocation_arguments.command.input().file.clone()),
+                *target_id,
+            )
         }
+        Key::File { path, target_id } => (path.clone(), *target_id),
+    };
 
-        // recursively scan the submodule node
-        match submodule {
-            Submodule::Node(node) => {
-                scan_file_tree(engine, source_file_paths_by_id, node)?;
-            }
-            Submodule::SourceFile { path, target_id } => {
-                let Ok(node) = engine.query(&Key::File {
-                    path: path.clone(),
-                    target_id: *target_id,
-                })?
-                else {
-                    return Ok(());
-                };
+    assert!(source_file_paths_by_id
+        .insert(
+            engine.calculate_path_id(&file_path, target_id),
+            file_path.clone()
+        )
+        .is_none());
 
-                scan_file_tree(engine, source_file_paths_by_id, &node)?;
-            }
-        }
+    let Ok(child_files) =
+        engine.query(&Key::File { path: file_path, target_id })?
+    else {
+        return Ok(());
+    };
 
-        Ok(())
+    child_files.files.par_iter().try_for_each(|child_file| {
+        scan_file_tree(engine, source_file_paths_by_id, &Key::File {
+            path: child_file.clone(),
+            target_id,
+        })?;
+
+        Ok::<(), CyclicError>(())
     })?;
 
     Ok(())
@@ -350,13 +412,8 @@ pub fn map_executor(
     Result<Arc<ReadOnlyView<ID<SourceFile>, Arc<Path>>>, Error>,
     CyclicError,
 > {
-    let module_tree = match engine.query(&Key::Root(target_id))? {
-        Ok(module_tree) => module_tree,
-        Err(result) => return Ok(Err(result)),
-    };
-
     let source_file_paths_by_id = DashMap::default();
-    scan_file_tree(engine, &source_file_paths_by_id, &module_tree)?;
+    scan_file_tree(engine, &source_file_paths_by_id, &Key::Root(target_id))?;
 
     Ok(Ok(Arc::new(source_file_paths_by_id.into_read_only())))
 }
