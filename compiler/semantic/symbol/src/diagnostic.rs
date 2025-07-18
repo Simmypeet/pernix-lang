@@ -4,8 +4,8 @@ use std::{fmt::Debug, sync::Arc};
 
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Diagnostic, Report};
+use pernixc_file_tree::source_map::to_absolute_span;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_module_tree::source_map::to_absolute_span;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;

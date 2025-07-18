@@ -1,5 +1,8 @@
 //! Crate responsible for declaring symbols from the syntax tree.
 
+pub mod node;
+
+/*
 use std::{
     hash::{Hash as _, Hasher as _},
     sync::Arc,
@@ -9,7 +12,6 @@ use flexstr::SharedStr;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_module_tree::{get_module_tree, ModuleTree};
 use pernixc_query::{
     runtime::{
         executor,
@@ -35,6 +37,7 @@ pub mod import;
 pub mod kind;
 pub mod member;
 pub mod name;
+pub mod node;
 pub mod parent;
 pub mod span;
 pub mod symbols;
@@ -837,3 +840,4 @@ pub fn skip_persistence(persistence: &mut Persistence) {
     persistence.skip_cache_value::<Key>();
     persistence.skip_cache_value::<parent::IntermediateKey>();
 }
+*/

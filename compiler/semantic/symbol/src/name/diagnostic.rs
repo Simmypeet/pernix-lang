@@ -3,8 +3,8 @@
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Report, Severity};
+use pernixc_file_tree::source_map::to_absolute_span;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_module_tree::source_map::to_absolute_span;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;

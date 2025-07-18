@@ -18,7 +18,7 @@ pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_lexical = { path = "../../syntax/lexical" }
-pernixc_module_tree = { path = "../../syntax/module_tree" }
+pernixc_file_tree = { path = "../../syntax/file_tree" }
 strsim = { workspace = true }
 siphasher = { workspace = true }
 parking_lot = { workspace = true }
