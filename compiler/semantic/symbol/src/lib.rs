@@ -1,6 +1,35 @@
 //! Crate responsible for declaring symbols from the syntax tree.
 
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
+
+pub mod accessibility;
+pub mod import;
+pub mod kind;
+pub mod member;
+pub mod name;
 pub mod node;
+pub mod parent;
+
+/// Represents a unique identifier for the symbols in the compilation target.
+/// This ID is only unique within the context of a single target. If wants to
+/// use identifier across multiple targets, it should be combined with the
+/// [`Global`]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    Serialize,
+    Deserialize,
+    StableHash,
+)]
+pub struct ID(pub u64);
 
 /*
 use std::{
@@ -42,32 +71,6 @@ pub mod parent;
 pub mod span;
 pub mod symbols;
 pub mod syntax;
-
-/// Represents a unique identifier for the symbols in the compilation target.
-/// This ID is only unique within the context of a single target. If wants to
-/// use identifier across multiple targets, it should be combined with the
-/// [`Global`]
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    Serialize,
-    Deserialize,
-    StableHash,
-)]
-pub struct ID(pub u64);
-
-impl ID {
-    /// The constant symbol ID that is fixed to zero for every target. It
-    /// represents the root module of the target.
-    pub const ROOT_MODULE: Self = Self(0);
-}
 
 /// Represents a single symbol declaration.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]

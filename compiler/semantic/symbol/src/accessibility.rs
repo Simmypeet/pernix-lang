@@ -1,20 +1,11 @@
 //! Contains the definition of tyhe [`Accessibility`] enum.
 
 use enum_as_inner::EnumAsInner;
-use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
-use crate::{
-    kind::{get_kind, Kind},
-    parent::{
-        get_closest_module_id, get_parent, symbol_hierarchy_relationship,
-        HierarchyRelationship,
-    },
-    ID,
-};
+use crate::ID;
 
 /// The key type used with [`TrackedEngine`] to access the accessibility of a
 /// symbol.
@@ -73,6 +64,7 @@ impl Accessibility<ID> {
     }
 }
 
+/*
 /// An executor for the [`Key`] query that retrieves the accessibility of a
 /// symbol with the given ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -222,3 +214,4 @@ pub fn is_accessible_from(
         }
     }
 }
+*/

@@ -1,36 +1,14 @@
 //! Contains the definition of the [`Import`] struct
 
-use std::sync::Arc;
-
-use flexstr::SharedStr;
-use pernixc_handler::{Handler, Storage};
-use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
-use pernixc_query::{executor, runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{SourceElement, Span};
+use pernixc_source_file::Span;
 use pernixc_stable_hash::StableHash;
-use pernixc_syntax::{item::module::ImportItems, SimplePathRoot};
-use pernixc_target::{get_linked_targets, get_target_map, Global};
+use pernixc_target::Global;
 
-use crate::{
-    accessibility::symbol_accessible,
-    import::diagnostic::{
-        ConflictingUsing, TargetRootInImportIsNotAllowedwithFrom,
-    },
-    kind::{get_kind, Kind},
-    member::get_members,
-    name::{
-        self,
-        diagnostic::{ExpectModule, SymbolIsNotAccessible, SymbolNotFound},
-        get_name, resolve_simple_path,
-    },
-    span::get_span,
-    syntax::get_module_imports_syntax,
-    ID,
-};
+use crate::ID;
 
-pub mod diagnostic;
+// pub mod diagnostic;
 
 /// Represents a single `import ...` statement.
 #[derive(
@@ -53,6 +31,8 @@ pub struct Using {
     /// The span to the `import ... (as ...)?` statement in the source code.
     pub span: Span<RelativeLocation>,
 }
+
+/*
 
 /// Represents the collection of `from ... import ...` statements that are
 /// declared in the module.
@@ -79,7 +59,9 @@ pub struct WithDiagnostic {
     /// The diagnostics that were generated while processing the import
     pub diagnostics: Arc<[diagnostic::Diagnostic]>,
 }
+*/
 
+/*
 #[allow(clippy::too_many_lines)]
 fn process_import_items(
     engine: &TrackedEngine,
@@ -360,3 +342,4 @@ pub fn import_executor(
 
     Ok(import_with_diagnostic.imports)
 }
+*/

@@ -5,16 +5,12 @@ use std::sync::Arc;
 use flexstr::SharedStr;
 use pernixc_extend::extend;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_query::{TrackedEngine, Value};
+use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{
-    import::get_imports,
-    kind::{get_kind, Kind},
-    ID,
-};
+use crate::ID;
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(
@@ -42,6 +38,7 @@ pub struct Member {
     pub redefinitions: HashSet<ID>,
 }
 
+/*
 /// An executor for the [`Key`] query that retrieves the members of the symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Executor;
@@ -128,6 +125,6 @@ pub fn get_member_of(
             None
         }
 
-        _ => None,
-    }
+        _ => None, }
 }
+*/

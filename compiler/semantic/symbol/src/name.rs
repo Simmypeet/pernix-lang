@@ -3,24 +3,13 @@
 
 use flexstr::SharedStr;
 use pernixc_extend::extend;
-use pernixc_handler::Handler;
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_syntax::{Identifier, SimplePath, SimplePathRoot};
-use pernixc_target::{get_linked_targets, get_target_map, Global};
+use pernixc_target::Global;
 
-use crate::{
-    accessibility::symbol_accessible,
-    import::get_imports,
-    kind::get_kind,
-    member::{get_member_of, get_members},
-    name::diagnostic::{Diagnostic, SymbolIsNotAccessible, SymbolNotFound},
-    parent::{get_closest_module_id, get_parent},
-    ID,
-};
+use crate::ID;
 
-pub mod diagnostic;
+// pub mod diagnostic;
 
 /// A simple name identifier given to a symbol.
 #[derive(
@@ -41,6 +30,8 @@ pub mod diagnostic;
 #[value(SharedStr)]
 #[extend(method(get_name), no_cyclic)]
 pub struct Key(pub Global<ID>);
+
+/*
 
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
@@ -260,3 +251,4 @@ pub fn resolve_sequence<'a>(
 
     Some(lastest_resolution)
 }
+*/

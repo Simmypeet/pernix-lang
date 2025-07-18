@@ -271,6 +271,7 @@ impl Kind {
     }
 }
 
+/*
 /// An executor for the [`Kind`] query that retrieves the kind of a symbol from
 /// the symbol table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -290,3 +291,4 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
             .kind)
     }
 }
+*/

@@ -1,21 +1,12 @@
 //! Contains the definition of the [`Parent`] component.
 
-use std::sync::Arc;
-
 use derive_more::{Deref, DerefMut};
 use pernixc_extend::extend;
-use pernixc_hash::HashMap;
-use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::{Global, TargetID};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use pernixc_target::Global;
 
-use crate::{
-    kind::{get_kind, Kind},
-    name::get_name,
-    ID,
-};
+use crate::ID;
 
 /// Describes the relationship between two symbols in the hierarchy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -26,7 +17,7 @@ pub enum HierarchyRelationship {
     /// The first symbol is the child of the second symbol.
     Child,
 
-    /// Both symbols are two equivalent symbols.  
+    /// Both symbols are two equivalent symbols.
     Equivalent,
 
     /// Both symbols are defined in different hierarchy scope.
@@ -55,6 +46,8 @@ pub enum HierarchyRelationship {
 #[value(Option<ID>)]
 #[extend(method(get_parent), no_cyclic)]
 pub struct Key(pub Global<ID>);
+
+/*
 
 /// The executor for the [`Parent`] component.
 
@@ -86,8 +79,9 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         Ok(Some(parent_id))
     }
 }
+*/
 
-// Intermediate query to compute the [`Parent`] component for all symbols
+/* Intermediate query to compute the [`Parent`] component for all symbols
 #[derive(
     Debug,
     Clone,
@@ -240,3 +234,4 @@ pub fn get_closest_module_id(
         );
     }
 }
+*/
