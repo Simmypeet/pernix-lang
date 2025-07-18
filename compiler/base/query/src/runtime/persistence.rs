@@ -738,9 +738,10 @@ impl Persistence {
     fn commit(&mut self) {
         // drop the old background writer that makes sure that all the tasks
         // are completed
-        self.background_writer.write().take();
+        let _span =
+            tracing::info_span!("commit persistence database").entered();
 
-        tracing::info!("Persistence database committed successfully");
+        self.background_writer.write().take();
 
         self.read_transaction = Some(
             self.database

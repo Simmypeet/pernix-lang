@@ -146,6 +146,9 @@ impl BatchWriteTransaction {
 
 impl Drop for BatchWriteTransaction {
     fn drop(&mut self) {
+        let _span =
+            tracing::info_span!("drop_batch_write_transaction").entered();
+
         let mut write = self.write.write();
 
         if let Some(write) = write.take() {
