@@ -109,6 +109,23 @@ pub struct ExternalSubmodule {
 #[value(Arc<Table>)]
 pub struct TableKey(pub Key);
 
+/// A query for retrieving only the diagnostics from a [`Table`] node.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<HashSet<Diagnostic>>)]
+pub struct DiagnosticKey(pub Key);
+
 /// A symbol table from parsing a single file.
 #[derive(Debug, Clone, Serialize, Deserialize, StableHash)]
 pub struct Table {
@@ -297,6 +314,19 @@ pub fn table_executor(
 
         diagnostics: Arc::new(storage.into_vec().into_iter().collect()),
     }))
+}
+
+#[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
+pub fn diagnostic_executor(
+    DiagnosticKey(key): &DiagnosticKey,
+    engine: &TrackedEngine,
+) -> Result<
+    Arc<HashSet<Diagnostic>>,
+    pernixc_query::runtime::executor::CyclicError,
+> {
+    // Query the table and return only its diagnostics field
+    let table = engine.query(&TableKey(key.clone()))?;
+    Ok(table.diagnostics.clone())
 }
 
 impl<'ctx> TableContext<'ctx> {
