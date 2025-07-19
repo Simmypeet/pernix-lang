@@ -32,6 +32,7 @@ use crate::ID;
 #[value(Option<RelativeSpan>)]
 pub struct Key(pub Global<ID>);
 
+/*
 /// An executor for the [`Span`] query that retrieves the span of the symbol
 /// with the given ID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -53,3 +54,4 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         Ok(table.entries_by_id.get(&id.id).expect("invalid symbol ID").span)
     }
 }
+*/

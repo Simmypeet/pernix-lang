@@ -3,6 +3,7 @@
 
 use flexstr::SharedStr;
 use pernixc_extend::extend;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -31,14 +32,10 @@ use crate::ID;
 #[extend(method(get_name), no_cyclic)]
 pub struct Key(pub Global<ID>);
 
-/*
-
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
-pub fn get_qualified_name(
-    self: &TrackedEngine<'_>,
-    mut id: Global<ID>,
-) -> String {
+pub fn get_qualified_name(self: &TrackedEngine<'_>, id: Global<ID>) -> String {
+    /*
     let mut qualified_name = String::new();
 
     loop {
@@ -59,7 +56,11 @@ pub fn get_qualified_name(
     }
 
     qualified_name
+    */
+    todo!()
 }
+
+/*
 
 /// An executor for the [`Key`] query that retrieves the name of the symbol
 /// with the given ID.

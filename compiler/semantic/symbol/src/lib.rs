@@ -8,8 +8,9 @@ pub mod import;
 pub mod kind;
 pub mod member;
 pub mod name;
-pub mod node;
+pub mod tree;
 pub mod parent;
+pub mod span;
 
 /// Represents a unique identifier for the symbols in the compilation target.
 /// This ID is only unique within the context of a single target. If wants to
