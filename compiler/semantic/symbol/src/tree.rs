@@ -14,6 +14,7 @@ use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_source_file::SourceFile;
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::module::Member as ModuleMemberSyn;
 use pernixc_target::{get_invocation_arguments, get_target_seed, TargetID};
@@ -154,7 +155,7 @@ enum ModuleKind {
     },
 }
 
-struct Context<'a> {
+struct TableContext<'a> {
     engine: &'a TrackedEngine<'a>,
     storage: &'a Storage<Diagnostic>,
     target_id: TargetID,
@@ -223,7 +224,7 @@ pub fn table_executor(
     };
 
     let storage = Storage::default();
-    let context = Context {
+    let context = TableContext {
         engine,
         storage: &storage,
         target_id,
@@ -266,7 +267,7 @@ pub fn table_executor(
     })))
 }
 
-impl<'ctx> Context<'ctx> {
+impl<'ctx> TableContext<'ctx> {
     fn insert_to_table<V>(map: &DashMap<ID, V>, id: ID, value: V) {
         assert!(
             map.insert(id, value).is_none(),
@@ -638,4 +639,39 @@ pub fn get_target_root_module_id(
         target_id,
         0,
     )
+}
+
+/// Used to identify in which table node the symbol is defined.
+#[derive(
+    Debug, Clone, Serialize, Deserialize, StableHash, pernixc_query::Value,
+)]
+#[id(TargetID)]
+#[key(MapKey)]
+pub struct Map {
+    /// Maps the symbol ID to the key where the symbol's information is stored.
+    ///
+    /// The value is stored as [`Option<Arc<ExternalSubmodule>>`] where the
+    /// `None` value indicates that the symbol is defined in the root file
+    /// whereas the `Some` value indicates that the symbol is defined in an
+    /// external submodule.
+    pub keys_by_symbol_id:
+        Arc<ReadOnlyView<ID, Option<Arc<ExternalSubmodule>>>>,
+
+    /// Maps the source file ID to its path and the external submodule (if it
+    /// is).
+    #[allow(clippy::type_complexity)]
+    pub paths_by_source_id: Arc<
+        ReadOnlyView<
+            pernixc_arena::ID<SourceFile>,
+            (Arc<Path>, Option<ExternalSubmodule>),
+        >,
+    >,
+}
+
+#[pernixc_query::executor(key(MapKey), name(MapExecutor))]
+pub fn map_executor(
+    map_key: &MapKey,
+    engine: &TrackedEngine,
+) -> Result<Map, pernixc_query::runtime::executor::CyclicError> {
+    todo!()
 }
