@@ -42,6 +42,21 @@ pub enum Diagnostic {
     SourceFileLoadFail(SourceFileLoadFail),
 }
 
+impl Report<&TrackedEngine<'_>> for Diagnostic {
+    type Location = ByteIndex;
+
+    fn report(
+        &self,
+        engine: &TrackedEngine<'_>,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        match self {
+            Self::ItemRedefinition(diagnostic) => diagnostic.report(engine),
+            Self::RecursiveFileRequest(diagnostic) => diagnostic.report(engine),
+            Self::SourceFileLoadFail(diagnostic) => diagnostic.report(engine),
+        }
+    }
+}
+
 /// The item symbol with the same name already exists in the given scope.
 #[derive(
     Debug,

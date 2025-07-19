@@ -8,6 +8,7 @@ use std::{
 };
 
 use flexstr::{FlexStr, SharedStr};
+use pernixc_diagnostic::Report;
 use pernixc_extend::extend;
 use pernixc_file_tree::calculate_path_id;
 use pernixc_handler::{Handler, Storage};
@@ -125,6 +126,24 @@ pub struct TableKey(pub Key);
 )]
 #[value(Arc<HashSet<Diagnostic>>)]
 pub struct DiagnosticKey(pub Key);
+
+/// A query for retrieving all rendered diagnostics for a target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>)]
+pub struct AllRenderedDiagnostic(pub TargetID);
 
 /// A symbol table from parsing a single file.
 #[derive(Debug, Clone, Serialize, Deserialize, StableHash)]
@@ -327,6 +346,52 @@ pub fn diagnostic_executor(
     // Query the table and return only its diagnostics field
     let table = engine.query(&TableKey(key.clone()))?;
     Ok(table.diagnostics.clone())
+}
+
+#[pernixc_query::executor(
+    key(AllRenderedDiagnostic),
+    name(AllRenderedDiagnosticExecutor)
+)]
+pub fn all_rendered_diagnostic_executor(
+    AllRenderedDiagnostic(target_id): &AllRenderedDiagnostic,
+    engine: &TrackedEngine,
+) -> Result<
+    Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>,
+    pernixc_query::runtime::executor::CyclicError,
+> {
+    // Get the map for this target to discover all table keys
+    let map = engine.query(&MapKey(*target_id))?;
+
+    // Collect diagnostics from all tables and render them using iterator
+    // combinators
+    let keys = map
+        .paths_by_source_id
+        .values()
+        .map(|x| {
+            let external_submodule_opt = x.1.as_ref();
+
+            // Create the table key based on whether it's root or external
+            // submodule
+            let table_key = external_submodule_opt.map_or_else(
+                || Key::Root(*target_id),
+                |external_submodule| Key::Submodule {
+                    external_submodule: external_submodule.clone(),
+                    target_id: *target_id,
+                },
+            );
+
+            engine.query(&DiagnosticKey(table_key))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let diagnostics = keys
+        .par_iter()
+        .flat_map(|diagnostic| {
+            diagnostic.par_iter().cloned().map(|d| d.report(engine))
+        })
+        .collect::<Arc<[_]>>();
+
+    Ok(diagnostics)
 }
 
 impl<'ctx> TableContext<'ctx> {
@@ -725,7 +790,7 @@ pub struct Map {
     pub paths_by_source_id: Arc<
         ReadOnlyView<
             pernixc_arena::ID<SourceFile>,
-            (Arc<Path>, Option<ExternalSubmodule>),
+            (Arc<Path>, Option<Arc<ExternalSubmodule>>),
         >,
     >,
 }
@@ -735,14 +800,14 @@ pub fn map_executor(
     &MapKey(target_id): &MapKey,
     engine: &TrackedEngine,
 ) -> Result<Map, pernixc_query::runtime::executor::CyclicError> {
-    #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::needless_pass_by_value, clippy::type_complexity)]
     fn traverse_table(
         engine: &TrackedEngine,
         table_key: &Key,
         keys_by_symbol_id: &DashMap<ID, Option<Arc<ExternalSubmodule>>>,
         paths_by_source_id: &DashMap<
             pernixc_arena::ID<SourceFile>,
-            (Arc<Path>, Option<ExternalSubmodule>),
+            (Arc<Path>, Option<Arc<ExternalSubmodule>>),
         >,
         current_external_submodule: Option<Arc<ExternalSubmodule>>,
     ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
@@ -770,10 +835,8 @@ pub fn map_executor(
         let source_file_id = engine.calculate_path_id(&path, current_target_id);
 
         // Add the path to source file mapping
-        paths_by_source_id.insert(
-            source_file_id,
-            (path, current_external_submodule.as_ref().map(|x| (**x).clone())),
-        );
+        paths_by_source_id
+            .insert(source_file_id, (path, current_external_submodule.clone()));
 
         // Add all symbols from this table to the symbol map
         for (symbol_id, _kind) in table.kinds.iter() {
