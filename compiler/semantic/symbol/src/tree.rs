@@ -9,6 +9,7 @@ use std::{
 
 use flexstr::{FlexStr, SharedStr};
 use pernixc_extend::extend;
+use pernixc_file_tree::calculate_path_id;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
@@ -23,7 +24,9 @@ use crate::{
     accessibility::Accessibility,
     kind::Kind,
     member::Member,
-    tree::diagnostic::{Diagnostic, ItemRedefinition, RecursiveFileRequest},
+    tree::diagnostic::{
+        Diagnostic, ItemRedefinition, RecursiveFileRequest, SourceFileLoadFail,
+    },
     ID,
 };
 
@@ -102,7 +105,7 @@ pub struct ExternalSubmodule {
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Result<Arc<Table>, pernixc_file_tree::load::Error>)]
+#[value(Arc<Table>)]
 pub struct TableKey(pub Key);
 
 /// A symbol table from parsing a single file.
@@ -175,11 +178,8 @@ struct TableContext<'a> {
 pub fn table_executor(
     TableKey(key): &TableKey,
     engine: &TrackedEngine,
-) -> Result<
-    Result<Arc<Table>, pernixc_file_tree::load::Error>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
-    let (tree, target_id, module_kind, is_root) = match key {
+) -> Result<Arc<Table>, pernixc_query::runtime::executor::CyclicError> {
+    let (tree_result, target_id, module_kind, is_root) = match key {
         Key::Root(target_id) => {
             let invocation_arguments =
                 engine.get_invocation_arguments(*target_id);
@@ -218,12 +218,38 @@ pub fn table_executor(
         ),
     };
 
-    let tree = match tree {
-        Ok(tree) => tree,
-        Err(e) => return Ok(Err(e)),
+    let storage = Storage::default();
+
+    // Handle load errors by creating diagnostics and using empty content
+    let tree = match tree_result {
+        Ok(tree) => Some(tree),
+        Err(e) => {
+            // Create a diagnostic for the load failure
+            let (path, submodule_span) = match key {
+                Key::Root(target_id) => {
+                    let invocation_arguments =
+                        engine.get_invocation_arguments(*target_id);
+                    (invocation_arguments.command.input().file.clone(), None)
+                }
+                Key::Submodule { external_submodule, .. } => (
+                    external_submodule.path.as_ref().to_path_buf(),
+                    Some(external_submodule.span),
+                ),
+            };
+
+            storage.receive(Diagnostic::SourceFileLoadFail(
+                SourceFileLoadFail {
+                    error_message: e.to_string(),
+                    path,
+                    submodule_span,
+                },
+            ));
+
+            // Continue with empty content
+            None
+        }
     };
 
-    let storage = Storage::default();
     let context = TableContext {
         engine,
         storage: &storage,
@@ -245,14 +271,14 @@ pub fn table_executor(
 
         rayon::scope(move |scope| {
             context.create_module(
-                tree.syntax_tree.map(|x| x.0),
+                tree.and_then(|t| t.syntax_tree.map(|x| x.0)),
                 module_kind,
                 scope,
             );
         });
     }
 
-    Ok(Ok(Arc::new(Table {
+    Ok(Arc::new(Table {
         kinds: Arc::new(context.kinds.into_read_only()),
         names: Arc::new(context.names.into_read_only()),
         spans: Arc::new(context.spans.into_read_only()),
@@ -264,7 +290,7 @@ pub fn table_executor(
         ),
 
         diagnostics: Arc::new(storage.into_vec().into_iter().collect()),
-    })))
+    }))
 }
 
 impl<'ctx> TableContext<'ctx> {
@@ -670,8 +696,95 @@ pub struct Map {
 
 #[pernixc_query::executor(key(MapKey), name(MapExecutor))]
 pub fn map_executor(
-    map_key: &MapKey,
+    &MapKey(target_id): &MapKey,
     engine: &TrackedEngine,
 ) -> Result<Map, pernixc_query::runtime::executor::CyclicError> {
-    todo!()
+    #[allow(clippy::items_after_statements)]
+    #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::manual_let_else)]
+    #[allow(clippy::match_same_arms)]
+    fn traverse_table(
+        engine: &TrackedEngine,
+        table_key: Key,
+        keys_by_symbol_id: &DashMap<ID, Option<Arc<ExternalSubmodule>>>,
+        paths_by_source_id: &DashMap<
+            pernixc_arena::ID<SourceFile>,
+            (Arc<Path>, Option<ExternalSubmodule>),
+        >,
+        current_external_submodule: Option<Arc<ExternalSubmodule>>,
+    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
+        // Query the table for this key
+        let table = engine.query(&TableKey(table_key.clone()))?;
+
+        // Get the path and target_id for this table
+        let (path, current_target_id) = match &table_key {
+            Key::Root(target_id) => {
+                let invocation_arguments =
+                    engine.get_invocation_arguments(*target_id);
+                (
+                    Arc::from(
+                        invocation_arguments.command.input().file.clone(),
+                    ),
+                    *target_id,
+                )
+            }
+            Key::Submodule { external_submodule, target_id } => {
+                (external_submodule.path.clone(), *target_id)
+            }
+        };
+
+        // Calculate the source file ID for this path
+        let source_file_id = engine.calculate_path_id(&path, current_target_id);
+
+        // Add the path to source file mapping
+        paths_by_source_id.insert(
+            source_file_id,
+            (path, current_external_submodule.as_ref().map(|x| (**x).clone())),
+        );
+
+        // Add all symbols from this table to the symbol map
+        for (symbol_id, _kind) in table.kinds.iter() {
+            keys_by_symbol_id
+                .insert(*symbol_id, current_external_submodule.clone());
+        }
+
+        // Recursively traverse external submodules
+        for (_module_id, external_submodule) in table.external_submodules.iter()
+        {
+            let submodule_key = Key::Submodule {
+                external_submodule: external_submodule.clone(),
+                target_id: current_target_id,
+            };
+
+            traverse_table(
+                engine,
+                submodule_key,
+                keys_by_symbol_id,
+                paths_by_source_id,
+                Some(external_submodule.clone()),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    let keys_by_symbol_id = DashMap::default();
+    let paths_by_source_id = DashMap::default();
+
+    // Start traversal from the root
+    traverse_table(
+        engine,
+        Key::Root(target_id),
+        &keys_by_symbol_id,
+        &paths_by_source_id,
+        None,
+    )?;
+
+    Ok(Map {
+        keys_by_symbol_id: Arc::new(keys_by_symbol_id.into_read_only()),
+        paths_by_source_id: Arc::new(paths_by_source_id.into_read_only()),
+    })
 }
+
+#[cfg(test)]
+mod test;

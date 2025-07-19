@@ -36,6 +36,7 @@ use crate::{
 pub enum Diagnostic {
     ItemRedefinition(ItemRedefinition),
     RecursiveFileRequest(RecursiveFileRequest),
+    SourceFileLoadFail(SourceFileLoadFail),
 }
 
 /// The item symbol with the same name already exists in the given scope.
@@ -149,6 +150,74 @@ impl Report<&TrackedEngine<'_>> for RecursiveFileRequest {
                  that is not the same as the file name",
                 self.path.file_stem().unwrap_or_default().to_string_lossy()
             )),
+            related: Vec::new(),
+        }
+    }
+}
+
+/// Failed to load source file when building the symbol table.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct SourceFileLoadFail {
+    /// The error message from the file loading failure.
+    pub error_message: String,
+
+    /// The path to the source file that failed to load.
+    pub path: PathBuf,
+
+    /// The span of the submodule identifier declaration, if this failure
+    /// occurred when loading a submodule. `None` for root file load failures.
+    pub submodule_span: Option<RelativeSpan>,
+}
+
+impl Report<&TrackedEngine<'_>> for SourceFileLoadFail {
+    type Location = ByteIndex;
+
+    fn report(
+        &self,
+        engine: &TrackedEngine<'_>,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let (span, context_message) = self.submodule_span.as_ref().map_or_else(
+            || {
+                (
+                    None,
+                    format!(
+                        "failed to load root file `{}`",
+                        self.path.display()
+                    ),
+                )
+            },
+            |submodule_span| {
+                (
+                    Some((
+                        engine.to_absolute_span(submodule_span),
+                        Some("submodule declaration here".to_string()),
+                    )),
+                    format!(
+                        "failed to load submodule file `{}`",
+                        self.path.display()
+                    ),
+                )
+            },
+        );
+
+        pernixc_diagnostic::Diagnostic {
+            span,
+            message: format!("{}: {}", context_message, self.error_message),
+            severity: pernixc_diagnostic::Severity::Error,
+            help_message: Some(
+                "check if the file exists and is accessible".to_string(),
+            ),
             related: Vec::new(),
         }
     }
