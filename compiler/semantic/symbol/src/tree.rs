@@ -28,6 +28,7 @@ use crate::{
 
 pub mod diagnostic;
 
+/// The key to query each table node.
 #[derive(
     Debug,
     Clone,
@@ -41,13 +42,21 @@ pub mod diagnostic;
     StableHash,
 )]
 pub enum Key {
+    /// Build the symbol table at the target root file.
     Root(TargetID),
+
+    /// Build the symbol table for a submodule defined in another file.
     Submodule {
+        /// Describes where the file is located and how it is defined.
         external_submodule: Arc<ExternalSubmodule>,
+
+        /// The target ID for which the submodule is defined.
         target_id: TargetID,
     },
 }
 
+/// Represents a module that is defined via `public module subModule`
+/// declaration syntax and its content is defined in an another file.
 #[derive(
     Debug,
     Clone,
@@ -61,12 +70,24 @@ pub enum Key {
     StableHash,
 )]
 pub struct ExternalSubmodule {
-    pub parent_module_id: ID,
+    /// The ID assigned to the submodule.
     pub submodule_id: ID,
+
+    /// The qualified name of the submodule.
     pub submodule_qualified_name: Arc<[SharedStr]>,
+
+    /// The path to the source file containing the submodule.
     pub path: Arc<Path>,
+
+    /// The accessibility in the `public module subModule` declaration.
+    pub accessibility: Accessibility<ID>,
+
+    /// The span of the identifier in the `public module subModule`
+    /// declaration.
+    pub span: RelativeSpan,
 }
 
+/// A query for retrieving the [`Table`] node.
 #[derive(
     Debug,
     Clone,
@@ -83,15 +104,42 @@ pub struct ExternalSubmodule {
 #[value(Result<Arc<Table>, pernixc_file_tree::load::Error>)]
 pub struct TableKey(pub Key);
 
+/// A symbol table from parsing a single file.
 #[derive(Debug, Clone, Serialize, Deserialize, StableHash)]
 pub struct Table {
+    /// Maps the ID of the symbol to its kind.
+    ///
+    /// Every symbol must have a kind, therefore, this map is guaranteed to
+    /// contain every symbol ID that is present
     pub kinds: Arc<ReadOnlyView<ID, Kind>>,
+
+    /// Maps the ID of the symbol to its name.
+    ///
+    /// This is not a qualified name, but rather a simple name of the symbol.
     pub names: Arc<ReadOnlyView<ID, SharedStr>>,
+
+    /// Maps the ID of the symbol to its span in the source code.
+    ///
+    /// The span shall point to the identifier of the symbol in the source
+    /// code, not the whole declaration.
     pub spans: Arc<ReadOnlyView<ID, Option<RelativeSpan>>>,
+
+    /// Maps the ID of the symbol to its list of members if that particular
+    /// kind of symbol can have members.
     pub members: Arc<ReadOnlyView<ID, Arc<Member>>>,
 
+    /// Maps the ID of the symbol to its accessibility.
+    pub accessibilities: Arc<ReadOnlyView<ID, Accessibility<ID>>>,
+
+    /// Maps the module ID to the external submodules where its content is
+    /// defined in. This added to the table via `public module subModule`
+    /// declaration syntax.
+    ///
+    /// The content of the submodule is not defined in the current [`Table`],
+    /// this is simply a reference to where the submodule is defined in
     pub external_submodules: Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>,
 
+    /// The diagnostics that were collected while building the table.
     pub diagnostics: Arc<HashSet<Diagnostic>>,
 }
 
@@ -99,9 +147,10 @@ pub struct Table {
 enum ModuleKind {
     Root,
     Submodule {
-        parent_module_id: ID,
         submodule_id: ID,
         submodule_qualified_name: Arc<[SharedStr]>,
+        accessibility: Accessibility<ID>,
+        span: RelativeSpan,
     },
 }
 
@@ -157,11 +206,12 @@ pub fn table_executor(
             })?,
             *target_id,
             ModuleKind::Submodule {
-                parent_module_id: external_submodule.parent_module_id,
                 submodule_id: external_submodule.submodule_id,
                 submodule_qualified_name: external_submodule
                     .submodule_qualified_name
                     .clone(),
+                accessibility: external_submodule.accessibility,
+                span: external_submodule.span,
             },
             false,
         ),
@@ -206,9 +256,12 @@ pub fn table_executor(
         names: Arc::new(context.names.into_read_only()),
         spans: Arc::new(context.spans.into_read_only()),
         members: Arc::new(context.members.into_read_only()),
+        accessibilities: Arc::new(context.accessibilities.into_read_only()),
+
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
         ),
+
         diagnostics: Arc::new(storage.into_vec().into_iter().collect()),
     })))
 }
@@ -232,7 +285,7 @@ impl<'ctx> Context<'ctx> {
         'ctx: 'scope,
     {
         // extract the information about the module
-        let (parent_module_id, current_module_id, module_qualified_name) =
+        let (accessibility, current_module_id, module_qualified_name, span) =
             match module_kind {
                 ModuleKind::Root => {
                     let invocation_arguments =
@@ -250,16 +303,23 @@ impl<'ctx> Context<'ctx> {
 
                     let module_qualified_name = Arc::from([target_name]);
 
-                    (None, current_module_id, module_qualified_name)
+                    (
+                        Accessibility::Public,
+                        current_module_id,
+                        module_qualified_name,
+                        None,
+                    )
                 }
                 ModuleKind::Submodule {
-                    parent_module_id,
                     submodule_id,
                     submodule_qualified_name,
+                    accessibility,
+                    span,
                 } => (
-                    Some(parent_module_id),
+                    accessibility,
                     submodule_id,
                     submodule_qualified_name,
+                    Some(span),
                 ),
             };
 
@@ -277,9 +337,31 @@ impl<'ctx> Context<'ctx> {
                     scope,
                 );
             }
+
+            Self::insert_to_table(
+                &self.names,
+                current_module_id,
+                member_builder.symbol_qualified_name.last().cloned().unwrap(),
+            );
+            Self::insert_to_table(
+                &self.accessibilities,
+                current_module_id,
+                accessibility,
+            );
+            Self::insert_to_table(&self.kinds, current_module_id, Kind::Module);
+            Self::insert_to_table(&self.spans, current_module_id, span);
+            Self::insert_to_table(
+                &self.members,
+                current_module_id,
+                Arc::new(Member {
+                    member_ids_by_name: member_builder.member_ids_by_name,
+                    redefinitions: member_builder.redefinitions,
+                }),
+            );
         });
     }
 
+    #[allow(clippy::too_many_lines)]
     fn handle_module_member<'scope>(
         &'ctx self,
         module_syntax: &pernixc_syntax::item::module::Module,
@@ -304,6 +386,22 @@ impl<'ctx> Context<'ctx> {
             .chain(std::iter::once(identifier.kind.0.clone()))
             .collect::<Arc<[_]>>();
 
+        let accessibility = match access_modifier {
+            Some(pernixc_syntax::AccessModifier::Private(_)) => {
+                Accessibility::Scoped(member_builder.symbol_id)
+            }
+            Some(pernixc_syntax::AccessModifier::Internal(_)) => {
+                Accessibility::Scoped(
+                    self.engine.get_target_root_module_id(self.target_id),
+                )
+            }
+            Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
+                Accessibility::Public
+            }
+        };
+
+        let span = identifier.span;
+
         if let Some(member) = module_syntax.inline_body() {
             let next_submodule_id =
                 member_builder.add_member(identifier, self.engine);
@@ -311,9 +409,10 @@ impl<'ctx> Context<'ctx> {
             self.create_module(
                 member.content(),
                 ModuleKind::Submodule {
-                    parent_module_id: member_builder.symbol_id,
                     submodule_id: next_submodule_id,
                     submodule_qualified_name: next_submodule_qualified_name,
+                    accessibility,
+                    span,
                 },
                 scope,
             );
@@ -378,9 +477,10 @@ impl<'ctx> Context<'ctx> {
                     id,
                     Arc::new(ExternalSubmodule {
                         path: Arc::from(load_path),
-                        parent_module_id: member_builder.symbol_id,
                         submodule_id: id,
                         submodule_qualified_name: next_submodule_qualified_name,
+                        accessibility,
+                        span,
                     }),
                 );
             }
@@ -522,4 +622,20 @@ pub fn calculate_qualified_name_id<'a>(
     declaration_order.hash(&mut hasher);
 
     ID(hasher.finish())
+}
+
+/// Returns the root module ID for the given target ID.
+#[extend]
+pub fn get_target_root_module_id(
+    self: &TrackedEngine<'_>,
+    target_id: TargetID,
+) -> ID {
+    let invocation_arguments = self.get_invocation_arguments(target_id);
+    let target_name = invocation_arguments.command.input().target_name();
+
+    self.calculate_qualified_name_id(
+        std::iter::once(target_name.as_str()),
+        target_id,
+        0,
+    )
 }

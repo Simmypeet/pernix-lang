@@ -1,3 +1,6 @@
+//! Contains the diagnostics that can be reported while building the
+//! symbol table tree.
+
 use std::path::PathBuf;
 
 use pernixc_diagnostic::Report;
@@ -29,6 +32,7 @@ use crate::{
     Serialize,
     Deserialize,
 )]
+#[allow(missing_docs)]
 pub enum Diagnostic {
     ItemRedefinition(ItemRedefinition),
     RecursiveFileRequest(RecursiveFileRequest),
