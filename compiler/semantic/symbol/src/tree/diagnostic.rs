@@ -1,7 +1,10 @@
 //! Contains the diagnostics that can be reported while building the
 //! symbol table tree.
 
-use std::path::PathBuf;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use pernixc_diagnostic::Report;
 use pernixc_file_tree::source_map::to_absolute_span;
@@ -173,7 +176,7 @@ pub struct SourceFileLoadFail {
     pub error_message: String,
 
     /// The path to the source file that failed to load.
-    pub path: PathBuf,
+    pub path: Arc<Path>,
 
     /// The span of the submodule identifier declaration, if this failure
     /// occurred when loading a submodule. `None` for root file load failures.

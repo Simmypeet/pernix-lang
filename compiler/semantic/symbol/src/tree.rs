@@ -229,10 +229,15 @@ pub fn table_executor(
                 Key::Root(target_id) => {
                     let invocation_arguments =
                         engine.get_invocation_arguments(*target_id);
-                    (invocation_arguments.command.input().file.clone(), None)
+                    (
+                        Arc::from(
+                            invocation_arguments.command.input().file.clone(),
+                        ),
+                        None,
+                    )
                 }
                 Key::Submodule { external_submodule, .. } => (
-                    external_submodule.path.as_ref().to_path_buf(),
+                    external_submodule.path.clone(),
                     Some(external_submodule.span),
                 ),
             };
