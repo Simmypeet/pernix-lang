@@ -19,6 +19,7 @@ use pernixc_source_file::SourceFile;
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::module::Member as ModuleMemberSyn;
 use pernixc_target::{get_invocation_arguments, get_target_seed, TargetID};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     accessibility::Accessibility,
@@ -704,13 +705,10 @@ pub fn map_executor(
     &MapKey(target_id): &MapKey,
     engine: &TrackedEngine,
 ) -> Result<Map, pernixc_query::runtime::executor::CyclicError> {
-    #[allow(clippy::items_after_statements)]
     #[allow(clippy::needless_pass_by_value)]
-    #[allow(clippy::manual_let_else)]
-    #[allow(clippy::match_same_arms)]
     fn traverse_table(
         engine: &TrackedEngine,
-        table_key: Key,
+        table_key: &Key,
         keys_by_symbol_id: &DashMap<ID, Option<Arc<ExternalSubmodule>>>,
         paths_by_source_id: &DashMap<
             pernixc_arena::ID<SourceFile>,
@@ -754,8 +752,8 @@ pub fn map_executor(
         }
 
         // Recursively traverse external submodules
-        for (_module_id, external_submodule) in table.external_submodules.iter()
-        {
+        table.external_submodules.par_iter().try_for_each(|item| {
+            let (_module_id, external_submodule) = item.pair();
             let submodule_key = Key::Submodule {
                 external_submodule: external_submodule.clone(),
                 target_id: current_target_id,
@@ -763,12 +761,12 @@ pub fn map_executor(
 
             traverse_table(
                 engine,
-                submodule_key,
+                &submodule_key,
                 keys_by_symbol_id,
                 paths_by_source_id,
                 Some(external_submodule.clone()),
-            )?;
-        }
+            )
+        })?;
 
         Ok(())
     }
@@ -779,7 +777,7 @@ pub fn map_executor(
     // Start traversal from the root
     traverse_table(
         engine,
-        Key::Root(target_id),
+        &Key::Root(target_id),
         &keys_by_symbol_id,
         &paths_by_source_id,
         None,
