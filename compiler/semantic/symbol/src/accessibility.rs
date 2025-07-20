@@ -1,6 +1,7 @@
 //! Contains the definition of tyhe [`Accessibility`] enum.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
@@ -60,6 +61,48 @@ impl Accessibility<ID> {
             Self::Scoped(id) => {
                 Accessibility::Scoped(Global::new(target_id, id))
             }
+        }
+    }
+}
+
+#[pernixc_query::executor(key(Key), name(Executor))]
+pub fn executor(
+    key: &Key,
+    engine: &TrackedEngine,
+) -> Result<Accessibility<ID>, CyclicError> {
+    match engine.get_kind(id) {
+        Kind::Module
+        | Kind::Struct
+        | Kind::Trait
+        | Kind::Enum
+        | Kind::Type
+        | Kind::Constant
+        | Kind::TraitType
+        | Kind::TraitFunction
+        | Kind::TraitConstant
+        | Kind::Marker
+        | Kind::AdtImplementationFunction
+        | Kind::ExternFunction
+        | Kind::Function => {
+            self.query(&Key(id)).expect("should have no cyclic dependencies")
+        }
+
+        // based on the parent's accessibility
+        Kind::TraitImplementationFunction
+        | Kind::TraitImplementationType
+        | Kind::TraitImplementationConstant
+        | Kind::Variant => self.get_accessibility(Global::new(
+            id.target_id,
+            self.get_parent(id).unwrap(),
+        )),
+
+        Kind::PositiveTraitImplementation
+        | Kind::NegativeTraitImplementation
+        | Kind::PositiveMarkerImplementation
+        | Kind::NegativeMarkerImplementation
+        | Kind::AdtImplementation => {
+            // self.get_accessibility(self.get_implements(id))
+            todo!()
         }
     }
 }
@@ -127,41 +170,6 @@ pub fn get_accessibility(
     self: &TrackedEngine<'_>,
     id: Global<ID>,
 ) -> Accessibility<ID> {
-    match self.get_kind(id) {
-        Kind::Module
-        | Kind::Struct
-        | Kind::Trait
-        | Kind::Enum
-        | Kind::Type
-        | Kind::Constant
-        | Kind::TraitType
-        | Kind::TraitFunction
-        | Kind::TraitConstant
-        | Kind::Marker
-        | Kind::AdtImplementationFunction
-        | Kind::ExternFunction
-        | Kind::Function => {
-            self.query(&Key(id)).expect("should have no cyclic dependencies")
-        }
-
-        // based on the parent's accessibility
-        Kind::TraitImplementationFunction
-        | Kind::TraitImplementationType
-        | Kind::TraitImplementationConstant
-        | Kind::Variant => self.get_accessibility(Global::new(
-            id.target_id,
-            self.get_parent(id).unwrap(),
-        )),
-
-        Kind::PositiveTraitImplementation
-        | Kind::NegativeTraitImplementation
-        | Kind::PositiveMarkerImplementation
-        | Kind::NegativeMarkerImplementation
-        | Kind::AdtImplementation => {
-            // self.get_accessibility(self.get_implements(id))
-            todo!()
-        }
-    }
 }
 
 /// Checks if the `referred` is accessible from the `referring_site`.

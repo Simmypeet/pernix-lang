@@ -2,7 +2,7 @@
 
 use std::hash::Hash;
 
-use pernixc_query::Value;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -271,24 +271,30 @@ impl Kind {
     }
 }
 
-/*
-/// An executor for the [`Kind`] query that retrieves the kind of a symbol from
-/// the symbol table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Executor;
+#[pernixc_query::executor(key(Key), name(Executor))]
+pub fn executor(
+    key: &Key,
+    engine: &TrackedEngine,
+) -> Result<Kind, CyclicError> {
+    let map = engine.query(&crate::MapKey(key.0.target_id))?;
+    let node_key = map
+        .keys_by_symbol_id
+        .get(&key.0.id)
+        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id))
+        .as_ref()
+        .map_or_else(
+            || crate::Key::Root(key.0.target_id),
+            |x| crate::Key::Submodule {
+                external_submodule: x.clone(),
+                target_id: key.0.target_id,
+            },
+        );
 
-impl pernixc_query::runtime::executor::Executor<Key> for Executor {
-    fn execute(
-        &self,
-        engine: &pernixc_query::TrackedEngine,
-        key: &Key,
-    ) -> Result<Kind, pernixc_query::runtime::executor::CyclicError> {
-        let symbol_table = engine.query(&crate::Key(key.0.target_id))?;
+    let table = engine.query(&crate::TableKey(node_key))?;
 
-        Ok(symbol_table.entries_by_id
-            .get(&key.0.id)
-            .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id))
-            .kind)
-    }
+    Ok(table
+        .kinds
+        .get(&key.0.id)
+        .copied()
+        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
 }
-*/
