@@ -7,7 +7,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::ID;
+use crate::{get_table_of_symbol, ID};
 
 /// An enumeration used to identify the kind of a symbol in the Pernix. This
 /// value should be set to every symbol that is defined in the compilation
@@ -272,25 +272,12 @@ impl Kind {
 }
 
 #[pernixc_query::executor(key(Key), name(Executor))]
+#[allow(clippy::unnecessary_wraps)]
 pub fn executor(
     key: &Key,
     engine: &TrackedEngine,
 ) -> Result<Kind, CyclicError> {
-    let map = engine.query(&crate::MapKey(key.0.target_id))?;
-    let node_key = map
-        .keys_by_symbol_id
-        .get(&key.0.id)
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id))
-        .as_ref()
-        .map_or_else(
-            || crate::Key::Root(key.0.target_id),
-            |x| crate::Key::Submodule {
-                external_submodule: x.clone(),
-                target_id: key.0.target_id,
-            },
-        );
-
-    let table = engine.query(&crate::TableKey(node_key))?;
+    let table = engine.get_table_of_symbol(key.0);
 
     Ok(table
         .kinds

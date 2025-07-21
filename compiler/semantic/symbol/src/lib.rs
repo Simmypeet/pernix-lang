@@ -1,4 +1,4 @@
-//! Contains the implementation of building the symbol table from the file tree.
+//! Contains the logic for building the symbol table from the syntax tree.
 
 use std::{
     collections::hash_map,
@@ -19,7 +19,9 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceFile;
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::module::Member as ModuleMemberSyn;
-use pernixc_target::{get_invocation_arguments, get_target_seed, TargetID};
+use pernixc_target::{
+    get_invocation_arguments, get_target_seed, Global, TargetID,
+};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
@@ -906,4 +908,25 @@ pub fn map_executor(
         keys_by_symbol_id: Arc::new(keys_by_symbol_id.into_read_only()),
         paths_by_source_id: Arc::new(paths_by_source_id.into_read_only()),
     })
+}
+
+/// Gets the table node where the information of the given symbol ID is stored.
+#[extend]
+fn get_table_of_symbol(self: &TrackedEngine<'_>, id: Global<ID>) -> Arc<Table> {
+    let map = self.query(&MapKey(id.target_id)).unwrap();
+
+    let node_key = map
+        .keys_by_symbol_id
+        .get(&id.id)
+        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id))
+        .as_ref()
+        .map_or_else(
+            || crate::Key::Root(id.target_id),
+            |x| crate::Key::Submodule {
+                external_submodule: x.clone(),
+                target_id: id.target_id,
+            },
+        );
+
+    self.query(&crate::TableKey(node_key)).unwrap()
 }

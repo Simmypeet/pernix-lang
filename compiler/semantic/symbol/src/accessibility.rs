@@ -1,12 +1,21 @@
 //! Contains the definition of tyhe [`Accessibility`] enum.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_extend::extend;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
-use crate::ID;
+use crate::{
+    get_table_of_symbol,
+    kind::{get_kind, Kind},
+    parent::{
+        get_closest_module_id, get_parent, symbol_hierarchy_relationship,
+        HierarchyRelationship,
+    },
+    ID,
+};
 
 /// The key type used with [`TrackedEngine`] to access the accessibility of a
 /// symbol.
@@ -25,6 +34,7 @@ use crate::ID;
     StableHash,
 )]
 #[value(Accessibility<ID>)]
+#[extend(method(get_accessibility), no_cyclic)]
 pub struct Key(pub Global<ID>);
 
 /// The accessibility defined to a symbol
@@ -67,7 +77,7 @@ impl Accessibility<ID> {
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 pub fn executor(
-    key: &Key,
+    &Key(id): &Key,
     engine: &TrackedEngine,
 ) -> Result<Accessibility<ID>, CyclicError> {
     match engine.get_kind(id) {
@@ -84,17 +94,19 @@ pub fn executor(
         | Kind::AdtImplementationFunction
         | Kind::ExternFunction
         | Kind::Function => {
-            self.query(&Key(id)).expect("should have no cyclic dependencies")
+            let table = engine.get_table_of_symbol(id);
+
+            Ok(table.accessibilities.get(&id.id).copied().unwrap())
         }
 
         // based on the parent's accessibility
         Kind::TraitImplementationFunction
         | Kind::TraitImplementationType
         | Kind::TraitImplementationConstant
-        | Kind::Variant => self.get_accessibility(Global::new(
+        | Kind::Variant => Ok(engine.get_accessibility(Global::new(
             id.target_id,
-            self.get_parent(id).unwrap(),
-        )),
+            engine.get_parent(id).unwrap(),
+        ))),
 
         Kind::PositiveTraitImplementation
         | Kind::NegativeTraitImplementation
@@ -104,35 +116,6 @@ pub fn executor(
             // self.get_accessibility(self.get_implements(id))
             todo!()
         }
-    }
-}
-
-/*
-/// An executor for the [`Key`] query that retrieves the accessibility of a
-/// symbol with the given ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Executor;
-
-impl pernixc_query::runtime::executor::Executor<Key> for Executor {
-    fn execute(
-        &self,
-        engine: &TrackedEngine,
-        &Key(id): &Key,
-    ) -> Result<Accessibility<ID>, pernixc_query::runtime::executor::CyclicError>
-    {
-        let table = engine
-            .query(&crate::Key(id.target_id))
-            .expect("should have no cyclic dependencies");
-
-        Ok(table
-            .entries_by_id
-            .get(&id.id)
-            .expect("invalid symbol ID")
-            .accessibility
-            .expect(
-                "the symbol doesn't have an explicit accessibility set, use \
-                 the `get_accessibility` extension method to retrieve it",
-            ))
     }
 }
 
@@ -162,14 +145,6 @@ pub fn accessibility_hierarchy_relationship(
             self.symbol_hierarchy_relationship(target_id, first, second)
         }
     }
-}
-
-/// Gets the [`Accessibility`] of the given symbol.
-#[extend]
-pub fn get_accessibility(
-    self: &TrackedEngine<'_>,
-    id: Global<ID>,
-) -> Accessibility<ID> {
 }
 
 /// Checks if the `referred` is accessible from the `referring_site`.
@@ -222,4 +197,3 @@ pub fn is_accessible_from(
         }
     }
 }
-*/

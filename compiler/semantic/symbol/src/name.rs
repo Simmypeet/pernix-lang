@@ -8,7 +8,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::ID;
+use crate::{parent::get_parent, ID};
 
 // pub mod diagnostic;
 
@@ -34,8 +34,10 @@ pub struct Key(pub Global<ID>);
 
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
-pub fn get_qualified_name(self: &TrackedEngine<'_>, id: Global<ID>) -> String {
-    /*
+pub fn get_qualified_name(
+    self: &TrackedEngine<'_>,
+    mut id: Global<ID>,
+) -> String {
     let mut qualified_name = String::new();
 
     loop {
@@ -56,8 +58,6 @@ pub fn get_qualified_name(self: &TrackedEngine<'_>, id: Global<ID>) -> String {
     }
 
     qualified_name
-    */
-    todo!()
 }
 
 /*
