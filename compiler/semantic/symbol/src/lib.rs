@@ -708,8 +708,7 @@ impl<'ctx> TableContext<'ctx> {
                 .unwrap_or_default();
 
             load_path.extend(
-                member_builder
-                    .symbol_qualified_name
+                next_submodule_qualified_name
                     .iter()
                     .skip(1)
                     .map(FlexStr::as_str),

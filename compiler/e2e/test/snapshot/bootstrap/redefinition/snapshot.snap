@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: symbol `first` is already defined in the scope `main`
+  ╭─ bootstrap/redefinition/main.pnx:6:15
+  │
+3 │ public module first:
+  │               ----- symbol `first` is already defined here
+  ·
+6 │ public module first:
+  │               ^^^^^ redefinition here
+
+error: symbol `duplicateInner` is already defined in the scope `main::inner`
+  ╭─ bootstrap/redefinition/inner.pnx:4:15
+  │
+1 │ public module duplicateInner:
+  │               -------------- symbol `duplicateInner` is already defined here
+  ·
+4 │ public module duplicateInner:
+  │               ^^^^^^^^^^^^^^ redefinition here
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
