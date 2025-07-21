@@ -4,6 +4,25 @@ assertion_line: 220
 expression: clean_run
 ---
 stderr:
+error: general IO error (os error 2)
+  ╭─ bootstrap/redefinition/main.pnx:1:15
+  │
+1 │ public module inner
+  │               ^^^^^ submodule declaration here
+  │
+  = check if the file exists and is accessible
+
+error: symbol `first` is already defined in the scope `main`
+  ╭─ bootstrap/redefinition/main.pnx:6:15
+  │
+3 │ public module first:
+  │               ----- symbol `first` is already defined here
+  ·
+6 │ public module first:
+  │               ^^^^^ redefinition here
+
+error: Compilation aborted due to 2 error(s)
+
 
 
 stdout:

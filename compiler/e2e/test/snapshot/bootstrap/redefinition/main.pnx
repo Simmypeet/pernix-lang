@@ -1,38 +1,8 @@
-public trait First:
+public module inner
+
+public module first:
     pass
 
-
-public trait First:
+public module first:
     pass
 
-
-public trait Second:
-    pass
-
-
-public function Second():
-    pass
-
-
-public trait RedefinitionInTrait:
-    public function first()
-    public function first()
-
-    public type Second
-    public type Second
-
-    public const THIRD: int32
-    public const THIRD: int32
-
-    public function fourth()
-    public type fourth
-
-    public const FIFTH: int32
-    public type FIFTH
-
-
-public enum RedefinitionInEnum:
-    First
-    Second
-    First(int32)
-    Second(int32)

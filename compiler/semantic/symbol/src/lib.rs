@@ -103,7 +103,6 @@ pub fn register_serde<
 pub fn skip_persistence(
     _persistence: &mut pernixc_query::runtime::persistence::Persistence,
 ) {
-    todo!()
 }
 
 /// Represents a unique identifier for the symbols in the compilation target.
@@ -729,20 +728,16 @@ impl<'ctx> TableContext<'ctx> {
                 ModuleMemberSyn::Module(module) => {
                     self.handle_module_member(&module, member_builder, scope);
                 }
-                ModuleMemberSyn::Import(_) => todo!(),
-                ModuleMemberSyn::Trait(_) => todo!(),
-                ModuleMemberSyn::Function(_) => {
-                    todo!()
-                }
-                ModuleMemberSyn::Type(_) => todo!(),
-                ModuleMemberSyn::Struct(_) => todo!(),
-                ModuleMemberSyn::Implements(_) => todo!(),
-                ModuleMemberSyn::Enum(_) => todo!(),
-                ModuleMemberSyn::Constant(_) => {
-                    todo!()
-                }
-                ModuleMemberSyn::Extern(_) => todo!(),
-                ModuleMemberSyn::Marker(_) => todo!(),
+                ModuleMemberSyn::Import(_)
+                | ModuleMemberSyn::Trait(_)
+                | ModuleMemberSyn::Function(_)
+                | ModuleMemberSyn::Type(_)
+                | ModuleMemberSyn::Struct(_)
+                | ModuleMemberSyn::Implements(_)
+                | ModuleMemberSyn::Enum(_)
+                | ModuleMemberSyn::Constant(_)
+                | ModuleMemberSyn::Extern(_)
+                | ModuleMemberSyn::Marker(_) => {}
             }
         }
     }

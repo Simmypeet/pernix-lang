@@ -1,0 +1,27 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+assertion_line: 220
+expression: clean_run
+---
+stderr:
+error: the module declaration ened up loading the current file `module_tree/root_conflict.pnx`
+  ╭─ module_tree/root_conflict/main.pnx:3:15
+  │
+3 │ public module main
+  │               ^^^^ this module declaration causes recursive loading
+  │
+  = try changing the module name from `root_conflict` to something else that is not the same as the file name
+
+error: the module declaration ened up loading the current file `module_tree/root_conflict/main.pnx`
+  ╭─ module_tree/root_conflict/main.pnx:3:15
+  │
+3 │ public module main
+  │               ^^^^ this module declaration causes recursive loading
+  │
+  = try changing the module name from `main` to something else that is not the same as the file name
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
