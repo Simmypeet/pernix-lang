@@ -75,10 +75,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         let path = engine.get_source_file_path(key.0);
 
         let source_file = engine
-            .query(&crate::load::Key {
-                path,
-                target_id: key.0.target_id,
-            })
+            .query(&crate::load::Key { path, target_id: key.0.target_id })
             .unwrap()
             .unwrap();
 

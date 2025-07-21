@@ -19,9 +19,13 @@ pernixc_parser = { path = "../parser" }
 pernixc_test_input = { path = "../../base/test_input", optional = true }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_query = { path = "../../base/query" }
+pernixc_source_file = { path = "../../base/source_file" }
+pernixc_target = { path = "../../base/target" }
 proptest = { workspace = true, optional = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 pernixc_source_file = { path = "../../base/source_file" }

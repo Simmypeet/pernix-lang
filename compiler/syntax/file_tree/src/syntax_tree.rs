@@ -113,24 +113,6 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         tracked_engine: &pernixc_query::TrackedEngine,
         key: &Key,
     ) -> Result<Result<SyntaxTree, Error>, CyclicError> {
-        // load the token tree
-        let token_tree =
-            match tracked_engine.query(&crate::token_tree::Parse {
-                path: key.path.clone(),
-                target_id: key.target_id,
-            })? {
-                Ok(source_code) => source_code,
-                Err(error) => return Ok(Err(error)),
-            };
-
-        let (module, errors) = pernixc_syntax::item::module::Content::parse(
-            &token_tree.token_tree,
-        );
-
-        Ok(Ok(SyntaxTree {
-            syntax_tree: module.map(ModuleContent),
-            errors: Arc::from(errors),
-        }))
     }
 }
 
