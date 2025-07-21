@@ -109,14 +109,6 @@ pub fn error_executor(
     key: &ErrorKey,
     engine: &pernixc_query::TrackedEngine,
 ) -> Result<Result<Arc<[pernixc_lexical::error::Error]>, Error>, CyclicError> {
-    let token_tree = match engine
-        .query(&Parse { path: key.path.clone(), target_id: key.target_id })?
-    {
-        Ok(token_tree) => token_tree,
-        Err(error) => return Ok(Err(error)),
-    };
-
-    Ok(Ok(token_tree.errors))
 }
 
 /// A key for the retrieving a [`TokenTree`] that has been parsed from a

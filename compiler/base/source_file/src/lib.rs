@@ -5,7 +5,7 @@ use std::{
     cmp::Ordering,
     fmt::Debug,
     fs::File,
-    hash::{Hash, Hasher},
+    hash::{BuildHasher, BuildHasherDefault, Hash, Hasher},
     io::Read,
     ops::Range,
     path::{Path, PathBuf},
@@ -20,6 +20,7 @@ use flexstr::SharedStr;
 use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
+use pernixc_extend::extend;
 use pernixc_query::{
     runtime::{
         executor::CyclicError,
@@ -32,7 +33,7 @@ use pernixc_serialize::{
 };
 use pernixc_stable_hash::{StableHash, Value};
 use pernixc_stable_type_id::Identifiable;
-use pernixc_target::{Global, TargetID};
+use pernixc_target::{get_target_seed, Global, TargetID};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 
 /// Registers all the required executors to run the queries.
@@ -880,6 +881,22 @@ pub fn executor(
             Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
         })
         .map_err(|x| Error(x.to_string().into())))
+}
+
+/// Calculates the ID of the source file based on their path.
+///
+/// Internally this uses a hash function to derive a stable ID for the source
+/// file.
+#[extend]
+pub fn calculate_path_id(
+    self: &TrackedEngine<'_>,
+    path: &Path,
+    target_id: TargetID,
+) -> ID<SourceFile> {
+    ID::new(
+        BuildHasherDefault::<siphasher::sip::SipHasher24>::default()
+            .hash_one((self.get_target_seed(target_id), path)),
+    )
 }
 
 #[cfg(test)]

@@ -21,6 +21,7 @@ pernixc_test_input = { path = "../../base/test_input" }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_query = { path = "../../base/query" }
 codespan-reporting = { workspace = true }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }

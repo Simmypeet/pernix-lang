@@ -201,22 +201,6 @@ pub struct ChildFiles {
     pub recursive_request_error: Option<Arc<RecursiveFileRequest>>,
 }
 
-/// Calculates the ID of the source file based on their path.
-///
-/// Internally this uses a hash function to derive a stable ID for the source
-/// file.
-#[extend]
-pub fn calculate_path_id(
-    self: &TrackedEngine<'_>,
-    path: &Path,
-    target_id: TargetID,
-) -> ID<SourceFile> {
-    ID::new(
-        BuildHasherDefault::<siphasher::sip::SipHasher24>::default()
-            .hash_one((self.get_target_seed(target_id), path)),
-    )
-}
-
 #[allow(dead_code)]
 fn parse_node_from_module_content(
     content: Option<ModuleContent>,

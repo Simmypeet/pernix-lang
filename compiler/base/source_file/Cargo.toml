@@ -13,12 +13,14 @@ pernixc_serialize = { path = "../serialize" }
 pernixc_stable_hash = { path = "../stable_hash" }
 pernixc_stable_type_id = { path = "../stable_type_id" }
 pernixc_query = { path = "../query" }
+pernixc_extend = { path = "../extend" }
 thiserror = { workspace = true }
 flexstr = { workspace = true }
 dashmap = { workspace = true }
 getset = { workspace = true }
 codespan-reporting = { workspace = true }
 fnv = { workspace = true }
+siphasher = { workspace = true }
 rayon = { workspace = true }
 
 [lints]
