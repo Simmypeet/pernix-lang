@@ -3,12 +3,12 @@
 
 use flexstr::SharedStr;
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{parent::get_parent, ID};
+use crate::{get_table_of_symbol, parent::get_parent, ID};
 
 // pub mod diagnostic;
 
@@ -58,6 +58,21 @@ pub fn get_qualified_name(
     }
 
     qualified_name
+}
+
+#[pernixc_query::executor(key(Key), name(Executor))]
+#[allow(clippy::unnecessary_wraps)]
+pub fn executor(
+    key: &Key,
+    engine: &TrackedEngine,
+) -> Result<SharedStr, CyclicError> {
+    let table = engine.get_table_of_symbol(key.0);
+
+    Ok(table
+        .names
+        .get(&key.0.id)
+        .cloned()
+        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
 }
 
 /*

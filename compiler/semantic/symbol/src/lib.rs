@@ -658,20 +658,20 @@ impl<'ctx> TableContext<'ctx> {
                 ModuleMemberSyn::Module(module) => {
                     self.handle_module_member(&module, member_builder, scope);
                 }
-                ModuleMemberSyn::Import(import) => todo!(),
+                ModuleMemberSyn::Import(_) => todo!(),
                 ModuleMemberSyn::Trait(_) => todo!(),
-                ModuleMemberSyn::Function(function) => {
+                ModuleMemberSyn::Function(_) => {
                     todo!()
                 }
                 ModuleMemberSyn::Type(_) => todo!(),
                 ModuleMemberSyn::Struct(_) => todo!(),
-                ModuleMemberSyn::Implements(implements) => todo!(),
+                ModuleMemberSyn::Implements(_) => todo!(),
                 ModuleMemberSyn::Enum(_) => todo!(),
-                ModuleMemberSyn::Constant(constant) => {
+                ModuleMemberSyn::Constant(_) => {
                     todo!()
                 }
                 ModuleMemberSyn::Extern(_) => todo!(),
-                ModuleMemberSyn::Marker(marker) => todo!(),
+                ModuleMemberSyn::Marker(_) => todo!(),
             }
         }
     }

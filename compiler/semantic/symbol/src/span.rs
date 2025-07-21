@@ -2,11 +2,12 @@
 
 use derive_more::{Deref, DerefMut};
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::ID;
+use crate::{get_table_of_symbol, ID};
 
 /// Points to the particular location span in the source code where the given
 /// symbol is defined, typically used for diagnostics and error reporting.
@@ -32,26 +33,17 @@ use crate::ID;
 #[value(Option<RelativeSpan>)]
 pub struct Key(pub Global<ID>);
 
-/*
-/// An executor for the [`Span`] query that retrieves the span of the symbol
-/// with the given ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Executor;
+#[pernixc_query::executor(key(Key), name(Executor))]
+#[allow(clippy::unnecessary_wraps)]
+pub fn executor(
+    key: &Key,
+    engine: &TrackedEngine,
+) -> Result<Option<RelativeSpan>, CyclicError> {
+    let table = engine.get_table_of_symbol(key.0);
 
-impl pernixc_query::runtime::executor::Executor<Key> for Executor {
-    fn execute(
-        &self,
-        engine: &pernixc_query::TrackedEngine,
-        &Key(id): &Key,
-    ) -> Result<
-        Option<RelativeSpan>,
-        pernixc_query::runtime::executor::CyclicError,
-    > {
-        let table = engine
-            .query(&crate::Key(id.target_id))
-            .expect("should have no cyclic dependencies");
-
-        Ok(table.entries_by_id.get(&id.id).expect("invalid symbol ID").span)
-    }
+    Ok(table
+        .spans
+        .get(&key.0.id)
+        .copied()
+        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
 }
-*/

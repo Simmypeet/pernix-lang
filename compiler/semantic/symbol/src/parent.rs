@@ -1,14 +1,20 @@
 //! Contains the definition of the [`Parent`] component.
 
+use std::sync::Arc;
+
 use derive_more::{Deref, DerefMut};
 use pernixc_extend::extend;
-use pernixc_query::TrackedEngine;
+use pernixc_hash::HashMap;
+use pernixc_query::{TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
+    get_table_of_symbol, get_target_root_module_id,
     kind::{get_kind, Kind},
+    name::get_name,
     ID,
 };
 
@@ -142,8 +148,6 @@ pub fn get_closest_module_id(
     }
 }
 
-/*
-
 /// The executor for the [`Parent`] component.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -155,7 +159,7 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         engine: &TrackedEngine,
         key: &Key,
     ) -> Result<Option<ID>, pernixc_query::runtime::executor::CyclicError> {
-        if key.0.id == ID::ROOT_MODULE {
+        if key.0.id == engine.get_target_root_module_id(key.0.target_id) {
             return Ok(None);
         }
 
@@ -174,9 +178,8 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
         Ok(Some(parent_id))
     }
 }
-*/
 
-/* Intermediate query to compute the [`Parent`] component for all symbols
+/// Intermediate query to compute the [`Parent`] component for all symbols
 #[derive(
     Debug,
     Clone,
@@ -206,24 +209,23 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
     fn execute(
         &self,
         engine: &TrackedEngine,
-        key: &IntermediateKey,
+        &IntermediateKey(target_id): &IntermediateKey,
     ) -> Result<Arc<Intermediate>, pernixc_query::runtime::executor::CyclicError>
     {
-        let symbols = engine.query(&crate::symbols::Key(key.0))?;
-        let table = engine.query(&crate::Key(key.0))?;
-        let symbols = symbols.as_ref();
+        let map = engine.query(&crate::MapKey(target_id))?;
 
         Ok(Arc::new(Intermediate(
-            symbols
+            map.keys_by_symbol_id
                 .par_iter()
                 .filter_map(|x| {
+                    let table = engine
+                        .get_table_of_symbol(target_id.make_global(*x.key()));
+
                     table
-                        .entries_by_id
-                        .get(x)
-                        .unwrap()
                         .members
-                        .clone()
-                        .map(|members| (x, members))
+                        .get(x.key())
+                        .cloned()
+                        .map(|members| (*x.key(), members))
                 })
                 .flat_map_iter(|(symbol, member)| {
                     member
@@ -231,12 +233,10 @@ impl pernixc_query::runtime::executor::Executor<IntermediateKey>
                         .values()
                         .copied()
                         .chain(member.redefinitions.iter().copied())
-                        .map(move |member_id| (member_id, *symbol))
+                        .map(move |member_id| (member_id, symbol))
                         .collect::<Vec<_>>()
                 })
                 .collect(),
         )))
     }
 }
-
-*/
