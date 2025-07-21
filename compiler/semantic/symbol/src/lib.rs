@@ -25,7 +25,9 @@ use pernixc_syntax::item::module::Member as ModuleMemberSyn;
 use pernixc_target::{
     get_invocation_arguments, get_target_seed, Global, TargetID,
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 use crate::{
     accessibility::Accessibility,
@@ -34,6 +36,7 @@ use crate::{
     },
     kind::Kind,
     member::Member,
+    source_map::SourceMap,
 };
 
 pub mod accessibility;
@@ -63,6 +66,8 @@ pub fn register_executors(
 
     executor.register(Arc::new(span::Executor));
 
+    executor.register(Arc::new(source_map::FilePathExecutor));
+
     executor.register(Arc::new(TableExecutor));
     executor.register(Arc::new(DiagnosticExecutor));
     executor.register(Arc::new(MapExecutor));
@@ -91,6 +96,8 @@ pub fn register_serde<
     serde_registry.register::<parent::Key>();
 
     serde_registry.register::<span::Key>();
+
+    serde_registry.register::<source_map::FilePathKey>();
 
     serde_registry.register::<TableKey>();
     serde_registry.register::<DiagnosticKey>();
@@ -467,15 +474,64 @@ pub fn all_rendered_diagnostic_executor(
                     target_id: *target_id,
                 },
             );
+            let path_key = x.0.clone();
 
-            engine.query(&DiagnosticKey(table_key))
+            Ok((
+                engine.query(&DiagnosticKey(table_key))?,
+                engine.query(&pernixc_syntax::DiagnosticKey(
+                    pernixc_syntax::Key {
+                        path: path_key.clone(),
+                        target_id: *target_id,
+                    },
+                ))?,
+                engine.query(&pernixc_lexical::DiagnosticKey(
+                    pernixc_lexical::Key {
+                        path: path_key.clone(),
+                        target_id: *target_id,
+                    },
+                ))?,
+                path_key,
+            ))
         })
         .collect::<Result<Vec<_>, _>>()?;
 
     let diagnostics = keys
         .par_iter()
-        .flat_map(|diagnostic| {
-            diagnostic.par_iter().cloned().map(|d| d.report(engine))
+        .flat_map(|(symbol_diags, syntax_diags, lexical_diags, path)| {
+            let symbol_diagnostics =
+                symbol_diags.par_iter().map(|d| d.report(engine));
+
+            let lexical_diagnostic =
+                lexical_diags.as_ref().ok().into_par_iter().flat_map_iter(
+                    |x| {
+                        x.iter()
+                            .map(|d| d.report(&SourceMap(engine)))
+                            .collect::<Vec<_>>()
+                    },
+                );
+
+            let tree = engine
+                .query(&pernixc_lexical::Key {
+                    path: path.clone(),
+                    target_id: *target_id,
+                })
+                .unwrap();
+
+            let syntax_diagnostics = syntax_diags
+                .as_ref()
+                .ok()
+                .into_par_iter()
+                .flat_map_iter(move |x| {
+                    x.iter()
+                        .map(|d| {
+                            d.report(tree.as_ref().ok().map(|x| &x.0).unwrap())
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+            symbol_diagnostics
+                .chain(lexical_diagnostic)
+                .chain(syntax_diagnostics)
         })
         .collect::<Arc<[_]>>();
 
