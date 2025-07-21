@@ -10,7 +10,6 @@ use std::{
 use flexstr::{FlexStr, SharedStr};
 use pernixc_diagnostic::Report;
 use pernixc_extend::extend;
-use pernixc_file_tree::calculate_path_id;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
@@ -20,7 +19,7 @@ use pernixc_query::{
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
-use pernixc_source_file::SourceFile;
+use pernixc_source_file::{calculate_path_id, SourceFile};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::module::Member as ModuleMemberSyn;
 use pernixc_target::{
@@ -44,6 +43,7 @@ pub mod kind;
 pub mod member;
 pub mod name;
 pub mod parent;
+pub mod source_map;
 pub mod span;
 
 /// Registers all the required executors to run the queries.
@@ -295,7 +295,7 @@ pub fn table_executor(
                 engine.get_invocation_arguments(*target_id);
 
             (
-                engine.query(&pernixc_file_tree::syntax_tree::Key {
+                engine.query(&pernixc_syntax::Key {
                     path: invocation_arguments
                         .command
                         .input()
@@ -311,7 +311,7 @@ pub fn table_executor(
         }
 
         Key::Submodule { external_submodule, target_id } => (
-            engine.query(&pernixc_file_tree::syntax_tree::Key {
+            engine.query(&pernixc_syntax::Key {
                 path: external_submodule.path.clone(),
                 target_id: *target_id,
             })?,
@@ -385,11 +385,7 @@ pub fn table_executor(
         let context = &context;
 
         rayon::scope(move |scope| {
-            context.create_module(
-                tree.and_then(|t| t.syntax_tree.map(|x| x.0)),
-                module_kind,
-                scope,
-            );
+            context.create_module(tree.and_then(|t| t.0), module_kind, scope);
         });
     }
 
@@ -418,6 +414,7 @@ pub fn diagnostic_executor(
 > {
     // Query the table and return only its diagnostics field
     let table = engine.query(&TableKey(key.clone()))?;
+
     Ok(table.diagnostics.clone())
 }
 

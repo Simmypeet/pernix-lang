@@ -7,7 +7,6 @@ use std::{
 };
 
 use pernixc_diagnostic::Report;
-use pernixc_file_tree::source_map::to_absolute_span;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -17,6 +16,7 @@ use pernixc_target::Global;
 
 use crate::{
     name::{get_name, get_qualified_name},
+    source_map::to_absolute_span,
     span::get_span,
     ID,
 };

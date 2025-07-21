@@ -1,16 +1,47 @@
-//! A module that provides a wrapper around [`TrackedEngine`] to implement
-//! `codespan_reporting::files::Files` for use with `codespan_reporting`.
-
+//! Contains the definition of the [`SourceMap`] type, which implements the
+//! [`codespan_reporting::files::Files`] trait for use with
+//! `codespan_reporting`.
 use std::{fmt::Display, path::Path, sync::Arc};
 
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{ByteIndex, GlobalSourceID, SourceFile, Span};
+use pernixc_source_file::{ByteIndex, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
 
-use crate::{get_source_file_path, token_tree::get_source_file_token_tree};
+/// A query for retrieving the a path of the given sourcce file ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<Path>)]
+#[extend(method(get_source_file_path), no_cyclic)]
+pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
+
+#[pernixc_query::executor(key(FilePathKey), name(FilePathExecutor))]
+pub fn file_path_executor(
+    FilePathKey(source_file_id): &FilePathKey,
+    engine: &TrackedEngine,
+) -> Result<Arc<Path>, pernixc_query::runtime::executor::CyclicError> {
+    let table = engine.query(&crate::MapKey(source_file_id.target_id))?;
+
+    Ok(table.paths_by_source_id.get(&source_file_id.id).map_or_else(
+        || panic!("Source file path not found for ID: {:?}", source_file_id.id),
+        |x| x.0.clone(),
+    ))
+}
 
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.
@@ -37,54 +68,8 @@ impl AsRef<str> for SourceFileStr {
     fn as_ref(&self) -> &str { self.0.content() }
 }
 
-/// Query for retrieving a [`Arc<SourceFile>`] from the given
-/// [`GlobalSourceID`].
-///
-/// The given [`GlobalSourceID`] must be a valid ID and obtained from the module
-/// tree.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-    pernixc_query::Key,
-)]
-#[value(Arc<SourceFile>)]
-#[extend(method(get_source_file), no_cyclic)]
-pub struct Key(pub GlobalSourceID);
-
-/// An executor for the [`Key`] query that retrieves the source file from the
-/// module tree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Executor;
-
-impl pernixc_query::runtime::executor::Executor<Key> for Executor {
-    fn execute(
-        &self,
-        engine: &TrackedEngine,
-        key: &Key,
-    ) -> Result<Arc<SourceFile>, pernixc_query::runtime::executor::CyclicError>
-    {
-        let path = engine.get_source_file_path(key.0);
-
-        let source_file = engine
-            .query(&crate::load::Key { path, target_id: key.0.target_id })
-            .unwrap()
-            .unwrap();
-
-        Ok(source_file)
-    }
-}
-
 impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
-    type FileId = GlobalSourceID;
+    type FileId = Global<pernixc_arena::ID<SourceFile>>;
 
     type Name = PathDisplay;
 
@@ -101,7 +86,16 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
         &'a self,
         id: Self::FileId,
     ) -> Result<Self::Source, codespan_reporting::files::Error> {
-        Ok(SourceFileStr(self.0.get_source_file(id)))
+        let path = self.0.get_source_file_path(id);
+        Ok(SourceFileStr(
+            self.0
+                .query(&pernixc_source_file::Key {
+                    path,
+                    target_id: id.target_id,
+                })
+                .unwrap()
+                .unwrap(),
+        ))
     }
 
     fn line_index(
@@ -163,8 +157,23 @@ pub fn to_absolute_span(
     self: &TrackedEngine<'_>,
     relative_span: &Span<RelativeLocation>,
 ) -> Span<ByteIndex> {
-    let source_file = self.get_source_file(relative_span.source_id);
-    let token_tree = self.get_source_file_token_tree(relative_span.source_id);
+    let path = self.get_source_file_path(relative_span.source_id);
+    let file = self
+        .query(&pernixc_source_file::Key {
+            path: path.clone(),
+            target_id: relative_span.source_id.target_id,
+        })
+        .unwrap()
+        .unwrap();
 
-    relative_span.to_absolute_span(&source_file, &token_tree)
+    let token_tree = self
+        .query(&pernixc_lexical::Key {
+            path,
+            target_id: relative_span.source_id.target_id,
+        })
+        .unwrap()
+        .unwrap()
+        .0;
+
+    relative_span.to_absolute_span(&file, &token_tree)
 }

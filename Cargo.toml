@@ -23,7 +23,6 @@ members = [
     "compiler/syntax/lexical",
     "compiler/syntax/parser",
     "compiler/syntax/syntax",
-    "compiler/syntax/file_tree",
 
     "compiler/semantic/symbol",
 
