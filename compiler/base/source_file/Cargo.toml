@@ -11,6 +11,10 @@ pernixc_arena = { path = "../arena" }
 pernixc_target = { path = "../target" }
 pernixc_serialize = { path = "../serialize" }
 pernixc_stable_hash = { path = "../stable_hash" }
+pernixc_stable_type_id = { path = "../stable_type_id" }
+pernixc_query = { path = "../query" }
+thiserror = { workspace = true }
+flexstr = { workspace = true }
 dashmap = { workspace = true }
 getset = { workspace = true }
 codespan-reporting = { workspace = true }

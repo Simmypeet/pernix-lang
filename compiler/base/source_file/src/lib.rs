@@ -8,20 +8,58 @@ use std::{
     hash::{Hash, Hasher},
     io::Read,
     ops::Range,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use dashmap::{
     mapref::one::{MappedRef, Ref, RefMut},
     DashMap,
 };
+use flexstr::SharedStr;
 use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_query::{
+    runtime::{
+        executor::CyclicError,
+        persistence::{serde::DynamicRegistry, Persistence},
+    },
+    TrackedEngine,
+};
+use pernixc_serialize::{
+    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+};
 use pernixc_stable_hash::{StableHash, Value};
+use pernixc_stable_type_id::Identifiable;
 use pernixc_target::{Global, TargetID};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+
+/// Registers all the required executors to run the queries.
+pub fn register_executors(
+    executor: &mut pernixc_query::runtime::executor::Registry,
+) {
+    executor.register(Arc::new(Executor));
+}
+
+/// Registers all the necessary runtime information for the query engine.
+pub fn register_serde<
+    S: Serializer<Registry>,
+    D: Deserializer<Registry>,
+    Registry: DynamicRegistry<S, D> + Send + Sync,
+>(
+    serde_registry: &mut Registry,
+) where
+    S::Error: Send + Sync,
+{
+    serde_registry.register::<Key>();
+}
+
+/// Registers the keys that should be skipped during serialization and
+/// deserialization in the query engine's persistence layer
+pub fn skip_persistence(persistence: &mut Persistence) {
+    persistence.skip_cache_value::<Key>();
+}
 
 /// Represents an source file input for the compiler.
 #[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
@@ -776,6 +814,73 @@ pub type LocalSourceID = ID<SourceFile>;
 /// A type alias for the [`Global`] type with a [`LocalSourceID`] as the inner
 /// type, used for identifying source files across different targets.
 pub type GlobalSourceID = Global<ID<SourceFile>>;
+
+/// Query for loading source files content from the file system.
+///
+/// This query is im-pure and should be re-evaluated every time it's loaded from
+/// the persistence layer to trigger the re-verification of the query that
+/// depends on it.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Identifiable,
+    StableHash,
+)]
+pub struct Key {
+    /// The path to load the source file.
+    pub path: Arc<Path>,
+
+    /// The target that requested the source file loading
+    pub target_id: TargetID,
+}
+
+/// The string formatted error from the [`std::io::Error`] when loading
+/// the source file.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    thiserror::Error,
+)]
+#[error("{0}")]
+pub struct Error(pub SharedStr);
+
+impl pernixc_query::Key for Key {
+    // Loading source files is an impure operation, so it should be
+    // re-evaluated every time
+    const ALWAYS_REVERIFY: bool = true;
+
+    /// The [`Ok`] value represents the source file content, while the [`Err`]
+    /// is the string to report the error.
+    type Value = Result<Arc<SourceFile>, Error>;
+}
+
+#[pernixc_query::executor(key(Key), name(Executor))]
+#[allow(clippy::unnecessary_wraps)]
+pub fn executor(
+    key: &Key,
+    _: &TrackedEngine,
+) -> Result<Result<Arc<SourceFile>, Error>, CyclicError> {
+    Ok(std::fs::File::open(key.path.as_ref())
+        .and_then(|file| {
+            Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
+        })
+        .map_err(|x| Error(x.to_string().into())))
+}
 
 #[cfg(test)]
 mod test;
