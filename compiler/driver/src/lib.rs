@@ -317,6 +317,14 @@ pub fn run(
                 .collect(),
             ),
         );
+
+        if let Some(explicit_seed) = argument.command.input().target_seed {
+            x.set_input(
+                pernixc_target::SeedKey(TargetID::Local),
+                explicit_seed,
+            );
+        }
+
         x.set_input(pernixc_target::Key(TargetID::Local), Arc::new(argument));
     });
 

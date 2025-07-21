@@ -100,7 +100,7 @@ pub fn register_serde<
 
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
-pub fn skip_persistence(
+pub const fn skip_persistence(
     _persistence: &mut pernixc_query::runtime::persistence::Persistence,
 ) {
 }

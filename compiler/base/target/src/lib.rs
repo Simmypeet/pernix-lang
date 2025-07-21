@@ -119,6 +119,13 @@ pub struct Input {
     /// the Chrome browser.
     #[clap(long = "chrome")]
     pub chrome_tracing: bool,
+
+    /// The seed for the compiler internal ID generation.
+    ///
+    /// This option is meant to be used internally for testing and debugging
+    /// purposes.
+    #[clap(long = "target-seed")]
+    pub target_seed: Option<u64>,
 }
 
 impl Input {

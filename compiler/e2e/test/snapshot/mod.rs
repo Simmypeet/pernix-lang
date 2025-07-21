@@ -155,6 +155,7 @@ fn test(file_path: &Path) {
                     library_paths: Vec::new(),
                     incremental_path: None,
                     chrome_tracing: false,
+                    target_seed: Some(0),
                 },
             }),
         },
@@ -183,6 +184,7 @@ fn test(file_path: &Path) {
                             library_paths: Vec::new(),
                             incremental_path: None,
                             chrome_tracing: false,
+                            target_seed: Some(0),
                         },
                     }),
                 }
