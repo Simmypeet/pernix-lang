@@ -19,6 +19,7 @@ pernixc_serialize = { path = "../base/serialize/" }
 pernixc_hash = { path = "../base/hash" }
 pernixc_stable_type_id = { path = "../base/stable_type_id" }
 pernixc_file_tree = { path = "../syntax/file_tree" }
+pernixc_symbol = { path = "../semantic/symbol" }
 clap = { workspace = true }
 codespan-reporting = { workspace = true }
 derive_more = { workspace = true }

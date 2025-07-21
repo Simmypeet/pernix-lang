@@ -235,7 +235,7 @@ pub fn run(
     // registered before creating a persistence layer
     pernixc_target::register_serde(&mut serde_registry);
     pernixc_file_tree::register_serde(&mut serde_registry);
-    // pernixc_symbol::register_serde(&mut serde_registry);
+    pernixc_symbol::register_serde(&mut serde_registry);
 
     let mut engine = Engine::default();
 
@@ -291,13 +291,13 @@ pub fn run(
     if let Some(persistence) = engine.runtime.persistence.as_mut() {
         pernixc_target::skip_persistence(persistence);
         pernixc_file_tree::skip_persistence(persistence);
-        // pernixc_symbol::skip_persistence(persistence);
+        pernixc_symbol::skip_persistence(persistence);
     }
 
     // final step, setup the query executors for the engine
     pernixc_target::register_executors(&mut engine.runtime.executor);
     pernixc_file_tree::register_executors(&mut engine.runtime.executor);
-    // pernixc_symbol::register_executors(&mut engine.runtime.executor);
+    pernixc_symbol::register_executors(&mut engine.runtime.executor);
 
     // set the initial input, the invocation arguments
     engine.input_session(|x| {
@@ -356,6 +356,16 @@ pub fn run(
     let source_map = SourceMap(&tracked_engine);
 
     for diag in module_tree_errors.0.as_ref() {
+        diagnostics.push(SortableDiagnostic(
+            pernix_diagnostic_to_codespan_diagnostic(diag),
+        ));
+    }
+
+    let symbol_errors = tracked_engine
+        .query(&pernixc_symbol::AllRenderedDiagnostic(TargetID::Local))
+        .unwrap();
+
+    for diag in symbol_errors.as_ref() {
         diagnostics.push(SortableDiagnostic(
             pernix_diagnostic_to_codespan_diagnostic(diag),
         ));

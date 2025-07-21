@@ -14,8 +14,12 @@ use pernixc_file_tree::calculate_path_id;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_query::{
+    runtime::persistence::serde::DynamicRegistry, TrackedEngine,
+};
+use pernixc_serialize::{
+    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+};
 use pernixc_source_file::SourceFile;
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::module::Member as ModuleMemberSyn;
@@ -41,6 +45,66 @@ pub mod member;
 pub mod name;
 pub mod parent;
 pub mod span;
+
+/// Registers all the required executors to run the queries.
+pub fn register_executors(
+    executor: &mut pernixc_query::runtime::executor::Registry,
+) {
+    executor.register(Arc::new(accessibility::Executor));
+
+    executor.register(Arc::new(kind::Executor));
+
+    executor.register(Arc::new(member::Executor));
+
+    executor.register(Arc::new(name::Executor));
+
+    executor.register(Arc::new(parent::IntermediateExecutor));
+    executor.register(Arc::new(parent::Executor));
+
+    executor.register(Arc::new(span::Executor));
+
+    executor.register(Arc::new(TableExecutor));
+    executor.register(Arc::new(DiagnosticExecutor));
+    executor.register(Arc::new(MapExecutor));
+    executor.register(Arc::new(AllRenderedDiagnosticExecutor));
+}
+
+/// Registers all the necessary runtime information for the query engine.
+pub fn register_serde<
+    S: Serializer<Registry>,
+    D: Deserializer<Registry>,
+    Registry: DynamicRegistry<S, D> + Send + Sync,
+>(
+    serde_registry: &mut Registry,
+) where
+    S::Error: Send + Sync,
+{
+    serde_registry.register::<accessibility::Key>();
+
+    serde_registry.register::<kind::Key>();
+
+    serde_registry.register::<member::Key>();
+
+    serde_registry.register::<name::Key>();
+
+    serde_registry.register::<parent::IntermediateKey>();
+    serde_registry.register::<parent::Key>();
+
+    serde_registry.register::<span::Key>();
+
+    serde_registry.register::<TableKey>();
+    serde_registry.register::<DiagnosticKey>();
+    serde_registry.register::<MapKey>();
+    serde_registry.register::<AllRenderedDiagnostic>();
+}
+
+/// Registers the keys that should be skipped during serialization and
+/// deserialization in the query engine's persistence layer
+pub fn skip_persistence(
+    _persistence: &mut pernixc_query::runtime::persistence::Persistence,
+) {
+    todo!()
+}
 
 /// Represents a unique identifier for the symbols in the compilation target.
 /// This ID is only unique within the context of a single target. If wants to
@@ -513,6 +577,13 @@ impl<'ctx> TableContext<'ctx> {
                     member_ids_by_name: member_builder.member_ids_by_name,
                     redefinitions: member_builder.redefinitions,
                 }),
+            );
+
+            self.storage.as_vec_mut().extend(
+                member_builder
+                    .redefinition_errors
+                    .into_iter()
+                    .map(Diagnostic::ItemRedefinition),
             );
         });
     }
