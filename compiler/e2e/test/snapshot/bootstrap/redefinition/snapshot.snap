@@ -48,6 +48,31 @@ error: symbol `Third` is already defined in the scope `main`
 28 │ public struct Third:
    │               ^^^^^ redefinition here
 
+error: symbol `SecondVariant` is already defined in the scope `main::Fourth`
+   ╭─ bootstrap/redefinition/main.pnx:35:5
+   │
+34 │     SecondVariant
+   │     ------------- symbol `SecondVariant` is already defined here
+35 │     SecondVariant
+   │     ^^^^^^^^^^^^^ redefinition here
+
+error: symbol `Fourth` is already defined in the scope `main`
+   ╭─ bootstrap/redefinition/main.pnx:37:13
+   │
+32 │ public enum Fourth:
+   │             ------ symbol `Fourth` is already defined here
+   ·
+37 │ public enum Fourth:
+   │             ^^^^^^ redefinition here
+
+error: symbol `FourthVariant` is already defined in the scope `main::Fourth`
+   ╭─ bootstrap/redefinition/main.pnx:40:5
+   │
+39 │     FourthVariant
+   │     ------------- symbol `FourthVariant` is already defined here
+40 │     FourthVariant
+   │     ^^^^^^^^^^^^^ redefinition here
+
 error: symbol `duplicateInner` is already defined in the scope `main::inner`
   ╭─ bootstrap/redefinition/inner.pnx:4:15
   │
@@ -57,7 +82,7 @@ error: symbol `duplicateInner` is already defined in the scope `main::inner`
 4 │ public module duplicateInner:
   │               ^^^^^^^^^^^^^^ redefinition here
 
-error: Compilation aborted due to 6 error(s)
+error: Compilation aborted due to 9 error(s)
 
 
 

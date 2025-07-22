@@ -29,5 +29,15 @@ public struct Third:
     public field1: int32
     public field2: int32
 
+public enum Fourth:
+    FirstVariant
+    SecondVariant
+    SecondVariant
+
+public enum Fourth:
+    ThirdVariant
+    FourthVariant
+    FourthVariant
+
 public function main():
     pass

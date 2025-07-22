@@ -322,6 +322,11 @@ pub struct Table {
         >,
     >,
 
+    /// Maps the variant ID to its associated type syntax, which is represented
+    /// by the `Variant(Type)` syntax.
+    pub variant_associated_type_syntaxes:
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -382,6 +387,8 @@ struct TableContext<'a> {
             pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
         >,
     >,
+    variant_associated_type_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
 
     is_root: bool,
 }
@@ -488,6 +495,7 @@ pub fn table_executor(
         constant_expression_syntaxes: DashMap::default(),
         function_signature_syntaxes: DashMap::default(),
         fields_syntaxes: DashMap::default(),
+        variant_associated_type_syntaxes: DashMap::default(),
 
         is_root,
     };
@@ -527,6 +535,9 @@ pub fn table_executor(
             context.function_signature_syntaxes.into_read_only(),
         ),
         fields_syntaxes: Arc::new(context.fields_syntaxes.into_read_only()),
+        variant_associated_type_syntaxes: Arc::new(
+            context.variant_associated_type_syntaxes.into_read_only(),
+        ),
 
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
@@ -593,6 +604,10 @@ struct Entry {
             pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
         >,
     >,
+
+    #[builder(default, setter(strip_option))]
+    pub variant_associated_type_syntax:
+        Option<Option<pernixc_syntax::r#type::Type>>,
 }
 
 impl<'ctx> TableContext<'ctx> {
@@ -678,6 +693,16 @@ impl<'ctx> TableContext<'ctx> {
 
         if let Some(fields_syntax) = entry.fields_syntax {
             Self::insert_to_table(&self.fields_syntaxes, id, fields_syntax);
+        }
+
+        if let Some(variant_associated_type_syntax) =
+            entry.variant_associated_type_syntax
+        {
+            Self::insert_to_table(
+                &self.variant_associated_type_syntaxes,
+                id,
+                variant_associated_type_syntax,
+            );
         }
     }
 
@@ -1070,6 +1095,98 @@ impl<'ctx> TableContext<'ctx> {
         });
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn handle_enum_member<'scope>(
+        &'ctx self,
+        enum_syntax: &pernixc_syntax::item::r#enum::Enum,
+        module_member_builder: &mut MemberBuilder,
+        scope: &rayon::Scope<'scope>,
+    ) where
+        'ctx: 'scope,
+    {
+        let Some(signature) = enum_syntax.signature() else {
+            return;
+        };
+
+        let Some(identifier) = signature.identifier() else {
+            return;
+        };
+
+        let next_submodule_qualified_name = module_member_builder
+            .symbol_qualified_name
+            .iter()
+            .cloned()
+            .chain(std::iter::once(identifier.kind.0.clone()))
+            .collect::<Arc<[_]>>();
+
+        let enum_id =
+            module_member_builder.add_member(identifier.clone(), self.engine);
+
+        let enum_body = enum_syntax.body();
+        let members =
+            enum_body.as_ref().and_then(pernixc_syntax::item::Body::members);
+
+        let access_modifier = enum_syntax.access_modifier();
+        let generic_parameters = signature.generic_parameters();
+        let where_clause = enum_body
+            .and_then(|x| x.where_clause())
+            .and_then(|x| x.predicates());
+
+        let parent_module_id = module_member_builder.symbol_id;
+
+        scope.spawn(move |_| {
+            let mut enum_member_builder = MemberBuilder::new(
+                enum_id,
+                next_submodule_qualified_name,
+                self.target_id,
+            );
+
+            // add each of the member to the trait member
+            for variant in members
+                .as_ref()
+                .iter()
+                .flat_map(|x| x.members())
+                .filter_map(|x| x.into_line().ok())
+            {
+                let Some(identifier) = variant.identifier() else {
+                    continue;
+                };
+
+                let variant_id = enum_member_builder
+                    .add_member(identifier.clone(), self.engine);
+
+                let entry = Entry::builder()
+                    .kind(Kind::Variant)
+                    .identifier(identifier)
+                    .variant_associated_type_syntax(
+                        variant.association().and_then(|x| x.r#type()),
+                    )
+                    .build();
+
+                self.add_symbol_entry(variant_id, enum_id, entry);
+            }
+
+            self.add_symbol_entry(
+                enum_id,
+                parent_module_id,
+                Entry::builder()
+                    .kind(Kind::Trait)
+                    .identifier(identifier)
+                    .accessibility(access_modifier)
+                    .generic_parameters_syntax(generic_parameters)
+                    .where_clause_syntax(where_clause)
+                    .build(),
+            );
+
+            self.storage.as_vec_mut().extend(
+                enum_member_builder
+                    .redefinition_errors
+                    .into_iter()
+                    .map(Diagnostic::ItemRedefinition),
+            );
+        });
+    }
+
     #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
     fn handle_module_content<'scope>(
         &'ctx self,
@@ -1226,8 +1343,17 @@ impl<'ctx> TableContext<'ctx> {
                         .build()
                 }
 
+                ModuleMemberSyn::Enum(enum_syntax) => {
+                    // custom handling for the enum member
+                    self.handle_enum_member(
+                        &enum_syntax,
+                        module_member_builder,
+                        scope,
+                    );
+                    continue;
+                }
+
                 ModuleMemberSyn::Import(_)
-                | ModuleMemberSyn::Enum(_)
                 | ModuleMemberSyn::Implements(_)
                 | ModuleMemberSyn::Extern(_)
                 | ModuleMemberSyn::Marker(_) => continue,
