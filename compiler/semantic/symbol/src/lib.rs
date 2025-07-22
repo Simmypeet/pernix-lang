@@ -1,8 +1,11 @@
 //! Contains the logic for building the symbol table from the syntax tree.
 
 use std::{
+    any::Any,
     collections::hash_map,
     hash::{Hash, Hasher},
+    mem,
+    os::unix::process::parent_id,
     path::Path,
     sync::Arc,
 };
@@ -423,7 +426,47 @@ pub fn diagnostic_executor(
     Ok(table.diagnostics.clone())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, typed_builder::TypedBuilder)]
+#[allow(clippy::option_option)]
+struct Entry {
+    pub identifier: pernixc_syntax::Identifier,
+    pub kind: kind::Kind,
+
+    #[builder(default, setter(strip_option))]
+    pub member: Option<Arc<member::Member>>,
+
+    #[builder(default, setter(strip_option))]
+    pub accessibility: Option<Option<pernixc_syntax::AccessModifier>>,
+}
+
 impl<'ctx> TableContext<'ctx> {
+    fn add_symbol_entry(&self, id: ID, parent_id: ID, entry: Entry) {
+        Self::insert_to_table(&self.names, id, entry.identifier.kind.0);
+        Self::insert_to_table(&self.spans, id, Some(entry.identifier.span));
+        Self::insert_to_table(&self.kinds, id, entry.kind);
+
+        if let Some(accessibility) = entry.accessibility {
+            let accessibility = match accessibility {
+                Some(pernixc_syntax::AccessModifier::Private(_)) => {
+                    Accessibility::Scoped(parent_id)
+                }
+                Some(pernixc_syntax::AccessModifier::Internal(_)) => {
+                    Accessibility::Scoped(
+                        self.engine.get_target_root_module_id(self.target_id),
+                    )
+                }
+                Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
+                    Accessibility::Public
+                }
+            };
+            Self::insert_to_table(&self.accessibilities, id, accessibility);
+        }
+
+        if let Some(member) = entry.member {
+            Self::insert_to_table(&self.members, id, member);
+        }
+    }
+
     fn insert_to_table<V>(map: &DashMap<ID, V>, id: ID, value: V) {
         assert!(
             map.insert(id, value).is_none(),
@@ -650,11 +693,60 @@ impl<'ctx> TableContext<'ctx> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
+    fn handle_trait_member<'scope>(
+        &'ctx self,
+        trait_syntax: &pernixc_syntax::item::r#trait::Trait,
+        module_member_builder: &mut MemberBuilder,
+        scope: &rayon::Scope<'scope>,
+    ) where
+        'ctx: 'scope,
+    {
+        let Some(signature) = trait_syntax.signature() else {
+            return;
+        };
+
+        let Some(identifier) = signature.identifier() else {
+            return;
+        };
+
+        let next_submodule_qualified_name = module_member_builder
+            .symbol_qualified_name
+            .iter()
+            .cloned()
+            .chain(std::iter::once(identifier.kind.0.clone()))
+            .collect::<Arc<[_]>>();
+
+        let trait_id =
+            module_member_builder.add_member(identifier.clone(), self.engine);
+
+        let access_modifier = trait_syntax.access_modifier();
+        let parent_module_id = module_member_builder.symbol_id;
+
+        scope.spawn(move |_| {
+            let mut trait_member_builder = MemberBuilder::new(
+                trait_id,
+                next_submodule_qualified_name,
+                self.target_id,
+            );
+
+            self.add_symbol_entry(
+                trait_id,
+                parent_module_id,
+                Entry::builder()
+                    .kind(Kind::Trait)
+                    .identifier(identifier)
+                    .accessibility(access_modifier)
+                    .build(),
+            );
+        });
+    }
+
     #[allow(clippy::needless_pass_by_value)]
     fn handle_module_content<'scope>(
         &'ctx self,
         module_content: pernixc_syntax::item::module::Content,
-        member_builder: &mut MemberBuilder,
+        module_member_builder: &mut MemberBuilder,
         scope: &rayon::Scope<'scope>,
     ) where
         'ctx: 'scope,
@@ -663,10 +755,22 @@ impl<'ctx> TableContext<'ctx> {
         {
             match item {
                 ModuleMemberSyn::Module(module) => {
-                    self.handle_module_member(&module, member_builder, scope);
+                    self.handle_module_member(
+                        &module,
+                        module_member_builder,
+                        scope,
+                    );
                 }
+
+                ModuleMemberSyn::Trait(trait_syntax) => {
+                    self.handle_trait_member(
+                        &trait_syntax,
+                        module_member_builder,
+                        scope,
+                    );
+                }
+
                 ModuleMemberSyn::Import(_)
-                | ModuleMemberSyn::Trait(_)
                 | ModuleMemberSyn::Function(_)
                 | ModuleMemberSyn::Type(_)
                 | ModuleMemberSyn::Struct(_)
