@@ -73,6 +73,15 @@ error: symbol `FourthVariant` is already defined in the scope `main::Fourth`
 40 │     FourthVariant
    │     ^^^^^^^^^^^^^ redefinition here
 
+error: symbol `Fifth` is already defined in the scope `main`
+   ╭─ bootstrap/redefinition/main.pnx:44:15
+   │
+42 │ public marker Fifth
+   │               ----- symbol `Fifth` is already defined here
+43 │ 
+44 │ public marker Fifth
+   │               ^^^^^ redefinition here
+
 error: symbol `duplicateInner` is already defined in the scope `main::inner`
   ╭─ bootstrap/redefinition/inner.pnx:4:15
   │
@@ -82,7 +91,7 @@ error: symbol `duplicateInner` is already defined in the scope `main::inner`
 4 │ public module duplicateInner:
   │               ^^^^^^^^^^^^^^ redefinition here
 
-error: Compilation aborted due to 9 error(s)
+error: Compilation aborted due to 10 error(s)
 
 
 

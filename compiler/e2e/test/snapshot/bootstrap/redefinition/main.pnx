@@ -39,5 +39,9 @@ public enum Fourth:
     FourthVariant
     FourthVariant
 
+public marker Fifth
+
+public marker Fifth
+
 public function main():
     pass

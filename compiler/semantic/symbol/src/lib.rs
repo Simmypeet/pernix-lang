@@ -1353,10 +1353,34 @@ impl<'ctx> TableContext<'ctx> {
                     continue;
                 }
 
+                ModuleMemberSyn::Marker(marker_syntax) => {
+                    let Some(identifier) =
+                        marker_syntax.signature().and_then(|x| x.identifier())
+                    else {
+                        continue;
+                    };
+
+                    Entry::builder()
+                        .kind(Kind::Marker)
+                        .identifier(identifier.clone())
+                        .accessibility(marker_syntax.access_modifier())
+                        .generic_parameters_syntax(
+                            marker_syntax
+                                .signature()
+                                .and_then(|x| x.generic_parameters()),
+                        )
+                        .where_clause_syntax(
+                            marker_syntax
+                                .trailing_where_clause()
+                                .and_then(|x| x.where_clause())
+                                .and_then(|x| x.predicates()),
+                        )
+                        .build()
+                }
+
                 ModuleMemberSyn::Import(_)
                 | ModuleMemberSyn::Implements(_)
-                | ModuleMemberSyn::Extern(_)
-                | ModuleMemberSyn::Marker(_) => continue,
+                | ModuleMemberSyn::Extern(_) => continue,
             };
 
             let member_id = module_member_builder
