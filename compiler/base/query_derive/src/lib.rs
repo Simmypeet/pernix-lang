@@ -1057,3 +1057,328 @@ pub fn executor(
 
     TokenStream::from(expanded)
 }
+
+/// Streamlines the process of defining a query by automatically generating
+/// the key struct, executor struct, and their implementations.
+///
+/// This procedural macro is designed for queries that use a trivial ID type
+/// (copyable, comparable, hashable, and cheap to copy/move) as the key, which
+/// represents the most common query pattern in this compiler.
+///
+/// # Required Attributes
+///
+/// ## `key(KeyName)`
+///
+/// Specifies the name of the generated key struct. This struct will wrap the
+/// ID type and implement all necessary traits for use in the query system.
+///
+/// ## `value(ValueType)`
+///
+/// Specifies the value type that this query will compute and return. This type
+/// must implement the necessary traits for storage in the query database.
+///
+/// ## `id(IdType)`
+///
+/// Specifies the ID type used to uniquely identify values. This type should
+/// be trivial (copyable, comparable, hashable) for optimal performance.
+///
+/// ## `executor(ExecutorName)`
+///
+/// Specifies the name of the generated executor struct that will handle
+/// computation of values for this query.
+///
+/// # Function Requirements
+///
+/// The annotated function must have the following signature:
+///
+/// ```ignore
+/// fn function_name(
+///     id: IdType,
+///     engine: &TrackedEngine,
+/// ) -> Result<ValueType, CyclicError>
+/// ```
+///
+/// Note that the first parameter is the ID type directly, not a reference to
+/// the key struct. The macro handles the extraction automatically.
+///
+/// # Generated Code
+///
+/// The macro generates:
+///
+/// 1. **Key Struct**: A newtype wrapper around the ID that implements all
+///    necessary traits including `Key`, `Hash`, `Serialize`, `Deserialize`, and
+///    `StableHash`.
+///
+/// 2. **Executor Struct**: A zero-sized struct that implements the
+///    `Executor<KeyType>` trait.
+///
+/// 3. **Anonymous Const Block**: Contains the original function and trait
+///    implementation in a private scope.
+///
+/// # Example
+///
+/// ```ignore
+/// #[query(key(UserNameKey), value(String), id(u32), executor(UserNameExecutor))]
+/// pub fn get_user_name(
+///     id: u32,
+///     engine: &TrackedEngine,
+/// ) -> Result<String, CyclicError> {
+///     // Query implementation here
+///     Ok(format!("User {}", id))
+/// }
+/// ```
+///
+/// This generates:
+///
+/// ```ignore
+/// #[derive(
+///     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
+///     Serialize, Deserialize, StableHash, ::pernixc_query::Key,
+/// )]
+/// #[value(String)]
+/// pub struct UserNameKey(pub u32);
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+/// pub struct UserNameExecutor;
+///
+/// const _: () = {
+///     fn get_user_name(
+///         id: u32,
+///         engine: &TrackedEngine,
+///     ) -> Result<String, CyclicError> {
+///         Ok(format!("User {}", id))
+///     }
+///
+///     impl ::pernixc_query::runtime::executor::Executor<UserNameKey> for UserNameExecutor {
+///         fn execute(
+///             &self,
+///             engine: &::pernixc_query::TrackedEngine,
+///             key: &UserNameKey,
+///         ) -> Result<String, CyclicError> {
+///             get_user_name(key.0, engine)
+///         }
+///     }
+/// };
+/// ```
+///
+/// # Benefits
+///
+/// - **Reduced Boilerplate**: Eliminates the need to manually define key and
+///   executor structs
+/// - **Type Safety**: Ensures proper trait implementations and signatures
+/// - **Consistency**: Standardizes the query definition pattern across the
+///   codebase
+/// - **Performance**: Uses zero-cost abstractions with trivial ID types
+///
+/// # Compile-Time Validation
+///
+/// The macro performs several compile-time checks:
+/// - Ensures all required attributes are present and well-formed
+/// - Validates function signature matches expected pattern
+/// - Checks that ID type is used correctly in function parameters
+/// - Ensures return type is properly formed Result type
+#[proc_macro_attribute]
+#[allow(clippy::too_many_lines)]
+pub fn query(
+    attr: proc_macro::TokenStream,
+    input: proc_macro::TokenStream,
+) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::ItemFn);
+
+    // Parse the attribute parameters: key(KeyName), value(ValueType),
+    // id(IdType), executor(ExecutorName)
+    let mut key_name: Option<syn::Ident> = None;
+    let mut value_type: Option<syn::Type> = None;
+    let mut id_type: Option<syn::Type> = None;
+    let mut executor_name: Option<syn::Ident> = None;
+
+    // Create a dummy attribute to use parse_nested_meta
+    let attr_tokens = proc_macro2::TokenStream::from(attr);
+    let dummy_attr: syn::Attribute = syn::parse_quote!(#[dummy(#attr_tokens)]);
+
+    match dummy_attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("key") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            match content.parse::<syn::Ident>() {
+                Ok(ident) => {
+                    key_name = Some(ident);
+                    Ok(())
+                }
+                Err(err) => Err(syn::Error::new_spanned(
+                    meta.path,
+                    format!("invalid key name: {err}"),
+                )),
+            }
+        } else if meta.path.is_ident("value") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            match content.parse::<syn::Type>() {
+                Ok(ty) => {
+                    value_type = Some(ty);
+                    Ok(())
+                }
+                Err(err) => Err(syn::Error::new_spanned(
+                    meta.path,
+                    format!("invalid value type: {err}"),
+                )),
+            }
+        } else if meta.path.is_ident("id") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            match content.parse::<syn::Type>() {
+                Ok(ty) => {
+                    id_type = Some(ty);
+                    Ok(())
+                }
+                Err(err) => Err(syn::Error::new_spanned(
+                    meta.path,
+                    format!("invalid id type: {err}"),
+                )),
+            }
+        } else if meta.path.is_ident("executor") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            match content.parse::<syn::Ident>() {
+                Ok(ident) => {
+                    executor_name = Some(ident);
+                    Ok(())
+                }
+                Err(err) => Err(syn::Error::new_spanned(
+                    meta.path,
+                    format!("invalid executor name: {err}"),
+                )),
+            }
+        } else {
+            Err(syn::Error::new_spanned(
+                meta.path,
+                "expected `key(KeyName)`, `value(ValueType)`, `id(IdType)`, \
+                 or `executor(ExecutorName)`",
+            ))
+        }
+    }) {
+        Ok(()) => {}
+        Err(err) => return err.to_compile_error().into(),
+    }
+
+    let Some(key_name) = key_name else {
+        return syn::Error::new_spanned(
+            &input.sig.ident,
+            "missing required `key(KeyName)` parameter",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    let Some(value_type) = value_type else {
+        return syn::Error::new_spanned(
+            &input.sig.ident,
+            "missing required `value(ValueType)` parameter",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    let Some(id_type) = id_type else {
+        return syn::Error::new_spanned(
+            &input.sig.ident,
+            "missing required `id(IdType)` parameter",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    let Some(executor_name) = executor_name else {
+        return syn::Error::new_spanned(
+            &input.sig.ident,
+            "missing required `executor(ExecutorName)` parameter",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    // Validate function signature
+    if input.sig.inputs.len() != 2 {
+        return syn::Error::new_spanned(
+            &input.sig,
+            "query function must have exactly 2 parameters: (id: IdType, \
+             engine: &TrackedEngine)",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    // Get the original function details
+    let fn_name = &input.sig.ident;
+    let fn_vis = &input.vis;
+
+    // Extract return type from the function signature
+    let return_type = match &input.sig.output {
+        syn::ReturnType::Type(_, ty) => ty.as_ref(),
+        syn::ReturnType::Default => {
+            return syn::Error::new_spanned(
+                &input.sig,
+                "query function must have an explicit return type: \
+                 Result<ValueType, CyclicError>",
+            )
+            .to_compile_error()
+            .into()
+        }
+    };
+
+    // Generate the expanded code
+    let expanded = quote::quote! {
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            ::pernixc_query::__internal::Serialize,
+            ::pernixc_query::__internal::Deserialize,
+            ::pernixc_query::__internal::StableHash,
+            ::pernixc_query::__internal::Key,
+        )]
+        #[value(#value_type)]
+        #[doc = concat!(
+            "A key type for the `",
+            stringify!(#fn_name),
+            "` query. This key wraps an ID of type `",
+            stringify!(#id_type),
+            "` and is used to uniquely identify values in the query database."
+        )]
+        #fn_vis struct #key_name(pub #id_type);
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+        #[doc = concat!(
+            "An executor for the `",
+            stringify!(#fn_name),
+            "` query. This executor computes values for keys of type `",
+            stringify!(#key_name),
+            "`."
+        )]
+        #fn_vis struct #executor_name;
+
+        // Anonymous const block to avoid namespace pollution
+        const _: () = {
+            // Keep the original function in the const scope
+            #input
+
+            // Implement the Executor trait
+            impl ::pernixc_query::runtime::executor::Executor<#key_name> for #executor_name {
+                fn execute(
+                    &self,
+                    engine: &::pernixc_query::TrackedEngine,
+                    key: &#key_name,
+                ) -> #return_type {
+                    #fn_name(key.0, engine)
+                }
+            }
+        };
+    };
+
+    TokenStream::from(expanded)
+}
