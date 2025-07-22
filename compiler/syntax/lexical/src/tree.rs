@@ -11,7 +11,6 @@ use fnv::FnvHasher;
 use getset::CopyGetters;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
-use pernixc_hash::DashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{
     AbsoluteSpan, ByteIndex, GlobalSourceID, Location, SourceFile, Span,
@@ -293,6 +292,13 @@ pub struct Branch {
 
     /// The collection of nodes that are children of this branch.
     pub nodes: Vec<Node>,
+
+    /// The absolute start byte index of this branch in the source code.
+    pub absolute_start_byte_index: ByteIndex,
+
+    /// The absolute end byte index (exclusive) of this branch in the source
+    /// code.
+    pub absolute_end_byte_index: ByteIndex,
 }
 
 impl Branch {
@@ -322,9 +328,6 @@ pub struct Tree {
     /// The source ID of the source code that this tree is built from.
     #[get_copy = "pub"]
     source_id: GlobalSourceID,
-
-    #[serde(skip)]
-    end_location_cache: DashMap<ID<Branch>, ByteIndex>,
 }
 
 impl StableHash for Tree {
@@ -361,11 +364,7 @@ impl Tree {
             delimiter_stack: Vec::new(),
             indentation_stack: Vec::new(),
             current_nodes: Vec::new(),
-            tree: Self {
-                source_id,
-                arena: Arena::new(),
-                end_location_cache: DashMap::default(),
-            },
+            tree: Self { source_id, arena: Arena::new() },
         };
 
         while converter.forward() {}
@@ -386,12 +385,28 @@ impl Tree {
             None,
         );
 
+        // Compute the absolute end position for the root branch based on the
+        // last token
+        let root_end_position =
+            if let Some(last_node) = converter.current_nodes.last() {
+                match last_node {
+                    Node::Leaf(leaf) => leaf.span.end.offset,
+                    Node::Branch(branch_id) => {
+                        converter.tree.arena[*branch_id].absolute_end_byte_index
+                    }
+                }
+            } else {
+                0
+            };
+
         converter
             .tree
             .arena
             .insert_with_id(ROOT_BRANCH_ID, Branch {
                 kind: BranchKind::Root,
                 nodes: converter.current_nodes,
+                absolute_start_byte_index: 0,
+                absolute_end_byte_index: root_end_position.max(source.len()),
             })
             .unwrap();
 
@@ -437,128 +452,17 @@ impl Tree {
     }
 }
 
-fn absolute_end_byte_of(
-    branches: &Arena<Branch>,
-    mut id: ID<Branch>,
-    end_cache: Option<&DashMap<ID<Branch>, ByteIndex>>,
-) -> ByteIndex {
-    loop {
-        if let Some(end_cache) = end_cache {
-            if let Some(end) = end_cache.get(&id) {
-                return *end;
-            }
-        }
-
-        let branch = &branches[id];
-        let result = match &branch.kind {
-            BranchKind::Fragment(fragment_branch) => {
-                match &fragment_branch.fragment_kind {
-                    FragmentKind::Delimiter(delimiter) => absolute_location_of(
-                        branches,
-                        &delimiter.close.span.end,
-                        end_cache,
-                    ),
-
-                    FragmentKind::Indentation(indentation) => {
-                        if let Some(x) = branch.nodes.last() {
-                            match x {
-                                Node::Leaf(leaf) => absolute_location_of(
-                                    branches,
-                                    &leaf.span.end,
-                                    end_cache,
-                                ),
-                                Node::Branch(new_id) => {
-                                    id = *new_id;
-                                    continue;
-                                }
-                            }
-                        } else {
-                            absolute_location_of(
-                                branches,
-                                &indentation.new_line.span.end,
-                                end_cache,
-                            )
-                        }
-                    }
-                }
-            }
-
-            BranchKind::Root => match branch.nodes.last() {
-                Some(node) => match node {
-                    Node::Leaf(leaf) => absolute_location_of(
-                        branches,
-                        &leaf.span.end,
-                        end_cache,
-                    ),
-
-                    Node::Branch(new_id) => {
-                        id = *new_id;
-                        continue;
-                    }
-                },
-                None => 0,
-            },
-        };
-
-        if let Some(end_cache) = end_cache {
-            end_cache.insert(id, result);
-        }
-
-        return result;
-    }
-}
-
-fn absolute_start_byte_of(
-    branches: &Arena<Branch>,
-    id: ID<Branch>,
-    end_cache: Option<&DashMap<ID<Branch>, ByteIndex>>,
-) -> ByteIndex {
-    match &branches[id].kind {
-        BranchKind::Fragment(fragment) => absolute_location_of(
-            branches,
-            &fragment.starting_location,
-            end_cache,
-        ),
-        BranchKind::Root => 0,
-    }
-}
-
-fn absolute_location_of(
-    branches: &Arena<Branch>,
-    relative_location: &RelativeLocation,
-    end_cache: Option<&DashMap<ID<Branch>, ByteIndex>>,
-) -> ByteIndex {
-    let offset = match relative_location.mode {
-        OffsetMode::Start => absolute_start_byte_of(
-            branches,
-            relative_location.relative_to,
-            end_cache,
-        ),
-        OffsetMode::End => absolute_end_byte_of(
-            branches,
-            relative_location.relative_to,
-            end_cache,
-        ),
-    };
-
-    relative_location.offset + offset
-}
-
 impl Tree {
     /// Gets the absolute start byte of the given branch ID.
     #[must_use]
     pub fn absolute_start_byte_of(&self, id: ID<Branch>) -> ByteIndex {
-        if id == ROOT_BRANCH_ID {
-            return 0;
-        }
-
-        absolute_start_byte_of(&self.arena, id, Some(&self.end_location_cache))
+        self.arena[id].absolute_start_byte_index
     }
 
     /// Gets the absolute end byte of the given branch ID.
     #[must_use]
     pub fn absoluate_end_byte_of(&self, id: ID<Branch>) -> ByteIndex {
-        absolute_end_byte_of(&self.arena, id, Some(&self.end_location_cache))
+        self.arena[id].absolute_end_byte_index
     }
 
     /// Calculates the absolute span of the given relative span.
@@ -579,16 +483,13 @@ impl Tree {
         &self,
         relative_location: &RelativeLocation,
     ) -> ByteIndex {
-        let offset = match relative_location.mode {
-            OffsetMode::Start => {
-                self.absolute_start_byte_of(relative_location.relative_to)
-            }
-            OffsetMode::End => {
-                self.absoluate_end_byte_of(relative_location.relative_to)
-            }
+        let branch = &self.arena[relative_location.relative_to];
+        let base_offset = match relative_location.mode {
+            OffsetMode::Start => branch.absolute_start_byte_index,
+            OffsetMode::End => branch.absolute_end_byte_index,
         };
 
-        relative_location.offset + offset
+        relative_location.offset + base_offset
     }
 }
 
@@ -1047,6 +948,11 @@ impl Converter<'_, '_> {
                 Some(&mut fragment_kind),
             );
 
+            // Compute absolute positions for this branch
+            let absolute_start = opening_delimiter.start_location().offset;
+            // For delimiter branches, the end is at the closing delimiter's end
+            let absolute_end = closing_delimiter.span.end.offset;
+
             self.tree
                 .arena
                 .insert_with_id(branch_id, Branch {
@@ -1060,6 +966,8 @@ impl Converter<'_, '_> {
                         parent: ROOT_BRANCH_ID,
                     }),
                     nodes,
+                    absolute_start_byte_index: absolute_start,
+                    absolute_end_byte_index: absolute_end,
                 })
                 .unwrap();
 
@@ -1103,6 +1011,16 @@ impl Converter<'_, '_> {
             .unwrap()
             + 1;
 
+        let end_byte_index =
+            self.current_nodes.get(end_index).map_or(self.source.len(), |x| {
+                match x {
+                    Node::Leaf(token) => token.start_location().offset,
+                    Node::Branch(id) => {
+                        self.tree.arena[*id].absolute_start_byte_index
+                    }
+                }
+            });
+
         for _ in 0..pop_count {
             let marker = self.indentation_stack.pop().unwrap();
 
@@ -1145,6 +1063,8 @@ impl Converter<'_, '_> {
                 Some(&mut fragment_kind),
             );
 
+            // Compute absolute positions for indentation branch
+            let absolute_start = colon.start_location().offset;
             let branch = Branch {
                 kind: BranchKind::Fragment(FragmentBranch {
                     fragment_kind,
@@ -1156,6 +1076,8 @@ impl Converter<'_, '_> {
                     parent: ROOT_BRANCH_ID,
                 }),
                 nodes,
+                absolute_start_byte_index: absolute_start,
+                absolute_end_byte_index: end_byte_index,
             };
 
             // insert the branch
@@ -1194,6 +1116,10 @@ impl Converter<'_, '_> {
         let colon = colon.into_leaf().unwrap();
         let new_line = new_line.into_leaf().unwrap();
 
+        // Compute absolute positions before moving the values
+        let absolute_start = colon.start_location().offset;
+        let absolute_end = absolute_start; // For empty invalid indentation, end is where it starts
+
         let branch_kind = BranchKind::Fragment(FragmentBranch {
             starting_location: RelativeLocation {
                 offset: colon.start_location().offset,
@@ -1215,7 +1141,13 @@ impl Converter<'_, '_> {
             }),
             parent: ROOT_BRANCH_ID,
         });
-        let branch = Branch { kind: branch_kind, nodes: Vec::new() };
+
+        let branch = Branch {
+            kind: branch_kind,
+            nodes: Vec::new(),
+            absolute_start_byte_index: absolute_start,
+            absolute_end_byte_index: absolute_end,
+        };
 
         let branch_id = calculate_branch_hash(
             std::iter::empty(),
