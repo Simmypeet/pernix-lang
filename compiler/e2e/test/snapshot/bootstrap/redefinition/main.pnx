@@ -6,3 +6,18 @@ public module first:
 public module first:
     pass
 
+public trait Second:
+    pass
+
+public trait Second:
+    pass
+
+public trait Inner:
+
+    public type First
+
+    public type First
+    
+    public const Second: usize
+    
+    public function Second() 

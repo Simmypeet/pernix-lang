@@ -12,6 +12,33 @@ error: symbol `first` is already defined in the scope `main`
 6 │ public module first:
   │               ^^^^^ redefinition here
 
+error: symbol `Second` is already defined in the scope `main`
+   ╭─ bootstrap/redefinition/main.pnx:12:14
+   │
+ 9 │ public trait Second:
+   │              ------ symbol `Second` is already defined here
+   ·
+12 │ public trait Second:
+   │              ^^^^^^ redefinition here
+
+error: symbol `First` is already defined in the scope `main::Inner`
+   ╭─ bootstrap/redefinition/main.pnx:19:17
+   │
+17 │     public type First
+   │                 ----- symbol `First` is already defined here
+18 │ 
+19 │     public type First
+   │                 ^^^^^ redefinition here
+
+error: symbol `Second` is already defined in the scope `main::Inner`
+   ╭─ bootstrap/redefinition/main.pnx:23:21
+   │
+21 │     public const Second: usize
+   │                  ------ symbol `Second` is already defined here
+22 │     
+23 │     public function Second() 
+   │                     ^^^^^^ redefinition here
+
 error: symbol `duplicateInner` is already defined in the scope `main::inner`
   ╭─ bootstrap/redefinition/inner.pnx:4:15
   │
@@ -21,7 +48,7 @@ error: symbol `duplicateInner` is already defined in the scope `main::inner`
 4 │ public module duplicateInner:
   │               ^^^^^^^^^^^^^^ redefinition here
 
-error: Compilation aborted due to 2 error(s)
+error: Compilation aborted due to 5 error(s)
 
 
 

@@ -1,11 +1,8 @@
 //! Contains the logic for building the symbol table from the syntax tree.
 
 use std::{
-    any::Any,
     collections::hash_map,
     hash::{Hash, Hasher},
-    mem,
-    os::unix::process::parent_id,
     path::Path,
     sync::Arc,
 };
@@ -23,7 +20,9 @@ use pernixc_serialize::{
 };
 use pernixc_source_file::{calculate_path_id, SourceFile};
 use pernixc_stable_hash::StableHash;
-use pernixc_syntax::item::module::Member as ModuleMemberSyn;
+use pernixc_syntax::item::{
+    module::Member as ModuleMemberSyn, r#trait::Member as TraitMemberSyn,
+};
 use pernixc_target::{
     get_invocation_arguments, get_target_seed, Global, TargetID,
 };
@@ -228,6 +227,7 @@ pub struct DiagnosticKey(pub Key);
 
 /// A symbol table from parsing a single file.
 #[derive(Debug, Clone, Serialize, Deserialize, StableHash)]
+#[allow(clippy::type_complexity)]
 pub struct Table {
     /// Maps the ID of the symbol to its kind.
     ///
@@ -252,6 +252,63 @@ pub struct Table {
 
     /// Maps the ID of the symbol to its accessibility.
     pub accessibilities: Arc<ReadOnlyView<ID, Accessibility<ID>>>,
+
+    /// Maps the ID of the symbol to its generic parameters declaration syntax.
+    ///
+    /// This represents the generic parameters `['a, T, const N: usize]`
+    /// declaration of the symbol.
+    pub generic_parameter_syntaxes: Arc<
+        ReadOnlyView<
+            ID,
+            Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
+        >,
+    >,
+
+    /// Maps the ID of the symbol to its where clause declaration syntax.
+    ///
+    /// This represents the `where` clause of the symbol, such as
+    /// `where: T: Trait, U: AnotherTrait`.
+    pub where_clause_syntaxes: Arc<
+        ReadOnlyView<
+            ID,
+            Option<pernixc_syntax::item::where_clause::Predicates>,
+        >,
+    >,
+
+    /// Maps the ID of the symbol to its type alias declaration syntax.
+    ///
+    /// This represents the `= Type` part that presents only in type alias
+    /// declarations.
+    pub type_alias_syntaxes:
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+
+    /// Maps the ID of the symbol to its constant type annotation syntax.
+    ///
+    /// This represents the `const T: Type` part that presents only in
+    /// constant declarations.
+    pub constant_type_annotation_syntaxes:
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+
+    /// Maps the ID of the symbol to its constant expression syntax.
+    ///
+    /// This represents the `= Expression` part that presents only in
+    /// constant declarations.
+    pub constant_expression_syntaxes:
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+
+    /// Maps the ID of the symbol to its function signature syntax.
+    ///
+    /// This represents the `fn function_name(...) -> T` part that presents
+    /// only in function declarations.
+    pub function_signature_syntaxes: Arc<
+        ReadOnlyView<
+            ID,
+            (
+                Option<pernixc_syntax::item::function::Parameters>,
+                Option<pernixc_syntax::item::function::ReturnType>,
+            ),
+        >,
+    >,
 
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
@@ -289,10 +346,30 @@ struct TableContext<'a> {
 
     external_submodules: DashMap<ID, Arc<ExternalSubmodule>>,
 
+    generic_parameter_syntaxes: DashMap<
+        ID,
+        Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
+    >,
+    where_clause_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::item::where_clause::Predicates>>,
+    type_alias_syntaxes: DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+    constant_type_annotation_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+    constant_expression_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+    function_signature_syntaxes: DashMap<
+        ID,
+        (
+            Option<pernixc_syntax::item::function::Parameters>,
+            Option<pernixc_syntax::item::function::ReturnType>,
+        ),
+    >,
+
     is_root: bool,
 }
 
 #[pernixc_query::executor(key(TableKey), name(TableExecutor))]
+#[allow(clippy::too_many_lines)]
 pub fn table_executor(
     TableKey(key): &TableKey,
     engine: &TrackedEngine,
@@ -386,6 +463,13 @@ pub fn table_executor(
 
         external_submodules: DashMap::default(),
 
+        generic_parameter_syntaxes: DashMap::default(),
+        where_clause_syntaxes: DashMap::default(),
+        type_alias_syntaxes: DashMap::default(),
+        constant_type_annotation_syntaxes: DashMap::default(),
+        constant_expression_syntaxes: DashMap::default(),
+        function_signature_syntaxes: DashMap::default(),
+
         is_root,
     };
 
@@ -404,10 +488,29 @@ pub fn table_executor(
         members: Arc::new(context.members.into_read_only()),
         accessibilities: Arc::new(context.accessibilities.into_read_only()),
 
+        // syntax extractions
+        generic_parameter_syntaxes: Arc::new(
+            context.generic_parameter_syntaxes.into_read_only(),
+        ),
+        where_clause_syntaxes: Arc::new(
+            context.where_clause_syntaxes.into_read_only(),
+        ),
+        type_alias_syntaxes: Arc::new(
+            context.type_alias_syntaxes.into_read_only(),
+        ),
+        constant_type_annotation_syntaxes: Arc::new(
+            context.constant_type_annotation_syntaxes.into_read_only(),
+        ),
+        constant_expression_syntaxes: Arc::new(
+            context.constant_expression_syntaxes.into_read_only(),
+        ),
+        function_signature_syntaxes: Arc::new(
+            context.function_signature_syntaxes.into_read_only(),
+        ),
+
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
         ),
-
         diagnostics: Arc::new(storage.into_vec().into_iter().collect()),
     }))
 }
@@ -437,6 +540,32 @@ struct Entry {
 
     #[builder(default, setter(strip_option))]
     pub accessibility: Option<Option<pernixc_syntax::AccessModifier>>,
+
+    #[builder(default, setter(strip_option))]
+    pub generic_parameters_syntax: Option<
+        Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
+    >,
+
+    #[builder(default, setter(strip_option))]
+    pub where_clause_syntax:
+        Option<Option<pernixc_syntax::item::where_clause::Predicates>>,
+
+    #[builder(default, setter(strip_option))]
+    pub type_alias_syntax: Option<Option<pernixc_syntax::r#type::Type>>,
+
+    #[builder(default, setter(strip_option))]
+    pub constant_type_annotation_syntax:
+        Option<Option<pernixc_syntax::r#type::Type>>,
+
+    #[builder(default, setter(strip_option))]
+    pub constant_expression_syntax:
+        Option<Option<pernixc_syntax::r#type::Type>>,
+
+    #[builder(default, setter(strip_option))]
+    pub function_signature_syntax: Option<(
+        Option<pernixc_syntax::item::function::Parameters>,
+        Option<pernixc_syntax::item::function::ReturnType>,
+    )>,
 }
 
 impl<'ctx> TableContext<'ctx> {
@@ -464,6 +593,60 @@ impl<'ctx> TableContext<'ctx> {
 
         if let Some(member) = entry.member {
             Self::insert_to_table(&self.members, id, member);
+        }
+
+        if let Some(generic_parameters_syntax) = entry.generic_parameters_syntax
+        {
+            Self::insert_to_table(
+                &self.generic_parameter_syntaxes,
+                id,
+                generic_parameters_syntax,
+            );
+        }
+
+        if let Some(where_clause_syntax) = entry.where_clause_syntax {
+            Self::insert_to_table(
+                &self.where_clause_syntaxes,
+                id,
+                where_clause_syntax,
+            );
+        }
+
+        if let Some(type_alias_syntax) = entry.type_alias_syntax {
+            Self::insert_to_table(
+                &self.type_alias_syntaxes,
+                id,
+                type_alias_syntax,
+            );
+        }
+
+        if let Some(constant_type_annotation_syntax) =
+            entry.constant_type_annotation_syntax
+        {
+            Self::insert_to_table(
+                &self.constant_type_annotation_syntaxes,
+                id,
+                constant_type_annotation_syntax,
+            );
+        }
+
+        if let Some(constant_expression_syntax) =
+            entry.constant_expression_syntax
+        {
+            Self::insert_to_table(
+                &self.constant_expression_syntaxes,
+                id,
+                constant_expression_syntax,
+            );
+        }
+
+        if let Some(function_signature_syntax) = entry.function_signature_syntax
+        {
+            Self::insert_to_table(
+                &self.function_signature_syntaxes,
+                id,
+                function_signature_syntax,
+            );
         }
     }
 
@@ -720,7 +903,16 @@ impl<'ctx> TableContext<'ctx> {
         let trait_id =
             module_member_builder.add_member(identifier.clone(), self.engine);
 
+        let trait_body = trait_syntax.body();
+        let members =
+            trait_body.as_ref().and_then(pernixc_syntax::item::Body::members);
+
         let access_modifier = trait_syntax.access_modifier();
+        let generic_parameters = signature.generic_parameters();
+        let where_clause = trait_body
+            .and_then(|x| x.where_clause())
+            .and_then(|x| x.predicates());
+
         let parent_module_id = module_member_builder.symbol_id;
 
         scope.spawn(move |_| {
@@ -730,6 +922,102 @@ impl<'ctx> TableContext<'ctx> {
                 self.target_id,
             );
 
+            // add each of the member to the trait member
+            for member in members
+                .as_ref()
+                .iter()
+                .flat_map(|x| x.members())
+                .filter_map(|x| x.into_line().ok())
+            {
+                let entry = match member {
+                    TraitMemberSyn::Type(member) => {
+                        let Some(signature) =
+                            member.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        Entry::builder()
+                            .kind(Kind::TraitType)
+                            .identifier(signature)
+                            .generic_parameters_syntax(
+                                member
+                                    .signature()
+                                    .and_then(|x| x.generic_parameters()),
+                            )
+                            .where_clause_syntax(
+                                member
+                                    .trailing_where_clause()
+                                    .and_then(|x| x.where_clause())
+                                    .and_then(|x| x.predicates()),
+                            )
+                            .build()
+                    }
+
+                    TraitMemberSyn::Function(member) => {
+                        let Some(signature) =
+                            member.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        Entry::builder()
+                            .kind(Kind::TraitFunction)
+                            .identifier(signature)
+                            .generic_parameters_syntax(
+                                member
+                                    .signature()
+                                    .and_then(|x| x.generic_parameters()),
+                            )
+                            .where_clause_syntax(
+                                member
+                                    .trailing_where_clause()
+                                    .and_then(|x| x.where_clause())
+                                    .and_then(|x| x.predicates()),
+                            )
+                            .function_signature_syntax((
+                                member.signature().and_then(|x| x.parameters()),
+                                member
+                                    .signature()
+                                    .and_then(|x| x.return_type()),
+                            ))
+                            .build()
+                    }
+
+                    TraitMemberSyn::Constant(member) => {
+                        let Some(signature) =
+                            member.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        Entry::builder()
+                            .kind(Kind::TraitConstant)
+                            .identifier(signature)
+                            .generic_parameters_syntax(
+                                member
+                                    .signature()
+                                    .and_then(|x| x.generic_parameters()),
+                            )
+                            .where_clause_syntax(
+                                member
+                                    .trailing_where_clause()
+                                    .and_then(|x| x.where_clause())
+                                    .and_then(|x| x.predicates()),
+                            )
+                            .constant_type_annotation_syntax(
+                                member.signature().and_then(|x| x.r#type()),
+                            )
+                            .build()
+                    }
+                };
+
+                let member_id = trait_member_builder
+                    .add_member(entry.identifier.clone(), self.engine);
+
+                self.add_symbol_entry(member_id, trait_id, entry);
+            }
+
             self.add_symbol_entry(
                 trait_id,
                 parent_module_id,
@@ -737,7 +1025,16 @@ impl<'ctx> TableContext<'ctx> {
                     .kind(Kind::Trait)
                     .identifier(identifier)
                     .accessibility(access_modifier)
+                    .generic_parameters_syntax(generic_parameters)
+                    .where_clause_syntax(where_clause)
                     .build(),
+            );
+
+            self.storage.as_vec_mut().extend(
+                trait_member_builder
+                    .redefinition_errors
+                    .into_iter()
+                    .map(Diagnostic::ItemRedefinition),
             );
         });
     }
