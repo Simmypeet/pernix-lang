@@ -8,7 +8,6 @@ use std::{
 };
 
 use flexstr::{FlexStr, SharedStr};
-use pernixc_diagnostic::Report;
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
@@ -25,9 +24,7 @@ use pernixc_syntax::item::module::Member as ModuleMemberSyn;
 use pernixc_target::{
     get_invocation_arguments, get_target_seed, Global, TargetID,
 };
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{
     accessibility::Accessibility,
@@ -36,7 +33,6 @@ use crate::{
     },
     kind::Kind,
     member::Member,
-    source_map::SourceMap,
 };
 
 pub mod accessibility;
@@ -68,10 +64,11 @@ pub fn register_executors(
 
     executor.register(Arc::new(source_map::FilePathExecutor));
 
+    executor.register(Arc::new(diagnostic::RenderedExecutor));
+
     executor.register(Arc::new(TableExecutor));
     executor.register(Arc::new(DiagnosticExecutor));
     executor.register(Arc::new(MapExecutor));
-    executor.register(Arc::new(AllRenderedDiagnosticExecutor));
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -99,10 +96,11 @@ pub fn register_serde<
 
     serde_registry.register::<source_map::FilePathKey>();
 
+    serde_registry.register::<diagnostic::RenderedKey>();
+
     serde_registry.register::<TableKey>();
     serde_registry.register::<DiagnosticKey>();
     serde_registry.register::<MapKey>();
-    serde_registry.register::<AllRenderedDiagnostic>();
 }
 
 /// Registers the keys that should be skipped during serialization and
@@ -423,119 +421,6 @@ pub fn diagnostic_executor(
     let table = engine.query(&TableKey(key.clone()))?;
 
     Ok(table.diagnostics.clone())
-}
-
-/// A query for retrieving all rendered diagnostics for a target.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Key,
-)]
-#[value(Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>)]
-pub struct AllRenderedDiagnostic(pub TargetID);
-
-#[pernixc_query::executor(
-    key(AllRenderedDiagnostic),
-    name(AllRenderedDiagnosticExecutor)
-)]
-pub fn all_rendered_diagnostic_executor(
-    AllRenderedDiagnostic(target_id): &AllRenderedDiagnostic,
-    engine: &TrackedEngine,
-) -> Result<
-    Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>,
-    pernixc_query::runtime::executor::CyclicError,
-> {
-    // Get the map for this target to discover all table keys
-    let map = engine.query(&MapKey(*target_id))?;
-
-    // Collect diagnostics from all tables and render them using iterator
-    // combinators
-    let keys = map
-        .paths_by_source_id
-        .values()
-        .map(|x| {
-            let external_submodule_opt = x.1.as_ref();
-
-            // Create the table key based on whether it's root or external
-            // submodule
-            let table_key = external_submodule_opt.map_or_else(
-                || Key::Root(*target_id),
-                |external_submodule| Key::Submodule {
-                    external_submodule: external_submodule.clone(),
-                    target_id: *target_id,
-                },
-            );
-            let path_key = x.0.clone();
-
-            Ok((
-                engine.query(&DiagnosticKey(table_key))?,
-                engine.query(&pernixc_syntax::DiagnosticKey(
-                    pernixc_syntax::Key {
-                        path: path_key.clone(),
-                        target_id: *target_id,
-                    },
-                ))?,
-                engine.query(&pernixc_lexical::DiagnosticKey(
-                    pernixc_lexical::Key {
-                        path: path_key.clone(),
-                        target_id: *target_id,
-                    },
-                ))?,
-                path_key,
-            ))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let diagnostics = keys
-        .par_iter()
-        .flat_map(|(symbol_diags, syntax_diags, lexical_diags, path)| {
-            let symbol_diagnostics =
-                symbol_diags.par_iter().map(|d| d.report(engine));
-
-            let lexical_diagnostic =
-                lexical_diags.as_ref().ok().into_par_iter().flat_map_iter(
-                    |x| {
-                        x.iter()
-                            .map(|d| d.report(&SourceMap(engine)))
-                            .collect::<Vec<_>>()
-                    },
-                );
-
-            let tree = engine
-                .query(&pernixc_lexical::Key {
-                    path: path.clone(),
-                    target_id: *target_id,
-                })
-                .unwrap();
-
-            let syntax_diagnostics = syntax_diags
-                .as_ref()
-                .ok()
-                .into_par_iter()
-                .flat_map_iter(move |x| {
-                    x.iter()
-                        .map(|d| {
-                            d.report(tree.as_ref().ok().map(|x| &x.0).unwrap())
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-            symbol_diagnostics
-                .chain(lexical_diagnostic)
-                .chain(syntax_diagnostics)
-        })
-        .collect::<Arc<[_]>>();
-
-    Ok(diagnostics)
 }
 
 impl<'ctx> TableContext<'ctx> {

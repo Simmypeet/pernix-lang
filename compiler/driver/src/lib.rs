@@ -345,7 +345,7 @@ pub fn run(
     let source_map = SourceMap(&tracked_engine);
 
     let symbol_errors = tracked_engine
-        .query(&pernixc_symbol::AllRenderedDiagnostic(TargetID::Local))
+        .query(&pernixc_symbol::diagnostic::RenderedKey(TargetID::Local))
         .unwrap();
 
     for diag in symbol_errors.as_ref() {

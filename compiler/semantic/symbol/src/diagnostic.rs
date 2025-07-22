@@ -12,13 +12,16 @@ use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
+use pernixc_target::{Global, TargetID};
+use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 
 use crate::{
     name::{get_name, get_qualified_name},
-    source_map::to_absolute_span,
+    source_map::{to_absolute_span, SourceMap},
     span::get_span,
-    ID,
+    DiagnosticKey, Key, ID,
 };
 
 /// Enumeration of all diagnostics that can be reported while building table
@@ -239,4 +242,114 @@ impl Report<&TrackedEngine<'_>> for SourceFileLoadFail {
             related: Vec::new(),
         }
     }
+}
+
+/// A query for retrieving all rendered diagnostics for a target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>)]
+pub struct RenderedKey(pub TargetID);
+
+#[pernixc_query::executor(key(RenderedKey), name(RenderedExecutor))]
+pub fn rendered_executor(
+    RenderedKey(target_id): &RenderedKey,
+    engine: &TrackedEngine,
+) -> Result<
+    Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>,
+    pernixc_query::runtime::executor::CyclicError,
+> {
+    // Get the map for this target to discover all table keys
+    let map = engine.query(&crate::MapKey(*target_id))?;
+
+    // Collect diagnostics from all tables and render them using iterator
+    // combinators
+    let keys = map
+        .paths_by_source_id
+        .values()
+        .map(|x| {
+            let external_submodule_opt = x.1.as_ref();
+
+            // Create the table key based on whether it's root or external
+            // submodule
+            let table_key = external_submodule_opt.map_or_else(
+                || Key::Root(*target_id),
+                |external_submodule| Key::Submodule {
+                    external_submodule: external_submodule.clone(),
+                    target_id: *target_id,
+                },
+            );
+            let path_key = x.0.clone();
+
+            Ok((
+                engine.query(&DiagnosticKey(table_key))?,
+                engine.query(&pernixc_syntax::DiagnosticKey(
+                    pernixc_syntax::Key {
+                        path: path_key.clone(),
+                        target_id: *target_id,
+                    },
+                ))?,
+                engine.query(&pernixc_lexical::DiagnosticKey(
+                    pernixc_lexical::Key {
+                        path: path_key.clone(),
+                        target_id: *target_id,
+                    },
+                ))?,
+                path_key,
+            ))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let diagnostics = keys
+        .par_iter()
+        .flat_map(|(symbol_diags, syntax_diags, lexical_diags, path)| {
+            let symbol_diagnostics =
+                symbol_diags.par_iter().map(|d| d.report(engine));
+
+            let lexical_diagnostic =
+                lexical_diags.as_ref().ok().into_par_iter().flat_map_iter(
+                    |x| {
+                        x.iter()
+                            .map(|d| d.report(&SourceMap(engine)))
+                            .collect::<Vec<_>>()
+                    },
+                );
+
+            let tree = engine
+                .query(&pernixc_lexical::Key {
+                    path: path.clone(),
+                    target_id: *target_id,
+                })
+                .unwrap();
+
+            let syntax_diagnostics = syntax_diags
+                .as_ref()
+                .ok()
+                .into_par_iter()
+                .flat_map_iter(move |x| {
+                    x.iter()
+                        .map(|d| {
+                            d.report(tree.as_ref().ok().map(|x| &x.0).unwrap())
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+            symbol_diagnostics
+                .chain(lexical_diagnostic)
+                .chain(syntax_diagnostics)
+        })
+        .collect::<Arc<[_]>>();
+
+    Ok(diagnostics)
 }
