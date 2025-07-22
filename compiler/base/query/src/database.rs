@@ -1360,10 +1360,15 @@ impl Engine {
                 }
             }
 
-            tracing::debug!(
-                "`{}` `{key:?}` returned `ToSlowPath`, executing slow path",
-                key.type_name()
-            );
+            let _span = tracing::info_span!(
+                "Starting query slow path",
+                key_type_name = key.type_name(),
+                key = ?key,
+                current_version = current_version,
+                return_value = return_value,
+                called_from = ?called_from.map(Dynamic::type_name)
+            )
+            .entered();
 
             // Slow Path: use `entry` obtaining a write lock for state mutation
             let (continuation, notify) =
