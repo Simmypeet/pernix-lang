@@ -294,7 +294,7 @@ pub struct Table {
     /// This represents the `= Expression` part that presents only in
     /// constant declarations.
     pub constant_expression_syntaxes:
-        Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::expression::Expression>>>,
 
     /// Maps the ID of the symbol to its function signature syntax.
     ///
@@ -356,7 +356,7 @@ struct TableContext<'a> {
     constant_type_annotation_syntaxes:
         DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
     constant_expression_syntaxes:
-        DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+        DashMap<ID, Option<pernixc_syntax::expression::Expression>>,
     function_signature_syntaxes: DashMap<
         ID,
         (
@@ -559,7 +559,7 @@ struct Entry {
 
     #[builder(default, setter(strip_option))]
     pub constant_expression_syntax:
-        Option<Option<pernixc_syntax::r#type::Type>>,
+        Option<Option<pernixc_syntax::expression::Expression>>,
 
     #[builder(default, setter(strip_option))]
     pub function_signature_syntax: Option<(
@@ -1039,7 +1039,7 @@ impl<'ctx> TableContext<'ctx> {
         });
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
     fn handle_module_content<'scope>(
         &'ctx self,
         module_content: pernixc_syntax::item::module::Content,
@@ -1050,33 +1050,140 @@ impl<'ctx> TableContext<'ctx> {
     {
         for item in module_content.members().filter_map(|x| x.into_line().ok())
         {
-            match item {
+            let entry = match item {
                 ModuleMemberSyn::Module(module) => {
+                    // custom handling for the module member
                     self.handle_module_member(
                         &module,
                         module_member_builder,
                         scope,
                     );
+                    continue;
                 }
 
                 ModuleMemberSyn::Trait(trait_syntax) => {
+                    // custom handling for the trait member
                     self.handle_trait_member(
                         &trait_syntax,
                         module_member_builder,
                         scope,
                     );
+                    continue;
+                }
+
+                ModuleMemberSyn::Function(function_syntax) => {
+                    let Some(identifier) = function_syntax
+                        .signature()
+                        .and_then(|x| x.identifier())
+                    else {
+                        continue;
+                    };
+
+                    Entry::builder()
+                        .kind(Kind::Function)
+                        .identifier(identifier.clone())
+                        .accessibility(function_syntax.access_modifier())
+                        .generic_parameters_syntax(
+                            function_syntax
+                                .signature()
+                                .and_then(|x| x.generic_parameters()),
+                        )
+                        .where_clause_syntax(
+                            function_syntax
+                                .body()
+                                .and_then(|x| x.where_clause())
+                                .and_then(|x| x.predicates()),
+                        )
+                        .function_signature_syntax((
+                            function_syntax
+                                .signature()
+                                .and_then(|x| x.parameters()),
+                            function_syntax
+                                .signature()
+                                .and_then(|x| x.return_type()),
+                        ))
+                        .build()
+                }
+
+                ModuleMemberSyn::Type(type_syntax) => {
+                    let Some(identifier) =
+                        type_syntax.signature().and_then(|x| x.identifier())
+                    else {
+                        continue;
+                    };
+
+                    Entry::builder()
+                        .kind(Kind::Type)
+                        .identifier(identifier.clone())
+                        .accessibility(type_syntax.access_modifier())
+                        .generic_parameters_syntax(
+                            type_syntax
+                                .signature()
+                                .and_then(|x| x.generic_parameters()),
+                        )
+                        .where_clause_syntax(
+                            type_syntax
+                                .body()
+                                .and_then(|x| x.trailing_where_clause())
+                                .and_then(|x| x.where_clause())
+                                .and_then(|x| x.predicates()),
+                        )
+                        .type_alias_syntax(
+                            type_syntax.body().and_then(|x| x.r#type()),
+                        )
+                        .build()
+                }
+
+                ModuleMemberSyn::Constant(constant_syntax) => {
+                    let Some(identifier) = constant_syntax
+                        .signature()
+                        .and_then(|x| x.identifier())
+                    else {
+                        continue;
+                    };
+
+                    Entry::builder()
+                        .kind(Kind::Constant)
+                        .identifier(identifier.clone())
+                        .accessibility(constant_syntax.access_modifier())
+                        .generic_parameters_syntax(
+                            constant_syntax
+                                .signature()
+                                .and_then(|x| x.generic_parameters()),
+                        )
+                        .where_clause_syntax(
+                            constant_syntax
+                                .body()
+                                .and_then(|x| x.trailing_where_clause())
+                                .and_then(|x| x.where_clause())
+                                .and_then(|x| x.predicates()),
+                        )
+                        .constant_type_annotation_syntax(
+                            constant_syntax
+                                .signature()
+                                .and_then(|x| x.r#type()),
+                        )
+                        .constant_expression_syntax(
+                            constant_syntax.body().and_then(|x| x.expression()),
+                        )
+                        .build()
                 }
 
                 ModuleMemberSyn::Import(_)
-                | ModuleMemberSyn::Function(_)
-                | ModuleMemberSyn::Type(_)
+                | ModuleMemberSyn::Enum(_)
                 | ModuleMemberSyn::Struct(_)
                 | ModuleMemberSyn::Implements(_)
-                | ModuleMemberSyn::Enum(_)
-                | ModuleMemberSyn::Constant(_)
                 | ModuleMemberSyn::Extern(_)
-                | ModuleMemberSyn::Marker(_) => {}
-            }
+                | ModuleMemberSyn::Marker(_) => continue,
+            };
+
+            let member_id = module_member_builder
+                .add_member(entry.identifier.clone(), self.engine);
+            self.add_symbol_entry(
+                member_id,
+                module_member_builder.symbol_id,
+                entry,
+            );
         }
     }
 }
