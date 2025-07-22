@@ -64,7 +64,12 @@ pub fn register_serde<
 
 /// Registers the keys that should be skipped during serialization and
 /// deserialization in the query engine's persistence layer
-pub const fn skip_persistence(_persistence: &mut Persistence) {}
+pub fn skip_persistence(persistence: &mut Persistence) {
+    // Since most of the time, syntax are not accessed directly, and if
+    // there's a slight change to the source text, the whole syntax tree
+    // is invalidated, we can skip the persistence of the syntax tree.
+    persistence.skip_cache_value::<Key>();
+}
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;
