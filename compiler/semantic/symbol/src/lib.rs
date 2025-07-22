@@ -327,6 +327,11 @@ pub struct Table {
     pub variant_associated_type_syntaxes:
         Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
 
+    /// Maps the module symbol ID to the list of import syntaxes that
+    /// are defined in the module.
+    pub import_syntaxes:
+        Arc<ReadOnlyView<ID, Arc<[pernixc_syntax::item::module::Import]>>>,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -389,6 +394,7 @@ struct TableContext<'a> {
     >,
     variant_associated_type_syntaxes:
         DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+    import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
 
     is_root: bool,
 }
@@ -496,6 +502,7 @@ pub fn table_executor(
         function_signature_syntaxes: DashMap::default(),
         fields_syntaxes: DashMap::default(),
         variant_associated_type_syntaxes: DashMap::default(),
+        import_syntaxes: DashMap::default(),
 
         is_root,
     };
@@ -538,6 +545,7 @@ pub fn table_executor(
         variant_associated_type_syntaxes: Arc::new(
             context.variant_associated_type_syntaxes.into_read_only(),
         ),
+        import_syntaxes: Arc::new(context.import_syntaxes.into_read_only()),
 
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
@@ -768,11 +776,13 @@ impl<'ctx> TableContext<'ctx> {
                 module_qualified_name,
                 self.target_id,
             );
+            let mut imports = Vec::new();
 
             if let Some(module_content) = module_content {
                 self.handle_module_content(
                     module_content,
                     &mut member_builder,
+                    &mut imports,
                     scope,
                 );
             }
@@ -796,6 +806,11 @@ impl<'ctx> TableContext<'ctx> {
                     member_ids_by_name: member_builder.member_ids_by_name,
                     redefinitions: member_builder.redefinitions,
                 }),
+            );
+            Self::insert_to_table(
+                &self.import_syntaxes,
+                current_module_id,
+                imports.into(),
             );
 
             self.storage.as_vec_mut().extend(
@@ -1192,6 +1207,7 @@ impl<'ctx> TableContext<'ctx> {
         &'ctx self,
         module_content: pernixc_syntax::item::module::Content,
         module_member_builder: &mut MemberBuilder,
+        imports: &mut Vec<pernixc_syntax::item::module::Import>,
         scope: &rayon::Scope<'scope>,
     ) where
         'ctx: 'scope,
@@ -1378,9 +1394,15 @@ impl<'ctx> TableContext<'ctx> {
                         .build()
                 }
 
-                ModuleMemberSyn::Import(_)
-                | ModuleMemberSyn::Implements(_)
-                | ModuleMemberSyn::Extern(_) => continue,
+                ModuleMemberSyn::Import(import) => {
+                    // collect the import syntax for later processing
+                    imports.push(import);
+                    continue;
+                }
+
+                ModuleMemberSyn::Implements(_) | ModuleMemberSyn::Extern(_) => {
+                    continue
+                }
             };
 
             let member_id = module_member_builder
