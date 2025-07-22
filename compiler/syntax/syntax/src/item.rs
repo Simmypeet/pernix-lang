@@ -53,7 +53,18 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Serialize,
+        Deserialize
+    )]
     #{fragment = expect::Fragment::Indentation}
     pub struct Body<T: 'static + AbstractTree> {
         pub where_clause: WhereClause = ast::<WhereClause>().optional(),

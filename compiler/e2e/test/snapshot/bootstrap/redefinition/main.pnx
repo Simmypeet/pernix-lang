@@ -21,3 +21,13 @@ public trait Inner:
     public const Second: usize
     
     public function Second() 
+
+public struct Third:
+    pass
+
+public struct Third:
+    public field1: int32
+    public field2: int32
+
+public function main():
+    pass

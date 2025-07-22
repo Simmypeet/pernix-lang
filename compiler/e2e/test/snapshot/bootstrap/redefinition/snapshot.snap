@@ -39,6 +39,15 @@ error: symbol `Second` is already defined in the scope `main::Inner`
 23 │     public function Second() 
    │                     ^^^^^^ redefinition here
 
+error: symbol `Third` is already defined in the scope `main`
+   ╭─ bootstrap/redefinition/main.pnx:28:15
+   │
+25 │ public struct Third:
+   │               ----- symbol `Third` is already defined here
+   ·
+28 │ public struct Third:
+   │               ^^^^^ redefinition here
+
 error: symbol `duplicateInner` is already defined in the scope `main::inner`
   ╭─ bootstrap/redefinition/inner.pnx:4:15
   │
@@ -48,7 +57,7 @@ error: symbol `duplicateInner` is already defined in the scope `main::inner`
 4 │ public module duplicateInner:
   │               ^^^^^^^^^^^^^^ redefinition here
 
-error: Compilation aborted due to 5 error(s)
+error: Compilation aborted due to 6 error(s)
 
 
 

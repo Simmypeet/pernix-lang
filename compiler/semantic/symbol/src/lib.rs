@@ -310,6 +310,18 @@ pub struct Table {
         >,
     >,
 
+    /// Maps the struct ID to its body syntax, which contains a list of fields.
+    pub fields_syntaxes: Arc<
+        ReadOnlyView<
+            ID,
+            Option<
+                pernixc_syntax::item::Body<
+                    pernixc_syntax::item::r#struct::Field,
+                >,
+            >,
+        >,
+    >,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -363,6 +375,12 @@ struct TableContext<'a> {
             Option<pernixc_syntax::item::function::Parameters>,
             Option<pernixc_syntax::item::function::ReturnType>,
         ),
+    >,
+    fields_syntaxes: DashMap<
+        ID,
+        Option<
+            pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
+        >,
     >,
 
     is_root: bool,
@@ -469,6 +487,7 @@ pub fn table_executor(
         constant_type_annotation_syntaxes: DashMap::default(),
         constant_expression_syntaxes: DashMap::default(),
         function_signature_syntaxes: DashMap::default(),
+        fields_syntaxes: DashMap::default(),
 
         is_root,
     };
@@ -507,6 +526,7 @@ pub fn table_executor(
         function_signature_syntaxes: Arc::new(
             context.function_signature_syntaxes.into_read_only(),
         ),
+        fields_syntaxes: Arc::new(context.fields_syntaxes.into_read_only()),
 
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
@@ -566,6 +586,13 @@ struct Entry {
         Option<pernixc_syntax::item::function::Parameters>,
         Option<pernixc_syntax::item::function::ReturnType>,
     )>,
+
+    #[builder(default, setter(strip_option))]
+    pub fields_syntax: Option<
+        Option<
+            pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
+        >,
+    >,
 }
 
 impl<'ctx> TableContext<'ctx> {
@@ -647,6 +674,10 @@ impl<'ctx> TableContext<'ctx> {
                 id,
                 function_signature_syntax,
             );
+        }
+
+        if let Some(fields_syntax) = entry.fields_syntax {
+            Self::insert_to_table(&self.fields_syntaxes, id, fields_syntax);
         }
     }
 
@@ -1169,9 +1200,34 @@ impl<'ctx> TableContext<'ctx> {
                         .build()
                 }
 
+                ModuleMemberSyn::Struct(struct_syntax) => {
+                    let Some(identifier) =
+                        struct_syntax.signature().and_then(|x| x.identifier())
+                    else {
+                        continue;
+                    };
+
+                    Entry::builder()
+                        .kind(Kind::Struct)
+                        .identifier(identifier.clone())
+                        .accessibility(struct_syntax.access_modifier())
+                        .generic_parameters_syntax(
+                            struct_syntax
+                                .signature()
+                                .and_then(|x| x.generic_parameters()),
+                        )
+                        .where_clause_syntax(
+                            struct_syntax
+                                .body()
+                                .and_then(|x| x.where_clause())
+                                .and_then(|x| x.predicates()),
+                        )
+                        .fields_syntax(struct_syntax.body())
+                        .build()
+                }
+
                 ModuleMemberSyn::Import(_)
                 | ModuleMemberSyn::Enum(_)
-                | ModuleMemberSyn::Struct(_)
                 | ModuleMemberSyn::Implements(_)
                 | ModuleMemberSyn::Extern(_)
                 | ModuleMemberSyn::Marker(_) => continue,
