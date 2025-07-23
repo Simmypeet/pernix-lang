@@ -4,7 +4,7 @@ expression: clean_run
 ---
 stderr:
 error: the using statement conflicts with an existing name in the module
-   ╭─ bootstrap/using/main.pnx:2:8
+   ╭─ symbol/import/main.pnx:2:8
    │
  2 │ import main::First
    │        ^^^^^^^^^^^ the using `First` conflicts with the existing name in the module `main`
@@ -13,7 +13,7 @@ error: the using statement conflicts with an existing name in the module
    │               ----- this symbol already defined the name `First`
 
 error: the using statement conflicts with an existing name in the module
-  ╭─ bootstrap/using/main.pnx:6:8
+  ╭─ symbol/import/main.pnx:6:8
   │
 5 │ import main::inner1::Inner
   │        ------------------- this symbol already defined the name `Inner`
@@ -21,31 +21,31 @@ error: the using statement conflicts with an existing name in the module
   │        ^^^^^^^^^^^^^^^^^^^ the using `Inner` conflicts with the existing name in the module `main`
 
 error: the symbol is not accessible
-  ╭─ bootstrap/using/main.pnx:9:22
+  ╭─ symbol/import/main.pnx:9:22
   │
 9 │ import main::inner3::InAccessible
   │                      ^^^^^^^^^^^^ the symbol `main::inner3::InAccessible` is not accessible from `main`
 
 error: the symbol is not accessible
-   ╭─ bootstrap/using/main.pnx:10:26
+   ╭─ symbol/import/main.pnx:10:26
    │
 10 │ from main::inner3 import AnotherInAccessible
    │                          ^^^^^^^^^^^^^^^^^^^ the symbol `main::inner3::AnotherInAccessible` is not accessible from `main`
 
 error: import items that have a `from` clause cannot have the `target` as the root path
-   ╭─ bootstrap/using/main.pnx:13:26
+   ╭─ symbol/import/main.pnx:13:26
    │
 13 │ from main::inner4 import target::invalidOne, target::invalidTwo
    │                          ^^^^^^ the `target` root path is not allowed with `from` clause
 
 error: import items that have a `from` clause cannot have the `target` as the root path
-   ╭─ bootstrap/using/main.pnx:13:46
+   ╭─ symbol/import/main.pnx:13:46
    │
 13 │ from main::inner4 import target::invalidOne, target::invalidTwo
    │                                              ^^^^^^ the `target` root path is not allowed with `from` clause
 
 error: the using statement conflicts with an existing name in the module
-   ╭─ bootstrap/using/main.pnx:18:16
+   ╭─ symbol/import/main.pnx:18:16
    │  
 15 │   from main::inner4 import (
    │ ╭──────────────────────────'
@@ -56,25 +56,25 @@ error: the using statement conflicts with an existing name in the module
    │                  ^^^^^^^^^^^^^ the using `InnerFirst` conflicts with the existing name in the module `main`
 
 error: expected a module in the module path, but found `enum main::inner5::Direction`
-   ╭─ bootstrap/using/main.pnx:22:6
+   ╭─ symbol/import/main.pnx:22:6
    │
 22 │ from target::inner5::Direction import Up, Down, Left, Right
    │      ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: the symbol could not be found
-   ╭─ bootstrap/using/main.pnx:25:28
+   ╭─ symbol/import/main.pnx:25:28
    │
 25 │ from target::inner5 import NotFound
    │                            ^^^^^^^^ the symbol named `NotFound` does not exist in `main::inner5`
 
 error: the symbol could not be found
-   ╭─ bootstrap/using/main.pnx:28:8
+   ╭─ symbol/import/main.pnx:28:8
    │
 28 │ import unknown
    │        ^^^^^^^ the target named `unknown` is not found
 
 error: the symbol could not be found
-   ╭─ bootstrap/using/main.pnx:29:14
+   ╭─ symbol/import/main.pnx:29:14
    │
 29 │ import main::unknown
    │              ^^^^^^^ the symbol named `unknown` does not exist in `main`

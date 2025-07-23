@@ -18,6 +18,7 @@ use rayon::iter::{
 };
 
 use crate::{
+    kind::Kind,
     name::{get_name, get_qualified_name},
     source_map::{to_absolute_span, SourceMap},
     span::get_span,
@@ -311,6 +312,11 @@ pub fn rendered_executor(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    let all_modules = engine.query(&crate::kind::AllSymbolOfKindKey {
+        target_id: *target_id,
+        kind: Kind::Module,
+    })?;
+
     let diagnostics = keys
         .par_iter()
         .flat_map(|(symbol_diags, syntax_diags, lexical_diags, path)| {
@@ -349,6 +355,13 @@ pub fn rendered_executor(
                 .chain(lexical_diagnostic)
                 .chain(syntax_diagnostics)
         })
+        .chain(all_modules.par_iter().flat_map_iter(|x| {
+            let diagnostic = engine
+                .query(&crate::import::DiagnosticKey(target_id.make_global(*x)))
+                .unwrap();
+
+            diagnostic.iter().map(|x| x.report(engine)).collect::<Vec<_>>()
+        }))
         .collect::<Arc<[_]>>();
 
     Ok(diagnostics)

@@ -69,6 +69,8 @@ pub fn register_executors(
 
     executor.register(Arc::new(source_map::FilePathExecutor));
 
+    executor.register(Arc::new(syntax::ImportExecutor));
+
     executor.register(Arc::new(import::WithDiagnosticExecutor));
     executor.register(Arc::new(import::Executor));
     executor.register(Arc::new(import::DiagnosticExecutor));
@@ -107,6 +109,8 @@ pub fn register_serde<
     serde_registry.register::<span::Key>();
 
     serde_registry.register::<source_map::FilePathKey>();
+
+    serde_registry.register::<syntax::ImportKey>();
 
     serde_registry.register::<import::WithDiagnosticKey>();
     serde_registry.register::<import::Key>();
@@ -1256,7 +1260,7 @@ impl<'ctx> TableContext<'ctx> {
                 enum_id,
                 parent_module_id,
                 Entry::builder()
-                    .kind(Kind::Trait)
+                    .kind(Kind::Enum)
                     .identifier(identifier)
                     .accessibility(access_modifier)
                     .generic_parameters_syntax(generic_parameters)
