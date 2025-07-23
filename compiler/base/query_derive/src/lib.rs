@@ -1087,6 +1087,45 @@ pub fn executor(
 /// Specifies the name of the generated executor struct that will handle
 /// computation of values for this query.
 ///
+/// # Optional Attributes
+///
+/// ## `extend(method(name), ...)`
+///
+/// Generates an extension trait for convenient value retrieval from the query
+/// engine. This attribute is passed through to the generated key struct and
+/// follows the same syntax as the `#[extend]` attribute on key types.
+///
+/// ### Required: `method(name)`
+///
+/// Specifies the name of the method to generate in the extension trait.
+///
+/// ### Optional: `trait(name)`
+///
+/// Specifies the name of the extension trait. Defaults to the method name.
+///
+/// ### Optional: `no_cyclic`
+///
+/// If provided, the generated method will unwrap the result and panic on
+/// cyclic dependency errors. Without this, the method returns a `Result` type.
+///
+/// ```ignore
+/// #[query(
+///     key(UserNameKey),
+///     value(String),
+///     id(u32),
+///     executor(UserNameExecutor),
+///     extend(method(get_user_name), no_cyclic)
+/// )]
+/// pub fn get_user_name(
+///     id: u32,
+///     engine: &TrackedEngine,
+/// ) -> Result<String, CyclicError> {
+///     Ok(format!("User {}", id))
+/// }
+///
+/// // Usage: let name = engine.get_user_name(123);
+/// ```
+///
 /// # Function Requirements
 ///
 /// The annotated function must have the following signature:
@@ -1126,6 +1165,26 @@ pub fn executor(
 ///     // Query implementation here
 ///     Ok(format!("User {}", id))
 /// }
+/// ```
+///
+/// ## With Extension Trait
+///
+/// ```ignore
+/// #[query(
+///     key(UserNameKey),
+///     value(String),
+///     id(u32),
+///     executor(UserNameExecutor),
+///     extend(method(get_user_name), no_cyclic)
+/// )]
+/// pub fn get_user_name(
+///     id: u32,
+///     engine: &TrackedEngine,
+/// ) -> Result<String, CyclicError> {
+///     Ok(format!("User {}", id))
+/// }
+///
+/// // Usage: let name = engine.get_user_name(123);
 /// ```
 ///
 /// This generates:
@@ -1186,11 +1245,12 @@ pub fn query(
     let input = syn::parse_macro_input!(input as syn::ItemFn);
 
     // Parse the attribute parameters: key(KeyName), value(ValueType),
-    // id(IdType), executor(ExecutorName)
+    // id(IdType), executor(ExecutorName), extend(...)
     let mut key_name: Option<syn::Ident> = None;
     let mut value_type: Option<syn::Type> = None;
     let mut id_type: Option<syn::Type> = None;
     let mut executor_name: Option<syn::Ident> = None;
+    let mut extend_tokens: Option<proc_macro2::TokenStream> = None;
 
     // Create a dummy attribute to use parse_nested_meta
     let attr_tokens = proc_macro2::TokenStream::from(attr);
@@ -1249,11 +1309,16 @@ pub fn query(
                     format!("invalid executor name: {err}"),
                 )),
             }
+        } else if meta.path.is_ident("extend") {
+            let content;
+            syn::parenthesized!(content in meta.input);
+            extend_tokens = Some(content.parse()?);
+            Ok(())
         } else {
             Err(syn::Error::new_spanned(
                 meta.path,
                 "expected `key(KeyName)`, `value(ValueType)`, `id(IdType)`, \
-                 or `executor(ExecutorName)`",
+                 `executor(ExecutorName)`, or `extend(...)`",
             ))
         }
     }) {
@@ -1326,6 +1391,11 @@ pub fn query(
         }
     };
 
+    // Generate the extend attribute if provided
+    let extend_attr = extend_tokens.map(|tokens| {
+        quote::quote! { #[extend(#tokens)] }
+    });
+
     // Generate the expanded code
     let expanded = quote::quote! {
         #[derive(
@@ -1343,6 +1413,7 @@ pub fn query(
             ::pernixc_query::__internal::Key,
         )]
         #[value(#value_type)]
+        #extend_attr
         #[doc = concat!(
             "A key type for the `",
             stringify!(#fn_name),
