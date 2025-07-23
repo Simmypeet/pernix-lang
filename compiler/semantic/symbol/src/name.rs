@@ -211,10 +211,12 @@ pub fn resolve_sequence<'a>(
     handler: &dyn Handler<Diagnostic>,
 ) -> Option<Global<ID>> {
     let mut lastest_resolution = root;
+    let mut is_first = true;
+
     for identifier in simple_path {
         let Some(new_id) = self.get_member_of(
             lastest_resolution,
-            use_imports,
+            use_imports && is_first,
             identifier.kind.0.as_str(),
         ) else {
             handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
@@ -237,6 +239,7 @@ pub fn resolve_sequence<'a>(
             ));
         }
 
+        is_first = false;
         lastest_resolution = new_id;
     }
 
