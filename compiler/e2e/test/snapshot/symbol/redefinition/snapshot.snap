@@ -4,7 +4,7 @@ expression: clean_run
 ---
 stderr:
 error: symbol `first` is already defined in the scope `main`
-  ╭─ bootstrap/redefinition/main.pnx:6:15
+  ╭─ symbol/redefinition/main.pnx:6:15
   │
 3 │ public module first:
   │               ----- symbol `first` is already defined here
@@ -13,7 +13,7 @@ error: symbol `first` is already defined in the scope `main`
   │               ^^^^^ redefinition here
 
 error: symbol `Second` is already defined in the scope `main`
-   ╭─ bootstrap/redefinition/main.pnx:12:14
+   ╭─ symbol/redefinition/main.pnx:12:14
    │
  9 │ public trait Second:
    │              ------ symbol `Second` is already defined here
@@ -22,7 +22,7 @@ error: symbol `Second` is already defined in the scope `main`
    │              ^^^^^^ redefinition here
 
 error: symbol `First` is already defined in the scope `main::Inner`
-   ╭─ bootstrap/redefinition/main.pnx:19:17
+   ╭─ symbol/redefinition/main.pnx:19:17
    │
 17 │     public type First
    │                 ----- symbol `First` is already defined here
@@ -31,7 +31,7 @@ error: symbol `First` is already defined in the scope `main::Inner`
    │                 ^^^^^ redefinition here
 
 error: symbol `Second` is already defined in the scope `main::Inner`
-   ╭─ bootstrap/redefinition/main.pnx:23:21
+   ╭─ symbol/redefinition/main.pnx:23:21
    │
 21 │     public const Second: usize
    │                  ------ symbol `Second` is already defined here
@@ -40,7 +40,7 @@ error: symbol `Second` is already defined in the scope `main::Inner`
    │                     ^^^^^^ redefinition here
 
 error: symbol `Third` is already defined in the scope `main`
-   ╭─ bootstrap/redefinition/main.pnx:28:15
+   ╭─ symbol/redefinition/main.pnx:28:15
    │
 25 │ public struct Third:
    │               ----- symbol `Third` is already defined here
@@ -49,7 +49,7 @@ error: symbol `Third` is already defined in the scope `main`
    │               ^^^^^ redefinition here
 
 error: symbol `SecondVariant` is already defined in the scope `main::Fourth`
-   ╭─ bootstrap/redefinition/main.pnx:35:5
+   ╭─ symbol/redefinition/main.pnx:35:5
    │
 34 │     SecondVariant
    │     ------------- symbol `SecondVariant` is already defined here
@@ -57,7 +57,7 @@ error: symbol `SecondVariant` is already defined in the scope `main::Fourth`
    │     ^^^^^^^^^^^^^ redefinition here
 
 error: symbol `Fourth` is already defined in the scope `main`
-   ╭─ bootstrap/redefinition/main.pnx:37:13
+   ╭─ symbol/redefinition/main.pnx:37:13
    │
 32 │ public enum Fourth:
    │             ------ symbol `Fourth` is already defined here
@@ -66,7 +66,7 @@ error: symbol `Fourth` is already defined in the scope `main`
    │             ^^^^^^ redefinition here
 
 error: symbol `FourthVariant` is already defined in the scope `main::Fourth`
-   ╭─ bootstrap/redefinition/main.pnx:40:5
+   ╭─ symbol/redefinition/main.pnx:40:5
    │
 39 │     FourthVariant
    │     ------------- symbol `FourthVariant` is already defined here
@@ -74,7 +74,7 @@ error: symbol `FourthVariant` is already defined in the scope `main::Fourth`
    │     ^^^^^^^^^^^^^ redefinition here
 
 error: symbol `Fifth` is already defined in the scope `main`
-   ╭─ bootstrap/redefinition/main.pnx:44:15
+   ╭─ symbol/redefinition/main.pnx:44:15
    │
 42 │ public marker Fifth
    │               ----- symbol `Fifth` is already defined here
@@ -83,7 +83,7 @@ error: symbol `Fifth` is already defined in the scope `main`
    │               ^^^^^ redefinition here
 
 error: symbol `duplicateInner` is already defined in the scope `main::inner`
-  ╭─ bootstrap/redefinition/inner.pnx:4:15
+  ╭─ symbol/redefinition/inner.pnx:4:15
   │
 1 │ public module duplicateInner:
   │               -------------- symbol `duplicateInner` is already defined here
