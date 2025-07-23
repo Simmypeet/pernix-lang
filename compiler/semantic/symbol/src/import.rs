@@ -84,7 +84,6 @@ pub fn import_executor(
                 &from_simple_path,
                 id,
                 true,
-                false,
                 &storage,
             ) else {
                 continue;
@@ -152,10 +151,10 @@ pub fn diagnostic_executor(
 }
 
 #[pernixc_query::query(
-    key(ImportKey),
+    key(Key),
     value(Arc<HashMap<SharedStr, Using>>),
     id(Global<ID>),
-    executor(ImportExecutor),
+    executor(Executor),
     extend(method(get_imports), no_cyclic)
 )]
 pub fn import_executor(

@@ -12,7 +12,7 @@ use crate::{
     accessibility::symbol_accessible,
     get_table_of_symbol, get_target_root_module_id,
     import::get_imports,
-    kind::{get_kind, Kind},
+    kind::get_kind,
     member::get_members,
     name::diagnostic::{Diagnostic, SymbolIsNotAccessible, SymbolNotFound},
     parent::{get_closest_module_id, get_parent},
@@ -117,7 +117,6 @@ pub fn resolve_simple_path(
     simple_path: &SimplePath,
     referring_site: Global<ID>,
     start_from_root: bool,
-    use_imports: bool,
     handler: &dyn Handler<Diagnostic>,
 ) -> Option<Global<ID>> {
     // simple path should always have root tough
@@ -195,7 +194,6 @@ pub fn resolve_simple_path(
         simple_path.subsequences().flat_map(|x| x.identifier().into_iter()),
         referring_site,
         root,
-        use_imports,
         handler,
     )
 }
@@ -207,18 +205,15 @@ pub fn resolve_sequence<'a>(
     simple_path: impl Iterator<Item = Identifier>,
     referring_site: Global<ID>,
     root: Global<ID>,
-    use_imports: bool,
     handler: &dyn Handler<Diagnostic>,
 ) -> Option<Global<ID>> {
     let mut lastest_resolution = root;
     let mut is_first = true;
 
     for identifier in simple_path {
-        let Some(new_id) = self.get_member_of(
-            lastest_resolution,
-            use_imports && is_first,
-            identifier.kind.0.as_str(),
-        ) else {
+        let Some(new_id) =
+            self.get_member_of(lastest_resolution, identifier.kind.0.as_str())
+        else {
             handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
                 searched_item_id: Some(lastest_resolution),
                 resolution_span: identifier.span,
@@ -252,7 +247,6 @@ pub fn resolve_sequence<'a>(
 pub fn get_member_of(
     self: &TrackedEngine<'_>,
     id: Global<ID>,
-    use_imports: bool,
     member_name: &str,
 ) -> Option<Global<ID>> {
     let symbol_kind = self.get_kind(id);
@@ -263,32 +257,7 @@ pub fn get_member_of(
         return Some(Global::new(id.target_id, test));
     }
 
-    match (symbol_kind == Kind::Module, symbol_kind.is_adt(), use_imports) {
-        (true, false, true) => {
-            self.get_imports(id).get(member_name).map(|x| x.id)
-        }
+    // TODO: search the member in the adt implementations
 
-        // serach for the member of implementations
-        (false, true, _) => {
-            /*
-            let implements = self.get::<Implemented>(id);
-
-            for implementation_id in implements.iter().copied() {
-                if let Some(id) =
-                    self.get::<Member>(implementation_id).get(member_name)
-                {
-                    return Some(GlobalID::new(
-                        implementation_id.target_id,
-                        *id,
-                    ));
-                }
-            }
-
-            None
-            */
-            None
-        }
-
-        _ => None,
-    }
+    None
 }

@@ -13,7 +13,8 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
-    runtime::persistence::serde::DynamicRegistry, TrackedEngine,
+    runtime::{executor::CyclicError, persistence::serde::DynamicRegistry},
+    TrackedEngine,
 };
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
@@ -55,6 +56,7 @@ pub fn register_executors(
     executor.register(Arc::new(accessibility::Executor));
 
     executor.register(Arc::new(kind::Executor));
+    executor.register(Arc::new(kind::AllSymbolOfKindExecutor));
 
     executor.register(Arc::new(member::Executor));
 
@@ -68,13 +70,15 @@ pub fn register_executors(
     executor.register(Arc::new(source_map::FilePathExecutor));
 
     executor.register(Arc::new(import::WithDiagnosticExecutor));
-    executor.register(Arc::new(import::ImportExecutor));
-    executor.register(Arc::new(source_map::FilePathExecutor));
+    executor.register(Arc::new(import::Executor));
+    executor.register(Arc::new(import::DiagnosticExecutor));
 
     executor.register(Arc::new(diagnostic::RenderedExecutor));
 
     executor.register(Arc::new(TableExecutor));
     executor.register(Arc::new(DiagnosticExecutor));
+    executor.register(Arc::new(KindMapExecutor));
+    executor.register(Arc::new(ExternalSubmoduleMapExecutor));
     executor.register(Arc::new(MapExecutor));
 }
 
@@ -91,6 +95,7 @@ pub fn register_serde<
     serde_registry.register::<accessibility::Key>();
 
     serde_registry.register::<kind::Key>();
+    serde_registry.register::<kind::AllSymbolOfKindKey>();
 
     serde_registry.register::<member::Key>();
 
@@ -103,10 +108,16 @@ pub fn register_serde<
 
     serde_registry.register::<source_map::FilePathKey>();
 
+    serde_registry.register::<import::WithDiagnosticKey>();
+    serde_registry.register::<import::Key>();
+    serde_registry.register::<import::DiagnosticKey>();
+
     serde_registry.register::<diagnostic::RenderedKey>();
 
     serde_registry.register::<TableKey>();
     serde_registry.register::<DiagnosticKey>();
+    serde_registry.register::<KindMapKey>();
+    serde_registry.register::<ExternalSubmoduleMapKey>();
     serde_registry.register::<MapKey>();
 }
 
@@ -347,6 +358,61 @@ pub struct Table {
 
     /// The diagnostics that were collected while building the table.
     pub diagnostics: Arc<HashSet<Diagnostic>>,
+}
+
+/// A query for retrieving only the kinds map from a [`Table`].
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<ReadOnlyView<ID, Kind>>)]
+pub struct KindMapKey(pub Key);
+
+#[pernixc_query::executor(key(KindMapKey), name(KindMapExecutor))]
+pub fn kind_map_executor(
+    KindMapKey(key): &KindMapKey,
+    engine: &TrackedEngine,
+) -> Result<Arc<ReadOnlyView<ID, Kind>>, CyclicError> {
+    let table = engine.query(&TableKey(key.clone()))?;
+    Ok(table.kinds.clone())
+}
+
+/// A query for retrieving only the external submodules map from a [`Table`].
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>)]
+pub struct ExternalSubmoduleMapKey(pub Key);
+
+#[pernixc_query::executor(
+    key(ExternalSubmoduleMapKey),
+    name(ExternalSubmoduleMapExecutor)
+)]
+pub fn external_submodule_map_executor(
+    ExternalSubmoduleMapKey(key): &ExternalSubmoduleMapKey,
+    engine: &TrackedEngine,
+) -> Result<Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>, CyclicError> {
+    let table = engine.query(&TableKey(key.clone()))?;
+    Ok(table.external_submodules.clone())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -1584,7 +1650,9 @@ pub fn map_executor(
         current_external_submodule: Option<Arc<ExternalSubmodule>>,
     ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
         // Query the table for this key
-        let table = engine.query(&TableKey(table_key.clone()))?;
+        let kinds = engine.query(&KindMapKey(table_key.clone()))?;
+        let external_submodules =
+            engine.query(&ExternalSubmoduleMapKey(table_key.clone()))?;
 
         // Get the path and target_id for this table
         let (path, current_target_id) = match &table_key {
@@ -1611,13 +1679,13 @@ pub fn map_executor(
             .insert(source_file_id, (path, current_external_submodule.clone()));
 
         // Add all symbols from this table to the symbol map
-        for (symbol_id, _kind) in table.kinds.iter() {
+        for (symbol_id, _kind) in kinds.iter() {
             keys_by_symbol_id
                 .insert(*symbol_id, current_external_submodule.clone());
         }
 
         // Recursively traverse external submodules
-        table.external_submodules.par_iter().try_for_each(|item| {
+        external_submodules.par_iter().try_for_each(|item| {
             let (_module_id, external_submodule) = item.pair();
             let submodule_key = Key::Submodule {
                 external_submodule: external_submodule.clone(),

@@ -1,11 +1,12 @@
 //!  Contains the definition of the [`Kind`] enum.
 
-use std::hash::Hash;
+use std::{hash::Hash, sync::Arc};
 
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
+use pernixc_target::{Global, TargetID};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{get_table_of_symbol, ID};
 
@@ -284,4 +285,61 @@ pub fn executor(
         .get(&key.0.id)
         .copied()
         .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
+}
+
+/// A query for retrieving all the symbol IDs of a specific kind in the
+/// compilation target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[ID]>)]
+pub struct AllSymbolOfKindKey {
+    /// The target ID to collect for the symbols.
+    pub target_id: TargetID,
+
+    /// The kind of the symbols to collect.
+    pub kind: Kind,
+}
+
+#[pernixc_query::executor(
+    key(AllSymbolOfKindKey),
+    name(AllSymbolOfKindExecutor)
+)]
+pub fn all_symbol_of_kind_executor(
+    &AllSymbolOfKindKey { target_id, kind }: &AllSymbolOfKindKey,
+    engine: &TrackedEngine,
+) -> Result<Arc<[ID]>, CyclicError> {
+    let map = engine.query(&crate::MapKey(target_id))?;
+
+    Ok(map
+        .keys_by_symbol_id
+        .par_iter()
+        .filter_map(|x| {
+            let node_key = map
+                .keys_by_symbol_id
+                .get(x.key())
+                .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", x.key()))
+                .as_ref()
+                .map_or_else(
+                    || crate::Key::Root(target_id),
+                    |x| crate::Key::Submodule {
+                        external_submodule: x.clone(),
+                        target_id,
+                    },
+                );
+
+            let node = engine.query(&crate::TableKey(node_key)).unwrap();
+
+            (*node.kinds.get(x.key()).unwrap() == kind).then_some(*x.key())
+        })
+        .collect())
 }
