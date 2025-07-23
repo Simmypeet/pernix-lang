@@ -46,6 +46,7 @@ pub mod name;
 pub mod parent;
 pub mod source_map;
 pub mod span;
+pub mod syntax;
 
 /// Registers all the required executors to run the queries.
 pub fn register_executors(
@@ -64,6 +65,10 @@ pub fn register_executors(
 
     executor.register(Arc::new(span::Executor));
 
+    executor.register(Arc::new(source_map::FilePathExecutor));
+
+    executor.register(Arc::new(import::WithDiagnosticExecutor));
+    executor.register(Arc::new(import::ImportExecutor));
     executor.register(Arc::new(source_map::FilePathExecutor));
 
     executor.register(Arc::new(diagnostic::RenderedExecutor));

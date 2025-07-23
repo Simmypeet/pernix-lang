@@ -3,34 +3,44 @@
 
 use flexstr::SharedStr;
 use pernixc_extend::extend;
+use pernixc_handler::Handler;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
+use pernixc_syntax::{Identifier, SimplePath, SimplePathRoot};
+use pernixc_target::{get_linked_targets, get_target_map, Global};
 
-use crate::{get_table_of_symbol, parent::get_parent, ID};
+use crate::{
+    accessibility::symbol_accessible,
+    get_table_of_symbol, get_target_root_module_id,
+    import::get_imports,
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::diagnostic::{Diagnostic, SymbolIsNotAccessible, SymbolNotFound},
+    parent::{get_closest_module_id, get_parent},
+    ID,
+};
 
-// pub mod diagnostic;
+pub mod diagnostic;
 
-/// A simple name identifier given to a symbol.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Key,
+#[pernixc_query::query(
+    key(Key),
+    id(Global<ID>),
+    value(SharedStr),
+    executor(Executor),
+    extend(method(get_name), no_cyclic)
 )]
-#[value(SharedStr)]
-#[extend(method(get_name), no_cyclic)]
-pub struct Key(pub Global<ID>);
+#[allow(clippy::unnecessary_wraps)]
+pub fn executor(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<SharedStr, CyclicError> {
+    let table = engine.get_table_of_symbol(id);
+
+    Ok(table
+        .names
+        .get(&id.id)
+        .cloned()
+        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id)))
+}
 
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
@@ -58,45 +68,6 @@ pub fn get_qualified_name(
     }
 
     qualified_name
-}
-
-#[pernixc_query::executor(key(Key), name(Executor))]
-#[allow(clippy::unnecessary_wraps)]
-pub fn executor(
-    key: &Key,
-    engine: &TrackedEngine,
-) -> Result<SharedStr, CyclicError> {
-    let table = engine.get_table_of_symbol(key.0);
-
-    Ok(table
-        .names
-        .get(&key.0.id)
-        .cloned()
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
-}
-
-/*
-
-/// An executor for the [`Key`] query that retrieves the name of the symbol
-/// with the given ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Executor;
-
-impl pernixc_query::runtime::executor::Executor<Key> for Executor {
-    fn execute(
-        &self,
-        engine: &TrackedEngine<'_>,
-        &Key(id): &Key,
-    ) -> Result<SharedStr, CyclicError> {
-        let symbol_table = engine.query(&crate::Key(id.target_id)).unwrap();
-
-        Ok(symbol_table
-            .entries_by_id
-            .get(&id.id)
-            .expect("invalid symbol ID")
-            .name
-            .clone())
-    }
 }
 
 /// Gets the [`Global<symbol::ID>`] of the symbol with the given sequence of
@@ -129,10 +100,9 @@ pub fn get_by_qualified_name<'a>(
                 );
             }
             None => {
-                current_id = self
-                    .get_target_map()
-                    .get(name)
-                    .map(|&x| Global::new(x, ID::ROOT_MODULE));
+                current_id = self.get_target_map().get(name).map(|&x| {
+                    Global::new(x, self.get_target_root_module_id(x))
+                });
             }
         }
     }
@@ -152,9 +122,11 @@ pub fn resolve_simple_path(
 ) -> Option<Global<ID>> {
     // simple path should always have root tough
     let root: Global<ID> = match simple_path.root()? {
-        SimplePathRoot::Target(_) => {
-            Global::new(referring_site.target_id, ID::ROOT_MODULE)
-        }
+        SimplePathRoot::Target(_) => Global::new(
+            referring_site.target_id,
+            self.get_target_root_module_id(referring_site.target_id),
+        ),
+
         SimplePathRoot::Identifier(ident) => {
             if start_from_root {
                 let target_map = self.get_target_map();
@@ -181,7 +153,10 @@ pub fn resolve_simple_path(
                     return None;
                 };
 
-                Global::new(target_id, ID::ROOT_MODULE)
+                Global::new(
+                    target_id,
+                    self.get_target_root_module_id(target_id),
+                )
             } else {
                 let closet_module_id =
                     self.get_closest_module_id(referring_site);
@@ -267,4 +242,50 @@ pub fn resolve_sequence<'a>(
 
     Some(lastest_resolution)
 }
-*/
+
+/// Searches for a member in the given symbol scope and returns its ID if it
+/// exists.
+#[extend]
+pub fn get_member_of(
+    self: &TrackedEngine<'_>,
+    id: Global<ID>,
+    use_imports: bool,
+    member_name: &str,
+) -> Option<Global<ID>> {
+    let symbol_kind = self.get_kind(id);
+
+    if let Some(Some(test)) = symbol_kind.has_member().then(|| {
+        self.get_members(id).member_ids_by_name.get(member_name).copied()
+    }) {
+        return Some(Global::new(id.target_id, test));
+    }
+
+    match (symbol_kind == Kind::Module, symbol_kind.is_adt(), use_imports) {
+        (true, false, true) => {
+            self.get_imports(id).get(member_name).map(|x| x.id)
+        }
+
+        // serach for the member of implementations
+        (false, true, _) => {
+            /*
+            let implements = self.get::<Implemented>(id);
+
+            for implementation_id in implements.iter().copied() {
+                if let Some(id) =
+                    self.get::<Member>(implementation_id).get(member_name)
+                {
+                    return Some(GlobalID::new(
+                        implementation_id.target_id,
+                        *id,
+                    ));
+                }
+            }
+
+            None
+            */
+            None
+        }
+
+        _ => None,
+    }
+}

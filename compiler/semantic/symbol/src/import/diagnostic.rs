@@ -2,7 +2,6 @@
 
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Related, Report, Severity};
-use pernixc_file_tree::source_map::to_absolute_span;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -16,6 +15,7 @@ use crate::{
         diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
         get_qualified_name,
     },
+    source_map::to_absolute_span,
     ID,
 };
 

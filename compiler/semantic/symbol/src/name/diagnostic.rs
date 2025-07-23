@@ -3,7 +3,6 @@
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Report, Severity};
-use pernixc_file_tree::source_map::to_absolute_span;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -16,6 +15,7 @@ use crate::{
     kind::{get_kind, Kind},
     member::try_get_members,
     name::get_qualified_name,
+    source_map::to_absolute_span,
     ID,
 };
 

@@ -1,14 +1,36 @@
 //! Contains the definition of the [`Import`] struct
 
+use std::sync::Arc;
+
+use flexstr::SharedStr;
+use pernixc_handler::{Handler, Storage};
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeLocation;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::Span;
+use pernixc_source_file::{SourceElement, Span};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
+use pernixc_syntax::{item::module::ImportItems, SimplePathRoot};
+use pernixc_target::{get_linked_targets, get_target_map, Global};
 
-use crate::ID;
+use crate::{
+    accessibility::symbol_accessible,
+    get_target_root_module_id,
+    import::diagnostic::{
+        ConflictingUsing, Diagnostic, TargetRootInImportIsNotAllowedwithFrom,
+    },
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::{
+        self,
+        diagnostic::{ExpectModule, SymbolIsNotAccessible, SymbolNotFound},
+        get_name, resolve_simple_path,
+    },
+    span::get_span,
+    ID,
+};
 
-// pub mod diagnostic;
+pub mod diagnostic;
 
 /// Represents a single `import ...` statement.
 #[derive(
@@ -32,36 +54,122 @@ pub struct Using {
     pub span: Span<RelativeLocation>,
 }
 
-/*
-
-/// Represents the collection of `from ... import ...` statements that are
-/// declared in the module.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Default,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Value,
+#[pernixc_query::query(
+    key(WithDiagnosticKey),
+    value((
+        Arc<HashMap<SharedStr, Using>>,
+        Arc<[diagnostic::Diagnostic]>
+    )),
+    id(Global<ID>),
+    executor(WithDiagnosticExecutor)
 )]
-#[id(Global<ID>)]
-#[key(WithDiagnosticKey)]
-pub struct WithDiagnostic {
-    /// A map from the name of the imported symbol to its ID and span.
-    ///
-    /// The span is the span of the `import ... (as ...)?` statement in the
-    /// source code.
-    pub imports: Arc<HashMap<SharedStr, Using>>,
+#[allow(clippy::type_complexity)]
+pub fn import_executor(
+    id: Global<ID>,
+    engine: &pernixc_query::TrackedEngine,
+) -> Result<
+    (Arc<HashMap<SharedStr, Using>>, Arc<[diagnostic::Diagnostic]>),
+    pernixc_query::runtime::executor::CyclicError,
+> {
+    let imports = engine.query(&crate::syntax::ImportKey(id))?;
+    let storage = Storage::<diagnostic::Diagnostic>::new();
 
-    /// The diagnostics that were generated while processing the import
-    pub diagnostics: Arc<[diagnostic::Diagnostic]>,
+    let mut import_map = HashMap::default();
+
+    for import in imports.as_ref() {
+        let start_from = if let Some(from_simple_path) =
+            import.from().and_then(|x| x.simple_path())
+        {
+            let Some(from_id) = engine.resolve_simple_path(
+                &from_simple_path,
+                id,
+                true,
+                false,
+                &storage,
+            ) else {
+                continue;
+            };
+
+            // must be module
+            if engine.get_kind(from_id) != Kind::Module {
+                storage.receive(diagnostic::Diagnostic::Naming(
+                    name::diagnostic::Diagnostic::ExpectModule(ExpectModule {
+                        module_path: from_simple_path.inner_tree().span(),
+                        found_id: from_id,
+                    }),
+                ));
+                continue;
+            }
+
+            Some(from_id)
+        } else {
+            None
+        };
+
+        let import_items = import.items().into_iter().flat_map(|x| {
+            let test: Option<ImportItems> = match x {
+            pernixc_syntax::item::module::ImportItemsKind::Regular(
+                import_items,
+            ) => Some(import_items),
+
+            pernixc_syntax::item::module::ImportItemsKind::Parenthesized(i) => {
+                i.import_items()
+            }
+        };
+
+            test.into_iter()
+        });
+
+        for import_item in import_items {
+            process_import_items(
+                engine,
+                id,
+                import,
+                &import_item,
+                start_from,
+                &mut import_map,
+                &storage,
+            );
+        }
+    }
+
+    Ok((Arc::new(import_map), storage.into_vec().into()))
 }
-*/
 
-/*
+#[pernixc_query::query(
+    key(DiagnosticKey),
+    value(Arc<[Diagnostic]>),
+    id(Global<ID>),
+    executor(DiagnosticExecutor)
+)]
+pub fn diagnostic_executor(
+    id: Global<ID>,
+    engine: &pernixc_query::TrackedEngine,
+) -> Result<Arc<[Diagnostic]>, pernixc_query::runtime::executor::CyclicError> {
+    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id))?;
+
+    Ok(import_with_diagnostic.1)
+}
+
+#[pernixc_query::query(
+    key(ImportKey),
+    value(Arc<HashMap<SharedStr, Using>>),
+    id(Global<ID>),
+    executor(ImportExecutor),
+    extend(method(get_imports), no_cyclic)
+)]
+pub fn import_executor(
+    id: Global<ID>,
+    engine: &pernixc_query::TrackedEngine,
+) -> Result<
+    Arc<HashMap<SharedStr, Using>>,
+    pernixc_query::runtime::executor::CyclicError,
+> {
+    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id))?;
+
+    Ok(import_with_diagnostic.0)
+}
+
 #[allow(clippy::too_many_lines)]
 fn process_import_items(
     engine: &TrackedEngine,
@@ -131,9 +239,12 @@ fn process_import_items(
             }
 
             None => match root {
-                SimplePathRoot::Target(_) => {
-                    Global::new(defined_in_module_id.target_id, ID::ROOT_MODULE)
-                }
+                SimplePathRoot::Target(_) => Global::new(
+                    defined_in_module_id.target_id,
+                    engine.get_target_root_module_id(
+                        defined_in_module_id.target_id,
+                    ),
+                ),
                 SimplePathRoot::Identifier(identifier) => {
                     let target_map = engine.get_target_map();
 
@@ -160,7 +271,7 @@ fn process_import_items(
                         continue;
                     };
 
-                    Global::new(id, ID::ROOT_MODULE)
+                    Global::new(id, engine.get_target_root_module_id(id))
                 }
             },
         };
@@ -240,106 +351,3 @@ fn process_import_items(
         }
     }
 }
-
-#[executor(key(WithDiagnosticKey), name(WithDiagnosticExecutor))]
-#[allow(clippy::unnecessary_wraps)]
-pub fn import_with_diagnostic_executor(
-    &WithDiagnosticKey(id): &WithDiagnosticKey,
-    engine: &TrackedEngine,
-) -> Result<WithDiagnostic, CyclicError> {
-    let imports = engine.get_module_imports_syntax(id);
-    let storage = Storage::<diagnostic::Diagnostic>::new();
-
-    let mut import_map = HashMap::default();
-
-    for import in imports.as_ref() {
-        let start_from = if let Some(from_simple_path) =
-            import.from().and_then(|x| x.simple_path())
-        {
-            let Some(from_id) = engine.resolve_simple_path(
-                &from_simple_path,
-                id,
-                true,
-                false,
-                &storage,
-            ) else {
-                continue;
-            };
-
-            // must be module
-            if engine.get_kind(from_id) != Kind::Module {
-                storage.receive(diagnostic::Diagnostic::Naming(
-                    name::diagnostic::Diagnostic::ExpectModule(ExpectModule {
-                        module_path: from_simple_path.inner_tree().span(),
-                        found_id: from_id,
-                    }),
-                ));
-                continue;
-            }
-
-            Some(from_id)
-        } else {
-            None
-        };
-
-        let import_items = import.items().into_iter().flat_map(|x| {
-            let test: Option<ImportItems> = match x {
-            pernixc_syntax::item::module::ImportItemsKind::Regular(
-                import_items,
-            ) => Some(import_items),
-
-            pernixc_syntax::item::module::ImportItemsKind::Parenthesized(i) => {
-                i.import_items()
-            }
-        };
-
-            test.into_iter()
-        });
-
-        for import_item in import_items {
-            process_import_items(
-                engine,
-                id,
-                import,
-                &import_item,
-                start_from,
-                &mut import_map,
-                &storage,
-            );
-        }
-    }
-
-    Ok(WithDiagnostic {
-        imports: Arc::new(import_map),
-        diagnostics: storage.into_vec().into(),
-    })
-}
-
-/// A key for retrieving the import map from the module symbol.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Key,
-)]
-#[value(Arc<HashMap<SharedStr, Using>>)]
-#[extend(method(get_imports), no_cyclic)]
-pub struct Key(pub Global<ID>);
-
-#[executor(key(Key), name(Executor))]
-#[allow(clippy::unnecessary_wraps)]
-pub fn import_executor(
-    &Key(id): &Key,
-    engine: &TrackedEngine,
-) -> Result<Arc<HashMap<SharedStr, Using>>, CyclicError> {
-    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id))?;
-
-    Ok(import_with_diagnostic.imports)
-}
-*/
