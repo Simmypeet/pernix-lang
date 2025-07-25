@@ -190,14 +190,14 @@ pub async fn intermediate_executor(
 {
     let map = engine.query(&crate::MapKey(target_id)).await?;
 
-    let mut key_and_members = Vec::new();
+    let mut key_and_member_tasks = Vec::new();
 
     for (symbol, _) in map.keys_by_symbol_id.iter() {
         let engine = engine.clone();
         let symbol = *symbol;
 
-        key_and_members.push(tokio::spawn(async move {
-            let table =
+        key_and_member_tasks.push(tokio::spawn(async move {
+            let table: Arc<crate::Table> =
                 engine.get_table_of_symbol(target_id.make_global(symbol)).await;
 
             table.members.get(&symbol).map(|members| {
@@ -214,12 +214,14 @@ pub async fn intermediate_executor(
         }));
     }
 
-    let key_and_members: Vec<(ID, Vec<ID>)> =
-        futures::future::join_all(key_and_members)
-            .await
-            .into_iter()
-            .filter_map(|x| x.unwrap())
-            .collect();
+    let mut key_and_members = Vec::new();
+    for task in key_and_member_tasks {
+        let Some((symbol, members)) = task.await.unwrap() else {
+            continue;
+        };
+
+        key_and_members.push((symbol, members));
+    }
 
     let mut parent_map = HashMap::default();
 
