@@ -1,5 +1,7 @@
 //! Contains the definition of the [`Diagnostic`] struct and related types.
 
+use std::future::Future;
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::Span;
 use pernixc_stable_hash::StableHash;
@@ -20,7 +22,10 @@ pub trait Report<Param> {
     type Location;
 
     /// Creates a diagnostic.
-    fn report(&self, parameter: Param) -> Diagnostic<Self::Location>;
+    fn report(
+        &self,
+        parameter: Param,
+    ) -> impl Future<Output = Diagnostic<Self::Location>> + Send;
 }
 
 /// Enumeration of the severity levels of a diagnostic.

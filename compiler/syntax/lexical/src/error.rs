@@ -32,10 +32,10 @@ pub struct UndelimitedDelimiter {
     pub delimiter: DelimiterKind,
 }
 
-impl<T> Report<T> for UndelimitedDelimiter {
+impl<T: Send> Report<T> for UndelimitedDelimiter {
     type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.opening_span,
@@ -78,10 +78,10 @@ pub struct UnterminatedStringLiteral {
     pub span: AbsoluteSpan,
 }
 
-impl<T> Report<T> for UnterminatedStringLiteral {
+impl<T: Send> Report<T> for UnterminatedStringLiteral {
     type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
@@ -114,10 +114,10 @@ pub struct InvalidEscapeSequence {
     pub span: AbsoluteSpan,
 }
 
-impl<T> Report<T> for InvalidEscapeSequence {
+impl<T: Send> Report<T> for InvalidEscapeSequence {
     type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((self.span, None)),
             message: "found an invalid escape sequence".to_string(),
@@ -174,10 +174,10 @@ pub struct InvalidIndentation {
     pub available_indentations: Vec<AvailableIndentation>,
 }
 
-impl<T> Report<T> for InvalidIndentation {
+impl<T: Send> Report<T> for InvalidIndentation {
     type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
@@ -223,12 +223,16 @@ pub struct ExpectIndentation {
     pub indentation_start: AbsoluteSpan,
 }
 
-impl<'a, T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>>
-    Report<&'a T> for ExpectIndentation
+impl<
+        'a,
+        T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>
+            + Send
+            + Sync,
+    > Report<&'a T> for ExpectIndentation
 {
     type Location = ByteIndex;
 
-    fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
+    async fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
         let source_file = source_map
             .source(self.span.source_id)
             .expect("source map should contain the source code");
@@ -283,10 +287,10 @@ pub struct InvalidNewIndentationLevel {
     pub found_indentation: usize,
 }
 
-impl<T> Report<T> for InvalidNewIndentationLevel {
+impl<T: Send> Report<T> for InvalidNewIndentationLevel {
     type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
@@ -336,10 +340,10 @@ pub struct UnexpectedClosingDelimiter {
     pub closing_delimiter: DelimiterKind,
 }
 
-impl<T> Report<T> for UnexpectedClosingDelimiter {
+impl<T: Send> Report<T> for UnexpectedClosingDelimiter {
     type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
             span: Some((
                 self.span,
@@ -385,10 +389,10 @@ pub struct MismatchedClosingDelimiter {
     pub opening_delimiter: DelimiterKind,
 }
 
-impl<T> Report<T> for MismatchedClosingDelimiter {
+impl<T: Send> Report<T> for MismatchedClosingDelimiter {
     type Location = ByteIndex;
 
-    fn report(&self, _: T) -> Diagnostic<Self::Location> {
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         let opening_delimiter_p = self.opening_delimiter.opening_character();
         let closing_delimiter_p = self.closing_delimiter.closing_character();
         Diagnostic {
@@ -460,21 +464,33 @@ impl Error {
     }
 }
 
-impl<'a, T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>>
-    Report<&'a T> for Error
+impl<
+        'a,
+        T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>
+            + Send
+            + Sync,
+    > Report<&'a T> for Error
 {
     type Location = ByteIndex;
 
-    fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
+    async fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
         match self {
-            Self::UndelimitedDelimiter(err) => err.report(source_map),
-            Self::UnterminatedStringLiteral(err) => err.report(source_map),
-            Self::InvalidEscapeSequence(err) => err.report(source_map),
-            Self::InvalidIndentation(err) => err.report(source_map),
-            Self::InvalidNewIndentationLevel(err) => err.report(source_map),
-            Self::UnexpectedClosingDelimiter(err) => err.report(source_map),
-            Self::MismatchedClosingDelimiter(err) => err.report(source_map),
-            Self::ExpectIndentation(err) => err.report(source_map),
+            Self::UndelimitedDelimiter(err) => err.report(source_map).await,
+            Self::UnterminatedStringLiteral(err) => {
+                err.report(source_map).await
+            }
+            Self::InvalidEscapeSequence(err) => err.report(source_map).await,
+            Self::InvalidIndentation(err) => err.report(source_map).await,
+            Self::InvalidNewIndentationLevel(err) => {
+                err.report(source_map).await
+            }
+            Self::UnexpectedClosingDelimiter(err) => {
+                err.report(source_map).await
+            }
+            Self::MismatchedClosingDelimiter(err) => {
+                err.report(source_map).await
+            }
+            Self::ExpectIndentation(err) => err.report(source_map).await,
         }
     }
 }

@@ -226,7 +226,7 @@ fn found_string(
 impl Report<&pernixc_lexical::tree::Tree> for Error {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
         token_tree: &pernixc_lexical::tree::Tree,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
