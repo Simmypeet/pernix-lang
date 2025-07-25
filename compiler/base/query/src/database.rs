@@ -15,11 +15,12 @@ use std::{
 use dashmap::{DashMap, DashSet};
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
-use parking_lot::{Condvar, Mutex, RwLock};
+use parking_lot::RwLock;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use tokio::sync::Notify;
 use tracing::instrument;
 
 use crate::{
@@ -35,32 +36,9 @@ mod input;
 
 pub use input::SetInputLock;
 
-#[derive(Debug, Clone)]
-struct Notification(Arc<(Mutex<bool>, Condvar)>);
-
-impl Notification {
-    fn new() -> Self { Self(Arc::new((Mutex::new(false), Condvar::new()))) }
-
-    fn wait(&self) {
-        let (lock, cvar) = &*self.0;
-        let mut notified = lock.lock();
-
-        while !*notified {
-            cvar.wait(&mut notified);
-        }
-    }
-
-    fn notify(&self) {
-        let (lock, cvar) = &*self.0;
-        let mut notified = lock.lock();
-        *notified = true;
-        cvar.notify_all();
-    }
-}
-
 #[derive(Debug)]
 struct Running {
-    notify: Notification,
+    notify: Arc<Notify>,
     dependencies_order: RwLock<Vec<DynamicKey>>,
     dependencies_set: DashSet<DynamicKey>,
     is_in_scc: AtomicBool,
@@ -227,7 +205,7 @@ enum FastPathDecision<V> {
 enum SlowPathDecision<V> {
     TryAgain,
     Return(Option<V>),
-    Continuation(Continuation, Notification),
+    Continuation(Continuation, Arc<Notify>),
 }
 
 #[derive(Debug)]
@@ -353,7 +331,7 @@ impl Engine {
         found
     }
 
-    fn fast_path<K: Key>(
+    async fn fast_path<K: Key>(
         &self,
         key: &K,
         called_from: Option<&dyn Dynamic>,
@@ -404,7 +382,7 @@ impl Engine {
                         key
                     );
 
-                    notify.wait();
+                    notify.notified().await;
 
                     tracing::debug!(
                         "Fast path `{}` `{:?}` received notification from \
@@ -576,7 +554,7 @@ impl Engine {
                             }
                         };
 
-                        let notify = Notification::new();
+                        let notify = Arc::new(Notify::new());
 
                         *occupied_entry.get_mut() = State::Running(Running {
                             notify: notify.clone(),
@@ -631,7 +609,7 @@ impl Engine {
                                 return SlowPathDecision::Return(Some(value));
                             }
 
-                            let notify = Notification::new();
+                            let notify = Arc::new(Notify::new());
                             vacant_entry.insert(State::Running(Running {
                                 notify: notify.clone(),
                                 dependencies_order: RwLock::default(),
@@ -666,7 +644,7 @@ impl Engine {
                         return SlowPathDecision::Return(None);
                     }
 
-                    let notify = Notification::new();
+                    let notify = Arc::new(Notify::new());
                     vacant_entry.insert(State::Running(Running {
                         notify: notify.clone(),
                         dependencies_order: RwLock::default(),
@@ -688,7 +666,7 @@ impl Engine {
                 }
 
                 // no version found, need to create a fresh query
-                let notify = Notification::new();
+                let notify = Arc::new(Notify::new());
                 vacant_entry.insert(State::Running(Running {
                     notify: notify.clone(),
                     dependencies_order: RwLock::default(),
@@ -1333,12 +1311,10 @@ impl Engine {
 
         let value = loop {
             // Fast path: mostly used read lock, lower lock contention
-            match self.fast_path(
-                key,
-                called_from,
-                return_value,
-                current_version,
-            )? {
+            match self
+                .fast_path(key, called_from, return_value, current_version)
+                .await?
+            {
                 FastPathDecision::TryAgain => continue,
                 FastPathDecision::ToSlowPath => {}
                 FastPathDecision::Return(value) => {
@@ -1371,7 +1347,7 @@ impl Engine {
                 .await;
 
             // notify the waiting tasks that the query has been completed
-            notify.notify();
+            notify.notify_waiters();
 
             break value;
         };
