@@ -731,17 +731,18 @@ fn get_ext<'a>(
                             fn #method(
                                 &self,
                                 id: #id_type
-                            ) -> #return_type;
+                            ) -> impl ::std::future::Future<Output = #return_type> + '_;
                         }
 
-                        impl #method for ::pernixc_query::TrackedEngine<'_> {
-                            fn #method(
+                        impl #method for ::pernixc_query::TrackedEngine {
+                            async fn #method(
                                 &self,
                                 id: #id_type
                             ) -> #return_type {
                                 self.query(
                                     &#key_ident(id)
-                                )#dot_unwrap
+                                ).await
+                                #dot_unwrap
                             }
                         }
                     })
@@ -1044,12 +1045,12 @@ pub fn executor(
 
             // Implement the Executor trait
             impl ::pernixc_query::runtime::executor::Executor<#key_type> for #executor_name {
-                fn execute(
+                async fn execute(
                     &self,
                     engine: &::pernixc_query::TrackedEngine,
                     key: &#key_type,
                 ) -> #return_type {
-                    #fn_name(key, engine)
+                    #fn_name(key, engine).await
                 }
             }
         };

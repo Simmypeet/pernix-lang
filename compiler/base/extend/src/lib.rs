@@ -93,6 +93,7 @@ fn expand(attr: &TokenStream, input: TokenStream) -> Result<TokenStream> {
     let vis = mem::replace(&mut function.vis, Visibility::Inherited);
 
     let mut declaration = function.sig.clone();
+    let is_async = function.sig.asyncness.is_some();
 
     // remove patterns from param names in the trait method declaration
     declaration.inputs.iter_mut().for_each(|arg| match arg {
@@ -105,6 +106,26 @@ fn expand(attr: &TokenStream, input: TokenStream) -> Result<TokenStream> {
             typed.pat = parse_quote!(_);
         }
     });
+
+    // For async functions, modify the trait declaration
+    if is_async {
+        // Remove the async keyword from the trait declaration
+        declaration.asyncness = None;
+
+        // Wrap the return type in impl Future<Output = RetTy>
+        let original_return_type = declaration.output.clone();
+        let return_type = match original_return_type {
+            syn::ReturnType::Default => {
+                // If no return type specified, it's () -> Future<Output = ()>
+                parse_quote!(-> impl ::std::future::Future<Output = ()>)
+            }
+            syn::ReturnType::Type(_, ty) => {
+                // Wrap the existing return type
+                parse_quote!(-> impl ::std::future::Future<Output = #ty>)
+            }
+        };
+        declaration.output = return_type;
+    }
 
     let trait_name = format_ident!("{}", function.sig.ident.to_string());
 

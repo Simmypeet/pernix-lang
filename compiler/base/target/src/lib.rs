@@ -489,10 +489,10 @@ pub struct MapKey;
 
 /// Gets the map from the name of the target to its ID.
 #[extend]
-pub fn get_target_map(
-    self: &TrackedEngine<'_>,
+pub async fn get_target_map(
+    self: &TrackedEngine,
 ) -> Arc<HashMap<SharedStr, TargetID>> {
-    self.query(&MapKey).expect("should have no cyclic dependencies")
+    self.query(&MapKey).await.expect("should have no cyclic dependencies")
 }
 
 /// A query for retrieving the linked targets of a given target ID.
@@ -535,10 +535,10 @@ pub struct SeedKey(pub TargetID);
 
 /// Gets the initial random seed for ID generation.
 #[pernixc_query::executor(key(SeedKey), name(SeedExecutor))]
-#[allow(clippy::unnecessary_wraps)]
-pub fn target_seed_executor(
+#[allow(clippy::unnecessary_wraps, clippy::unused_async)]
+pub async fn target_seed_executor(
     _: &SeedKey,
-    _: &TrackedEngine<'_>,
+    _: &TrackedEngine,
 ) -> Result<u64, pernixc_query::runtime::executor::CyclicError> {
     Ok(rand::thread_rng().gen())
 }
