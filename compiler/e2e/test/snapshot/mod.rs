@@ -10,6 +10,7 @@ use clap::Parser;
 use insta::assert_snapshot;
 use pernixc_target::{Arguments, Check, Command, Input};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use tokio::runtime::Builder;
 
 #[test]
 #[allow(clippy::manual_assert)]
@@ -35,7 +36,11 @@ fn main() -> ExitCode {
 
         let result = std::panic::catch_unwind(|| {
             // for each file that has the `main.pnx` name, run the test
-            test(relative_to_scandir);
+            Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(test(relative_to_scandir));
         });
 
         if result.is_err() {
@@ -125,13 +130,14 @@ fn visit_dirs(dir: &Path, cb: &mut dyn FnMut(&Path)) -> std::io::Result<()> {
     Ok(())
 }
 
-fn run(arguments: Arguments) -> String {
+async fn run(arguments: Arguments) -> String {
     let mut err_writer =
         codespan_reporting::term::termcolor::NoColor::new(Vec::new());
     let mut out_writer =
         codespan_reporting::term::termcolor::NoColor::new(Vec::new());
 
-    let _ = pernixc_driver::run(arguments, &mut err_writer, &mut out_writer);
+    let _ =
+        pernixc_driver::run(arguments, &mut err_writer, &mut out_writer).await;
 
     let stderr_string = String::from_utf8(err_writer.into_inner()).unwrap();
     let stout_string = String::from_utf8(out_writer.into_inner()).unwrap();
@@ -139,7 +145,7 @@ fn run(arguments: Arguments) -> String {
     format!("stderr:\n{stderr_string}\n\nstdout:\n{stout_string}")
 }
 
-fn test(file_path: &Path) {
+async fn test(file_path: &Path) {
     let file = std::fs::File::open(file_path).unwrap();
     let buf_reader = std::io::BufReader::new(file);
 
@@ -192,8 +198,8 @@ fn test(file_path: &Path) {
         },
     );
 
-    let clean_run = run(arguments.clone());
-    let with_incremental = run(arguments);
+    let clean_run = run(arguments.clone()).await;
+    let with_incremental = run(arguments).await;
 
     assert!(
         clean_run == with_incremental,

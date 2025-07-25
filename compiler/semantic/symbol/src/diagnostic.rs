@@ -259,6 +259,7 @@ impl Report<&TrackedEngine> for SourceFileLoadFail {
 pub struct RenderedKey(pub TargetID);
 
 #[pernixc_query::executor(key(RenderedKey), name(RenderedExecutor))]
+#[allow(clippy::too_many_lines)]
 pub async fn rendered_executor(
     &RenderedKey(target_id): &RenderedKey,
     engine: &TrackedEngine,
@@ -268,8 +269,6 @@ pub async fn rendered_executor(
 > {
     // Get the map for this target to discover all table keys
     let map: crate::Map = engine.query(&crate::MapKey(target_id)).await?;
-
-    let diagnostics = Vec::new();
 
     // Collect diagnostics from all tables and render them using iterator
     // combinators
@@ -286,7 +285,7 @@ pub async fn rendered_executor(
             let table_key = external_submodule_opt.map_or_else(
                 || Key::Root(target_id),
                 |external_submodule| Key::Submodule {
-                    external_submodule: external_submodule.clone(),
+                    external_submodule,
                     target_id,
                 },
             );
@@ -347,19 +346,19 @@ pub async fn rendered_executor(
             path_key,
         ) = file_diagnostic.await.unwrap()?;
 
-        for diagnostic in diagnostics_for_file.iter().cloned() {
+        for diagnostic in diagnostics_for_file.iter() {
             let engine = engine.clone();
+            let diagnostic = diagnostic.clone();
 
             diagnostic_handles.push(tokio::spawn(async move {
                 Ok::<_, CyclicError>(diagnostic.report(&engine).await)
             }));
         }
 
-        for diagnostic in
-            syntax_diagnostics.iter().flat_map(|d| d.iter()).cloned()
-        {
+        for diagnostic in syntax_diagnostics.iter().flat_map(|d| d.iter()) {
             let engine = engine.clone();
             let path_key = path_key.clone();
+            let diagnostic = diagnostic.clone();
 
             diagnostic_handles.push(tokio::spawn(async move {
                 let tree = engine
@@ -375,16 +374,35 @@ pub async fn rendered_executor(
             }));
         }
 
-        for diagnostic in
-            lexical_diagnostics.iter().flat_map(|d| d.iter()).cloned()
-        {
+        for diagnostic in lexical_diagnostics.iter().flat_map(|d| d.iter()) {
             let engine = engine.clone();
+            let diagnostic = diagnostic.clone();
 
             diagnostic_handles.push(tokio::spawn(async move {
                 let source_map = SourceMap(engine);
                 Ok(diagnostic.report(&source_map).await)
             }));
         }
+    }
+
+    for module_diagnostic in module_diagnostics {
+        let (_, diagnostic) = module_diagnostic.await.unwrap()?;
+
+        for diagnostic in diagnostic.iter() {
+            let engine = engine.clone();
+            let diagnostic = diagnostic.clone();
+
+            diagnostic_handles.push(tokio::spawn(async move {
+                Ok(diagnostic.report(&engine).await)
+            }));
+        }
+    }
+
+    let mut diagnostics = Vec::new();
+
+    for handle in diagnostic_handles {
+        let rendered_diagnostic = handle.await.unwrap()?;
+        diagnostics.push(rendered_diagnostic);
     }
 
     Ok(Arc::from(diagnostics))

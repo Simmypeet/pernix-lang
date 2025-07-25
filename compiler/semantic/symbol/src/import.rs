@@ -126,7 +126,8 @@ pub async fn import_executor(
                 start_from,
                 &mut import_map,
                 &storage,
-            );
+            )
+            .await;
         }
     }
 

@@ -151,6 +151,8 @@ pub struct TrackedEngine {
     cache: Option<Arc<DashMap<DynamicKey, DynamicValue>>>,
 }
 
+static_assertions::assert_impl_all!(TrackedEngine: Send, Sync);
+
 impl Engine {
     /// Creates a new [`TrackedEngine`] allowing queries to the database.
     pub fn tracked(self: &Arc<Self>) -> TrackedEngine {

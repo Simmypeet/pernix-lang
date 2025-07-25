@@ -17,6 +17,7 @@ pernixc_driver = { path = "../driver" }
 pernixc_target = { path = "../base/target/" }
 clap = { workspace = true }
 termcolor = { workspace = true }
+tokio = { workspace = true }
 
 [[test]]
 name = "snapshot_e2e"

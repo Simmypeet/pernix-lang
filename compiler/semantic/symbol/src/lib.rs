@@ -596,14 +596,16 @@ pub async fn table_executor(
 
     context.create_module(tree.and_then(|t| t.0), module_kind).await;
 
+    // make sure all the tasks are joined before returning the table
+    let tasks = std::mem::take(&mut *context.tasks.write());
+
+    for join in tasks {
+        join.await.expect("Failed to join task");
+    }
+
     let Ok(context) = Arc::try_unwrap(context) else {
         panic!("some threads are not joined")
     };
-
-    // make sure all the tasks are joined before returning the table
-    for join in context.tasks.into_inner() {
-        join.await.expect("Failed to join task");
-    }
 
     Ok(Arc::new(Table {
         kinds: Arc::new(context.kinds.into_read_only()),
@@ -816,7 +818,7 @@ impl TableContext {
     }
 
     async fn create_module(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         module_content: Option<pernixc_syntax::item::module::Content>,
         module_kind: ModuleKind,
     ) {
@@ -865,7 +867,7 @@ impl TableContext {
 
         let context = self.clone();
 
-        self.tasks.write().push(tokio::spawn(async move {
+        self.tasks.write().push(tokio::spawn(Box::pin(async move {
             let mut member_builder = MemberBuilder::new(
                 current_module_id,
                 module_qualified_name,
@@ -919,11 +921,23 @@ impl TableContext {
                     .into_iter()
                     .map(Diagnostic::ItemRedefinition),
             );
-        }));
+        })));
+    }
+
+    #[allow(clippy::manual_async_fn)]
+    fn handle_module_member<'x>(
+        self: &'x Arc<Self>,
+        module_syntax: &'x pernixc_syntax::item::module::Module,
+        member_builder: &'x mut MemberBuilder,
+    ) -> impl std::future::Future<Output = ()> + Send + 'x {
+        async move {
+            self.handle_module_member_internal(module_syntax, member_builder)
+                .await;
+        }
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn handle_module_member(
+    async fn handle_module_member_internal(
         self: &Arc<Self>,
         module_syntax: &pernixc_syntax::item::module::Module,
         member_builder: &mut MemberBuilder,
@@ -1182,20 +1196,22 @@ impl TableContext {
                     .add_member(entry.identifier.clone(), &context.engine)
                     .await;
 
-                context.add_symbol_entry(member_id, trait_id, entry);
+                context.add_symbol_entry(member_id, trait_id, entry).await;
             }
 
-            context.add_symbol_entry(
-                trait_id,
-                parent_module_id,
-                Entry::builder()
-                    .kind(Kind::Trait)
-                    .identifier(identifier)
-                    .accessibility(access_modifier)
-                    .generic_parameters_syntax(generic_parameters)
-                    .where_clause_syntax(where_clause)
-                    .build(),
-            );
+            context
+                .add_symbol_entry(
+                    trait_id,
+                    parent_module_id,
+                    Entry::builder()
+                        .kind(Kind::Trait)
+                        .identifier(identifier)
+                        .accessibility(access_modifier)
+                        .generic_parameters_syntax(generic_parameters)
+                        .where_clause_syntax(where_clause)
+                        .build(),
+                )
+                .await;
 
             context.storage.as_vec_mut().extend(
                 trait_member_builder
@@ -1274,20 +1290,22 @@ impl TableContext {
                     )
                     .build();
 
-                context.add_symbol_entry(variant_id, enum_id, entry);
+                context.add_symbol_entry(variant_id, enum_id, entry).await;
             }
 
-            context.add_symbol_entry(
-                enum_id,
-                parent_module_id,
-                Entry::builder()
-                    .kind(Kind::Enum)
-                    .identifier(identifier)
-                    .accessibility(access_modifier)
-                    .generic_parameters_syntax(generic_parameters)
-                    .where_clause_syntax(where_clause)
-                    .build(),
-            );
+            context
+                .add_symbol_entry(
+                    enum_id,
+                    parent_module_id,
+                    Entry::builder()
+                        .kind(Kind::Enum)
+                        .identifier(identifier)
+                        .accessibility(access_modifier)
+                        .generic_parameters_syntax(generic_parameters)
+                        .where_clause_syntax(where_clause)
+                        .build(),
+                )
+                .await;
 
             context.storage.as_vec_mut().extend(
                 enum_member_builder
@@ -1506,7 +1524,8 @@ impl TableContext {
                 member_id,
                 module_member_builder.symbol_id,
                 entry,
-            );
+            )
+            .await;
         }
     }
 }

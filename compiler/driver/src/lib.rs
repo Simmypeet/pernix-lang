@@ -220,7 +220,7 @@ impl Ord for SortableDiagnostic {
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
 #[instrument(skip(err_writer, _out_writer))]
-pub fn run(
+pub async fn run(
     argument: Arguments,
     err_writer: &mut dyn WriteColor,
     _out_writer: &mut dyn WriteColor,
@@ -339,13 +339,13 @@ pub fn run(
 
     // now the query can start ...
 
+    let engine = Arc::new(engine);
     let tracked_engine = engine.tracked();
     let mut diagnostics = Vec::new();
 
-    let source_map = SourceMap(&tracked_engine);
-
     let symbol_errors = tracked_engine
         .query(&pernixc_symbol::diagnostic::RenderedKey(TargetID::Local))
+        .await
         .unwrap();
 
     for diag in symbol_errors.as_ref() {
@@ -356,12 +356,16 @@ pub fn run(
 
     diagnostics.sort();
 
+    let source_map = SourceMap(tracked_engine);
     for diagnostic in &diagnostics {
         let mut report_term =
             ReportTerm { config: report_config.clone(), err_writer };
 
         report_term.report(&source_map, &diagnostic.0);
     }
+
+    let mut engine =
+        Arc::try_unwrap(engine).expect("Engine should be unique at this point");
 
     if let Err(error) = engine.save_database() {
         let diag = codespan_reporting::diagnostic::Diagnostic::error()

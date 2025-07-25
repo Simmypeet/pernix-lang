@@ -28,6 +28,7 @@ ouroboros = { workspace = true }
 crossbeam = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
+static_assertions = { workspace = true }
 
 [dev-dependencies]
 ron = { workspace = true }

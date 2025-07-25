@@ -330,7 +330,7 @@ pub async fn all_symbol_of_kind_executor(
             let node_key = map
                 .keys_by_symbol_id
                 .get(&id)
-                .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id))
+                .unwrap_or_else(|| panic!("invalid symbol ID: {id:?}"))
                 .as_ref()
                 .map_or_else(
                     || crate::Key::Root(target_id),

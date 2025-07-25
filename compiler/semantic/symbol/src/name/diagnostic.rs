@@ -143,53 +143,48 @@ impl Report<&TrackedEngine> for SymbolNotFound {
         };
 
         let did_you_mean = 'dym: {
-            match self.searched_item_id {
-                Some(item) => {
-                    let Some(members) = engine.try_get_members(item).await
-                    else {
-                        break 'dym None;
-                    };
+            if let Some(item) = self.searched_item_id {
+                let Some(members) = engine.try_get_members(item).await else {
+                    break 'dym None;
+                };
 
-                    let kind = engine.get_kind(item).await;
+                let kind = engine.get_kind(item).await;
 
-                    match kind {
-                        Kind::Module => {
-                            let imports = engine.get_imports(item).await;
+                match kind {
+                    Kind::Module => {
+                        let imports = engine.get_imports(item).await;
 
-                            suggest(
-                                &self.name,
-                                members
-                                    .member_ids_by_name
-                                    .keys()
-                                    .map(flexstr::FlexStr::as_str)
-                                    .chain(
-                                        imports
-                                            .keys()
-                                            .map(flexstr::FlexStr::as_str),
-                                    ),
-                            )
-                            .map(ToString::to_string)
-                        }
-
-                        _ => suggest(
+                        suggest(
                             &self.name,
                             members
                                 .member_ids_by_name
                                 .keys()
-                                .map(flexstr::FlexStr::as_str),
+                                .map(flexstr::FlexStr::as_str)
+                                .chain(
+                                    imports
+                                        .keys()
+                                        .map(flexstr::FlexStr::as_str),
+                                ),
                         )
-                        .map(ToString::to_string),
+                        .map(ToString::to_string)
                     }
-                }
 
-                None => {
-                    let target_map = engine.get_target_map().await;
-                    suggest(
+                    _ => suggest(
                         &self.name,
-                        target_map.keys().map(flexstr::FlexStr::as_str),
+                        members
+                            .member_ids_by_name
+                            .keys()
+                            .map(flexstr::FlexStr::as_str),
                     )
-                    .map(ToString::to_string)
+                    .map(ToString::to_string),
                 }
+            } else {
+                let target_map = engine.get_target_map().await;
+                suggest(
+                    &self.name,
+                    target_map.keys().map(flexstr::FlexStr::as_str),
+                )
+                .map(ToString::to_string)
             }
         };
 
