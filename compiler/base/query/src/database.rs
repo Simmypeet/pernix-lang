@@ -5,6 +5,7 @@ use std::{
     borrow::Borrow,
     fmt::Debug,
     hash::Hash,
+    pin::Pin,
     sync::{
         atomic::{AtomicBool, AtomicU64},
         Arc,
@@ -24,7 +25,7 @@ use tracing::instrument;
 use crate::{
     fingerprint,
     runtime::{
-        executor::CyclicError,
+        executor::{self, CyclicError},
         persistence::serde::{DynamicDeserialize, DynamicSerialize},
     },
     Engine, Key,
@@ -139,22 +140,22 @@ enum State {
 /// allowing the query system to run multiple queries in parallel using
 /// [`tokio::spawn`].
 #[derive(Debug, Clone)]
-pub struct TrackedEngine<'e> {
+pub struct TrackedEngine {
     // CONSIDER: Should we add another cache layer within the `TrackedEngine`
     // avoiding to call the `query_internal` method multiple times for the same
     // key?
-    engine: &'e Engine,
-    called_from: Option<&'e dyn Dynamic>,
+    engine: Arc<Engine>,
+    called_from: Option<DynamicKey>,
 
     #[cfg(feature = "query_cache")]
-    cache: Option<&'e DashMap<DynamicKey, DynamicValue>>,
+    cache: Option<Arc<DashMap<DynamicKey, DynamicValue>>>,
 }
 
 impl Engine {
     /// Creates a new [`TrackedEngine`] allowing queries to the database.
-    pub const fn tracked(&self) -> TrackedEngine {
+    pub fn tracked(self: &Arc<Self>) -> TrackedEngine {
         TrackedEngine {
-            engine: self,
+            engine: self.clone(),
             called_from: None,
 
             #[cfg(feature = "query_cache")]
@@ -163,16 +164,19 @@ impl Engine {
     }
 }
 
-impl TrackedEngine<'_> {
+impl TrackedEngine {
     /// Queries the value for the given key.
     ///
     /// # Errors
     ///
     /// Returns an error if the query is part of a cyclic dependency, which
     /// prevents deadlocks in the query system.
-    pub fn query<K: Key>(&self, key: &K) -> Result<K::Value, CyclicError> {
+    pub async fn query<K: Key>(
+        &self,
+        key: &K,
+    ) -> Result<K::Value, CyclicError> {
         #[cfg(feature = "query_cache")]
-        if let Some(cache) = self.cache {
+        if let Some(cache) = self.cache.as_ref() {
             if let Some(value) = cache.get(key as &dyn Dynamic) {
                 let value = (&**value.value() as &dyn Any)
                     .downcast_ref::<K::Value>()
@@ -191,11 +195,17 @@ impl TrackedEngine<'_> {
 
         let value = self
             .engine
-            .query_internal(key, self.called_from, current_version, true)
+            .query_internal(
+                key,
+                self.called_from.as_ref().map(|x| &*x.0 as &dyn Dynamic),
+                current_version,
+                true,
+            )
+            .await
             .map(|x| x.unwrap())?;
 
         #[cfg(feature = "query_cache")]
-        if let Some(cache) = self.cache {
+        if let Some(cache) = self.cache.as_ref() {
             cache.insert(
                 DynamicKey(smallbox::smallbox!(key.clone())),
                 smallbox::smallbox!(value.clone()),
@@ -287,16 +297,20 @@ struct SaveConfig {
 }
 
 pub(super) fn re_verify_query<'a, K: Key + 'static>(
-    engine: &'a Engine,
+    engine: &'a Arc<Engine>,
     key: &'a dyn Any,
     current_version: u64,
     called_from: &'a dyn Dynamic,
-) -> Result<(), CyclicError> {
+) -> Pin<Box<dyn executor::Future<'a, ()> + 'a>> {
     let key = key.downcast_ref::<K>().expect("Key type mismatch");
 
-    engine.query_internal(key, Some(called_from), current_version, false)?;
+    Box::pin(async move {
+        engine
+            .query_internal(key, Some(called_from), current_version, false)
+            .await?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 impl Engine {
@@ -698,7 +712,7 @@ impl Engine {
         level = "info",
         skip_all
     )]
-    fn compute_query<K: Key>(
+    async fn compute_query<K: Key>(
         tracked_engine: &mut TrackedEngine,
         key: &K,
     ) -> Result<DynamicValue, CyclicError> {
@@ -720,11 +734,11 @@ impl Engine {
                 },
             );
 
-        (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine)
+        (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine).await
     }
 
-    fn compute<K: Key>(
-        &self,
+    async fn compute<K: Key>(
+        self: &Arc<Self>,
         key: &K,
         return_value: bool,
         set_completed: impl FnOnce(
@@ -733,14 +747,14 @@ impl Engine {
         ) -> (DerivedMetadata, bool),
     ) -> Option<K::Value> {
         #[cfg(feature = "query_cache")]
-        let cache = DashMap::default();
+        let cache = Arc::new(DashMap::default());
 
         let mut tracked_engine = TrackedEngine {
-            engine: self,
-            called_from: Some(key as &dyn Dynamic),
+            engine: self.clone(),
+            called_from: Some(DynamicKey(key.smallbox_clone())),
 
             #[cfg(feature = "query_cache")]
-            cache: Some(&cache),
+            cache: Some(cache),
         };
 
         // make sure that the dependencies that are added by re-verification
@@ -760,7 +774,7 @@ impl Engine {
             running.dependencies_set.clear();
         }
 
-        let value = Self::compute_query(&mut tracked_engine, key);
+        let value = Self::compute_query(&mut tracked_engine, key).await;
 
         let is_in_scc = self
             .database
@@ -866,8 +880,8 @@ impl Engine {
         return_value
     }
 
-    fn need_recompute<K: Key>(
-        &self,
+    async fn need_recompute<K: Key>(
+        self: &Arc<Self>,
         re_verify: &ReVerify,
         key: &K,
         current_version: u64,
@@ -907,7 +921,8 @@ impl Engine {
                     dep_ref.any(),
                     current_version,
                     key as &dyn Dynamic,
-                );
+                )
+                .await;
             }
 
             tracing::debug!(
@@ -946,8 +961,8 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn continuation<K: Key>(
-        &self,
+    async fn continuation<K: Key>(
+        self: &Arc<Self>,
         key: &K,
         continuation: Continuation,
         return_value: bool,
@@ -978,25 +993,10 @@ impl Engine {
                         )
                     },
                 )
+                .await
             }
             Continuation::ReVerify(mut re_verify) => {
-                let _span = tracing::info_span!(
-                    "Re-verifying query",
-                    key_type_name = key.type_name(),
-                    key = ?key,
-                    metadata = ?re_verify.derived_metadata,
-                )
-                .entered();
-
                 let recompute = {
-                    let _span = tracing::info_span!(
-                        "Checking if re-computation is needed",
-                        key_type_name = key.type_name(),
-                        key = ?key,
-                        metadata = ?re_verify.derived_metadata,
-                    )
-                    .entered();
-
                     if K::ALWAYS_REVERIFY
                         || re_verify
                             .derived_metadata
@@ -1011,15 +1011,8 @@ impl Engine {
                         );
                         true
                     } else {
-                        let _span = tracing::info_span!(
-                            "Checking each dependency",
-                            key_type_name = key.type_name(),
-                            key = ?key,
-                            metadata = ?re_verify.derived_metadata,
-                        )
-                        .entered();
-
                         self.need_recompute(&re_verify, key, current_version)
+                            .await
                     }
                 };
 
@@ -1028,14 +1021,6 @@ impl Engine {
                     current_version;
 
                 if recompute {
-                    let _span = tracing::info_span!(
-                        "Re-computing value for query",
-                        key_type_name = key.type_name(),
-                        key = ?key,
-                        metadata = ?re_verify.derived_metadata,
-                    )
-                    .entered();
-
                     self.compute(key, true, |value, tracked_dependencies| {
                         let new_fingerprint = value.ok().map(|x| {
                             fingerprint::fingerprint(
@@ -1095,6 +1080,7 @@ impl Engine {
 
                         (re_verify.derived_metadata, true)
                     })
+                    .await
                 } else if return_value {
                     let value = match re_verify.value_store {
                         Some(value) => {
@@ -1236,6 +1222,7 @@ impl Engine {
 
                                 (re_verify.derived_metadata, true)
                             })
+                            .await
                         }
                     }
                 } else {
@@ -1302,12 +1289,13 @@ impl Engine {
 
                     (re_execute.derived_metadata, update)
                 })
+                .await
             }
         }
     }
 
-    pub(super) fn query_internal<K: Key>(
-        &self,
+    pub(super) async fn query_internal<K: Key>(
+        self: &Arc<Self>,
         key: &K,
         called_from: Option<&dyn Dynamic>,
         current_version: u64,
@@ -1360,16 +1348,6 @@ impl Engine {
                 }
             }
 
-            let _span = tracing::info_span!(
-                "Starting query slow path",
-                key_type_name = key.type_name(),
-                key = ?key,
-                current_version = current_version,
-                return_value = return_value,
-                called_from = ?called_from.map(Dynamic::type_name)
-            )
-            .entered();
-
             // Slow Path: use `entry` obtaining a write lock for state mutation
             let (continuation, notify) =
                 match self.slow_path(key, current_version, return_value) {
@@ -1386,12 +1364,9 @@ impl Engine {
                 continuation
             );
 
-            let value = self.continuation(
-                key,
-                continuation,
-                return_value,
-                current_version,
-            );
+            let value = self
+                .continuation(key, continuation, return_value, current_version)
+                .await;
 
             // notify the waiting tasks that the query has been completed
             notify.notify();

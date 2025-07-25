@@ -2,6 +2,7 @@
 
 use std::{
     any::{Any, TypeId},
+    pin::Pin,
     sync::Arc,
 };
 
@@ -47,42 +48,44 @@ pub trait Executor<K: Key>: Any + Send + Sync + std::fmt::Debug {
     /// Returns `Ok(value)` on successful computation, or `Err(CyclicError)`
     /// when the query is part of a strongly connected component (SCC) with
     /// cyclic dependencies.
-    fn execute(
-        &self,
-        engine: &TrackedEngine,
-        key: &K,
-    ) -> Result<K::Value, CyclicError>;
+    fn execute<'a>(
+        &'a self,
+        engine: &'a TrackedEngine,
+        key: &'a K,
+    ) -> impl Future<'a, K::Value>;
 }
 
-fn invoke_executor<'db, E: Executor<K> + 'static, K: Key + 'static>(
-    key: &'db dyn Any,
-    executor: &'db dyn Any,
-    engine: &'db mut TrackedEngine,
-) -> Result<DynamicValue, CyclicError> {
+fn invoke_executor<'a, E: Executor<K> + 'static, K: Key + 'static>(
+    key: &'a dyn Any,
+    executor: &'a dyn Any,
+    engine: &'a mut TrackedEngine,
+) -> Pin<Box<dyn Future<'a, DynamicValue> + 'a>> {
     let key = key.downcast_ref::<K>().expect("Key type mismatch");
     let executor =
         executor.downcast_ref::<E>().expect("Executor type mismatch");
 
-    executor.execute(engine, key).map(|x| {
-        let smallbox: DynamicValue = smallbox::smallbox!(x);
+    Box::pin(async {
+        executor.execute(engine, key).await.map(|x| {
+            let smallbox: DynamicValue = smallbox::smallbox!(x);
 
-        smallbox
+            smallbox
+        })
     })
 }
 
 type InvokeExecutorFn =
-    for<'key, 'ex, 'eng> fn(
-        key: &'key dyn Any,
-        executor: &'ex dyn Any,
-        engine: &'eng mut TrackedEngine,
-    ) -> Result<DynamicValue, CyclicError>;
+    for<'a> fn(
+        key: &'a dyn Any,
+        executor: &'a dyn Any,
+        engine: &'a mut TrackedEngine,
+    ) -> Pin<Box<dyn Future<'a, DynamicValue> + 'a>>;
 
-type ReVerifyQueryFn = for<'x> fn(
-    engine: &'x Engine,
-    key: &'x dyn Any,
+type ReVerifyQueryFn = for<'a> fn(
+    engine: &'a Arc<Engine>,
+    key: &'a dyn Any,
     current_version: u64,
-    called_from: &'x dyn Dynamic,
-) -> Result<(), CyclicError>;
+    called_from: &'a dyn Dynamic,
+) -> Pin<Box<dyn Future<'a, ()> + 'a>>;
 
 /// Contains the [`Executor`] objects for each key type. This struct allows
 /// registering and retrieving executors for different query key types.
