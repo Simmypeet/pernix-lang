@@ -5,7 +5,7 @@ use std::sync::Arc;
 use derive_more::{Deref, DerefMut};
 use pernixc_extend::extend;
 use pernixc_hash::HashMap;
-use pernixc_query::{TrackedEngine, Value};
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
@@ -177,81 +177,57 @@ impl pernixc_query::runtime::executor::Executor<Key> for Executor {
     }
 }
 
-/// Intermediate query to compute the [`Parent`] component for all symbols
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Deref,
-    DerefMut,
-    Default,
-    Serialize,
-    Deserialize,
-    Value,
-    StableHash,
+#[pernixc_query::query(
+    key(IntermediateKey),
+    id(TargetID),
+    value(Arc<HashMap<ID, ID>>),
+    executor(IntermediateExecutor),
 )]
-#[id(TargetID)]
-#[key(IntermediateKey)]
-#[value(Arc<Intermediate>)]
-#[doc(hidden)]
-pub struct Intermediate(pub HashMap<ID, ID>);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[doc(hidden)]
-pub struct IntermediateExecutor;
-
-impl pernixc_query::runtime::executor::Executor<IntermediateKey>
-    for IntermediateExecutor
+pub async fn intermediate_executor(
+    target_id: TargetID,
+    engine: &TrackedEngine,
+) -> Result<Arc<HashMap<ID, ID>>, pernixc_query::runtime::executor::CyclicError>
 {
-    async fn execute(
-        &self,
-        engine: &TrackedEngine,
-        &IntermediateKey(target_id): &IntermediateKey,
-    ) -> Result<Arc<Intermediate>, pernixc_query::runtime::executor::CyclicError>
-    {
-        let map = engine.query(&crate::MapKey(target_id)).await?;
+    let map = engine.query(&crate::MapKey(target_id)).await?;
 
-        let mut key_and_members = Vec::new();
+    let mut key_and_members = Vec::new();
 
-        for (symbol, _) in map.keys_by_symbol_id.iter() {
-            let engine = engine.clone();
-            let symbol = *symbol;
+    for (symbol, _) in map.keys_by_symbol_id.iter() {
+        let engine = engine.clone();
+        let symbol = *symbol;
 
-            key_and_members.push(tokio::spawn(async move {
-                let table = engine
-                    .get_table_of_symbol(target_id.make_global(symbol))
-                    .await;
+        key_and_members.push(tokio::spawn(async move {
+            let table =
+                engine.get_table_of_symbol(target_id.make_global(symbol)).await;
 
-                table.members.get(&symbol).map(|members| {
-                    (
-                        symbol,
-                        members
-                            .member_ids_by_name
-                            .values()
-                            .copied()
-                            .chain(members.redefinitions.iter().copied())
-                            .collect::<Vec<_>>(),
-                    )
-                })
-            }));
-        }
-
-        let key_and_members: Vec<(ID, Vec<ID>)> =
-            futures::future::join_all(key_and_members)
-                .await
-                .into_iter()
-                .filter_map(|x| x.unwrap())
-                .collect();
-
-        let mut parent_map = HashMap::default();
-
-        for (symbol, members) in key_and_members {
-            for member in members {
-                assert!(parent_map.insert(member, symbol).is_none());
-            }
-        }
-
-        todo!()
+            table.members.get(&symbol).map(|members| {
+                (
+                    symbol,
+                    members
+                        .member_ids_by_name
+                        .values()
+                        .copied()
+                        .chain(members.redefinitions.iter().copied())
+                        .collect::<Vec<_>>(),
+                )
+            })
+        }));
     }
+
+    let key_and_members: Vec<(ID, Vec<ID>)> =
+        futures::future::join_all(key_and_members)
+            .await
+            .into_iter()
+            .filter_map(|x| x.unwrap())
+            .collect();
+
+    let mut parent_map = HashMap::default();
+
+    for (symbol, members) in key_and_members {
+        for member in members {
+            assert!(parent_map.insert(member, symbol).is_none());
+        }
+    }
+
+    Ok(Arc::new(parent_map))
 }

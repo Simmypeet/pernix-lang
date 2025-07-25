@@ -19,7 +19,7 @@ use pernixc_serialize::{
 };
 use pernixc_source_file::{ByteIndex, GlobalSourceID};
 use pernixc_stable_type_id::StableTypeID;
-use pernixc_symbol::source_map::SourceMap;
+use pernixc_symbol::source_map::{create_source_map, SourceMap};
 use pernixc_target::{Arguments, TargetID};
 use tracing::instrument;
 
@@ -340,29 +340,36 @@ pub async fn run(
     // now the query can start ...
 
     let engine = Arc::new(engine);
-    let tracked_engine = engine.tracked();
-    let mut diagnostics = Vec::new();
 
-    let symbol_errors = tracked_engine
-        .query(&pernixc_symbol::diagnostic::RenderedKey(TargetID::Local))
-        .await
-        .unwrap();
+    let diagnostic_count = {
+        let tracked_engine = engine.tracked();
+        let mut diagnostics = Vec::new();
 
-    for diag in symbol_errors.as_ref() {
-        diagnostics.push(SortableDiagnostic(
-            pernix_diagnostic_to_codespan_diagnostic(diag),
-        ));
-    }
+        let symbol_errors = tracked_engine
+            .query(&pernixc_symbol::diagnostic::RenderedKey(TargetID::Local))
+            .await
+            .unwrap();
 
-    diagnostics.sort();
+        for diag in symbol_errors.as_ref() {
+            diagnostics.push(SortableDiagnostic(
+                pernix_diagnostic_to_codespan_diagnostic(diag),
+            ));
+        }
 
-    let source_map = SourceMap(tracked_engine);
-    for diagnostic in &diagnostics {
-        let mut report_term =
-            ReportTerm { config: report_config.clone(), err_writer };
+        diagnostics.sort();
 
-        report_term.report(&source_map, &diagnostic.0);
-    }
+        let source_map =
+            tracked_engine.create_source_map(TargetID::Local).await;
+
+        for diagnostic in &diagnostics {
+            let mut report_term =
+                ReportTerm { config: report_config.clone(), err_writer };
+
+            report_term.report(&source_map, &diagnostic.0);
+        }
+
+        diagnostics.len()
+    };
 
     let mut engine =
         Arc::try_unwrap(engine).expect("Engine should be unique at this point");
@@ -381,11 +388,10 @@ pub async fn run(
         return ExitCode::FAILURE;
     }
 
-    if !diagnostics.is_empty() {
+    if diagnostic_count != 0 {
         let diag = codespan_reporting::diagnostic::Diagnostic::error()
             .with_message(format!(
-                "Compilation aborted due to {} error(s)",
-                diagnostics.len()
+                "Compilation aborted due to {diagnostic_count} error(s)"
             ));
 
         codespan_reporting::term::emit(

@@ -1,7 +1,7 @@
 //! Contains the definition of the [`SourceMap`] type, which implements the
 //! [`codespan_reporting::files::Files`] trait for use with
 //! `codespan_reporting`.
-use std::{fmt::Display, path::Path, sync::Arc};
+use std::{collections::HashMap, fmt::Display, path::Path, sync::Arc};
 
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeLocation;
@@ -9,8 +9,7 @@ use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{ByteIndex, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
-use tokio::runtime::Handle;
+use pernixc_target::{Global, TargetID};
 
 /// A query for retrieving the a path of the given sourcce file ID.
 #[derive(
@@ -47,16 +46,44 @@ pub async fn file_path_executor(
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.
 #[derive(Debug, Clone)]
-pub struct SourceMap(pub TrackedEngine);
+pub struct SourceMap(
+    pub HashMap<Global<pernixc_arena::ID<SourceFile>>, Arc<SourceFile>>,
+);
+
+/// Creates a new [`SourceMap`] that will allow a code span reporting to
+/// retrieve source files by their IDs.
+#[extend]
+pub async fn create_source_map(
+    self: &TrackedEngine,
+    target_id: TargetID,
+) -> SourceMap {
+    let map: crate::Map = self.query(&crate::MapKey(target_id)).await.unwrap();
+    let mut source_files = HashMap::default();
+
+    for (id, source_file) in map.paths_by_source_id.iter() {
+        source_files.insert(
+            Global::new(target_id, *id),
+            self.query(&pernixc_source_file::Key {
+                path: source_file.0.clone(),
+                target_id,
+            })
+            .await
+            .unwrap()
+            .unwrap(),
+        );
+    }
+
+    SourceMap(source_files)
+}
 
 /// A wrapper around [`Arc<Path>`] to implement `Display` for use with
 /// `codespan_reporting`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PathDisplay(Arc<Path>);
+#[derive(Debug)]
+pub struct PathDisplay<'x>(std::path::Display<'x>);
 
-impl Display for PathDisplay {
+impl Display for PathDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.display().fmt(f)
+        self.0.fmt(f)
     }
 }
 
@@ -78,40 +105,31 @@ impl AsRef<str> for SourceFileStr {
  * is simply a cache lookup operation.
  */
 
-impl codespan_reporting::files::Files<'_> for SourceMap {
+impl<'x> codespan_reporting::files::Files<'x> for SourceMap {
     type FileId = Global<pernixc_arena::ID<SourceFile>>;
 
-    type Name = PathDisplay;
+    type Name = PathDisplay<'x>;
 
-    type Source = SourceFileStr;
+    type Source = &'x str;
 
     fn name(
-        &self,
+        &'x self,
         id: Self::FileId,
     ) -> Result<Self::Name, codespan_reporting::files::Error> {
-        Ok(Handle::current().block_on(async move {
-            PathDisplay(self.0.query(&FilePathKey(id)).await.unwrap())
-        }))
+        self.0
+            .get(&id)
+            .map(|source_file| PathDisplay(source_file.path().display()))
+            .ok_or(codespan_reporting::files::Error::FileMissing)
     }
 
     fn source(
-        &self,
+        &'x self,
         id: Self::FileId,
     ) -> Result<Self::Source, codespan_reporting::files::Error> {
-        Handle::current().block_on(async move {
-            let path = self.0.get_source_file_path(id).await;
-
-            Ok(SourceFileStr(
-                self.0
-                    .query(&pernixc_source_file::Key {
-                        path,
-                        target_id: id.target_id,
-                    })
-                    .await
-                    .unwrap()
-                    .unwrap(),
-            ))
-        })
+        self.0
+            .get(&id)
+            .map(|source_file| source_file.content())
+            .ok_or(codespan_reporting::files::Error::FileMissing)
     }
 
     fn line_index(
@@ -119,20 +137,23 @@ impl codespan_reporting::files::Files<'_> for SourceMap {
         id: Self::FileId,
         byte_index: usize,
     ) -> Result<usize, codespan_reporting::files::Error> {
-        let source = self.source(id)?;
+        let source_file = self
+            .0
+            .get(&id)
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
-        if byte_index == source.0.content().len() {
-            return Ok(if source.0.lines().is_empty() {
+        if byte_index == source_file.content().len() {
+            return Ok(if source_file.lines().is_empty() {
                 0
             } else {
-                source.0.lines().len() - 1
+                source_file.lines().len() - 1
             });
         }
 
-        let line = source.0.get_line_of_byte_index(byte_index).ok_or(
+        let line = source_file.get_line_of_byte_index(byte_index).ok_or(
             codespan_reporting::files::Error::IndexTooLarge {
                 given: byte_index,
-                max: source.0.content().len(),
+                max: source_file.content().len(),
             },
         )?;
 
@@ -144,20 +165,22 @@ impl codespan_reporting::files::Files<'_> for SourceMap {
         id: Self::FileId,
         line_index: usize,
     ) -> Result<std::ops::Range<usize>, codespan_reporting::files::Error> {
-        let source = self.source(id)?;
+        let source_file = self
+            .0
+            .get(&id)
+            .ok_or(codespan_reporting::files::Error::FileMissing)?;
 
-        if line_index == source.0.lines().len() {
-            return Ok(source
-                .0
+        if line_index == source_file.lines().len() {
+            return Ok(source_file
                 .lines()
                 .last()
                 .map_or(0..0, |x| x.start..x.end));
         }
 
-        let line_range = source.0.lines().get(line_index).ok_or({
+        let line_range = source_file.lines().get(line_index).ok_or({
             codespan_reporting::files::Error::IndexTooLarge {
                 given: line_index,
-                max: source.0.lines().len(),
+                max: source_file.lines().len(),
             }
         })?;
 

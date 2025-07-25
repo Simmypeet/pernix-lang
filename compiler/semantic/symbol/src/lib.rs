@@ -8,7 +8,6 @@ use std::{
 };
 
 use flexstr::{FlexStr, SharedStr};
-use parking_lot::RwLock;
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
@@ -475,8 +474,6 @@ struct TableContext {
         DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
     import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
 
-    tasks: RwLock<Vec<JoinHandle<()>>>,
-
     is_root: bool,
 }
 
@@ -589,19 +586,14 @@ pub async fn table_executor(
         variant_associated_type_syntaxes: DashMap::default(),
         import_syntaxes: DashMap::default(),
 
-        tasks: RwLock::new(Vec::new()),
-
         is_root,
     });
 
-    context.create_module(tree.and_then(|t| t.0), module_kind).await;
-
-    // make sure all the tasks are joined before returning the table
-    let tasks = std::mem::take(&mut *context.tasks.write());
-
-    for join in tasks {
-        join.await.expect("Failed to join task");
-    }
+    context
+        .create_module(tree.and_then(|t| t.0), module_kind)
+        .await
+        .await
+        .expect("failed to join task");
 
     let Ok(context) = Arc::try_unwrap(context) else {
         panic!("some threads are not joined")
@@ -821,7 +813,7 @@ impl TableContext {
         self: &Arc<Self>,
         module_content: Option<pernixc_syntax::item::module::Content>,
         module_kind: ModuleKind,
-    ) {
+    ) -> JoinHandle<()> {
         // extract the information about the module
         let (accessibility, current_module_id, module_qualified_name, span) =
             match module_kind {
@@ -867,7 +859,7 @@ impl TableContext {
 
         let context = self.clone();
 
-        self.tasks.write().push(tokio::spawn(Box::pin(async move {
+        tokio::spawn(async move {
             let mut member_builder = MemberBuilder::new(
                 current_module_id,
                 module_qualified_name,
@@ -921,7 +913,7 @@ impl TableContext {
                     .into_iter()
                     .map(Diagnostic::ItemRedefinition),
             );
-        })));
+        })
     }
 
     #[allow(clippy::manual_async_fn)]
@@ -929,10 +921,11 @@ impl TableContext {
         self: &'x Arc<Self>,
         module_syntax: &'x pernixc_syntax::item::module::Module,
         member_builder: &'x mut MemberBuilder,
-    ) -> impl std::future::Future<Output = ()> + Send + 'x {
+    ) -> impl std::future::Future<Output = Option<JoinHandle<()>>> + Send + 'x
+    {
         async move {
             self.handle_module_member_internal(module_syntax, member_builder)
-                .await;
+                .await
         }
     }
 
@@ -941,14 +934,9 @@ impl TableContext {
         self: &Arc<Self>,
         module_syntax: &pernixc_syntax::item::module::Module,
         member_builder: &mut MemberBuilder,
-    ) {
-        let Some(signature) = module_syntax.signature() else {
-            return;
-        };
-
-        let Some(identifier) = signature.identifier() else {
-            return;
-        };
+    ) -> Option<JoinHandle<()>> {
+        let signature = module_syntax.signature()?;
+        let identifier = signature.identifier()?;
 
         let access_modifier = module_syntax.access_modifier();
         let next_submodule_qualified_name = member_builder
@@ -978,13 +966,15 @@ impl TableContext {
             let next_submodule_id =
                 member_builder.add_member(identifier, &self.engine).await;
 
-            self.create_module(member.content(), ModuleKind::Submodule {
-                submodule_id: next_submodule_id,
-                submodule_qualified_name: next_submodule_qualified_name,
-                accessibility,
-                span,
-            })
-            .await;
+            Some(
+                self.create_module(member.content(), ModuleKind::Submodule {
+                    submodule_id: next_submodule_id,
+                    submodule_qualified_name: next_submodule_qualified_name,
+                    accessibility,
+                    span,
+                })
+                .await,
+            )
         } else {
             let invocation_arguments =
                 self.engine.get_invocation_arguments(self.target_id).await;
@@ -1024,7 +1014,7 @@ impl TableContext {
                         path: load_path,
                     },
                 ));
-                return;
+                return None;
             }
 
             let existing_member_id = member_builder
@@ -1053,6 +1043,8 @@ impl TableContext {
                     }),
                 );
             }
+
+            None
         }
     }
 
@@ -1061,14 +1053,9 @@ impl TableContext {
         self: &Arc<Self>,
         trait_syntax: &pernixc_syntax::item::r#trait::Trait,
         module_member_builder: &mut MemberBuilder,
-    ) {
-        let Some(signature) = trait_syntax.signature() else {
-            return;
-        };
-
-        let Some(identifier) = signature.identifier() else {
-            return;
-        };
+    ) -> Option<JoinHandle<()>> {
+        let signature = trait_syntax.signature()?;
+        let identifier = signature.identifier()?;
 
         let next_submodule_qualified_name = module_member_builder
             .symbol_qualified_name
@@ -1095,7 +1082,7 @@ impl TableContext {
 
         let context = self.clone();
 
-        self.tasks.write().push(tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             let mut trait_member_builder = MemberBuilder::new(
                 trait_id,
                 next_submodule_qualified_name,
@@ -1219,7 +1206,7 @@ impl TableContext {
                     .into_iter()
                     .map(Diagnostic::ItemRedefinition),
             );
-        }));
+        }))
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1227,14 +1214,9 @@ impl TableContext {
         self: &Arc<Self>,
         enum_syntax: &pernixc_syntax::item::r#enum::Enum,
         module_member_builder: &mut MemberBuilder,
-    ) {
-        let Some(signature) = enum_syntax.signature() else {
-            return;
-        };
-
-        let Some(identifier) = signature.identifier() else {
-            return;
-        };
+    ) -> Option<JoinHandle<()>> {
+        let signature = enum_syntax.signature()?;
+        let identifier = signature.identifier()?;
 
         let next_submodule_qualified_name = module_member_builder
             .symbol_qualified_name
@@ -1260,7 +1242,8 @@ impl TableContext {
         let parent_module_id = module_member_builder.symbol_id;
 
         let context = self.clone();
-        self.tasks.write().push(tokio::spawn(async move {
+
+        Some(tokio::spawn(async move {
             let mut enum_member_builder = MemberBuilder::new(
                 enum_id,
                 next_submodule_qualified_name,
@@ -1313,7 +1296,7 @@ impl TableContext {
                     .into_iter()
                     .map(Diagnostic::ItemRedefinition),
             );
-        }));
+        }))
     }
 
     #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
@@ -1323,24 +1306,35 @@ impl TableContext {
         module_member_builder: &mut MemberBuilder,
         imports: &mut Vec<pernixc_syntax::item::module::Import>,
     ) {
+        // will be joined later
+        let mut tasks = Vec::new();
+
         for item in module_content.members().filter_map(|x| x.into_line().ok())
         {
             let entry = match item {
                 ModuleMemberSyn::Module(module) => {
                     // custom handling for the module member
-                    self.handle_module_member(&module, module_member_builder)
-                        .await;
+                    if let Some(handle) = self
+                        .handle_module_member(&module, module_member_builder)
+                        .await
+                    {
+                        tasks.push(handle);
+                    }
 
                     continue;
                 }
 
                 ModuleMemberSyn::Trait(trait_syntax) => {
                     // custom handling for the trait member
-                    self.handle_trait_member(
-                        &trait_syntax,
-                        module_member_builder,
-                    )
-                    .await;
+                    if let Some(handle) = self
+                        .handle_trait_member(
+                            &trait_syntax,
+                            module_member_builder,
+                        )
+                        .await
+                    {
+                        tasks.push(handle);
+                    }
 
                     continue;
                 }
@@ -1471,11 +1465,12 @@ impl TableContext {
 
                 ModuleMemberSyn::Enum(enum_syntax) => {
                     // custom handling for the enum member
-                    self.handle_enum_member(
-                        &enum_syntax,
-                        module_member_builder,
-                    )
-                    .await;
+                    if let Some(handle) = self
+                        .handle_enum_member(&enum_syntax, module_member_builder)
+                        .await
+                    {
+                        tasks.push(handle);
+                    }
 
                     continue;
                 }
@@ -1526,6 +1521,11 @@ impl TableContext {
                 entry,
             )
             .await;
+        }
+
+        // wait for all the tasks to finish
+        for task in tasks {
+            task.await.unwrap();
         }
     }
 }
