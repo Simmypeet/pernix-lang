@@ -5,7 +5,7 @@ use derive_more::From;
 use enum_as_inner::EnumAsInner;
 use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID};
+use pernixc_source_file::{AbsoluteSpan, ByteIndex};
 use pernixc_stable_hash::StableHash;
 
 use crate::tree::DelimiterKind;
@@ -223,34 +223,15 @@ pub struct ExpectIndentation {
     pub indentation_start: AbsoluteSpan,
 }
 
-impl<
-        'a,
-        T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>
-            + Send
-            + Sync,
-    > Report<&'a T> for ExpectIndentation
-{
+impl<T: Send> Report<T> for ExpectIndentation {
     type Location = ByteIndex;
 
-    async fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
-        let source_file = source_map
-            .source(self.span.source_id)
-            .expect("source map should contain the source code");
-
+    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((
-                self.span,
-                Some(format!(
-                    "`{}` is not indented",
-                    &source_file.as_ref()[self.span.range()]
-                )),
-            )),
+            span: Some((self.span, Some("this is not indented".to_string()))),
             message: "expect an indentation".to_string(),
             severity: Severity::Error,
-            help_message: Some(format!(
-                "add spaces before `{}` to indent",
-                &source_file.as_ref()[self.indentation_start.range()]
-            )),
+            help_message: Some("add spaces before this to indent".to_string()),
             related: vec![Related {
                 span: self.indentation_start,
                 message: "this colon starts the indentation level".to_string(),
@@ -464,33 +445,19 @@ impl Error {
     }
 }
 
-impl<
-        'a,
-        T: codespan_reporting::files::Files<'a, FileId = GlobalSourceID>
-            + Send
-            + Sync,
-    > Report<&'a T> for Error
-{
+impl<T: Send> Report<T> for Error {
     type Location = ByteIndex;
 
-    async fn report(&self, source_map: &'a T) -> Diagnostic<Self::Location> {
+    async fn report(&self, param: T) -> Diagnostic<Self::Location> {
         match self {
-            Self::UndelimitedDelimiter(err) => err.report(source_map).await,
-            Self::UnterminatedStringLiteral(err) => {
-                err.report(source_map).await
-            }
-            Self::InvalidEscapeSequence(err) => err.report(source_map).await,
-            Self::InvalidIndentation(err) => err.report(source_map).await,
-            Self::InvalidNewIndentationLevel(err) => {
-                err.report(source_map).await
-            }
-            Self::UnexpectedClosingDelimiter(err) => {
-                err.report(source_map).await
-            }
-            Self::MismatchedClosingDelimiter(err) => {
-                err.report(source_map).await
-            }
-            Self::ExpectIndentation(err) => err.report(source_map).await,
+            Self::UndelimitedDelimiter(err) => err.report(param).await,
+            Self::UnterminatedStringLiteral(err) => err.report(param).await,
+            Self::InvalidEscapeSequence(err) => err.report(param).await,
+            Self::InvalidIndentation(err) => err.report(param).await,
+            Self::InvalidNewIndentationLevel(err) => err.report(param).await,
+            Self::UnexpectedClosingDelimiter(err) => err.report(param).await,
+            Self::MismatchedClosingDelimiter(err) => err.report(param).await,
+            Self::ExpectIndentation(err) => err.report(param).await,
         }
     }
 }

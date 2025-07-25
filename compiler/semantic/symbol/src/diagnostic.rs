@@ -17,7 +17,7 @@ use pernixc_target::{Global, TargetID};
 use crate::{
     kind::Kind,
     name::{get_name, get_qualified_name},
-    source_map::{to_absolute_span, SourceMap},
+    source_map::to_absolute_span,
     span::get_span,
     DiagnosticKey, Key, ID,
 };
@@ -375,12 +375,10 @@ pub async fn rendered_executor(
         }
 
         for diagnostic in lexical_diagnostics.iter().flat_map(|d| d.iter()) {
-            let engine = engine.clone();
             let diagnostic = diagnostic.clone();
 
             diagnostic_handles.push(tokio::spawn(async move {
-                let source_map = SourceMap(engine);
-                Ok(diagnostic.report(&source_map).await)
+                Ok(diagnostic.report(()).await)
             }));
         }
     }
