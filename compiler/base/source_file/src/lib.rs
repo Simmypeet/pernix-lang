@@ -871,8 +871,8 @@ impl pernixc_query::Key for Key {
 }
 
 #[pernixc_query::executor(key(Key), name(Executor))]
-#[allow(clippy::unnecessary_wraps)]
-pub fn executor(
+#[allow(clippy::unnecessary_wraps, clippy::unused_async)]
+pub async fn executor(
     key: &Key,
     _: &TrackedEngine,
 ) -> Result<Result<Arc<SourceFile>, Error>, CyclicError> {
@@ -888,14 +888,14 @@ pub fn executor(
 /// Internally this uses a hash function to derive a stable ID for the source
 /// file.
 #[extend]
-pub fn calculate_path_id(
-    self: &TrackedEngine<'_>,
+pub async fn calculate_path_id(
+    self: &TrackedEngine,
     path: &Path,
     target_id: TargetID,
 ) -> ID<SourceFile> {
     ID::new(
         BuildHasherDefault::<siphasher::sip::SipHasher24>::default()
-            .hash_one((self.get_target_seed(target_id), path)),
+            .hash_one((self.get_target_seed(target_id).await, path)),
     )
 }
 
