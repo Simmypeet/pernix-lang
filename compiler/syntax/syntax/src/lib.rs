@@ -337,7 +337,7 @@ pub struct Key {
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::type_complexity)]
-pub fn parse_executor(
+pub async fn parse_executor(
     key: &Key,
     engine: &TrackedEngine,
 ) -> Result<
@@ -348,10 +348,13 @@ pub fn parse_executor(
     CyclicError,
 > {
     // load the token tree
-    let token_tree = match engine.query(&pernixc_lexical::Key {
-        path: key.path.clone(),
-        target_id: key.target_id,
-    })? {
+    let token_tree = match engine
+        .query(&pernixc_lexical::Key {
+            path: key.path.clone(),
+            target_id: key.target_id,
+        })
+        .await?
+    {
         Ok(source_code) => source_code,
         Err(error) => return Ok(Err(error)),
     };
@@ -381,14 +384,14 @@ pub struct DiagnosticKey(pub Key);
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
 #[allow(clippy::type_complexity)]
-pub fn diagnostic_executor(
+pub async fn diagnostic_executor(
     DiagnosticKey(key): &DiagnosticKey,
     engine: &TrackedEngine,
 ) -> Result<
     Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>,
     CyclicError,
 > {
-    let token_tree = match engine.query(key)? {
+    let token_tree = match engine.query(key).await? {
         Ok(token_tree) => token_tree,
         Err(error) => return Ok(Err(error)),
     };
