@@ -10,6 +10,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{ByteIndex, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use tokio::runtime::Handle;
 
 /// A query for retrieving the a path of the given sourcce file ID.
 #[derive(
@@ -30,9 +31,6 @@ use pernixc_target::Global;
 #[extend(method(get_source_file_path), no_cyclic)]
 pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
 
-#[extend]
-pub async fn get_source_map(self: &TrackedEngine) -> SourceMap {}
-
 #[pernixc_query::executor(key(FilePathKey), name(FilePathExecutor))]
 pub async fn file_path_executor(
     FilePathKey(source_file_id): &FilePathKey,
@@ -48,8 +46,8 @@ pub async fn file_path_executor(
 
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.
-#[derive(Debug, Clone, Copy)]
-pub struct SourceMap<'a>(pub &'a TrackedEngine);
+#[derive(Debug, Clone)]
+pub struct SourceMap(pub TrackedEngine);
 
 /// A wrapper around [`Arc<Path>`] to implement `Display` for use with
 /// `codespan_reporting`.
@@ -71,7 +69,16 @@ impl AsRef<str> for SourceFileStr {
     fn as_ref(&self) -> &str { self.0.content() }
 }
 
-impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
+/*
+ * NOTE: Due to the `Files` trait defined in `codespan_reporting` is not
+ * async, we need to use `Handle::current().block_on(async move { ... })` to
+ * execute the async code, which according to the documentation, it's
+ * possible that it could cause deadlocks. However, in  this case, it's
+ * mostly safe due to it's only related to loading the source file which
+ * is simply a cache lookup operation.
+ */
+
+impl codespan_reporting::files::Files<'_> for SourceMap {
     type FileId = Global<pernixc_arena::ID<SourceFile>>;
 
     type Name = PathDisplay;
@@ -79,32 +86,36 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
     type Source = SourceFileStr;
 
     fn name(
-        &'a self,
+        &self,
         id: Self::FileId,
     ) -> Result<Self::Name, codespan_reporting::files::Error> {
-        Ok(PathDisplay(tokio::spawn(async move || {
-            self.0.query(&FilePathKey(id)).await.unwrap().map(PathDisplay)
-        })))
+        Ok(Handle::current().block_on(async move {
+            PathDisplay(self.0.query(&FilePathKey(id)).await.unwrap())
+        }))
     }
 
     fn source(
-        &'a self,
+        &self,
         id: Self::FileId,
     ) -> Result<Self::Source, codespan_reporting::files::Error> {
-        let path = self.0.get_source_file_path(id);
-        Ok(SourceFileStr(
-            self.0
-                .query(&pernixc_source_file::Key {
-                    path,
-                    target_id: id.target_id,
-                })
-                .unwrap()
-                .unwrap(),
-        ))
+        Handle::current().block_on(async move {
+            let path = self.0.get_source_file_path(id).await;
+
+            Ok(SourceFileStr(
+                self.0
+                    .query(&pernixc_source_file::Key {
+                        path,
+                        target_id: id.target_id,
+                    })
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            ))
+        })
     }
 
     fn line_index(
-        &'a self,
+        &self,
         id: Self::FileId,
         byte_index: usize,
     ) -> Result<usize, codespan_reporting::files::Error> {
@@ -129,7 +140,7 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
     }
 
     fn line_range(
-        &'a self,
+        &self,
         id: Self::FileId,
         line_index: usize,
     ) -> Result<std::ops::Range<usize>, codespan_reporting::files::Error> {

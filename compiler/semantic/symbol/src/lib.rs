@@ -8,12 +8,16 @@ use std::{
 };
 
 use flexstr::{FlexStr, SharedStr};
+use parking_lot::RwLock;
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
-    runtime::{executor::CyclicError, persistence::serde::DynamicRegistry},
+    runtime::{
+        executor::{CyclicError, Future},
+        persistence::serde::DynamicRegistry,
+    },
     TrackedEngine,
 };
 use pernixc_serialize::{
@@ -27,7 +31,7 @@ use pernixc_syntax::item::{
 use pernixc_target::{
     get_invocation_arguments, get_target_seed, Global, TargetID,
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use tokio::task::JoinHandle;
 
 use crate::{
     accessibility::Accessibility,
@@ -411,11 +415,11 @@ pub struct ExternalSubmoduleMapKey(pub Key);
     key(ExternalSubmoduleMapKey),
     name(ExternalSubmoduleMapExecutor)
 )]
-pub fn external_submodule_map_executor(
+pub async fn external_submodule_map_executor(
     ExternalSubmoduleMapKey(key): &ExternalSubmoduleMapKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>, CyclicError> {
-    let table = engine.query(&TableKey(key.clone()))?;
+    let table = engine.query(&TableKey(key.clone())).await?;
     Ok(table.external_submodules.clone())
 }
 
@@ -430,9 +434,9 @@ enum ModuleKind {
     },
 }
 
-struct TableContext<'a> {
-    engine: &'a TrackedEngine<'a>,
-    storage: &'a Storage<Diagnostic>,
+struct TableContext {
+    engine: TrackedEngine,
+    storage: Storage<Diagnostic>,
     target_id: TargetID,
 
     kinds: DashMap<ID, Kind>,
@@ -471,30 +475,34 @@ struct TableContext<'a> {
         DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
     import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
 
+    tasks: RwLock<Vec<JoinHandle<()>>>,
+
     is_root: bool,
 }
 
 #[pernixc_query::executor(key(TableKey), name(TableExecutor))]
 #[allow(clippy::too_many_lines)]
-pub fn table_executor(
+pub async fn table_executor(
     TableKey(key): &TableKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<Table>, pernixc_query::runtime::executor::CyclicError> {
     let (tree_result, target_id, module_kind, is_root) = match key {
         Key::Root(target_id) => {
             let invocation_arguments =
-                engine.get_invocation_arguments(*target_id);
+                engine.get_invocation_arguments(*target_id).await;
 
             (
-                engine.query(&pernixc_syntax::Key {
-                    path: invocation_arguments
-                        .command
-                        .input()
-                        .file
-                        .clone()
-                        .into(),
-                    target_id: *target_id,
-                })?,
+                engine
+                    .query(&pernixc_syntax::Key {
+                        path: invocation_arguments
+                            .command
+                            .input()
+                            .file
+                            .clone()
+                            .into(),
+                        target_id: *target_id,
+                    })
+                    .await?,
                 *target_id,
                 ModuleKind::Root,
                 true,
@@ -502,10 +510,12 @@ pub fn table_executor(
         }
 
         Key::Submodule { external_submodule, target_id } => (
-            engine.query(&pernixc_syntax::Key {
-                path: external_submodule.path.clone(),
-                target_id: *target_id,
-            })?,
+            engine
+                .query(&pernixc_syntax::Key {
+                    path: external_submodule.path.clone(),
+                    target_id: *target_id,
+                })
+                .await?,
             *target_id,
             ModuleKind::Submodule {
                 submodule_id: external_submodule.submodule_id,
@@ -529,7 +539,7 @@ pub fn table_executor(
             let (path, submodule_span) = match key {
                 Key::Root(target_id) => {
                     let invocation_arguments =
-                        engine.get_invocation_arguments(*target_id);
+                        engine.get_invocation_arguments(*target_id).await;
                     (
                         Arc::from(
                             invocation_arguments.command.input().file.clone(),
@@ -556,9 +566,9 @@ pub fn table_executor(
         }
     };
 
-    let context = TableContext {
-        engine,
-        storage: &storage,
+    let context = Arc::new(TableContext {
+        engine: engine.clone(),
+        storage,
         target_id,
 
         kinds: DashMap::default(),
@@ -579,15 +589,20 @@ pub fn table_executor(
         variant_associated_type_syntaxes: DashMap::default(),
         import_syntaxes: DashMap::default(),
 
+        tasks: RwLock::new(Vec::new()),
+
         is_root,
+    });
+
+    context.create_module(tree.and_then(|t| t.0), module_kind).await;
+
+    let Ok(context) = Arc::try_unwrap(context) else {
+        panic!("some threads are not joined")
     };
 
-    {
-        let context = &context;
-
-        rayon::scope(move |scope| {
-            context.create_module(tree.and_then(|t| t.0), module_kind, scope);
-        });
+    // make sure all the tasks are joined before returning the table
+    for join in context.tasks.into_inner() {
+        join.await.expect("Failed to join task");
     }
 
     Ok(Arc::new(Table {
@@ -625,12 +640,12 @@ pub fn table_executor(
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
         ),
-        diagnostics: Arc::new(storage.into_vec().into_iter().collect()),
+        diagnostics: Arc::new(context.storage.into_vec().into_iter().collect()),
     }))
 }
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
-pub fn diagnostic_executor(
+pub async fn diagnostic_executor(
     DiagnosticKey(key): &DiagnosticKey,
     engine: &TrackedEngine,
 ) -> Result<
@@ -638,7 +653,7 @@ pub fn diagnostic_executor(
     pernixc_query::runtime::executor::CyclicError,
 > {
     // Query the table and return only its diagnostics field
-    let table = engine.query(&TableKey(key.clone()))?;
+    let table = engine.query(&TableKey(key.clone())).await?;
 
     Ok(table.diagnostics.clone())
 }
@@ -693,8 +708,8 @@ struct Entry {
         Option<Option<pernixc_syntax::r#type::Type>>,
 }
 
-impl<'ctx> TableContext<'ctx> {
-    fn add_symbol_entry(&self, id: ID, parent_id: ID, entry: Entry) {
+impl TableContext {
+    async fn add_symbol_entry(&self, id: ID, parent_id: ID, entry: Entry) {
         Self::insert_to_table(&self.names, id, entry.identifier.kind.0);
         Self::insert_to_table(&self.spans, id, Some(entry.identifier.span));
         Self::insert_to_table(&self.kinds, id, entry.kind);
@@ -706,7 +721,9 @@ impl<'ctx> TableContext<'ctx> {
                 }
                 Some(pernixc_syntax::AccessModifier::Internal(_)) => {
                     Accessibility::Scoped(
-                        self.engine.get_target_root_module_id(self.target_id),
+                        self.engine
+                            .get_target_root_module_id(self.target_id)
+                            .await,
                     )
                 }
                 Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
@@ -798,30 +815,31 @@ impl<'ctx> TableContext<'ctx> {
         );
     }
 
-    fn create_module<'scope>(
-        &'ctx self,
+    async fn create_module(
+        self: Arc<Self>,
         module_content: Option<pernixc_syntax::item::module::Content>,
         module_kind: ModuleKind,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        'ctx: 'scope,
-    {
+    ) {
         // extract the information about the module
         let (accessibility, current_module_id, module_qualified_name, span) =
             match module_kind {
                 ModuleKind::Root => {
-                    let invocation_arguments =
-                        self.engine.get_invocation_arguments(self.target_id);
+                    let invocation_arguments = self
+                        .engine
+                        .get_invocation_arguments(self.target_id)
+                        .await;
 
                     let target_name =
                         invocation_arguments.command.input().target_name();
 
-                    let current_module_id =
-                        self.engine.calculate_qualified_name_id(
+                    let current_module_id = self
+                        .engine
+                        .calculate_qualified_name_id(
                             std::iter::once(target_name.as_str()),
                             self.target_id,
                             0,
-                        );
+                        )
+                        .await;
 
                     let module_qualified_name = Arc::from([target_name]);
 
@@ -845,37 +863,44 @@ impl<'ctx> TableContext<'ctx> {
                 ),
             };
 
-        scope.spawn(move |scope| {
+        let context = self.clone();
+
+        self.tasks.write().push(tokio::spawn(async move {
             let mut member_builder = MemberBuilder::new(
                 current_module_id,
                 module_qualified_name,
-                self.target_id,
+                context.target_id,
             );
             let mut imports = Vec::new();
 
             if let Some(module_content) = module_content {
-                self.handle_module_content(
-                    module_content,
-                    &mut member_builder,
-                    &mut imports,
-                    scope,
-                );
+                context
+                    .handle_module_content(
+                        module_content,
+                        &mut member_builder,
+                        &mut imports,
+                    )
+                    .await;
             }
 
             Self::insert_to_table(
-                &self.names,
+                &context.names,
                 current_module_id,
                 member_builder.symbol_qualified_name.last().cloned().unwrap(),
             );
             Self::insert_to_table(
-                &self.accessibilities,
+                &context.accessibilities,
                 current_module_id,
                 accessibility,
             );
-            Self::insert_to_table(&self.kinds, current_module_id, Kind::Module);
-            Self::insert_to_table(&self.spans, current_module_id, span);
             Self::insert_to_table(
-                &self.members,
+                &context.kinds,
+                current_module_id,
+                Kind::Module,
+            );
+            Self::insert_to_table(&context.spans, current_module_id, span);
+            Self::insert_to_table(
+                &context.members,
                 current_module_id,
                 Arc::new(Member {
                     member_ids_by_name: member_builder.member_ids_by_name,
@@ -883,29 +908,26 @@ impl<'ctx> TableContext<'ctx> {
                 }),
             );
             Self::insert_to_table(
-                &self.import_syntaxes,
+                &context.import_syntaxes,
                 current_module_id,
                 imports.into(),
             );
 
-            self.storage.as_vec_mut().extend(
+            context.storage.as_vec_mut().extend(
                 member_builder
                     .redefinition_errors
                     .into_iter()
                     .map(Diagnostic::ItemRedefinition),
             );
-        });
+        }));
     }
 
     #[allow(clippy::too_many_lines)]
-    fn handle_module_member<'scope>(
-        &'ctx self,
+    async fn handle_module_member(
+        self: &Arc<Self>,
         module_syntax: &pernixc_syntax::item::module::Module,
         member_builder: &mut MemberBuilder,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        'ctx: 'scope,
-    {
+    ) {
         let Some(signature) = module_syntax.signature() else {
             return;
         };
@@ -928,7 +950,7 @@ impl<'ctx> TableContext<'ctx> {
             }
             Some(pernixc_syntax::AccessModifier::Internal(_)) => {
                 Accessibility::Scoped(
-                    self.engine.get_target_root_module_id(self.target_id),
+                    self.engine.get_target_root_module_id(self.target_id).await,
                 )
             }
             Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
@@ -940,21 +962,18 @@ impl<'ctx> TableContext<'ctx> {
 
         if let Some(member) = module_syntax.inline_body() {
             let next_submodule_id =
-                member_builder.add_member(identifier, self.engine);
+                member_builder.add_member(identifier, &self.engine).await;
 
-            self.create_module(
-                member.content(),
-                ModuleKind::Submodule {
-                    submodule_id: next_submodule_id,
-                    submodule_qualified_name: next_submodule_qualified_name,
-                    accessibility,
-                    span,
-                },
-                scope,
-            );
+            self.create_module(member.content(), ModuleKind::Submodule {
+                submodule_id: next_submodule_id,
+                submodule_qualified_name: next_submodule_qualified_name,
+                accessibility,
+                span,
+            })
+            .await;
         } else {
             let invocation_arguments =
-                self.engine.get_invocation_arguments(self.target_id);
+                self.engine.get_invocation_arguments(self.target_id).await;
 
             let mut load_path = invocation_arguments
                 .command
@@ -1006,7 +1025,8 @@ impl<'ctx> TableContext<'ctx> {
                     in_id: self.target_id.make_global(member_builder.symbol_id),
                 });
             } else {
-                let id = member_builder.add_member(identifier, self.engine);
+                let id =
+                    member_builder.add_member(identifier, &self.engine).await;
 
                 self.external_submodules.insert(
                     id,
@@ -1023,14 +1043,11 @@ impl<'ctx> TableContext<'ctx> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn handle_trait_member<'scope>(
-        &'ctx self,
+    async fn handle_trait_member(
+        self: &Arc<Self>,
         trait_syntax: &pernixc_syntax::item::r#trait::Trait,
         module_member_builder: &mut MemberBuilder,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        'ctx: 'scope,
-    {
+    ) {
         let Some(signature) = trait_syntax.signature() else {
             return;
         };
@@ -1046,8 +1063,9 @@ impl<'ctx> TableContext<'ctx> {
             .chain(std::iter::once(identifier.kind.0.clone()))
             .collect::<Arc<[_]>>();
 
-        let trait_id =
-            module_member_builder.add_member(identifier.clone(), self.engine);
+        let trait_id = module_member_builder
+            .add_member(identifier.clone(), &self.engine)
+            .await;
 
         let trait_body = trait_syntax.body();
         let members =
@@ -1061,11 +1079,13 @@ impl<'ctx> TableContext<'ctx> {
 
         let parent_module_id = module_member_builder.symbol_id;
 
-        scope.spawn(move |_| {
+        let context = self.clone();
+
+        self.tasks.write().push(tokio::spawn(async move {
             let mut trait_member_builder = MemberBuilder::new(
                 trait_id,
                 next_submodule_qualified_name,
-                self.target_id,
+                context.target_id,
             );
 
             // add each of the member to the trait member
@@ -1159,12 +1179,13 @@ impl<'ctx> TableContext<'ctx> {
                 };
 
                 let member_id = trait_member_builder
-                    .add_member(entry.identifier.clone(), self.engine);
+                    .add_member(entry.identifier.clone(), &context.engine)
+                    .await;
 
-                self.add_symbol_entry(member_id, trait_id, entry);
+                context.add_symbol_entry(member_id, trait_id, entry);
             }
 
-            self.add_symbol_entry(
+            context.add_symbol_entry(
                 trait_id,
                 parent_module_id,
                 Entry::builder()
@@ -1176,24 +1197,21 @@ impl<'ctx> TableContext<'ctx> {
                     .build(),
             );
 
-            self.storage.as_vec_mut().extend(
+            context.storage.as_vec_mut().extend(
                 trait_member_builder
                     .redefinition_errors
                     .into_iter()
                     .map(Diagnostic::ItemRedefinition),
             );
-        });
+        }));
     }
 
     #[allow(clippy::too_many_lines)]
-    fn handle_enum_member<'scope>(
-        &'ctx self,
+    async fn handle_enum_member(
+        self: &Arc<Self>,
         enum_syntax: &pernixc_syntax::item::r#enum::Enum,
         module_member_builder: &mut MemberBuilder,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        'ctx: 'scope,
-    {
+    ) {
         let Some(signature) = enum_syntax.signature() else {
             return;
         };
@@ -1209,8 +1227,9 @@ impl<'ctx> TableContext<'ctx> {
             .chain(std::iter::once(identifier.kind.0.clone()))
             .collect::<Arc<[_]>>();
 
-        let enum_id =
-            module_member_builder.add_member(identifier.clone(), self.engine);
+        let enum_id = module_member_builder
+            .add_member(identifier.clone(), &self.engine)
+            .await;
 
         let enum_body = enum_syntax.body();
         let members =
@@ -1224,11 +1243,12 @@ impl<'ctx> TableContext<'ctx> {
 
         let parent_module_id = module_member_builder.symbol_id;
 
-        scope.spawn(move |_| {
+        let context = self.clone();
+        self.tasks.write().push(tokio::spawn(async move {
             let mut enum_member_builder = MemberBuilder::new(
                 enum_id,
                 next_submodule_qualified_name,
-                self.target_id,
+                context.target_id,
             );
 
             // add each of the member to the trait member
@@ -1243,7 +1263,8 @@ impl<'ctx> TableContext<'ctx> {
                 };
 
                 let variant_id = enum_member_builder
-                    .add_member(identifier.clone(), self.engine);
+                    .add_member(identifier.clone(), &context.engine)
+                    .await;
 
                 let entry = Entry::builder()
                     .kind(Kind::Variant)
@@ -1253,10 +1274,10 @@ impl<'ctx> TableContext<'ctx> {
                     )
                     .build();
 
-                self.add_symbol_entry(variant_id, enum_id, entry);
+                context.add_symbol_entry(variant_id, enum_id, entry);
             }
 
-            self.add_symbol_entry(
+            context.add_symbol_entry(
                 enum_id,
                 parent_module_id,
                 Entry::builder()
@@ -1268,35 +1289,30 @@ impl<'ctx> TableContext<'ctx> {
                     .build(),
             );
 
-            self.storage.as_vec_mut().extend(
+            context.storage.as_vec_mut().extend(
                 enum_member_builder
                     .redefinition_errors
                     .into_iter()
                     .map(Diagnostic::ItemRedefinition),
             );
-        });
+        }));
     }
 
     #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
-    fn handle_module_content<'scope>(
-        &'ctx self,
+    async fn handle_module_content(
+        self: &Arc<Self>,
         module_content: pernixc_syntax::item::module::Content,
         module_member_builder: &mut MemberBuilder,
         imports: &mut Vec<pernixc_syntax::item::module::Import>,
-        scope: &rayon::Scope<'scope>,
-    ) where
-        'ctx: 'scope,
-    {
+    ) {
         for item in module_content.members().filter_map(|x| x.into_line().ok())
         {
             let entry = match item {
                 ModuleMemberSyn::Module(module) => {
                     // custom handling for the module member
-                    self.handle_module_member(
-                        &module,
-                        module_member_builder,
-                        scope,
-                    );
+                    self.handle_module_member(&module, module_member_builder)
+                        .await;
+
                     continue;
                 }
 
@@ -1305,8 +1321,9 @@ impl<'ctx> TableContext<'ctx> {
                     self.handle_trait_member(
                         &trait_syntax,
                         module_member_builder,
-                        scope,
-                    );
+                    )
+                    .await;
+
                     continue;
                 }
 
@@ -1439,8 +1456,9 @@ impl<'ctx> TableContext<'ctx> {
                     self.handle_enum_member(
                         &enum_syntax,
                         module_member_builder,
-                        scope,
-                    );
+                    )
+                    .await;
+
                     continue;
                 }
 
@@ -1481,7 +1499,9 @@ impl<'ctx> TableContext<'ctx> {
             };
 
             let member_id = module_member_builder
-                .add_member(entry.identifier.clone(), self.engine);
+                .add_member(entry.identifier.clone(), &self.engine)
+                .await;
+
             self.add_symbol_entry(
                 member_id,
                 module_member_builder.symbol_id,
@@ -1522,10 +1542,10 @@ impl MemberBuilder {
         }
     }
 
-    fn add_member(
+    async fn add_member(
         &mut self,
         identifier: pernixc_syntax::Identifier,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> ID {
         let occurrences =
             self.name_occurrences.entry(identifier.kind.0.clone()).or_default();
@@ -1533,14 +1553,16 @@ impl MemberBuilder {
         let current_count = *occurrences;
         *occurrences += 1;
 
-        let new_member_id = engine.calculate_qualified_name_id(
-            self.symbol_qualified_name
-                .iter()
-                .map(flexstr::FlexStr::as_str)
-                .chain(std::iter::once(identifier.kind.0.as_str())),
-            self.target_id,
-            current_count,
-        );
+        let new_member_id = engine
+            .calculate_qualified_name_id(
+                self.symbol_qualified_name
+                    .iter()
+                    .map(flexstr::FlexStr::as_str)
+                    .chain(std::iter::once(identifier.kind.0.as_str())),
+                self.target_id,
+                current_count,
+            )
+            .await;
 
         match self.member_ids_by_name.entry(identifier.kind.0) {
             hash_map::Entry::Occupied(occupied_entry) => {
@@ -1639,91 +1661,135 @@ pub struct Map {
 }
 
 #[pernixc_query::executor(key(MapKey), name(MapExecutor))]
-pub fn map_executor(
+#[allow(clippy::too_many_lines)]
+pub async fn map_executor(
     &MapKey(target_id): &MapKey,
     engine: &TrackedEngine,
 ) -> Result<Map, pernixc_query::runtime::executor::CyclicError> {
     #[allow(clippy::needless_pass_by_value, clippy::type_complexity)]
-    fn traverse_table(
-        engine: &TrackedEngine,
-        table_key: &Key,
-        keys_by_symbol_id: &DashMap<ID, Option<Arc<ExternalSubmodule>>>,
-        paths_by_source_id: &DashMap<
-            pernixc_arena::ID<SourceFile>,
-            (Arc<Path>, Option<Arc<ExternalSubmodule>>),
+    fn traverse_table<'x>(
+        engine: &'x TrackedEngine,
+        table_key: &'x Key,
+        keys_by_symbol_id: Arc<DashMap<ID, Option<Arc<ExternalSubmodule>>>>,
+        paths_by_source_id: Arc<
+            DashMap<
+                pernixc_arena::ID<SourceFile>,
+                (Arc<Path>, Option<Arc<ExternalSubmodule>>),
+            >,
         >,
         current_external_submodule: Option<Arc<ExternalSubmodule>>,
-    ) -> Result<(), pernixc_query::runtime::executor::CyclicError> {
-        // Query the table for this key
-        let kinds = engine.query(&KindMapKey(table_key.clone()))?;
-        let external_submodules =
-            engine.query(&ExternalSubmoduleMapKey(table_key.clone()))?;
+    ) -> impl Future<'x, ()> {
+        async move {
+            // Query the table for this key
+            let kinds = engine.query(&KindMapKey(table_key.clone())).await?;
 
-        // Get the path and target_id for this table
-        let (path, current_target_id) = match &table_key {
-            Key::Root(target_id) => {
-                let invocation_arguments =
-                    engine.get_invocation_arguments(*target_id);
-                (
-                    Arc::from(
-                        invocation_arguments.command.input().file.clone(),
-                    ),
-                    *target_id,
-                )
-            }
-            Key::Submodule { external_submodule, target_id } => {
-                (external_submodule.path.clone(), *target_id)
-            }
-        };
+            let external_submodules: Arc<
+                ReadOnlyView<ID, Arc<ExternalSubmodule>>,
+            > = engine
+                .query(&ExternalSubmoduleMapKey(table_key.clone()))
+                .await?;
 
-        // Calculate the source file ID for this path
-        let source_file_id = engine.calculate_path_id(&path, current_target_id);
-
-        // Add the path to source file mapping
-        paths_by_source_id
-            .insert(source_file_id, (path, current_external_submodule.clone()));
-
-        // Add all symbols from this table to the symbol map
-        for (symbol_id, _kind) in kinds.iter() {
-            keys_by_symbol_id
-                .insert(*symbol_id, current_external_submodule.clone());
-        }
-
-        // Recursively traverse external submodules
-        external_submodules.par_iter().try_for_each(|item| {
-            let (_module_id, external_submodule) = item.pair();
-            let submodule_key = Key::Submodule {
-                external_submodule: external_submodule.clone(),
-                target_id: current_target_id,
+            // Get the path and target_id for this table
+            let (path, current_target_id) = match &table_key {
+                Key::Root(target_id) => {
+                    let invocation_arguments =
+                        engine.get_invocation_arguments(*target_id).await;
+                    (
+                        Arc::from(
+                            invocation_arguments.command.input().file.clone(),
+                        ),
+                        *target_id,
+                    )
+                }
+                Key::Submodule { external_submodule, target_id } => {
+                    (external_submodule.path.clone(), *target_id)
+                }
             };
 
-            traverse_table(
-                engine,
-                &submodule_key,
-                keys_by_symbol_id,
-                paths_by_source_id,
-                Some(external_submodule.clone()),
-            )
-        })?;
+            // Calculate the source file ID for this path
+            let source_file_id =
+                engine.calculate_path_id(&path, current_target_id).await;
 
-        Ok(())
+            // Add the path to source file mapping
+            paths_by_source_id.insert(
+                source_file_id,
+                (path, current_external_submodule.clone()),
+            );
+
+            // Add all symbols from this table to the symbol map
+            for (symbol_id, _kind) in kinds.iter() {
+                keys_by_symbol_id
+                    .insert(*symbol_id, current_external_submodule.clone());
+            }
+
+            // Recursively traverse external submodules
+
+            let mut handles = Vec::new();
+
+            for i in external_submodules.iter() {
+                let external_submodule = i.1.clone();
+                let engine = engine.clone();
+
+                let submodule_key = Key::Submodule {
+                    external_submodule: external_submodule.clone(),
+                    target_id: current_target_id,
+                };
+
+                let keys_by_symbol_id = keys_by_symbol_id.clone();
+                let paths_by_source_id = paths_by_source_id.clone();
+
+                handles.push(tokio::spawn(async move {
+                    traverse_table(
+                        &engine,
+                        &submodule_key,
+                        keys_by_symbol_id,
+                        paths_by_source_id,
+                        Some(external_submodule),
+                    )
+                    .await
+                }));
+            }
+
+            // Wait for all traversals to complete
+            let mut error = None;
+            for handle in handles {
+                if let Err(e) = handle.await.unwrap() {
+                    error = Some(e);
+                }
+            }
+
+            if let Some(e) = error {
+                return Err(e);
+            }
+
+            Ok::<(), CyclicError>(())
+        }
     }
 
-    let keys_by_symbol_id = DashMap::default();
-    let paths_by_source_id = DashMap::default();
+    let keys_by_symbol_id = Arc::new(DashMap::default());
+    let paths_by_source_id = Arc::new(DashMap::default());
 
     // Start traversal from the root
     traverse_table(
         engine,
         &Key::Root(target_id),
-        &keys_by_symbol_id,
-        &paths_by_source_id,
+        keys_by_symbol_id.clone(),
+        paths_by_source_id.clone(),
         None,
-    )?;
+    )
+    .await?;
 
     Ok(Map {
-        keys_by_symbol_id: Arc::new(keys_by_symbol_id.into_read_only()),
-        paths_by_source_id: Arc::new(paths_by_source_id.into_read_only()),
+        keys_by_symbol_id: Arc::new(
+            Arc::try_unwrap(keys_by_symbol_id)
+                .expect("Failed to convert DashMap to ReadOnlyView")
+                .into_read_only(),
+        ),
+        paths_by_source_id: Arc::new(
+            Arc::try_unwrap(paths_by_source_id)
+                .expect("Failed to convert DashMap to ReadOnlyView")
+                .into_read_only(),
+        ),
     })
 }
 
@@ -1733,7 +1799,7 @@ async fn get_table_of_symbol(
     self: &TrackedEngine,
     id: Global<ID>,
 ) -> Arc<Table> {
-    let map = self.query(&MapKey(id.target_id)).unwrap();
+    let map = self.query(&MapKey(id.target_id)).await.unwrap();
 
     let node_key = map
         .keys_by_symbol_id
@@ -1748,5 +1814,5 @@ async fn get_table_of_symbol(
             },
         );
 
-    self.query(&crate::TableKey(node_key)).unwrap()
+    self.query(&crate::TableKey(node_key)).await.unwrap()
 }
