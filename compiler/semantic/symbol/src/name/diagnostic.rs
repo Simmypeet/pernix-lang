@@ -40,17 +40,17 @@ pub enum Diagnostic {
     ExpectModule(ExpectModule),
 }
 
-impl Report<&TrackedEngine<'_>> for Diagnostic {
+impl Report<&TrackedEngine> for Diagnostic {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         match self {
-            Self::SymbolNotFound(err) => err.report(engine),
-            Self::SymbolIsNotAccessible(err) => err.report(engine),
-            Self::ExpectModule(err) => err.report(engine),
+            Self::SymbolNotFound(err) => err.report(engine).await,
+            Self::SymbolIsNotAccessible(err) => err.report(engine).await,
+            Self::ExpectModule(err) => err.report(engine).await,
         }
     }
 }
@@ -130,57 +130,68 @@ fn suggest<'a>(
     }
 }
 
-impl Report<&TrackedEngine<'_>> for SymbolNotFound {
+impl Report<&TrackedEngine> for SymbolNotFound {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let searched_item_id_qualified_name =
-            self.searched_item_id.map(|x| engine.get_qualified_name(x));
+        let searched_item_id_qualified_name = match self.searched_item_id {
+            Some(id) => Some(engine.get_qualified_name(id).await),
+            None => None,
+        };
 
-        let did_you_mean = self.searched_item_id.map_or_else(
-            || {
-                let target_map = engine.get_target_map();
-                suggest(
-                    &self.name,
-                    target_map.keys().map(flexstr::FlexStr::as_str),
-                )
-                .map(ToString::to_string)
-            },
-            |x| {
-                let members = engine.try_get_members(x)?;
+        let did_you_mean = 'dym: {
+            match self.searched_item_id {
+                Some(item) => {
+                    let Some(members) = engine.try_get_members(item).await
+                    else {
+                        break 'dym None;
+                    };
 
-                let kind = engine.get_kind(x);
+                    let kind = engine.get_kind(item).await;
 
-                match kind {
-                    Kind::Module => suggest(
-                        &self.name,
-                        members
-                            .member_ids_by_name
-                            .keys()
-                            .map(flexstr::FlexStr::as_str)
-                            .chain(
-                                engine
-                                    .get_imports(x)
+                    match kind {
+                        Kind::Module => {
+                            let imports = engine.get_imports(item).await;
+
+                            suggest(
+                                &self.name,
+                                members
+                                    .member_ids_by_name
                                     .keys()
-                                    .map(flexstr::FlexStr::as_str),
-                            ),
-                    )
-                    .map(ToString::to_string),
+                                    .map(flexstr::FlexStr::as_str)
+                                    .chain(
+                                        imports
+                                            .keys()
+                                            .map(flexstr::FlexStr::as_str),
+                                    ),
+                            )
+                            .map(ToString::to_string)
+                        }
 
-                    _ => suggest(
-                        &self.name,
-                        members
-                            .member_ids_by_name
-                            .keys()
-                            .map(flexstr::FlexStr::as_str),
-                    )
-                    .map(ToString::to_string),
+                        _ => suggest(
+                            &self.name,
+                            members
+                                .member_ids_by_name
+                                .keys()
+                                .map(flexstr::FlexStr::as_str),
+                        )
+                        .map(ToString::to_string),
+                    }
                 }
-            },
-        );
+
+                None => {
+                    let target_map = engine.get_target_map().await;
+                    suggest(
+                        &self.name,
+                        target_map.keys().map(flexstr::FlexStr::as_str),
+                    )
+                    .map(ToString::to_string)
+                }
+            }
+        };
 
         let span_message = searched_item_id_qualified_name.map_or_else(
             || {
@@ -199,7 +210,7 @@ impl Report<&TrackedEngine<'_>> for SymbolNotFound {
 
         pernixc_diagnostic::Diagnostic {
             span: Some((
-                engine.to_absolute_span(&self.resolution_span),
+                engine.to_absolute_span(&self.resolution_span).await,
                 Some(span_message),
             )),
             message: "the symbol could not be found".to_string(),
@@ -237,20 +248,21 @@ pub struct SymbolIsNotAccessible {
     pub referred_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine<'_>> for SymbolIsNotAccessible {
+impl Report<&TrackedEngine> for SymbolIsNotAccessible {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         let referring_site_qualified_name =
-            engine.get_qualified_name(self.referring_site);
-        let referred_qualified_name = engine.get_qualified_name(self.referred);
+            engine.get_qualified_name(self.referring_site).await;
+        let referred_qualified_name =
+            engine.get_qualified_name(self.referred).await;
 
         pernixc_diagnostic::Diagnostic {
             span: Some((
-                engine.to_absolute_span(&self.referred_span),
+                engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
                     "the symbol `{referred_qualified_name}` is not accessible \
                      from `{referring_site_qualified_name}`",
@@ -286,20 +298,23 @@ pub struct ExpectModule {
     pub found_id: Global<ID>,
 }
 
-impl Report<&TrackedEngine<'_>> for ExpectModule {
+impl Report<&TrackedEngine> for ExpectModule {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         let found_symbol_qualified_name =
-            engine.get_qualified_name(self.found_id);
+            engine.get_qualified_name(self.found_id).await;
 
-        let kind = engine.get_kind(self.found_id);
+        let kind = engine.get_kind(self.found_id).await;
 
         pernixc_diagnostic::Diagnostic {
-            span: Some((engine.to_absolute_span(&self.module_path), None)),
+            span: Some((
+                engine.to_absolute_span(&self.module_path).await,
+                None,
+            )),
             message: format!(
                 "expected a module in the module path, but found `{} {}`",
                 kind.kind_str(),

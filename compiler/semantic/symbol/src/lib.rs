@@ -382,11 +382,11 @@ pub struct Table {
 pub struct KindMapKey(pub Key);
 
 #[pernixc_query::executor(key(KindMapKey), name(KindMapExecutor))]
-pub fn kind_map_executor(
+pub async fn kind_map_executor(
     KindMapKey(key): &KindMapKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<ReadOnlyView<ID, Kind>>, CyclicError> {
-    let table = engine.query(&TableKey(key.clone()))?;
+    let table = engine.query(&TableKey(key.clone())).await?;
     Ok(table.kinds.clone())
 }
 
@@ -1573,14 +1573,14 @@ impl MemberBuilder {
 /// with the same name in the same scope. In case of the symbol with no
 /// redefinition, passing `0` as the declaration order is sufficient.
 #[extend]
-pub fn calculate_qualified_name_id<'a>(
-    self: &TrackedEngine<'_>,
+pub async fn calculate_qualified_name_id<'a>(
+    self: &TrackedEngine,
     qualified_name_sequence: impl IntoIterator<Item = &'a str>,
     target_id: TargetID,
     declaration_order: usize,
 ) -> ID {
     let mut hasher = siphasher::sip::SipHasher24::default();
-    let target_seed = self.get_target_seed(target_id);
+    let target_seed = self.get_target_seed(target_id).await;
 
     target_seed.hash(&mut hasher);
 
@@ -1596,11 +1596,11 @@ pub fn calculate_qualified_name_id<'a>(
 
 /// Returns the root module ID for the given target ID.
 #[extend]
-pub fn get_target_root_module_id(
-    self: &TrackedEngine<'_>,
+pub async fn get_target_root_module_id(
+    self: &TrackedEngine,
     target_id: TargetID,
 ) -> ID {
-    let invocation_arguments = self.get_invocation_arguments(target_id);
+    let invocation_arguments = self.get_invocation_arguments(target_id).await;
     let target_name = invocation_arguments.command.input().target_name();
 
     self.calculate_qualified_name_id(
@@ -1608,6 +1608,7 @@ pub fn get_target_root_module_id(
         target_id,
         0,
     )
+    .await
 }
 
 /// Used to identify in which table node the symbol is defined.
@@ -1728,7 +1729,10 @@ pub fn map_executor(
 
 /// Gets the table node where the information of the given symbol ID is stored.
 #[extend]
-fn get_table_of_symbol(self: &TrackedEngine<'_>, id: Global<ID>) -> Arc<Table> {
+async fn get_table_of_symbol(
+    self: &TrackedEngine,
+    id: Global<ID>,
+) -> Arc<Table> {
     let map = self.query(&MapKey(id.target_id)).unwrap();
 
     let node_key = map

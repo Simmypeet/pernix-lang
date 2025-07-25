@@ -42,19 +42,19 @@ pub enum Diagnostic {
     ConflictingUsing(ConflictingUsing),
 }
 
-impl Report<&TrackedEngine<'_>> for Diagnostic {
+impl Report<&TrackedEngine> for Diagnostic {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         match self {
-            Self::Naming(err) => err.report(engine),
+            Self::Naming(err) => err.report(engine).await,
             Self::TargetRootInImportIsNotAllowedwithFrom(err) => {
-                err.report(engine)
+                err.report(engine).await
             }
-            Self::ConflictingUsing(err) => err.report(engine),
+            Self::ConflictingUsing(err) => err.report(engine).await,
         }
     }
 }
@@ -79,16 +79,16 @@ pub struct TargetRootInImportIsNotAllowedwithFrom {
     pub target_root_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine<'_>> for TargetRootInImportIsNotAllowedwithFrom {
+impl Report<&TrackedEngine> for TargetRootInImportIsNotAllowedwithFrom {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             span: Some((
-                engine.to_absolute_span(&self.target_root_span),
+                engine.to_absolute_span(&self.target_root_span).await,
                 Some(
                     "the `target` root path is not allowed with `from` clause"
                         .to_string(),
@@ -134,18 +134,19 @@ pub struct ConflictingUsing {
     pub conflicting_span: Option<RelativeSpan>,
 }
 
-impl Report<&TrackedEngine<'_>> for ConflictingUsing {
+impl Report<&TrackedEngine> for ConflictingUsing {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let module_qualified_name = engine.get_qualified_name(self.module_id);
+        let module_qualified_name =
+            engine.get_qualified_name(self.module_id).await;
 
         pernixc_diagnostic::Diagnostic {
             span: Some((
-                engine.to_absolute_span(&self.using_span),
+                engine.to_absolute_span(&self.using_span).await,
                 Some(format!(
                     "the using `{name}` conflicts with the existing name in \
                      the module `{module_qualified_name}`",
@@ -157,19 +158,18 @@ impl Report<&TrackedEngine<'_>> for ConflictingUsing {
                 .to_string(),
             severity: Severity::Error,
             help_message: None,
-            related: self
-                .conflicting_span
-                .as_ref()
-                .map(|span| {
+            related: match self.conflicting_span.as_ref() {
+                Some(span) => {
                     vec![Related {
-                        span: engine.to_absolute_span(span),
+                        span: engine.to_absolute_span(span).await,
                         message: format!(
                             "this symbol already defined the name `{}`",
                             self.name
                         ),
                     }]
-                })
-                .unwrap_or_default(),
+                }
+                None => vec![],
+            },
         }
     }
 }

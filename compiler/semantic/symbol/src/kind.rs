@@ -6,7 +6,6 @@ use pernixc_query::{runtime::executor::CyclicError, TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 use crate::{get_table_of_symbol, ID};
 
@@ -274,11 +273,11 @@ impl Kind {
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
-pub fn executor(
+pub async fn executor(
     key: &Key,
     engine: &TrackedEngine,
 ) -> Result<Kind, CyclicError> {
-    let table = engine.get_table_of_symbol(key.0);
+    let table = engine.get_table_of_symbol(key.0).await;
 
     Ok(table
         .kinds
@@ -314,20 +313,24 @@ pub struct AllSymbolOfKindKey {
     key(AllSymbolOfKindKey),
     name(AllSymbolOfKindExecutor)
 )]
-pub fn all_symbol_of_kind_executor(
+pub async fn all_symbol_of_kind_executor(
     &AllSymbolOfKindKey { target_id, kind }: &AllSymbolOfKindKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<[ID]>, CyclicError> {
-    let map = engine.query(&crate::MapKey(target_id))?;
+    let map = engine.query(&crate::MapKey(target_id)).await?;
 
-    Ok(map
-        .keys_by_symbol_id
-        .par_iter()
-        .filter_map(|x| {
+    let mut handles = Vec::with_capacity(map.keys_by_symbol_id.len());
+
+    for x in map.keys_by_symbol_id.keys() {
+        let map = map.clone();
+        let engine = engine.clone();
+        let id = *x;
+
+        handles.push(tokio::spawn(async move {
             let node_key = map
                 .keys_by_symbol_id
-                .get(x.key())
-                .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", x.key()))
+                .get(&id)
+                .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id))
                 .as_ref()
                 .map_or_else(
                     || crate::Key::Root(target_id),
@@ -337,9 +340,23 @@ pub fn all_symbol_of_kind_executor(
                     },
                 );
 
-            let node = engine.query(&crate::TableKey(node_key)).unwrap();
+            let node = engine.query(&crate::TableKey(node_key)).await?;
 
-            (*node.kinds.get(x.key()).unwrap() == kind).then_some(*x.key())
-        })
-        .collect())
+            if node.kinds.get(&id).unwrap() == &kind {
+                Ok(Some(id))
+            } else {
+                Ok(None)
+            }
+        }));
+    }
+
+    let mut results = Vec::new();
+
+    for handle in handles {
+        if let Some(id) = handle.await.unwrap()? {
+            results.push(id);
+        }
+    }
+
+    Ok(Arc::from(results))
 }

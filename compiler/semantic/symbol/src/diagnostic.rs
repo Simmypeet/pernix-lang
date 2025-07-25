@@ -8,19 +8,16 @@ use std::{
 
 use pernixc_diagnostic::Report;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
-use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
 
 use crate::{
     kind::Kind,
     name::{get_name, get_qualified_name},
-    source_map::{to_absolute_span, SourceMap},
+    source_map::to_absolute_span,
     span::get_span,
     DiagnosticKey, Key, ID,
 };
@@ -46,17 +43,23 @@ pub enum Diagnostic {
     SourceFileLoadFail(SourceFileLoadFail),
 }
 
-impl Report<&TrackedEngine<'_>> for Diagnostic {
+impl Report<&TrackedEngine> for Diagnostic {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         match self {
-            Self::ItemRedefinition(diagnostic) => diagnostic.report(engine),
-            Self::RecursiveFileRequest(diagnostic) => diagnostic.report(engine),
-            Self::SourceFileLoadFail(diagnostic) => diagnostic.report(engine),
+            Self::ItemRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::RecursiveFileRequest(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::SourceFileLoadFail(diagnostic) => {
+                diagnostic.report(engine).await
+            }
         }
     }
 }
@@ -86,20 +89,20 @@ pub struct ItemRedefinition {
     pub in_id: Global<ID>,
 }
 
-impl Report<&TrackedEngine<'_>> for ItemRedefinition {
+impl Report<&TrackedEngine> for ItemRedefinition {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<ByteIndex> {
-        let existing_symbol_span = engine.get_span(self.existing_id);
-        let existing_symbol_name = engine.get_name(self.existing_id);
-        let in_name = engine.get_qualified_name(self.in_id);
+        let existing_symbol_span = engine.get_span(self.existing_id).await;
+        let existing_symbol_name = engine.get_name(self.existing_id).await;
+        let in_name = engine.get_qualified_name(self.in_id).await;
 
         pernixc_diagnostic::Diagnostic {
             span: Some((
-                engine.to_absolute_span(&self.redefinition_span),
+                engine.to_absolute_span(&self.redefinition_span).await,
                 Some("redefinition here".to_string()),
             )),
 
@@ -109,17 +112,16 @@ impl Report<&TrackedEngine<'_>> for ItemRedefinition {
             ),
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
-            related: existing_symbol_span
-                .as_ref()
-                .map(|span| pernixc_diagnostic::Related {
-                    span: engine.to_absolute_span(span),
+            related: match existing_symbol_span.as_ref() {
+                Some(span) => vec![pernixc_diagnostic::Related {
+                    span: engine.to_absolute_span(span).await,
                     message: format!(
                         "symbol `{existing_symbol_name}` is already defined \
                          here"
                     ),
-                })
-                .into_iter()
-                .collect(),
+                }],
+                None => Vec::new(),
+            },
         }
     }
 }
@@ -147,16 +149,16 @@ pub struct RecursiveFileRequest {
     pub path: PathBuf,
 }
 
-impl Report<&TrackedEngine<'_>> for RecursiveFileRequest {
+impl Report<&TrackedEngine> for RecursiveFileRequest {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             span: Some((
-                engine.to_absolute_span(&self.submodule_span),
+                engine.to_absolute_span(&self.submodule_span).await,
                 Some(
                     "this module declaration causes recursive loading"
                         .to_string(),
@@ -202,36 +204,29 @@ pub struct SourceFileLoadFail {
     pub submodule_span: Option<RelativeSpan>,
 }
 
-impl Report<&TrackedEngine<'_>> for SourceFileLoadFail {
+impl Report<&TrackedEngine> for SourceFileLoadFail {
     type Location = ByteIndex;
 
-    fn report(
+    async fn report(
         &self,
-        engine: &TrackedEngine<'_>,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let (span, context_message) = self.submodule_span.as_ref().map_or_else(
-            || {
-                (
-                    None,
-                    format!(
-                        "failed to load root file `{}`",
-                        self.path.display()
-                    ),
-                )
-            },
-            |submodule_span| {
-                (
-                    Some((
-                        engine.to_absolute_span(submodule_span),
-                        Some("submodule declaration here".to_string()),
-                    )),
-                    format!(
-                        "failed to load submodule file `{}`",
-                        self.path.display()
-                    ),
-                )
-            },
-        );
+        let (span, context_message) = match self.submodule_span.as_ref() {
+            Some(submodule_span) => (
+                Some((
+                    engine.to_absolute_span(submodule_span).await,
+                    Some("submodule declaration here".to_string()),
+                )),
+                format!(
+                    "failed to load submodule file `{}`",
+                    self.path.display()
+                ),
+            ),
+            None => (
+                None,
+                format!("failed to load root file `{}`", self.path.display()),
+            ),
+        };
 
         pernixc_diagnostic::Diagnostic {
             span,
@@ -264,105 +259,126 @@ impl Report<&TrackedEngine<'_>> for SourceFileLoadFail {
 pub struct RenderedKey(pub TargetID);
 
 #[pernixc_query::executor(key(RenderedKey), name(RenderedExecutor))]
-pub fn rendered_executor(
-    RenderedKey(target_id): &RenderedKey,
+pub async fn rendered_executor(
+    &RenderedKey(target_id): &RenderedKey,
     engine: &TrackedEngine,
 ) -> Result<
     Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>,
     pernixc_query::runtime::executor::CyclicError,
 > {
     // Get the map for this target to discover all table keys
-    let map = engine.query(&crate::MapKey(*target_id))?;
+    let map: crate::Map = engine.query(&crate::MapKey(target_id)).await?;
+
+    let diagnostics = Vec::new();
 
     // Collect diagnostics from all tables and render them using iterator
     // combinators
-    let keys = map
-        .paths_by_source_id
-        .values()
-        .map(|x| {
-            let external_submodule_opt = x.1.as_ref();
+    let mut file_diagnostics = Vec::new();
 
+    for path in map.paths_by_source_id.values() {
+        let external_submodule_opt = path.1.clone();
+        let path_key = path.0.clone();
+        let engine = engine.clone();
+
+        file_diagnostics.push(tokio::spawn(async move {
             // Create the table key based on whether it's root or external
             // submodule
             let table_key = external_submodule_opt.map_or_else(
-                || Key::Root(*target_id),
+                || Key::Root(target_id),
                 |external_submodule| Key::Submodule {
                     external_submodule: external_submodule.clone(),
-                    target_id: *target_id,
+                    target_id,
                 },
             );
-            let path_key = x.0.clone();
 
-            Ok((
-                engine.query(&DiagnosticKey(table_key))?,
-                engine.query(&pernixc_syntax::DiagnosticKey(
-                    pernixc_syntax::Key {
-                        path: path_key.clone(),
-                        target_id: *target_id,
-                    },
-                ))?,
-                engine.query(&pernixc_lexical::DiagnosticKey(
-                    pernixc_lexical::Key {
-                        path: path_key.clone(),
-                        target_id: *target_id,
-                    },
-                ))?,
+            Ok::<_, CyclicError>((
+                engine.query(&DiagnosticKey(table_key)).await?,
+                engine
+                    .query(&pernixc_syntax::DiagnosticKey(
+                        pernixc_syntax::Key {
+                            path: path_key.clone(),
+                            target_id,
+                        },
+                    ))
+                    .await?,
+                engine
+                    .query(&pernixc_lexical::DiagnosticKey(
+                        pernixc_lexical::Key {
+                            path: path_key.clone(),
+                            target_id,
+                        },
+                    ))
+                    .await?,
                 path_key,
             ))
+        }));
+    }
+
+    let all_modules: Arc<[crate::ID]> = engine
+        .query(&crate::kind::AllSymbolOfKindKey {
+            target_id,
+            kind: Kind::Module,
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .await?;
 
-    let all_modules = engine.query(&crate::kind::AllSymbolOfKindKey {
-        target_id: *target_id,
-        kind: Kind::Module,
-    })?;
+    let mut module_diagnostics = Vec::new();
 
-    let diagnostics = keys
-        .par_iter()
-        .flat_map(|(symbol_diags, syntax_diags, lexical_diags, path)| {
-            let symbol_diagnostics =
-                symbol_diags.par_iter().map(|d| d.report(engine));
+    for module_id in all_modules.iter().copied() {
+        let engine = engine.clone();
 
-            let lexical_diagnostic =
-                lexical_diags.as_ref().ok().into_par_iter().flat_map_iter(
-                    |x| {
-                        x.iter()
-                            .map(|d| d.report(&SourceMap(engine)))
-                            .collect::<Vec<_>>()
-                    },
-                );
-
-            let tree = engine
-                .query(&pernixc_lexical::Key {
-                    path: path.clone(),
-                    target_id: *target_id,
-                })
-                .unwrap();
-
-            let syntax_diagnostics = syntax_diags
-                .as_ref()
-                .ok()
-                .into_par_iter()
-                .flat_map_iter(move |x| {
-                    x.iter()
-                        .map(|d| {
-                            d.report(tree.as_ref().ok().map(|x| &x.0).unwrap())
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-            symbol_diagnostics
-                .chain(lexical_diagnostic)
-                .chain(syntax_diagnostics)
-        })
-        .chain(all_modules.par_iter().flat_map_iter(|x| {
+        module_diagnostics.push(tokio::spawn(async move {
             let diagnostic = engine
-                .query(&crate::import::DiagnosticKey(target_id.make_global(*x)))
-                .unwrap();
+                .query(&crate::import::DiagnosticKey(
+                    target_id.make_global(module_id),
+                ))
+                .await?;
 
-            diagnostic.iter().map(|x| x.report(engine)).collect::<Vec<_>>()
-        }))
-        .collect::<Arc<[_]>>();
+            Ok::<_, CyclicError>((module_id, diagnostic))
+        }));
+    }
 
-    Ok(diagnostics)
+    let mut diagnostic_handles = Vec::new();
+
+    for file_diagnostic in file_diagnostics {
+        let (
+            diagnostics_for_file,
+            syntax_diagnostics,
+            lexical_diagnostics,
+            path_key,
+        ) = file_diagnostic.await.unwrap()?;
+
+        for diagnostic in diagnostics_for_file.iter().cloned() {
+            let engine = engine.clone();
+
+            diagnostic_handles.push(tokio::spawn(async move {
+                Ok::<_, CyclicError>(diagnostic.report(&engine).await)
+            }));
+        }
+
+        for diagnostic in
+            syntax_diagnostics.iter().flat_map(|d| d.iter()).cloned()
+        {
+            let engine = engine.clone();
+            let path_key = path_key.clone();
+
+            diagnostic_handles.push(tokio::spawn(async move {
+                let tree = engine
+                    .query(&pernixc_lexical::Key {
+                        path: path_key.clone(),
+                        target_id,
+                    })
+                    .await?
+                    .unwrap()
+                    .0;
+
+                Ok(diagnostic.report(&tree).await)
+            }));
+        }
+
+        for diagnostic in
+            lexical_diagnostics.iter().flat_map(|d| d.iter()).cloned()
+        {}
+    }
+
+    Ok(Arc::from(diagnostics))
 }

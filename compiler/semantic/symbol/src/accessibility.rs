@@ -76,11 +76,11 @@ impl Accessibility<ID> {
 }
 
 #[pernixc_query::executor(key(Key), name(Executor))]
-pub fn executor(
+pub async fn executor(
     &Key(id): &Key,
     engine: &TrackedEngine,
 ) -> Result<Accessibility<ID>, CyclicError> {
-    match engine.get_kind(id) {
+    match engine.get_kind(id).await {
         Kind::Module
         | Kind::Struct
         | Kind::Trait
@@ -94,7 +94,7 @@ pub fn executor(
         | Kind::AdtImplementationFunction
         | Kind::ExternFunction
         | Kind::Function => {
-            let table = engine.get_table_of_symbol(id);
+            let table = engine.get_table_of_symbol(id).await;
 
             Ok(table.accessibilities.get(&id.id).copied().unwrap())
         }
@@ -103,10 +103,12 @@ pub fn executor(
         Kind::TraitImplementationFunction
         | Kind::TraitImplementationType
         | Kind::TraitImplementationConstant
-        | Kind::Variant => Ok(engine.get_accessibility(Global::new(
-            id.target_id,
-            engine.get_parent(id).unwrap(),
-        ))),
+        | Kind::Variant => Ok(engine
+            .get_accessibility(Global::new(
+                id.target_id,
+                engine.get_parent(id).await.unwrap(),
+            ))
+            .await),
 
         Kind::PositiveTraitImplementation
         | Kind::NegativeTraitImplementation
@@ -125,8 +127,8 @@ pub fn executor(
 /// The returned [`HierarchyRelationship`] is based on the `first`
 /// accessibility.
 #[extend]
-pub fn accessibility_hierarchy_relationship(
-    self: &TrackedEngine<'_>,
+pub async fn accessibility_hierarchy_relationship(
+    self: &TrackedEngine,
     target_id: TargetID,
     first: Accessibility<ID>,
     second: Accessibility<ID>,
@@ -142,7 +144,7 @@ pub fn accessibility_hierarchy_relationship(
             HierarchyRelationship::Child
         }
         (Accessibility::Scoped(first), Accessibility::Scoped(second)) => {
-            self.symbol_hierarchy_relationship(target_id, first, second)
+            self.symbol_hierarchy_relationship(target_id, first, second).await
         }
     }
 }
@@ -153,26 +155,27 @@ pub fn accessibility_hierarchy_relationship(
 ///
 /// Returns `None` if `referred` or `referring_site` is not a valid ID.
 #[extend]
-pub fn symbol_accessible(
-    self: &TrackedEngine<'_>,
+pub async fn symbol_accessible(
+    self: &TrackedEngine,
     referring_site: Global<ID>,
     referred: Global<ID>,
 ) -> bool {
-    let referred_accessibility = self.get_accessibility(referred);
+    let referred_accessibility = self.get_accessibility(referred).await;
 
     self.is_accessible_from(
         referring_site.id,
         referred.target_id,
         referred_accessibility,
     )
+    .await
 }
 
 /// Determines whether the given `referred` is accessible from the
 /// `referring_site` as if the `referred` has the given
 /// `referred_accessibility`.
 #[extend]
-pub fn is_accessible_from(
-    self: &TrackedEngine<'_>,
+pub async fn is_accessible_from(
+    self: &TrackedEngine,
     referring_site: ID,
     referred_target_id: TargetID,
     referred_accessibility: Accessibility<ID>,
@@ -181,16 +184,20 @@ pub fn is_accessible_from(
         Accessibility::Public => true,
 
         Accessibility::Scoped(module_id) => {
-            let referring_site_module_id = self.get_closest_module_id(
-                Global::new(referred_target_id, referring_site),
-            );
+            let referring_site_module_id = self
+                .get_closest_module_id(Global::new(
+                    referred_target_id,
+                    referring_site,
+                ))
+                .await;
 
             matches!(
                 self.symbol_hierarchy_relationship(
                     referred_target_id,
                     module_id,
                     referring_site_module_id,
-                ),
+                )
+                .await,
                 HierarchyRelationship::Parent
                     | HierarchyRelationship::Equivalent
             )

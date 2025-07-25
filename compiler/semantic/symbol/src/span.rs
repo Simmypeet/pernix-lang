@@ -35,11 +35,11 @@ pub struct Key(pub Global<ID>);
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
-pub fn executor(
+pub async fn executor(
     key: &Key,
     engine: &TrackedEngine,
 ) -> Result<Option<RelativeSpan>, CyclicError> {
-    let table = engine.get_table_of_symbol(key.0);
+    let table = engine.get_table_of_symbol(key.0).await;
 
     Ok(table
         .spans

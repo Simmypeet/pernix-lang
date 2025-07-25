@@ -16,11 +16,11 @@ use crate::{get_table_of_symbol, ID};
     executor(ImportExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
-pub fn import_syntax_executor(
+pub async fn import_syntax_executor(
     id: Global<ID>,
     engine: &TrackedEngine,
 ) -> Result<Arc<[pernixc_syntax::item::module::Import]>, CyclicError> {
-    let table = engine.get_table_of_symbol(id);
+    let table = engine.get_table_of_symbol(id).await;
     Ok(table
         .import_syntaxes
         .get(&id.id)

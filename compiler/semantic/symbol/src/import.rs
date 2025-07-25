@@ -64,14 +64,14 @@ pub struct Using {
     executor(WithDiagnosticExecutor)
 )]
 #[allow(clippy::type_complexity)]
-pub fn import_executor(
+pub async fn import_executor(
     id: Global<ID>,
     engine: &pernixc_query::TrackedEngine,
 ) -> Result<
     (Arc<HashMap<SharedStr, Using>>, Arc<[diagnostic::Diagnostic]>),
     pernixc_query::runtime::executor::CyclicError,
 > {
-    let imports = engine.query(&crate::syntax::ImportKey(id))?;
+    let imports = engine.query(&crate::syntax::ImportKey(id)).await?;
     let storage = Storage::<diagnostic::Diagnostic>::new();
 
     let mut import_map = HashMap::default();
@@ -80,17 +80,15 @@ pub fn import_executor(
         let start_from = if let Some(from_simple_path) =
             import.from().and_then(|x| x.simple_path())
         {
-            let Some(from_id) = engine.resolve_simple_path(
-                &from_simple_path,
-                id,
-                true,
-                &storage,
-            ) else {
+            let Some(from_id) = engine
+                .resolve_simple_path(&from_simple_path, id, true, &storage)
+                .await
+            else {
                 continue;
             };
 
             // must be module
-            if engine.get_kind(from_id) != Kind::Module {
+            if engine.get_kind(from_id).await != Kind::Module {
                 storage.receive(diagnostic::Diagnostic::Naming(
                     name::diagnostic::Diagnostic::ExpectModule(ExpectModule {
                         module_path: from_simple_path.inner_tree().span(),
@@ -141,11 +139,11 @@ pub fn import_executor(
     id(Global<ID>),
     executor(DiagnosticExecutor)
 )]
-pub fn diagnostic_executor(
+pub async fn diagnostic_executor(
     id: Global<ID>,
     engine: &pernixc_query::TrackedEngine,
 ) -> Result<Arc<[Diagnostic]>, pernixc_query::runtime::executor::CyclicError> {
-    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id))?;
+    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id)).await?;
 
     Ok(import_with_diagnostic.1)
 }
@@ -157,20 +155,20 @@ pub fn diagnostic_executor(
     executor(Executor),
     extend(method(get_imports), no_cyclic)
 )]
-pub fn import_executor(
+pub async fn import_executor(
     id: Global<ID>,
     engine: &pernixc_query::TrackedEngine,
 ) -> Result<
     Arc<HashMap<SharedStr, Using>>,
     pernixc_query::runtime::executor::CyclicError,
 > {
-    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id))?;
+    let import_with_diagnostic = engine.query(&WithDiagnosticKey(id)).await?;
 
     Ok(import_with_diagnostic.0)
 }
 
 #[allow(clippy::too_many_lines)]
-fn process_import_items(
+async fn process_import_items(
     engine: &TrackedEngine,
     defined_in_module_id: Global<ID>,
     import: &pernixc_syntax::item::module::Import,
@@ -207,6 +205,7 @@ fn process_import_items(
 
                 let Some(id) = engine
                     .get_members(current)
+                    .await
                     .member_ids_by_name
                     .get(identifier_root.kind.0.as_str())
                     .copied()
@@ -223,7 +222,8 @@ fn process_import_items(
                 };
 
                 let result = Global::new(current.target_id, id);
-                if !engine.symbol_accessible(defined_in_module_id, result) {
+                if !engine.symbol_accessible(defined_in_module_id, result).await
+                {
                     handler.receive(
                         SymbolIsNotAccessible {
                             referring_site: defined_in_module_id,
@@ -240,23 +240,24 @@ fn process_import_items(
             None => match root {
                 SimplePathRoot::Target(_) => Global::new(
                     defined_in_module_id.target_id,
-                    engine.get_target_root_module_id(
-                        defined_in_module_id.target_id,
-                    ),
+                    engine
+                        .get_target_root_module_id(
+                            defined_in_module_id.target_id,
+                        )
+                        .await,
                 ),
                 SimplePathRoot::Identifier(identifier) => {
-                    let target_map = engine.get_target_map();
+                    let target_map = engine.get_target_map().await;
+                    let linked_targets = engine
+                        .get_linked_targets(defined_in_module_id.target_id)
+                        .await;
 
                     let Some(id) = target_map
                         .get(identifier.kind.0.as_str())
                         .copied()
                         .filter(|x| {
                             x == &defined_in_module_id.target_id
-                                || engine
-                                    .get_linked_targets(
-                                        defined_in_module_id.target_id,
-                                    )
-                                    .contains(x)
+                                || linked_targets.contains(x)
                         })
                     else {
                         handler.receive(
@@ -270,7 +271,7 @@ fn process_import_items(
                         continue;
                     };
 
-                    Global::new(id, engine.get_target_root_module_id(id))
+                    Global::new(id, engine.get_target_root_module_id(id).await)
                 }
             },
         };
@@ -278,6 +279,7 @@ fn process_import_items(
         for rest in simple_path.subsequences().filter_map(|x| x.identifier()) {
             let Some(next) = engine
                 .get_members(start)
+                .await
                 .member_ids_by_name
                 .get(rest.kind.0.as_str())
                 .copied()
@@ -295,7 +297,7 @@ fn process_import_items(
 
             let next_id = Global::new(start.target_id, next);
 
-            if !engine.symbol_accessible(defined_in_module_id, next_id) {
+            if !engine.symbol_accessible(defined_in_module_id, next_id).await {
                 handler.receive(
                     SymbolIsNotAccessible {
                         referring_site: defined_in_module_id,
@@ -309,23 +311,29 @@ fn process_import_items(
             start = next_id;
         }
 
-        let name = import_item
+        let name = match import_item
             .alias()
             .as_ref()
             .and_then(pernixc_syntax::item::module::Alias::identifier)
-            .map_or_else(|| engine.get_name(start), |x| x.kind.0);
+        {
+            Some(alias) => alias.kind.0.clone(),
+            None => engine.get_name(start).await,
+        };
 
         // check if there's existing symbol right now
-        let existing = engine
+        let existing = match engine
             .get_members(defined_in_module_id)
+            .await
             .member_ids_by_name
             .get(&name)
-            .map(|x| {
-                engine.get_span(Global::new(defined_in_module_id.target_id, *x))
-            })
-            .or_else(|| {
-                import_component.get(name.as_str()).map(|x| Some(x.span))
-            });
+        {
+            Some(x) => Some(
+                engine
+                    .get_span(Global::new(defined_in_module_id.target_id, *x))
+                    .await,
+            ),
+            None => import_component.get(name.as_str()).map(|x| Some(x.span)),
+        };
 
         if let Some(existing) = existing {
             handler.receive(diagnostic::Diagnostic::ConflictingUsing(

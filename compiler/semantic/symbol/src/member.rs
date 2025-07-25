@@ -35,11 +35,11 @@ pub struct Member {
     extend(method(get_members), no_cyclic)
 )]
 #[allow(clippy::unnecessary_wraps)]
-pub fn executor(
+pub async fn executor(
     id: Global<ID>,
     engine: &TrackedEngine,
 ) -> Result<Arc<Member>, CyclicError> {
-    let table = engine.get_table_of_symbol(id);
+    let table = engine.get_table_of_symbol(id).await;
 
     Ok(table
         .members
@@ -51,13 +51,13 @@ pub fn executor(
 /// Optionally returns `None` if the given symbol is of a kind that does not
 /// have members.
 #[extend]
-pub fn try_get_members(
-    self: &TrackedEngine<'_>,
+pub async fn try_get_members(
+    self: &TrackedEngine,
     id: Global<ID>,
 ) -> Option<Arc<Member>> {
-    if !self.get_kind(id).has_member() {
+    if !self.get_kind(id).await.has_member() {
         return None;
     }
 
-    Some(self.get_members(id))
+    Some(self.get_members(id).await)
 }

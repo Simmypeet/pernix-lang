@@ -30,12 +30,15 @@ use pernixc_target::Global;
 #[extend(method(get_source_file_path), no_cyclic)]
 pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
 
+#[extend]
+pub async fn get_source_map(self: &TrackedEngine) -> SourceMap {}
+
 #[pernixc_query::executor(key(FilePathKey), name(FilePathExecutor))]
-pub fn file_path_executor(
+pub async fn file_path_executor(
     FilePathKey(source_file_id): &FilePathKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<Path>, pernixc_query::runtime::executor::CyclicError> {
-    let table = engine.query(&crate::MapKey(source_file_id.target_id))?;
+    let table = engine.query(&crate::MapKey(source_file_id.target_id)).await?;
 
     Ok(table.paths_by_source_id.get(&source_file_id.id).map_or_else(
         || panic!("Source file path not found for ID: {:?}", source_file_id.id),
@@ -46,7 +49,7 @@ pub fn file_path_executor(
 /// A wrapper around [`TrackedEngine`] to implement
 /// `codespan_reporting::files::Files` for use with `codespan_reporting`.
 #[derive(Debug, Clone, Copy)]
-pub struct SourceMap<'a>(pub &'a TrackedEngine<'a>);
+pub struct SourceMap<'a>(pub &'a TrackedEngine);
 
 /// A wrapper around [`Arc<Path>`] to implement `Display` for use with
 /// `codespan_reporting`.
@@ -79,7 +82,9 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
         &'a self,
         id: Self::FileId,
     ) -> Result<Self::Name, codespan_reporting::files::Error> {
-        Ok(PathDisplay(self.0.get_source_file_path(id)))
+        Ok(PathDisplay(tokio::spawn(async move || {
+            self.0.query(&FilePathKey(id)).await.unwrap().map(PathDisplay)
+        })))
     }
 
     fn source(
@@ -153,16 +158,17 @@ impl<'a> codespan_reporting::files::Files<'a> for SourceMap<'a> {
 ///
 /// This method uses the token tree in order to calculate an absolute position.
 #[extend]
-pub fn to_absolute_span(
-    self: &TrackedEngine<'_>,
+pub async fn to_absolute_span(
+    self: &TrackedEngine,
     relative_span: &Span<RelativeLocation>,
 ) -> Span<ByteIndex> {
-    let path = self.get_source_file_path(relative_span.source_id);
+    let path = self.get_source_file_path(relative_span.source_id).await;
     let file = self
         .query(&pernixc_source_file::Key {
             path: path.clone(),
             target_id: relative_span.source_id.target_id,
         })
+        .await
         .unwrap()
         .unwrap();
 
@@ -171,6 +177,7 @@ pub fn to_absolute_span(
             path,
             target_id: relative_span.source_id.target_id,
         })
+        .await
         .unwrap()
         .unwrap()
         .0;

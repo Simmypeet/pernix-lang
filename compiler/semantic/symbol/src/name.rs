@@ -29,11 +29,11 @@ pub mod diagnostic;
     extend(method(get_name), no_cyclic)
 )]
 #[allow(clippy::unnecessary_wraps)]
-pub fn executor(
+pub async fn executor(
     id: Global<ID>,
     engine: &TrackedEngine,
 ) -> Result<SharedStr, CyclicError> {
-    let table = engine.get_table_of_symbol(id);
+    let table = engine.get_table_of_symbol(id).await;
 
     Ok(table
         .names
@@ -44,14 +44,14 @@ pub fn executor(
 
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
-pub fn get_qualified_name(
-    self: &TrackedEngine<'_>,
+pub async fn get_qualified_name(
+    self: &TrackedEngine,
     mut id: Global<ID>,
 ) -> String {
     let mut qualified_name = String::new();
 
     loop {
-        let current_name = self.get_name(id);
+        let current_name = self.get_name(id).await;
 
         if qualified_name.is_empty() {
             qualified_name.push_str(&current_name);
@@ -60,7 +60,7 @@ pub fn get_qualified_name(
             qualified_name.insert_str(0, &current_name);
         }
 
-        if let Some(parent_id) = self.get_parent(id) {
+        if let Some(parent_id) = self.get_parent(id).await {
             id = Global::new(id.target_id, parent_id);
         } else {
             break;
@@ -73,8 +73,8 @@ pub fn get_qualified_name(
 /// Gets the [`Global<symbol::ID>`] of the symbol with the given sequence of
 /// qualified names.
 #[extend]
-pub fn get_by_qualified_name<'a>(
-    self: &TrackedEngine<'_>,
+pub async fn get_by_qualified_name<'a>(
+    self: &TrackedEngine,
     qualified_names: impl IntoIterator<Item = &'a str>,
 ) -> Option<Global<ID>> {
     let mut current_id: Option<Global<ID>> = None;
@@ -83,7 +83,7 @@ pub fn get_by_qualified_name<'a>(
         match current_id {
             Some(searched_in_item_id) => {
                 let has_member =
-                    self.get_kind(searched_in_item_id).has_member();
+                    self.get_kind(searched_in_item_id).await.has_member();
 
                 if !has_member {
                     return None;
@@ -91,6 +91,7 @@ pub fn get_by_qualified_name<'a>(
 
                 current_id = Some(
                     self.get_members(searched_in_item_id)
+                        .await
                         .member_ids_by_name
                         .get(name)
                         .copied()
@@ -100,9 +101,16 @@ pub fn get_by_qualified_name<'a>(
                 );
             }
             None => {
-                current_id = self.get_target_map().get(name).map(|&x| {
-                    Global::new(x, self.get_target_root_module_id(x))
-                });
+                current_id = if let Some(target_id) =
+                    self.get_target_map().await.get(name).copied()
+                {
+                    Some(Global::new(
+                        target_id,
+                        self.get_target_root_module_id(target_id).await,
+                    ))
+                } else {
+                    None
+                };
             }
         }
     }
@@ -112,8 +120,8 @@ pub fn get_by_qualified_name<'a>(
 
 /// Resolves a [`SimplePath`] as a [`GlobalID`].
 #[extend]
-pub fn resolve_simple_path(
-    self: &TrackedEngine<'_>,
+pub async fn resolve_simple_path(
+    self: &TrackedEngine,
     simple_path: &SimplePath,
     referring_site: Global<ID>,
     start_from_root: bool,
@@ -123,22 +131,20 @@ pub fn resolve_simple_path(
     let root: Global<ID> = match simple_path.root()? {
         SimplePathRoot::Target(_) => Global::new(
             referring_site.target_id,
-            self.get_target_root_module_id(referring_site.target_id),
+            self.get_target_root_module_id(referring_site.target_id).await,
         ),
 
         SimplePathRoot::Identifier(ident) => {
             if start_from_root {
-                let target_map = self.get_target_map();
+                let target_map = self.get_target_map().await;
+                let target =
+                    self.get_linked_targets(referring_site.target_id).await;
+
                 let Some(target_id) = target_map
                     .get(ident.kind.0.as_str())
                     .copied()
                     .filter(|x| {
-                        x == &referring_site.target_id || {
-                            let target = self
-                                .get_linked_targets(referring_site.target_id);
-
-                            target.contains(x)
-                        }
+                        x == &referring_site.target_id || { target.contains(x) }
                     })
                 else {
                     handler.receive(Diagnostic::SymbolNotFound(
@@ -154,26 +160,31 @@ pub fn resolve_simple_path(
 
                 Global::new(
                     target_id,
-                    self.get_target_root_module_id(target_id),
+                    self.get_target_root_module_id(target_id).await,
                 )
             } else {
                 let closet_module_id =
-                    self.get_closest_module_id(referring_site);
+                    self.get_closest_module_id(referring_site).await;
 
                 let global_closest_module_id =
                     Global::new(referring_site.target_id, closet_module_id);
 
-                let Some(id) = self
+                let id = match self
                     .get_members(global_closest_module_id)
+                    .await
                     .member_ids_by_name
                     .get(ident.kind.0.as_str())
                     .map(|x| Global::new(referring_site.target_id, *x))
-                    .or_else(|| {
-                        self.get_imports(global_closest_module_id)
-                            .get(ident.kind.0.as_str())
-                            .map(|x| x.id)
-                    })
-                else {
+                {
+                    Some(id) => Some(id),
+                    None => self
+                        .get_imports(global_closest_module_id)
+                        .await
+                        .get(ident.kind.0.as_str())
+                        .map(|x| x.id),
+                };
+
+                let Some(id) = id else {
                     handler.receive(Diagnostic::SymbolNotFound(
                         SymbolNotFound {
                             searched_item_id: Some(global_closest_module_id),
@@ -196,23 +207,24 @@ pub fn resolve_simple_path(
         root,
         handler,
     )
+    .await
 }
 
 /// Resolves a sequence of identifier starting of from the given `root`.
 #[extend]
-pub fn resolve_sequence<'a>(
-    self: &TrackedEngine<'_>,
+pub async fn resolve_sequence<'a>(
+    self: &TrackedEngine,
     simple_path: impl Iterator<Item = Identifier>,
     referring_site: Global<ID>,
     root: Global<ID>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Option<Global<ID>> {
     let mut lastest_resolution = root;
-    let mut is_first = true;
 
     for identifier in simple_path {
-        let Some(new_id) =
-            self.get_member_of(lastest_resolution, identifier.kind.0.as_str())
+        let Some(new_id) = self
+            .get_member_of(lastest_resolution, identifier.kind.0.as_str())
+            .await
         else {
             handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
                 searched_item_id: Some(lastest_resolution),
@@ -224,7 +236,7 @@ pub fn resolve_sequence<'a>(
         };
 
         // non-fatal error, no need to return early
-        if !self.symbol_accessible(referring_site, new_id) {
+        if !self.symbol_accessible(referring_site, new_id).await {
             handler.receive(Diagnostic::SymbolIsNotAccessible(
                 SymbolIsNotAccessible {
                     referring_site,
@@ -234,7 +246,6 @@ pub fn resolve_sequence<'a>(
             ));
         }
 
-        is_first = false;
         lastest_resolution = new_id;
     }
 
@@ -244,16 +255,20 @@ pub fn resolve_sequence<'a>(
 /// Searches for a member in the given symbol scope and returns its ID if it
 /// exists.
 #[extend]
-pub fn get_member_of(
-    self: &TrackedEngine<'_>,
+pub async fn get_member_of(
+    self: &TrackedEngine,
     id: Global<ID>,
     member_name: &str,
 ) -> Option<Global<ID>> {
-    let symbol_kind = self.get_kind(id);
+    let symbol_kind = self.get_kind(id).await;
 
-    if let Some(Some(test)) = symbol_kind.has_member().then(|| {
-        self.get_members(id).member_ids_by_name.get(member_name).copied()
-    }) {
+    let result = if symbol_kind.has_member() {
+        self.get_members(id).await.member_ids_by_name.get(member_name).copied()
+    } else {
+        None
+    };
+
+    if let Some(test) = result {
         return Some(Global::new(id.target_id, test));
     }
 
