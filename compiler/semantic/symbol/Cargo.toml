@@ -19,19 +19,16 @@ pernixc_source_file = { path = "../../base/source_file" }
 pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_arena = { path = "../../base/arena" }
-futures = { workspace = true }
 codespan-reporting = { workspace = true }
 tokio = { workspace = true }
 strsim = { workspace = true }
 siphasher = { workspace = true }
-parking_lot = { workspace = true }
 flexstr = { workspace = true }
 enum-as-inner = { workspace = true }
 dashmap = { workspace = true }
 typed-builder = { workspace = true }
 derive_more = { workspace = true }
 rayon = { workspace = true }
-static_assertions = { workspace = true }
 
 
 [lints]

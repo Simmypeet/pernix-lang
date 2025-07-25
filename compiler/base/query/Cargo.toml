@@ -24,7 +24,6 @@ dashmap = { workspace = true }
 rayon = { workspace = true }
 redb = { workspace = true }
 tracing = { workspace = true }
-ouroboros = { workspace = true }
 crossbeam = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
