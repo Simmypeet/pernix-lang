@@ -1441,12 +1441,12 @@ pub fn query(
 
             // Implement the Executor trait
             impl ::pernixc_query::runtime::executor::Executor<#key_name> for #executor_name {
-                fn execute(
+                async fn execute(
                     &self,
                     engine: &::pernixc_query::TrackedEngine,
                     key: &#key_name,
                 ) -> #return_type {
-                    #fn_name(key.0, engine)
+                    #fn_name(key.0, engine).await
                 }
             }
         };
