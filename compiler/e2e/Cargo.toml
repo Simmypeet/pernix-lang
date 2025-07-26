@@ -18,6 +18,7 @@ pernixc_target = { path = "../base/target/" }
 clap = { workspace = true }
 termcolor = { workspace = true }
 tokio = { workspace = true }
+test-generator = { workspace = true }
 
 [[test]]
 name = "snapshot_e2e"
