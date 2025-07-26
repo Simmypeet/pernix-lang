@@ -369,6 +369,14 @@ impl Engine {
                         }
                     }
 
+                    // IMPORTANT: add the current thread to the waiter list
+                    // first before dropping the state read lock to avoid the
+                    // notification being sent before the thread is added to the
+                    // waiters list.
+                    let notified = notify.notified();
+
+                    // drop the read lock to allow the thread that is computing
+                    // the query to access the state and notify the waiters.
                     drop(state);
 
                     tracing::debug!(
@@ -382,7 +390,12 @@ impl Engine {
                         key
                     );
 
-                    notify.notified().await;
+                    // wait for the notification to be sent. this yields the
+                    // current thread and allows the thread that is computing
+                    // the query to notify the waiters. this current thread is
+                    // yielded, allowing the tokio runtime to schedule other
+                    // tasks and avoid blocking the thread pool.
+                    notified.await;
 
                     tracing::debug!(
                         "Fast path `{}` `{:?}` received notification from \
@@ -1346,7 +1359,18 @@ impl Engine {
                 .continuation(key, continuation, return_value, current_version)
                 .await;
 
-            // notify the waiting tasks that the query has been completed
+            tracing::debug!("`{}` `{key:?}` completed", key.type_name(),);
+
+            debug_assert!(
+                self.database
+                    .query_states_by_key
+                    .get(key as &dyn Dynamic)
+                    .is_some_and(|x| x.as_completion().is_some()),
+                "Query state for `{}` `{key:?}` should be in completion state",
+                key.type_name()
+            );
+
+            // notify all the waiters that is waiting for the query to complete
             notify.notify_waiters();
 
             break value;
