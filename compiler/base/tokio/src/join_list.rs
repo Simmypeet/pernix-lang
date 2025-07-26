@@ -42,6 +42,9 @@ impl<T> JoinList<T> {
             None // No more tasks to await
         }
     }
+
+    /// Adds an already spawned task to the list.
+    pub fn push(&mut self, task: JoinHandle<T>) { self.tasks.push(task); }
 }
 
 /// A macro for spawning tasks through the `JoinList` and ensuring they are
