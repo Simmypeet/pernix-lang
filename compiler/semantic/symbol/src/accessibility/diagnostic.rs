@@ -1,15 +1,16 @@
 //! Contains the diagnostics related to accessibility of symbols.
 
 use pernixc_diagnostic::{Related, Report, Severity};
-use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 
 use crate::{
     accessibility::{accessibility_description, get_accessibility},
     name::{get_name, get_qualified_name},
+    source_map::to_absolute_span,
     span::get_span,
     ID,
 };
@@ -31,6 +32,21 @@ use crate::{
 #[allow(missing_docs)]
 pub enum Diagnostic {
     SymbolIsMoreAccessibleThanParent(SymbolIsMoreAccessibleThanParent),
+}
+
+impl Report<&TrackedEngine> for Diagnostic {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        match self {
+            Self::SymbolIsMoreAccessibleThanParent(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+        }
+    }
 }
 
 /// The symbol is more accessible than the parent symbol.
@@ -59,7 +75,7 @@ pub struct SymbolIsMoreAccessibleThanParent {
 }
 
 impl Report<&TrackedEngine> for SymbolIsMoreAccessibleThanParent {
-    type Location = RelativeLocation;
+    type Location = ByteIndex;
 
     async fn report(
         &self,
@@ -74,8 +90,17 @@ impl Report<&TrackedEngine> for SymbolIsMoreAccessibleThanParent {
         let symbol_accessibility = engine.get_accessibility(symbol_id).await;
         let parent_accessibility = engine.get_accessibility(parent_id).await;
 
-        let symbol_span = engine.get_span(symbol_id).await;
-        let parent_span = engine.get_span(parent_id).await;
+        let symbol_span = if let Some(s) = engine.get_span(symbol_id).await {
+            Some(engine.to_absolute_span(&s).await)
+        } else {
+            None
+        };
+
+        let parent_span = if let Some(s) = engine.get_span(parent_id).await {
+            Some(engine.to_absolute_span(&s).await)
+        } else {
+            None
+        };
 
         let symbol_accessibility_description = engine
             .accessibility_description(

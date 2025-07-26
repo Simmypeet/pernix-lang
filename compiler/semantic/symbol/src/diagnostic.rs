@@ -7,13 +7,14 @@ use std::{
 };
 
 use pernixc_diagnostic::Report;
+use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
-use pernixc_tokio::scoped;
+use pernixc_tokio::{join_list::JoinList, scoped};
 
 use crate::{
     kind::Kind,
@@ -259,150 +260,232 @@ impl Report<&TrackedEngine> for SourceFileLoadFail {
 #[value(Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>)]
 pub struct RenderedKey(pub TargetID);
 
+struct FileError {
+    lexicals: Arc<[pernixc_lexical::error::Error]>,
+    syntaxes: Arc<[pernixc_parser::error::Error]>,
+    symbols: Arc<HashSet<Diagnostic>>,
+    path: Arc<Path>,
+}
+
+fn populate_file_errors(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    file_errors_list: &mut JoinList<Result<FileError, CyclicError>>,
+    map: &crate::Map,
+) {
+    for path in map.paths_by_source_id.values() {
+        let external_submodule_opt = path.1.clone();
+        let path_key = path.0.clone();
+        let engine = engine.clone();
+
+        file_errors_list.spawn(async move {
+            // Create the table key based on whether it's root or
+            // external submodule
+            let table_key = external_submodule_opt.map_or_else(
+                || Key::Root(target_id),
+                |external_submodule| Key::Submodule {
+                    external_submodule,
+                    target_id,
+                },
+            );
+
+            Ok(FileError {
+                symbols: engine.query(&DiagnosticKey(table_key)).await?,
+                syntaxes: engine
+                    .query(&pernixc_syntax::DiagnosticKey(
+                        pernixc_syntax::Key {
+                            path: path_key.clone(),
+                            target_id,
+                        },
+                    ))
+                    .await?
+                    .unwrap(),
+                lexicals: engine
+                    .query(&pernixc_lexical::DiagnosticKey(
+                        pernixc_lexical::Key {
+                            path: path_key.clone(),
+                            target_id,
+                        },
+                    ))
+                    .await?
+                    .unwrap(),
+                path: path_key,
+            })
+        });
+    }
+}
+
+#[allow(clippy::type_complexity)]
+async fn populate_module_import_diagnostics(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    module_import_diagnostics: &mut JoinList<
+        Result<(ID, Arc<[crate::import::diagnostic::Diagnostic]>), CyclicError>,
+    >,
+) -> Result<(), CyclicError> {
+    let all_modules = engine
+        .query(&crate::kind::AllSymbolOfKindKey {
+            target_id,
+            kind: Kind::Module,
+        })
+        .await?;
+
+    for module_id in all_modules.iter().copied() {
+        let engine = engine.clone();
+
+        module_import_diagnostics.spawn(async move {
+            let diagnostic = engine
+                .query(&crate::import::DiagnosticKey(
+                    target_id.make_global(module_id),
+                ))
+                .await?;
+
+            Ok::<_, CyclicError>((module_id, diagnostic))
+        });
+    }
+
+    Ok(())
+}
+
+async fn populate_member_is_more_accessible_diagnostics(
+    engine: &TrackedEngine,
+    target_id: TargetID,
+    module_import_diagnostics: &mut JoinList<
+        Result<
+            Option<Arc<[crate::accessibility::diagnostic::Diagnostic]>>,
+            CyclicError,
+        >,
+    >,
+) -> Result<(), CyclicError> {
+    let all_traits = engine
+        .query(&crate::kind::AllSymbolOfKindKey {
+            target_id,
+            kind: Kind::Trait,
+        })
+        .await?;
+
+    for trait_id in all_traits.iter().copied() {
+        let engine = engine.clone();
+
+        module_import_diagnostics.spawn(async move {
+            let diagnostic = engine
+                .query(&crate::accessibility::MemberIsMoreAaccessibleKey(
+                    target_id.make_global(trait_id),
+                ))
+                .await?;
+
+            Ok::<_, CyclicError>(diagnostic)
+        });
+    }
+
+    Ok(())
+}
+
 #[pernixc_query::executor(key(RenderedKey), name(RenderedExecutor))]
 #[allow(clippy::too_many_lines)]
 pub async fn rendered_executor(
     &RenderedKey(target_id): &RenderedKey,
     engine: &TrackedEngine,
 ) -> Result<
-    Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>,
+    Arc<[pernixc_diagnostic::Diagnostic<ByteIndex>]>,
     pernixc_query::runtime::executor::CyclicError,
 > {
-    // Get the map for this target to discover all table keys
-    let map: crate::Map = engine.query(&crate::MapKey(target_id)).await?;
+    scoped!(|file_diagnostics,
+             module_diagnostics,
+             member_is_moere_accessible_diagnostics,
+             diagnostic_handles| async move {
+        // Get the map for this target to discover all table keys
+        let map = engine.query(&crate::MapKey(target_id)).await?;
 
-    scoped!(
-        |file_diagnostics, module_diagnostics, diagnostic_handles| async move {
-            for path in map.paths_by_source_id.values() {
-                let external_submodule_opt = path.1.clone();
-                let path_key = path.0.clone();
+        populate_file_errors(engine, target_id, file_diagnostics, &map);
+
+        populate_module_import_diagnostics(
+            engine,
+            target_id,
+            module_diagnostics,
+        )
+        .await?;
+
+        populate_member_is_more_accessible_diagnostics(
+            engine,
+            target_id,
+            member_is_moere_accessible_diagnostics,
+        )
+        .await?;
+
+        while let Some(file_diagnostic) = file_diagnostics.next().await {
+            let FileError { lexicals, syntaxes, symbols, path } =
+                file_diagnostic?;
+
+            for diagnostic in symbols.iter() {
                 let engine = engine.clone();
+                let diagnostic = diagnostic.clone();
 
-                file_diagnostics.spawn(async move {
-                    // Create the table key based on whether it's root or
-                    // external submodule
-                    let table_key = external_submodule_opt.map_or_else(
-                        || Key::Root(target_id),
-                        |external_submodule| Key::Submodule {
-                            external_submodule,
+                diagnostic_handles.spawn(async move {
+                    Ok::<_, CyclicError>(diagnostic.report(&engine).await)
+                });
+            }
+
+            for diagnostic in syntaxes.iter() {
+                let engine = engine.clone();
+                let path_key = path.clone();
+                let diagnostic = diagnostic.clone();
+
+                diagnostic_handles.spawn(async move {
+                    let tree = engine
+                        .query(&pernixc_lexical::Key {
+                            path: path_key.clone(),
                             target_id,
-                        },
-                    );
+                        })
+                        .await?
+                        .unwrap()
+                        .0;
 
-                    Ok::<_, CyclicError>((
-                        engine.query(&DiagnosticKey(table_key)).await?,
-                        engine
-                            .query(&pernixc_syntax::DiagnosticKey(
-                                pernixc_syntax::Key {
-                                    path: path_key.clone(),
-                                    target_id,
-                                },
-                            ))
-                            .await?,
-                        engine
-                            .query(&pernixc_lexical::DiagnosticKey(
-                                pernixc_lexical::Key {
-                                    path: path_key.clone(),
-                                    target_id,
-                                },
-                            ))
-                            .await?,
-                        path_key,
-                    ))
+                    Ok(diagnostic.report(&tree).await)
                 });
             }
 
-            let all_modules: Arc<[crate::ID]> = engine
-                .query(&crate::kind::AllSymbolOfKindKey {
-                    target_id,
-                    kind: Kind::Module,
-                })
-                .await?;
+            for diagnostic in lexicals.iter() {
+                let diagnostic = diagnostic.clone();
 
-            for module_id in all_modules.iter().copied() {
+                diagnostic_handles
+                    .spawn(async move { Ok(diagnostic.report(()).await) });
+            }
+        }
+
+        while let Some(module_diagnostic) = module_diagnostics.next().await {
+            let (_, diagnostic) = module_diagnostic?;
+
+            for diagnostic in diagnostic.iter() {
                 let engine = engine.clone();
+                let diagnostic = diagnostic.clone();
 
-                module_diagnostics.spawn(async move {
-                    let diagnostic = engine
-                        .query(&crate::import::DiagnosticKey(
-                            target_id.make_global(module_id),
-                        ))
-                        .await?;
-
-                    Ok::<_, CyclicError>((module_id, diagnostic))
-                });
+                diagnostic_handles
+                    .spawn(async move { Ok(diagnostic.report(&engine).await) });
             }
+        }
 
-            while let Some(file_diagnostic) = file_diagnostics.next().await {
-                let (
-                    diagnostics_for_file,
-                    syntax_diagnostics,
-                    lexical_diagnostics,
-                    path_key,
-                ) = file_diagnostic?;
-
-                for diagnostic in diagnostics_for_file.iter() {
+        while let Some(member_is_more_accessible_diagnostic) =
+            member_is_moere_accessible_diagnostics.next().await
+        {
+            if let Some(diagnostic) = member_is_more_accessible_diagnostic? {
+                for &diagnostic in diagnostic.iter() {
                     let engine = engine.clone();
-                    let diagnostic = diagnostic.clone();
-
-                    diagnostic_handles.spawn(async move {
-                        Ok::<_, CyclicError>(diagnostic.report(&engine).await)
-                    });
-                }
-
-                for diagnostic in
-                    syntax_diagnostics.iter().flat_map(|d| d.iter())
-                {
-                    let engine = engine.clone();
-                    let path_key = path_key.clone();
-                    let diagnostic = diagnostic.clone();
-
-                    diagnostic_handles.spawn(async move {
-                        let tree = engine
-                            .query(&pernixc_lexical::Key {
-                                path: path_key.clone(),
-                                target_id,
-                            })
-                            .await?
-                            .unwrap()
-                            .0;
-
-                        Ok(diagnostic.report(&tree).await)
-                    });
-                }
-
-                for diagnostic in
-                    lexical_diagnostics.iter().flat_map(|d| d.iter())
-                {
-                    let diagnostic = diagnostic.clone();
-
-                    diagnostic_handles
-                        .spawn(async move { Ok(diagnostic.report(()).await) });
-                }
-            }
-
-            while let Some(module_diagnostic) = module_diagnostics.next().await
-            {
-                let (_, diagnostic) = module_diagnostic?;
-
-                for diagnostic in diagnostic.iter() {
-                    let engine = engine.clone();
-                    let diagnostic = diagnostic.clone();
 
                     diagnostic_handles.spawn(async move {
                         Ok(diagnostic.report(&engine).await)
                     });
                 }
             }
-
-            let mut diagnostics = Vec::new();
-
-            while let Some(handle) = diagnostic_handles.next().await {
-                let rendered_diagnostic = handle?;
-                diagnostics.push(rendered_diagnostic);
-            }
-
-            Ok(Arc::from(diagnostics))
         }
-    )
+
+        let mut diagnostics = Vec::new();
+
+        while let Some(handle) = diagnostic_handles.next().await {
+            let rendered_diagnostic = handle?;
+            diagnostics.push(rendered_diagnostic);
+        }
+
+        Ok(Arc::from(diagnostics))
+    })
 }
