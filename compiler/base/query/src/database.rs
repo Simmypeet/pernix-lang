@@ -125,7 +125,6 @@ pub struct TrackedEngine {
     engine: Arc<Engine>,
     called_from: Option<DynamicKey>,
 
-    #[cfg(feature = "query_cache")]
     cache: Option<Arc<DashMap<DynamicKey, DynamicValue>>>,
 }
 
@@ -134,13 +133,7 @@ static_assertions::assert_impl_all!(TrackedEngine: Send, Sync);
 impl Engine {
     /// Creates a new [`TrackedEngine`] allowing queries to the database.
     pub fn tracked(self: &Arc<Self>) -> TrackedEngine {
-        TrackedEngine {
-            engine: self.clone(),
-            called_from: None,
-
-            #[cfg(feature = "query_cache")]
-            cache: None,
-        }
+        TrackedEngine { engine: self.clone(), called_from: None, cache: None }
     }
 }
 
@@ -155,7 +148,6 @@ impl TrackedEngine {
         &self,
         key: &K,
     ) -> Result<K::Value, CyclicError> {
-        #[cfg(feature = "query_cache")]
         if let Some(cache) = self.cache.as_ref() {
             if let Some(value) = cache.get(key as &dyn Dynamic) {
                 let value = (&**value.value() as &dyn Any)
@@ -184,7 +176,6 @@ impl TrackedEngine {
             .await
             .map(|x| x.unwrap())?;
 
-        #[cfg(feature = "query_cache")]
         if let Some(cache) = self.cache.as_ref() {
             cache.insert(
                 DynamicKey(smallbox::smallbox!(key.clone())),
@@ -739,16 +730,32 @@ impl Engine {
             Vec<DynamicKey>,
         ) -> (DerivedMetadata, bool),
     ) -> Option<K::Value> {
-        #[cfg(feature = "query_cache")]
         let cache = Arc::new(DashMap::default());
 
         let mut tracked_engine = TrackedEngine {
             engine: self.clone(),
             called_from: Some(DynamicKey(key.smallbox_clone())),
-
-            #[cfg(feature = "query_cache")]
             cache: Some(cache),
         };
+
+        // use the `cache`'s strong count to determine if the tracked engine
+        // is still held elsewhere other than the current call stack.
+        //
+        // if there're still references to the `TrackedEngine`, it means that
+        // there's some dangling references to the `TrackedEngine` on some
+        // other threads that the implementation of the query is not aware of.
+        //
+        // in this case, we'll panic to avoid silent bugs in the query
+        // implementation.
+        assert!(
+            Arc::strong_count(tracked_engine.cache.as_ref().unwrap()) == 1,
+            "`TrackedEngine` is still held elsewhere, this is a bug in the \
+             query implementation which violates the query system's contract. \
+             It's possible that the `TrackedEngine` is being sent to a
+             different thread and the query implementation hasn't properly
+             joined the thread before returning the value. Key: `{}`",
+            key.type_name()
+        );
 
         // make sure that the dependencies that are added by re-verification
         // are not added to the current query

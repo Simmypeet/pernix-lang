@@ -6,10 +6,6 @@ description.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[features]
-query_cache = []
-default = ["query_cache"]
-
 [dependencies]
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_query_derive = { path = "../query_derive" }
