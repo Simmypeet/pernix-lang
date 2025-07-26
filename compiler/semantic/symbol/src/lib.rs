@@ -58,6 +58,7 @@ pub fn register_executors(
     executor: &mut pernixc_query::runtime::executor::Registry,
 ) {
     executor.register(Arc::new(accessibility::Executor));
+    executor.register(Arc::new(accessibility::MemberIsMoreAccessibleExecutor));
 
     executor.register(Arc::new(kind::Executor));
     executor.register(Arc::new(kind::AllSymbolOfKindExecutor));
@@ -99,6 +100,7 @@ pub fn register_serde<
     S::Error: Send + Sync,
 {
     serde_registry.register::<accessibility::Key>();
+    serde_registry.register::<accessibility::MemberIsMoreAaccessibleKey>();
 
     serde_registry.register::<kind::Key>();
     serde_registry.register::<kind::AllSymbolOfKindKey>();
@@ -1108,6 +1110,7 @@ impl TableContext {
                         Entry::builder()
                             .kind(Kind::TraitType)
                             .identifier(signature)
+                            .accessibility(member.access_modifier())
                             .generic_parameters_syntax(
                                 member
                                     .signature()
@@ -1132,6 +1135,7 @@ impl TableContext {
                         Entry::builder()
                             .kind(Kind::TraitFunction)
                             .identifier(signature)
+                            .accessibility(member.access_modifier())
                             .generic_parameters_syntax(
                                 member
                                     .signature()
@@ -1162,6 +1166,7 @@ impl TableContext {
                         Entry::builder()
                             .kind(Kind::TraitConstant)
                             .identifier(signature)
+                            .accessibility(member.access_modifier())
                             .generic_parameters_syntax(
                                 member
                                     .signature()
@@ -1197,6 +1202,11 @@ impl TableContext {
                         .accessibility(access_modifier)
                         .generic_parameters_syntax(generic_parameters)
                         .where_clause_syntax(where_clause)
+                        .member(Arc::new(Member {
+                            member_ids_by_name: trait_member_builder
+                                .member_ids_by_name,
+                            redefinitions: trait_member_builder.redefinitions,
+                        }))
                         .build(),
                 )
                 .await;
@@ -1287,6 +1297,11 @@ impl TableContext {
                         .accessibility(access_modifier)
                         .generic_parameters_syntax(generic_parameters)
                         .where_clause_syntax(where_clause)
+                        .member(Arc::new(Member {
+                            member_ids_by_name: enum_member_builder
+                                .member_ids_by_name,
+                            redefinitions: enum_member_builder.redefinitions,
+                        }))
                         .build(),
                 )
                 .await;
