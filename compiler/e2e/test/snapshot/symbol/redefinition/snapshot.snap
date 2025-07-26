@@ -91,7 +91,16 @@ error: symbol `Fifth` is already defined in the scope `main`
 44 │ public marker Fifth
    │               ^^^^^ redefinition here
 
-error: Compilation aborted due to 10 error(s)
+error: symbol `Sixth` is already defined in the scope `main`
+   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:49:14
+   │
+46 │ public trait Sixth:
+   │              ----- symbol `Sixth` is already defined here
+   ·
+49 │ public trait Sixth:
+   │              ^^^^^ redefinition here
+
+error: Compilation aborted due to 11 error(s)
 
 
 

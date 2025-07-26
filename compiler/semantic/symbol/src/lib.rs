@@ -806,7 +806,7 @@ impl TableContext {
     fn insert_to_table<V>(map: &DashMap<ID, V>, id: ID, value: V) {
         assert!(
             map.insert(id, value).is_none(),
-            "Possible hash collision dfetected, please try re-building the \
+            "Possible hash collision detected, please try re-building the \
              project and delete the incremental directory if the problem \
              persists."
         );
@@ -831,11 +831,7 @@ impl TableContext {
 
                     let current_module_id = self
                         .engine
-                        .calculate_qualified_name_id(
-                            std::iter::once(target_name.as_str()),
-                            self.target_id,
-                            0,
-                        )
+                        .get_target_root_module_id(self.target_id)
                         .await;
 
                     let module_qualified_name = Arc::from([target_name]);
@@ -1601,6 +1597,7 @@ impl MemberBuilder {
                     .map(flexstr::FlexStr::as_str)
                     .chain(std::iter::once(identifier.kind.0.as_str())),
                 self.target_id,
+                Some(self.symbol_id),
                 current_count,
             )
             .await;
@@ -1640,12 +1637,14 @@ pub async fn calculate_qualified_name_id<'a>(
     self: &TrackedEngine,
     qualified_name_sequence: impl IntoIterator<Item = &'a str>,
     target_id: TargetID,
+    parent_id: Option<ID>,
     declaration_order: usize,
 ) -> ID {
     let mut hasher = siphasher::sip::SipHasher24::default();
     let target_seed = self.get_target_seed(target_id).await;
 
     target_seed.hash(&mut hasher);
+    parent_id.hash(&mut hasher);
 
     for name in qualified_name_sequence {
         // hash the name of the symbol
@@ -1669,6 +1668,7 @@ pub async fn get_target_root_module_id(
     self.calculate_qualified_name_id(
         std::iter::once(target_name.as_str()),
         target_id,
+        None,
         0,
     )
     .await
