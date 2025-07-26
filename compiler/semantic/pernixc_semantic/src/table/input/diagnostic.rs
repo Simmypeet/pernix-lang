@@ -78,44 +78,6 @@ impl Representation {
 
 impl Report<&Table> for SymbolIsMoreAccessibleThanParent {
     fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
-        let symbol_name = table.get::<Name>(self.symbol_id);
-        let parent_qualified_name = table.get_qualified_name(self.parent_id);
-
-        let symbol_accessibility = table.get_accessibility(self.symbol_id);
-        let parent_accessibility = table.get_accessibility(self.parent_id);
-
-        let symbol_span = table.get::<LocationSpan>(self.symbol_id);
-        let parent_span = table.get::<LocationSpan>(self.parent_id);
-
-        let symbol_accessibility_description = table.accessibility_description(
-            self.symbol_id.target_id,
-            symbol_accessibility,
-        );
-
-        let parent_accessibility_description = table.accessibility_description(
-            self.parent_id.target_id,
-            parent_accessibility,
-        );
-
-        Diagnostic {
-            span: symbol_span.span.clone().unwrap(),
-            message: format!(
-                "the symbol `{}` in `{parent_qualified_name}` is more \
-                 accessible than the parent symbol",
-                symbol_name.as_str()
-            ),
-            severity: Severity::Error,
-            help_message: Some(format!(
-                "the symbol `{}` is {symbol_accessibility_description}",
-                symbol_name.as_str()
-            )),
-            related: vec![Related {
-                span: parent_span.span.clone().unwrap(),
-                message: format!(
-                    "the parent symbol is {parent_accessibility_description}",
-                ),
-            }],
-        }
     }
 }
 

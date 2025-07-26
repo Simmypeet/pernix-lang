@@ -273,8 +273,8 @@ pub async fn member_is_more_accessible_executor(
             diagnostic.push(
                 diagnostic::Diagnostic::SymbolIsMoreAccessibleThanParent(
                     SymbolIsMoreAccessibleThanParent {
-                        symbol_id: trait_id.id,
-                        parent_id: member,
+                        symbol_id: member,
+                        parent_id: trait_id.id,
                         target_id: trait_id.target_id,
                     },
                 ),
