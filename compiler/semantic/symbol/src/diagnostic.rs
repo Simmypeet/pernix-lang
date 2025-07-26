@@ -13,6 +13,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
+use pernixc_tokio::scoped;
 
 use crate::{
     kind::Kind,
@@ -270,138 +271,138 @@ pub async fn rendered_executor(
     // Get the map for this target to discover all table keys
     let map: crate::Map = engine.query(&crate::MapKey(target_id)).await?;
 
-    // Collect diagnostics from all tables and render them using iterator
-    // combinators
-    let mut file_diagnostics = Vec::new();
+    scoped!(
+        |file_diagnostics, module_diagnostics, diagnostic_handles| async move {
+            for path in map.paths_by_source_id.values() {
+                let external_submodule_opt = path.1.clone();
+                let path_key = path.0.clone();
+                let engine = engine.clone();
 
-    for path in map.paths_by_source_id.values() {
-        let external_submodule_opt = path.1.clone();
-        let path_key = path.0.clone();
-        let engine = engine.clone();
+                file_diagnostics.spawn(async move {
+                    // Create the table key based on whether it's root or
+                    // external submodule
+                    let table_key = external_submodule_opt.map_or_else(
+                        || Key::Root(target_id),
+                        |external_submodule| Key::Submodule {
+                            external_submodule,
+                            target_id,
+                        },
+                    );
 
-        file_diagnostics.push(tokio::spawn(async move {
-            // Create the table key based on whether it's root or external
-            // submodule
-            let table_key = external_submodule_opt.map_or_else(
-                || Key::Root(target_id),
-                |external_submodule| Key::Submodule {
-                    external_submodule,
+                    Ok::<_, CyclicError>((
+                        engine.query(&DiagnosticKey(table_key)).await?,
+                        engine
+                            .query(&pernixc_syntax::DiagnosticKey(
+                                pernixc_syntax::Key {
+                                    path: path_key.clone(),
+                                    target_id,
+                                },
+                            ))
+                            .await?,
+                        engine
+                            .query(&pernixc_lexical::DiagnosticKey(
+                                pernixc_lexical::Key {
+                                    path: path_key.clone(),
+                                    target_id,
+                                },
+                            ))
+                            .await?,
+                        path_key,
+                    ))
+                });
+            }
+
+            let all_modules: Arc<[crate::ID]> = engine
+                .query(&crate::kind::AllSymbolOfKindKey {
                     target_id,
-                },
-            );
-
-            Ok::<_, CyclicError>((
-                engine.query(&DiagnosticKey(table_key)).await?,
-                engine
-                    .query(&pernixc_syntax::DiagnosticKey(
-                        pernixc_syntax::Key {
-                            path: path_key.clone(),
-                            target_id,
-                        },
-                    ))
-                    .await?,
-                engine
-                    .query(&pernixc_lexical::DiagnosticKey(
-                        pernixc_lexical::Key {
-                            path: path_key.clone(),
-                            target_id,
-                        },
-                    ))
-                    .await?,
-                path_key,
-            ))
-        }));
-    }
-
-    let all_modules: Arc<[crate::ID]> = engine
-        .query(&crate::kind::AllSymbolOfKindKey {
-            target_id,
-            kind: Kind::Module,
-        })
-        .await?;
-
-    let mut module_diagnostics = Vec::new();
-
-    for module_id in all_modules.iter().copied() {
-        let engine = engine.clone();
-
-        module_diagnostics.push(tokio::spawn(async move {
-            let diagnostic = engine
-                .query(&crate::import::DiagnosticKey(
-                    target_id.make_global(module_id),
-                ))
+                    kind: Kind::Module,
+                })
                 .await?;
 
-            Ok::<_, CyclicError>((module_id, diagnostic))
-        }));
-    }
+            for module_id in all_modules.iter().copied() {
+                let engine = engine.clone();
 
-    let mut diagnostic_handles = Vec::new();
+                module_diagnostics.spawn(async move {
+                    let diagnostic = engine
+                        .query(&crate::import::DiagnosticKey(
+                            target_id.make_global(module_id),
+                        ))
+                        .await?;
 
-    for file_diagnostic in file_diagnostics {
-        let (
-            diagnostics_for_file,
-            syntax_diagnostics,
-            lexical_diagnostics,
-            path_key,
-        ) = file_diagnostic.await.unwrap()?;
+                    Ok::<_, CyclicError>((module_id, diagnostic))
+                });
+            }
 
-        for diagnostic in diagnostics_for_file.iter() {
-            let engine = engine.clone();
-            let diagnostic = diagnostic.clone();
+            while let Some(file_diagnostic) = file_diagnostics.next().await {
+                let (
+                    diagnostics_for_file,
+                    syntax_diagnostics,
+                    lexical_diagnostics,
+                    path_key,
+                ) = file_diagnostic?;
 
-            diagnostic_handles.push(tokio::spawn(async move {
-                Ok::<_, CyclicError>(diagnostic.report(&engine).await)
-            }));
+                for diagnostic in diagnostics_for_file.iter() {
+                    let engine = engine.clone();
+                    let diagnostic = diagnostic.clone();
+
+                    diagnostic_handles.spawn(async move {
+                        Ok::<_, CyclicError>(diagnostic.report(&engine).await)
+                    });
+                }
+
+                for diagnostic in
+                    syntax_diagnostics.iter().flat_map(|d| d.iter())
+                {
+                    let engine = engine.clone();
+                    let path_key = path_key.clone();
+                    let diagnostic = diagnostic.clone();
+
+                    diagnostic_handles.spawn(async move {
+                        let tree = engine
+                            .query(&pernixc_lexical::Key {
+                                path: path_key.clone(),
+                                target_id,
+                            })
+                            .await?
+                            .unwrap()
+                            .0;
+
+                        Ok(diagnostic.report(&tree).await)
+                    });
+                }
+
+                for diagnostic in
+                    lexical_diagnostics.iter().flat_map(|d| d.iter())
+                {
+                    let diagnostic = diagnostic.clone();
+
+                    diagnostic_handles
+                        .spawn(async move { Ok(diagnostic.report(()).await) });
+                }
+            }
+
+            while let Some(module_diagnostic) = module_diagnostics.next().await
+            {
+                let (_, diagnostic) = module_diagnostic?;
+
+                for diagnostic in diagnostic.iter() {
+                    let engine = engine.clone();
+                    let diagnostic = diagnostic.clone();
+
+                    diagnostic_handles.spawn(async move {
+                        Ok(diagnostic.report(&engine).await)
+                    });
+                }
+            }
+
+            let mut diagnostics = Vec::new();
+
+            while let Some(handle) = diagnostic_handles.next().await {
+                let rendered_diagnostic = handle?;
+                diagnostics.push(rendered_diagnostic);
+            }
+
+            Ok(Arc::from(diagnostics))
         }
-
-        for diagnostic in syntax_diagnostics.iter().flat_map(|d| d.iter()) {
-            let engine = engine.clone();
-            let path_key = path_key.clone();
-            let diagnostic = diagnostic.clone();
-
-            diagnostic_handles.push(tokio::spawn(async move {
-                let tree = engine
-                    .query(&pernixc_lexical::Key {
-                        path: path_key.clone(),
-                        target_id,
-                    })
-                    .await?
-                    .unwrap()
-                    .0;
-
-                Ok(diagnostic.report(&tree).await)
-            }));
-        }
-
-        for diagnostic in lexical_diagnostics.iter().flat_map(|d| d.iter()) {
-            let diagnostic = diagnostic.clone();
-
-            diagnostic_handles.push(tokio::spawn(async move {
-                Ok(diagnostic.report(()).await)
-            }));
-        }
-    }
-
-    for module_diagnostic in module_diagnostics {
-        let (_, diagnostic) = module_diagnostic.await.unwrap()?;
-
-        for diagnostic in diagnostic.iter() {
-            let engine = engine.clone();
-            let diagnostic = diagnostic.clone();
-
-            diagnostic_handles.push(tokio::spawn(async move {
-                Ok(diagnostic.report(&engine).await)
-            }));
-        }
-    }
-
-    let mut diagnostics = Vec::new();
-
-    for handle in diagnostic_handles {
-        let rendered_diagnostic = handle.await.unwrap()?;
-        diagnostics.push(rendered_diagnostic);
-    }
-
-    Ok(Arc::from(diagnostics))
+    )
 }
