@@ -19,6 +19,7 @@ members = [
     "compiler/base/extend",
     "compiler/base/query",
     "compiler/base/query_derive",
+    "compiler/base/tokio",
 
     "compiler/syntax/lexical",
     "compiler/syntax/parser",

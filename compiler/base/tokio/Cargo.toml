@@ -1,0 +1,13 @@
+[package]
+name = "pernixc_tokio"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true
