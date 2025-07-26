@@ -954,6 +954,244 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_lines)]
+    async fn handle_re_verify<K: Key>(
+        self: &Arc<Self>,
+        key: &K,
+        mut re_verify: ReVerify,
+        current_version: u64,
+        return_value: bool,
+    ) -> Option<K::Value> {
+        let recompute = {
+            if K::ALWAYS_REVERIFY
+                || re_verify.derived_metadata.version_info.fingerprint.is_none()
+            {
+                // if the query is a part of SCC, always recompute
+                tracing::info!(
+                    "Always recomputing `{}` `{key:?}`",
+                    key.type_name()
+                );
+                true
+            } else {
+                self.need_recompute(&re_verify, key, current_version).await
+            }
+        };
+
+        // update the version info to the current version
+        re_verify.derived_metadata.version_info.verified_at = current_version;
+
+        if recompute {
+            self.compute(key, true, |value, tracked_dependencies| {
+                let new_fingerprint = value.ok().map(|x| {
+                    fingerprint::fingerprint(self.database.random_seed, x)
+                });
+
+                // if the new fingerprint is different from
+                // the old one, update the value version
+                if re_verify
+                    .derived_metadata
+                    .version_info
+                    .fingerprint
+                    .is_none_or(|x| Some(x) != new_fingerprint)
+                {
+                    tracing::debug!(
+                        "Value fingerprint updated for `{}` `{key:?}` with a \
+                         new fingerprint: {:?} -> {:?}",
+                        key.type_name(),
+                        re_verify.derived_metadata.version_info.fingerprint,
+                        new_fingerprint
+                    );
+
+                    re_verify.derived_metadata.version_info.fingerprint =
+                        new_fingerprint;
+                    re_verify.derived_metadata.version_info.updated_at =
+                        current_version;
+                }
+
+                re_verify.derived_metadata.version_info.verified_at =
+                    current_version;
+
+                // update the dependencies with the tracked one
+                tracing::debug!(
+                    "Dependencies updated for `{}` `{key:?}`: {:?}",
+                    key.type_name(),
+                    tracked_dependencies
+                );
+
+                re_verify.derived_metadata.dependencies =
+                    tracked_dependencies.into();
+
+                tracing::info!(
+                    "Re-computed value for `{}` `{key:?}` with metadata: {:?}",
+                    key.type_name(),
+                    re_verify.derived_metadata
+                );
+
+                (re_verify.derived_metadata, true)
+            })
+            .await
+        } else if return_value {
+            let value = match re_verify.value_store {
+                Some(value) => {
+                    let return_value = (&*value as &dyn Any)
+                        .downcast_ref::<K::Value>()
+                        .expect("Failed to downcast value")
+                        .clone();
+
+                    let final_metadata =
+                        ValueMetadata::Derived(re_verify.derived_metadata);
+
+                    self.save_value_metadata::<K>(
+                        fingerprint::fingerprint(
+                            self.database.random_seed,
+                            key,
+                        ),
+                        final_metadata.clone(),
+                    );
+
+                    self.database.query_states_by_key.insert(
+                        DynamicKey(key.smallbox_clone()),
+                        State::Completion(Completion {
+                            metadata: final_metadata,
+                            store: Some(value),
+                        }),
+                    );
+
+                    return Some(return_value);
+                }
+                None => re_verify
+                    .derived_metadata
+                    .version_info
+                    .fingerprint
+                    .map_or_else(
+                        || Some(Err(CyclicError)),
+                        |fingerprint| {
+                            self.try_load_value::<K>(fingerprint).map(Ok)
+                        },
+                    ),
+            };
+
+            match value {
+                Some(value) => self.handle_computed_value(
+                    key,
+                    value.map(|x| {
+                        let dynamic_value: DynamicValue =
+                            smallbox::smallbox!(x);
+
+                        dynamic_value
+                    }),
+                    return_value,
+                    |result| {
+                        let new_fingerprint = result.ok().map(|x| {
+                            fingerprint::fingerprint(
+                                self.database.random_seed,
+                                x,
+                            )
+                        });
+
+                        let save_value = if new_fingerprint
+                            == re_verify
+                                .derived_metadata
+                                .version_info
+                                .fingerprint
+                        {
+                            false
+                        } else {
+                            tracing::debug!(
+                                "Value fingerprint updated for `{}` `{key:?}` \
+                                 with a new fingerprint: {:?} -> {:?}",
+                                key.type_name(),
+                                re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .fingerprint,
+                                new_fingerprint
+                            );
+
+                            re_verify
+                                .derived_metadata
+                                .version_info
+                                .fingerprint = new_fingerprint;
+                            re_verify
+                                .derived_metadata
+                                .version_info
+                                .updated_at = current_version;
+
+                            true
+                        };
+
+                        (re_verify.derived_metadata, SaveConfig {
+                            save_value,
+                            save_metadata: true,
+                        })
+                    },
+                ),
+                None => {
+                    self.compute(key, true, |value, dependencies| {
+                        let new_fingerprint = value.ok().map(|x| {
+                            fingerprint::fingerprint(
+                                self.database.random_seed,
+                                x,
+                            )
+                        });
+
+                        if new_fingerprint
+                            != re_verify
+                                .derived_metadata
+                                .version_info
+                                .fingerprint
+                        {
+                            tracing::debug!(
+                                "Value fingerprint updated for `{}` `{key:?}` \
+                                 with a new fingerprint: {:?} -> {:?}",
+                                key.type_name(),
+                                re_verify
+                                    .derived_metadata
+                                    .version_info
+                                    .fingerprint,
+                                new_fingerprint
+                            );
+
+                            re_verify
+                                .derived_metadata
+                                .version_info
+                                .fingerprint = new_fingerprint;
+                            re_verify
+                                .derived_metadata
+                                .version_info
+                                .updated_at = current_version;
+
+                            re_verify.derived_metadata.dependencies =
+                                dependencies.into();
+                        }
+
+                        (re_verify.derived_metadata, true)
+                    })
+                    .await
+                }
+            }
+        } else {
+            let final_metadata =
+                ValueMetadata::Derived(re_verify.derived_metadata);
+
+            self.save_value_metadata::<K>(
+                fingerprint::fingerprint(self.database.random_seed, key),
+                final_metadata.clone(),
+            );
+
+            *self
+                .database
+                .query_states_by_key
+                .get_mut(key as &dyn Dynamic)
+                .expect("should be present") = State::Completion(Completion {
+                metadata: final_metadata,
+                store: re_verify.value_store,
+            });
+
+            None
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
     async fn continuation<K: Key>(
         self: &Arc<Self>,
         key: &K,
@@ -988,261 +1226,17 @@ impl Engine {
                 )
                 .await
             }
-            Continuation::ReVerify(mut re_verify) => {
-                let recompute = {
-                    if K::ALWAYS_REVERIFY
-                        || re_verify
-                            .derived_metadata
-                            .version_info
-                            .fingerprint
-                            .is_none()
-                    {
-                        // if the query is a part of SCC, always recompute
-                        tracing::info!(
-                            "Always recomputing `{}` `{key:?}`",
-                            key.type_name()
-                        );
-                        true
-                    } else {
-                        self.need_recompute(&re_verify, key, current_version)
-                            .await
-                    }
-                };
 
-                // update the version info to the current version
-                re_verify.derived_metadata.version_info.verified_at =
-                    current_version;
-
-                if recompute {
-                    self.compute(key, true, |value, tracked_dependencies| {
-                        let new_fingerprint = value.ok().map(|x| {
-                            fingerprint::fingerprint(
-                                self.database.random_seed,
-                                x,
-                            )
-                        });
-
-                        // if the new fingerprint is different from
-                        // the old one, update the value version
-                        if re_verify
-                            .derived_metadata
-                            .version_info
-                            .fingerprint
-                            .is_none_or(|x| Some(x) != new_fingerprint)
-                        {
-                            tracing::debug!(
-                                "Value fingerprint updated for `{}` `{key:?}` \
-                                 with a new fingerprint: {:?} -> {:?}",
-                                key.type_name(),
-                                re_verify
-                                    .derived_metadata
-                                    .version_info
-                                    .fingerprint,
-                                new_fingerprint
-                            );
-
-                            re_verify
-                                .derived_metadata
-                                .version_info
-                                .fingerprint = new_fingerprint;
-                            re_verify
-                                .derived_metadata
-                                .version_info
-                                .updated_at = current_version;
-                        }
-
-                        re_verify.derived_metadata.version_info.verified_at =
-                            current_version;
-
-                        // update the dependencies with the tracked one
-                        tracing::debug!(
-                            "Dependencies updated for `{}` `{key:?}`: {:?}",
-                            key.type_name(),
-                            tracked_dependencies
-                        );
-
-                        re_verify.derived_metadata.dependencies =
-                            tracked_dependencies.into();
-
-                        tracing::info!(
-                            "Re-computed value for `{}` `{key:?}` with \
-                             metadata: {:?}",
-                            key.type_name(),
-                            re_verify.derived_metadata
-                        );
-
-                        (re_verify.derived_metadata, true)
-                    })
-                    .await
-                } else if return_value {
-                    let value = match re_verify.value_store {
-                        Some(value) => {
-                            let return_value = (&*value as &dyn Any)
-                                .downcast_ref::<K::Value>()
-                                .expect("Failed to downcast value")
-                                .clone();
-
-                            let final_metadata = ValueMetadata::Derived(
-                                re_verify.derived_metadata,
-                            );
-
-                            self.save_value_metadata::<K>(
-                                fingerprint::fingerprint(
-                                    self.database.random_seed,
-                                    key,
-                                ),
-                                final_metadata.clone(),
-                            );
-
-                            self.database.query_states_by_key.insert(
-                                DynamicKey(key.smallbox_clone()),
-                                State::Completion(Completion {
-                                    metadata: final_metadata,
-                                    store: Some(value),
-                                }),
-                            );
-
-                            return Some(return_value);
-                        }
-                        None => re_verify
-                            .derived_metadata
-                            .version_info
-                            .fingerprint
-                            .map_or_else(
-                                || Some(Err(CyclicError)),
-                                |fingerprint| {
-                                    self.try_load_value::<K>(fingerprint)
-                                        .map(Ok)
-                                },
-                            ),
-                    };
-
-                    match value {
-                        Some(value) => self.handle_computed_value(
-                            key,
-                            value.map(|x| {
-                                let dynamic_value: DynamicValue =
-                                    smallbox::smallbox!(x);
-
-                                dynamic_value
-                            }),
-                            return_value,
-                            |result| {
-                                let new_fingerprint = result.ok().map(|x| {
-                                    fingerprint::fingerprint(
-                                        self.database.random_seed,
-                                        x,
-                                    )
-                                });
-
-                                let save_value = if new_fingerprint
-                                    == re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .fingerprint
-                                {
-                                    false
-                                } else {
-                                    tracing::debug!(
-                                        "Value fingerprint updated for `{}` \
-                                         `{key:?}` with a new fingerprint: \
-                                         {:?} -> {:?}",
-                                        key.type_name(),
-                                        re_verify
-                                            .derived_metadata
-                                            .version_info
-                                            .fingerprint,
-                                        new_fingerprint
-                                    );
-
-                                    re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .fingerprint = new_fingerprint;
-                                    re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .updated_at = current_version;
-
-                                    true
-                                };
-
-                                (re_verify.derived_metadata, SaveConfig {
-                                    save_value,
-                                    save_metadata: true,
-                                })
-                            },
-                        ),
-                        None => {
-                            self.compute(key, true, |value, dependencies| {
-                                let new_fingerprint = value.ok().map(|x| {
-                                    fingerprint::fingerprint(
-                                        self.database.random_seed,
-                                        x,
-                                    )
-                                });
-
-                                if new_fingerprint
-                                    != re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .fingerprint
-                                {
-                                    tracing::debug!(
-                                        "Value fingerprint updated for `{}` \
-                                         `{key:?}` with a new fingerprint: \
-                                         {:?} -> {:?}",
-                                        key.type_name(),
-                                        re_verify
-                                            .derived_metadata
-                                            .version_info
-                                            .fingerprint,
-                                        new_fingerprint
-                                    );
-
-                                    re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .fingerprint = new_fingerprint;
-                                    re_verify
-                                        .derived_metadata
-                                        .version_info
-                                        .updated_at = current_version;
-
-                                    re_verify.derived_metadata.dependencies =
-                                        dependencies.into();
-                                }
-
-                                (re_verify.derived_metadata, true)
-                            })
-                            .await
-                        }
-                    }
-                } else {
-                    let final_metadata =
-                        ValueMetadata::Derived(re_verify.derived_metadata);
-
-                    self.save_value_metadata::<K>(
-                        fingerprint::fingerprint(
-                            self.database.random_seed,
-                            key,
-                        ),
-                        final_metadata.clone(),
-                    );
-
-                    *self
-                        .database
-                        .query_states_by_key
-                        .get_mut(key as &dyn Dynamic)
-                        .expect("should be present") =
-                        State::Completion(Completion {
-                            metadata: final_metadata,
-                            store: re_verify.value_store,
-                        });
-
-                    None
-                }
+            Continuation::ReVerify(re_verify) => {
+                self.handle_re_verify(
+                    key,
+                    re_verify,
+                    current_version,
+                    return_value,
+                )
+                .await
             }
+
             Continuation::ReExecute(mut re_execute) => {
                 tracing::debug!(
                     "Re-executing query for `{}` `{key:?}` with metadata: {:?}",
