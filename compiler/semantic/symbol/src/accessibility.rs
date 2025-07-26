@@ -1,5 +1,7 @@
 //! Contains the definition of tyhe [`Accessibility`] enum.
 
+use std::sync::Arc;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
@@ -8,14 +10,19 @@ use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
 use crate::{
+    accessibility::diagnostic::SymbolIsMoreAccessibleThanParent,
     get_table_of_symbol,
     kind::{get_kind, Kind},
+    member::get_members,
+    name::get_qualified_name,
     parent::{
         get_closest_module_id, get_parent, symbol_hierarchy_relationship,
         HierarchyRelationship,
     },
     ID,
 };
+
+pub mod diagnostic;
 
 /// The key type used with [`TrackedEngine`] to access the accessibility of a
 /// symbol.
@@ -170,6 +177,23 @@ pub async fn symbol_accessible(
     .await
 }
 
+/// Returns the user-friendly description of the accessibility.
+#[extend]
+pub async fn accessibility_description(
+    self: &TrackedEngine,
+    accessibility: Accessibility<Global<ID>>,
+) -> String {
+    match accessibility {
+        Accessibility::Public => "publicly accessible".to_owned(),
+        Accessibility::Scoped(module_id) => {
+            let module_qualified_name =
+                self.get_qualified_name(module_id).await;
+
+            format!("accessible in `{module_qualified_name}`")
+        }
+    }
+}
+
 /// Determines whether the given `referred` is accessible from the
 /// `referring_site` as if the `referred` has the given
 /// `referred_accessibility`.
@@ -202,5 +226,65 @@ pub async fn is_accessible_from(
                     | HierarchyRelationship::Equivalent
             )
         }
+    }
+}
+
+/// A query for checking if the trait has members that are more accessible than
+/// itself.
+#[pernixc_query::query(
+    key(MemberIsMoreAaccessibleKey),
+    id(Global<ID>),
+    value(Option<Arc<[diagnostic::Diagnostic]>>),
+    executor(MemberIsMoreAccessibleExecutor)
+)]
+pub async fn member_is_more_accessible_executor(
+    trait_id: Global<ID>,
+    tracked_engine: &TrackedEngine,
+) -> Result<Option<Arc<[diagnostic::Diagnostic]>>, CyclicError> {
+    let trait_accessibility: Accessibility<ID> =
+        tracked_engine.get_accessibility(trait_id).await;
+
+    let members: Arc<crate::member::Member> =
+        tracked_engine.get_members(trait_id).await;
+
+    let mut diagnostic = Vec::new();
+
+    for member in members
+        .member_ids_by_name
+        .values()
+        .copied()
+        .chain(members.redefinitions.iter().copied())
+    {
+        let member_accessibiliy = tracked_engine
+            .get_accessibility(Global::new(trait_id.target_id, member))
+            .await;
+
+        // if the member has accessibility that is more accessible
+        // than the trait's accessibility, then we report a diagnostic
+        if tracked_engine
+            .accessibility_hierarchy_relationship(
+                trait_id.target_id,
+                member_accessibiliy,
+                trait_accessibility,
+            )
+            .await
+            == HierarchyRelationship::Parent
+        {
+            diagnostic.push(
+                diagnostic::Diagnostic::SymbolIsMoreAccessibleThanParent(
+                    SymbolIsMoreAccessibleThanParent {
+                        symbol_id: trait_id.id,
+                        parent_id: member,
+                        target_id: trait_id.target_id,
+                    },
+                ),
+            );
+        }
+    }
+
+    if diagnostic.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(Arc::from(diagnostic)))
     }
 }
