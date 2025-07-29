@@ -1633,6 +1633,7 @@ impl MemberBuilder {
 /// with the same name in the same scope. In case of the symbol with no
 /// redefinition, passing `0` as the declaration order is sufficient.
 #[extend]
+#[allow(clippy::collection_is_never_read)]
 pub async fn calculate_qualified_name_id<'a>(
     self: &TrackedEngine,
     qualified_name_sequence: impl IntoIterator<Item = &'a str>,
