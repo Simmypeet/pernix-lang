@@ -961,6 +961,14 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_lines)]
+    #[instrument(
+        fields(
+            key_name = std::any::type_name::<K>(),
+            key = ?key,
+        ),
+        level = "info",
+        skip_all
+    )]
     async fn handle_re_verify<K: Key>(
         self: &Arc<Self>,
         key: &K,
