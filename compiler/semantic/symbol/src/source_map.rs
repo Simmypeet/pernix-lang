@@ -61,16 +61,18 @@ pub async fn create_source_map(
     let mut source_files = HashMap::default();
 
     for (id, source_file) in map.paths_by_source_id.iter() {
-        source_files.insert(
-            Global::new(target_id, *id),
-            self.query(&pernixc_source_file::Key {
+        let Ok(source_file) = self
+            .query(&pernixc_source_file::Key {
                 path: source_file.0.clone(),
                 target_id,
             })
             .await
             .unwrap()
-            .unwrap(),
-        );
+        else {
+            continue;
+        };
+
+        source_files.insert(Global::new(target_id, *id), source_file);
     }
 
     SourceMap(source_files)

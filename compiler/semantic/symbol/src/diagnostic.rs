@@ -261,8 +261,8 @@ impl Report<&TrackedEngine> for SourceFileLoadFail {
 pub struct RenderedKey(pub TargetID);
 
 struct FileError {
-    lexicals: Arc<[pernixc_lexical::error::Error]>,
-    syntaxes: Arc<[pernixc_parser::error::Error]>,
+    lexicals: Option<Arc<[pernixc_lexical::error::Error]>>,
+    syntaxes: Option<Arc<[pernixc_parser::error::Error]>>,
     symbols: Arc<HashSet<Diagnostic>>,
     path: Arc<Path>,
 }
@@ -299,7 +299,7 @@ fn populate_file_errors(
                         },
                     ))
                     .await?
-                    .unwrap(),
+                    .ok(),
                 lexicals: engine
                     .query(&pernixc_lexical::DiagnosticKey(
                         pernixc_lexical::Key {
@@ -308,7 +308,7 @@ fn populate_file_errors(
                         },
                     ))
                     .await?
-                    .unwrap(),
+                    .ok(),
                 path: path_key,
             })
         });
@@ -426,7 +426,7 @@ pub async fn rendered_executor(
                 });
             }
 
-            for diagnostic in syntaxes.iter() {
+            for diagnostic in syntaxes.iter().flat_map(|x| x.iter()) {
                 let engine = engine.clone();
                 let path_key = path.clone();
                 let diagnostic = diagnostic.clone();
@@ -445,7 +445,7 @@ pub async fn rendered_executor(
                 });
             }
 
-            for diagnostic in lexicals.iter() {
+            for diagnostic in lexicals.iter().flat_map(|x| x.iter()) {
                 let diagnostic = diagnostic.clone();
 
                 diagnostic_handles
