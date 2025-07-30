@@ -12,6 +12,7 @@ use crate::{
     generic_parameters::ConstantParameterID,
     inference::Inference,
     lifetime::Lifetime,
+    matching::{Match, Matching, Substructural},
     r#type::Type,
     sub_term::{self, Location, SubTerm, TermLocation},
     tuple::SubTupleLocation,
@@ -343,4 +344,108 @@ impl SubTerm for Constant {
     type SubConstantLocation = SubConstantLocation;
     type SubLifetimeLocation = Never;
     type ThisSubTermLocation = SubConstantLocation;
+}
+
+impl Match for Constant {
+    #[allow(clippy::too_many_lines)]
+    fn substructural_match(
+        &self,
+        other: &Self,
+    ) -> Option<
+        Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    > {
+        match (self, other) {
+            (Self::Struct(lhs), Self::Struct(rhs))
+                if lhs.id == rhs.id && lhs.fields.len() == rhs.fields.len() =>
+            {
+                Some(Substructural {
+                    lifetimes: Vec::new(),
+                    types: Vec::new(),
+                    constants: lhs
+                        .fields
+                        .iter()
+                        .zip(rhs.fields.iter())
+                        .enumerate()
+                        .map(|(idx, (lhs, rhs))| Matching {
+                            lhs: lhs.clone(),
+                            rhs: rhs.clone(),
+                            lhs_location: SubConstantLocation::Struct(idx),
+                            rhs_location: SubConstantLocation::Struct(idx),
+                        })
+                        .collect(),
+                })
+            }
+
+            (Self::Enum(lhs), Self::Enum(rhs))
+                if lhs.variant_id == rhs.variant_id =>
+            {
+                match (&lhs.associated_value, &rhs.associated_value) {
+                    (Some(lhs), Some(rhs)) => Some(Substructural {
+                        lifetimes: Vec::new(),
+                        types: Vec::new(),
+                        constants: vec![Matching {
+                            lhs: lhs.deref().clone(),
+                            rhs: rhs.deref().clone(),
+                            lhs_location: SubConstantLocation::Enum,
+                            rhs_location: SubConstantLocation::Enum,
+                        }],
+                    }),
+                    (None, None) => Some(Substructural::default()),
+                    _ => None,
+                }
+            }
+
+            (Self::Array(lhs), Self::Array(rhs))
+                if lhs.elements.len() == rhs.elements.len() =>
+            {
+                Some(Substructural {
+                    lifetimes: Vec::new(),
+                    types: Vec::new(),
+                    constants: lhs
+                        .elements
+                        .iter()
+                        .cloned()
+                        .zip(rhs.elements.iter().cloned())
+                        .enumerate()
+                        .map(|(idx, (lhs, rhs))| Matching {
+                            lhs,
+                            rhs,
+                            lhs_location: SubConstantLocation::Array(idx),
+                            rhs_location: SubConstantLocation::Array(idx),
+                        })
+                        .collect(),
+                })
+            }
+
+            (Self::Tuple(lhs), Self::Tuple(rhs)) => {
+                lhs.substructural_match(rhs)
+            }
+
+            _ => None,
+        }
+    }
+
+    fn get_substructural(
+        substructural: &Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        &substructural.constants
+    }
+
+    fn get_substructural_mut(
+        substructural: &mut Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        &mut substructural.constants
+    }
 }
