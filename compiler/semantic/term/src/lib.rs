@@ -8,6 +8,7 @@ pub mod error;
 pub mod generic_arguments;
 pub mod generic_parameters;
 pub mod inference;
+pub mod instantiation;
 pub mod lifetime;
 pub mod matching;
 pub mod sub_term;

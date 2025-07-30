@@ -26,6 +26,7 @@ use crate::{
     StableHash,
     Serialize,
     Deserialize,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum Lifetime {
