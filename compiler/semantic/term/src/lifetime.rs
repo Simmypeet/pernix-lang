@@ -1,6 +1,7 @@
 //! Contains the definition of [`Lifetime`] term.
 
 use enum_as_inner::EnumAsInner;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -14,6 +15,49 @@ use crate::{
     sub_term::{Location, SubTerm},
     Never,
 };
+
+/// Represents a forall lifetime declared with `for['a]` syntax.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct NamedForall {
+    /// The span where the named for all lifetime.
+    ///
+    /// The relative span can be uniquely identified the named for-all
+    /// lifetime.
+    pub span: RelativeSpan,
+}
+
+/// Represents a forall lifetime; a lifetime that represents all available
+/// lifetimes.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    EnumAsInner,
+)]
+#[allow(missing_docs)]
+pub enum Forall {
+    Named(NamedForall),
+}
 
 /// Represents a lifetime term.
 #[derive(
@@ -35,6 +79,7 @@ use crate::{
 pub enum Lifetime {
     Inference(pernixc_arena::ID<Inference<Self>>),
     Parameter(LifetimeParameterID),
+    Forall(Forall),
     Static,
     Erased,
     Error(Error),
