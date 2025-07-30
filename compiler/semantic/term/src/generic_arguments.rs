@@ -95,7 +95,7 @@ impl Element for Constant {
 )]
 pub struct Symbol {
     /// The ID of the symbol that is supplied with generic arguments.
-    pub symbol_id: Global<pernixc_symbol::ID>,
+    pub id: Global<pernixc_symbol::ID>,
 
     /// The generic arguments supplied to the symbol.
     pub generic_arguments: GenericArguments,
@@ -120,7 +120,7 @@ pub struct MemberSymbol {
     ///
     /// By associated symbol, we mean a symbol that is defined in the context
     /// of another symbol, such as a method or an associated type.
-    pub associated_id: Global<pernixc_symbol::ID>,
+    pub id: Global<pernixc_symbol::ID>,
 
     /// The generic arguments supplied to the parent of the associated symbol.
     pub parent_generic_arguments: GenericArguments,
