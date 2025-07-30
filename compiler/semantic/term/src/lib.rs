@@ -6,7 +6,6 @@ use pernixc_stable_hash::StableHash;
 pub mod constant;
 pub mod error;
 pub mod generic_arguments;
-pub mod generic_parameters;
 pub mod inference;
 pub mod instantiation;
 pub mod lifetime;
@@ -16,6 +15,8 @@ pub mod sub_term;
 pub mod tuple;
 pub mod r#type;
 pub mod visitor;
+
+pub mod query;
 
 /// Represents a type that can never be instantiated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

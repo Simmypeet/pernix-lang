@@ -7,9 +7,9 @@ use pernixc_stable_hash::StableHash;
 use crate::{
     constant::Constant,
     error::Error,
-    generic_parameters::LifetimeParameterID,
     inference::Inference,
     matching::{Match, Matching, Substructural},
+    query::generic_parameters::LifetimeParameterID,
     r#type::Type,
     sub_term::{Location, SubTerm},
     Never,

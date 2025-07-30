@@ -9,10 +9,10 @@ use pernixc_target::Global;
 
 use crate::{
     error::Error,
-    generic_parameters::ConstantParameterID,
     inference::Inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
+    query::generic_parameters::ConstantParameterID,
     r#type::Type,
     sub_term::{self, Location, SubTerm, TermLocation},
     tuple::SubTupleLocation,

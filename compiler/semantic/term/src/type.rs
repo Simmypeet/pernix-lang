@@ -11,10 +11,10 @@ use crate::{
         MemberSymbol, SubMemberSymbolLocation, SubSymbolLocation,
         SubTraitMemberLocation, Symbol, TraitMember,
     },
-    generic_parameters::TypeParameterID,
     inference::Inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
+    query::generic_parameters::TypeParameterID,
     sub_term::{self, Location, SubTerm, TermLocation},
     tuple::SubTupleLocation,
 };
