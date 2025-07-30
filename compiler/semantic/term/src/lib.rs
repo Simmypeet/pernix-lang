@@ -13,6 +13,10 @@ pub mod sub_term;
 pub mod tuple;
 pub mod r#type;
 
+/// Represents a type that can never be instantiated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Never {}
+
 /// An enumeration of all kinds of terms in the type system.
 #[derive(
     Debug,

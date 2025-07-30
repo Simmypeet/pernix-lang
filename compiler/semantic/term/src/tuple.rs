@@ -87,13 +87,12 @@ where
 
                 let tuple_elements = self.elements.get_mut(begin..end).unwrap();
 
-                if sub_constant_tuple.elements.len() != tuple_elements.len() {
-                    panic!(
-                        "tuple length mismatch: expected {}, got {}",
-                        tuple_elements.len(),
-                        sub_constant_tuple.elements.len()
-                    );
-                }
+                assert!(
+                    sub_constant_tuple.elements.len() == tuple_elements.len(),
+                    "tuple length mismatch: expected {}, got {}",
+                    tuple_elements.len(),
+                    sub_constant_tuple.elements.len()
+                );
 
                 for (lhs, rhs) in
                     tuple_elements.iter_mut().zip(sub_constant_tuple.elements)

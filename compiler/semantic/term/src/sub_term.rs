@@ -7,11 +7,9 @@ use std::{fmt::Debug, hash::Hash};
 use enum_as_inner::EnumAsInner;
 
 use crate::{
-    constant::Constant,
-    generic_arguments::{self, MemberSymbol, Symbol},
+    constant::{self, Constant},
     lifetime::Lifetime,
-    r#type::Type,
-    tuple::Tuple,
+    r#type::{self, Type},
 };
 
 /// Contains the information about the sub-term of a term.

@@ -336,20 +336,20 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
     fn get_sub_term(self, term: &Type) -> Option<Lifetime> {
         match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
-                Some(reference.lifetime.clone())
+                Some(reference.lifetime)
             }
 
             (Type::Symbol(symbol), Self::Symbol(location)) => {
-                symbol.get_term(location).cloned()
+                symbol.get_term(location).copied()
             }
 
             (
                 Type::MemberSymbol(member_symbol),
                 Self::MemberSymbol(location),
-            ) => member_symbol.get_term(location).cloned(),
+            ) => member_symbol.get_term(location).copied(),
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.0.get_term(location.0).cloned()
+                trait_member.0.get_term(location.0).copied()
             }
 
             _ => None,
