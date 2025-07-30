@@ -6,4 +6,5 @@
 //! another crate.
 
 pub mod generic_parameters;
+pub mod implied_predicates;
 pub mod where_clause;
