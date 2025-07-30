@@ -9,7 +9,7 @@ use derive_more::Deref;
 use enum_as_inner::EnumAsInner;
 use fnv::FnvHasher;
 use getset::CopyGetters;
-use pernixc_arena::{Arena, ID};
+use pernixc_arena::{state, Arena, ID};
 use pernixc_handler::Handler;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{
@@ -323,7 +323,7 @@ pub const ROOT_BRANCH_ID: ID<Branch> = ID::new(0);
 #[derive(Debug, Clone, Deref, Serialize, Deserialize, CopyGetters)]
 pub struct Tree {
     #[deref]
-    arena: Arena<Branch>,
+    arena: Arena<Branch, state::Default>,
 
     /// The source ID of the source code that this tree is built from.
     #[get_copy = "pub"]
@@ -556,7 +556,7 @@ fn calculate_branch_hash<'a>(
     tokens: impl Iterator<Item = &'a Kind<RelativeLocation>>,
     node_kind: GeneralBranchKind,
     source: &str,
-    arena: &Arena<Branch>,
+    arena: &Arena<Branch, state::Default>,
 ) -> ID<Branch> {
     let mut hasher = FnvHasher::default();
     node_kind.hash(&mut hasher);
@@ -1197,7 +1197,7 @@ impl Converter<'_, '_> {
 
     #[allow(clippy::too_many_lines, clippy::needless_pass_by_value)]
     fn make_branch_relative(
-        arena: &mut Arena<Branch>,
+        arena: &mut Arena<Branch, state::Default>,
         parent_branch_id: ID<Branch>,
         mut offset: ByteIndex,
         nodes: &mut [Node],

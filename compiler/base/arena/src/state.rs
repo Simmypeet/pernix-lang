@@ -90,6 +90,7 @@ impl<T> State<T> for Default {
     Default,
     Serialize,
     Deserialize,
+    StableHash,
 )]
 pub struct Serial(u64);
 

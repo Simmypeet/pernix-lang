@@ -1,5 +1,3 @@
-//! Contains the definition of [`Arena`] and [`ID`].
-//!
 //! [`Arena`] is a data structure that allows storing items of type `T` and
 //! referencing them by your own custom index type. This is useful for providing
 //! more type safety when working with various containers of different types.
@@ -120,7 +118,7 @@ impl<D: Deserializer<E>, E, T> Deserialize<D, E> for ID<T> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(ser_bound(G: Serialize<__S, __E>, G::ID: Serialize<__S, __E>, T: Serialize<__S, __E>))]
 #[serde(de_bound(G: Deserialize<__D, __E>, G::ID: Deserialize<__D, __E>, T: Deserialize<__D, __E>))]
-pub struct Arena<T, G: State<T> = state::Default> {
+pub struct Arena<T, G: State<T> = state::Serial> {
     generator: G,
     items: HashMap<G::ID, T>,
 }
