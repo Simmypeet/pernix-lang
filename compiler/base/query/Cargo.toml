@@ -23,6 +23,7 @@ tracing = { workspace = true }
 crossbeam = { workspace = true }
 rand = { workspace = true }
 tokio = { workspace = true }
+thiserror = { workspace = true }
 static_assertions = { workspace = true }
 
 [dev-dependencies]

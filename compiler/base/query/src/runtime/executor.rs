@@ -15,7 +15,10 @@ use crate::{
 };
 
 /// A unit struct for signaling cyclic dependencies in query execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error("cyclic dependency in the query system detected")]
 pub struct CyclicError;
 
 /// A super trait representing a future returned by an executor.
