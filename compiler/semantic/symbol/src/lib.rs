@@ -158,6 +158,36 @@ pub const fn skip_persistence(
 )]
 pub struct ID(pub u64);
 
+/// A kind of ID used to unique identify a symbol inside a particular global
+/// symbol.
+///
+/// For example, we can use this struct to uniquely identify a generic parameter
+/// inside a particular function symbol. Where the [`Self::parent_id`] is the ID
+/// of the function symbol and the [`Self::id`] is the ID of the generic
+/// parameter.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    derive_new::new,
+)]
+pub struct MemberID<InnerID> {
+    /// The ID of the member.
+    pub id: InnerID,
+
+    /// The parent ID of the member, which is the ID of the symbol that
+    /// contains this member.
+    pub parent_id: Global<ID>,
+}
+
 /// The key to query each table node.
 #[derive(
     Debug,

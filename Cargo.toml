@@ -26,6 +26,7 @@ members = [
     "compiler/syntax/syntax",
 
     "compiler/semantic/symbol",
+    "compiler/semantic/term",
 
     "compiler/driver",
     "compiler/main",
