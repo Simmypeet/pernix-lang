@@ -9,6 +9,7 @@ use crate::{generic_parameters::LifetimeParameterID, inference::Inference};
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
