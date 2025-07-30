@@ -15,6 +15,7 @@ use crate::{
     generic_parameters::TypeParameterID,
     inference::Inference,
     lifetime::Lifetime,
+    matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
     tuple::SubTupleLocation,
 };
@@ -792,4 +793,206 @@ impl SubTerm for Type {
     type SubTypeLocation = SubTypeLocation;
     type SubConstantLocation = SubConstantLocation;
     type ThisSubTermLocation = SubTypeLocation;
+}
+
+impl Match for Type {
+    #[allow(clippy::too_many_lines)]
+    fn substructural_match(
+        &self,
+        other: &Self,
+    ) -> Option<
+        Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    > {
+        match (self, other) {
+            (Self::Symbol(lhs), Self::Symbol(rhs)) if lhs.id == rhs.id => {
+                lhs.generic_arguments.substructural_match(
+                    &rhs.generic_arguments,
+                    Substructural::default(),
+                    SubSymbolLocation,
+                )
+            }
+
+            (Self::Pointer(lhs), Self::Pointer(rhs))
+                if lhs.mutable == rhs.mutable =>
+            {
+                Some(Substructural {
+                    lifetimes: Vec::new(),
+                    types: vec![Matching {
+                        lhs: (*lhs.pointee).clone(),
+                        rhs: (*rhs.pointee).clone(),
+                        lhs_location: SubTypeLocation::Pointer,
+                        rhs_location: SubTypeLocation::Pointer,
+                    }],
+                    constants: Vec::new(),
+                })
+            }
+
+            (Self::Reference(lhs), Self::Reference(rhs))
+                if lhs.qualifier == rhs.qualifier =>
+            {
+                Some(Substructural {
+                    lifetimes: vec![Matching {
+                        lhs: lhs.lifetime,
+                        rhs: rhs.lifetime,
+                        lhs_location: SubLifetimeLocation::Reference,
+                        rhs_location: SubLifetimeLocation::Reference,
+                    }],
+                    types: vec![Matching {
+                        lhs: (*lhs.pointee).clone(),
+                        rhs: (*rhs.pointee).clone(),
+                        lhs_location: SubTypeLocation::Reference,
+                        rhs_location: SubTypeLocation::Reference,
+                    }],
+                    constants: Vec::new(),
+                })
+            }
+
+            (Self::Array(lhs), Self::Array(rhs)) => Some(Substructural {
+                lifetimes: Vec::new(),
+                types: vec![Matching {
+                    lhs: (*lhs.r#type).clone(),
+                    rhs: (*rhs.r#type).clone(),
+                    lhs_location: SubTypeLocation::Array,
+                    rhs_location: SubTypeLocation::Array,
+                }],
+                constants: vec![Matching {
+                    lhs: lhs.length.clone(),
+                    rhs: rhs.length.clone(),
+                    lhs_location: SubConstantLocation::Array,
+                    rhs_location: SubConstantLocation::Array,
+                }],
+            }),
+
+            (Self::Tuple(lhs), Self::Tuple(rhs)) => {
+                lhs.substructural_match(rhs)
+            }
+
+            (Self::TraitMember(lhs), Self::TraitMember(rhs))
+                if lhs.0.id == rhs.0.id =>
+            {
+                lhs.parent_generic_arguments
+                    .substructural_match(
+                        &rhs.parent_generic_arguments,
+                        Substructural::default(),
+                        |x| {
+                            SubTraitMemberLocation(SubMemberSymbolLocation {
+                                index: x,
+                                from_parent: true,
+                            })
+                        },
+                    )
+                    .and_then(|x| {
+                        lhs.member_generic_arguments.substructural_match(
+                            &rhs.member_generic_arguments,
+                            x,
+                            |x| {
+                                SubTraitMemberLocation(
+                                    SubMemberSymbolLocation {
+                                        index: x,
+                                        from_parent: false,
+                                    },
+                                )
+                            },
+                        )
+                    })
+            }
+
+            (Self::MemberSymbol(lhs), Self::MemberSymbol(rhs))
+                if lhs.id == rhs.id =>
+            {
+                lhs.parent_generic_arguments
+                    .substructural_match(
+                        &rhs.parent_generic_arguments,
+                        Substructural::default(),
+                        |x| SubMemberSymbolLocation {
+                            index: x,
+                            from_parent: true,
+                        },
+                    )
+                    .and_then(|x| {
+                        lhs.member_generic_arguments.substructural_match(
+                            &rhs.member_generic_arguments,
+                            x,
+                            |x| SubMemberSymbolLocation {
+                                index: x,
+                                from_parent: false,
+                            },
+                        )
+                    })
+            }
+
+            (Self::Phantom(lhs), Self::Phantom(rhs)) => Some(Substructural {
+                lifetimes: Vec::new(),
+                types: vec![Matching {
+                    lhs: (*lhs.0).clone(),
+                    rhs: (*rhs.0).clone(),
+                    lhs_location: SubTypeLocation::Phantom,
+                    rhs_location: SubTypeLocation::Phantom,
+                }],
+                constants: Vec::new(),
+            }),
+
+            (Self::FunctionSignature(lhs), Self::FunctionSignature(rhs)) => {
+                if lhs.parameters.len() != rhs.parameters.len() {
+                    return None;
+                }
+
+                let mut substructural = Substructural::default();
+
+                for (i, (lhs, rhs)) in
+                    lhs.parameters.iter().zip(rhs.parameters.iter()).enumerate()
+                {
+                    substructural.types.push(Matching {
+                        lhs: lhs.clone(),
+                        rhs: rhs.clone(),
+                        lhs_location: SubTypeLocation::FunctionSignature(
+                            SubFunctionSignatureLocation::Parameter(i),
+                        ),
+                        rhs_location: SubTypeLocation::FunctionSignature(
+                            SubFunctionSignatureLocation::Parameter(i),
+                        ),
+                    });
+                }
+
+                substructural.types.push(Matching {
+                    lhs: (*lhs.return_type).clone(),
+                    rhs: (*rhs.return_type).clone(),
+                    lhs_location: SubTypeLocation::FunctionSignature(
+                        SubFunctionSignatureLocation::ReturnType,
+                    ),
+                    rhs_location: SubTypeLocation::FunctionSignature(
+                        SubFunctionSignatureLocation::ReturnType,
+                    ),
+                });
+
+                Some(substructural)
+            }
+
+            _ => None,
+        }
+    }
+
+    fn get_substructural(
+        substructural: &Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        &substructural.types
+    }
+
+    fn get_substructural_mut(
+        substructural: &mut Substructural<
+            Self::SubLifetimeLocation,
+            Self::SubTypeLocation,
+            Self::SubConstantLocation,
+        >,
+    ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
+        &mut substructural.types
+    }
 }
