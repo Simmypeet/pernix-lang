@@ -147,3 +147,69 @@ pub struct SubMemberSymbolLocation {
 /// in trait member symbols.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SubTraitMemberLocation(pub SubMemberSymbolLocation);
+
+impl MemberSymbol {
+    /// Returns a mutable reference to a particular sub-term of this generic
+    /// arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term_mut<T: Element>(
+        &mut self,
+        location: SubMemberSymbolLocation,
+    ) -> Option<&mut T> {
+        let generic_arguments = if location.from_parent {
+            T::get_mut(&mut self.parent_generic_arguments)
+        } else {
+            T::get_mut(&mut self.member_generic_arguments)
+        };
+
+        generic_arguments.get_mut(location.index)
+    }
+
+    /// Returns a reference to a particular sub-term of this generic arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term<T: Element>(
+        &self,
+        location: SubMemberSymbolLocation,
+    ) -> Option<&T> {
+        let generic_arguments = if location.from_parent {
+            T::get(&self.parent_generic_arguments)
+        } else {
+            T::get(&self.member_generic_arguments)
+        };
+
+        generic_arguments.get(location.index)
+    }
+}
+
+impl Symbol {
+    /// Returns a mutable reference to a particular sub-term of this generic
+    /// arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term_mut<T: Element>(
+        &mut self,
+        location: SubSymbolLocation,
+    ) -> Option<&mut T> {
+        let generic_arguments = T::get_mut(&mut self.generic_arguments);
+
+        generic_arguments.get_mut(location.0)
+    }
+
+    /// Returns a reference to a particular sub-term of this generic arguments.
+    ///
+    /// Returns `None` if the location is invalid.
+    #[must_use]
+    pub fn get_term<T: Element>(
+        &self,
+        location: SubSymbolLocation,
+    ) -> Option<&T> {
+        let generic_arguments = T::get(&self.generic_arguments);
+
+        generic_arguments.get(location.0)
+    }
+}

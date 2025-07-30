@@ -15,7 +15,8 @@ use crate::{
     generic_parameters::TypeParameterID,
     inference::Inference,
     lifetime::Lifetime,
-    sub_term::{self, Location, SubTerm, SubTupleLocation, TermLocation},
+    sub_term::{self, Location, SubTerm, TermLocation},
+    tuple::SubTupleLocation,
 };
 
 /// A qualifier that can be applied to references/pointers.
@@ -257,6 +258,17 @@ pub enum Type {
     Error(Error),
 }
 
+impl TryFrom<Type> for Tuple {
+    type Error = Type;
+
+    fn try_from(value: Type) -> Result<Self, Self::Error> {
+        match value {
+            Type::Tuple(tuple) => Ok(tuple),
+            _ => Err(value),
+        }
+    }
+}
+
 /// The location pointing to a sub-lifetime term in a type.
 #[derive(
     Debug,
@@ -310,16 +322,15 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
             ) => member_symbol.get_term_mut(location).unwrap(),
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.0.get_term_mut(location.0).unwrap()?
+                trait_member.0.get_term_mut(location.0).unwrap()
             }
 
-            _ => panic!(
+            term => panic!(
                 "invalid sub-lifetime location: {self:?} for term: {term:?}"
             ),
         };
 
         *reference = sub_term;
-        Ok(())
     }
 
     fn get_sub_term(self, term: &Type) -> Option<Lifetime> {
@@ -488,13 +499,12 @@ impl Location<Type, Type> for SubTypeLocation {
             }
             .unwrap(),
 
-            _ => {
+            term => {
                 panic!("invalid sub-type location: {self:?} for term: {term:?}")
             }
         };
 
         *reference = sub_term;
-        Ok(())
     }
 
     fn get_sub_term(self, term: &Type) -> Option<Type> {
@@ -705,13 +715,12 @@ impl Location<Type, Constant> for SubConstantLocation {
                 trait_member.0.get_term_mut(location.0).unwrap()
             }
 
-            _ => panic!(
+            term => panic!(
                 "invalid sub-constant location: {self:?} for term: {term:?}"
             ),
         };
 
         *reference = sub_term;
-        Ok(())
     }
 
     fn get_sub_term(self, term: &Type) -> Option<Constant> {
