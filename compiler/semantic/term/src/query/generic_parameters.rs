@@ -6,7 +6,9 @@ use paste::paste;
 use pernixc_arena::Arena;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 
@@ -20,8 +22,19 @@ use crate::{
 /// parameters, as well as the order of their declaration and the maps that
 /// maps the name of the generic parameters to their IDs.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Getters, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Getters,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Value,
 )]
+#[id(Global<pernixc_symbol::ID>)]
+#[extend(method(get_generic_parameters))]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.
     #[get = "pub"]
@@ -119,7 +132,16 @@ pub trait GenericParameter: Sized + 'static {
 
 /// Represents a lifetime parameter, denoted by `'a` syntax.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
 )]
 pub struct LifetimeParameter {
     /// The name of the lifetime parameter (if none, then it is anonymous
@@ -165,7 +187,16 @@ impl GenericParameter for LifetimeParameter {
 
 /// Represents a type parameter, denoted by `T` syntax.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
 )]
 pub struct TypeParameter {
     /// The name of the type parameter.
@@ -210,7 +241,16 @@ impl GenericParameter for TypeParameter {
 
 /// Represents a constant parameter, denoted by `const C: TYPE` syntax.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
 )]
 pub struct ConstantParameter {
     /// The name of the constant parameter.
