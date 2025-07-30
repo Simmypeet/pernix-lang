@@ -4,7 +4,12 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use crate::{
+    constant::Constant,
+    lifetime::Lifetime,
+    matching::{Matching, Substructural},
+    r#type::Type,
+};
 
 /// Represents a list of generic arguments supplied to a particular symbol that
 /// has generic parameters (e.g., `symbol[ARGS]`).
@@ -211,5 +216,75 @@ impl Symbol {
         let generic_arguments = T::get(&self.generic_arguments);
 
         generic_arguments.get(location.0)
+    }
+}
+
+impl GenericArguments {
+    /// Substructurally matches `self` to `to`.
+    pub fn substructural_match<L, T, C, Y>(
+        &self,
+        other: &Self,
+        mut existing: Substructural<L, T, C>,
+        to_location: impl Fn(usize) -> Y,
+    ) -> Option<Substructural<L, T, C>>
+    where
+        Y: Into<L> + Into<T> + Into<C> + Copy,
+    {
+        if self.lifetimes.len() != other.lifetimes.len()
+            || self.types.len() != other.types.len()
+            || self.constants.len() != other.constants.len()
+        {
+            return None;
+        }
+
+        for (idx, (lhs, rhs)) in self
+            .lifetimes
+            .iter()
+            .copied()
+            .zip(other.lifetimes.iter().copied())
+            .enumerate()
+        {
+            let location = to_location(idx);
+            existing.lifetimes.push(Matching {
+                lhs,
+                rhs,
+                lhs_location: location.into(),
+                rhs_location: location.into(),
+            });
+        }
+
+        for (idx, (lhs, rhs)) in self
+            .types
+            .iter()
+            .cloned()
+            .zip(other.types.iter().cloned())
+            .enumerate()
+        {
+            let location = to_location(idx);
+            existing.types.push(Matching {
+                lhs,
+                rhs,
+                lhs_location: location.into(),
+                rhs_location: location.into(),
+            });
+        }
+
+        for (idx, (lhs, rhs)) in self
+            .constants
+            .iter()
+            .cloned()
+            .zip(other.constants.iter().cloned())
+            .enumerate()
+        {
+            let location = to_location(idx);
+            existing.constants.push(Matching {
+                lhs,
+                rhs,
+                lhs_location: location.into(),
+                rhs_location: location.into(),
+            });
+        }
+
+        Some(existing)
     }
 }
