@@ -121,5 +121,29 @@ pub struct MemberSymbol {
     pub parent_generic_arguments: GenericArguments,
 
     /// The generic arguments supplied to the associated symbol.
-    pub associated_generic_arguments: GenericArguments,
+    pub member_generic_arguments: GenericArguments,
 }
+
+/// Represents a sub-term location where the sub-term is stored as a generic
+/// arguments.
+///
+/// The `usize` represents the index of the sub-term in the generic arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubSymbolLocation(pub usize);
+
+/// Represents a sub-term location where the sub-term is stored as a generic
+/// arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubMemberSymbolLocation {
+    /// The index of the sub-term in the generic arguments.
+    pub index: usize,
+
+    /// True if the sub-term is in the parent's generic arguments part,
+    /// otherwise false.
+    pub from_parent: bool,
+}
+
+/// A new type wrapper for [`SubMemberSymbolLocation`] to represent a sub-term
+/// in trait member symbols.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SubTraitMemberLocation(pub SubMemberSymbolLocation);

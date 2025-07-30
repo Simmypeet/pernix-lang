@@ -6,38 +6,24 @@ use std::{fmt::Debug, hash::Hash};
 
 use enum_as_inner::EnumAsInner;
 
-use crate::term::{
-    constant::{self, Constant},
-    generic_arguments,
+use crate::{
+    constant::Constant,
+    generic_arguments::{self, MemberSymbol, Symbol},
     lifetime::Lifetime,
-    r#type::{self, Type},
-    MemberSymbol, Model, ModelOf, Symbol, Tuple,
+    r#type::Type,
+    tuple::Tuple,
 };
 
-/// An error that occurs when assigning a sub-term to a term.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum AssignSubTermError {
-    #[error("the given location is invalid for this term")]
-    InvalidLocation,
-    #[error("the given term to assign was expected to be a tuple")]
-    TupleExpected,
-    #[error("the given tuple term to assign had a mismatched length")]
-    InvalidTupleRange,
-}
-
 /// Contains the information about the sub-term of a term.
-pub trait SubTerm: Sized + ModelOf {
+pub trait SubTerm: Sized {
     /// The type that represents the location of a sub-type in the term.
-    type SubTypeLocation: Location<Self, Type<Self::Model>>;
+    type SubTypeLocation: Location<Self, Type>;
 
     /// The type that represents the location of a sub-constant in the term.
-    type SubConstantLocation: Location<Self, Constant<Self::Model>>;
+    type SubConstantLocation: Location<Self, Constant>;
 
     /// The type that represents the location of a sub-lifetime in the term.
-    type SubLifetimeLocation: Location<Self, Lifetime<Self::Model>>;
+    type SubLifetimeLocation: Location<Self, Lifetime>;
 
     /// The type that represents the location of a sub-term of this kind of
     /// term.
@@ -60,15 +46,7 @@ pub trait Location<Term, SubTerm>:
     + 'static
 {
     /// Assigns the `sub_term` to the given `term` at this location.
-    ///
-    /// # Errors
-    ///
-    /// See [`AssignSubTermError`] for more information.
-    fn assign_sub_term(
-        self,
-        term: &mut Term,
-        sub_term: SubTerm,
-    ) -> Result<(), AssignSubTermError>;
+    fn assign_sub_term(self, term: &mut Term, sub_term: SubTerm);
 
     /// Returns the sub-term at this location.
     #[must_use]
@@ -128,35 +106,27 @@ where
     /// # Errors
     ///
     /// See [`AssignSubTermError`] for more information.
-    pub fn assign_sub_term(
-        &mut self,
-        location: SubTupleLocation,
-        sub_term: T,
-    ) -> Result<(), AssignSubTermError> {
+    pub fn assign_sub_term(&mut self, location: SubTupleLocation, sub_term: T) {
         match location {
             SubTupleLocation::Single(idx) => {
-                let element = self
-                    .elements
-                    .get_mut(idx)
-                    .map(|x| &mut x.term)
-                    .ok_or(AssignSubTermError::InvalidLocation)?;
+                let element =
+                    self.elements.get_mut(idx).map(|x| &mut x.term).unwrap();
 
                 *element = sub_term;
-
-                Ok(())
             }
             SubTupleLocation::Range { begin, end } => {
                 let Ok(sub_constant_tuple) = Self::try_from(sub_term) else {
-                    return Err(AssignSubTermError::TupleExpected);
+                    panic!("tuple expected");
                 };
 
-                let tuple_elements = self
-                    .elements
-                    .get_mut(begin..end)
-                    .ok_or(AssignSubTermError::InvalidLocation)?;
+                let tuple_elements = self.elements.get_mut(begin..end).unwrap();
 
                 if sub_constant_tuple.elements.len() != tuple_elements.len() {
-                    return Err(AssignSubTermError::InvalidLocation);
+                    panic!(
+                        "tuple length mismatch: expected {}, got {}",
+                        tuple_elements.len(),
+                        sub_constant_tuple.elements.len()
+                    );
                 }
 
                 for (lhs, rhs) in
@@ -164,24 +134,10 @@ where
                 {
                     *lhs = rhs;
                 }
-
-                Ok(())
             }
         }
     }
 }
-
-/// Represents a sub-term location where the sub-term is stored as a generic
-/// arguments.
-///
-/// The `usize` represents the index of the sub-term in the generic arguments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SubSymbolLocation(pub usize);
-
-/// A new type wrapper for [`SubMemberSymbolLocation`] to represent a sub-term
-/// in trait member symbols.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SubTraitMemberLocation(pub SubMemberSymbolLocation);
 
 /// An enumeration of locations where a lifetime can be located.
 #[derive(
@@ -264,13 +220,13 @@ pub enum TermLocation {
     Constant(SubConstantLocation),
 }
 
-impl<M: Model> MemberSymbol<M> {
+impl MemberSymbol {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term_mut<T: generic_arguments::Element<M>>(
+    pub fn get_term_mut<T: generic_arguments::Element>(
         &mut self,
         location: SubMemberSymbolLocation,
     ) -> Option<&mut T> {
@@ -287,7 +243,7 @@ impl<M: Model> MemberSymbol<M> {
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term<T: generic_arguments::Element<M>>(
+    pub fn get_term<T: generic_arguments::Element>(
         &self,
         location: SubMemberSymbolLocation,
     ) -> Option<&T> {
@@ -301,13 +257,13 @@ impl<M: Model> MemberSymbol<M> {
     }
 }
 
-impl<M: Model> Symbol<M> {
+impl Symbol {
     /// Returns a mutable reference to a particular sub-term of this generic
     /// arguments.
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term_mut<T: generic_arguments::Element<M>>(
+    pub fn get_term_mut<T: generic_arguments::Element>(
         &mut self,
         location: SubSymbolLocation,
     ) -> Option<&mut T> {
@@ -320,7 +276,7 @@ impl<M: Model> Symbol<M> {
     ///
     /// Returns `None` if the location is invalid.
     #[must_use]
-    pub fn get_term<T: generic_arguments::Element<M>>(
+    pub fn get_term<T: generic_arguments::Element>(
         &self,
         location: SubSymbolLocation,
     ) -> Option<&T> {

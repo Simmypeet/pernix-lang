@@ -8,10 +8,14 @@ use pernixc_stable_hash::StableHash;
 use crate::{
     constant::Constant,
     error::Error,
-    generic_arguments::{MemberSymbol, Symbol},
+    generic_arguments::{
+        MemberSymbol, SubMemberSymbolLocation, SubSymbolLocation,
+        SubTraitMemberLocation, Symbol,
+    },
     generic_parameters::TypeParameterID,
     inference::Inference,
     lifetime::Lifetime,
+    sub_term::{self, Location, SubTerm, SubTupleLocation, TermLocation},
 };
 
 /// A qualifier that can be applied to references/pointers.
@@ -189,6 +193,27 @@ pub struct FunctionSignature {
     pub return_type: Box<Type>,
 }
 
+/// A location pointing to either a parameter or the return type of a function
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubFunctionSignatureLocation {
+    /// Points to a parameter at the given index in the function signature
+    Parameter(usize),
+
+    /// Points to the return type of the function signature
+    ReturnType,
+}
+
 /// Represents a type term
 #[derive(
     Debug,
@@ -230,4 +255,532 @@ pub enum Type {
     FunctionSignature(FunctionSignature),
     #[from]
     Error(Error),
+}
+
+/// The location pointing to a sub-lifetime term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubLifetimeLocation {
+    /// The index of lifetime argument in a [`Type::Symbol`] type.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// The lifetime of a reference.
+    Reference,
+
+    /// A lifetime argument in a [`Type::MemberSymbol`] variant.
+    #[from]
+    MemberSymbol(SubMemberSymbolLocation),
+
+    /// A lifetime argument in a [`Type::TraitMember`] variant.
+    #[from]
+    TraitMember(SubTraitMemberLocation),
+}
+
+impl From<SubLifetimeLocation> for TermLocation {
+    fn from(value: SubLifetimeLocation) -> Self {
+        Self::Lifetime(sub_term::SubLifetimeLocation::FromType(value))
+    }
+}
+
+impl Location<Type, Lifetime> for SubLifetimeLocation {
+    fn assign_sub_term(self, term: &mut Type, sub_term: Lifetime) {
+        let reference = match (term, self) {
+            (Type::Reference(reference), Self::Reference) => {
+                &mut reference.lifetime
+            }
+
+            (Type::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol.get_term_mut(location).unwrap(),
+
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.0.get_term_mut(location.0).unwrap()?
+            }
+
+            _ => panic!(
+                "invalid sub-lifetime location: {self:?} for term: {term:?}"
+            ),
+        };
+
+        *reference = sub_term;
+        Ok(())
+    }
+
+    fn get_sub_term(self, term: &Type) -> Option<Lifetime> {
+        match (term, self) {
+            (Type::Reference(reference), Self::Reference) => {
+                Some(reference.lifetime.clone())
+            }
+
+            (Type::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol.get_term(location).cloned(),
+
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.0.get_term(location.0).cloned()
+            }
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Type) -> Option<&Lifetime> {
+        match (term, self) {
+            (Type::Reference(reference), Self::Reference) => {
+                Some(&reference.lifetime)
+            }
+
+            (Type::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term(location)
+            }
+
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol.get_term(location),
+
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.0.get_term(location.0)
+            }
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Type) -> Option<&mut Lifetime> {
+        match (term, self) {
+            (Type::Reference(reference), Self::Reference) => {
+                Some(&mut reference.lifetime)
+            }
+
+            (Type::Symbol(symbol), Self::Symbol(location)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (
+                Type::MemberSymbol(member_symbol),
+                Self::MemberSymbol(location),
+            ) => member_symbol.get_term_mut(location),
+
+            (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
+                trait_member.0.get_term_mut(location.0)
+            }
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-type term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubTypeLocation {
+    /// The index of the type argument in a [`Type::Symbol`] type.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// The [`Pointer::pointee`] of a pointer.
+    Pointer,
+
+    /// The [`Reference::pointee`] of a reference.
+    Reference,
+
+    /// The [`Array::type`] of an array.
+    Array,
+
+    /// The index of the type element in a [`Type::Tuple`] type.
+    #[from]
+    Tuple(SubTupleLocation),
+
+    /// The inner type of a [`Type::Phantom`] type.
+    Phantom,
+
+    /// The type argument in a [`Type::MemberSymbol`] type.
+    #[from]
+    MemberSymbol(SubMemberSymbolLocation),
+
+    /// The type argument in a [`Type::TraitMember`] type.
+    #[from]
+    TraitMember(SubTraitMemberLocation),
+
+    /// The return type or a parameter of a function signature.
+    #[from]
+    FunctionSignature(SubFunctionSignatureLocation),
+}
+
+impl From<SubTypeLocation> for TermLocation {
+    fn from(value: SubTypeLocation) -> Self {
+        Self::Type(sub_term::SubTypeLocation::FromType(value))
+    }
+}
+
+impl Location<Type, Type> for SubTypeLocation {
+    fn assign_sub_term(self, term: &mut Type, sub_term: Type) {
+        let reference = match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (Self::Pointer, Type::Pointer(pointer)) => &mut *pointer.pointee,
+
+            (Self::Phantom, Type::Phantom(phantom)) => &mut *phantom.0,
+
+            (Self::Reference, Type::Reference(reference)) => {
+                &mut *reference.pointee
+            }
+
+            (Self::Array, Type::Array(array)) => &mut *array.r#type,
+
+            (Self::Tuple(location), Type::Tuple(tuple)) => {
+                return tuple.assign_sub_term(location, sub_term)
+            }
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location).unwrap(),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term_mut(location.0).unwrap()
+            }
+
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(function_signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    function_signature.parameters.get_mut(idx)
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some(&mut *function_signature.return_type)
+                }
+            }
+            .unwrap(),
+
+            _ => {
+                panic!("invalid sub-type location: {self:?} for term: {term:?}")
+            }
+        };
+
+        *reference = sub_term;
+        Ok(())
+    }
+
+    fn get_sub_term(self, term: &Type) -> Option<Type> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (Self::Pointer, Type::Pointer(pointer)) => {
+                Some((*pointer.pointee).clone())
+            }
+
+            (Self::Reference, Type::Reference(reference)) => {
+                Some((*reference.pointee).clone())
+            }
+
+            (Self::Array, Type::Array(array)) => Some((*array.r#type).clone()),
+
+            (Self::Tuple(location), Type::Tuple(tuple)) => match location {
+                SubTupleLocation::Single(single) => {
+                    tuple.elements.get(single).map(|x| x.term.clone())
+                }
+                SubTupleLocation::Range { begin, end } => tuple
+                    .elements
+                    .get(begin..end)
+                    .map(|x| Type::Tuple(Tuple { elements: x.to_vec() })),
+            },
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(trait_member),
+            ) => trait_member.get_term(location).cloned(),
+
+            (Self::Phantom, Type::Phantom(phantom)) => {
+                Some((*phantom.0).clone())
+            }
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term(location.0).cloned()
+            }
+
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    signature.parameters.get(idx).cloned()
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some((*signature.return_type).clone())
+                }
+            },
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Type) -> Option<&Type> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location)
+            }
+
+            (Self::Pointer, Type::Pointer(pointer)) => Some(&*pointer.pointee),
+
+            (Self::Reference, Type::Reference(reference)) => {
+                Some(&*reference.pointee)
+            }
+
+            (Self::Array, Type::Array(array)) => Some(&*array.r#type),
+
+            (Self::Tuple(location), Type::Tuple(tuple)) => match location {
+                SubTupleLocation::Single(single) => {
+                    tuple.elements.get(single).map(|x| &x.term)
+                }
+                SubTupleLocation::Range { .. } => None,
+            },
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location),
+
+            (Self::Phantom, Type::Phantom(phantom)) => Some(&*phantom.0),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term(location.0)
+            }
+
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    signature.parameters.get(idx)
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some(&*signature.return_type)
+                }
+            },
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Type) -> Option<&mut Type> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (Self::Pointer, Type::Pointer(pointer)) => {
+                Some(&mut *pointer.pointee)
+            }
+
+            (Self::Reference, Type::Reference(reference)) => {
+                Some(&mut *reference.pointee)
+            }
+
+            (Self::Array, Type::Array(array)) => Some(&mut *array.r#type),
+
+            (Self::Tuple(location), Type::Tuple(tuple)) => match location {
+                SubTupleLocation::Single(single) => {
+                    tuple.elements.get_mut(single).map(|x| &mut x.term)
+                }
+                SubTupleLocation::Range { .. } => None,
+            },
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term_mut(location.0)
+            }
+
+            (Self::Phantom, Type::Phantom(phantom)) => Some(&mut *phantom.0),
+
+            (
+                Self::FunctionSignature(location),
+                Type::FunctionSignature(signature),
+            ) => match location {
+                SubFunctionSignatureLocation::Parameter(idx) => {
+                    signature.parameters.get_mut(idx)
+                }
+                SubFunctionSignatureLocation::ReturnType => {
+                    Some(&mut *signature.return_type)
+                }
+            },
+
+            _ => None,
+        }
+    }
+}
+
+/// The location pointing to a sub-constant term in a type.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_more::From,
+    EnumAsInner,
+)]
+pub enum SubConstantLocation {
+    /// The index of the constant argument in a [`Type::Symbol`] type.
+    #[from]
+    Symbol(SubSymbolLocation),
+
+    /// The constant argument in a [`Type::MemberSymbol`] type.
+    #[from]
+    MemberSymbol(SubMemberSymbolLocation),
+
+    /// The [`Array::length`] of an array.
+    Array,
+
+    /// The constant argument in a [`Type::TraitMember`] type.
+    #[from]
+    TraitMember(SubTraitMemberLocation),
+}
+
+impl From<SubConstantLocation> for TermLocation {
+    fn from(value: SubConstantLocation) -> Self {
+        Self::Constant(sub_term::SubConstantLocation::FromType(value))
+    }
+}
+
+impl Location<Type, Constant> for SubConstantLocation {
+    fn assign_sub_term(self, term: &mut Type, sub_term: Constant) {
+        let reference = match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term_mut(location).unwrap()
+            }
+
+            (Self::Array, Type::Array(array)) => &mut array.length,
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location).unwrap(),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term_mut(location.0).unwrap()
+            }
+
+            _ => panic!(
+                "invalid sub-constant location: {self:?} for term: {term:?}"
+            ),
+        };
+
+        *reference = sub_term;
+        Ok(())
+    }
+
+    fn get_sub_term(self, term: &Type) -> Option<Constant> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location).cloned()
+            }
+
+            (Self::Array, Type::Array(array)) => Some(array.length.clone()),
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location).cloned(),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term(location.0).cloned()
+            }
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_ref(self, term: &Type) -> Option<&Constant> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term(location)
+            }
+
+            (Self::Array, Type::Array(array)) => Some(&array.length),
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term(location),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term(location.0)
+            }
+
+            _ => None,
+        }
+    }
+
+    fn get_sub_term_mut(self, term: &mut Type) -> Option<&mut Constant> {
+        match (self, term) {
+            (Self::Symbol(location), Type::Symbol(symbol)) => {
+                symbol.get_term_mut(location)
+            }
+
+            (Self::Array, Type::Array(array)) => Some(&mut array.length),
+
+            (
+                Self::MemberSymbol(location),
+                Type::MemberSymbol(member_symbol),
+            ) => member_symbol.get_term_mut(location),
+
+            (Self::TraitMember(location), Type::TraitMember(trait_member)) => {
+                trait_member.0.get_term_mut(location.0)
+            }
+
+            _ => None,
+        }
+    }
+}
+
+impl SubTerm for Type {
+    type SubLifetimeLocation = SubLifetimeLocation;
+    type SubTypeLocation = SubTypeLocation;
+    type SubConstantLocation = SubConstantLocation;
+    type ThisSubTermLocation = SubTypeLocation;
 }
