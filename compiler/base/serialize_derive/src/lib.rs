@@ -1148,10 +1148,11 @@ where
     let all_field_vars: Vec<_> = fields
         .named
         .iter()
-        .map(|field| {
+        .enumerate()
+        .map(|(i, field)| {
             let field_name = field.ident.as_ref().unwrap();
             let var_name =
-                Ident::new(&format!("__{field_name}_value"), field_name.span());
+                Ident::new(&format!("__field_{i}_value"), field_name.span());
             (field_name, var_name, has_serde_skip_attr(field))
         })
         .collect();
