@@ -1,8 +1,10 @@
 //! Contains the definition of [`WhereClause`] component.
 
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
 
 /// Represents a predicate introduced by either a where clause or implication.
 #[derive(
@@ -38,7 +40,10 @@ pub struct Predicate {
     StableHash,
     Serialize,
     Deserialize,
+    Value,
 )]
+#[id(Global<pernixc_symbol::ID>)]
+#[extend(method(get_where_clause))]
 pub struct WhereClause {
     /// The list of predicates declared in the where clause.
     pub predicates: Vec<Predicate>,
