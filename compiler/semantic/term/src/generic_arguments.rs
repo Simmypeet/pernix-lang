@@ -288,3 +288,20 @@ impl GenericArguments {
         Some(existing)
     }
 }
+
+/// A new type wrapper representing a trait associated type.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::Deref,
+    derive_more::DerefMut,
+)]
+pub struct TraitMember(pub MemberSymbol);

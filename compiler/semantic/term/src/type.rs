@@ -1,6 +1,5 @@
 //! Contains the definition of [`Type`] term.
 
-use derive_more::{Deref, DerefMut};
 use enum_as_inner::EnumAsInner;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -10,7 +9,7 @@ use crate::{
     error::Error,
     generic_arguments::{
         MemberSymbol, SubMemberSymbolLocation, SubSymbolLocation,
-        SubTraitMemberLocation, Symbol,
+        SubTraitMemberLocation, Symbol, TraitMember,
     },
     generic_parameters::TypeParameterID,
     inference::Inference,
@@ -155,23 +154,6 @@ pub type Tuple = crate::tuple::Tuple<Type>;
     Deserialize,
 )]
 pub struct Phantom(pub Box<Type>);
-
-/// A new type wrapper representing a trait associated type.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-    Deref,
-    DerefMut,
-)]
-pub struct TraitMember(pub MemberSymbol);
 
 /// Represents a function signature object. Can be used to represent a function
 /// pointer.
