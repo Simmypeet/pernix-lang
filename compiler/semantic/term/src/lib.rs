@@ -11,6 +11,7 @@ pub mod inference;
 pub mod instantiation;
 pub mod lifetime;
 pub mod matching;
+pub mod predicate;
 pub mod sub_term;
 pub mod tuple;
 pub mod r#type;

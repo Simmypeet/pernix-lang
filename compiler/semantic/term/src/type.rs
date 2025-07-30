@@ -211,6 +211,7 @@ pub enum SubFunctionSignatureLocation {
     Serialize,
     Deserialize,
     derive_more::From,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Type {

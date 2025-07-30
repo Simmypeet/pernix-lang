@@ -305,3 +305,13 @@ impl GenericArguments {
     derive_more::DerefMut,
 )]
 pub struct TraitMember(pub MemberSymbol);
+
+impl GenericArguments {
+    /// Checks if there's any errornous term in the generic arguments.
+    #[must_use]
+    pub fn contains_error(&self) -> bool {
+        self.lifetimes.iter().any(Lifetime::is_error)
+            || self.types.iter().any(Type::is_error)
+            || self.constants.iter().any(Constant::is_error)
+    }
+}

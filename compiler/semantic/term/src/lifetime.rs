@@ -1,10 +1,12 @@
 //! Contains the definition of [`Lifetime`] term.
 
+use enum_as_inner::EnumAsInner;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
     constant::Constant,
+    error::Error,
     generic_parameters::LifetimeParameterID,
     inference::Inference,
     matching::{Match, Matching, Substructural},
@@ -27,6 +29,7 @@ use crate::{
     Serialize,
     Deserialize,
     derive_more::From,
+    EnumAsInner,
 )]
 #[allow(missing_docs)]
 pub enum Lifetime {
@@ -34,6 +37,7 @@ pub enum Lifetime {
     Parameter(LifetimeParameterID),
     Static,
     Erased,
+    Error(Error),
 }
 
 impl Location<Lifetime, Lifetime> for Never {
