@@ -19,6 +19,7 @@ enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
 getset = { workspace = true }
 paste = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true
