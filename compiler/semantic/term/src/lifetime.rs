@@ -85,6 +85,10 @@ pub enum Lifetime {
     Error(Error),
 }
 
+impl From<Never> for Lifetime {
+    fn from(never: Never) -> Self { match never {} }
+}
+
 impl Location<Lifetime, Lifetime> for Never {
     fn assign_sub_term(self, _: &mut Lifetime, _: Lifetime) { match self {} }
 

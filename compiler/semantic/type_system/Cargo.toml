@@ -8,9 +8,14 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_query = { path = "../../base/query" }
+pernixc_target = { path = "../../base/target" }
+pernixc_extend = { path = "../../base/extend" }
+pernixc_lexical = { path = "../../syntax/lexical" }
+pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }
 thiserror = { workspace = true }
 enum-as-inner = { workspace = true }
+getset = { workspace = true }
 
 [lints]
 workspace = true

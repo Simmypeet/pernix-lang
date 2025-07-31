@@ -149,6 +149,10 @@ pub enum Constant {
     Error(Error),
 }
 
+impl From<Never> for Constant {
+    fn from(never: Never) -> Self { match never {} }
+}
+
 impl TryFrom<Constant> for Tuple {
     type Error = Constant;
 
