@@ -18,6 +18,9 @@ use pernixc_serialize::{
 use pernixc_stable_hash::StableHash;
 use rand::Rng;
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Represents an identifier for a target.
 #[derive(
     Debug,

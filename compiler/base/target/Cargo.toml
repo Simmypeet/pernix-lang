@@ -6,6 +6,9 @@ description.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+arbitrary = ["dep:proptest"]
+
 [dependencies]
 pernixc_serialize = { path = "../serialize" }
 pernixc_stable_hash = { path = "../stable_hash" }
@@ -17,6 +20,10 @@ clap = { workspace = true }
 enum-as-inner = { workspace = true }
 flexstr = { workspace = true }
 rand = { workspace = true }
+proptest = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
 
 [lints]
 workspace = true
