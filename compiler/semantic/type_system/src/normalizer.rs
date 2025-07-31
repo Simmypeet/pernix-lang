@@ -15,7 +15,7 @@ pub trait Normalizer: Sized {
     fn normalize_type(
         ty: &Type,
         environment: &Environment<Self>,
-    ) -> Result<Option<Succeeded<Type>>, Error>;
+    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Type>>, Error>>;
 
     /// Normalizes the constant inference variable into the concrete constant
     /// term.
@@ -26,7 +26,7 @@ pub trait Normalizer: Sized {
     fn normalize_constant(
         constant: &Constant,
         environment: &Environment<Self>,
-    ) -> Result<Option<Succeeded<Constant>>, Error>;
+    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Constant>>, Error>>;
 }
 
 /// The default normalizer that does not normalize the inference variables.
@@ -37,16 +37,16 @@ pub struct NoOp;
 pub const NO_OP: &NoOp = &NoOp;
 
 impl Normalizer for NoOp {
-    fn normalize_type(
+    async fn normalize_type(
         _: &Type,
-        _: &Environment<Self>,
+        _: &Environment<'_, Self>,
     ) -> Result<Option<Succeeded<Type>>, Error> {
         Ok(None)
     }
 
-    fn normalize_constant(
+    async fn normalize_constant(
         _: &Constant,
-        _: &Environment<Self>,
+        _: &Environment<'_, Self>,
     ) -> Result<Option<Succeeded<Constant>>, Error> {
         Ok(None)
     }

@@ -8,6 +8,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::{Compatible, Predicate},
     r#type::Type,
+    tuple::{Element, Tuple},
     Never,
 };
 
@@ -101,9 +102,37 @@ impl Term for Type {
 
     async fn normalize(
         &self,
-        _: &Environment<'_, impl Normalizer>,
+        environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Succeeded<Self>>, Error> {
-        Ok(None)
+        let normalized = match self {
+            // TODO: transform the trait-member into trait-implementation-type
+            // equivalent
+            /*
+            Self::TraitMember(trait_member) => {
+                normalize_trait_member(trait_member, environment)?
+            }
+            */
+            // unpack the tuple
+            Self::Tuple(tuple) => unpack_tuple(tuple),
+
+            _ => None,
+        };
+
+        if let Some(mut normalized) = normalized {
+            if let Some(x) =
+                Normalizer::normalize_type(&normalized.result, environment)
+                    .await?
+            {
+                normalized.result = x.result;
+                normalized.constraints.extend(x.constraints);
+            }
+
+            Ok(Some(normalized))
+        } else {
+            Normalizer::normalize_type(self, environment)
+                .await?
+                .map_or_else(|| Ok(None), |x| Ok(Some(x)))
+        }
     }
 
     fn as_trait_member(&self) -> Option<&<Self as Term>::TraitMember> {
@@ -139,9 +168,30 @@ impl Term for Constant {
 
     async fn normalize(
         &self,
-        _: &Environment<'_, impl Normalizer>,
+        environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Succeeded<Self>>, Error> {
-        Ok(None)
+        let normalized = match self {
+            // unpack the tuple
+            Self::Tuple(tuple) => unpack_tuple(tuple),
+
+            _ => None,
+        };
+
+        if let Some(mut normalized) = normalized {
+            if let Some(x) =
+                Normalizer::normalize_constant(&normalized.result, environment)
+                    .await?
+            {
+                normalized.result = x.result;
+                normalized.constraints.extend(x.constraints);
+            }
+
+            Ok(Some(normalized))
+        } else {
+            Normalizer::normalize_constant(self, environment)
+                .await?
+                .map_or_else(|| Ok(None), |x| Ok(Some(x)))
+        }
     }
 
     fn as_trait_member(&self) -> Option<&Self::TraitMember> { None }
@@ -157,4 +207,37 @@ impl Term for Constant {
     ) -> Option<&mut Compatible<Self::TraitMember, Self>> {
         None
     }
+}
+
+fn unpack_tuple<T: Term + From<Tuple<T>> + TryInto<Tuple<T>, Error = T>>(
+    tuple: &Tuple<T>,
+) -> Option<Succeeded<T>> {
+    let contain_upacked = tuple.elements.iter().any(|x| x.is_unpacked);
+
+    if !contain_upacked {
+        return None;
+    }
+
+    if tuple.elements.len() == 1 {
+        return Some(Succeeded::new(tuple.elements[0].term.clone()));
+    }
+
+    let mut result = Vec::new();
+
+    for element in tuple.elements.iter().cloned() {
+        if element.is_unpacked {
+            match element.term.try_into() {
+                Ok(inner) => {
+                    result.extend(inner.elements);
+                }
+                Err(term) => {
+                    result.push(Element { term, is_unpacked: true });
+                }
+            }
+        } else {
+            result.push(element);
+        }
+    }
+
+    Some(Succeeded::new(Tuple { elements: result }.into()))
 }
