@@ -18,7 +18,8 @@ use state::{Generator, Rebind, State};
 
 pub mod state;
 
-mod arbitrary;
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
 
 /// Represents an unique identifier to a particular entry in the [`Arena`] of
 /// type `T`.

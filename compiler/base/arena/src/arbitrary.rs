@@ -1,4 +1,4 @@
-//! Arbitrary implementations for [`ID`].
+#![allow(missing_docs)]
 
 use proptest::{
     num::u64,
