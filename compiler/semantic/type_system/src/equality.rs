@@ -12,17 +12,13 @@ use crate::{
 };
 
 /// A query for checking strict equality
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+)]
 #[allow(missing_docs)]
 pub struct Equality<T, U = T> {
     pub lhs: T,
     pub rhs: U,
-}
-
-impl<T, U> Equality<T, U> {
-    /// Creates a new equality query.
-    #[must_use]
-    pub const fn new(lhs: T, rhs: U) -> Self { Self { lhs, rhs } }
 }
 
 #[allow(clippy::mismatching_type_param_order)]
