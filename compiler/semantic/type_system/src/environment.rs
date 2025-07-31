@@ -19,12 +19,10 @@ use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::{GenericArguments, TraitMember},
+    implied_predicates::{get_implied_predicates, ImpliedPredicate},
     predicate::{Compatible, Predicate},
-    query::{
-        implied_predicates::{get_implied_predicates, ImpliedPredicate},
-        where_clause::get_where_clause,
-    },
     r#type::Type,
+    where_clause::get_where_clause,
 };
 
 use crate::{

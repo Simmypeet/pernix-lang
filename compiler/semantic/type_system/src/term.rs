@@ -4,9 +4,9 @@ use std::{fmt::Debug, hash::Hash};
 
 use pernixc_term::{
     constant::Constant,
+    generic_parameters::GenericParameter,
     lifetime::Lifetime,
     predicate::{Compatible, Predicate},
-    query::generic_parameters::GenericParameter,
     r#type::Type,
     Never,
 };
@@ -68,8 +68,7 @@ pub trait Term:
 }
 
 impl Term for Lifetime {
-    type GenericParameter =
-        pernixc_term::query::generic_parameters::LifetimeParameter;
+    type GenericParameter = pernixc_term::generic_parameters::LifetimeParameter;
 
     type TraitMember = Never;
 
@@ -96,8 +95,7 @@ impl Term for Lifetime {
 }
 
 impl Term for Type {
-    type GenericParameter =
-        pernixc_term::query::generic_parameters::TypeParameter;
+    type GenericParameter = pernixc_term::generic_parameters::TypeParameter;
 
     type TraitMember = pernixc_term::generic_arguments::TraitMember;
 
@@ -135,8 +133,7 @@ impl Term for Type {
 }
 
 impl Term for Constant {
-    type GenericParameter =
-        pernixc_term::query::generic_parameters::ConstantParameter;
+    type GenericParameter = pernixc_term::generic_parameters::ConstantParameter;
 
     type TraitMember = Never;
 

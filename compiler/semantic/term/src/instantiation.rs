@@ -15,11 +15,11 @@ use super::{
 use crate::{
     constant::Constant,
     generic_arguments::GenericArguments,
-    lifetime::Lifetime,
-    query::generic_parameters::{
+    generic_parameters::{
         ConstantParameterID, GenericKind, GenericParameters,
         LifetimeParameterID, TypeParameterID,
     },
+    lifetime::Lifetime,
     r#type::Type,
 };
 
