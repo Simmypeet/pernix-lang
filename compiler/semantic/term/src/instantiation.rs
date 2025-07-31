@@ -109,7 +109,7 @@ impl Instantiation {
         MemberID<ID<U>>: Into<T>,
     {
         for (term, term_id) in terms.zip(term_parameter_order) {
-            let parameter_id = MemberID::new(term_id, generic_id);
+            let parameter_id = MemberID::new(generic_id, term_id);
 
             assert!(T::get_mut(self)
                 .insert(parameter_id.into(), term)
@@ -208,7 +208,7 @@ impl Instantiation {
     ) {
         self.append_from_arguments(
             from_parameters.lifetime_order().iter().copied().map(|x| {
-                Lifetime::Parameter(LifetimeParameterID::new(x, from_id))
+                Lifetime::Parameter(LifetimeParameterID::new(from_id, x))
             }),
             to_parameters.lifetime_order().iter().copied(),
             to_id,
@@ -219,14 +219,14 @@ impl Instantiation {
                 .type_order()
                 .iter()
                 .copied()
-                .map(|x| Type::Parameter(TypeParameterID::new(x, from_id))),
+                .map(|x| Type::Parameter(TypeParameterID::new(from_id, x))),
             to_parameters.type_order().iter().copied(),
             to_id,
         );
 
         self.append_from_arguments(
             from_parameters.constant_order().iter().copied().map(|x| {
-                Constant::Parameter(ConstantParameterID::new(x, from_id))
+                Constant::Parameter(ConstantParameterID::new(from_id, x))
             }),
             to_parameters.constant_order().iter().copied(),
             to_id,
@@ -250,7 +250,7 @@ impl Instantiation {
                 .copied()
                 .map(|x| {
                     let lifetime_parameter = Lifetime::Parameter(
-                        LifetimeParameterID::new(x, global_id),
+                        LifetimeParameterID::new(global_id, x),
                     );
 
                     let inst = self
@@ -268,7 +268,7 @@ impl Instantiation {
                 .copied()
                 .map(|x| {
                     let type_parameter =
-                        Type::Parameter(TypeParameterID::new(x, global_id));
+                        Type::Parameter(TypeParameterID::new(global_id, x));
 
                     let inst =
                         self.types.get(&type_parameter).cloned().unwrap();
@@ -282,7 +282,7 @@ impl Instantiation {
                 .copied()
                 .map(|x| {
                     let constant_parameter = Constant::Parameter(
-                        ConstantParameterID::new(x, global_id),
+                        ConstantParameterID::new(global_id, x),
                     );
 
                     let inst = self

@@ -16,6 +16,9 @@ use crate::{
     Never,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Represents a forall lifetime declared with `for['a]` syntax.
 #[derive(
     Debug,

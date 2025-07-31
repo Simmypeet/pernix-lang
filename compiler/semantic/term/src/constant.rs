@@ -19,6 +19,9 @@ use crate::{
     Never,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Represents a primitive constant.
 #[derive(
     Debug,

@@ -9,6 +9,9 @@ use crate::{
     sub_term::SubTerm,
 };
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Represents a single element of a tuple.
 #[derive(
     Debug,

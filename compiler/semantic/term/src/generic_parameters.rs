@@ -406,19 +406,19 @@ impl GenericParameters {
                 .lifetime_order
                 .iter()
                 .copied()
-                .map(|id| Lifetime::Parameter(MemberID::new(id, global_id)))
+                .map(|id| Lifetime::Parameter(MemberID::new(global_id, id)))
                 .collect(),
             types: self
                 .type_order
                 .iter()
                 .copied()
-                .map(|id| Type::Parameter(MemberID::new(id, global_id)))
+                .map(|id| Type::Parameter(MemberID::new(global_id, id)))
                 .collect(),
             constants: self
                 .constant_order
                 .iter()
                 .copied()
-                .map(|id| Constant::Parameter(MemberID::new(id, global_id)))
+                .map(|id| Constant::Parameter(MemberID::new(global_id, id)))
                 .collect(),
         }
     }

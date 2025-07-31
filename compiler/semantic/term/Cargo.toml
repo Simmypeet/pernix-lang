@@ -7,7 +7,11 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-arbitrary = ["dep:proptest"]
+arbitrary = [
+    "dep:proptest",
+    "pernixc_symbol/arbitrary",
+    "pernixc_arena/arbitrary",
+]
 
 [dependencies]
 pernixc_serialize = { path = "../../base/serialize" }
@@ -25,6 +29,11 @@ paste = { workspace = true }
 thiserror = { workspace = true }
 derive-new = { workspace = true }
 proptest = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+pernixc_symbol = { path = "../symbol", features = ["arbitrary"] }
+pernixc_arena = { path = "../../base/arena", features = ["arbitrary"] }
 
 [lints]
 workspace = true
