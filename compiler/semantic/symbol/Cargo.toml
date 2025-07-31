@@ -6,6 +6,9 @@ description.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+arbitrary = ["dep:proptest", "pernixc_target/arbitrary"]
+
 [dependencies]
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
@@ -32,6 +35,11 @@ typed-builder = { workspace = true }
 derive_more = { workspace = true }
 rayon = { workspace = true }
 derive-new = { workspace = true }
+proptest = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+pernixc_target = { path = "../../base/target", features = ["arbitrary"] }
 
 [lints]
 workspace = true

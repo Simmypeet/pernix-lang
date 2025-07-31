@@ -53,6 +53,9 @@ pub mod source_map;
 pub mod span;
 pub mod syntax;
 
+#[cfg(any(test, feature = "arbitrary"))]
+pub mod arbitrary;
+
 /// Registers all the required executors to run the queries.
 pub fn register_executors(
     executor: &mut pernixc_query::runtime::executor::Registry,
@@ -180,12 +183,12 @@ pub struct ID(pub u64);
     derive_new::new,
 )]
 pub struct MemberID<InnerID> {
-    /// The ID of the member.
-    pub id: InnerID,
-
     /// The parent ID of the member, which is the ID of the symbol that
     /// contains this member.
     pub parent_id: Global<ID>,
+
+    /// The ID of the member.
+    pub id: InnerID,
 }
 
 /// The key to query each table node.
