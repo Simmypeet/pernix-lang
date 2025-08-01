@@ -1,4 +1,6 @@
 //! Contains the definition of the [`JoinList`] type and the [`scoped!`] macro.
+use std::collections::VecDeque;
+
 use tokio::task::JoinHandle;
 
 /// A collection for managing multiple `JoinHandle`s.
@@ -8,11 +10,11 @@ use tokio::task::JoinHandle;
 /// tasks are awaited before the scope exits, preventing any detached tasks
 #[derive(Debug)]
 pub struct JoinList<T> {
-    tasks: Vec<JoinHandle<T>>,
+    tasks: VecDeque<JoinHandle<T>>,
 }
 
 impl<T> Default for JoinList<T> {
-    fn default() -> Self { Self { tasks: Vec::new() } }
+    fn default() -> Self { Self { tasks: VecDeque::new() } }
 }
 
 impl<T> JoinList<T> {
@@ -24,7 +26,7 @@ impl<T> JoinList<T> {
         T: Send + 'static,
     {
         let task = tokio::spawn(future);
-        self.tasks.push(task);
+        self.tasks.push_back(task);
     }
 
     /// Awaits all tasks in the list, ensuring they complete before proceeding.
@@ -36,7 +38,7 @@ impl<T> JoinList<T> {
 
     /// Pops the next task from the list and awaits it, returning its result.
     pub async fn next(&mut self) -> Option<T> {
-        if let Some(task) = self.tasks.pop() {
+        if let Some(task) = self.tasks.pop_front() {
             Some(task.await.unwrap())
         } else {
             None // No more tasks to await
@@ -44,7 +46,7 @@ impl<T> JoinList<T> {
     }
 
     /// Adds an already spawned task to the list.
-    pub fn push(&mut self, task: JoinHandle<T>) { self.tasks.push(task); }
+    pub fn push(&mut self, task: JoinHandle<T>) { self.tasks.push_front(task); }
 }
 
 /// A macro for spawning tasks through the `JoinList` and ensuring they are
