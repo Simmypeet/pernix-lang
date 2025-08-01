@@ -6,6 +6,7 @@ use pernixc_query::{runtime::executor::CyclicError, TrackedEngine, Value};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
+use pernixc_tokio::scoped;
 
 use crate::{get_table_of_symbol, ID};
 
@@ -319,44 +320,43 @@ pub async fn all_symbol_of_kind_executor(
 ) -> Result<Arc<[ID]>, CyclicError> {
     let map = engine.query(&crate::MapKey(target_id)).await?;
 
-    let mut handles = Vec::with_capacity(map.keys_by_symbol_id.len());
+    scoped!(|handles| async move {
+        for x in map.keys_by_symbol_id.keys() {
+            let map = map.clone();
+            let engine = engine.clone();
+            let id = *x;
 
-    for x in map.keys_by_symbol_id.keys() {
-        let map = map.clone();
-        let engine = engine.clone();
-        let id = *x;
+            handles.spawn(async move {
+                let node_key = map
+                    .keys_by_symbol_id
+                    .get(&id)
+                    .unwrap_or_else(|| panic!("invalid symbol ID: {id:?}"))
+                    .as_ref()
+                    .map_or_else(
+                        || crate::Key::Root(target_id),
+                        |x| crate::Key::Submodule {
+                            external_submodule: x.clone(),
+                            target_id,
+                        },
+                    );
 
-        handles.push(tokio::spawn(async move {
-            let node_key = map
-                .keys_by_symbol_id
-                .get(&id)
-                .unwrap_or_else(|| panic!("invalid symbol ID: {id:?}"))
-                .as_ref()
-                .map_or_else(
-                    || crate::Key::Root(target_id),
-                    |x| crate::Key::Submodule {
-                        external_submodule: x.clone(),
-                        target_id,
-                    },
-                );
+                let node = engine.query(&crate::TableKey(node_key)).await?;
 
-            let node = engine.query(&crate::TableKey(node_key)).await?;
-
-            if node.kinds.get(&id).unwrap() == &kind {
-                Ok(Some(id))
-            } else {
-                Ok(None)
-            }
-        }));
-    }
-
-    let mut results = Vec::new();
-
-    for handle in handles {
-        if let Some(id) = handle.await.unwrap()? {
-            results.push(id);
+                if node.kinds.get(&id).unwrap() == &kind {
+                    Ok(Some(id))
+                } else {
+                    Ok(None)
+                }
+            });
         }
-    }
 
-    Ok(Arc::from(results))
+        let mut results = Vec::new();
+        while let Some(symbol) = handles.next().await {
+            if let Some(symbol) = symbol? {
+                results.push(symbol);
+            }
+        }
+
+        Ok(Arc::from(results))
+    })
 }
