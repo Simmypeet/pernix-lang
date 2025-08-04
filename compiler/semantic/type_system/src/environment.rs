@@ -25,10 +25,7 @@ use pernixc_term::{
     where_clause::get_where_clause,
 };
 
-use crate::{
-    normalizer::{self, Normalizer},
-    OverflowError,
-};
+use crate::{normalizer::Normalizer, OverflowError};
 
 /// Contains the premise of the semantic logic.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -137,27 +134,14 @@ pub struct Environment<'a, N> {
     premise: Cow<'a, Premise>,
 
     /// The table that contains the information of symbols.
-    #[get_copy = "pub"]
-    tracked_engine: &'a TrackedEngine,
+    #[get = "pub"]
+    tracked_engine: Cow<'a, TrackedEngine>,
 
     /// The normalizer used to normalize the inference variables.
     #[get_copy = "pub"]
     normalizer: &'a N,
 
     context: RefCell<Context>,
-}
-
-impl<'a> Environment<'a, normalizer::NoOp> {
-    /// Creates a new environment with the given table, default premise, and
-    /// default normalizer.
-    pub fn with_default(tracked_engine: &'a TrackedEngine) -> Self {
-        Self {
-            premise: Cow::Owned(Premise::default()),
-            tracked_engine,
-            normalizer: normalizer::NO_OP,
-            context: RefCell::new(Context::default()),
-        }
-    }
 }
 
 impl<N> Environment<'_, N> {
@@ -185,7 +169,7 @@ impl<N> Clone for Environment<'_, N> {
     fn clone(&self) -> Self {
         Self {
             premise: self.premise.clone(),
-            tracked_engine: self.tracked_engine,
+            tracked_engine: self.tracked_engine.clone(),
             normalizer: self.normalizer,
             context: self.context.clone(),
         }
@@ -1271,7 +1255,7 @@ impl<'a, N: Normalizer> Environment<'a, N> {
     /// extracted out to the vector of [`Error`].
     pub fn new(
         premise: Cow<'a, Premise>,
-        tracked_engine: &'a TrackedEngine,
+        tracked_engine: Cow<'a, TrackedEngine>,
         normalizer: &'a N,
     ) -> Self {
         Self {
