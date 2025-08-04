@@ -274,7 +274,7 @@ pub enum Cached<I, T> {
     InProgress(I),
 
     /// The query is done and the result is stored.
-    Done(T),
+    Done(Option<T>),
 }
 
 /// A struct storing the call to compute a query and the in progress state.
@@ -360,9 +360,9 @@ impl Context {
                 Cached::InProgress(in_progress_rc) => Cached::InProgress(
                     in_progress_rc.downcast::<Q::InProgress>().unwrap(),
                 ),
-                Cached::Done(result_rc) => {
-                    Cached::Done(result_rc.downcast::<Q::Result>().unwrap())
-                }
+                Cached::Done(result_rc) => Cached::Done(
+                    result_rc.map(|x| x.downcast::<Q::Result>().unwrap()),
+                ),
             })),
         }
     }
@@ -378,7 +378,7 @@ impl Context {
     pub fn mark_as_done<Q: Query>(
         &mut self,
         query: &Q,
-        result: Arc<Q::Result>,
+        result: Option<Arc<Q::Result>>,
     ) -> bool {
         let Some(last) = self.call_stack.last() else {
             return false;
@@ -389,7 +389,7 @@ impl Context {
         }
 
         if let Some(x) = self.map.get_mut(query as &dyn DynIdent) {
-            *x = Cached::Done(result);
+            *x = Cached::Done(result.map(|x| x as _));
         } else {
             return false;
         }
@@ -434,7 +434,7 @@ impl Context {
                 Cached::InProgress(rc.downcast::<Q::InProgress>().unwrap())
             }
             Cached::Done(rc) => {
-                Cached::Done(rc.downcast::<Q::Result>().unwrap())
+                Cached::Done(rc.map(|x| x.downcast::<Q::Result>().unwrap()))
             }
         })
     }
@@ -475,7 +475,7 @@ impl<N: Normalizer> Environment<'_, N> {
             .mark_as_in_progress(query.clone(), in_progress.clone())?;
 
         match in_progress_result {
-            Some(Cached::Done(result)) => return Ok(Some(result)),
+            Some(Cached::Done(result)) => return Ok(result),
             Some(Cached::InProgress(new_in_progress)) => {
                 let context = self.context.borrow();
 
@@ -504,7 +504,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 assert!(self
                     .context
                     .borrow_mut()
-                    .mark_as_done(query, result.clone()));
+                    .mark_as_done(query, Some(result.clone())));
 
                 Ok(Some(result))
             }
