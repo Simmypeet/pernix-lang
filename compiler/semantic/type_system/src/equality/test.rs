@@ -1,18 +1,34 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{
+    borrow::Cow, collections::BTreeSet, fmt::Debug, future::Future, pin::Pin,
+    sync::Arc,
+};
 
-use pernixc_query::Engine;
+use pernixc_query::{database::SetInputResult, Engine};
 use pernixc_symbol::kind::Kind;
-use pernixc_target::TargetID;
+use pernixc_target::{Global, TargetID};
 use pernixc_term::{
+    constant::Constant,
     generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
+    lifetime::Lifetime,
     predicate::{Compatible, Predicate},
     r#type::{Primitive, Type},
+};
+use proptest::{
+    prelude::{Arbitrary, BoxedStrategy, Strategy, TestCaseError},
+    prop_assert, prop_oneof, proptest,
+    test_runner::TestCaseResult,
 };
 
 use crate::{
     environment::{Environment, Premise},
     equality::Equality,
     normalizer,
+    term::Term,
+    test::{
+        purge_trait_associated_type,
+        purge_trait_associated_type_in_generic_arguments,
+    },
+    Error,
 };
 
 #[tokio::test]
@@ -392,8 +408,6 @@ async fn symbol() {
     environment.assert_call_stack_empty();
 }
 
-/*
-
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
@@ -405,14 +419,17 @@ pub enum AbortError {
     IDCollision,
 }
 
+pub type BoxedFuture<'x, T> =
+    Pin<Box<dyn Future<Output = Result<(T, T), AbortError>> + 'x>>;
+
 /// A trait for generating term for checking equality.
 pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(T, T), AbortError>;
+    fn generate<'s>(
+        &'s self,
+        table: &'s mut Arc<Engine>,
+        premise: &'s mut Premise,
+    ) -> BoxedFuture<'s, T>;
 
     /// Returns the number of nodes in the property.
     fn node_count(&self) -> usize;
@@ -431,17 +448,21 @@ where
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        T::arbitrary().prop_map(|term| Self { term: purge(term) }).boxed()
+        T::arbitrary()
+            .prop_map(|term| Self { term: purge_trait_associated_type(term) })
+            .boxed()
     }
 }
 
 impl<T: Clone + Debug + 'static> Property<T> for Identity<T> {
-    fn generate(
-        &self,
-        _: &mut Table,
-        _: &mut Premise<Default>,
-    ) -> Result<(T, T), AbortError> {
-        Ok((self.term.clone(), self.term.clone()))
+    fn generate<'s>(
+        &'s self,
+        _: &mut Arc<Engine>,
+        _: &mut Premise,
+    ) -> Pin<
+        Box<dyn std::future::Future<Output = Result<(T, T), AbortError>> + 's>,
+    > {
+        Box::pin(async move { Ok((self.term.clone(), self.term.clone())) })
     }
 
     fn node_count(&self) -> usize { 1 }
@@ -449,24 +470,24 @@ impl<T: Clone + Debug + 'static> Property<T> for Identity<T> {
 
 #[derive(Debug)]
 pub struct Mapping {
-    pub property: Box<dyn Property<Type<Default>>>,
-    pub target_trait_member: TraitMember<Default>,
-    pub trait_id: table::ID,
+    pub property: Box<dyn Property<Type>>,
+    pub target_trait_member: TraitMember,
+    pub trait_id: pernixc_symbol::ID,
     pub map_at_lhs: bool,
 }
 
 impl Arbitrary for Mapping {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         let strategy =
-            args.unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
+            args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
 
         (
             strategy,
             TraitMember::arbitrary(),
-            ID::arbitrary(),
+            pernixc_symbol::ID::arbitrary(),
             proptest::bool::ANY,
         )
             .prop_map(
@@ -474,52 +495,14 @@ impl Arbitrary for Mapping {
                     property,
                     target_trait_member: TraitMember(MemberSymbol {
                         id: target_trait_member.id,
-                        member_generic_arguments: GenericArguments {
-                            lifetimes: target_trait_member
-                                .0
-                                .member_generic_arguments
-                                .lifetimes
-                                .into_iter()
-                                .map(purge)
-                                .collect(),
-                            types: target_trait_member
-                                .0
-                                .member_generic_arguments
-                                .types
-                                .into_iter()
-                                .map(purge)
-                                .collect(),
-                            constants: target_trait_member
-                                .0
-                                .member_generic_arguments
-                                .constants
-                                .into_iter()
-                                .map(purge)
-                                .collect(),
-                        },
-                        parent_generic_arguments: GenericArguments {
-                            lifetimes: target_trait_member
-                                .0
-                                .parent_generic_arguments
-                                .lifetimes
-                                .into_iter()
-                                .map(purge)
-                                .collect(),
-                            types: target_trait_member
-                                .0
-                                .parent_generic_arguments
-                                .types
-                                .into_iter()
-                                .map(purge)
-                                .collect(),
-                            constants: target_trait_member
-                                .0
-                                .parent_generic_arguments
-                                .constants
-                                .into_iter()
-                                .map(purge)
-                                .collect(),
-                        },
+                        member_generic_arguments:
+                            purge_trait_associated_type_in_generic_arguments(
+                                target_trait_member.0.member_generic_arguments,
+                            ),
+                        parent_generic_arguments:
+                            purge_trait_associated_type_in_generic_arguments(
+                                target_trait_member.0.parent_generic_arguments,
+                            ),
                     }),
                     trait_id,
                     map_at_lhs,
@@ -529,66 +512,91 @@ impl Arbitrary for Mapping {
     }
 }
 
-impl Property<Type<Default>> for Mapping {
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(Type<Default>, Type<Default>), AbortError> {
-        let add_parent = table.add_component(
-            self.target_trait_member.id,
-            Parent(Some(self.trait_id)),
-        );
-        let add_kind = table.add_component(
-            GlobalID::new(self.target_trait_member.id.target_id, self.trait_id),
-            SymbolKind::Trait,
-        );
-        let add_implemented = table.add_component(
-            GlobalID::new(self.target_trait_member.id.target_id, self.trait_id),
-            Implemented(HashSet::new()),
-        );
+impl Property<Type> for Mapping {
+    fn generate<'s>(
+        &'s self,
+        engine: &'s mut Arc<Engine>,
+        premise: &'s mut Premise,
+    ) -> BoxedFuture<'s, Type> {
+        Box::pin(async move {
+            let (add_parent, add_kind) =
+                Arc::get_mut(engine).unwrap().input_session(|x| {
+                    let add_parent = x.set_input(
+                        pernixc_symbol::parent::Key(
+                            self.target_trait_member.id,
+                        ),
+                        Some(self.trait_id),
+                    ) == SetInputResult::Fresh;
 
-        if !add_parent || !add_kind || !add_implemented {
-            return Err(AbortError::IDCollision);
-        }
+                    let add_kind = x.set_input(
+                        pernixc_symbol::kind::Key(self.target_trait_member.id),
+                        pernixc_symbol::kind::Kind::Trait,
+                    ) == SetInputResult::Fresh;
 
-        let (inner_lhs, inner_rhs) = self.property.generate(table, premise)?;
+                    (add_parent, add_kind)
+                });
 
-        let should_map = if self.map_at_lhs {
-            Environment::new(Cow::Borrowed(premise), table, normalizer::NO_OP)
+            /*
+            TODO: bring back
+            let add_implemented = engine.add_component(
+                GlobalID::new(self.target_trait_member.id.target_id, self.trait_id),
+                Implemented(HashSet::new()),
+            );
+            */
+
+            if !add_parent || !add_kind {
+                return Err(AbortError::IDCollision);
+            }
+
+            let (inner_lhs, inner_rhs) =
+                self.property.generate(engine, premise).await?;
+
+            let should_map = if self.map_at_lhs {
+                Environment::new(
+                    Cow::Borrowed(premise),
+                    Cow::Owned(engine.tracked()),
+                    normalizer::NO_OP,
+                )
                 .query(&Equality::new(
                     self.target_trait_member.clone().into(),
                     inner_rhs.clone(),
-                ))?
+                ))
+                .await?
                 .is_none()
-        } else {
-            Environment::new(Cow::Borrowed(premise), table, normalizer::NO_OP)
+            } else {
+                Environment::new(
+                    Cow::Borrowed(premise),
+                    Cow::Owned(engine.tracked()),
+                    normalizer::NO_OP,
+                )
                 .query(&Equality::new(
                     inner_lhs.clone(),
                     self.target_trait_member.clone().into(),
-                ))?
+                ))
+                .await?
                 .is_none()
-        };
+            };
 
-        if should_map {
-            premise.predicates.insert(
-                Compatible {
-                    lhs: self.target_trait_member.clone(),
-                    rhs: if self.map_at_lhs {
-                        inner_lhs.clone()
-                    } else {
-                        inner_rhs.clone()
-                    },
-                }
-                .into(),
-            );
-        }
+            if should_map {
+                premise.predicates.insert(
+                    Compatible {
+                        lhs: self.target_trait_member.clone(),
+                        rhs: if self.map_at_lhs {
+                            inner_lhs.clone()
+                        } else {
+                            inner_rhs.clone()
+                        },
+                    }
+                    .into(),
+                );
+            }
 
-        if self.map_at_lhs {
-            Ok((self.target_trait_member.clone().into(), inner_rhs))
-        } else {
-            Ok((inner_lhs, self.target_trait_member.clone().into()))
-        }
+            if self.map_at_lhs {
+                Ok((self.target_trait_member.clone().into(), inner_rhs))
+            } else {
+                Ok((inner_lhs, self.target_trait_member.clone().into()))
+            }
+        })
     }
 
     fn node_count(&self) -> usize { 1 + self.property.node_count() }
@@ -596,40 +604,36 @@ impl Property<Type<Default>> for Mapping {
 
 #[derive(Debug)]
 pub struct SymbolCongruence {
-    lifetime_properties: Vec<Box<dyn Property<Lifetime<Default>>>>,
-    type_properties: Vec<Box<dyn Property<Type<Default>>>>,
-    constant_properties: Vec<Box<dyn Property<Constant<Default>>>>,
+    lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
+    type_properties: Vec<Box<dyn Property<Type>>>,
+    constant_properties: Vec<Box<dyn Property<Constant>>>,
 
-    id: GlobalID,
+    id: Global<pernixc_symbol::ID>,
 }
 
 impl Arbitrary for SymbolCongruence {
     type Parameters = (
-        Option<BoxedStrategy<Box<dyn Property<Lifetime<Default>>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>,
-        Option<BoxedStrategy<Box<dyn Property<Constant<Default>>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Lifetime>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Type>>>>,
+        Option<BoxedStrategy<Box<dyn Property<Constant>>>>,
     );
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
         (
             proptest::collection::vec(
-                args.1.unwrap_or_else(Box::<dyn Property<Type<_>>>::arbitrary),
+                args.1.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary),
                 0..=2,
             ),
             proptest::collection::vec(
-                args.0.unwrap_or_else(
-                    Box::<dyn Property<Lifetime<_>>>::arbitrary,
-                ),
+                args.0.unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
                 0..=2,
             ),
             proptest::collection::vec(
-                args.2.unwrap_or_else(
-                    Box::<dyn Property<Constant<_>>>::arbitrary,
-                ),
+                args.2.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
                 0..=2,
             ),
-            GlobalID::arbitrary(),
+            Global::arbitrary(),
         )
             .prop_map(
                 |(
@@ -648,44 +652,50 @@ impl Arbitrary for SymbolCongruence {
     }
 }
 
-impl<T: Term<Model = Default> + From<Symbol<Default>> + 'static> Property<T>
-    for SymbolCongruence
-{
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(T, T), AbortError> {
-        let mut lhs_generic_arguments = GenericArguments::default();
-        let mut rhs_generic_arguments = GenericArguments::default();
+impl<T: Term + From<Symbol> + 'static> Property<T> for SymbolCongruence {
+    fn generate<'s>(
+        &'s self,
+        engine: &'s mut Arc<Engine>,
+        premise: &'s mut Premise,
+    ) -> BoxedFuture<'s, T> {
+        Box::pin(async move {
+            let mut lhs_generic_arguments = GenericArguments::default();
+            let mut rhs_generic_arguments = GenericArguments::default();
 
-        for strategy in &self.lifetime_properties {
-            let (lhs, rhs) = strategy.generate(table, premise)?;
+            for strategy in &self.lifetime_properties {
+                let (lhs, rhs) = strategy.generate(engine, premise).await?;
 
-            lhs_generic_arguments.lifetimes.push(lhs);
-            rhs_generic_arguments.lifetimes.push(rhs);
-        }
+                lhs_generic_arguments.lifetimes.push(lhs);
+                rhs_generic_arguments.lifetimes.push(rhs);
+            }
 
-        for strategy in &self.type_properties {
-            let (lhs, rhs) = strategy.generate(table, premise)?;
+            for strategy in &self.type_properties {
+                let (lhs, rhs) = strategy.generate(engine, premise).await?;
 
-            lhs_generic_arguments.types.push(lhs);
-            rhs_generic_arguments.types.push(rhs);
-        }
+                lhs_generic_arguments.types.push(lhs);
+                rhs_generic_arguments.types.push(rhs);
+            }
 
-        for strategy in &self.constant_properties {
-            let (lhs, rhs) = strategy.generate(table, premise)?;
+            for strategy in &self.constant_properties {
+                let (lhs, rhs) = strategy.generate(engine, premise).await?;
 
-            lhs_generic_arguments.constants.push(lhs);
-            rhs_generic_arguments.constants.push(rhs);
-        }
+                lhs_generic_arguments.constants.push(lhs);
+                rhs_generic_arguments.constants.push(rhs);
+            }
 
-        Ok((
-            Symbol { id: self.id, generic_arguments: lhs_generic_arguments }
+            Ok((
+                Symbol {
+                    id: self.id,
+                    generic_arguments: lhs_generic_arguments,
+                }
                 .into(),
-            Symbol { id: self.id, generic_arguments: rhs_generic_arguments }
+                Symbol {
+                    id: self.id,
+                    generic_arguments: rhs_generic_arguments,
+                }
                 .into(),
-        ))
+            ))
+        })
     }
 
     fn node_count(&self) -> usize {
@@ -703,7 +713,7 @@ impl<T: Term<Model = Default> + From<Symbol<Default>> + 'static> Property<T>
     }
 }
 
-impl Arbitrary for Box<dyn Property<Type<Default>>> {
+impl Arbitrary for Box<dyn Property<Type>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -711,8 +721,8 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
         leaf.prop_recursive(50, 100, 2, move |inner| {
-            let constant_strategy = Box::<dyn Property<Constant<Default>>>::arbitrary();
-            let lifetime_strategy = Box::<dyn Property<Lifetime<Default>>>::arbitrary();
+            let constant_strategy = Box::<dyn Property<Constant>>::arbitrary();
+            let lifetime_strategy = Box::<dyn Property<Lifetime>>::arbitrary();
 
             prop_oneof![
                 4 => Mapping::arbitrary_with(Some(inner.clone())).prop_map(|x| Box::new(x) as _),
@@ -728,7 +738,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
+impl Arbitrary for Box<dyn Property<Lifetime>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -737,7 +747,7 @@ impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Constant<Default>>> {
+impl Arbitrary for Box<dyn Property<Constant>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -747,8 +757,8 @@ impl Arbitrary for Box<dyn Property<Constant<Default>>> {
 }
 
 fn remove_equality_recursive(
-    predicates: &mut BTreeSet<Predicate<Default>>,
-    trait_member: &TraitMember<Default>,
+    predicates: &mut BTreeSet<Predicate>,
+    trait_member: &TraitMember,
 ) {
     let to_be_removeds = predicates
         .iter()
@@ -776,25 +786,31 @@ fn remove_equality_recursive(
 }
 
 #[allow(clippy::too_many_lines)]
-fn property_based_testing<T: Term<Model = Default> + 'static>(
+async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
     decoy: Decoy,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut table = Table::new(Arc::new(pernixc_handler::Panic));
+    let mut engine = Arc::new(Engine::default());
 
-    let (term1, term2) =
-        property.generate(&mut table, &mut premise).map_err(|error| {
+    let (term1, term2) = property
+        .generate(&mut engine, &mut premise)
+        .await
+        .map_err(|error| {
             TestCaseError::reject(format!(
                 "abrupt error {error}; skipping now .."
             ))
         })?;
 
-    let environment =
-        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
+    let environment = Environment::new(
+        Cow::Borrowed(&premise),
+        Cow::Owned(engine.tracked()),
+        normalizer::NO_OP,
+    );
 
     let first_result = environment
         .query(&Equality::new(term1.clone(), term2.clone()))
+        .await
         .map_err(|x| {
             TestCaseError::reject(format!("abrupt error {x}; skipping now .."))
         })?
@@ -802,6 +818,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
     let second_result = environment
         .query(&Equality::new(term2.clone(), term1.clone()))
+        .await
         .map_err(|x| {
             TestCaseError::reject(format!("abrupt error {x}; skipping now .."))
         })?
@@ -830,12 +847,13 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
         let modified_environment = Environment::new(
             Cow::Borrowed(&modified_premise),
-            &table,
+            Cow::Owned(engine.tracked()),
             normalizer::NO_OP,
         );
 
         let first_result = modified_environment
             .query(&Equality::new(term1.clone(), term2.clone()))
+            .await
             .map_err(|x| {
                 TestCaseError::reject(format!(
                     "abrupt error {x}; skipping now .."
@@ -843,6 +861,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
             })?;
         let second_result = modified_environment
             .query(&Equality::new(term2.clone(), term1.clone()))
+            .await
             .map_err(|x| {
                 TestCaseError::reject(format!(
                     "abrupt error {x}; skipping now .."
@@ -887,23 +906,36 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
     }
     */
 
+    // drop the previous environment to reduce `engine` strong count.
+    drop(environment);
+
     for (trait_member, trait_id) in &decoy.types {
-        let add_parent =
-            table.add_component(trait_member.lhs.id, Parent(Some(*trait_id)));
+        let (add_parent, add_kind) =
+            Arc::get_mut(&mut engine).unwrap().input_session(|x| {
+                let add_parent = x.set_input(
+                    pernixc_symbol::parent::Key(trait_member.lhs.id),
+                    Some(*trait_id),
+                ) == SetInputResult::Fresh;
 
-        let add_kind = table.add_component(
-            GlobalID::new(trait_member.lhs.id.target_id, *trait_id),
-            SymbolKind::Trait,
-        );
+                let add_kind = x.set_input(
+                    pernixc_symbol::kind::Key(trait_member.lhs.id),
+                    pernixc_symbol::kind::Kind::Trait,
+                ) == SetInputResult::Fresh;
 
-        let add_implemented = table.add_component(
+                (add_parent, add_kind)
+            });
+
+        if !add_parent || !add_kind {
+            return Err(TestCaseError::reject("ID collision"));
+        }
+
+        /*
+        TODO: bring back
+        let add_implemented = engine.add_component(
             GlobalID::new(trait_member.lhs.id.target_id, *trait_id),
             Implemented(HashSet::new()),
         );
-
-        if !add_parent || !add_kind || !add_implemented {
-            return Err(TestCaseError::reject("ID collision"));
-        }
+        */
     }
 
     premise.predicates.extend(
@@ -914,17 +946,22 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
             .map(Predicate::TraitTypeCompatible),
     );
 
-    let environment =
-        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
+    let environment = Environment::new(
+        Cow::Borrowed(&premise),
+        Cow::Owned(engine.tracked()),
+        normalizer::NO_OP,
+    );
 
     let first_result = environment
         .query(&Equality::new(term1.clone(), term2.clone()))
+        .await
         .map_err(|x| {
             TestCaseError::reject(format!("abrupt error {x}; skipping now .."))
         })?
         .ok_or_else(|| TestCaseError::fail("equality failed"))?;
     let second_result = environment
         .query(&Equality::new(term2, term1))
+        .await
         .map_err(|x| {
             TestCaseError::reject(format!("abrupt error {x}; skipping now .."))
         })?
@@ -940,8 +977,7 @@ fn property_based_testing<T: Term<Model = Default> + 'static>(
 
 #[derive(Debug, Default)]
 pub struct Decoy {
-    #[allow(clippy::type_complexity)]
-    types: Vec<(Compatible<TraitMember<Default>, Type<Default>>, table::ID)>,
+    types: Vec<(Compatible<TraitMember, Type>, pernixc_symbol::ID)>,
 }
 
 impl Arbitrary for Decoy {
@@ -950,54 +986,20 @@ impl Arbitrary for Decoy {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let equality = (
             MemberSymbol::arbitrary(),
-            Type::arbitrary().prop_map(purge),
-            table::ID::arbitrary(),
+            Type::arbitrary().prop_map(purge_trait_associated_type),
+            pernixc_symbol::ID::arbitrary(),
         )
             .prop_map(|(lhs, rhs, id)| {
                 (
                     Compatible::new(
                         TraitMember(MemberSymbol {
                             id: lhs.id,
-                            member_generic_arguments: GenericArguments {
-                                lifetimes: lhs
-                                    .member_generic_arguments
-                                    .lifetimes
-                                    .into_iter()
-                                    .map(purge)
-                                    .collect(),
-                                types: lhs
-                                    .member_generic_arguments
-                                    .types
-                                    .into_iter()
-                                    .map(purge)
-                                    .collect(),
-                                constants: lhs
-                                    .member_generic_arguments
-                                    .constants
-                                    .into_iter()
-                                    .map(purge)
-                                    .collect(),
-                            },
-                            parent_generic_arguments: GenericArguments {
-                                lifetimes: lhs
-                                    .parent_generic_arguments
-                                    .lifetimes
-                                    .into_iter()
-                                    .map(purge)
-                                    .collect(),
-                                types: lhs
-                                    .parent_generic_arguments
-                                    .types
-                                    .into_iter()
-                                    .map(purge)
-                                    .collect(),
-                                constants: lhs
-                                    .parent_generic_arguments
-                                    .constants
-                                    .into_iter()
-                                    .map(purge)
-                                    .collect(),
-                            },
+                            member_generic_arguments: purge_trait_associated_type_in_generic_arguments(
+                                lhs.member_generic_arguments,
+                            ),
+                            parent_generic_arguments: purge_trait_associated_type_in_generic_arguments(
+                                lhs.parent_generic_arguments,
+                            ),
                         }),
                         rhs,
                     ),
@@ -1014,27 +1016,31 @@ impl Arbitrary for Decoy {
 proptest! {
     #[test]
    fn property_based_testing_type(
-        property in Box::<dyn Property<Type<Default>>>::arbitrary(),
+        property in Box::<dyn Property<Type>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
-        property_based_testing(&*property, decoy)?;
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(property_based_testing(&*property, decoy))?;
     }
 
     #[test]
     fn property_based_testing_constant(
-       property in Box::<dyn Property<Constant<Default>>>::arbitrary(),
+       property in Box::<dyn Property<Constant>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
-        property_based_testing(&*property, decoy)?;
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(property_based_testing(&*property, decoy))?;
     }
 
     #[test]
     fn property_based_testing_lifetime(
-        property in Box::<dyn Property<Lifetime<Default>>>::arbitrary(),
+        property in Box::<dyn Property<Lifetime>>::arbitrary(),
         decoy in Decoy::arbitrary()
     ) {
-        property_based_testing(&*property, decoy)?;
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(property_based_testing(&*property, decoy))?;
     }
 }
-
-*/

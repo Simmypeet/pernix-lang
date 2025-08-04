@@ -34,7 +34,7 @@ use crate::{
 
 mod input;
 
-pub use input::SetInputLock;
+pub use input::{SetInputLock, SetInputResult};
 
 #[derive(Debug)]
 struct Running {

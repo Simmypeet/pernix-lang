@@ -19,6 +19,9 @@ getset = { workspace = true }
 derive-new = { workspace = true }
 
 [dev-dependencies]
+pernixc_symbol = { path = "../symbol", features = ["arbitrary"] }
+pernixc_term = { path = "../term", features = ["arbitrary"] }
+pernixc_query = { path = "../../base/query" }
 proptest = { workspace = true }
 tokio = { workspace = true }
 

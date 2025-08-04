@@ -23,7 +23,14 @@ use crate::{
 /// type system. Since most of the queries and operations in the type system are
 /// generic over the kind of term.
 pub trait Term:
-    pernixc_term::matching::Match + Clone + Ord + Hash + Send + Sync + 'static
+    pernixc_term::visitor::Element
+    + pernixc_term::matching::Match
+    + Clone
+    + Ord
+    + Hash
+    + Send
+    + Sync
+    + 'static
 {
     /// The type of generic parameters of this term kind.
     type GenericParameter: GenericParameter + 'static;

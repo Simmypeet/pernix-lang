@@ -154,3 +154,6 @@ pub enum Satisfiability {
     /// predicate is satisfiable.
     Congruent,
 }
+
+#[cfg(test)]
+mod test;

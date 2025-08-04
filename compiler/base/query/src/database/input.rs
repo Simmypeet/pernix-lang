@@ -30,10 +30,15 @@ impl Engine {
     }
 
     /// A helper method allowing setting the input queries via [`SetInputLock`]
-    pub fn input_session<'x>(&'x mut self, f: impl FnOnce(&SetInputLock<'x>)) {
+    pub fn input_session<'x, R>(
+        &'x mut self,
+        f: impl FnOnce(&SetInputLock<'x>) -> R,
+    ) -> R {
         let input_lock = self.input_lock();
-        f(&input_lock);
+        let result = f(&input_lock);
         drop(input_lock);
+
+        result
     }
 
     /// Forcefully increments the version of the query database, making all the
@@ -61,6 +66,17 @@ struct UpdateSave {
     update_metadata: bool,
 }
 
+/// Specifying whether there's a change in the input value or not
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SetInputResult {
+    /// A new input value has been set
+    Fresh,
+
+    /// The input value has been updated; boolean indicates whether the
+    /// value has been updated since the last time it was set or not.
+    Updated(bool),
+}
+
 impl SetInputLock<'_> {
     /// Sets the predefined input value for the given key in the query
     /// database.
@@ -69,7 +85,7 @@ impl SetInputLock<'_> {
     /// method.
     ///
     /// When setting the input, the dependencies of the key are cleared.
-    pub fn set_input<K: Key>(&self, key: K, value: K::Value) {
+    pub fn set_input<K: Key>(&self, key: K, value: K::Value) -> SetInputResult {
         let key_fingerprint =
             fingerprint::fingerprint(self.engine.database.random_seed, &key);
         let value_fingerprint =
@@ -110,6 +126,8 @@ impl SetInputLock<'_> {
                         }
 
                         completion.store = Some(smallbox::smallbox!(value));
+
+                        SetInputResult::Updated(update.update_value)
                     }
                 }
             }
@@ -137,6 +155,8 @@ impl SetInputLock<'_> {
                         metadata: version_info,
                         store: Some(smallbox::smallbox!(value)),
                     }));
+
+                    SetInputResult::Updated(update.update_value)
                 } else {
                     self.update_version
                         .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -159,6 +179,8 @@ impl SetInputLock<'_> {
                         metadata,
                         store: Some(smallbox::smallbox!(value)),
                     }));
+
+                    SetInputResult::Fresh
                 }
             }
         }
