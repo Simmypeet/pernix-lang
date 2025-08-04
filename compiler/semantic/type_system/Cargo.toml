@@ -20,6 +20,7 @@ derive-new = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

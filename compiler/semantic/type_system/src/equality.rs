@@ -194,3 +194,6 @@ async fn equals_without_mapping<T: Term>(
 
     Ok(None)
 }
+
+#[cfg(test)]
+mod test;
