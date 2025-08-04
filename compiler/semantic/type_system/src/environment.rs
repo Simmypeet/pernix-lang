@@ -3,7 +3,7 @@
 use std::{
     any::Any,
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     cmp::Ordering,
     collections::{hash_map::Entry, BTreeSet, HashMap},
     hash::{Hash, Hasher},
@@ -278,11 +278,12 @@ pub enum Cached<I, T> {
 }
 
 /// A struct storing the call to compute a query and the in progress state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[allow(missing_docs)]
 pub struct Call<Q, I> {
     pub query: Q,
     pub in_progress: I,
+    pub in_scc: Cell<bool>,
 }
 
 /// The context used to manage the queries.
@@ -350,6 +351,7 @@ impl Context {
                 self.call_stack.push(Call {
                     query: query_rc,
                     in_progress: in_progress_rc,
+                    in_scc: Cell::new(false),
                 });
                 self.current_count += 1;
 
@@ -389,7 +391,11 @@ impl Context {
         }
 
         if let Some(x) = self.map.get_mut(query as &dyn DynIdent) {
-            *x = Cached::Done(result.map(|x| x as _));
+            if last.in_scc.get() {
+                self.map.remove(query as &dyn DynIdent);
+            } else {
+                *x = Cached::Done(result.map(|x| x as _));
+            }
         } else {
             return false;
         }
@@ -493,23 +499,28 @@ impl<N: Normalizer> Environment<'_, N> {
                     &context.call_stack[position..],
                 )?;
 
+                // mark the query as in progress
+                for call in &context.call_stack[(position + 1)..] {
+                    call.in_scc.set(true);
+                }
+
                 return Ok(result);
             }
             None => { /*no circular dependency, continue...*/ }
         }
 
         match query.query(self, parameter, in_progress).await {
-            Ok(Some(result)) => {
+            Ok(result) => {
                 // remember the result
                 assert!(self
                     .context
                     .borrow_mut()
-                    .mark_as_done(query, Some(result.clone())));
+                    .mark_as_done(query, result.clone()));
 
-                Ok(Some(result))
+                Ok(result)
             }
 
-            result @ (Ok(None) | Err(_)) => {
+            result @ Err(_) => {
                 // reset the query
                 assert!(self.context.borrow_mut().clear_query(query).is_some());
 

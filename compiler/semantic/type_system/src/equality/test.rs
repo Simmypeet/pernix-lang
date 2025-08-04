@@ -623,15 +623,15 @@ impl Arbitrary for SymbolCongruence {
         (
             proptest::collection::vec(
                 args.1.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary),
-                0..=2,
+                0..=6,
             ),
             proptest::collection::vec(
                 args.0.unwrap_or_else(Box::<dyn Property<Lifetime>>::arbitrary),
-                0..=2,
+                0..=6,
             ),
             proptest::collection::vec(
                 args.2.unwrap_or_else(Box::<dyn Property<Constant>>::arbitrary),
-                0..=2,
+                0..=6,
             ),
             Global::arbitrary(),
         )
@@ -720,7 +720,7 @@ impl Arbitrary for Box<dyn Property<Type>> {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         let leaf = Identity::arbitrary().prop_map(|x| Box::new(x) as _);
 
-        leaf.prop_recursive(50, 100, 2, move |inner| {
+        leaf.prop_recursive(16, 96, 6, move |inner| {
             let constant_strategy = Box::<dyn Property<Constant>>::arbitrary();
             let lifetime_strategy = Box::<dyn Property<Lifetime>>::arbitrary();
 
@@ -972,6 +972,8 @@ async fn property_based_testing<T: Term + 'static>(
     prop_assert!(first_result.constraints.is_empty());
     prop_assert!(second_result.constraints.is_empty());
 
+    println!("{} nodes in the property", property.node_count());
+
     Ok(())
 }
 
@@ -1014,6 +1016,12 @@ impl Arbitrary for Decoy {
 }
 
 proptest! {
+
+    #![proptest_config(proptest::test_runner::Config {
+        cases: 10_000,
+        ..Default::default()
+    })]
+
     #[test]
    fn property_based_testing_type(
         property in Box::<dyn Property<Type>>::arbitrary(),
