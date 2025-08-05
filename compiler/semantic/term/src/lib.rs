@@ -18,6 +18,7 @@ pub mod tuple;
 pub mod r#type;
 pub mod visitor;
 pub mod where_clause;
+pub mod variance;
 
 /// Represents a type that can never be instantiated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
