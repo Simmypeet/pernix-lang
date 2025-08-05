@@ -6,10 +6,14 @@ use enum_as_inner::EnumAsInner;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
 
+pub mod compatible;
+pub mod definite;
 pub mod environment;
 pub mod equality;
+pub mod equivalence;
 pub mod normalizer;
 pub mod term;
+pub mod unification;
 
 /// An error that occurs when the number of queries exceeds the limit.
 ///

@@ -13,7 +13,8 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::Environment, normalizer::Normalizer, Error, Succeeded,
+    environment::Environment, normalizer::Normalizer, Error, Satisfiability,
+    Succeeded,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -25,6 +26,8 @@ use crate::{
 pub trait Term:
     pernixc_term::visitor::Element
     + pernixc_term::matching::Match
+    + crate::equivalence::Equivalence
+    + crate::unification::Element
     + Clone
     + Ord
     + Hash
@@ -73,6 +76,9 @@ pub trait Term:
     fn as_trait_member_compatible_predicate_mut(
         predicate: &mut Predicate,
     ) -> Option<&mut Compatible<Self::TraitMember, Self>>;
+
+    #[doc(hidden)]
+    fn definite_satisfiability(&self) -> Satisfiability;
 }
 
 impl Term for Lifetime {
@@ -99,6 +105,10 @@ impl Term for Lifetime {
         _: &mut Predicate,
     ) -> Option<&mut Compatible<Self::TraitMember, Self>> {
         None
+    }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        Satisfiability::Satisfied
     }
 }
 
@@ -166,6 +176,26 @@ impl Term for Type {
             _ => None,
         }
     }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Error(_) | Self::Parameter(_) | Self::Inference(_) => {
+                Satisfiability::Unsatisfied
+            }
+
+            Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::MemberSymbol(_)
+            | Self::FunctionSignature(_)
+            | Self::Pointer(_)
+            | Self::Symbol(_)
+            | Self::Reference(_)
+            | Self::Array(_)
+            | Self::Phantom(_)
+            | Self::TraitMember(_)
+            | Self::Tuple(_) => Satisfiability::Congruent,
+        }
+    }
 }
 
 impl Term for Constant {
@@ -213,6 +243,21 @@ impl Term for Constant {
         _: &mut Predicate,
     ) -> Option<&mut Compatible<Self::TraitMember, Self>> {
         None
+    }
+
+    fn definite_satisfiability(&self) -> Satisfiability {
+        match self {
+            Self::Error(_) | Self::Parameter(_) | Self::Inference(_) => {
+                Satisfiability::Unsatisfied
+            }
+
+            Self::Phantom | Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::Struct(_)
+            | Self::Enum(_)
+            | Self::Array(_)
+            | Self::Tuple(_) => Satisfiability::Congruent,
+        }
     }
 }
 
