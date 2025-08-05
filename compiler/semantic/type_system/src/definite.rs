@@ -156,3 +156,6 @@ impl<N: Normalizer> Environment<'_, N> {
         Ok(Some(Succeeded::satisfied_with(constraints)))
     }
 }
+
+#[cfg(test)]
+mod test;
