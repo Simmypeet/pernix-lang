@@ -1,6 +1,6 @@
 //! Implements the visitor patsern for semantic terms.
 
-use std::{fmt::Debug, hash::Hash};
+use std::{fmt::Debug, future::Future, hash::Hash};
 
 use super::sub_term::{
     SubConstantLocation, SubLifetimeLocation, SubTerm, SubTypeLocation,
@@ -62,6 +62,19 @@ pub trait Visitor<'a, T: Element> {
     /// the term.
     #[must_use]
     fn visit(&mut self, term: &'a T, location: T::Location) -> bool;
+}
+
+/// An asynchronous version of the [`Visitor`] trait.
+pub trait AsyncVisitor<T: Element> {
+    /// Visits a term.
+    ///
+    /// Returns `true` if the visitor should continue visiting the sub-terms of
+    /// the term.
+    fn visit<'a>(
+        &'a mut self,
+        term: &'a T,
+        location: T::Location,
+    ) -> impl Future<Output = bool> + 'a;
 }
 
 /// Represents a mutable visitor that visits a term.
@@ -170,6 +183,20 @@ pub trait Element: Sized + SubTerm {
         location: Self::Location,
     ) -> bool;
 
+    /// Similar to [`Element::accept_single()`], but for asynchronous visitors.
+    ///
+    /// # Returns
+    ///
+    /// Returns whatever the visitor `visit_*` method returns.
+    fn accept_single_async<
+        'a,
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        location: Self::Location,
+    ) -> impl Future<Output = bool> + 'a;
+
     /// Similar to [`Element::accept_single()`], but for mutable references.
     fn accept_single_mut<
         V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
@@ -226,6 +253,16 @@ pub trait Element: Sized + SubTerm {
         visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError>;
 
+    /// Similar to [`Element::accept_one_level()`], but for asynchronous
+    /// visitors.
+    fn accept_one_level_async<
+        'a,
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + 'a;
+
     /// Similar to [`Element::accept_one_level()`], but for mutable references.
     ///
     /// # Errors
@@ -281,12 +318,12 @@ pub fn accept_recursive_mut<
 }
 
 macro_rules! implements_tuple {
-    ($self:ident, $visitor:ident, $accept_single:ident, $iter:ident) => {{
+    ($self:ident, $visitor:ident, $accept_single:ident, $iter:ident $(,$await:ident)?) => {{
         for (idx, element) in $self.elements.$iter().enumerate() {
             if !element.term.$accept_single(
                 $visitor,
                 T::Location::from(SubTupleLocation::Single(idx).into()),
-            ) {
+            )$(.$await)? {
                 return false;
             }
         }
@@ -310,6 +347,15 @@ where
         implements_tuple!(self, visitor, accept_single, iter)
     }
 
+    async fn accept_one_level_async<
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single_async, iter, await)
+    }
+
     fn accept_one_level_mut<
         V: Mutable<Lifetime> + Mutable<Type> + Mutable<Constant>,
     >(
@@ -329,12 +375,13 @@ macro_rules! implements_generic_arguments {
         $visit_constant:ident,
         $iter:ident,
         $map_idx:ident
+        $(, $await:ident)?
     ) => {{
         for (id, lifetime) in $self.lifetimes.$iter().enumerate() {
             if !$visitor.$visit_lifetime(
                 lifetime,
                 Into::<T::SubLifetimeLocation>::into($map_idx(id)).into(),
-            ) {
+            )$(.$await)? {
                 return false;
             }
         }
@@ -343,7 +390,7 @@ macro_rules! implements_generic_arguments {
             if !$visitor.$visit_type(
                 ty,
                 Into::<T::SubTypeLocation>::into($map_idx(idx)).into(),
-            ) {
+            )$(.$await)? {
                 return false;
             }
         }
@@ -352,7 +399,7 @@ macro_rules! implements_generic_arguments {
             if !$visitor.$visit_constant(
                 constant,
                 Into::<T::SubConstantLocation>::into($map_idx(idx)).into(),
-            ) {
+            )$(.$await)? {
                 return false;
             }
         }
@@ -387,6 +434,29 @@ impl GenericArguments {
     }
 
     #[allow(clippy::trait_duplication_in_bounds)]
+    async fn accept_one_level_async<
+        T: Element,
+        Idx,
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &self,
+        visitor: &mut V,
+        map_idx: impl Fn(usize) -> Idx,
+    ) -> bool
+    where
+        Idx: Into<T::SubConstantLocation>
+            + Into<T::SubTypeLocation>
+            + Into<T::SubLifetimeLocation>,
+        T::SubLifetimeLocation: Into<SubLifetimeLocation>,
+        T::SubTypeLocation: Into<SubTypeLocation>,
+        T::SubConstantLocation: Into<SubConstantLocation>,
+    {
+        implements_generic_arguments!(
+            self, visitor, visit, visit, visit, iter, map_idx, await
+        )
+    }
+
+    #[allow(clippy::trait_duplication_in_bounds)]
     fn accept_one_level_mut<
         T: Element,
         Idx,
@@ -417,8 +487,9 @@ macro_rules! implements_type {
         $visit_type:ident,
         $visit_lifetime:ident,
         $visit_constant:ident,
-        $accept_one_level:ident
-        $(, $ref:ident)?
+        $accept_one_level:ident,
+        [$($ref:tt)*]
+        $(, $await:ident)?
     ) => {
         match $self {
             Self::Error(_) | Self::Primitive(_) | Self::Parameter(_) | Self::Inference(_) => {
@@ -431,7 +502,7 @@ macro_rules! implements_type {
                     .$accept_one_level::<Self, _, _>(
                         $visitor,
                         |id| SubSymbolLocation(id),
-                    ) {
+                    )$(.$await)? {
                     return Ok(false);
                 }
 
@@ -439,40 +510,40 @@ macro_rules! implements_type {
             }
             Self::Phantom(term) => Ok(
                 $visitor.$visit_type(
-                    &$($ref)?*term.0,
+                    $($ref)**term.0,
                     SubTypeLocation::FromType(r#type::SubTypeLocation::Phantom)
-                )
+                )$(.$await)?
             ),
             Self::Pointer(term) => Ok($visitor.$visit_type(
-                &$($ref)?*term.pointee,
+                $($ref)**term.pointee,
                 SubTypeLocation::FromType(r#type::SubTypeLocation::Pointer)
-            )),
+            )$(.$await)?),
             Self::Reference(term) => Ok($visitor
                 .$visit_lifetime(
-                    &$($ref)?term.lifetime,
+                    $($ref)*term.lifetime,
                     SubLifetimeLocation::FromType(
                         r#type::SubLifetimeLocation::Reference
                     )
-                )
+                )$(.$await)?
                 && $visitor.$visit_type(
-                    &$($ref)?*term.pointee,
+                    $($ref)**term.pointee,
                     SubTypeLocation::FromType(
                         r#type::SubTypeLocation::Reference
                     )
-                )),
+                )$(.$await)?),
             Self::Array(term) => Ok($visitor
                 .$visit_type(
-                    &$($ref)?*term.r#type,
+                    $($ref)**term.r#type,
                     SubTypeLocation::FromType(r#type::SubTypeLocation::Array)
-                )
+                )$(.$await)?
                 && $visitor
                 .$visit_constant(
-                    &$($ref)? term.length,
+                    $($ref)*term.length,
                     SubConstantLocation::FromType(
                         r#type::SubConstantLocation::Array
                     )
-                )),
-            Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
+                )$(.$await)?),
+            Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)$(.$await)?),
             Self::MemberSymbol(member_symbol) => Ok(
                 member_symbol
                     .parent_generic_arguments
@@ -482,7 +553,7 @@ macro_rules! implements_type {
                             index: id,
                             from_parent: true,
                         }
-                    )
+                    )$(.$await)?
                     && member_symbol
                         .member_generic_arguments
                         .$accept_one_level::<Self, _, _>(
@@ -491,7 +562,7 @@ macro_rules! implements_type {
                                 index: id,
                                 from_parent: false,
                             }
-                        ),
+                        )$(.$await)?,
             ),
             Self::TraitMember(term) => Ok(
                 term
@@ -503,7 +574,7 @@ macro_rules! implements_type {
                             index: id,
                             from_parent: true,
                         })
-                    )
+                    )$(.$await)?
                     && term
                         .0
                         .member_generic_arguments
@@ -513,11 +584,11 @@ macro_rules! implements_type {
                                 index: id,
                                 from_parent: false,
                             })
-                        ),
+                        )$(.$await)?,
             ),
 
             Self::FunctionSignature(term) => {
-                for (idx, parameter) in (& $($ref)? term.parameters).into_iter().enumerate() {
+                for (idx, parameter) in ( $($ref)* term.parameters).into_iter().enumerate() {
                     if !$visitor.$visit_type(
                         parameter,
                         SubTypeLocation::FromType(
@@ -525,20 +596,20 @@ macro_rules! implements_type {
                                 SubFunctionSignatureLocation::Parameter(idx)
                             )
                         )
-                    ) {
+                    )$(.$await)? {
                         return Ok(false);
                     }
                 }
 
                 Ok(
                     $visitor.$visit_type(
-                        &$($ref)?*term.return_type,
+                        $($ref)**term.return_type,
                         SubTypeLocation::FromType(
                             r#type::SubTypeLocation::FunctionSignature(
                                 SubFunctionSignatureLocation::ReturnType
                             )
                         )
-                    )
+                    )$(.$await)?
                 )
             },
         }
@@ -557,6 +628,17 @@ impl Element for Type {
         location: SubTypeLocation,
     ) -> bool {
         visitor.visit(self, location)
+    }
+
+    async fn accept_single_async<
+        'a,
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Self> + AsyncVisitor<Constant>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        location: Self::Location,
+    ) -> bool {
+        visitor.visit(self, location).await
     }
 
     fn accept_single_mut<
@@ -599,7 +681,15 @@ impl Element for Type {
         &'a self,
         visitor: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
-        implements_type!(self, visitor, visit, visit, visit, accept_one_level)
+        implements_type!(
+            self,
+            visitor,
+            visit,
+            visit,
+            visit,
+            accept_one_level,
+            [&]
+        )
     }
 
     fn accept_one_level_mut<
@@ -615,7 +705,25 @@ impl Element for Type {
             visit,
             visit,
             accept_one_level_mut,
-            mut
+            [&mut]
+        )
+    }
+
+    async fn accept_one_level_async<
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Self> + AsyncVisitor<Constant>,
+    >(
+        &self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        implements_type!(
+            self,
+            visitor,
+            visit,
+            visit,
+            visit,
+            accept_one_level_async,
+            [&],
+            await
         )
     }
 }
@@ -689,6 +797,26 @@ impl Element for Lifetime {
     ) -> Result<bool, VisitNonApplicationTermError> {
         Err(VisitNonApplicationTermError)
     }
+
+    fn accept_single_async<
+        'a,
+        V: AsyncVisitor<Self> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        location: Self::Location,
+    ) -> impl Future<Output = bool> + 'a {
+        visitor.visit(self, location)
+    }
+
+    async fn accept_one_level_async<
+        V: AsyncVisitor<Self> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
+    >(
+        &self,
+        _: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        Err(VisitNonApplicationTermError)
+    }
 }
 
 macro_rules! implements_constant {
@@ -700,8 +828,9 @@ macro_rules! implements_constant {
         $visit_constant:ident,
         $accept_one_level:ident,
         $as_ref:ident,
-        $iter:ident
-        $(, $ref:ident)?
+        $iter:ident,
+        [$($ref:tt)*]
+        $(, $await:ident)?
     ) => {
         match $self {
             Self::Error(_)
@@ -719,34 +848,40 @@ macro_rules! implements_constant {
                         SubConstantLocation::FromConstant(
                             constant::SubConstantLocation::Struct(idx)
                         )
-                    ) {
+                    )$(. $await)? {
                         return Ok(false);
                     }
                 }
 
                 Ok(true)
             }
-            Self::Enum(term) => Ok(term
-                .associated_value
-                .$as_ref()
-                .map_or(true, |x| $visitor.$visit_constant(
-                    & $($ref)? **x,
-                    SubConstantLocation::FromConstant(
-                        constant::SubConstantLocation::Enum
-                    )
-                ))),
+            Self::Enum(term) => {
+                match term.associated_value.$as_ref() {
+                    Some(value) => Ok($visitor.$visit_constant(
+                        $($ref)* **value,
+                        SubConstantLocation::FromConstant(
+                            constant::SubConstantLocation::Enum
+                        ),
+                    )$(. $await)?),
+                    None => Ok(true),
+                }
+            }
             Self::Array(term) => {
-                Ok(term.elements.$iter().enumerate().all(|(idx, x)|
-                    $visitor.$visit_constant(
-                        x,
+                for (idx, element) in term.elements.$iter().enumerate() {
+                    if !$visitor.$visit_constant(
+                        element,
                         SubConstantLocation::FromConstant(
                             constant::SubConstantLocation::Array(idx)
                         )
-                    )
-                ))
+                    )$(. $await)? {
+                        return Ok(false);
+                    }
+                }
+
+                Ok(true)
             }
 
-            Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)),
+            Self::Tuple(tuple) => Ok(tuple.$accept_one_level($visitor)$(. $await)?),
         }
     };
 }
@@ -814,7 +949,8 @@ impl Element for Constant {
             visit,
             accept_one_level,
             as_ref,
-            iter
+            iter,
+            [&]
         )
     }
 
@@ -833,7 +969,38 @@ impl Element for Constant {
             accept_one_level_mut,
             as_mut,
             iter_mut,
-            mut
+            [&mut]
+        )
+    }
+
+    fn accept_single_async<
+        'a,
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Self>,
+    >(
+        &'a self,
+        visitor: &'a mut V,
+        location: Self::Location,
+    ) -> impl Future<Output = bool> + 'a {
+        visitor.visit(self, location)
+    }
+
+    async fn accept_one_level_async<
+        V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Self>,
+    >(
+        &self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        implements_constant!(
+            self,
+            visitor,
+            visit_type,
+            visit_lifetime,
+            visit,
+            accept_one_level_async,
+            as_ref,
+            iter,
+            [&],
+            await
         )
     }
 }
