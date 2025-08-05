@@ -3,11 +3,14 @@
 
 use std::future::Future;
 
-use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_term::{
+    constant::Constant, lifetime::Lifetime, predicate::Predicate, r#type::Type,
+    variance::Variance,
+};
 
 use crate::{
-    environment::Environment, normalizer::Normalizer, term::Term, Error,
-    Succeeded,
+    compatible::Compatibility, environment::Environment,
+    normalizer::Normalizer, term::Term, Error, Succeeded,
 };
 
 /// A trait used for retrieving equivalences of a term based on the equality
@@ -34,7 +37,6 @@ impl Equivalence for Type {
         &self,
         environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Vec<Succeeded<Self>>, Error> {
-        /*
         let mut equivalences = Vec::new();
 
         if !self.is_trait_member() {
@@ -58,7 +60,8 @@ impl Equivalence for Type {
                         forall_lifetime_errors,
                     },
                 constraints,
-            }) = environment.compatible(self, lhs, Variance::Covariant)?
+            }) =
+                environment.compatible(self, lhs, Variance::Covariant).await?
             {
                 let mut result = rhs.clone();
 
@@ -74,8 +77,6 @@ impl Equivalence for Type {
         }
 
         Ok(equivalences)
-        */
-        todo!()
     }
 }
 
@@ -94,7 +95,7 @@ impl<N: Normalizer> Environment<'_, N> {
     ///
     /// # Errors
     ///
-    /// See [`AbruptError`] for more information.
+    /// See [`Error`] for more information.
     pub async fn get_equivalences<T: Term>(
         &self,
         term: &T,

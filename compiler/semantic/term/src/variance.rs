@@ -4,7 +4,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::generic_parameters::{LifetimeParameterID, TypeParameterID};
+use crate::generic_parameters::{LifetimeParameter, TypeParameter};
 
 /// Representing a variance used by the sub-typing system to determine the
 /// relationship between two types.
@@ -111,8 +111,10 @@ impl Variance {
 #[extend(method(get_variances))]
 pub struct Variances {
     /// Maps the lifetime parameter ID to its variance.
-    pub variances_by_lifetime_ids: HashMap<LifetimeParameterID, Variance>,
+    pub variances_by_lifetime_ids:
+        HashMap<pernixc_arena::ID<LifetimeParameter>, Variance>,
 
     /// Maps the type parameter ID to its variance.
-    pub variances_by_type_ids: HashMap<TypeParameterID, Variance>,
+    pub variances_by_type_ids:
+        HashMap<pernixc_arena::ID<TypeParameter>, Variance>,
 }

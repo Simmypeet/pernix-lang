@@ -1,6 +1,20 @@
 //! Contains the definition of [`Compatible`] logic.
 
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::{
+    collections::{btree_map::Entry, BTreeMap, BTreeSet},
+    future::Future,
+};
+
+use pernixc_term::{
+    constant::Constant,
+    generic_arguments::GenericArguments,
+    lifetime::{Forall, Lifetime},
+    predicate::Outlives,
+    r#type::Type,
+    sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
+    variance::Variance,
+    visitor,
+};
 
 use crate::{
     environment::Environment,
@@ -8,26 +22,27 @@ use crate::{
     normalizer::Normalizer,
     term::Term,
     unification::{self, Matching, Unification},
+    variance::get_variance_of,
     Error, LifetimeConstraint, Satisfied, Succeeded,
 };
 
 /// The result of matching the lifetime with the forall lifetimes.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ForallLifetimeInstantiation<M: Model> {
+pub struct ForallLifetimeInstantiation {
     /// The instantiation of the forall lifetimes.
-    pub lifetimes_by_forall: BTreeMap<ForallLifetimeID, Lifetime<M>>,
+    pub lifetimes_by_forall: BTreeMap<Forall, Lifetime>,
 }
 
-struct ForallLifetimeInstantiationVisitor<'a, M: Model> {
-    instantiations: &'a ForallLifetimeInstantiation<M>,
+struct ForallLifetimeInstantiationVisitor<'a> {
+    instantiations: &'a ForallLifetimeInstantiation,
 }
 
-impl<M: Model> visitor::MutableRecursive<Lifetime<M>>
-    for ForallLifetimeInstantiationVisitor<'_, M>
+impl visitor::MutableRecursive<Lifetime>
+    for ForallLifetimeInstantiationVisitor<'_>
 {
     fn visit(
         &mut self,
-        term: &mut Lifetime<M>,
+        term: &mut Lifetime,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         let Lifetime::Forall(term_forall) = &*term else {
@@ -37,40 +52,40 @@ impl<M: Model> visitor::MutableRecursive<Lifetime<M>>
         if let Some(instantiated) =
             self.instantiations.lifetimes_by_forall.get(term_forall)
         {
-            *term = instantiated.clone();
+            *term = *instantiated;
         }
 
         true
     }
 }
 
-impl<M: Model> visitor::MutableRecursive<Type<M>>
-    for ForallLifetimeInstantiationVisitor<'_, M>
+impl visitor::MutableRecursive<Type>
+    for ForallLifetimeInstantiationVisitor<'_>
 {
     fn visit(
         &mut self,
-        _: &mut Type<M>,
+        _: &mut Type,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
     }
 }
 
-impl<M: Model> visitor::MutableRecursive<Constant<M>>
-    for ForallLifetimeInstantiationVisitor<'_, M>
+impl visitor::MutableRecursive<Constant>
+    for ForallLifetimeInstantiationVisitor<'_>
 {
     fn visit(
         &mut self,
-        _: &mut Constant<M>,
+        _: &mut Constant,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
     }
 }
 
-impl<M: Model> ForallLifetimeInstantiation<M> {
+impl ForallLifetimeInstantiation {
     /// Instantiates the forall lifetimes in the term.
-    pub fn instantiate<T: Term<Model = M>>(&self, term: &mut T) {
+    pub fn instantiate<T: Term>(&self, term: &mut T) {
         let mut visitor =
             ForallLifetimeInstantiationVisitor { instantiations: self };
 
@@ -80,65 +95,61 @@ impl<M: Model> ForallLifetimeInstantiation<M> {
 
 /// The forall lifetime is found on the `self` side and matched with the
 /// non-forall lifetime on the `target` side.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NotGeneralEnoughLifetimeError<M: Model> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NotGeneralEnoughLifetimeError {
     /// The forall lifetime found on the `self` side.
-    pub forall_lifetime: ForallLifetimeID,
+    pub forall_lifetime: Forall,
 
     /// The non-forall lifetime found on the `target` side.
-    pub lifetime: Lifetime<M>,
+    pub lifetime: Lifetime,
 }
 
 /// The forall lifetime on the `target` side can be matched with only exactly
 /// one forall lifetime on the `self` side (including normal lifetimes).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ForallLifetimeMatchedMoreThanOnceError<M: Model> {
+pub struct ForallLifetimeMatchedMoreThanOnceError {
     /// The forall lifetime found on the `target` side.
-    pub forall_lifetime: ForallLifetimeID,
+    pub forall_lifetime: Forall,
 
     /// The lifetimes found on the `self` side that matched with the forall
     /// lifetime on the `target` side.
     ///
     /// The lifetimes here include at least one forall lifetime.
-    pub lifetimes: BTreeSet<Lifetime<M>>,
+    pub lifetimes: BTreeSet<Lifetime>,
 }
 
 /// An enumeration of the possible errors related to forall lifetimes when
 /// determining the compatibility of two terms.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[allow(missing_docs)]
-pub enum ForallLifetimeError<M: Model> {
-    NotGeneralEnoughLifetime(NotGeneralEnoughLifetimeError<M>),
-    ForallLifetimeMatchedMoreThanOnce(
-        ForallLifetimeMatchedMoreThanOnceError<M>,
-    ),
+pub enum ForallLifetimeError {
+    NotGeneralEnoughLifetime(NotGeneralEnoughLifetimeError),
+    ForallLifetimeMatchedMoreThanOnce(ForallLifetimeMatchedMoreThanOnceError),
 }
 
 /// The compatibility of two terms.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Compatibility<M: Model> {
+pub struct Compatibility {
     /// The result of matching the lifetime with the forall lifetimes.
-    pub forall_lifetime_instantiations: ForallLifetimeInstantiation<M>,
+    pub forall_lifetime_instantiations: ForallLifetimeInstantiation,
 
     /// List of all errors related to for-all lifetimes.
-    pub forall_lifetime_errors: BTreeSet<ForallLifetimeError<M>>,
+    pub forall_lifetime_errors: BTreeSet<ForallLifetimeError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct LifetimeMatchingPredicate<M: Model> {
-    from: Type<M>,
+struct LifetimeMatchingPredicate {
+    from: Type,
 }
 
-impl<M: Model> unification::Predicate<Lifetime<M>>
-    for LifetimeMatchingPredicate<M>
-{
+impl unification::Predicate<Lifetime> for LifetimeMatchingPredicate {
     fn unifiable(
         &self,
-        _: &Lifetime<M>,
-        _: &Lifetime<M>,
-        from_logs: &[unification::Log<M>],
-        _: &[unification::Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
+        _: &Lifetime,
+        _: &Lifetime,
+        from_logs: &[unification::Log],
+        _: &[unification::Log],
+    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
         let mut current_from = self.from.clone();
 
         for (idx, log) in from_logs.iter().enumerate() {
@@ -177,40 +188,36 @@ impl<M: Model> unification::Predicate<Lifetime<M>>
     }
 }
 
-impl<M: Model> unification::Predicate<Type<M>>
-    for LifetimeMatchingPredicate<M>
-{
+impl unification::Predicate<Type> for LifetimeMatchingPredicate {
     fn unifiable(
         &self,
-        _: &Type<M>,
-        _: &Type<M>,
-        _: &[unification::Log<M>],
-        _: &[unification::Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
+        _: &Type,
+        _: &Type,
+        _: &[unification::Log],
+        _: &[unification::Log],
+    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
         Ok(None)
     }
 }
 
-impl<M: Model> unification::Predicate<Constant<M>>
-    for LifetimeMatchingPredicate<M>
-{
+impl unification::Predicate<Constant> for LifetimeMatchingPredicate {
     fn unifiable(
         &self,
-        _: &Constant<M>,
-        _: &Constant<M>,
-        _: &[unification::Log<M>],
-        _: &[unification::Log<M>],
-    ) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
+        _: &Constant,
+        _: &Constant,
+        _: &[unification::Log],
+        _: &[unification::Log],
+    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
         Ok(None)
     }
 }
 
-fn append_matchings_from_unification<M: Model>(
-    mut current_from: Type<M>,
-    unifier: &unification::Unifier<Type<M>>,
+async fn append_matchings_from_unification(
+    mut current_from: Type,
+    unifier: &unification::Unifier<Type>,
     parent_variance: Variance,
-    environment: &Environment<M, impl Normalizer<M>>,
-    matching: &mut BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
+    environment: &Environment<'_, impl Normalizer>,
+    matching: &mut BTreeMap<Lifetime, Vec<(Lifetime, Variance)>>,
 ) -> Result<bool, Error> {
     if let Some(rewritten_from) = &unifier.rewritten_from {
         current_from = rewritten_from.clone();
@@ -224,43 +231,51 @@ fn append_matchings_from_unification<M: Model>(
         Matching::Substructural(substructural) => {
             // look for matched lifetimes
             for (location, unification) in &substructural.lifetimes {
-                let variance = environment.get_variance_of(
-                    &current_from,
-                    parent_variance,
-                    std::iter::once(TermLocation::Lifetime(
-                        SubLifetimeLocation::FromType(*location),
-                    )),
-                )?;
+                let variance = environment
+                    .tracked_engine()
+                    .get_variance_of(
+                        &current_from,
+                        parent_variance,
+                        std::iter::once(TermLocation::Lifetime(
+                            SubLifetimeLocation::FromType(*location),
+                        )),
+                    )
+                    .await?;
 
                 if let Matching::Unifiable(self_lt, target_lt) =
                     &unification.matching
                 {
                     matching
-                        .entry(target_lt.clone())
+                        .entry(*target_lt)
                         .or_default()
-                        .push((self_lt.clone(), variance));
+                        .push((*self_lt, variance));
                 }
             }
 
             // look for matched types
             for (location, unification) in &substructural.types {
-                let current_variance = environment.get_variance_of(
-                    &current_from,
-                    parent_variance,
-                    std::iter::once(TermLocation::Type(
-                        SubTypeLocation::FromType(*location),
-                    )),
-                )?;
+                let current_variance = environment
+                    .tracked_engine()
+                    .get_variance_of(
+                        &current_from,
+                        parent_variance,
+                        std::iter::once(TermLocation::Type(
+                            SubTypeLocation::FromType(*location),
+                        )),
+                    )
+                    .await?;
 
                 let new_from = location.get_sub_term(&current_from).unwrap();
 
-                if !append_matchings_from_unification(
+                if !Box::pin(append_matchings_from_unification(
                     new_from,
                     unification,
                     current_variance,
                     environment,
                     matching,
-                )? {
+                ))
+                .await?
+                {
                     return Ok(false);
                 }
             }
@@ -273,7 +288,7 @@ fn append_matchings_from_unification<M: Model>(
 
 /// A trait for determining the equality of two terms while considering the
 /// variance of the lifetime.
-pub trait Compatible: ModelOf {
+pub trait Compatible {
     /// The implementation of compatible algorithm.
     ///
     /// This similar to equality but allowing subtypings on lifetimes.
@@ -286,21 +301,21 @@ pub trait Compatible: ModelOf {
     ///   lifetimes. For the most cases, the default should be
     ///   [`Variance::Covariant`]
     #[allow(clippy::missing_errors_doc)]
-    fn compatible(
-        &self,
-        target: &Self,
+    fn compatible<'s>(
+        &'s self,
+        target: &'s Self,
         variance: Variance,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> crate::Result<Compatibility<Self::Model>, Self::Model>;
+        environment: &'s Environment<'s, impl Normalizer>,
+    ) -> impl Future<Output = crate::Result<Compatibility>> + 's;
 }
 
-impl<M: Model> Compatible for Lifetime<M> {
-    fn compatible(
+impl Compatible for Lifetime {
+    async fn compatible(
         &self,
         target: &Self,
         variance: Variance,
-        _environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> crate::Result<Compatibility<M>, M> {
+        _environment: &Environment<'_, impl Normalizer>,
+    ) -> crate::Result<Compatibility> {
         if self == target {
             return Ok(Some(Succeeded::new(Compatibility::default())));
         }
@@ -312,7 +327,7 @@ impl<M: Model> Compatible for Lifetime<M> {
                 assert!(compatibility
                     .forall_lifetime_instantiations
                     .lifetimes_by_forall
-                    .insert(*forall_target, self_lifetime.clone())
+                    .insert(*forall_target, *self_lifetime)
                     .is_none());
 
                 return Ok(Some(Succeeded::new(compatibility)));
@@ -323,7 +338,7 @@ impl<M: Model> Compatible for Lifetime<M> {
                 let error = ForallLifetimeError::NotGeneralEnoughLifetime(
                     NotGeneralEnoughLifetimeError {
                         forall_lifetime: *self_forall,
-                        lifetime: target.clone(),
+                        lifetime: *target,
                     },
                 );
 
@@ -340,25 +355,23 @@ impl<M: Model> Compatible for Lifetime<M> {
         let constraints: BTreeSet<_> = match variance {
             Variance::Covariant => {
                 std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: self.clone(), bound: target.clone() },
+                    Outlives { operand: *self, bound: *target },
                 ))
                 .collect()
             }
             Variance::Contravariant => {
                 std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: target.clone(), bound: self.clone() },
+                    Outlives { operand: *target, bound: *self },
                 ))
                 .collect()
             }
             Variance::Bivariant => BTreeSet::new(),
             Variance::Invariant => [
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                    self.clone(),
-                    target.clone(),
+                    *self, *target,
                 )),
                 LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                    target.clone(),
-                    self.clone(),
+                    *target, *self,
                 )),
             ]
             .into_iter()
@@ -373,17 +386,17 @@ impl<M: Model> Compatible for Lifetime<M> {
 }
 
 #[allow(clippy::too_many_lines)]
-fn matching_to_compatiblity<M: Model>(
-    matching: BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>>,
-) -> Succeeded<Compatibility<M>, M> {
+fn matching_to_compatiblity(
+    matching: BTreeMap<Lifetime, Vec<(Lifetime, Variance)>>,
+) -> Succeeded<Compatibility> {
     use ForallLifetimeError::ForallLifetimeMatchedMoreThanOnce as MoreThanOnceError;
 
     let mut compatibility = Compatibility::default();
     let mut constraints = BTreeSet::new();
 
     for (target_lt, self_lts) in matching {
-        for (self_lt, variance) in self_lts.iter().cloned() {
-            match (self_lt, target_lt.clone()) {
+        for (self_lt, variance) in self_lts.iter().copied() {
+            match (self_lt, target_lt) {
                 (self_lt, Lifetime::Forall(target_forall)) => {
                     match compatibility
                         .forall_lifetime_instantiations
@@ -419,7 +432,7 @@ fn matching_to_compatiblity<M: Model>(
                                             forall_lifetime: target_forall,
                                             lifetimes: self_lts
                                                 .iter()
-                                                .map(|(lifetime, _)| lifetime.clone())
+                                                .map(|(lifetime, _)| *lifetime)
                                                 .collect(),
                                         });
 
@@ -432,18 +445,12 @@ fn matching_to_compatiblity<M: Model>(
                                 // constraints
                                 constraints.insert(
                                     LifetimeConstraint::LifetimeOutlives(
-                                        Outlives::new(
-                                            self_lt.clone(),
-                                            entry.get().clone(),
-                                        ),
+                                        Outlives::new(self_lt, *entry.get()),
                                     ),
                                 );
                                 constraints.insert(
                                     LifetimeConstraint::LifetimeOutlives(
-                                        Outlives::new(
-                                            entry.get().clone(),
-                                            self_lt,
-                                        ),
+                                        Outlives::new(*entry.get(), self_lt),
                                     ),
                                 );
                             }
@@ -489,18 +496,12 @@ fn matching_to_compatiblity<M: Model>(
                     Variance::Invariant => {
                         constraints.insert(
                             LifetimeConstraint::LifetimeOutlives(
-                                Outlives::new(
-                                    self_lt.clone(),
-                                    target_lt.clone(),
-                                ),
+                                Outlives::new(self_lt, target_lt),
                             ),
                         );
                         constraints.insert(
                             LifetimeConstraint::LifetimeOutlives(
-                                Outlives::new(
-                                    target_lt.clone(),
-                                    self_lt.clone(),
-                                ),
+                                Outlives::new(target_lt, self_lt),
                             ),
                         );
                     }
@@ -512,18 +513,19 @@ fn matching_to_compatiblity<M: Model>(
     Succeeded::with_constraints(compatibility, constraints)
 }
 
-impl<M: Model> Compatible for Type<M> {
-    fn compatible(
+impl Compatible for Type {
+    async fn compatible(
         &self,
         target: &Self,
         variance: Variance,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> crate::Result<Compatibility<M>, M> {
-        let Some(unifer) = environment.query(&Unification::new(
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> crate::Result<Compatibility> {
+        let Some(unifer) = Box::pin(environment.query(&Unification::new(
             self.clone(),
             target.clone(),
             LifetimeMatchingPredicate { from: self.clone() },
-        ))?
+        )))
+        .await?
         else {
             return Ok(None);
         };
@@ -538,7 +540,9 @@ impl<M: Model> Compatible for Type<M> {
             variance,
             environment,
             &mut matching,
-        )? {
+        )
+        .await?
+        {
             return Ok(None);
         }
 
@@ -551,47 +555,48 @@ impl<M: Model> Compatible for Type<M> {
     }
 }
 
-impl<M: Model> Compatible for Constant<M> {
-    fn compatible(
+impl Compatible for Constant {
+    async fn compatible(
         &self,
         target: &Self,
         _: Variance,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
-    ) -> crate::Result<Compatibility<M>, M> {
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> crate::Result<Compatibility> {
         // use default strict equality for constant
-        environment.query(&Equality::new(self.clone(), target.clone())).map(
-            |x| {
+        environment
+            .query(&Equality::new(self.clone(), target.clone()))
+            .await
+            .map(|x| {
                 x.map(|x| {
                     Succeeded::with_constraints(
                         Compatibility::default(),
                         x.constraints.clone(),
                     )
                 })
-            },
-        )
+            })
     }
 }
 
-impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
+impl<N: Normalizer> Environment<'_, N> {
     /// Delegates the method from [`Compatible::compatible`]
     #[allow(clippy::missing_errors_doc)]
-    pub fn compatible<T: Compatible<Model = M>>(
+    pub async fn compatible<T: Compatible>(
         &self,
         this: &T,
         target: &T,
         variance: Variance,
-    ) -> crate::Result<Compatibility<M>, M> {
-        this.compatible(target, variance, self)
+    ) -> crate::Result<Compatibility> {
+        this.compatible(target, variance, self).await
     }
 
     /// Determines the compatibility of two generic arguments.
     #[allow(clippy::missing_errors_doc)]
-    pub fn generic_arguments_compatible(
+    pub async fn generic_arguments_compatible(
         &self,
-        this: &GenericArguments<M>,
-        target: &GenericArguments<M>,
+        this: &GenericArguments,
+        target: &GenericArguments,
         variance: Variance,
-    ) -> crate::Result<Compatibility<M>, M> {
+    ) -> crate::Result<Compatibility> {
         let mut constraints = BTreeSet::new();
 
         if this.lifetimes.len() != target.lifetimes.len()
@@ -601,26 +606,28 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
             return Ok(None);
         }
 
-        let mut matching: BTreeMap<Lifetime<M>, Vec<(Lifetime<M>, Variance)>> =
+        let mut matching: BTreeMap<Lifetime, Vec<(Lifetime, Variance)>> =
             BTreeMap::new();
 
         for (self_lifetime, target_lifetime) in
             this.lifetimes.iter().zip(target.lifetimes.iter())
         {
             matching
-                .entry(target_lifetime.clone())
+                .entry(*target_lifetime)
                 .or_default()
-                .push((self_lifetime.clone(), variance));
+                .push((*self_lifetime, variance));
         }
 
         for (self_type, target_type) in
             this.types.iter().zip(target.types.iter())
         {
-            let Some(new_unifier) = self.query(&Unification::new(
-                self_type.clone(),
-                target_type.clone(),
-                LifetimeMatchingPredicate { from: self_type.clone() },
-            ))?
+            let Some(new_unifier) = self
+                .query(&Unification::new(
+                    self_type.clone(),
+                    target_type.clone(),
+                    LifetimeMatchingPredicate { from: self_type.clone() },
+                ))
+                .await?
             else {
                 return Ok(None);
             };
@@ -633,7 +640,9 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
                 variance,
                 self,
                 &mut matching,
-            )? {
+            )
+            .await?
+            {
                 return Ok(None);
             }
         }
@@ -641,10 +650,12 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         for (self_constant, target_constant) in
             this.constants.iter().zip(target.constants.iter())
         {
-            let Some(new_equality) = self.query(&Equality::new(
-                self_constant.clone(),
-                target_constant.clone(),
-            ))?
+            let Some(new_equality) = self
+                .query(&Equality::new(
+                    self_constant.clone(),
+                    target_constant.clone(),
+                ))
+                .await?
             else {
                 return Ok(None);
             };
@@ -660,6 +671,3 @@ impl<M: Model, N: Normalizer<M>> Environment<'_, M, N> {
         Ok(Some(Succeeded::with_constraints(result, constraints)))
     }
 }
-
-#[cfg(test)]
-mod test;

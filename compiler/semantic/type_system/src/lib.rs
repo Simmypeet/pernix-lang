@@ -14,13 +14,9 @@ pub mod equivalence;
 pub mod normalizer;
 pub mod term;
 pub mod unification;
+pub mod variance;
 
 /// An error that occurs when the number of queries exceeds the limit.
-///
-/// Due to the fact that the semantic system is partially-decidable, it is
-/// possible that the number of queries can be infinite. To prevent this, a
-/// limit is set to the number of queries that can be made. However, in
-/// most cases, the number of queries should not exceed the limit.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
 )]
