@@ -28,6 +28,7 @@ pub trait Term:
     + pernixc_term::matching::Match
     + crate::equivalence::Equivalence
     + crate::unification::Element
+    + crate::subtype::Impl
     + Clone
     + Ord
     + Hash

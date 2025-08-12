@@ -12,6 +12,7 @@ pub mod environment;
 pub mod equality;
 pub mod equivalence;
 pub mod normalizer;
+pub mod subtype;
 pub mod term;
 pub mod unification;
 pub mod variance;

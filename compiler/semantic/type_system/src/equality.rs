@@ -34,14 +34,8 @@ impl<T: Term> Query for Equality<T, T> {
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        // trivially satisfied
-        if self.lhs == self.rhs {
-            return Ok(Some(Arc::new(Succeeded::satisfied())));
-        }
-
         if let Some(result) =
-            Box::pin(equals_without_mapping(&self.lhs, &self.rhs, environment))
-                .await?
+            equals_without_mapping(&self.lhs, &self.rhs, environment).await?
         {
             return Ok(Some(Arc::new(result)));
         }
@@ -56,11 +50,11 @@ impl<T: Term> Query for Equality<T, T> {
             let trait_member_term: T = equality_predicate.lhs.clone().into();
 
             if self.lhs.as_trait_member().is_some() {
-                if let Some(mut result) = Box::pin(equals_without_mapping(
+                if let Some(mut result) = equals_without_mapping(
                     &self.lhs,
                     &trait_member_term,
                     environment,
-                ))
+                )
                 .await?
                 {
                     if let Some(inner_result) =
@@ -79,11 +73,11 @@ impl<T: Term> Query for Equality<T, T> {
             }
 
             if self.rhs.as_trait_member().is_some() {
-                if let Some(mut result) = Box::pin(equals_without_mapping(
+                if let Some(mut result) = equals_without_mapping(
                     &trait_member_term,
                     &self.rhs,
                     environment,
-                ))
+                )
                 .await?
                 {
                     if let Some(inner_result) =
@@ -183,16 +177,27 @@ async fn equals_without_mapping<T: Term>(
     rhs: &T,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<Succeeded<Satisfied>>, super::Error> {
-    if let Some(result) = equals_by_unification(lhs, rhs, environment).await? {
-        return Ok(Some(result));
+    // trivially satisfied
+    if lhs == rhs {
+        return Ok(Some(Succeeded::satisfied()));
     }
 
-    if let Some(result) = equals_by_normalization(lhs, rhs, environment).await?
-    {
-        return Ok(Some(result));
-    }
+    Box::pin(async move {
+        if let Some(result) =
+            equals_by_unification(lhs, rhs, environment).await?
+        {
+            return Ok(Some(result));
+        }
 
-    Ok(None)
+        if let Some(result) =
+            equals_by_normalization(lhs, rhs, environment).await?
+        {
+            return Ok(Some(result));
+        }
+
+        Ok(None)
+    })
+    .await
 }
 
 #[cfg(test)]
