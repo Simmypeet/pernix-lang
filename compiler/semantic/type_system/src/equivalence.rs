@@ -9,8 +9,8 @@ use pernixc_term::{
 };
 
 use crate::{
-    compatible::Compatibility, environment::Environment,
-    normalizer::Normalizer, term::Term, Error, Succeeded,
+    environment::Environment, normalizer::Normalizer, subtype::Subtype,
+    term::Term, Error, Succeeded,
 };
 
 /// A trait used for retrieving equivalences of a term based on the equality
@@ -50,29 +50,28 @@ impl Equivalence for Type {
             .filter_map(Predicate::as_trait_type_compatible)
         {
             let lhs = Self::TraitMember(equivalence.lhs.clone());
-            let lhs = &lhs;
             let rhs = &equivalence.rhs;
 
-            if let Some(Succeeded {
-                result:
-                    Compatibility {
-                        forall_lifetime_instantiations,
-                        forall_lifetime_errors,
-                    },
-                constraints,
-            }) =
-                environment.compatible(self, lhs, Variance::Covariant).await?
+            if let Some(result) = environment
+                .query(&Subtype::new(self.clone(), lhs, Variance::Invariant))
+                .await?
             {
-                let mut result = rhs.clone();
-
-                // instantiate the forall lifetime
-                forall_lifetime_instantiations.instantiate(&mut result);
-
-                if !forall_lifetime_errors.is_empty() {
+                if !result.result.forall_lifetime_errors.is_empty() {
                     continue; // sadly
                 }
 
-                equivalences.push(Succeeded { result, constraints });
+                let mut final_result = rhs.clone();
+
+                // instantiate the forall lifetime
+                result
+                    .result
+                    .forall_lifetime_instantiations
+                    .instantiate(&mut final_result);
+
+                equivalences.push(Succeeded {
+                    result: final_result,
+                    constraints: result.constraints.clone(),
+                });
             }
         }
 
