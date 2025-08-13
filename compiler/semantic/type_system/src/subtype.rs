@@ -648,3 +648,6 @@ impl Impl for Constant {
             .map(|x| x.map(|_| Arc::new(Succeeded::new(Subtypable::default()))))
     }
 }
+
+#[cfg(test)]
+mod test;
