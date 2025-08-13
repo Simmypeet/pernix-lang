@@ -228,13 +228,13 @@ impl Impl for Lifetime {
         let constraints: BTreeSet<_> = match subtype.variance {
             Variance::Covariant => {
                 std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: subtype.target, bound: subtype.source },
+                    Outlives { operand: subtype.source, bound: subtype.target },
                 ))
                 .collect()
             }
             Variance::Contravariant => {
                 std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: subtype.source, bound: subtype.target },
+                    Outlives { operand: subtype.target, bound: subtype.source },
                 ))
                 .collect()
             }
