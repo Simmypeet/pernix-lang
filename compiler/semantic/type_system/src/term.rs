@@ -29,6 +29,7 @@ pub trait Term:
     + crate::equivalence::Impl
     + crate::unification::Element
     + crate::subtype::Impl
+    + crate::mapping::Element
     + Debug
     + Clone
     + Ord
