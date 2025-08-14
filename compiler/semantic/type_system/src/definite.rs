@@ -96,15 +96,18 @@ impl<T: Term> Query for Definite<T> {
         }
 
         // get the equivalences
-        for Succeeded { result: eq, mut constraints } in
-            environment.get_equivalences(&self.0).await?
+        for Succeeded { result: eq, constraints } in
+            environment.get_equivalences(&self.0).await?.iter()
         {
-            if let Some(result) = Box::pin(environment.query(&Self(eq))).await?
+            if let Some(result) =
+                Box::pin(environment.query(&Self(eq.clone()))).await?
             {
-                constraints.extend(result.constraints.iter().cloned());
-
                 return Ok(Some(Arc::new(Succeeded::satisfied_with(
-                    constraints,
+                    constraints
+                        .iter()
+                        .cloned()
+                        .chain(result.constraints.iter().cloned())
+                        .collect(),
                 ))));
             }
         }

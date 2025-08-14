@@ -398,51 +398,57 @@ pub(super) async fn unify<T: Term>(
     }
 
     // try to look for equivalences
-    for Succeeded { result: eq_from, mut constraints } in
-        environment.get_equivalences(from).await?
+    for Succeeded { result: eq_from, constraints } in
+        environment.get_equivalences(from).await?.iter()
     {
         let mut from_logs = from_logs.to_vec();
         from_logs.push(eq_from.clone().into_rewritten());
 
-        if let Some(unifier) = Box::pin(environment.query_with(
+        if let Some(unifier_result) = Box::pin(environment.query_with(
             &Unification::new(eq_from.clone(), to.clone(), predicate.clone()),
             (from_logs, to_logs.to_vec()),
             (),
         ))
         .await?
         {
-            constraints.extend(unifier.constraints.iter().cloned());
-
-            let mut unifier = unifier.result.clone();
-            unifier.rewritten_from = unifier.rewritten_from.or(Some(eq_from));
+            let mut unifier = unifier_result.result.clone();
+            unifier.rewritten_from =
+                unifier.rewritten_from.or(Some(eq_from.clone()));
 
             return Ok(Some(Arc::new(Succeeded::with_constraints(
                 unifier,
-                constraints,
+                constraints
+                    .iter()
+                    .cloned()
+                    .chain(unifier_result.constraints.iter().cloned())
+                    .collect(),
             ))));
         }
     }
-    for Succeeded { result: eq_to, mut constraints } in
-        environment.get_equivalences(to).await?
+    for Succeeded { result: eq_to, constraints } in
+        environment.get_equivalences(to).await?.iter()
     {
         let mut to_logs = to_logs.to_vec();
         to_logs.push(eq_to.clone().into_rewritten());
 
-        if let Some(unifier) = Box::pin(environment.query_with(
+        if let Some(unifier_result) = Box::pin(environment.query_with(
             &Unification::new(from.clone(), eq_to.clone(), predicate.clone()),
             (from_logs.to_vec(), to_logs),
             (),
         ))
         .await?
         {
-            constraints.extend(unifier.constraints.iter().cloned());
-
-            let mut unifier = unifier.result.clone();
-            unifier.rewritten_right = unifier.rewritten_right.or(Some(eq_to));
+            let mut unifier = unifier_result.result.clone();
+            unifier.rewritten_right =
+                unifier.rewritten_right.or(Some(eq_to.clone()));
 
             return Ok(Some(Arc::new(Succeeded::with_constraints(
                 unifier,
-                constraints,
+                constraints
+                    .iter()
+                    .cloned()
+                    .chain(unifier_result.constraints.iter().cloned())
+                    .collect(),
             ))));
         }
     }

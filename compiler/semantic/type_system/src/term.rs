@@ -26,7 +26,7 @@ use crate::{
 pub trait Term:
     pernixc_term::visitor::Element
     + pernixc_term::matching::Match
-    + crate::equivalence::Equivalence
+    + crate::equivalence::Impl
     + crate::unification::Element
     + crate::subtype::Impl
     + Debug
