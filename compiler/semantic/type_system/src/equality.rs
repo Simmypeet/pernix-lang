@@ -200,5 +200,16 @@ async fn equals_without_mapping<T: Term>(
     .await
 }
 
+impl<N: Normalizer> Environment<'_, N> {
+    /// Checks if two terms are strictly equals.
+    pub async fn equals<T: Term>(
+        &self,
+        lhs: T,
+        rhs: T,
+    ) -> crate::ResultArc<Satisfied> {
+        self.query(&Equality::new(lhs, rhs)).await
+    }
+}
+
 #[cfg(test)]
 mod test;

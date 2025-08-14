@@ -157,5 +157,19 @@ impl<N: Normalizer> Environment<'_, N> {
     }
 }
 
+impl<N: Normalizer> Environment<'_, N> {
+    /// Checks if the term is "defininte".
+    ///
+    /// In the context of type-checking, the term is defininte if it doesn't
+    /// contain any parameterized terms such as generic type or constant
+    /// parameters (except lifetime parameters).
+    pub async fn definite<T: Term>(
+        &self,
+        term: T,
+    ) -> crate::ResultArc<Satisfied> {
+        self.query(&Definite::new(term)).await
+    }
+}
+
 #[cfg(test)]
 mod test;
