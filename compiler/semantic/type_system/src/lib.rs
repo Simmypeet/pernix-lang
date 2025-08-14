@@ -6,6 +6,7 @@ use enum_as_inner::EnumAsInner;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
 
+pub mod adt_fields;
 pub mod definite;
 pub mod environment;
 pub mod equality;

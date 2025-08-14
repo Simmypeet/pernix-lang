@@ -12,6 +12,8 @@ pernixc_target = { path = "../../base/target" }
 pernixc_extend = { path = "../../base/extend" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_lexical = { path = "../../syntax/lexical" }
+pernixc_serialize = { path = "../../base/serialize" }
+pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }
 thiserror = { workspace = true }
