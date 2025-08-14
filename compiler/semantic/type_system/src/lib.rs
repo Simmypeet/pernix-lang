@@ -14,6 +14,7 @@ pub mod equivalence;
 pub mod mapping;
 pub mod normalizer;
 pub mod order;
+pub mod predicate;
 pub mod subtype;
 pub mod term;
 pub mod unification;
