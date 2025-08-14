@@ -649,5 +649,17 @@ impl Impl for Constant {
     }
 }
 
+impl<N: Normalizer> Environment<'_, N> {
+    /// Determines the sub-typing relationship between two terms.
+    pub async fn subtypes<T: Term>(
+        &self,
+        target: T,
+        source: T,
+        variance: Variance,
+    ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
+        self.query(&Subtype::new(target, source, variance)).await
+    }
+}
+
 #[cfg(test)]
 mod test;
