@@ -46,7 +46,7 @@ impl<T> Outlives<T> {
     where
         T: instantiation::Element + visitor::Element + Clone,
     {
-        instantiation::instantiate(&mut self.operand, instantiation);
-        instantiation::instantiate(&mut self.bound, instantiation);
+        instantiation.instantiate(&mut self.bound);
+        instantiation.instantiate(&mut self.operand);
     }
 }

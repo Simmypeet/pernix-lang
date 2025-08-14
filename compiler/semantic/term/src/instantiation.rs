@@ -62,15 +62,6 @@ impl<T: Element + Clone + Ord> MutableRecursive<T> for Instantiater<'_> {
     }
 }
 
-/// Applies the given substitution to the term.
-pub fn instantiate<T: Element + Clone + visitor::Element>(
-    term: &mut T,
-    instantiation: &Instantiation,
-) {
-    let mut instantiater = Instantiater { substitution: instantiation };
-    visitor::accept_recursive_mut(term, &mut instantiater);
-}
-
 /// Error that occurs when converting a [`GenericArguments`] into a
 /// [`Instantiation`], the number of generic arguments supplied does not
 /// match the number of generic parameters.
@@ -317,6 +308,15 @@ impl Instantiation {
 
         Ok(substitution)
     }
+
+    /// Applies the given substitution to the term.
+    pub fn instantiate<T: Element + Clone + visitor::Element>(
+        &self,
+        element: &mut T,
+    ) {
+        let mut instantiater = Instantiater { substitution: self };
+        visitor::accept_recursive_mut(element, &mut instantiater);
+    }
 }
 
 /// A trait for retrieving the instantiation map from the [`Instantiation`]
@@ -366,15 +366,15 @@ impl GenericArguments {
     /// Applies the instantiation to all the generic arguments.
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         for lifetime in &mut self.lifetimes {
-            instantiate(lifetime, instantiation);
+            instantiation.instantiate(lifetime);
         }
 
         for r#type in &mut self.types {
-            instantiate(r#type, instantiation);
+            instantiation.instantiate(r#type);
         }
 
         for constant in &mut self.constants {
-            instantiate(constant, instantiation);
+            instantiation.instantiate(constant);
         }
     }
 }

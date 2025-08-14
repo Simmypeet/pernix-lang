@@ -37,6 +37,6 @@ impl<T> Tuple<T> {
     where
         T: instantiation::Element + visitor::Element + Clone,
     {
-        instantiation::instantiate(&mut self.0, instantiation);
+        instantiation.instantiate(&mut self.0);
     }
 }

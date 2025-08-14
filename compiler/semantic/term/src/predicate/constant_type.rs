@@ -2,10 +2,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use super::contains_error;
-use crate::{
-    instantiation::{self, Instantiation},
-    r#type::Type,
-};
+use crate::{instantiation::Instantiation, r#type::Type};
 
 /// Represents a type can be used as a type of a compile-time constant value.
 #[derive(
@@ -29,6 +26,6 @@ impl ConstantType {
 
     /// Applies the instantiation to the type.
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
-        instantiation::instantiate(&mut self.0, instantiation);
+        instantiation.instantiate(&mut self.0);
     }
 }

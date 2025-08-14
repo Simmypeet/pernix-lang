@@ -18,11 +18,8 @@ pub use r#trait::{Negative as NegativeTrait, Positive as PositiveTrait};
 pub use tuple::Tuple;
 
 use crate::{
-    error::contains_error,
-    generic_arguments::TraitMember,
-    instantiation::{self, Instantiation},
-    lifetime::Lifetime,
-    r#type::Type,
+    error::contains_error, generic_arguments::TraitMember,
+    instantiation::Instantiation, lifetime::Lifetime, r#type::Type,
 };
 
 /// A predicate that can appear in the where clause.
@@ -106,6 +103,6 @@ impl Compatible<TraitMember, Type> {
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         self.lhs.0.member_generic_arguments.instantiate(instantiation);
         self.lhs.0.parent_generic_arguments.instantiate(instantiation);
-        instantiation::instantiate(&mut self.rhs, instantiation);
+        instantiation.instantiate(&mut self.rhs);
     }
 }
