@@ -29,6 +29,7 @@ pub trait Term:
     + crate::equivalence::Equivalence
     + crate::unification::Element
     + crate::subtype::Impl
+    + Debug
     + Clone
     + Ord
     + Hash

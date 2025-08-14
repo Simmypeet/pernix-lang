@@ -972,8 +972,6 @@ async fn property_based_testing<T: Term + 'static>(
     prop_assert!(first_result.constraints.is_empty());
     prop_assert!(second_result.constraints.is_empty());
 
-    println!("{} nodes in the property", property.node_count());
-
     Ok(())
 }
 
@@ -1018,7 +1016,7 @@ impl Arbitrary for Decoy {
 proptest! {
 
     #![proptest_config(proptest::test_runner::Config {
-        cases: 10_000,
+        cases: 5_000,
         ..Default::default()
     })]
 

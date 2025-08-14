@@ -449,3 +449,6 @@ pub(super) async fn unify<T: Term>(
 
     Ok(None)
 }
+
+#[cfg(test)]
+mod test;
