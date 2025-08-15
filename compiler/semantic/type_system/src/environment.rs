@@ -3,7 +3,6 @@
 use std::{
     any::Any,
     borrow::Cow,
-    cell::{Cell, RefCell},
     cmp::Ordering,
     collections::{hash_map::Entry, BTreeSet, HashMap},
     hash::{Hash, Hasher},
@@ -12,6 +11,7 @@ use std::{
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
+use parking_lot::RwLock;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
@@ -141,14 +141,14 @@ pub struct Environment<'a, N> {
     #[get_copy = "pub"]
     normalizer: &'a N,
 
-    context: RefCell<Context>,
+    context: RwLock<Context>,
 }
 
 impl<N> Environment<'_, N> {
     /// Asserts that the call stack is empty.
     #[cfg(test)]
     pub fn assert_call_stack_empty(&self) {
-        let context = self.context.borrow();
+        let context = self.context.read();
 
         assert!(context.call_stack.is_empty());
         assert_eq!(context.current_count, 0);
@@ -171,7 +171,7 @@ impl<N> Clone for Environment<'_, N> {
             premise: self.premise.clone(),
             tracked_engine: self.tracked_engine.clone(),
             normalizer: self.normalizer,
-            context: self.context.clone(),
+            context: RwLock::new(self.context.read().clone()),
         }
     }
 }
@@ -278,12 +278,21 @@ pub enum Cached<I, T> {
 }
 
 /// A struct storing the call to compute a query and the in progress state.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug)]
 #[allow(missing_docs)]
 pub struct Call<Q, I> {
     pub query: Q,
     pub in_progress: I,
-    pub in_scc: Cell<bool>,
+    pub in_scc: RwLock<bool>,
+}
+impl<Q: Clone, I: Clone> Clone for Call<Q, I> {
+    fn clone(&self) -> Self {
+        Self {
+            query: self.query.clone(),
+            in_progress: self.in_progress.clone(),
+            in_scc: RwLock::new(*self.in_scc.read()),
+        }
+    }
 }
 
 /// The context used to manage the queries.
@@ -351,7 +360,7 @@ impl Context {
                 self.call_stack.push(Call {
                     query: query_rc,
                     in_progress: in_progress_rc,
-                    in_scc: Cell::new(false),
+                    in_scc: RwLock::new(false),
                 });
                 self.current_count += 1;
 
@@ -391,7 +400,7 @@ impl Context {
         }
 
         if let Some(x) = self.map.get_mut(query as &dyn DynIdent) {
-            if last.in_scc.get() {
+            if *last.in_scc.read() {
                 self.map.remove(query as &dyn DynIdent);
             } else {
                 *x = Cached::Done(result.map(|x| x as _));
@@ -477,13 +486,13 @@ impl<N: Normalizer> Environment<'_, N> {
     ) -> Result<Option<Arc<Q::Result>>, Q::Error> {
         let in_progress_result = self
             .context
-            .borrow_mut()
+            .write()
             .mark_as_in_progress(query.clone(), in_progress.clone())?;
 
         match in_progress_result {
             Some(Cached::Done(result)) => return Ok(result),
             Some(Cached::InProgress(new_in_progress)) => {
-                let context = self.context.borrow();
+                let context = self.context.read();
 
                 let position = context
                     .call_stack
@@ -501,7 +510,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
                 // mark the query as in progress
                 for call in &context.call_stack[(position + 1)..] {
-                    call.in_scc.set(true);
+                    *call.in_scc.write() = true;
                 }
 
                 return Ok(result);
@@ -514,7 +523,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 // remember the result
                 assert!(self
                     .context
-                    .borrow_mut()
+                    .write()
                     .mark_as_done(query, result.clone()));
 
                 Ok(result)
@@ -522,7 +531,7 @@ impl<N: Normalizer> Environment<'_, N> {
 
             result @ Err(_) => {
                 // reset the query
-                assert!(self.context.borrow_mut().clear_query(query).is_some());
+                assert!(self.context.write().clear_query(query).is_some());
 
                 result
             }
@@ -1261,9 +1270,6 @@ impl<'a, N: Normalizer> Environment<'a, N> {
 
 impl<'a, N: Normalizer> Environment<'a, N> {
     /// Creates a new [`Environment`].
-    ///
-    /// The ambiguous predicates will be removed from the environment and is
-    /// extracted out to the vector of [`Error`].
     pub fn new(
         premise: Cow<'a, Premise>,
         tracked_engine: Cow<'a, TrackedEngine>,
@@ -1273,7 +1279,7 @@ impl<'a, N: Normalizer> Environment<'a, N> {
             premise,
             tracked_engine,
             normalizer,
-            context: RefCell::new(Context::default()),
+            context: RwLock::new(Context::default()),
         }
     }
 }
