@@ -212,4 +212,4 @@ impl<N: Normalizer> Environment<'_, N> {
 }
 
 #[cfg(test)]
-mod test;
+pub mod test;

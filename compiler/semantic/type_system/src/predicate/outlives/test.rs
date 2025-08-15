@@ -1,25 +1,20 @@
-use std::{borrow::Cow, collections::HashSet, fmt::Debug, sync::Arc};
+use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
-use pernixc_semantic::{
-    component::{
-        derived::{
-            generic_parameters::{GenericParameters, LifetimeParameter},
-            variances::{Variance, Variances},
-        },
-        input::{Implemented, Parent, SymbolKind},
-    },
-    table::{self, GlobalID, Table},
-    term::{
-        constant::Constant,
-        generic_arguments::GenericArguments,
-        lifetime::Lifetime,
-        predicate::{Compatible, Outlives, Predicate},
-        r#type::{TraitMember, Type},
-        Default, MemberSymbol, Symbol,
-    },
+use pernixc_query::{database::SetInputResult, Engine};
+use pernixc_symbol::kind::Kind;
+use pernixc_target::Global;
+use pernixc_term::{
+    constant::Constant,
+    generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
+    generic_parameters::{GenericParameters, LifetimeParameter},
+    lifetime::Lifetime,
+    predicate::{Compatible, Outlives, Predicate},
+    r#type::Type,
+    variance::{Variance, Variances},
 };
 use proptest::{
     arbitrary::Arbitrary,
+    prelude::prop,
     prop_assert, prop_oneof, proptest,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
@@ -29,7 +24,7 @@ use crate::{
     environment::{Environment, Premise},
     equality, normalizer,
     term::Term,
-    test::purge,
+    test::purge_trait_associated_type,
     Error,
 };
 
@@ -44,79 +39,96 @@ pub enum AbortError {
     IDCollision,
 }
 
+pub type BoxedFuture<'x, T> =
+    Pin<Box<dyn Future<Output = Result<(T, Lifetime), AbortError>> + 'x>>;
+
 /// A trait for generating term for checking predicate
 pub trait Property<T>: 'static + Debug {
     /// Applies this property to the environment.
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(T, Lifetime<Default>), AbortError>;
+    fn generate<'x>(
+        &'x self,
+        engine: &'x mut Arc<Engine>,
+        premise: &'x mut Premise,
+    ) -> BoxedFuture<'x, T>;
 
     fn node_count(&self) -> usize;
 }
 
 #[derive(Debug)]
 pub struct ByEquality {
-    pub equality: TraitMember<Default>,
-    pub trait_id: table::ID,
-    pub property: Box<dyn Property<Type<Default>>>,
+    pub equality: TraitMember,
+    pub trait_id: pernixc_symbol::ID,
+    pub property: Box<dyn Property<Type>>,
 }
 
-impl Property<Type<Default>> for ByEquality {
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(Type<Default>, Lifetime<Default>), AbortError> {
-        let add_parent =
-            table.add_component(self.equality.id, Parent(Some(self.trait_id)));
-        let add_kind = table.add_component(
-            GlobalID::new(self.equality.id.target_id, self.trait_id),
-            SymbolKind::Trait,
-        );
-        let add_implemented = table.add_component(
-            GlobalID::new(self.equality.id.target_id, self.trait_id),
-            Implemented(HashSet::new()),
-        );
+impl Property<Type> for ByEquality {
+    fn generate<'x>(
+        &'x self,
+        engine: &'x mut Arc<Engine>,
+        premise: &'x mut Premise,
+    ) -> BoxedFuture<'x, Type> {
+        Box::pin(async move {
+            let added = Arc::get_mut(engine).unwrap().input_session(|x| {
+                let add_parent = x.set_input(
+                    pernixc_symbol::parent::Key(self.equality.id),
+                    Some(self.trait_id),
+                ) == SetInputResult::Fresh;
 
-        if !add_parent || !add_kind || !add_implemented {
-            return Err(AbortError::IDCollision);
-        }
+                let add_kind = x.set_input(
+                    pernixc_symbol::kind::Key(
+                        self.equality.id.target_id.make_global(self.trait_id),
+                    ),
+                    Kind::Trait,
+                ) == SetInputResult::Fresh;
 
-        let (inner_operand, inner_bound) =
-            self.property.generate(table, premise)?;
+                // TODO: add implemented
 
-        let outlives = Outlives::new(
-            Type::TraitMember(self.equality.clone()),
-            inner_bound,
-        );
+                add_parent && add_kind
+            });
 
-        let environment =
-            Environment::new(Cow::Borrowed(premise), table, normalizer::NO_OP);
+            if !added {
+                return Err(AbortError::IDCollision);
+            }
 
-        if environment.query(&outlives)?.is_none() {
-            premise.predicates.insert(
-                Compatible { lhs: self.equality.clone(), rhs: inner_operand }
-                    .into(),
+            let (inner_operand, inner_bound) =
+                self.property.generate(engine, premise).await?;
+
+            let outlives = Outlives::new(
+                Type::TraitMember(self.equality.clone()),
+                inner_bound,
             );
-        }
 
-        Ok((Type::TraitMember(self.equality.clone()), inner_bound))
+            let environment = Environment::new(
+                Cow::Borrowed(premise),
+                Cow::Owned(engine.tracked()),
+                normalizer::NO_OP,
+            );
+
+            if environment.query(&outlives).await?.is_none() {
+                premise.predicates.insert(
+                    Compatible {
+                        lhs: self.equality.clone(),
+                        rhs: inner_operand,
+                    }
+                    .into(),
+                );
+            }
+
+            Ok((Type::TraitMember(self.equality.clone()), inner_bound))
+        })
     }
 
     fn node_count(&self) -> usize { self.property.node_count() + 1 }
 }
 
 impl Arbitrary for ByEquality {
-    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type<Default>>>>>;
+    type Parameters = Option<BoxedStrategy<Box<dyn Property<Type>>>>;
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        let args =
-            args.unwrap_or_else(Box::<dyn Property<Type<Default>>>::arbitrary);
+        let args = args.unwrap_or_else(Box::<dyn Property<Type>>::arbitrary);
 
-        (TraitMember::arbitrary(), table::ID::arbitrary(), args)
+        (TraitMember::arbitrary(), pernixc_symbol::ID::arbitrary(), args)
             .prop_map(|(equality, trait_id, property)| Self {
                 equality: TraitMember(MemberSymbol {
                     id: equality.0.id,
@@ -126,21 +138,21 @@ impl Arbitrary for ByEquality {
                             .member_generic_arguments
                             .lifetimes
                             .into_iter()
-                            .map(purge)
+                            .map(purge_trait_associated_type)
                             .collect(),
                         types: equality
                             .0
                             .member_generic_arguments
                             .types
                             .into_iter()
-                            .map(purge)
+                            .map(purge_trait_associated_type)
                             .collect(),
                         constants: equality
                             .0
                             .member_generic_arguments
                             .constants
                             .into_iter()
-                            .map(purge)
+                            .map(purge_trait_associated_type)
                             .collect(),
                     },
                     parent_generic_arguments: GenericArguments {
@@ -149,21 +161,21 @@ impl Arbitrary for ByEquality {
                             .parent_generic_arguments
                             .lifetimes
                             .into_iter()
-                            .map(purge)
+                            .map(purge_trait_associated_type)
                             .collect(),
                         types: equality
                             .0
                             .parent_generic_arguments
                             .types
                             .into_iter()
-                            .map(purge)
+                            .map(purge_trait_associated_type)
                             .collect(),
                         constants: equality
                             .0
                             .parent_generic_arguments
                             .constants
                             .into_iter()
-                            .map(purge)
+                            .map(purge_trait_associated_type)
                             .collect(),
                     },
                 }),
@@ -176,82 +188,105 @@ impl Arbitrary for ByEquality {
 
 #[derive(Debug)]
 pub struct LifetimeMatching {
-    pub struct_id: GlobalID,
-    pub lifetime_properties: Vec<Box<dyn Property<Lifetime<Default>>>>,
-    pub bound: Lifetime<Default>,
+    pub struct_id: Global<pernixc_symbol::ID>,
+    pub lifetime_properties: Vec<Box<dyn Property<Lifetime>>>,
+    pub bound: Lifetime,
 }
 
-impl Property<Type<Default>> for LifetimeMatching {
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(Type<Default>, Lifetime<Default>), AbortError> {
-        let mut operand_lifetimes = Vec::new();
-        let mut bound_lifetimes = Vec::new();
+impl Property<Type> for LifetimeMatching {
+    fn generate<'x>(
+        &'x self,
+        engine: &'x mut Arc<Engine>,
+        premise: &'x mut Premise,
+    ) -> BoxedFuture<'x, Type> {
+        Box::pin(async move {
+            let mut operand_lifetimes = Vec::new();
+            let mut bound_lifetimes = Vec::new();
 
-        for lifetime_prop in &self.lifetime_properties {
-            let (operand, bound) = lifetime_prop.generate(table, premise)?;
+            for lifetime_prop in &self.lifetime_properties {
+                let (operand, bound) =
+                    lifetime_prop.generate(engine, premise).await?;
 
-            operand_lifetimes.push(operand);
-            bound_lifetimes.push(bound);
-        }
-
-        // create lifetime generic parmaeters and variances
-        let mut generic_parameter = GenericParameters::default();
-        let mut variance_map = Variances::default();
-        {
-            for i in 0..self.lifetime_properties.len() {
-                let lifetime_param = generic_parameter
-                    .add_lifetime_parameter(LifetimeParameter {
-                        name: format!("_{i}"),
-                        span: None,
-                    })
-                    .unwrap();
-
-                variance_map
-                    .variances_by_lifetime_ids
-                    .insert(lifetime_param, Variance::Covariant);
+                operand_lifetimes.push(operand);
+                bound_lifetimes.push(bound);
             }
-        }
 
-        if !table.add_component(self.struct_id, SymbolKind::Struct) {
-            return Err(AbortError::IDCollision);
-        }
+            // create lifetime generic parmaeters and variances
+            let mut generic_parameter = GenericParameters::default();
+            let mut variance_map = Variances::default();
+            {
+                for i in 0..self.lifetime_properties.len() {
+                    let lifetime_param = generic_parameter
+                        .add_lifetime_parameter(LifetimeParameter {
+                            name: format!("_{i}"),
+                            span: None,
+                        })
+                        .unwrap();
 
-        assert!(table.add_component(self.struct_id, generic_parameter));
-        assert!(table.add_component(self.struct_id, variance_map));
+                    variance_map
+                        .variances_by_lifetime_ids
+                        .insert(lifetime_param, Variance::Covariant);
+                }
+            }
 
-        let ty_operand = Type::Symbol(Symbol {
-            id: self.struct_id,
-            generic_arguments: GenericArguments {
-                lifetimes: operand_lifetimes,
-                types: Vec::new(),
-                constants: Vec::new(),
-            },
-        });
+            let added = Arc::get_mut(engine).unwrap().input_session(|table| {
+                let added_kind = table.set_input(
+                    pernixc_symbol::kind::Key(self.struct_id),
+                    Kind::Struct,
+                ) == SetInputResult::Fresh;
 
-        let environment =
-            Environment::new(Cow::Borrowed(premise), table, normalizer::NO_OP);
+                let added_variance = table.set_input(
+                    pernixc_term::variance::Key(self.struct_id),
+                    variance_map,
+                ) == SetInputResult::Fresh;
 
-        if environment
-            .query(&Outlives::new(ty_operand.clone(), self.bound))?
-            .is_none()
-        {
-            premise.predicates.insert(Predicate::TypeOutlives(Outlives {
-                operand: Type::Symbol(Symbol {
-                    id: self.struct_id,
-                    generic_arguments: GenericArguments {
-                        lifetimes: bound_lifetimes,
-                        types: Vec::new(),
-                        constants: Vec::new(),
-                    },
-                }),
-                bound: self.bound,
-            }));
-        }
+                let added_generic_parameters = table.set_input(
+                    pernixc_term::generic_parameters::Key(self.struct_id),
+                    generic_parameter,
+                ) == SetInputResult::Fresh;
 
-        Ok((ty_operand, self.bound))
+                added_kind && added_variance && added_generic_parameters
+            });
+
+            if !added {
+                return Err(AbortError::IDCollision);
+            }
+
+            let ty_operand = Type::Symbol(Symbol {
+                id: self.struct_id,
+                generic_arguments: GenericArguments {
+                    lifetimes: operand_lifetimes,
+                    types: Vec::new(),
+                    constants: Vec::new(),
+                },
+            });
+
+            let environment = Environment::new(
+                Cow::Borrowed(premise),
+                Cow::Owned(engine.tracked()),
+                normalizer::NO_OP,
+            );
+
+            if environment
+                .query(&Outlives::new(ty_operand.clone(), self.bound))
+                .await?
+                .is_none()
+            {
+                premise.predicates.insert(Predicate::TypeOutlives(Outlives {
+                    operand: Type::Symbol(Symbol {
+                        id: self.struct_id,
+                        generic_arguments: GenericArguments {
+                            lifetimes: bound_lifetimes,
+                            types: Vec::new(),
+                            constants: Vec::new(),
+                        },
+                    }),
+                    bound: self.bound,
+                }));
+            }
+
+            Ok((ty_operand, self.bound))
+        })
     }
 
     fn node_count(&self) -> usize {
@@ -269,9 +304,9 @@ impl Arbitrary for LifetimeMatching {
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
-            GlobalID::arbitrary(),
+            Global::arbitrary(),
             proptest::collection::vec(
-                Box::<dyn Property<Lifetime<_>>>::arbitrary(),
+                Box::<dyn Property<Lifetime>>::arbitrary(),
                 1..=8,
             ),
             Lifetime::arbitrary(),
@@ -287,26 +322,30 @@ impl Arbitrary for LifetimeMatching {
 
 #[derive(Debug)]
 pub struct Reflexive {
-    pub term: Box<dyn equality::test::Property<Lifetime<Default>>>,
+    pub term: Box<dyn equality::test::Property<Lifetime>>,
 }
 
-impl Property<Lifetime<Default>> for Reflexive {
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(Lifetime<Default>, Lifetime<Default>), AbortError> {
-        let (term, bound) =
-            self.term.generate(table, premise).map_err(|x| match x {
-                equality::test::AbortError::Abrupt(abrupt_error) => {
-                    AbortError::Abrupt(abrupt_error)
-                }
-                equality::test::AbortError::IDCollision => {
-                    AbortError::IDCollision
-                }
-            })?;
+impl Property<Lifetime> for Reflexive {
+    fn generate<'x>(
+        &'x self,
+        engine: &'x mut Arc<Engine>,
+        premise: &'x mut Premise,
+    ) -> BoxedFuture<'x, Lifetime> {
+        Box::pin(async move {
+            let (term, bound) =
+                self.term.generate(engine, premise).await.map_err(
+                    |x| match x {
+                        equality::test::AbortError::Abrupt(abrupt_error) => {
+                            AbortError::Abrupt(abrupt_error)
+                        }
+                        equality::test::AbortError::IDCollision => {
+                            AbortError::IDCollision
+                        }
+                    },
+                )?;
 
-        Ok((term, bound))
+            Ok((term, bound))
+        })
     }
 
     fn node_count(&self) -> usize { 1 }
@@ -317,7 +356,7 @@ impl Arbitrary for Reflexive {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        Box::<dyn equality::test::Property<Lifetime<_>>>::arbitrary()
+        Box::<dyn equality::test::Property<Lifetime>>::arbitrary()
             .prop_map(|term| Self { term })
             .boxed()
     }
@@ -326,7 +365,7 @@ impl Arbitrary for Reflexive {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByPremise<T> {
     pub term: T,
-    pub bound: Lifetime<Default>,
+    pub bound: Lifetime,
 }
 
 impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static> Arbitrary
@@ -336,35 +375,44 @@ impl<T: Arbitrary<Strategy = BoxedStrategy<T>> + Term + 'static> Arbitrary
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (T::arbitrary().prop_map(purge), Lifetime::arbitrary())
+        (
+            T::arbitrary().prop_map(purge_trait_associated_type),
+            Lifetime::arbitrary(),
+        )
             .prop_map(|(term, bound)| Self { term, bound })
             .boxed()
     }
 }
 
-impl<T: Term<Model = Default>> Property<T> for ByPremise<T>
+impl<T: Term> Property<T> for ByPremise<T>
 where
-    Outlives<T>: Into<Predicate<Default>>,
+    Outlives<T>: Into<Predicate>,
 {
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(T, Lifetime<Default>), AbortError> {
-        let environment =
-            Environment::new(Cow::Borrowed(premise), table, normalizer::NO_OP);
-
-        if environment
-            .query(&Outlives::new(self.term.clone(), self.bound))?
-            .is_none()
-        {
-            premise.predicates.insert(
-                Outlives { operand: self.term.clone(), bound: self.bound }
-                    .into(),
+    fn generate<'x>(
+        &'x self,
+        engine: &'x mut Arc<Engine>,
+        premise: &'x mut Premise,
+    ) -> BoxedFuture<'x, T> {
+        Box::pin(async move {
+            let environment = Environment::new(
+                Cow::Borrowed(premise),
+                Cow::Owned(engine.tracked()),
+                normalizer::NO_OP,
             );
-        }
 
-        Ok((self.term.clone(), self.bound))
+            if environment
+                .query(&Outlives::new(self.term.clone(), self.bound))
+                .await?
+                .is_none()
+            {
+                premise.predicates.insert(
+                    Outlives { operand: self.term.clone(), bound: self.bound }
+                        .into(),
+                );
+            }
+
+            Ok((self.term.clone(), self.bound))
+        })
     }
 
     fn node_count(&self) -> usize { 1 }
@@ -373,32 +421,37 @@ where
 #[derive(Debug)]
 pub struct Transitive<T> {
     pub inner_property: Box<dyn Property<T>>,
-    pub final_bound: Lifetime<Default>,
+    pub final_bound: Lifetime,
 }
 
-impl<T: Term<Model = Default>> Property<T> for Transitive<T> {
-    fn generate(
-        &self,
-        table: &mut Table,
-        premise: &mut Premise<Default>,
-    ) -> Result<(T, Lifetime<Default>), AbortError> {
-        let (inner_operand, inner_bound) =
-            self.inner_property.generate(table, premise)?;
+impl<T: Term> Property<T> for Transitive<T> {
+    fn generate<'x>(
+        &'x self,
+        engine: &'x mut Arc<Engine>,
+        premise: &'x mut Premise,
+    ) -> BoxedFuture<'x, T> {
+        Box::pin(async move {
+            let (inner_operand, inner_bound) =
+                self.inner_property.generate(engine, premise).await?;
 
-        let environment =
-            Environment::new(Cow::Borrowed(premise), table, normalizer::NO_OP);
+            let environment = Environment::new(
+                Cow::Borrowed(premise),
+                Cow::Owned(engine.tracked()),
+                normalizer::NO_OP,
+            );
 
-        if environment
-            .query(&Outlives::new(inner_operand.clone(), self.final_bound))?
-            .is_none()
-        {
-            premise.predicates.insert(Predicate::LifetimeOutlives(Outlives {
-                operand: inner_bound,
-                bound: self.final_bound,
-            }));
-        }
+            if environment
+                .query(&Outlives::new(inner_operand.clone(), self.final_bound))
+                .await?
+                .is_none()
+            {
+                premise.predicates.insert(Predicate::LifetimeOutlives(
+                    Outlives { operand: inner_bound, bound: self.final_bound },
+                ));
+            }
 
-        Ok((inner_operand, self.final_bound))
+            Ok((inner_operand, self.final_bound))
+        })
     }
 
     fn node_count(&self) -> usize { 1 + self.inner_property.node_count() }
@@ -425,7 +478,7 @@ where
     }
 }
 
-impl Arbitrary for Box<dyn Property<Type<Default>>> {
+impl Arbitrary for Box<dyn Property<Type>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -445,7 +498,7 @@ impl Arbitrary for Box<dyn Property<Type<Default>>> {
     }
 }
 
-impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
+impl Arbitrary for Box<dyn Property<Lifetime>> {
     type Parameters = ();
     type Strategy = BoxedStrategy<Self>;
 
@@ -463,21 +516,29 @@ impl Arbitrary for Box<dyn Property<Lifetime<Default>>> {
     }
 }
 
-fn property_based_testing<T: Term<Model = Default> + 'static>(
+async fn property_based_testing<T: Term + 'static>(
     property: &dyn Property<T>,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut table = Table::new(Arc::new(pernixc_handler::Panic));
+    let mut engine = Arc::new(Engine::default());
 
-    let (term1, term2) = property
-        .generate(&mut table, &mut premise)
-        .map_err(|x| TestCaseError::reject(format!("{x}")))?;
+    println!("node count: {}", property.node_count());
 
-    let environment =
-        Environment::new(Cow::Borrowed(&premise), &table, normalizer::NO_OP);
+    let (term1, term2) =
+        property.generate(&mut engine, &mut premise).await.map_err(|x| {
+            println!("premise count: {}", premise.predicates.len());
+            TestCaseError::reject(format!("{x}"))
+        })?;
 
+    println!("premise count: {}", premise.predicates.len());
+
+    let environment = Environment::new(
+        Cow::Borrowed(&premise),
+        Cow::Owned(engine.tracked()),
+        normalizer::NO_OP,);
     let result = environment
         .query(&Outlives::new(term1, term2))
+        .await
         .map_err(|x| TestCaseError::reject(format!("{x}")))?;
 
     prop_assert!(result.is_some());
@@ -494,16 +555,24 @@ proptest! {
 
     #[test]
     fn property_based_testing_lifetime(
-        property in Box::<dyn Property<Lifetime<Default>>>::arbitrary()
+        property in Box::<dyn Property<Lifetime>>::arbitrary()
     ) {
-        property_based_testing(&*property)?;
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(property_based_testing(&*property))?;
     }
 
     #[test]
     fn property_based_testing_type(
-        property in Box::<dyn Property<Type<Default>>>::arbitrary()
+        property in Box::<dyn Property<Type>>::arbitrary()
     ) {
-        property_based_testing(&*property)?;
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(property_based_testing(&*property));
+
+        println!("{result:?}");
+
+        result?;
     }
 
     #[test]
@@ -511,17 +580,26 @@ proptest! {
         constant in Constant::arbitrary(),
         lifetime in Lifetime::arbitrary()
     ) {
-        let table = Table::new(Arc::new(pernixc_handler::Panic));
-        let premise = Premise::default();
+        let test = async move {
+            let engine = Arc::new(Engine::default());
+            let premise = Premise::default();
 
-        let environment = Environment::new(
-            Cow::Borrowed(&premise),
-            &table,
-            normalizer::NO_OP
-        );
+            let environment = Environment::new(
+                Cow::Borrowed(&premise),
+                Cow::Owned(engine.tracked()),
+                normalizer::NO_OP
+            );
 
-        prop_assert!(
-            environment.query(&Outlives::new(constant, lifetime))?.is_some()
-        );
+            prop_assert!(
+                environment.query(&Outlives::new(constant, lifetime)).await?.is_some()
+            );
+
+            Ok(())
+        };
+
+
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(test)?;
     }
 }

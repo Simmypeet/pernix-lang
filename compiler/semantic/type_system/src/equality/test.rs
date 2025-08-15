@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::{
     borrow::Cow, collections::BTreeSet, fmt::Debug, future::Future, pin::Pin,
     sync::Arc,

@@ -19,10 +19,10 @@ struct Visitor<'a, 'e, N: Normalizer> {
 
 impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, '_, N> {
     async fn visit(&mut self, term: &U, _: U::Location) -> bool {
-        match self
-            .environment
-            .query(&Outlives::new(term.clone(), *self.bound))
-            .await
+        match Box::pin(
+            self.environment.query(&Outlives::new(term.clone(), *self.bound)),
+        )
+        .await
         {
             Err(err) => {
                 self.outlives = Err(err);
@@ -196,5 +196,5 @@ impl<T: Term> Query for Outlives<T> {
     }
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;
