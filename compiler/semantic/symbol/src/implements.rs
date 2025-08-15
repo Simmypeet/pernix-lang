@@ -4,8 +4,6 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::symbol;
-
 /// Representing the symbol that is being implemented by the `implements`
 /// symbol.
 #[derive(
@@ -23,6 +21,6 @@ use crate::symbol;
     pernixc_query::Key,
     StableHash,
 )]
-#[value(Global<symbol::ID>)]
+#[value(Global<crate::ID>)]
 #[extend(method(get_implements), no_cyclic)]
-pub struct Key(pub Global<symbol::ID>);
+pub struct Key(pub Global<crate::ID>);

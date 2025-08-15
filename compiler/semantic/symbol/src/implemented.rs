@@ -7,8 +7,6 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::symbol;
-
 /// Used for retrieving a list of `implements` symbols that implement the
 /// given symbol ID.
 #[derive(
@@ -25,6 +23,6 @@ use crate::symbol;
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Arc<HashSet<Global<symbol::ID>>>)]
+#[value(Arc<HashSet<Global<crate::ID>>>)]
 #[extend(method(get_implemented), no_cyclic)]
-pub struct Key(pub Global<symbol::ID>);
+pub struct Key(pub Global<crate::ID>);
