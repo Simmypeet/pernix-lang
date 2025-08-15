@@ -3,24 +3,44 @@
 //! This is primarily used to determine the specialization of the
 //! implementation of the trait.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
+use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
-    lifetime::Lifetime, r#type::Type,
+    implements_argument::get_implements_argument, lifetime::Lifetime,
+    r#type::Type,
 };
 
 use crate::{
-    environment::Environment,
+    environment::{Environment, Premise},
     mapping::Mapping,
-    normalizer::Normalizer,
+    normalizer::{self, Normalizer},
     term::Term,
     unification::{self, Log, Unification},
     Error, Satisfied, Succeeded,
 };
 
 /// The order in terms of specificity of the generic arguments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 #[allow(missing_docs)]
 pub enum Order {
     Incompatible,
@@ -200,6 +220,56 @@ impl<N: Normalizer> Environment<'_, N> {
                 })
             }
         }
+    }
+}
+
+/// A query for retrieving the order (level of specificity) between two
+/// `implements` arguments.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(Result<Order, crate::OverflowError>)]
+pub struct Key {
+    /// The `this` in the [`Environment::order`]
+    pub this: Global<pernixc_symbol::ID>,
+    /// The `other` in the [`Environment::order`]
+    pub other: Global<pernixc_symbol::ID>,
+}
+
+#[pernixc_query::executor(key(Key), name(ImplementsOrderExecutor))]
+pub async fn implements_order(
+    Key { this, other }: &Key,
+    tracked_engine: &TrackedEngine,
+) -> Result<Result<Order, crate::OverflowError>, executor::CyclicError> {
+    let lhs_generic_arguments =
+        tracked_engine.get_implements_argument(*this).await?;
+    let rhs_generic_arguments =
+        tracked_engine.get_implements_argument(*other).await?;
+
+    let default_environment = Environment::new(
+        Cow::Owned(Premise::default()),
+        Cow::Borrowed(tracked_engine),
+        normalizer::NO_OP,
+    );
+
+    match default_environment
+        .order(&lhs_generic_arguments, &rhs_generic_arguments)
+        .await
+    {
+        Ok(order) => Ok(Ok(order)),
+        Err(Error::Overflow(overflow)) => Ok(Err(overflow)),
+        Err(Error::CyclicDependency(cyclic)) => Err(cyclic),
     }
 }
 

@@ -4,9 +4,12 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_query::runtime::executor::CyclicError;
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
 
 pub mod adt_fields;
+pub mod deduction;
 pub mod definite;
 pub mod environment;
 pub mod equality;
@@ -15,7 +18,6 @@ pub mod mapping;
 pub mod normalizer;
 pub mod order;
 pub mod predicate;
-pub mod deduction;
 pub mod subtype;
 pub mod term;
 pub mod unification;
@@ -23,7 +25,18 @@ pub mod variance;
 
 /// An error that occurs when the number of queries exceeds the limit.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    thiserror::Error,
 )]
 #[error(
     "exceeded the limit of the number of queries; the error hasn't been \
