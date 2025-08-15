@@ -1,31 +1,28 @@
 use std::sync::Arc;
 
-use pernixc_semantic::{
-    component::derived::variances::Variance,
-    term::{lifetime::Lifetime, predicate::Outlives, visitor, Model},
+use pernixc_term::{
+    lifetime::Lifetime, predicate::Outlives, variance::Variance, visitor,
 };
 
 use crate::{
-    compatible::Compatibility,
     environment::{Environment, Query},
     normalizer::Normalizer,
     term::Term,
     Error, LifetimeConstraint, Satisfiability, Satisfied, Succeeded,
 };
 
-struct Visitor<'a, 'e, N: Normalizer<M>, M: Model> {
+struct Visitor<'a, 'e, N: Normalizer> {
     outlives: Result<Option<Satisfied>, Error>,
-    bound: &'a Lifetime<M>,
-    environment: &'e Environment<'e, M, N>,
+    bound: &'a Lifetime,
+    environment: &'e Environment<'e, N>,
 }
 
-impl<'v, U: Term, N: Normalizer<U::Model>> visitor::Visitor<'v, U>
-    for Visitor<'_, '_, N, U::Model>
-{
-    fn visit(&mut self, term: &'v U, _: U::Location) -> bool {
+impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, '_, N> {
+    async fn visit(&mut self, term: &U, _: U::Location) -> bool {
         match self
             .environment
-            .query(&Outlives::new(term.clone(), self.bound.clone()))
+            .query(&Outlives::new(term.clone(), *self.bound))
+            .await
         {
             Err(err) => {
                 self.outlives = Err(err);
@@ -42,33 +39,35 @@ impl<'v, U: Term, N: Normalizer<U::Model>> visitor::Visitor<'v, U>
     }
 }
 
-impl<M: Model> LifetimeConstraint<M> {
+impl LifetimeConstraint {
     /// Checks if this lifetime constraints is satisfiable.
     ///
     /// # Errors
     ///
     /// See [`AbruptError`] for more information.
-    pub fn satisfies(
+    pub async fn satisfies(
         &self,
-        environment: &Environment<M, impl Normalizer<M>>,
+        environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Arc<Satisfied>>, Error> {
         match self {
-            Self::LifetimeOutlives(outlives) => environment.query(outlives),
+            Self::LifetimeOutlives(outlives) => {
+                environment.query(outlives).await
+            }
         }
     }
 }
 
 // TODO: optimize this query to use transitive closure
 impl<T: Term> Query for Outlives<T> {
-    type Model = T::Model;
     type Parameter = ();
     type InProgress = ();
     type Result = Satisfied;
     type Error = Error;
 
-    fn query(
+    #[allow(clippy::too_many_lines)]
+    async fn query(
         &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<'_, impl Normalizer>,
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<std::sync::Arc<Self::Result>>, Self::Error> {
@@ -86,7 +85,11 @@ impl<T: Term> Query for Outlives<T> {
                 environment,
             };
 
-            assert!(self.operand.accept_one_level(&mut visitor).is_ok());
+            assert!(self
+                .operand
+                .accept_one_level_async(&mut visitor)
+                .await
+                .is_ok());
 
             if visitor.outlives? == Some(Satisfied) {
                 return Ok(Some(Arc::new(Satisfied)));
@@ -100,38 +103,40 @@ impl<T: Term> Query for Outlives<T> {
                 .iter()
                 .filter_map(|x| T::as_outlives_predicate(x))
         {
-            let Some(Succeeded {
-                result:
-                    Compatibility {
-                        forall_lifetime_instantiations,
-                        forall_lifetime_errors,
-                    },
-                constraints,
-            }) = environment.compatible(
-                &self.operand,
-                next_operand,
-                Variance::Covariant,
-            )?
+            let Some(result) = environment
+                .subtypes(
+                    self.operand.clone(),
+                    next_operand.clone(),
+                    Variance::Covariant,
+                )
+                .await?
             else {
                 continue;
             };
 
-            if !forall_lifetime_errors.is_empty() {
+            if !result.result.forall_lifetime_errors.is_empty() {
                 continue;
             }
 
-            for constraint in constraints {
-                let Some(_) = constraint.satisfies(environment)? else {
+            for constraint in &result.constraints {
+                let Some(_) =
+                    Box::pin(constraint.satisfies(environment)).await?
+                else {
                     continue 'outer;
                 };
             }
 
-            let mut next_bound = next_bound.clone();
-            forall_lifetime_instantiations.instantiate(&mut next_bound);
+            let mut next_bound = *next_bound;
+            result
+                .result
+                .forall_lifetime_instantiations
+                .instantiate(&mut next_bound);
 
-            if environment
-                .query(&Outlives::new(next_bound, self.bound.clone()))?
-                .is_some()
+            if Box::pin(
+                environment.query(&Outlives::new(next_bound, self.bound)),
+            )
+            .await?
+            .is_some()
             {
                 return Ok(Some(Arc::new(Satisfied)));
             }
@@ -141,18 +146,22 @@ impl<T: Term> Query for Outlives<T> {
         'out: for Succeeded {
             result: operand_eq,
             constraints: additional_outlives,
-        } in environment.get_equivalences(&self.operand)?
+        } in environment.get_equivalences(&self.operand).await?.iter()
         {
             // additional constraints must be satisifed
             for constraint in additional_outlives {
-                let Some(_) = constraint.satisfies(environment)? else {
+                let Some(_) =
+                    Box::pin(constraint.satisfies(environment)).await?
+                else {
                     continue 'out;
                 };
             }
 
-            if environment
-                .query(&Self::new(operand_eq, self.bound.clone()))?
-                .is_some()
+            if Box::pin(
+                environment.query(&Self::new(operand_eq.clone(), self.bound)),
+            )
+            .await?
+            .is_some()
             {
                 return Ok(Some(Arc::new(Satisfied)));
             }
@@ -162,18 +171,22 @@ impl<T: Term> Query for Outlives<T> {
         'out: for Succeeded {
             result: bound_eq,
             constraints: additional_outlives,
-        } in environment.get_equivalences(&self.bound)?
+        } in environment.get_equivalences(&self.bound).await?.iter()
         {
             // additional constraints must be satisified
             for constraint in additional_outlives {
-                let Some(_) = constraint.satisfies(environment)? else {
+                let Some(_) =
+                    Box::pin(constraint.satisfies(environment)).await?
+                else {
                     continue 'out;
                 };
             }
 
-            if environment
-                .query(&Self::new(self.operand.clone(), bound_eq))?
-                .is_some()
+            if Box::pin(
+                environment.query(&Self::new(self.operand.clone(), *bound_eq)),
+            )
+            .await?
+            .is_some()
             {
                 return Ok(Some(Arc::new(Satisfied)));
             }
@@ -183,5 +196,5 @@ impl<T: Term> Query for Outlives<T> {
     }
 }
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

@@ -6,7 +6,7 @@ use pernixc_term::{
     constant::Constant,
     generic_parameters::GenericParameter,
     lifetime::Lifetime,
-    predicate::{Compatible, Predicate},
+    predicate::{Compatible, Outlives, Predicate},
     r#type::Type,
     tuple::{Element, Tuple},
     Never,
@@ -82,6 +82,12 @@ pub trait Term:
 
     #[doc(hidden)]
     fn definite_satisfiability(&self) -> Satisfiability;
+
+    #[doc(hidden)]
+    fn outlives_satisfiability(&self, lifetime: &Lifetime) -> Satisfiability;
+
+    #[doc(hidden)]
+    fn as_outlives_predicate(predicate: &Predicate) -> Option<&Outlives<Self>>;
 }
 
 impl Term for Lifetime {
@@ -112,6 +118,22 @@ impl Term for Lifetime {
 
     fn definite_satisfiability(&self) -> Satisfiability {
         Satisfiability::Satisfied
+    }
+
+    fn outlives_satisfiability(&self, other: &Self) -> Satisfiability {
+        if self == other {
+            return Satisfiability::Satisfied;
+        }
+
+        if self.is_static() {
+            Satisfiability::Satisfied
+        } else {
+            Satisfiability::Unsatisfied
+        }
+    }
+
+    fn as_outlives_predicate(predicate: &Predicate) -> Option<&Outlives<Self>> {
+        predicate.as_lifetime_outlives()
     }
 }
 
@@ -199,6 +221,30 @@ impl Term for Type {
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
+
+    fn outlives_satisfiability(&self, _: &Lifetime) -> Satisfiability {
+        match self {
+            Self::Primitive(_) => Satisfiability::Satisfied,
+
+            Self::Error(_) | Self::Inference(_) | Self::Parameter(_) => {
+                Satisfiability::Unsatisfied
+            }
+
+            Self::MemberSymbol(_)
+            | Self::FunctionSignature(_)
+            | Self::Symbol(_)
+            | Self::Pointer(_)
+            | Self::Reference(_)
+            | Self::Array(_)
+            | Self::Tuple(_)
+            | Self::TraitMember(_)
+            | Self::Phantom(_) => Satisfiability::Congruent,
+        }
+    }
+
+    fn as_outlives_predicate(predicate: &Predicate) -> Option<&Outlives<Self>> {
+        predicate.as_type_outlives()
+    }
 }
 
 impl Term for Constant {
@@ -262,6 +308,13 @@ impl Term for Constant {
             | Self::Tuple(_) => Satisfiability::Congruent,
         }
     }
+
+    fn outlives_satisfiability(&self, _: &Lifetime) -> Satisfiability {
+        // constants value do not have lifetimes
+        Satisfiability::Satisfied
+    }
+
+    fn as_outlives_predicate(_: &Predicate) -> Option<&Outlives<Self>> { None }
 }
 
 fn unpack_tuple<T: Term + From<Tuple<T>> + TryInto<Tuple<T>, Error = T>>(

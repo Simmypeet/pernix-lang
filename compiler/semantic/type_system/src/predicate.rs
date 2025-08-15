@@ -3,7 +3,7 @@
 
 mod constant_type;
 // mod marker;
-// mod outlives;
+mod outlives;
 // mod r#trait;
 // mod tuple;
 
