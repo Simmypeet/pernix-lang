@@ -54,6 +54,7 @@ pub mod span;
 pub mod syntax;
 pub mod implemented;
 pub mod implements;
+pub mod final_implements;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
