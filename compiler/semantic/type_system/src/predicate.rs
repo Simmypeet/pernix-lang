@@ -1,11 +1,11 @@
 //! Implements the [`crate::environment::Query`] for various
-//! definition of [`pernixc_semantic::term::predicate`]
+//! definition of [`pernixc_term::predicate`]
 
 pub mod constant_type;
 // mod marker;
 pub mod outlives;
 // mod r#trait;
-// mod tuple;
+pub mod tuple;
 
 // pub use marker::{
 //     NegativeSatisfied as NegativeMarkerSatisfied,

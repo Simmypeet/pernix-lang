@@ -1,27 +1,24 @@
+//! Implements the [`Query`] for the [`Tuple`]
+
 use std::sync::Arc;
 
-use pernixc_semantic::{
-    component::derived::variances::Variance, term::predicate::Tuple,
-};
+use pernixc_term::{predicate::Tuple, r#type::Type, variance::Variance};
 
 use crate::{
-    compatible::Compatibility,
     environment::{Environment, Query},
     normalizer::Normalizer,
-    term::Term,
     Error, Satisfied, Succeeded,
 };
 
-impl<T: Term> Query for Tuple<T> {
-    type Model = T::Model;
+impl Query for Tuple<Type> {
     type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<Satisfied, T::Model>;
+    type Result = Succeeded<Satisfied>;
     type Error = Error;
 
-    fn query(
+    async fn query(
         &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<'_, impl Normalizer>,
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
@@ -35,33 +32,39 @@ impl<T: Term> Query for Tuple<T> {
             .premise()
             .predicates
             .iter()
-            .filter_map(|x| T::as_tuple_predicate(x))
+            .filter_map(|x| x.as_tuple_type())
         {
-            if let Some(Succeeded {
-                result: Compatibility { forall_lifetime_errors, .. },
-                constraints,
-            }) = environment.compatible(
-                &self.0,
-                &predicate.0,
-                Variance::Covariant,
-            )? {
-                if !forall_lifetime_errors.is_empty() {
+            if let Some(result) = environment
+                .subtypes(
+                    self.0.clone(),
+                    predicate.0.clone(),
+                    Variance::Covariant,
+                )
+                .await?
+            {
+                if !result.result.forall_lifetime_errors.is_empty() {
                     continue;
                 }
 
                 return Ok(Some(Arc::new(Succeeded::satisfied_with(
-                    constraints,
+                    result.constraints.clone(),
                 ))));
             }
         }
 
         // get the equivalences
-        for Succeeded { result: eq, mut constraints } in
-            environment.get_equivalences(&self.0)?
+        for Succeeded { result: eq, constraints } in
+            environment.get_equivalences(&self.0).await?.iter()
         {
-            if let Some(result) = environment.query(&Self(eq))? {
-                constraints.extend(result.constraints.iter().cloned());
-                return Ok(Some(result));
+            if let Some(result) = environment.query(&Self(eq.clone())).await? {
+                return Ok(Some(Arc::new(Succeeded::satisfied_with(
+                    result
+                        .constraints
+                        .iter()
+                        .cloned()
+                        .chain(constraints.iter().cloned())
+                        .collect(),
+                ))));
             }
         }
 
