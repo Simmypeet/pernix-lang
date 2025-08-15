@@ -235,7 +235,13 @@ pub async fn get_variance_of(
                     location @ r#type::SubTypeLocation::Tuple(_),
                     tuple @ Type::Tuple(_),
                 ) => {
-                    let sub_term = location.get_sub_term(tuple).unwrap();
+                    let sub_term =
+                        location.get_sub_term(tuple).unwrap_or_else(|| {
+                            panic!(
+                                "failed to get sub term of tuple: {tuple:?} \
+                                 at location: {location:?}"
+                            )
+                        });
 
                     let current_variance =
                         parent_variance.xfrom(Variance::Covariant);

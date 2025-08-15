@@ -2,14 +2,17 @@ use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
 use pernixc_query::{database::SetInputResult, Engine};
 use pernixc_symbol::kind::Kind;
-use pernixc_target::Global;
+use pernixc_target::{Global, TargetID};
 use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
-    generic_parameters::{GenericParameters, LifetimeParameter},
+    generic_parameters::{
+        GenericParameters, LifetimeParameter, TypeParameterID,
+    },
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
-    r#type::Type,
+    r#type::{Primitive, Type},
+    tuple::{self, Tuple},
     variance::{Variance, Variances},
 };
 use proptest::{
@@ -526,7 +529,7 @@ async fn property_based_testing<T: Term + 'static>(
     let (term1, term2) =
         property.generate(&mut engine, &mut premise).await.map_err(|x| {
             println!("premise count: {}", premise.predicates.len());
-            TestCaseError::fail(format!("{x}"))
+            TestCaseError::reject(format!("{x}"))
         })?;
 
     println!("premise count: {}", premise.predicates.len());

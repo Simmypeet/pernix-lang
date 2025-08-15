@@ -393,7 +393,7 @@ async fn subtypable_with_unification(
     current_variance: Variance,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
-    let Some(matching) = target.substructural_match(source) else {
+    let Some(matching) = source.substructural_match(target) else {
         return Ok(None);
     };
 
@@ -403,9 +403,9 @@ async fn subtypable_with_unification(
     // matching the tuple packing range
 
     for Matching {
-        lhs: target_lt,
-        rhs: source_lt,
-        lhs_location: target_location,
+        lhs: source_lt,
+        rhs: target_lt,
+        lhs_location: source_location,
         ..
     } in matching.lifetimes
     {
@@ -415,7 +415,7 @@ async fn subtypable_with_unification(
                 source,
                 current_variance,
                 std::iter::once(TermLocation::Lifetime(
-                    SubLifetimeLocation::FromType(target_location),
+                    SubLifetimeLocation::FromType(source_location),
                 )),
             )
             .await?;
@@ -431,9 +431,9 @@ async fn subtypable_with_unification(
     }
 
     for Matching {
-        lhs: target_ty,
-        rhs: source_ty,
-        lhs_location: target_location,
+        lhs: source_ty,
+        rhs: target_ty,
+        lhs_location: source_location,
         ..
     } in matching.types
     {
@@ -443,7 +443,7 @@ async fn subtypable_with_unification(
                 source,
                 current_variance,
                 std::iter::once(TermLocation::Type(SubTypeLocation::FromType(
-                    target_location,
+                    source_location,
                 ))),
             )
             .await?;
@@ -458,7 +458,7 @@ async fn subtypable_with_unification(
         merge_result(&mut result, &new_result);
     }
 
-    for Matching { lhs: target_const, rhs: source_const, .. } in
+    for Matching { lhs: source_const, rhs: target_const, .. } in
         matching.constants
     {
         // constant should have variance influenced, as of now, we'll simply
