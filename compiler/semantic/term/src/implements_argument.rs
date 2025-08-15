@@ -1,0 +1,27 @@
+//! Contains the query definition for retrieving `implements` generic arguments.
+
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
+
+use crate::generic_arguments::GenericArguments;
+
+/// A query for retrieving the generic arguments supplied to the `implements`
+/// item (`implements[GENERIC_PARAMETERS] symbol[IMPLEMENTS_ARGUMENTS]`)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(GenericArguments)]
+#[extend(method(get_implements_argument))]
+pub struct Key(pub Global<pernixc_symbol::ID>);
