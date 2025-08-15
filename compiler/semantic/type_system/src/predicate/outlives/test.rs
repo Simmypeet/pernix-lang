@@ -2,17 +2,14 @@ use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
 use pernixc_query::{database::SetInputResult, Engine};
 use pernixc_symbol::kind::Kind;
-use pernixc_target::{Global, TargetID};
+use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, MemberSymbol, Symbol, TraitMember},
-    generic_parameters::{
-        GenericParameters, LifetimeParameter, TypeParameterID,
-    },
+    generic_parameters::{GenericParameters, LifetimeParameter},
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
-    r#type::{Primitive, Type},
-    tuple::{self, Tuple},
+    r#type::Type,
     variance::{Variance, Variances},
 };
 use proptest::{
