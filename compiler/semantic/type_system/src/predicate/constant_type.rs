@@ -1,3 +1,5 @@
+//! Implements the [`Query`] for the [`ConstantType`]
+
 use std::sync::Arc;
 
 use pernixc_query::{runtime::executor, TrackedEngine};

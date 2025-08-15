@@ -14,7 +14,6 @@ use pernixc_term::{
 };
 use proptest::{
     arbitrary::Arbitrary,
-    prelude::prop,
     prop_assert, prop_oneof, proptest,
     strategy::{BoxedStrategy, Strategy},
     test_runner::{TestCaseError, TestCaseResult},
@@ -508,7 +507,7 @@ impl Arbitrary for Box<dyn Property<Lifetime>> {
             ByPremise::arbitrary().prop_map(|x| Box::new(x) as _),
         ];
 
-        leaf.prop_recursive(4, 8, 2, |inner| {
+        leaf.prop_recursive(20, 20, 1, |inner| {
             Transitive::arbitrary_with(Some(inner.clone()))
                 .prop_map(|x| Box::new(x) as _)
         })
@@ -527,7 +526,7 @@ async fn property_based_testing<T: Term + 'static>(
     let (term1, term2) =
         property.generate(&mut engine, &mut premise).await.map_err(|x| {
             println!("premise count: {}", premise.predicates.len());
-            TestCaseError::reject(format!("{x}"))
+            TestCaseError::fail(format!("{x}"))
         })?;
 
     println!("premise count: {}", premise.predicates.len());
@@ -535,11 +534,12 @@ async fn property_based_testing<T: Term + 'static>(
     let environment = Environment::new(
         Cow::Borrowed(&premise),
         Cow::Owned(engine.tracked()),
-        normalizer::NO_OP,);
+        normalizer::NO_OP,
+    );
     let result = environment
         .query(&Outlives::new(term1, term2))
         .await
-        .map_err(|x| TestCaseError::reject(format!("{x}")))?;
+        .map_err(|x| TestCaseError::fail(format!("{x}")))?;
 
     prop_assert!(result.is_some());
 
@@ -557,9 +557,13 @@ proptest! {
     fn property_based_testing_lifetime(
         property in Box::<dyn Property<Lifetime>>::arbitrary()
     ) {
-        tokio::runtime::Runtime::new()
+        let result = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(property_based_testing(&*property))?;
+            .block_on(property_based_testing(&*property));
+
+        println!("{result:?}");
+
+        result?;
     }
 
     #[test]

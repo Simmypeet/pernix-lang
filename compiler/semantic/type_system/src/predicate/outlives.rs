@@ -1,7 +1,14 @@
-use std::sync::Arc;
+//! Implements the [`Query`] for the [`Outlives`]
+
+use std::{future::Future, sync::Arc};
 
 use pernixc_term::{
-    lifetime::Lifetime, predicate::Outlives, variance::Variance, visitor,
+    constant::Constant,
+    lifetime::Lifetime,
+    predicate::Outlives,
+    r#type::Type,
+    variance::Variance,
+    visitor::{self, Element},
 };
 
 use crate::{
@@ -41,10 +48,6 @@ impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, '_, N> {
 
 impl LifetimeConstraint {
     /// Checks if this lifetime constraints is satisfiable.
-    ///
-    /// # Errors
-    ///
-    /// See [`AbruptError`] for more information.
     pub async fn satisfies(
         &self,
         environment: &Environment<'_, impl Normalizer>,
@@ -71,7 +74,61 @@ impl<T: Term> Query for Outlives<T> {
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<std::sync::Arc<Self::Result>>, Self::Error> {
-        let satisfiability = self.operand.outlives_satisfiability(&self.bound);
+        Impl::outlives(self, environment).await
+    }
+}
+
+#[doc(hidden)]
+pub trait Impl: Sized {
+    fn outlives<'x>(
+        query: &'x Outlives<Self>,
+        environment: &'x Environment<'x, impl Normalizer>,
+    ) -> impl Future<Output = Result<Option<Arc<Satisfied>>, Error>> + 'x;
+}
+
+impl Impl for Lifetime {
+    async fn outlives(
+        query: &Outlives<Self>,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Arc<Satisfied>>, Error> {
+        let satisfiability =
+            query.operand.outlives_satisfiability(&query.bound);
+
+        if satisfiability == Satisfiability::Satisfied {
+            return Ok(Some(Arc::new(Satisfied)));
+        }
+
+        for Outlives { operand: next_operand, bound: next_bound } in environment
+            .premise()
+            .predicates
+            .iter()
+            .filter_map(|x| x.as_lifetime_outlives())
+        {
+            if *next_operand != query.operand {
+                continue;
+            }
+
+            if let Some(result) = Box::pin(
+                environment.query(&Outlives::new(*next_bound, query.bound)),
+            )
+            .await?
+            {
+                return Ok(Some(result));
+            }
+        }
+
+        Ok(None)
+    }
+}
+
+impl Impl for Type {
+    #[allow(clippy::too_many_lines)]
+    async fn outlives(
+        query: &Outlives<Self>,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Arc<Satisfied>>, Error> {
+        let satisfiability =
+            query.operand.outlives_satisfiability(&query.bound);
 
         if satisfiability == Satisfiability::Satisfied {
             return Ok(Some(Arc::new(Satisfied)));
@@ -81,11 +138,11 @@ impl<T: Term> Query for Outlives<T> {
         if satisfiability == Satisfiability::Congruent {
             let mut visitor = Visitor {
                 outlives: Ok(Some(Satisfied)),
-                bound: &self.bound,
+                bound: &query.bound,
                 environment,
             };
 
-            assert!(self
+            assert!(query
                 .operand
                 .accept_one_level_async(&mut visitor)
                 .await
@@ -96,16 +153,16 @@ impl<T: Term> Query for Outlives<T> {
             }
         }
 
-        'outer: for Self { operand: next_operand, bound: next_bound } in
+        'outer: for Outlives { operand: next_operand, bound: next_bound } in
             environment
                 .premise()
                 .predicates
                 .iter()
-                .filter_map(|x| T::as_outlives_predicate(x))
+                .filter_map(|x| x.as_type_outlives())
         {
             let Some(result) = environment
                 .subtypes(
-                    self.operand.clone(),
+                    query.operand.clone(),
                     next_operand.clone(),
                     Variance::Covariant,
                 )
@@ -133,7 +190,7 @@ impl<T: Term> Query for Outlives<T> {
                 .instantiate(&mut next_bound);
 
             if Box::pin(
-                environment.query(&Outlives::new(next_bound, self.bound)),
+                environment.query(&Outlives::new(next_bound, query.bound)),
             )
             .await?
             .is_some()
@@ -146,7 +203,8 @@ impl<T: Term> Query for Outlives<T> {
         'out: for Succeeded {
             result: operand_eq,
             constraints: additional_outlives,
-        } in environment.get_equivalences(&self.operand).await?.iter()
+        } in
+            environment.get_equivalences(&query.operand).await?.iter()
         {
             // additional constraints must be satisifed
             for constraint in additional_outlives {
@@ -158,7 +216,8 @@ impl<T: Term> Query for Outlives<T> {
             }
 
             if Box::pin(
-                environment.query(&Self::new(operand_eq.clone(), self.bound)),
+                environment
+                    .query(&Outlives::new(operand_eq.clone(), query.bound)),
             )
             .await?
             .is_some()
@@ -171,7 +230,7 @@ impl<T: Term> Query for Outlives<T> {
         'out: for Succeeded {
             result: bound_eq,
             constraints: additional_outlives,
-        } in environment.get_equivalences(&self.bound).await?.iter()
+        } in environment.get_equivalences(&query.bound).await?.iter()
         {
             // additional constraints must be satisified
             for constraint in additional_outlives {
@@ -183,7 +242,8 @@ impl<T: Term> Query for Outlives<T> {
             }
 
             if Box::pin(
-                environment.query(&Self::new(self.operand.clone(), *bound_eq)),
+                environment
+                    .query(&Outlives::new(query.operand.clone(), *bound_eq)),
             )
             .await?
             .is_some()
@@ -193,6 +253,15 @@ impl<T: Term> Query for Outlives<T> {
         }
 
         Ok(None)
+    }
+}
+
+impl Impl for Constant {
+    async fn outlives(
+        _: &Outlives<Self>,
+        _: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Arc<Satisfied>>, Error> {
+        Ok(Some(Arc::new(Satisfied)))
     }
 }
 
