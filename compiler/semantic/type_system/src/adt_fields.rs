@@ -8,7 +8,10 @@ use pernixc_symbol::{
     member::get_members,
 };
 use pernixc_target::Global;
-use pernixc_term::r#type::Type;
+use pernixc_term::{
+    generic_parameters::get_generic_parameters, instantiation::Instantiation,
+    r#type::Type,
+};
 
 /// Retrieves all the type terms that appear as field in the given ADT (struct
 /// or enum) ID.
@@ -64,4 +67,32 @@ pub async fn adt_fields(
     }
 
     Ok(results.into())
+}
+
+/// Retrieves all the fields of an ADT (struct or enum) with an instantiation
+/// from the given [`generic_arguments`] applied.
+#[pernixc_extend::extend]
+pub async fn get_instantiated_adt_fields(
+    self: &TrackedEngine,
+    adt_id: Global<pernixc_symbol::ID>,
+    generic_arguments: &pernixc_term::generic_arguments::GenericArguments,
+) -> Result<Vec<Type>, executor::CyclicError> {
+    let types = self.get_adt_fields(adt_id).await?;
+    let generic_parameters = self.get_generic_parameters(adt_id).await?;
+
+    let instantiation = Instantiation::from_generic_arguments(
+        generic_arguments.clone(),
+        adt_id,
+        &generic_parameters,
+    )
+    .unwrap();
+
+    let mut results = Vec::with_capacity(types.len());
+
+    for mut ty in types.iter().cloned() {
+        instantiation.instantiate(&mut ty);
+        results.push(ty);
+    }
+
+    Ok(results)
 }

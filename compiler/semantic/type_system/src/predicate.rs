@@ -2,9 +2,9 @@
 //! definition of [`pernixc_term::predicate`]
 
 pub mod constant_type;
-// mod marker;
+pub mod marker;
 pub mod outlives;
-// mod r#trait;
+// pub mod r#trait;
 pub mod tuple;
 
 // pub use marker::{

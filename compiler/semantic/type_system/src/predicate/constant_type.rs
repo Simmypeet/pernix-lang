@@ -6,8 +6,6 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_symbol::kind::{get_kind, Kind};
 use pernixc_term::{
     constant::Constant,
-    generic_parameters::get_generic_parameters,
-    instantiation::Instantiation,
     lifetime::Lifetime,
     predicate::ConstantType,
     r#type::{Primitive, Type},
@@ -16,7 +14,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    adt_fields::get_adt_fields,
+    adt_fields::get_instantiated_adt_fields,
     environment::{Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     Error, Satisfiability, Satisfied, Succeeded,
@@ -102,24 +100,11 @@ async fn try_get_adt_fields(
         return Ok(None);
     }
 
-    let mut results = Vec::new();
-
-    let generic_parameters = engine.get_generic_parameters(symbol.id).await?;
-
-    let instantiation = Instantiation::from_generic_arguments(
-        symbol.generic_arguments.clone(),
-        symbol.id,
-        &generic_parameters,
-    )
-    .unwrap();
-
-    for mut result in engine.get_adt_fields(symbol.id).await?.iter().cloned() {
-        instantiation.instantiate(&mut result);
-
-        results.push(result);
-    }
-
-    Ok(Some(results))
+    Ok(Some(
+        engine
+            .get_instantiated_adt_fields(symbol.id, &symbol.generic_arguments)
+            .await?,
+    ))
 }
 
 /// Describes the source of the query for constant type predicate.

@@ -44,6 +44,9 @@ use crate::{
 
 pub mod accessibility;
 pub mod diagnostic;
+pub mod final_implements;
+pub mod implemented;
+pub mod implements;
 pub mod import;
 pub mod kind;
 pub mod member;
@@ -52,9 +55,6 @@ pub mod parent;
 pub mod source_map;
 pub mod span;
 pub mod syntax;
-pub mod implemented;
-pub mod implements;
-pub mod final_implements;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;

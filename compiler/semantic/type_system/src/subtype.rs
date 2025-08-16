@@ -7,7 +7,7 @@ use std::{
 
 use pernixc_term::{
     constant::Constant,
-    generic_arguments::TraitMember,
+    generic_arguments::{GenericArguments, TraitMember},
     lifetime::{Forall, Lifetime},
     matching::{Match, Matching},
     predicate::{self, Outlives},
@@ -658,6 +658,79 @@ impl<N: Normalizer> Environment<'_, N> {
         variance: Variance,
     ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
         self.query(&Subtype::new(target, source, variance)).await
+    }
+
+    /// Determines the sub-typing relationship between two generic arguments.
+    /// This function assumes [`Variance::Invariant`]
+    pub async fn subtypes_generic_arguments(
+        &self,
+        target: &GenericArguments,
+        source: &GenericArguments,
+    ) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
+        if target.lifetimes.len() != source.lifetimes.len()
+            || target.types.len() != source.types.len()
+            || target.constants.len() != source.constants.len()
+        {
+            return Ok(None);
+        }
+
+        let mut result = Succeeded::with_constraints(
+            Subtypable::default(),
+            BTreeSet::default(),
+        );
+
+        for (target_lt, source_lt) in
+            source.lifetimes.iter().zip(target.lifetimes.iter())
+        {
+            let Some(new_result) = self
+                .query(&Subtype::new(
+                    *source_lt,
+                    *target_lt,
+                    Variance::Invariant,
+                ))
+                .await?
+            else {
+                return Ok(None);
+            };
+
+            merge_result(&mut result, &new_result);
+        }
+
+        for (target_ty, source_ty) in
+            source.types.iter().zip(target.types.iter())
+        {
+            let Some(new_result) = self
+                .query(&Subtype::new(
+                    source_ty.clone(),
+                    target_ty.clone(),
+                    Variance::Invariant,
+                ))
+                .await?
+            else {
+                return Ok(None);
+            };
+
+            merge_result(&mut result, &new_result);
+        }
+
+        for (target_const, source_const) in
+            source.constants.iter().zip(target.constants.iter())
+        {
+            let Some(new_result) = self
+                .query(&Subtype::new(
+                    source_const.clone(),
+                    target_const.clone(),
+                    Variance::Invariant,
+                ))
+                .await?
+            else {
+                return Ok(None);
+            };
+
+            merge_result(&mut result, &new_result);
+        }
+
+        Ok(Some(result))
     }
 }
 

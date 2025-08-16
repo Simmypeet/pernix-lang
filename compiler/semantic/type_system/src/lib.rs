@@ -18,6 +18,7 @@ pub mod mapping;
 pub mod normalizer;
 pub mod order;
 pub mod predicate;
+pub mod resolution;
 pub mod subtype;
 pub mod term;
 pub mod unification;

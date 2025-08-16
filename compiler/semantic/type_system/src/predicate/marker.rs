@@ -1,47 +1,46 @@
+//! Implements the [`Query`] for the [`PositiveMarker`] and [`NegativeMarker`].
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
 };
 
 use enum_as_inner::EnumAsInner;
-use pernixc_semantic::{
-    component::{
-        derived::{generic_parameters::GenericParameters, variances::Variance},
-        input::SymbolKind,
-    },
-    table::GlobalID,
-    term::{
-        constant::Constant,
-        generic_arguments::GenericArguments,
-        lifetime::Lifetime,
-        predicate::{
-            NegativeMarker as Negative, PositiveMarker as Positive, Predicate,
-        },
-        r#type::Type,
-        visitor::{self, Element, VisitNonApplicationTermError},
-        Model,
-    },
+use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    parent::scope_walker,
+};
+use pernixc_target::Global;
+use pernixc_term::{
+    constant::Constant,
+    generic_arguments::GenericArguments,
+    generic_parameters::get_generic_parameters,
+    lifetime::Lifetime,
+    predicate::{NegativeMarker, PositiveMarker, Predicate},
+    r#type::Type,
+    visitor::{self, Element},
 };
 
 use crate::{
+    adt_fields::get_instantiated_adt_fields,
     environment::{Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
-    term::Term,
     Error, Satisfied, Succeeded,
 };
 
 /// An enumeration of ways the marker can be satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum PositiveSatisfied<M: Model> {
+pub enum PositiveSatisfied {
     /// Found a matching premise.
     Premise,
 
     /// Found a matching implementation.
-    Implementation(Implementation<M>),
+    Implementation(Implementation),
 
     /// Satisfied by proving that all the fields/sub-terms are satisfied.
-    Congruence(BTreeMap<Positive<M>, Arc<Succeeded<PositiveSatisfied<M>, M>>>),
+    Congruence(BTreeMap<PositiveMarker, Arc<Succeeded<PositiveSatisfied>>>),
 
     /// Satisfied by the fact that the query was made in the marker/its
     /// implementation.
@@ -52,26 +51,24 @@ pub enum PositiveSatisfied<M: Model> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-enum VisitorState<M: Model> {
+enum VisitorState {
     Failed,
     AbruptError(Error),
-    Succeeded(BTreeMap<Positive<M>, Arc<Succeeded<PositiveSatisfied<M>, M>>>),
+    Succeeded(BTreeMap<PositiveMarker, Arc<Succeeded<PositiveSatisfied>>>),
 }
 
 #[derive(Debug)]
-struct Visitor<'t, 'p, N: Normalizer<M>, M: Model> {
-    original: &'p Positive<M>,
-    state: VisitorState<M>,
-    environment: &'t Environment<'t, M, N>,
+struct Visitor<'t, 'p, N: Normalizer> {
+    original: &'p PositiveMarker,
+    state: VisitorState,
+    environment: &'t Environment<'t, N>,
 }
 
-impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Lifetime<M>>
-    for Visitor<'_, '_, N, M>
-{
-    fn visit(
+impl<N: Normalizer> visitor::AsyncVisitor<Lifetime> for Visitor<'_, '_, N> {
+    async fn visit(
         &mut self,
-        _: &Lifetime<M>,
-        _: <Lifetime<M> as Element>::Location,
+        _: &Lifetime,
+        _: <Lifetime as Element>::Location,
     ) -> bool {
         if matches!(
             self.state,
@@ -84,19 +81,17 @@ impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Lifetime<M>>
     }
 }
 
-impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Type<M>>
-    for Visitor<'_, '_, N, M>
-{
-    fn visit(
+impl<N: Normalizer> visitor::AsyncVisitor<Type> for Visitor<'_, '_, N> {
+    async fn visit(
         &mut self,
-        ty: &Type<M>,
-        _: <Type<M> as Element>::Location,
+        ty: &Type,
+        _: <Type as Element>::Location,
     ) -> bool {
         let VisitorState::Succeeded(states) = &mut self.state else {
             return false;
         };
 
-        let new_query = Positive {
+        let new_query = PositiveMarker {
             marker_id: self.original.marker_id,
             generic_arguments: GenericArguments {
                 lifetimes: self.original.generic_arguments.lifetimes.clone(),
@@ -110,7 +105,7 @@ impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Type<M>>
             },
         };
 
-        match self.environment.query(&new_query) {
+        match self.environment.query(&new_query).await {
             Ok(Some(result)) => {
                 states.insert(new_query, result);
                 true
@@ -127,13 +122,11 @@ impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Type<M>>
     }
 }
 
-impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Constant<M>>
-    for Visitor<'_, '_, N, M>
-{
-    fn visit(
+impl<N: Normalizer> visitor::AsyncVisitor<Constant> for Visitor<'_, '_, N> {
+    async fn visit(
         &mut self,
-        _: &Constant<M>,
-        _: <Constant<M> as Element>::Location,
+        _: &Constant,
+        _: <Constant as Element>::Location,
     ) -> bool {
         if matches!(
             self.state,
@@ -146,24 +139,43 @@ impl<N: Normalizer<M>, M: Model> visitor::Visitor<'_, Constant<M>>
     }
 }
 
-impl<M: Model> Query for Positive<M> {
-    type Model = M;
+async fn try_get_adt_fields(
+    ty: &Type,
+    engine: &TrackedEngine,
+) -> Result<Option<Vec<Type>>, executor::CyclicError> {
+    let Type::Symbol(symbol) = ty else {
+        return Ok(None);
+    };
+
+    if !matches!(engine.get_kind(symbol.id).await, Kind::Enum | Kind::Struct) {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        engine
+            .get_instantiated_adt_fields(symbol.id, &symbol.generic_arguments)
+            .await?,
+    ))
+}
+
+impl Query for PositiveMarker {
     type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<PositiveSatisfied<M>, M>;
+    type Result = Succeeded<PositiveSatisfied>;
     type Error = Error;
 
     #[allow(clippy::too_many_lines)]
-    fn query(
+    async fn query(
         &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<'_, impl Normalizer>,
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         // if this query was made in marker, then check if the marker is the
         // same as the query one.
         if let Some(result) =
-            is_in_marker(self.marker_id, &self.generic_arguments, environment)?
+            is_in_marker(self.marker_id, &self.generic_arguments, environment)
+                .await?
         {
             return Ok(Some(Arc::new(Succeeded::with_constraints(
                 PositiveSatisfied::Environment,
@@ -183,11 +195,12 @@ impl<M: Model> Query for Positive<M> {
                 continue;
             }
 
-            let Some(compatiblity) = environment.generic_arguments_compatible(
-                &self.generic_arguments,
-                &premise.generic_arguments,
-                Variance::Invariant,
-            )?
+            let Some(compatiblity) = environment
+                .subtypes_generic_arguments(
+                    &self.generic_arguments,
+                    &premise.generic_arguments,
+                )
+                .await?
             else {
                 continue;
             };
@@ -203,40 +216,30 @@ impl<M: Model> Query for Positive<M> {
         }
 
         // manually search for the trait implementation
-        match environment
-            .resolve_implementation(self.marker_id, &self.generic_arguments)
+        if let Some(result) = environment
+            .query(&resolution::Resolve::new(
+                self.marker_id,
+                self.generic_arguments.clone(),
+            ))
+            .await?
         {
-            Ok(Succeeded {
-                result:
-                    Implementation { instantiation, id, is_not_general_enough },
-                constraints,
-            }) => {
-                if *environment.table().get::<SymbolKind>(id)
-                    == SymbolKind::PositiveMarkerImplementation
-                {
-                    return Ok(Some(Arc::new(Succeeded::with_constraints(
-                        PositiveSatisfied::Implementation(Implementation {
-                            instantiation,
-                            id,
-                            is_not_general_enough,
-                        }),
-                        constraints,
-                    ))));
-                }
-
-                // then it's a negative implementation
-                return Ok(None);
+            if environment.tracked_engine().get_kind(result.result.id).await
+                == Kind::PositiveMarkerImplementation
+            {
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    PositiveSatisfied::Implementation(Implementation {
+                        instantiation: result.result.instantiation.clone(),
+                        id: result.result.id,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    }),
+                    result.constraints.clone(),
+                ))));
             }
 
-            Err(resolution::Error::Abort(error)) => {
-                return Err(Error::Abort(error))
-            }
-
-            Err(resolution::Error::Overflow(error)) => {
-                return Err(Error::Overflow(error))
-            }
-
-            Err(_) => {}
+            // then it's a negative implementation
+            return Ok(None);
         }
 
         // replace the first type argument with sub-terms/fields and check if
@@ -248,14 +251,14 @@ impl<M: Model> Query for Positive<M> {
                 environment,
             };
 
-            let result = ty.accept_one_level(&mut visitor);
+            let result = ty.accept_one_level_async(&mut visitor).await;
 
             match (visitor.state, result) {
                 // can't find the sub-term / failed
                 (VisitorState::Failed, _)
                 | (
                     VisitorState::Succeeded(_),
-                    Err(VisitNonApplicationTermError),
+                    Err(visitor::VisitNonApplicationTermError),
                 ) => {}
 
                 // abrupt error
@@ -263,10 +266,11 @@ impl<M: Model> Query for Positive<M> {
 
                 (VisitorState::Succeeded(mut btree_map), Ok(_)) => {
                     // including fields as well
-                    for field_ty in ty
-                        .get_adt_fields(environment.table())?
-                        .into_iter()
-                        .flatten()
+                    for field_ty in
+                        try_get_adt_fields(ty, environment.tracked_engine())
+                            .await?
+                            .into_iter()
+                            .flatten()
                     {
                         let new_query = Self {
                             marker_id: self.marker_id,
@@ -288,7 +292,9 @@ impl<M: Model> Query for Positive<M> {
                             },
                         };
 
-                        if let Some(result) = environment.query(&new_query)? {
+                        if let Some(result) =
+                            environment.query(&new_query).await?
+                        {
                             btree_map.insert(new_query, result);
                         } else {
                             return Ok(None);
@@ -321,63 +327,52 @@ impl<M: Model> Query for Positive<M> {
 
 /// An enumeration of ways the [`Negative`] marker can be satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum NegativeSatisfied<M: Model> {
+pub enum NegativeSatisfied {
     /// Found a matching premise.
     Premise,
 
     /// Found a matching negative implementation.
-    Implementation(Implementation<M>),
+    Implementation(Implementation),
 
     /// Satisfied by proving that the [`Positive`] isn't satisfied and the
     /// generic arguments are definite.
     UnsatisfiedPositive,
 }
 
-impl<M: Model> Query for Negative<M> {
-    type Model = M;
+impl Query for NegativeMarker {
     type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<NegativeSatisfied<M>, M>;
+    type Result = Succeeded<NegativeSatisfied>;
     type Error = Error;
 
-    fn query(
+    async fn query(
         &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<'_, impl Normalizer>,
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         // manually search for the trait implementation
-        match environment
-            .resolve_implementation(self.marker_id, &self.generic_arguments)
+        if let Some(result) = environment
+            .query(&resolution::Resolve::new(
+                self.marker_id,
+                self.generic_arguments.clone(),
+            ))
+            .await?
         {
-            Ok(Succeeded {
-                result:
-                    Implementation { instantiation, id, is_not_general_enough },
-                constraints,
-            }) => {
-                if *environment.table().get::<SymbolKind>(id)
-                    == SymbolKind::NegativeMarkerImplementation
-                {
-                    return Ok(Some(Arc::new(Succeeded::with_constraints(
-                        NegativeSatisfied::Implementation(Implementation {
-                            instantiation,
-                            id,
-                            is_not_general_enough,
-                        }),
-                        constraints,
-                    ))));
-                }
+            if environment.tracked_engine().get_kind(result.result.id).await
+                == Kind::NegativeMarkerImplementation
+            {
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    NegativeSatisfied::Implementation(Implementation {
+                        instantiation: result.result.instantiation.clone(),
+                        id: result.result.id,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    }),
+                    result.constraints.clone(),
+                ))));
             }
-
-            Err(resolution::Error::Abort(error)) => {
-                return Err(Error::Abort(error));
-            }
-
-            Err(resolution::Error::Overflow(error)) => {
-                return Err(Error::Overflow(error));
-            }
-
-            Err(_) => {}
         }
 
         // look for the premise that matches
@@ -392,11 +387,12 @@ impl<M: Model> Query for Negative<M> {
                 continue;
             }
 
-            let Some(compatiblity) = environment.generic_arguments_compatible(
-                &self.generic_arguments,
-                &marker_premise.generic_arguments,
-                Variance::Invariant,
-            )?
+            let Some(compatiblity) = environment
+                .subtypes_generic_arguments(
+                    &self.generic_arguments,
+                    &marker_premise.generic_arguments,
+                )
+                .await?
             else {
                 continue;
             };
@@ -412,16 +408,19 @@ impl<M: Model> Query for Negative<M> {
         }
 
         // must be definite and failed to prove the positive trait
-        let Some(definition) =
-            environment.generic_arguments_definite(&self.generic_arguments)?
+        let Some(definition) = environment
+            .generic_arguments_definite(&self.generic_arguments)
+            .await?
         else {
             return Ok(None);
         };
+
         Ok(environment
-            .query(&Positive::new(
+            .query(&PositiveMarker::new(
                 self.marker_id,
                 self.generic_arguments.clone(),
-            ))?
+            ))
+            .await?
             .is_none()
             .then(|| {
                 Arc::new(Succeeded::with_constraints(
@@ -432,20 +431,23 @@ impl<M: Model> Query for Negative<M> {
     }
 }
 
-fn is_in_marker<M: Model>(
-    marker_id: GlobalID,
-    generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
+async fn is_in_marker(
+    marker_id: Global<pernixc_symbol::ID>,
+    generic_arguments: &GenericArguments,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Option<Succeeded<Satisfied>>, Error> {
     let Some(query_site) = environment.premise().query_site else {
         return Ok(None);
     };
 
-    for current_id in environment.table().scope_walker(query_site) {
-        let current_id = GlobalID::new(query_site.target_id, current_id);
+    let mut scope_walker =
+        environment.tracked_engine().scope_walker(query_site);
 
-        let SymbolKind::Trait =
-            *environment.table().get::<SymbolKind>(current_id)
+    while let Some(current_id) = scope_walker.next().await {
+        let current_id = Global::new(query_site.target_id, current_id);
+
+        let Kind::Trait =
+            environment.tracked_engine().get_kind(current_id).await
         else {
             continue;
         };
@@ -456,15 +458,17 @@ fn is_in_marker<M: Model>(
         }
 
         let marker_generic_arguments = environment
-            .table()
-            .query::<GenericParameters>(current_id)?
+            .tracked_engine()
+            .get_generic_parameters(current_id)
+            .await?
             .create_identity_generic_arguments(current_id);
 
-        let Some(compatibility) = environment.generic_arguments_compatible(
-            generic_arguments,
-            &marker_generic_arguments,
-            Variance::Invariant,
-        )?
+        let Some(compatibility) = environment
+            .subtypes_generic_arguments(
+                generic_arguments,
+                &marker_generic_arguments,
+            )
+            .await?
         else {
             continue;
         };
