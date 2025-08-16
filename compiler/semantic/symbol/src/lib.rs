@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use enum_as_inner::EnumAsInner;
 use flexstr::{FlexStr, SharedStr};
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
@@ -22,7 +23,7 @@ use pernixc_query::{
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
-use pernixc_source_file::{calculate_path_id, SourceFile};
+use pernixc_source_file::{calculate_path_id, SourceElement, SourceFile};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::item::{
     module::Member as ModuleMemberSyn, r#trait::Member as TraitMemberSyn,
@@ -512,6 +513,11 @@ struct TableContext {
     variant_associated_type_syntaxes:
         DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
     import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
+    implements_qualified_identifier_syntaxes:
+        DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
+
+    token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
+    source_file: Option<Arc<SourceFile>>,
 
     is_root: bool,
 }
@@ -522,7 +528,14 @@ pub async fn table_executor(
     TableKey(key): &TableKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<Table>, pernixc_query::runtime::executor::CyclicError> {
-    let (tree_result, target_id, module_kind, is_root) = match key {
+    let (
+        syntax_tree_result,
+        token_tree_result,
+        source_file,
+        target_id,
+        module_kind,
+        is_root,
+    ) = match key {
         Key::Root(target_id) => {
             let invocation_arguments =
                 engine.get_invocation_arguments(*target_id).await;
@@ -530,6 +543,28 @@ pub async fn table_executor(
             (
                 engine
                     .query(&pernixc_syntax::Key {
+                        path: invocation_arguments
+                            .command
+                            .input()
+                            .file
+                            .clone()
+                            .into(),
+                        target_id: *target_id,
+                    })
+                    .await?,
+                engine
+                    .query(&pernixc_lexical::Key {
+                        path: invocation_arguments
+                            .command
+                            .input()
+                            .file
+                            .clone()
+                            .into(),
+                        target_id: *target_id,
+                    })
+                    .await?,
+                engine
+                    .query(&pernixc_source_file::Key {
                         path: invocation_arguments
                             .command
                             .input()
@@ -552,6 +587,18 @@ pub async fn table_executor(
                     target_id: *target_id,
                 })
                 .await?,
+            engine
+                .query(&pernixc_lexical::Key {
+                    path: external_submodule.path.clone(),
+                    target_id: *target_id,
+                })
+                .await?,
+            engine
+                .query(&pernixc_source_file::Key {
+                    path: external_submodule.path.clone(),
+                    target_id: *target_id,
+                })
+                .await?,
             *target_id,
             ModuleKind::Submodule {
                 submodule_id: external_submodule.submodule_id,
@@ -568,7 +615,7 @@ pub async fn table_executor(
     let storage = Storage::default();
 
     // Handle load errors by creating diagnostics and using empty content
-    let tree = match tree_result {
+    let tree = match syntax_tree_result {
         Ok(tree) => Some(tree),
         Err(e) => {
             // Create a diagnostic for the load failure
@@ -624,6 +671,10 @@ pub async fn table_executor(
         fields_syntaxes: DashMap::default(),
         variant_associated_type_syntaxes: DashMap::default(),
         import_syntaxes: DashMap::default(),
+        implements_qualified_identifier_syntaxes: DashMap::default(),
+
+        token_tree: token_tree_result.ok().map(|x| x.0),
+        source_file: source_file.ok(),
 
         is_root,
     });
@@ -691,10 +742,16 @@ pub async fn diagnostic_executor(
     Ok(table.diagnostics.clone())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]
+enum Naming {
+    Identifier(pernixc_syntax::Identifier),
+    Implements(pernixc_syntax::QualifiedIdentifier),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, typed_builder::TypedBuilder)]
 #[allow(clippy::option_option)]
 struct Entry {
-    pub identifier: pernixc_syntax::Identifier,
+    pub naming: Naming,
     pub kind: kind::Kind,
 
     #[builder(default, setter(strip_option))]
@@ -742,9 +799,33 @@ struct Entry {
 }
 
 impl TableContext {
+    #[allow(clippy::too_many_lines)]
     async fn add_symbol_entry(&self, id: ID, parent_id: ID, entry: Entry) {
-        Self::insert_to_table(&self.names, id, entry.identifier.kind.0);
-        Self::insert_to_table(&self.spans, id, Some(entry.identifier.span));
+        match entry.naming {
+            Naming::Identifier(token) => {
+                Self::insert_to_table(&self.names, id, token.kind.0);
+                Self::insert_to_table(&self.spans, id, Some(token.span));
+            }
+            Naming::Implements(qualified_identifier) => {
+                let token_tree = self.token_tree.as_ref().unwrap();
+                let source_file = self.source_file.as_ref().unwrap();
+
+                Self::insert_to_table(
+                    &self.names,
+                    id,
+                    source_file.content()[qualified_identifier
+                        .span()
+                        .to_absolute_span(source_file, token_tree)
+                        .range()]
+                    .into(),
+                );
+                Self::insert_to_table(
+                    &self.spans,
+                    id,
+                    Some(qualified_identifier.span()),
+                );
+            }
+        }
         Self::insert_to_table(&self.kinds, id, entry.kind);
 
         if let Some(accessibility) = entry.accessibility {
@@ -1083,6 +1164,18 @@ impl TableContext {
         }
     }
 
+    #[allow(unused, clippy::unused_async)]
+    async fn handle_implements(
+        self: &Arc<Self>,
+        implements_syntax: &pernixc_syntax::item::implements::Implements,
+    ) -> Option<JoinHandle<()>> {
+        let signature = implements_syntax.signature()?;
+        let qualified_identifier = signature.qualified_identifier()?;
+        let body = implements_syntax.body()?;
+
+        todo!()
+    }
+
     #[allow(clippy::too_many_lines)]
     async fn handle_trait_member(
         self: &Arc<Self>,
@@ -1133,7 +1226,7 @@ impl TableContext {
             {
                 let entry = match member {
                     TraitMemberSyn::Type(member) => {
-                        let Some(signature) =
+                        let Some(identifier) =
                             member.signature().and_then(|x| x.identifier())
                         else {
                             continue;
@@ -1141,7 +1234,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::TraitType)
-                            .identifier(signature)
+                            .naming(Naming::Identifier(identifier))
                             .accessibility(member.access_modifier())
                             .generic_parameters_syntax(
                                 member
@@ -1158,7 +1251,7 @@ impl TableContext {
                     }
 
                     TraitMemberSyn::Function(member) => {
-                        let Some(signature) =
+                        let Some(identifier) =
                             member.signature().and_then(|x| x.identifier())
                         else {
                             continue;
@@ -1166,7 +1259,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::TraitFunction)
-                            .identifier(signature)
+                            .naming(Naming::Identifier(identifier))
                             .accessibility(member.access_modifier())
                             .generic_parameters_syntax(
                                 member
@@ -1189,7 +1282,7 @@ impl TableContext {
                     }
 
                     TraitMemberSyn::Constant(member) => {
-                        let Some(signature) =
+                        let Some(identifier) =
                             member.signature().and_then(|x| x.identifier())
                         else {
                             continue;
@@ -1197,7 +1290,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::TraitConstant)
-                            .identifier(signature)
+                            .naming(Naming::Identifier(identifier))
                             .accessibility(member.access_modifier())
                             .generic_parameters_syntax(
                                 member
@@ -1218,7 +1311,10 @@ impl TableContext {
                 };
 
                 let member_id = trait_member_builder
-                    .add_member(entry.identifier.clone(), &context.engine)
+                    .add_member(
+                        entry.naming.as_identifier().unwrap().clone(),
+                        &context.engine,
+                    )
                     .await;
 
                 context.add_symbol_entry(member_id, trait_id, entry).await;
@@ -1230,7 +1326,7 @@ impl TableContext {
                     parent_module_id,
                     Entry::builder()
                         .kind(Kind::Trait)
-                        .identifier(identifier)
+                        .naming(Naming::Identifier(identifier))
                         .accessibility(access_modifier)
                         .generic_parameters_syntax(generic_parameters)
                         .where_clause_syntax(where_clause)
@@ -1310,7 +1406,7 @@ impl TableContext {
 
                 let entry = Entry::builder()
                     .kind(Kind::Variant)
-                    .identifier(identifier)
+                    .naming(Naming::Identifier(identifier))
                     .variant_associated_type_syntax(
                         variant.association().and_then(|x| x.r#type()),
                     )
@@ -1325,7 +1421,7 @@ impl TableContext {
                     parent_module_id,
                     Entry::builder()
                         .kind(Kind::Enum)
-                        .identifier(identifier)
+                        .naming(Naming::Identifier(identifier))
                         .accessibility(access_modifier)
                         .generic_parameters_syntax(generic_parameters)
                         .where_clause_syntax(where_clause)
@@ -1400,7 +1496,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::Function)
-                            .identifier(identifier.clone())
+                            .naming(Naming::Identifier(identifier.clone()))
                             .accessibility(function_syntax.access_modifier())
                             .generic_parameters_syntax(
                                 function_syntax
@@ -1434,7 +1530,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::Type)
-                            .identifier(identifier.clone())
+                            .naming(Naming::Identifier(identifier.clone()))
                             .accessibility(type_syntax.access_modifier())
                             .generic_parameters_syntax(
                                 type_syntax
@@ -1464,7 +1560,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::Constant)
-                            .identifier(identifier.clone())
+                            .naming(Naming::Identifier(identifier.clone()))
                             .accessibility(constant_syntax.access_modifier())
                             .generic_parameters_syntax(
                                 constant_syntax
@@ -1501,7 +1597,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::Struct)
-                            .identifier(identifier.clone())
+                            .naming(Naming::Identifier(identifier.clone()))
                             .accessibility(struct_syntax.access_modifier())
                             .generic_parameters_syntax(
                                 struct_syntax
@@ -1543,7 +1639,7 @@ impl TableContext {
 
                         Entry::builder()
                             .kind(Kind::Marker)
-                            .identifier(identifier.clone())
+                            .naming(Naming::Identifier(identifier.clone()))
                             .accessibility(marker_syntax.access_modifier())
                             .generic_parameters_syntax(
                                 marker_syntax
@@ -1570,7 +1666,10 @@ impl TableContext {
                 };
 
                 let member_id = module_member_builder
-                    .add_member(entry.identifier.clone(), &self.engine)
+                    .add_member(
+                        entry.naming.as_identifier().unwrap().clone(),
+                        &self.engine,
+                    )
                     .await;
 
                 self.add_symbol_entry(
