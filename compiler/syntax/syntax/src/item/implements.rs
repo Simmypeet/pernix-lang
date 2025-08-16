@@ -3,6 +3,8 @@ use pernixc_parser::{
     expect,
     parser::{ast, Parser as _},
 };
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     item::{
@@ -87,7 +89,18 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Serialize,
+        Deserialize
+    )]
     pub struct Implements {
         pub signature: Signature = ast::<Signature>(),
         pub body: Body = ast::<Body>(),
