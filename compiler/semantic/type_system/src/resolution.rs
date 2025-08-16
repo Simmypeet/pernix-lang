@@ -166,7 +166,7 @@ impl Query for Resolve {
                     .await?;
 
                 if !predicate_satisfies(
-                    where_clause.predicates.iter().map(|x| &x.predicate),
+                    where_clause.iter().map(|x| &x.predicate),
                     &deduction.instantiation,
                     environment,
                 )
@@ -357,37 +357,38 @@ async fn predicate_satisfies<'a>(
         predicate.instantiate(substitution);
 
         if !match predicate {
-            Predicate::TraitTypeCompatible(equality) => environment
-                .subtypes(
+            Predicate::TraitTypeCompatible(equality) => {
+                Box::pin(environment.subtypes(
                     Type::TraitMember(equality.lhs),
                     equality.rhs.clone(),
                     Variance::Covariant,
-                )
+                ))
                 .await?
-                .is_some(),
+                .is_some()
+            }
 
             Predicate::ConstantType(constant_type) => {
-                environment.query(&constant_type).await?.is_some()
+                Box::pin(environment.query(&constant_type)).await?.is_some()
             }
 
             Predicate::TupleType(tuple_type) => {
-                environment.query(&tuple_type).await?.is_some()
+                Box::pin(environment.query(&tuple_type)).await?.is_some()
             }
 
             Predicate::PositiveMarker(tr) => {
-                environment.query(&tr).await?.is_some()
+                Box::pin(environment.query(&tr)).await?.is_some()
             }
 
             Predicate::NegativeMarker(tr) => {
-                environment.query(&tr).await?.is_none()
+                Box::pin(environment.query(&tr)).await?.is_none()
             }
 
             Predicate::PositiveTrait(tr) => {
-                environment.query(&tr).await?.is_some()
+                Box::pin(environment.query(&tr)).await?.is_some()
             }
 
             Predicate::NegativeTrait(tr) => {
-                environment.query(&tr).await?.is_some()
+                Box::pin(environment.query(&tr)).await?.is_some()
             }
 
             Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,

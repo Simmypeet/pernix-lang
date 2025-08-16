@@ -105,7 +105,7 @@ impl<N: Normalizer> visitor::AsyncVisitor<Type> for Visitor<'_, '_, N> {
             },
         };
 
-        match self.environment.query(&new_query).await {
+        match Box::pin(self.environment.query(&new_query)).await {
             Ok(Some(result)) => {
                 states.insert(new_query, result);
                 true
@@ -293,7 +293,7 @@ impl Query for PositiveMarker {
                         };
 
                         if let Some(result) =
-                            environment.query(&new_query).await?
+                            Box::pin(environment.query(&new_query)).await?
                         {
                             btree_map.insert(new_query, result);
                         } else {

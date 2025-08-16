@@ -1,7 +1,8 @@
 //! Contains the definition of [`WhereClause`] component.
 
+use std::sync::Arc;
+
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -32,19 +33,18 @@ pub struct Predicate {
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
     Ord,
     Default,
+    Hash,
     StableHash,
     Serialize,
     Deserialize,
-    Value,
+    pernixc_query::Key,
 )]
-#[id(Global<pernixc_symbol::ID>)]
+#[value(Arc<[Predicate]>)]
 #[extend(method(get_where_clause))]
-pub struct WhereClause {
-    /// The list of predicates declared in the where clause.
-    pub predicates: Vec<Predicate>,
-}
+pub struct Key(pub Global<pernixc_symbol::ID>);

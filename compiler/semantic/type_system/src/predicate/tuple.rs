@@ -56,7 +56,9 @@ impl Query for Tuple<Type> {
         for Succeeded { result: eq, constraints } in
             environment.get_equivalences(&self.0).await?.iter()
         {
-            if let Some(result) = environment.query(&Self(eq.clone())).await? {
+            if let Some(result) =
+                Box::pin(environment.query(&Self(eq.clone()))).await?
+            {
                 return Ok(Some(Arc::new(Succeeded::satisfied_with(
                     result
                         .constraints

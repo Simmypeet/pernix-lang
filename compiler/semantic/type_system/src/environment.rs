@@ -60,9 +60,9 @@ pub async fn get_active_premise(
 
         if kind.has_where_clause() {
             if let Ok(where_clause) = self.get_where_clause(current_id).await {
-                premise.predicates.extend(
-                    where_clause.predicates.iter().map(|x| x.predicate.clone()),
-                );
+                premise
+                    .predicates
+                    .extend(where_clause.iter().map(|x| x.predicate.clone()));
             }
         }
 
@@ -104,7 +104,7 @@ pub async fn get_active_premise_predicates_with_span(
 
         if symbol_kind.has_where_clause() {
             if let Ok(where_clause) = self.get_where_clause(global_id).await {
-                for predicate in &where_clause.predicates {
+                for predicate in where_clause.iter() {
                     let Some(span) = predicate.span else {
                         continue;
                     };

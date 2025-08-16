@@ -241,7 +241,7 @@ impl Property<Type> for LifetimeMatching {
 
                 let added_generic_parameters = table.set_input(
                     pernixc_term::generic_parameters::Key(self.struct_id),
-                    generic_parameter,
+                    Arc::new(generic_parameter),
                 ) == SetInputResult::Fresh;
 
                 added_kind && added_variance && added_generic_parameters

@@ -297,5 +297,5 @@ async fn is_in_trait(
     Ok(None)
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

@@ -1111,7 +1111,7 @@ fn expand_deserialize_enum(
         where
             #(#bounds),*
         {
-            fn deserialize(deserializer: &mut __D, extension: &__E) 
+            fn deserialize(deserializer: &mut __D, extension: &__E)
                 -> ::std::result::Result<Self, __D::Error> {
                 #deserialize_body
             }

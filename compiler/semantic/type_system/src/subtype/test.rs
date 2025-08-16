@@ -145,7 +145,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         Arc::get_mut(&mut engine).unwrap().input_session(|x| {
             x.set_input(
                 pernixc_term::generic_parameters::Key(adt_id),
-                generic_parameter,
+                Arc::new(generic_parameter),
             );
 
             x.set_input(pernixc_term::variance::Key(adt_id), variance_map);

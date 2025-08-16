@@ -1,5 +1,5 @@
 //! Contains the definition of [`GenericParameters`] component.
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, sync::Arc};
 
 use getset::Getters;
 use paste::paste;
@@ -34,6 +34,7 @@ use crate::{
     Value,
 )]
 #[id(Global<pernixc_symbol::ID>)]
+#[value(Arc<GenericParameters>)]
 #[extend(method(get_generic_parameters))]
 pub struct GenericParameters {
     /// List of defined lifetime parameters.

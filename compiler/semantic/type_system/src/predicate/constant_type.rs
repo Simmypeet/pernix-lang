@@ -242,9 +242,12 @@ impl Query for ConstantType {
         for Succeeded { result: eq, constraints } in
             environment.get_equivalences(&self.0).await?.iter()
         {
-            if let Some(result) = environment
-                .query_with(&Self(eq.clone()), (), QuerySource::FromEquivalence)
-                .await?
+            if let Some(result) = Box::pin(environment.query_with(
+                &Self(eq.clone()),
+                (),
+                QuerySource::FromEquivalence,
+            ))
+            .await?
             {
                 return Ok(Some(Arc::new(Succeeded::satisfied_with(
                     result
