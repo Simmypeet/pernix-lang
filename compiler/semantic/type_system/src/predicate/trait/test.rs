@@ -38,7 +38,7 @@ async fn single_implementation() {
     });
 
     let implements_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(0));
-    let trait_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(0));
+    let trait_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(1));
 
     let mut engine = Arc::new(Engine::default());
 
@@ -127,7 +127,7 @@ async fn single_implementation() {
         normalizer::NO_OP,
     );
 
-    let result = environment.query(&predicate).await.unwrap().unwrap();
+    let result = dbg!(environment.query(&predicate).await).unwrap().unwrap();
 
     assert!(result.constraints.is_empty());
 
