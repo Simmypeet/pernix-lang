@@ -318,7 +318,8 @@ async fn specialization_test_internal(case: SpecializationCase) {
         );
 
         match &case {
-            SpecializationCase::Specialized(ty) => Instantiation {
+            SpecializationCase::SpecializedRewrittenable(ty, _)
+            | SpecializationCase::Specialized(ty) => Instantiation {
                 types: std::iter::once((
                     Type::Parameter(TypeParameterID::new(
                         specialized_impl_id,
@@ -351,14 +352,16 @@ async fn specialization_test_internal(case: SpecializationCase) {
     });
 
     let expected_id = match &case {
-        SpecializationCase::Specialized(_) => specialized_impl_id,
+        SpecializationCase::SpecializedRewrittenable(_, _)
+        | SpecializationCase::Specialized(_) => specialized_impl_id,
         SpecializationCase::General(_, _) => general_impl_id,
     };
 
     let predicate = PositiveTrait::new(trait_id, false, GenericArguments {
         types: match case {
             SpecializationCase::Specialized(a) => vec![a.clone(), a],
-            SpecializationCase::General(a, b) => vec![a, b],
+            SpecializationCase::SpecializedRewrittenable(a, b)
+            | SpecializationCase::General(a, b) => vec![a, b],
         },
         ..Default::default()
     });
@@ -383,6 +386,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
 enum SpecializationCase {
     Specialized(Type),
     General(Type, Type),
+    SpecializedRewrittenable(Type, Type),
 }
 
 #[rstest::rstest]
@@ -390,6 +394,56 @@ enum SpecializationCase {
 #[case(SpecializationCase::General(
     Type::Primitive(Primitive::Int32),
     Type::Primitive(Primitive::Float32)
+))]
+#[case(SpecializationCase::SpecializedRewrittenable(
+    Type::Tuple(Tuple { 
+        elements: vec![
+            tuple::Element {
+                term: Type::Primitive(Primitive::Int8),
+                is_unpacked: false,
+            },
+            tuple::Element {
+                term: Type::Primitive(Primitive::Int16),
+                is_unpacked: false,
+            },
+            tuple::Element {
+                term: Type::Primitive(Primitive::Int32),
+                is_unpacked: false,
+            },
+            tuple::Element {
+                term: Type::Primitive(Primitive::Int64),
+                is_unpacked: false,
+            },
+        ] 
+    }), 
+    Type::Tuple(Tuple { 
+        elements: vec![
+            tuple::Element {
+                term: Type::Primitive(Primitive::Int8),
+                is_unpacked: false,
+            },
+            tuple::Element {
+                term: Type::Tuple(Tuple { 
+                    elements: vec![
+                        tuple::Element {
+                            term: Type::Primitive(Primitive::Int16),
+                            is_unpacked: false,
+                        },
+
+                        tuple::Element {
+                            term: Type::Primitive(Primitive::Int32),
+                            is_unpacked: false,
+                        },
+                    ] 
+                }),
+                is_unpacked: true,
+            },
+            tuple::Element {
+                term: Type::Primitive(Primitive::Int64),
+                is_unpacked: false,
+            },
+        ] 
+    }), 
 ))]
 fn more_specialized_implementation(#[case] specialization: SpecializationCase) {
     tokio::runtime::Runtime::new()
