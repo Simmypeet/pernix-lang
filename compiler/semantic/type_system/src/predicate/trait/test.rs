@@ -10,9 +10,10 @@ use pernixc_term::{
     },
     instantiation::Instantiation,
     lifetime::Lifetime,
-    predicate::PositiveTrait,
+    predicate::{self, PositiveTrait},
     r#type::{Primitive, Qualifier, Reference, Type},
     tuple::{self, Tuple},
+    where_clause::Predicate,
 };
 
 use crate::{
@@ -204,7 +205,55 @@ async fn specialization_test_internal(case: SpecializationCase) {
         );
         x.set_input(
             pernixc_term::where_clause::Key(specialized_impl_id),
-            Arc::default(),
+            if let SpecializationCase::SpecializedButFallback(ty) = &case {
+                Arc::from([{
+                    let impossible_trait_id = Global::new(
+                        TargetID::Extern(1),
+                        pernixc_symbol::ID(10),
+                    );
+
+                    x.set_input(
+                        pernixc_symbol::kind::Key(impossible_trait_id),
+                        Kind::Trait,
+                    );
+                    x.set_input(
+                        pernixc_symbol::implemented::Key(impossible_trait_id),
+                        Arc::default(),
+                    );
+
+                    let mut trait_generic_param = GenericParameters::default();
+                    trait_generic_param
+                        .add_type_parameter(TypeParameter {
+                            name: "T".to_string(),
+                            span: None,
+                        })
+                        .unwrap();
+
+                    x.set_input(
+                        pernixc_term::generic_parameters::Key(
+                            impossible_trait_id,
+                        ),
+                        Arc::new(trait_generic_param),
+                    );
+
+                    // This predicate requirement will never be satisfiable
+                    Predicate {
+                        predicate: predicate::Predicate::PositiveTrait(
+                            PositiveTrait {
+                                trait_id: impossible_trait_id,
+                                is_const: false,
+                                generic_arguments: GenericArguments {
+                                    types: vec![ty.clone()],
+                                    ..Default::default()
+                                },
+                            },
+                        ),
+                        span: None,
+                    }
+                }])
+            } else {
+                Arc::default()
+            },
         );
 
         let mut impl_generic_param = GenericParameters::default();
@@ -330,6 +379,28 @@ async fn specialization_test_internal(case: SpecializationCase) {
                 .collect(),
                 ..Default::default()
             },
+
+            SpecializationCase::SpecializedButFallback(first) => {
+                Instantiation {
+                    types: std::iter::once((
+                        Type::Parameter(TypeParameterID::new(
+                            general_impl_id,
+                            impl_general_t,
+                        )),
+                        first.clone(),
+                    ))
+                    .chain(std::iter::once((
+                        Type::Parameter(TypeParameterID::new(
+                            general_impl_id,
+                            impl_general_u,
+                        )),
+                        first.clone(),
+                    )))
+                    .collect(),
+                    ..Default::default()
+                }
+            }
+
             SpecializationCase::General(first, second) => Instantiation {
                 types: std::iter::once((
                     Type::Parameter(TypeParameterID::new(
@@ -354,12 +425,16 @@ async fn specialization_test_internal(case: SpecializationCase) {
     let expected_id = match &case {
         SpecializationCase::SpecializedRewrittenable(_, _)
         | SpecializationCase::Specialized(_) => specialized_impl_id,
-        SpecializationCase::General(_, _) => general_impl_id,
+
+        SpecializationCase::SpecializedButFallback(_)
+        | SpecializationCase::General(_, _) => general_impl_id,
     };
 
     let predicate = PositiveTrait::new(trait_id, false, GenericArguments {
         types: match case {
-            SpecializationCase::Specialized(a) => vec![a.clone(), a],
+            SpecializationCase::SpecializedButFallback(a)
+            | SpecializationCase::Specialized(a) => vec![a.clone(), a],
+
             SpecializationCase::SpecializedRewrittenable(a, b)
             | SpecializationCase::General(a, b) => vec![a, b],
         },
@@ -387,6 +462,7 @@ enum SpecializationCase {
     Specialized(Type),
     General(Type, Type),
     SpecializedRewrittenable(Type, Type),
+    SpecializedButFallback(Type),
 }
 
 #[rstest::rstest]
@@ -396,7 +472,7 @@ enum SpecializationCase {
     Type::Primitive(Primitive::Float32)
 ))]
 #[case(SpecializationCase::SpecializedRewrittenable(
-    Type::Tuple(Tuple { 
+    Type::Tuple(Tuple {
         elements: vec![
             tuple::Element {
                 term: Type::Primitive(Primitive::Int8),
@@ -414,16 +490,16 @@ enum SpecializationCase {
                 term: Type::Primitive(Primitive::Int64),
                 is_unpacked: false,
             },
-        ] 
-    }), 
-    Type::Tuple(Tuple { 
+        ]
+    }),
+    Type::Tuple(Tuple {
         elements: vec![
             tuple::Element {
                 term: Type::Primitive(Primitive::Int8),
                 is_unpacked: false,
             },
             tuple::Element {
-                term: Type::Tuple(Tuple { 
+                term: Type::Tuple(Tuple {
                     elements: vec![
                         tuple::Element {
                             term: Type::Primitive(Primitive::Int16),
@@ -434,7 +510,7 @@ enum SpecializationCase {
                             term: Type::Primitive(Primitive::Int32),
                             is_unpacked: false,
                         },
-                    ] 
+                    ]
                 }),
                 is_unpacked: true,
             },
@@ -442,9 +518,12 @@ enum SpecializationCase {
                 term: Type::Primitive(Primitive::Int64),
                 is_unpacked: false,
             },
-        ] 
-    }), 
+        ]
+    }),
 ))]
+#[case(SpecializationCase::SpecializedButFallback(Type::Primitive(
+    Primitive::Int32
+)))]
 fn more_specialized_implementation(#[case] specialization: SpecializationCase) {
     tokio::runtime::Runtime::new()
         .unwrap()
