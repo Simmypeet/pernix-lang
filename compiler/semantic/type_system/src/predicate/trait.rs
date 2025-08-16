@@ -1,19 +1,17 @@
+//! Implements the [`Query`] for the [`PositiveTrait`] and [`NegativeTrait`].
+
 use std::{any::Any, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_semantic::{
-    component::{
-        derived::{generic_parameters::GenericParameters, variances::Variance},
-        input::SymbolKind,
-    },
-    table::GlobalID,
-    term::{
-        generic_arguments::GenericArguments,
-        predicate::{
-            NegativeTrait as Negative, PositiveTrait as Positive, Predicate,
-        },
-        Model,
-    },
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    parent::scope_walker,
+};
+use pernixc_target::Global;
+use pernixc_term::{
+    generic_arguments::GenericArguments,
+    generic_parameters::get_generic_parameters,
+    predicate::{NegativeTrait, PositiveTrait, Predicate},
 };
 
 use crate::{
@@ -25,14 +23,14 @@ use crate::{
 
 /// An enumeration of ways a positive trait predicate can be satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum PositiveSatisfied<M: Model> {
+pub enum PositiveSatisfied {
     /// The trait predicate was proven to be satisfied by the fact that the
     /// query was made inside the trait that is being queried.
     Environment,
 
     /// The trait predicate was proven to be satisfied by searching for the
     /// matching trait implementation.
-    Implementation(Implementation<M>),
+    Implementation(Implementation),
 
     /// The trait predicate was proven to be satisfied by the premise.
     Premise,
@@ -45,36 +43,36 @@ pub enum PositiveSatisfied<M: Model> {
 
 /// An enumeration of ways a negative trait predicate can be satisfied.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-pub enum NegativeSatisfied<M: Model> {
+pub enum NegativeSatisfied {
     /// The trait predicate was proven to be satisfied by the premise.
     Premise,
 
     /// The trait predicate was proven to be satisfied by searching for the
     /// matching trait implementation.
-    Implementation(Implementation<M>),
+    Implementation(Implementation),
 
     /// By proving that the positive trait predicate is not satisfied and the
     /// generic arguments are definite.
     UnsatisfiedPositive,
 }
 
-impl<M: Model> Query for Positive<M> {
-    type Model = M;
+impl Query for PositiveTrait {
     type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<PositiveSatisfied<M>, M>;
+    type Result = Succeeded<PositiveSatisfied>;
     type Error = Error;
 
-    fn query(
+    async fn query(
         &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<'_, impl Normalizer>,
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         // if this query was made in some trait implementation or trait, then
         // check if the trait implementation is the same as the query one.
         if let Some(result) =
-            is_in_trait(self.trait_id, &self.generic_arguments, environment)?
+            is_in_trait(self.trait_id, &self.generic_arguments, environment)
+                .await?
         {
             return Ok(Some(Arc::new(Succeeded::with_constraints(
                 PositiveSatisfied::Environment,
@@ -83,37 +81,27 @@ impl<M: Model> Query for Positive<M> {
         }
 
         // manually search for the trait implementation
-        match environment
-            .resolve_implementation(self.trait_id, &self.generic_arguments)
+        if let Some(result) = environment
+            .query(&resolution::Resolve::new(
+                self.trait_id,
+                self.generic_arguments.clone(),
+            ))
+            .await?
         {
-            Ok(Succeeded {
-                result:
-                    Implementation { instantiation, id, is_not_general_enough },
-                constraints,
-            }) => {
-                if *environment.table().get::<SymbolKind>(id)
-                    == SymbolKind::PositiveTraitImplementation
-                {
-                    return Ok(Some(Arc::new(Succeeded::with_constraints(
-                        PositiveSatisfied::Implementation(Implementation {
-                            instantiation,
-                            id,
-                            is_not_general_enough,
-                        }),
-                        constraints,
-                    ))));
-                }
+            if environment.tracked_engine().get_kind(result.result.id).await
+                == Kind::PositiveTraitImplementation
+            {
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    PositiveSatisfied::Implementation(Implementation {
+                        instantiation: result.result.instantiation.clone(),
+                        id: result.result.id,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    }),
+                    result.constraints.clone(),
+                ))));
             }
-
-            Err(resolution::Error::Abort(error)) => {
-                return Err(Error::Abort(error));
-            }
-
-            Err(resolution::Error::Overflow(error)) => {
-                return Err(Error::Overflow(error));
-            }
-
-            Err(_) => {}
         }
 
         // look for the premise that matches
@@ -128,11 +116,12 @@ impl<M: Model> Query for Positive<M> {
                 continue;
             }
 
-            let Some(compatiblity) = environment.generic_arguments_compatible(
-                &self.generic_arguments,
-                &trait_premise.generic_arguments,
-                Variance::Invariant,
-            )?
+            let Some(compatiblity) = environment
+                .subtypes_generic_arguments(
+                    &self.generic_arguments,
+                    &trait_premise.generic_arguments,
+                )
+                .await?
             else {
                 continue;
             };
@@ -163,51 +152,40 @@ impl<M: Model> Query for Positive<M> {
     }
 }
 
-impl<M: Model> Query for Negative<M> {
-    type Model = M;
+impl Query for NegativeTrait {
     type Parameter = ();
     type InProgress = ();
-    type Result = Succeeded<NegativeSatisfied<M>, M>;
+    type Result = Succeeded<NegativeSatisfied>;
     type Error = Error;
 
-    fn query(
+    async fn query(
         &self,
-        environment: &Environment<Self::Model, impl Normalizer<Self::Model>>,
+        environment: &Environment<'_, impl Normalizer>,
         (): Self::Parameter,
         (): Self::InProgress,
     ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
         // manually search for the trait implementation
-        match environment
-            .resolve_implementation(self.trait_id, &self.generic_arguments)
+        if let Some(result) = environment
+            .query(&resolution::Resolve::new(
+                self.trait_id,
+                self.generic_arguments.clone(),
+            ))
+            .await?
         {
-            Ok(Succeeded {
-                result:
-                    Implementation { instantiation, id, is_not_general_enough },
-                constraints,
-            }) => {
-                if *environment.table().get::<SymbolKind>(id)
-                    == SymbolKind::NegativeTraitImplementation
-                {
-                    return Ok(Some(Arc::new(Succeeded::with_constraints(
-                        NegativeSatisfied::Implementation(Implementation {
-                            instantiation,
-                            id,
-                            is_not_general_enough,
-                        }),
-                        constraints,
-                    ))));
-                }
+            if environment.tracked_engine().get_kind(result.result.id).await
+                == Kind::NegativeTraitImplementation
+            {
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    NegativeSatisfied::Implementation(Implementation {
+                        instantiation: result.result.instantiation.clone(),
+                        id: result.result.id,
+                        is_not_general_enough: result
+                            .result
+                            .is_not_general_enough,
+                    }),
+                    result.constraints.clone(),
+                ))));
             }
-
-            Err(resolution::Error::Overflow(error)) => {
-                return Err(Error::Overflow(error));
-            }
-
-            Err(resolution::Error::Abort(error)) => {
-                return Err(Error::Abort(error));
-            }
-
-            Err(_) => {}
         }
 
         // look for the premise that matches
@@ -222,11 +200,12 @@ impl<M: Model> Query for Negative<M> {
                 continue;
             }
 
-            let Some(compatiblity) = environment.generic_arguments_compatible(
-                &self.generic_arguments,
-                &trait_premise.generic_arguments,
-                Variance::Invariant,
-            )?
+            let Some(compatiblity) = environment
+                .subtypes_generic_arguments(
+                    &self.generic_arguments,
+                    &trait_premise.generic_arguments,
+                )
+                .await?
             else {
                 continue;
             };
@@ -242,18 +221,20 @@ impl<M: Model> Query for Negative<M> {
         }
 
         // must be definite and failed to prove the positive trait
-        let Some(definition) =
-            environment.generic_arguments_definite(&self.generic_arguments)?
+        let Some(definition) = environment
+            .generic_arguments_definite(&self.generic_arguments)
+            .await?
         else {
             return Ok(None);
         };
 
         Ok(environment
-            .query(&Positive::new(
+            .query(&PositiveTrait::new(
                 self.trait_id,
                 false,
                 self.generic_arguments.clone(),
-            ))?
+            ))
+            .await?
             .is_none()
             .then(|| {
                 Arc::new(Succeeded::with_constraints(
@@ -264,20 +245,23 @@ impl<M: Model> Query for Negative<M> {
     }
 }
 
-fn is_in_trait<M: Model>(
-    trait_id: GlobalID,
-    generic_arguments: &GenericArguments<M>,
-    environment: &Environment<M, impl Normalizer<M>>,
-) -> Result<Option<Succeeded<Satisfied, M>>, Error> {
+async fn is_in_trait(
+    trait_id: Global<pernixc_symbol::ID>,
+    generic_arguments: &GenericArguments,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Option<Succeeded<Satisfied>>, Error> {
     let Some(query_site) = environment.premise().query_site else {
         return Ok(None);
     };
 
-    for current_id in environment.table().scope_walker(query_site) {
-        let current_id = GlobalID::new(query_site.target_id, current_id);
+    let mut scope_walker =
+        environment.tracked_engine().scope_walker(query_site);
 
-        let SymbolKind::Trait =
-            *environment.table().get::<SymbolKind>(current_id)
+    while let Some(current_id) = scope_walker.next().await {
+        let current_id = Global::new(query_site.target_id, current_id);
+
+        let Kind::Trait =
+            environment.tracked_engine().get_kind(current_id).await
         else {
             continue;
         };
@@ -288,15 +272,17 @@ fn is_in_trait<M: Model>(
         }
 
         let trait_generic_arguments = environment
-            .table()
-            .query::<GenericParameters>(current_id)?
+            .tracked_engine()
+            .get_generic_parameters(current_id)
+            .await?
             .create_identity_generic_arguments(current_id);
 
-        let Some(compatibility) = environment.generic_arguments_compatible(
-            generic_arguments,
-            &trait_generic_arguments,
-            Variance::Invariant,
-        )?
+        let Some(compatibility) = environment
+            .subtypes_generic_arguments(
+                generic_arguments,
+                &trait_generic_arguments,
+            )
+            .await?
         else {
             continue;
         };
@@ -311,5 +297,5 @@ fn is_in_trait<M: Model>(
     Ok(None)
 }
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

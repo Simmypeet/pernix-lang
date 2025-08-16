@@ -377,14 +377,20 @@ async fn predicate_satisfies<'a>(
             Predicate::PositiveMarker(tr) => {
                 environment.query(&tr).await?.is_some()
             }
+
             Predicate::NegativeMarker(tr) => {
                 environment.query(&tr).await?.is_none()
             }
 
-            Predicate::PositiveTrait(_)
-            | Predicate::NegativeTrait(_)
-            | Predicate::TypeOutlives(_)
-            | Predicate::LifetimeOutlives(_) => true,
+            Predicate::PositiveTrait(tr) => {
+                environment.query(&tr).await?.is_some()
+            }
+
+            Predicate::NegativeTrait(tr) => {
+                environment.query(&tr).await?.is_some()
+            }
+
+            Predicate::TypeOutlives(_) | Predicate::LifetimeOutlives(_) => true,
         } {
             return Ok(false);
         }
