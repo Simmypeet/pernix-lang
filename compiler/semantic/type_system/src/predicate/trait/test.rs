@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 use pernixc_query::Engine;
 use pernixc_symbol::kind::Kind;
@@ -8,6 +8,7 @@ use pernixc_term::{
     generic_parameters::{
         GenericParameters, LifetimeParameterID, TypeParameter, TypeParameterID,
     },
+    instantiation::Instantiation,
     lifetime::Lifetime,
     predicate::PositiveTrait,
     r#type::{Primitive, Qualifier, Reference, Type},
@@ -20,6 +21,7 @@ use crate::{
 };
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn single_implementation() {
     // given a trait predicate `Trait[&'static (int32,)]` with a single
     // implements `implements['a, T] Trait[&'a T]`
@@ -42,78 +44,98 @@ async fn single_implementation() {
 
     let mut engine = Arc::new(Engine::default());
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(
-            pernixc_symbol::kind::Key(implements_id),
-            Kind::PositiveTraitImplementation,
-        );
-        x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait);
-        x.set_input(pernixc_symbol::implements::Key(implements_id), trait_id);
-        x.set_input(
-            pernixc_symbol::final_implements::Key(implements_id),
-            false,
-        );
-        x.set_input(
-            pernixc_term::where_clause::Key(implements_id),
-            Arc::default(),
-        );
-        x.set_input(
-            pernixc_symbol::implemented::Key(trait_id),
-            Arc::new(std::iter::once(implements_id).collect()),
-        );
+    let expected_instantiation =
+        Arc::get_mut(&mut engine).unwrap().input_session(|x| {
+            x.set_input(
+                pernixc_symbol::kind::Key(implements_id),
+                Kind::PositiveTraitImplementation,
+            );
+            x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait);
+            x.set_input(
+                pernixc_symbol::implements::Key(implements_id),
+                trait_id,
+            );
+            x.set_input(
+                pernixc_symbol::final_implements::Key(implements_id),
+                false,
+            );
+            x.set_input(
+                pernixc_term::where_clause::Key(implements_id),
+                Arc::default(),
+            );
+            x.set_input(
+                pernixc_symbol::implemented::Key(trait_id),
+                Arc::new(std::iter::once(implements_id).collect()),
+            );
 
-        let mut trait_generic_param = GenericParameters::default();
-        trait_generic_param
-            .add_type_parameter(TypeParameter {
-                name: "T".to_string(),
-                span: None,
-            })
-            .unwrap();
-
-        x.set_input(
-            pernixc_term::generic_parameters::Key(trait_id),
-            Arc::new(trait_generic_param),
-        );
-
-        let mut impl_generic_param = GenericParameters::default();
-        let impl_a = impl_generic_param
-            .add_lifetime_parameter(
-                pernixc_term::generic_parameters::LifetimeParameter {
-                    name: "a".to_string(),
+            let mut trait_generic_param = GenericParameters::default();
+            trait_generic_param
+                .add_type_parameter(TypeParameter {
+                    name: "T".to_string(),
                     span: None,
+                })
+                .unwrap();
+
+            x.set_input(
+                pernixc_term::generic_parameters::Key(trait_id),
+                Arc::new(trait_generic_param),
+            );
+
+            let mut impl_generic_param = GenericParameters::default();
+            let impl_a = impl_generic_param
+                .add_lifetime_parameter(
+                    pernixc_term::generic_parameters::LifetimeParameter {
+                        name: "a".to_string(),
+                        span: None,
+                    },
+                )
+                .unwrap();
+            let impl_t = impl_generic_param
+                .add_type_parameter(TypeParameter {
+                    name: "T".to_string(),
+                    span: None,
+                })
+                .unwrap();
+
+            x.set_input(
+                pernixc_term::generic_parameters::Key(implements_id),
+                Arc::new(impl_generic_param),
+            );
+
+            x.set_input(
+                pernixc_term::implements_argument::Key(implements_id),
+                GenericArguments {
+                    lifetimes: vec![],
+                    types: vec![Type::Reference(Reference {
+                        qualifier: Qualifier::Immutable,
+                        lifetime: Lifetime::Parameter(
+                            LifetimeParameterID::new(implements_id, impl_a),
+                        ),
+                        pointee: Box::new(Type::Parameter(
+                            TypeParameterID::new(trait_id, impl_t),
+                        )),
+                    })],
+                    constants: vec![],
                 },
-            )
-            .unwrap();
-        let impl_t = impl_generic_param
-            .add_type_parameter(TypeParameter {
-                name: "T".to_string(),
-                span: None,
-            })
-            .unwrap();
+            );
 
-        x.set_input(
-            pernixc_term::generic_parameters::Key(implements_id),
-            Arc::new(impl_generic_param),
-        );
-
-        x.set_input(
-            pernixc_term::implements_argument::Key(implements_id),
-            GenericArguments {
-                lifetimes: vec![],
-                types: vec![Type::Reference(Reference {
-                    qualifier: Qualifier::Immutable,
-                    lifetime: Lifetime::Parameter(LifetimeParameterID::new(
+            Instantiation {
+                lifetimes: std::iter::once((
+                    Lifetime::Parameter(LifetimeParameterID::new(
                         implements_id,
                         impl_a,
                     )),
-                    pointee: Box::new(Type::Parameter(TypeParameterID::new(
-                        trait_id, impl_t,
-                    ))),
-                })],
-                constants: vec![],
-            },
-        );
-    });
+                    Lifetime::Static,
+                ))
+                .collect(),
+                types: std::iter::once((
+                    Type::Parameter(TypeParameterID::new(trait_id, impl_t)),
+                    tuple_with_i32.clone(),
+                ))
+                .collect(),
+                constants: BTreeMap::default(),
+            }
+        });
 
     let predicate = PositiveTrait::new(trait_id, false, GenericArguments {
         lifetimes: vec![],
@@ -127,7 +149,7 @@ async fn single_implementation() {
         normalizer::NO_OP,
     );
 
-    let result = dbg!(environment.query(&predicate).await).unwrap().unwrap();
+    let result = environment.query(&predicate).await.unwrap().unwrap();
 
     assert!(result.constraints.is_empty());
 
@@ -135,4 +157,5 @@ async fn single_implementation() {
 
     assert!(!implementation.is_not_general_enough);
     assert_eq!(implementation.id, implements_id);
+    assert_eq!(implementation.instantiation, expected_instantiation);
 }
