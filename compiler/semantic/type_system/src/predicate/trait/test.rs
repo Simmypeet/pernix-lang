@@ -158,4 +158,17 @@ async fn single_implementation() {
     assert!(!implementation.is_not_general_enough);
     assert_eq!(implementation.id, implements_id);
     assert_eq!(implementation.instantiation, expected_instantiation);
+
+    let non_valid_predicate =
+        PositiveTrait::new(trait_id, false, GenericArguments {
+            lifetimes: vec![],
+            types: vec![Type::Reference(Reference {
+                qualifier: Qualifier::Mutable, /* it's mutable now */
+                lifetime: Lifetime::Static,
+                pointee: Box::new(tuple_with_i32),
+            })],
+            constants: vec![],
+        });
+
+    assert!(environment.query(&non_valid_predicate).await.unwrap().is_none());
 }
