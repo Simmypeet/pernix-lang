@@ -224,7 +224,7 @@ impl Query for PositiveMarker {
             .await?
         {
             if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::PositiveMarkerImplementation
+                == Kind::PositiveImplementation
             {
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
                     PositiveSatisfied::Implementation(Implementation {
@@ -360,7 +360,7 @@ impl Query for NegativeMarker {
             .await?
         {
             if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::NegativeMarkerImplementation
+                == Kind::NegativeImplementation
             {
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
                     NegativeSatisfied::Implementation(Implementation {

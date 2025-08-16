@@ -89,7 +89,7 @@ impl Query for PositiveTrait {
             .await?
         {
             if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::PositiveTraitImplementation
+                == Kind::PositiveImplementation
             {
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
                     PositiveSatisfied::Implementation(Implementation {
@@ -173,7 +173,7 @@ impl Query for NegativeTrait {
             .await?
         {
             if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::NegativeTraitImplementation
+                == Kind::NegativeImplementation
             {
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
                     NegativeSatisfied::Implementation(Implementation {

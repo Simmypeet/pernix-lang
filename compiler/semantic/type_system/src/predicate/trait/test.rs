@@ -49,7 +49,7 @@ async fn single_implementation() {
         Arc::get_mut(&mut engine).unwrap().input_session(|x| {
             x.set_input(
                 pernixc_symbol::kind::Key(implements_id),
-                Kind::PositiveTraitImplementation,
+                Kind::PositiveImplementation,
             );
             x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait);
             x.set_input(
@@ -193,7 +193,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
     let expected = Arc::get_mut(&mut engine).unwrap().input_session(|x| {
         x.set_input(
             pernixc_symbol::kind::Key(specialized_impl_id),
-            Kind::PositiveTraitImplementation,
+            Kind::PositiveImplementation,
         );
         x.set_input(
             pernixc_symbol::implements::Key(specialized_impl_id),
@@ -289,7 +289,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
 
         x.set_input(
             pernixc_symbol::kind::Key(general_impl_id),
-            Kind::PositiveTraitImplementation,
+            Kind::PositiveImplementation,
         );
         x.set_input(pernixc_symbol::implements::Key(general_impl_id), trait_id);
         x.set_input(

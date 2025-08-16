@@ -45,16 +45,12 @@ pub enum Kind {
     TraitType,
     TraitFunction,
     TraitConstant,
-    PositiveTraitImplementation,
-    NegativeTraitImplementation,
-    TraitImplementationFunction,
-    TraitImplementationType,
-    TraitImplementationConstant,
-    AdtImplementation,
-    AdtImplementationFunction,
     Marker,
-    PositiveMarkerImplementation,
-    NegativeMarkerImplementation,
+    PositiveImplementation,
+    NegativeImplementation,
+    ImplementationType,
+    ImplementationFunction,
+    ImplementationConstant,
 }
 
 impl Kind {
@@ -66,8 +62,7 @@ impl Kind {
             Self::Module
                 | Self::Enum
                 | Self::Trait
-                | Self::AdtImplementation
-                | Self::PositiveTraitImplementation
+                | Self::PositiveImplementation
         )
     }
 
@@ -99,28 +94,12 @@ impl Kind {
             Self::TraitFunction => "trait function",
             Self::TraitConstant => "trait constant",
             Self::ExternFunction => "extern function",
-            Self::PositiveTraitImplementation => {
-                "positive trait implementation"
-            }
-            Self::NegativeTraitImplementation => {
-                "negative trait implementation"
-            }
-            Self::TraitImplementationFunction => {
-                "trait implementation function"
-            }
-            Self::TraitImplementationType => "trait implementation type",
-            Self::TraitImplementationConstant => {
-                "trait implementation constant"
-            }
-            Self::AdtImplementation => "implementation",
-            Self::AdtImplementationFunction => "implementation function",
+            Self::PositiveImplementation => "implementation",
+            Self::NegativeImplementation => "negative implementation",
+            Self::ImplementationFunction => "implementation function",
+            Self::ImplementationType => "implementation type",
+            Self::ImplementationConstant => "implementation constant",
             Self::Marker => "marker",
-            Self::PositiveMarkerImplementation => {
-                "positive marker implementation"
-            }
-            Self::NegativeMarkerImplementation => {
-                "negative marker implementation"
-            }
         }
     }
 
@@ -138,17 +117,13 @@ impl Kind {
                 | Self::TraitType
                 | Self::TraitFunction
                 | Self::TraitConstant
-                | Self::PositiveTraitImplementation
-                | Self::NegativeTraitImplementation
-                | Self::TraitImplementationFunction
-                | Self::TraitImplementationType
-                | Self::TraitImplementationConstant
-                | Self::AdtImplementation
-                | Self::AdtImplementationFunction
                 | Self::Marker
-                | Self::PositiveMarkerImplementation
-                | Self::NegativeMarkerImplementation
                 | Self::ExternFunction
+                | Self::PositiveImplementation
+                | Self::NegativeImplementation
+                | Self::ImplementationType
+                | Self::ImplementationFunction
+                | Self::ImplementationConstant
         )
     }
 
@@ -166,17 +141,13 @@ impl Kind {
                 | Self::TraitType
                 | Self::TraitFunction
                 | Self::TraitConstant
-                | Self::PositiveTraitImplementation
-                | Self::NegativeTraitImplementation
-                | Self::TraitImplementationFunction
-                | Self::TraitImplementationType
-                | Self::TraitImplementationConstant
-                | Self::AdtImplementation
-                | Self::AdtImplementationFunction
                 | Self::Marker
-                | Self::PositiveMarkerImplementation
-                | Self::NegativeMarkerImplementation
                 | Self::ExternFunction
+                | Self::PositiveImplementation
+                | Self::NegativeImplementation
+                | Self::ImplementationType
+                | Self::ImplementationFunction
+                | Self::ImplementationConstant
         )
     }
 
@@ -185,11 +156,7 @@ impl Kind {
     pub const fn is_implementation(&self) -> bool {
         matches!(
             self,
-            Self::PositiveTraitImplementation
-                | Self::NegativeTraitImplementation
-                | Self::PositiveMarkerImplementation
-                | Self::NegativeMarkerImplementation
-                | Self::AdtImplementation
+            Self::PositiveImplementation | Self::NegativeImplementation
         )
     }
 
@@ -200,7 +167,7 @@ impl Kind {
     /// of the type alias such as `trait T { type U; }`
     #[must_use]
     pub const fn has_type_alias(&self) -> bool {
-        matches!(self, Self::Type | Self::TraitImplementationType)
+        matches!(self, Self::Type | Self::ImplementationType)
     }
 
     /// Checks if the symbol has a function signature.
@@ -210,8 +177,7 @@ impl Kind {
             self,
             Self::Function
                 | Self::TraitFunction
-                | Self::TraitImplementationFunction
-                | Self::AdtImplementationFunction
+                | Self::ImplementationFunction
                 | Self::ExternFunction
         )
     }
@@ -223,8 +189,7 @@ impl Kind {
             self,
             Self::Function
                 | Self::TraitFunction
-                | Self::TraitImplementationFunction
-                | Self::AdtImplementationFunction
+                | Self::ImplementationFunction
                 | Self::ExternFunction
         )
     }
@@ -236,8 +201,7 @@ impl Kind {
             self,
             Self::Function
                 | Self::TraitFunction
-                | Self::TraitImplementationFunction
-                | Self::AdtImplementationFunction
+                | Self::ImplementationFunction
                 | Self::ExternFunction
         )
     }
@@ -251,24 +215,7 @@ impl Kind {
     /// Checks if the symbol has a function body
     #[must_use]
     pub const fn has_function_body(&self) -> bool {
-        matches!(
-            self,
-            Self::Function
-                | Self::TraitImplementationFunction
-                | Self::AdtImplementationFunction
-        )
-    }
-
-    /// Checks if the symbol has a `unsafe`ness attribute.
-    #[must_use]
-    pub const fn has_function_unsafeness(&self) -> bool {
-        matches!(self, Self::Function | Self::AdtImplementationFunction)
-    }
-
-    /// Checks if the symbol has a `const`ness attribute.
-    #[must_use]
-    pub const fn has_function_constness(&self) -> bool {
-        matches!(self, Self::Function | Self::AdtImplementationFunction)
+        matches!(self, Self::Function | Self::ImplementationFunction)
     }
 }
 

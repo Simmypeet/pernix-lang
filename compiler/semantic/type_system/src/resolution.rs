@@ -74,7 +74,6 @@ impl Query for Resolve {
         // we might be in the implementation site already
         if let Some(result) = is_in_active_implementation(
             self.implemented_id,
-            symbol_kind,
             &self.generic_arguments,
             environment,
         )
@@ -251,7 +250,6 @@ impl Query for Resolve {
 #[allow(clippy::type_complexity)]
 async fn is_in_active_implementation(
     implemented_id: Global<pernixc_symbol::ID>,
-    implemented_kind: Kind, /* either trait or marker */
     generic_arguments: &GenericArguments,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<Succeeded<Implementation>>, Error> {
@@ -268,28 +266,11 @@ async fn is_in_active_implementation(
             environment.tracked_engine().get_kind(current_id).await;
 
         // must be the implementation kind
-        match implemented_kind {
-            Kind::Trait => {
-                if !matches!(
-                    current_kind,
-                    Kind::PositiveTraitImplementation
-                        | Kind::NegativeTraitImplementation
-                ) {
-                    continue;
-                }
-            }
-
-            Kind::Marker => {
-                if !matches!(
-                    current_kind,
-                    Kind::PositiveMarkerImplementation
-                        | Kind::NegativeMarkerImplementation
-                ) {
-                    continue;
-                }
-            }
-
-            _ => unreachable!(),
+        if !matches!(
+            current_kind,
+            Kind::PositiveImplementation | Kind::NegativeImplementation
+        ) {
+            continue;
         }
 
         // must be an implementation

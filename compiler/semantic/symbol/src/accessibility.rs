@@ -98,33 +98,24 @@ pub async fn executor(
         | Kind::TraitFunction
         | Kind::TraitConstant
         | Kind::Marker
-        | Kind::AdtImplementationFunction
         | Kind::ExternFunction
         | Kind::Function => {
             let table = engine.get_table_of_symbol(id).await;
-
             Ok(table.accessibilities.get(&id.id).copied().unwrap())
         }
 
-        // based on the parent's accessibility
-        Kind::TraitImplementationFunction
-        | Kind::TraitImplementationType
-        | Kind::TraitImplementationConstant
-        | Kind::Variant => Ok(engine
+        Kind::Variant => Ok(engine
             .get_accessibility(Global::new(
                 id.target_id,
                 engine.get_parent(id).await.unwrap(),
             ))
             .await),
 
-        Kind::PositiveTraitImplementation
-        | Kind::NegativeTraitImplementation
-        | Kind::PositiveMarkerImplementation
-        | Kind::NegativeMarkerImplementation
-        | Kind::AdtImplementation => {
-            // self.get_accessibility(self.get_implements(id))
-            todo!()
-        }
+        Kind::PositiveImplementation => todo!(),
+        Kind::NegativeImplementation => todo!(),
+        Kind::ImplementationType => todo!(),
+        Kind::ImplementationFunction => todo!(),
+        Kind::ImplementationConstant => todo!(),
     }
 }
 
