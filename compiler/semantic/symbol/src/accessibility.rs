@@ -244,7 +244,7 @@ pub async fn member_is_more_accessible_executor(
         .member_ids_by_name
         .values()
         .copied()
-        .chain(members.redefinitions.iter().copied())
+        .chain(members.unnameds.iter().copied())
     {
         let member_accessibiliy = tracked_engine
             .get_accessibility(Global::new(trait_id.target_id, member))

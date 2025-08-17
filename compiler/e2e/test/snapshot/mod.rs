@@ -8,6 +8,7 @@ use std::{
 use clap::Parser;
 use insta::assert_snapshot;
 use pernixc_target::{Arguments, Check, Command, Input};
+use pretty_assertions::assert_str_eq;
 
 #[test_generator::test_resources("compiler/e2e/test/snapshot/**/main.pnx")]
 fn main(resource: &str) {
@@ -92,11 +93,10 @@ async fn test(file_path: &Path) {
     let clean_run = run(arguments.clone()).await;
     let with_incremental = run(arguments).await;
 
-    assert!(
-        clean_run == with_incremental,
-        "The output of the clean run and the incremental run is \
-         different:\nClean run:\n{clean_run}\n\nIncremental \
-         run:\n{with_incremental}"
+    assert_str_eq!(
+        clean_run,
+        with_incremental,
+        "the output between clean run and incremental run are different"
     );
 
     let mut settings = insta::Settings::clone_current();

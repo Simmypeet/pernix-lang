@@ -37,7 +37,7 @@ pub async fn adt_fields(
                 .member_ids_by_name
                 .values()
                 .copied()
-                .chain(variants.redefinitions.iter().copied())
+                .chain(variants.unnameds.iter().copied())
             {
                 let Some(ty) = engine
                     .query(&pernixc_term::variant::Key(

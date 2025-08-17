@@ -49,6 +49,20 @@ public trait Sixth:
 public trait Sixth:
     public function inner()
 
+public trait Test[T]:
+    public function test()
+
+implements Test[int32]:
+    public function test():
+        pass
+
+    public function test():
+        pass
+
+implements Test[float32]:
+    public function test():
+        pass
+
 public function main():
     pass
 

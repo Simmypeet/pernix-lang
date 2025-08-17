@@ -1027,7 +1027,7 @@ impl TableContext {
                 current_module_id,
                 Arc::new(Member {
                     member_ids_by_name: member_builder.member_ids_by_name,
-                    redefinitions: member_builder.redefinitions,
+                    unnameds: member_builder.unnameds,
                 }),
             );
             Self::insert_to_table(
@@ -1214,6 +1214,8 @@ impl TableContext {
             .calculate_implements_id(&qualified_identifier_span, self.target_id)
             .await;
 
+        assert!(module_member_builder.unnameds.insert(implements_id));
+
         match body {
             pernixc_syntax::item::implements::Body::Negative(_) => {
                 self.add_symbol_entry(
@@ -1253,7 +1255,7 @@ impl TableContext {
                         .member(Arc::new(Member {
                             member_ids_by_name: member_builder
                                 .member_ids_by_name,
-                            redefinitions: member_builder.redefinitions,
+                            unnameds: member_builder.unnameds,
                         }))
                         .build(),
                 )
@@ -1559,7 +1561,7 @@ impl TableContext {
                         .member(Arc::new(Member {
                             member_ids_by_name: trait_member_builder
                                 .member_ids_by_name,
-                            redefinitions: trait_member_builder.redefinitions,
+                            unnameds: trait_member_builder.unnameds,
                         }))
                         .build(),
                 )
@@ -1654,7 +1656,7 @@ impl TableContext {
                         .member(Arc::new(Member {
                             member_ids_by_name: enum_member_builder
                                 .member_ids_by_name,
-                            redefinitions: enum_member_builder.redefinitions,
+                            unnameds: enum_member_builder.unnameds,
                         }))
                         .build(),
                 )
@@ -1922,7 +1924,7 @@ struct MemberBuilder {
 
     member_ids_by_name: HashMap<SharedStr, ID>,
     name_occurrences: HashMap<SharedStr, usize>,
-    redefinitions: HashSet<ID>,
+    unnameds: HashSet<ID>,
 
     redefinition_errors: HashSet<ItemRedefinition>,
 }
@@ -1940,7 +1942,7 @@ impl MemberBuilder {
 
             member_ids_by_name: HashMap::default(),
             name_occurrences: HashMap::default(),
-            redefinitions: HashSet::default(),
+            unnameds: HashSet::default(),
 
             redefinition_errors: HashSet::default(),
         }
@@ -1979,7 +1981,7 @@ impl MemberBuilder {
                     in_id: self.target_id.make_global(self.symbol_id),
                 });
 
-                self.redefinitions.insert(new_member_id);
+                self.unnameds.insert(new_member_id);
             }
             hash_map::Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(new_member_id);

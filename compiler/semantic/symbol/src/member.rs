@@ -23,8 +23,10 @@ pub struct Member {
     /// map. The redefinition is recorded in the [`Self::redefinitions`] field.
     pub member_ids_by_name: HashMap<SharedStr, ID>,
 
-    /// A set of redefinitions of the members of this symbol.
-    pub redefinitions: HashSet<ID>,
+    /// A set of members that doesn't have a name associated to it.
+    ///
+    /// These IDs could be redefinitions or implements item the module.
+    pub unnameds: HashSet<ID>,
 }
 
 #[pernixc_query::query(

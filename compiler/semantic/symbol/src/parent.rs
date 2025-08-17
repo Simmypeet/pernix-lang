@@ -207,7 +207,7 @@ pub async fn intermediate_executor(
                         .member_ids_by_name
                         .values()
                         .copied()
-                        .chain(members.redefinitions.iter().copied())
+                        .chain(members.unnameds.iter().copied())
                         .collect::<Vec<_>>(),
                 )
             })

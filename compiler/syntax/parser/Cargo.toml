@@ -15,6 +15,7 @@ pernixc_handler = { path = "../../base/handler" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_hash = { path = "../../base/hash" }
 pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 rayon = { workspace = true }
 getset = { workspace = true }
