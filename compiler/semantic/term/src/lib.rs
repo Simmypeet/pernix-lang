@@ -18,6 +18,7 @@ pub mod predicate;
 pub mod sub_term;
 pub mod tuple;
 pub mod r#type;
+pub mod type_alias;
 pub mod variance;
 pub mod variant;
 pub mod visitor;
