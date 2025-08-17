@@ -799,6 +799,18 @@ struct Entry {
 }
 
 impl TableContext {
+    fn implements_qualified_identifier_name(
+        &self,
+        qualified_identifier_span: &RelativeSpan,
+    ) -> &str {
+        let source_file = self.source_file.as_ref().unwrap();
+        let token_tree = self.token_tree.as_ref().unwrap();
+
+        &source_file.content()[qualified_identifier_span
+            .to_absolute_span(source_file, token_tree)
+            .range()]
+    }
+
     #[allow(clippy::too_many_lines)]
     async fn add_symbol_entry(&self, id: ID, parent_id: ID, entry: Entry) {
         match entry.naming {
@@ -807,22 +819,23 @@ impl TableContext {
                 Self::insert_to_table(&self.spans, id, Some(token.span));
             }
             Naming::Implements(qualified_identifier) => {
-                let token_tree = self.token_tree.as_ref().unwrap();
-                let source_file = self.source_file.as_ref().unwrap();
-
                 Self::insert_to_table(
                     &self.names,
                     id,
-                    source_file.content()[qualified_identifier
-                        .span()
-                        .to_absolute_span(source_file, token_tree)
-                        .range()]
+                    self.implements_qualified_identifier_name(
+                        &qualified_identifier.span(),
+                    )
                     .into(),
                 );
                 Self::insert_to_table(
                     &self.spans,
                     id,
                     Some(qualified_identifier.span()),
+                );
+                Self::insert_to_table(
+                    &self.implements_qualified_identifier_syntaxes,
+                    id,
+                    qualified_identifier,
                 );
             }
         }
@@ -1164,16 +1177,229 @@ impl TableContext {
         }
     }
 
-    #[allow(unused, clippy::unused_async)]
     async fn handle_implements(
         self: &Arc<Self>,
-        implements_syntax: &pernixc_syntax::item::implements::Implements,
-    ) -> Option<JoinHandle<()>> {
-        let signature = implements_syntax.signature()?;
-        let qualified_identifier = signature.qualified_identifier()?;
-        let body = implements_syntax.body()?;
+        implements_syntax: pernixc_syntax::item::implements::Implements,
+        module_member_builder: &mut MemberBuilder,
+    ) {
+        let Some(signature) = implements_syntax.signature() else {
+            return;
+        };
 
-        todo!()
+        let Some(qualified_identifier) = signature.qualified_identifier()
+        else {
+            return;
+        };
+
+        let Some(body) = implements_syntax.body() else {
+            return;
+        };
+
+        let qualified_identifier_span = qualified_identifier.span();
+
+        let generic_parameters = signature.generic_parameters();
+        let where_clause = match &body {
+            pernixc_syntax::item::implements::Body::Negative(negative_body) => {
+                negative_body
+                    .trailing_where_clause()
+                    .and_then(|x| x.where_clause())
+                    .and_then(|x| x.predicates())
+            }
+            pernixc_syntax::item::implements::Body::Positive(body) => {
+                body.where_clause().and_then(|x| x.predicates())
+            }
+        };
+        let implements_id = self
+            .engine
+            .calculate_implements_id(&qualified_identifier_span, self.target_id)
+            .await;
+
+        match body {
+            pernixc_syntax::item::implements::Body::Negative(_) => {
+                self.add_symbol_entry(
+                    implements_id,
+                    module_member_builder.symbol_id,
+                    Entry::builder()
+                        .naming(Naming::Implements(
+                            qualified_identifier.clone(),
+                        ))
+                        .kind(Kind::NegativeImplementation)
+                        .generic_parameters_syntax(generic_parameters)
+                        .where_clause_syntax(where_clause)
+                        .build(),
+                )
+                .await;
+            }
+            pernixc_syntax::item::implements::Body::Positive(body) => {
+                let member_builder = self
+                    .handle_positive_implementation(
+                        implements_id,
+                        module_member_builder,
+                        &qualified_identifier_span,
+                        &body,
+                    )
+                    .await;
+
+                self.add_symbol_entry(
+                    implements_id,
+                    module_member_builder.symbol_id,
+                    Entry::builder()
+                        .naming(Naming::Implements(
+                            qualified_identifier.clone(),
+                        ))
+                        .kind(Kind::NegativeImplementation)
+                        .generic_parameters_syntax(generic_parameters)
+                        .where_clause_syntax(where_clause)
+                        .member(Arc::new(Member {
+                            member_ids_by_name: member_builder
+                                .member_ids_by_name,
+                            redefinitions: member_builder.redefinitions,
+                        }))
+                        .build(),
+                )
+                .await;
+
+                self.storage.as_vec_mut().extend(
+                    member_builder
+                        .redefinition_errors
+                        .into_iter()
+                        .map(Diagnostic::ItemRedefinition),
+                );
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn handle_positive_implementation(
+        &self,
+        implements_id: ID,
+        module_member_builder: &MemberBuilder,
+        qualified_identifier_span: &RelativeSpan,
+        body: &pernixc_syntax::item::Body<
+            pernixc_syntax::item::implements::Member,
+        >,
+    ) -> MemberBuilder {
+        let mut impl_member_builder = MemberBuilder::new(
+            implements_id,
+            module_member_builder
+                .symbol_qualified_name
+                .iter()
+                .cloned()
+                .chain(std::iter::once(
+                    self.implements_qualified_identifier_name(
+                        qualified_identifier_span,
+                    )
+                    .into(),
+                ))
+                .collect(),
+            self.target_id,
+        );
+
+        if let Some(members) = body.members() {
+            for member in members.members().filter_map(|x| x.into_line().ok()) {
+                let entry = match member {
+                    pernixc_syntax::item::implements::Member::Constant(con) => {
+                        let Some(identifier) =
+                            con.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        Entry::builder()
+                            .kind(Kind::ImplementationConstant)
+                            .naming(Naming::Identifier(identifier))
+                            .accessibility(con.access_modifier())
+                            .generic_parameters_syntax(
+                                con.signature()
+                                    .and_then(|x| x.generic_parameters()),
+                            )
+                            .where_clause_syntax(
+                                con.body()
+                                    .and_then(|x| x.trailing_where_clause())
+                                    .and_then(|x| x.where_clause())
+                                    .and_then(|x| x.predicates()),
+                            )
+                            .constant_type_annotation_syntax(
+                                con.signature().and_then(|x| x.r#type()),
+                            )
+                            .constant_expression_syntax(
+                                con.body().and_then(|x| x.expression()),
+                            )
+                            .build()
+                    }
+                    pernixc_syntax::item::implements::Member::Function(fun) => {
+                        let Some(identifier) = fun
+                            .signature()
+                            .and_then(|x| x.signature())
+                            .and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        Entry::builder()
+                            .kind(Kind::ImplementationFunction)
+                            .naming(Naming::Identifier(identifier))
+                            .accessibility(fun.access_modifier())
+                            .generic_parameters_syntax(
+                                fun.signature()
+                                    .and_then(|x| x.signature())
+                                    .and_then(|x| x.generic_parameters()),
+                            )
+                            .where_clause_syntax(
+                                fun.body()
+                                    .and_then(|x| x.where_clause())
+                                    .and_then(|x| x.predicates()),
+                            )
+                            .function_signature_syntax((
+                                fun.signature()
+                                    .and_then(|x| x.signature())
+                                    .and_then(|x| x.parameters()),
+                                fun.signature()
+                                    .and_then(|x| x.signature())
+                                    .and_then(|x| x.return_type()),
+                            ))
+                            .build()
+                    }
+                    pernixc_syntax::item::implements::Member::Type(ty) => {
+                        let Some(identifier) =
+                            ty.signature().and_then(|x| x.identifier())
+                        else {
+                            continue;
+                        };
+
+                        Entry::builder()
+                            .kind(Kind::ImplementationType)
+                            .naming(Naming::Identifier(identifier))
+                            .accessibility(ty.access_modifier())
+                            .generic_parameters_syntax(
+                                ty.signature()
+                                    .and_then(|x| x.generic_parameters()),
+                            )
+                            .where_clause_syntax(
+                                ty.body()
+                                    .and_then(|x| x.trailing_where_clause())
+                                    .and_then(|x| x.where_clause())
+                                    .and_then(|x| x.predicates()),
+                            )
+                            .type_alias_syntax(
+                                ty.body().and_then(|x| x.r#type()),
+                            )
+                            .build()
+                    }
+                };
+
+                let member_id = impl_member_builder
+                    .add_member(
+                        entry.naming.as_identifier().unwrap().clone(),
+                        &self.engine,
+                    )
+                    .await;
+
+                self.add_symbol_entry(member_id, implements_id, entry).await;
+            }
+        }
+
+        impl_member_builder
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1661,8 +1887,14 @@ impl TableContext {
                         continue;
                     }
 
-                    ModuleMemberSyn::Implements(_)
-                    | ModuleMemberSyn::Extern(_) => continue,
+                    ModuleMemberSyn::Implements(impls) => {
+                        // custom handling for the implements member
+                        self.handle_implements(impls, module_member_builder)
+                            .await;
+
+                        continue;
+                    }
+                    ModuleMemberSyn::Extern(_) => continue,
                 };
 
                 let member_id = module_member_builder
@@ -1780,6 +2012,9 @@ pub async fn calculate_qualified_name_id<'a>(
     let target_seed = self.get_target_seed(target_id).await;
 
     target_seed.hash(&mut hasher);
+
+    // signify that we're generating ID for the qualified name
+    true.hash(&mut hasher);
     parent_id.hash(&mut hasher);
 
     for name in qualified_name_sequence {
@@ -1788,6 +2023,29 @@ pub async fn calculate_qualified_name_id<'a>(
     }
 
     declaration_order.hash(&mut hasher);
+
+    ID(hasher.finish())
+}
+
+/// Calculates a symbol [`ID`] for the implements at the given qualified
+/// identifier span.
+#[extend]
+pub async fn calculate_implements_id(
+    self: &TrackedEngine,
+    qualified_identifier_span: &RelativeSpan,
+    target_id: TargetID,
+) -> ID {
+    let mut hasher = siphasher::sip::SipHasher24::default();
+    let target_seed = self.get_target_seed(target_id).await;
+
+    target_seed.hash(&mut hasher);
+
+    // signify that we're generating ID for the qualified name
+    false.hash(&mut hasher);
+
+    // relative span where the qualified identifier of the implements located
+    // is unique for each implements
+    qualified_identifier_span.hash(&mut hasher);
 
     ID(hasher.finish())
 }
