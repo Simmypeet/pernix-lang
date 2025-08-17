@@ -2,19 +2,28 @@
 
 use std::{fmt::Debug, hash::Hash};
 
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::get_name,
+    parent::get_parent,
+};
+use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
-    generic_parameters::GenericParameter,
+    generic_arguments::TraitMember,
+    generic_parameters::{get_generic_parameters, GenericParameter},
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
     r#type::Type,
     tuple::{Element, Tuple},
+    type_alias::get_type_alias,
     Never,
 };
 
 use crate::{
-    environment::Environment, normalizer::Normalizer, Error, Satisfiability,
-    Succeeded,
+    environment::Environment, normalizer::Normalizer, resolution, Error,
+    Satisfiability, Succeeded,
 };
 
 /// A trait implemented by all three fundamental terms of the language:
@@ -149,13 +158,12 @@ impl Term for Type {
         environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Succeeded<Self>>, Error> {
         let normalized = match self {
-            // TODO: transform the trait-member into trait-implementation-type
-            // equivalent
-            /*
             Self::TraitMember(trait_member) => {
-                normalize_trait_member(trait_member, environment)?
+                Box::pin(normalize_trait_member(trait_member, environment))
+                    .await?;
+                None
             }
-            */
+
             // unpack the tuple
             Self::Tuple(tuple) => unpack_tuple(tuple),
 
@@ -350,4 +358,87 @@ fn unpack_tuple<T: Term + From<Tuple<T>> + TryInto<Tuple<T>, Error = T>>(
     }
 
     Some(Succeeded::new(Tuple { elements: result }.into()))
+}
+
+async fn normalize_trait_member(
+    trait_member: &TraitMember,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Option<Succeeded<Type>>, Error> {
+    let trait_id = environment
+        .tracked_engine()
+        .get_parent(trait_member.id)
+        .await
+        .expect("should have a trait parent");
+
+    // resolve the trait implementation
+    let Some(resolution) = environment
+        .query(&resolution::Resolve::new(
+            Global::new(trait_member.id.target_id, trait_id),
+            trait_member.parent_generic_arguments.clone(),
+        ))
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    let trait_member_name =
+        environment.tracked_engine().get_name(trait_member.id).await;
+
+    // not a trait implementation
+    if environment.tracked_engine().get_kind(resolution.result.id).await
+        != Kind::PositiveImplementation
+    {
+        return Ok(None);
+    }
+
+    let Some(implementation_member_id) = environment
+        .tracked_engine()
+        .get_members(resolution.result.id)
+        .await
+        .member_ids_by_name
+        .get(&trait_member_name)
+        .copied()
+        .map(|x| Global::new(resolution.result.id.target_id, x))
+    else {
+        return Ok(None);
+    };
+
+    // check if is the type
+    if environment.tracked_engine().get_kind(implementation_member_id).await
+        != Kind::ImplementationType
+    {
+        return Ok(None);
+    }
+
+    let mut final_instantiation = resolution.result.instantiation.clone();
+
+    // should have no collision and no mismatched generic arguments
+    // count
+    {
+        let generic_parameter = environment
+            .tracked_engine()
+            .get_generic_parameters(implementation_member_id)
+            .await?;
+
+        final_instantiation
+            .append_from_generic_arguments(
+                trait_member.member_generic_arguments.clone(),
+                implementation_member_id,
+                &generic_parameter,
+            )
+            .unwrap();
+    }
+
+    let mut new_term = (*environment
+        .tracked_engine()
+        .get_type_alias(implementation_member_id)
+        .await?)
+        .clone();
+
+    final_instantiation.instantiate(&mut new_term);
+
+    Ok(Some(Succeeded::with_constraints(
+        new_term,
+        resolution.constraints.clone(),
+    )))
 }
