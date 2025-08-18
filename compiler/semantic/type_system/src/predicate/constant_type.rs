@@ -48,12 +48,14 @@ impl<N: Normalizer> visitor::AsyncVisitor<Type> for Visitor<'_, N> {
     ) -> bool {
         match &mut self.constant_type {
             Ok(Some(satisified)) => {
-                match Box::pin(self.environment.query_with(
-                    &ConstantType(term.clone()),
-                    (),
-                    QuerySource::Normal,
-                ))
-                .await
+                match self
+                    .environment
+                    .query_with(
+                        &ConstantType(term.clone()),
+                        (),
+                        QuerySource::Normal,
+                    )
+                    .await
                 {
                     Ok(Some(new_satisfied)) => {
                         satisified
@@ -196,12 +198,12 @@ impl Query for ConstantType {
                     .await?
                     {
                         for field in fields {
-                            let Some(new_result) =
-                                Box::pin(environment.query_with(
+                            let Some(new_result) = environment
+                                .query_with(
                                     &Self(field.clone()),
                                     (),
                                     QuerySource::Normal,
-                                ))
+                                )
                                 .await?
                             else {
                                 found_error = true;
@@ -249,12 +251,13 @@ impl Query for ConstantType {
             for Succeeded { result: eq, constraints } in
                 environment.get_equivalences(&self.0).await?.iter()
             {
-                if let Some(result) = Box::pin(environment.query_with(
-                    &Self(eq.clone()),
-                    (),
-                    QuerySource::FromEquivalence,
-                ))
-                .await?
+                if let Some(result) = environment
+                    .query_with(
+                        &Self(eq.clone()),
+                        (),
+                        QuerySource::FromEquivalence,
+                    )
+                    .await?
                 {
                     return Ok(Some(Arc::new(Succeeded::satisfied_with(
                         result

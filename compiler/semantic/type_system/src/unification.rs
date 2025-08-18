@@ -264,12 +264,13 @@ async fn substructural_unify<T: Term>(
         let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
-        let Some(new) = Box::pin(environment.query_with(
-            &Unification::new(from, to, predicate.clone()),
-            (from_logs, to_logs),
-            (),
-        ))
-        .await?
+        let Some(new) = environment
+            .query_with(
+                &Unification::new(from, to, predicate.clone()),
+                (from_logs, to_logs),
+                (),
+            )
+            .await?
         else {
             return Ok(None);
         };
@@ -294,12 +295,13 @@ async fn substructural_unify<T: Term>(
         let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
-        let Some(new) = Box::pin(environment.query_with(
-            &Unification::new(from.clone(), to.clone(), predicate.clone()),
-            (from_logs, to_logs),
-            (),
-        ))
-        .await?
+        let Some(new) = environment
+            .query_with(
+                &Unification::new(from.clone(), to.clone(), predicate.clone()),
+                (from_logs, to_logs),
+                (),
+            )
+            .await?
         else {
             return Ok(None);
         };
@@ -324,12 +326,13 @@ async fn substructural_unify<T: Term>(
         let mut to_logs = to_logs.to_vec();
         to_logs.push(Log::Substructural(to_location.into()));
 
-        let Some(new) = Box::pin(environment.query_with(
-            &Unification::new(from.clone(), to.clone(), predicate.clone()),
-            (from_logs, to_logs),
-            (),
-        ))
-        .await?
+        let Some(new) = environment
+            .query_with(
+                &Unification::new(from.clone(), to.clone(), predicate.clone()),
+                (from_logs, to_logs),
+                (),
+            )
+            .await?
         else {
             return Ok(None);
         };
@@ -406,12 +409,17 @@ pub(super) async fn unify<T: Term>(
         let mut from_logs = from_logs.to_vec();
         from_logs.push(eq_from.clone().into_rewritten());
 
-        if let Some(unifier_result) = Box::pin(environment.query_with(
-            &Unification::new(eq_from.clone(), to.clone(), predicate.clone()),
-            (from_logs, to_logs.to_vec()),
-            (),
-        ))
-        .await?
+        if let Some(unifier_result) = environment
+            .query_with(
+                &Unification::new(
+                    eq_from.clone(),
+                    to.clone(),
+                    predicate.clone(),
+                ),
+                (from_logs, to_logs.to_vec()),
+                (),
+            )
+            .await?
         {
             let mut unifier = unifier_result.result.clone();
             unifier.rewritten_from =
@@ -433,12 +441,17 @@ pub(super) async fn unify<T: Term>(
         let mut to_logs = to_logs.to_vec();
         to_logs.push(eq_to.clone().into_rewritten());
 
-        if let Some(unifier_result) = Box::pin(environment.query_with(
-            &Unification::new(from.clone(), eq_to.clone(), predicate.clone()),
-            (from_logs.to_vec(), to_logs),
-            (),
-        ))
-        .await?
+        if let Some(unifier_result) = environment
+            .query_with(
+                &Unification::new(
+                    from.clone(),
+                    eq_to.clone(),
+                    predicate.clone(),
+                ),
+                (from_logs.to_vec(), to_logs),
+                (),
+            )
+            .await?
         {
             let mut unifier = unifier_result.result.clone();
             unifier.rewritten_right =

@@ -487,25 +487,21 @@ async fn subtypable_without_mapping(
         return Ok(Some(Succeeded::new(Subtypable::default())));
     }
 
-    // the rest twos will involved in recursion
-    Box::pin(async move {
-        if let Some(result) =
-            subtypable_with_unification(target, source, variance, environment)
-                .await?
-        {
-            return Ok(Some(result));
-        }
+    if let Some(result) =
+        subtypable_with_unification(target, source, variance, environment)
+            .await?
+    {
+        return Ok(Some(result));
+    }
 
-        if let Some(result) =
-            subtypable_with_normalization(target, source, variance, environment)
-                .await?
-        {
-            return Ok(Some(result));
-        }
+    if let Some(result) =
+        subtypable_with_normalization(target, source, variance, environment)
+            .await?
+    {
+        return Ok(Some(result));
+    }
 
-        Ok(None)
-    })
-    .await
+    Ok(None)
 }
 
 async fn handle_mapping(
@@ -553,12 +549,9 @@ async fn handle_mapping(
 
     // finally perform subtyping with the trait member equivalent with the
     // `last`
-    let Some(inner_result) = Box::pin(environment.query(&Subtype::new(
-        final_query_target,
-        final_query_source,
-        variance,
-    )))
-    .await?
+    let Some(inner_result) = environment
+        .query(&Subtype::new(final_query_target, final_query_source, variance))
+        .await?
     else {
         return Ok(None);
     };

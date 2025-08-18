@@ -25,7 +25,7 @@ impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, N> {
             return false;
         }
 
-        match Box::pin(self.environment.query(&Definite(term.clone()))).await {
+        match self.environment.query(&Definite(term.clone())).await {
             Err(err) => {
                 self.definite = Err(err);
                 false
@@ -105,7 +105,7 @@ impl<T: Term> Query for Definite<T> {
                 environment.get_equivalences(&self.0).await?.iter()
             {
                 if let Some(result) =
-                    Box::pin(environment.query(&Self(eq.clone()))).await?
+                    environment.query(&Self(eq.clone())).await?
                 {
                     return Ok(Some(Arc::new(Succeeded::satisfied_with(
                         constraints

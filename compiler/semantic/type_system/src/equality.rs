@@ -60,11 +60,11 @@ impl<T: Term> Query for Equality<T, T> {
                     )
                     .await?
                     {
-                        if let Some(inner_result) =
-                            Box::pin(environment.query(&Self::new(
+                        if let Some(inner_result) = environment
+                            .query(&Self::new(
                                 equality_predicate.rhs.clone(),
                                 self.rhs.clone(),
-                            )))
+                            ))
                             .await?
                         {
                             result.constraints.extend(
@@ -83,11 +83,11 @@ impl<T: Term> Query for Equality<T, T> {
                     )
                     .await?
                     {
-                        if let Some(inner_result) =
-                            Box::pin(environment.query(&Self::new(
+                        if let Some(inner_result) = environment
+                            .query(&Self::new(
                                 self.lhs.clone(),
                                 equality_predicate.rhs.clone(),
-                            )))
+                            ))
                             .await?
                         {
                             result.constraints.extend(
@@ -186,22 +186,16 @@ async fn equals_without_mapping<T: Term>(
         return Ok(Some(Succeeded::satisfied()));
     }
 
-    Box::pin(async move {
-        if let Some(result) =
-            equals_by_unification(lhs, rhs, environment).await?
-        {
-            return Ok(Some(result));
-        }
+    if let Some(result) = equals_by_unification(lhs, rhs, environment).await? {
+        return Ok(Some(result));
+    }
 
-        if let Some(result) =
-            equals_by_normalization(lhs, rhs, environment).await?
-        {
-            return Ok(Some(result));
-        }
+    if let Some(result) = equals_by_normalization(lhs, rhs, environment).await?
+    {
+        return Ok(Some(result));
+    }
 
-        Ok(None)
-    })
-    .await
+    Ok(None)
 }
 
 impl<N: Normalizer> Environment<'_, N> {

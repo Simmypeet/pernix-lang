@@ -162,8 +162,7 @@ impl Term for Type {
     ) -> Result<Option<Succeeded<Self>>, Error> {
         let normalized = match self {
             Self::TraitMember(trait_member) => {
-                Box::pin(normalize_trait_member(trait_member, environment))
-                    .await?;
+                normalize_trait_member(trait_member, environment).await?;
                 None
             }
 

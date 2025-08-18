@@ -26,10 +26,10 @@ struct Visitor<'a, 'e, N: Normalizer> {
 
 impl<U: Term, N: Normalizer> visitor::AsyncVisitor<U> for Visitor<'_, '_, N> {
     async fn visit(&mut self, term: &U, _: U::Location) -> bool {
-        match Box::pin(
-            self.environment.query(&Outlives::new(term.clone(), *self.bound)),
-        )
-        .await
+        match self
+            .environment
+            .query(&Outlives::new(term.clone(), *self.bound))
+            .await
         {
             Err(err) => {
                 self.outlives = Err(err);
@@ -108,10 +108,9 @@ impl Impl for Lifetime {
                 continue;
             }
 
-            if let Some(result) = Box::pin(
-                environment.query(&Outlives::new(*next_bound, query.bound)),
-            )
-            .await?
+            if let Some(result) = environment
+                .query(&Outlives::new(*next_bound, query.bound))
+                .await?
             {
                 return Ok(Some(result));
             }
@@ -176,9 +175,7 @@ impl Impl for Type {
             }
 
             for constraint in &result.constraints {
-                let Some(_) =
-                    Box::pin(constraint.satisfies(environment)).await?
-                else {
+                let Some(_) = constraint.satisfies(environment).await? else {
                     continue 'outer;
                 };
             }
@@ -189,11 +186,10 @@ impl Impl for Type {
                 .forall_lifetime_instantiations
                 .instantiate(&mut next_bound);
 
-            if Box::pin(
-                environment.query(&Outlives::new(next_bound, query.bound)),
-            )
-            .await?
-            .is_some()
+            if environment
+                .query(&Outlives::new(next_bound, query.bound))
+                .await?
+                .is_some()
             {
                 return Ok(Some(Arc::new(Satisfied)));
             }
@@ -208,19 +204,15 @@ impl Impl for Type {
         {
             // additional constraints must be satisifed
             for constraint in additional_outlives {
-                let Some(_) =
-                    Box::pin(constraint.satisfies(environment)).await?
-                else {
+                let Some(_) = constraint.satisfies(environment).await? else {
                     continue 'out;
                 };
             }
 
-            if Box::pin(
-                environment
-                    .query(&Outlives::new(operand_eq.clone(), query.bound)),
-            )
-            .await?
-            .is_some()
+            if environment
+                .query(&Outlives::new(operand_eq.clone(), query.bound))
+                .await?
+                .is_some()
             {
                 return Ok(Some(Arc::new(Satisfied)));
             }
@@ -234,19 +226,15 @@ impl Impl for Type {
         {
             // additional constraints must be satisified
             for constraint in additional_outlives {
-                let Some(_) =
-                    Box::pin(constraint.satisfies(environment)).await?
-                else {
+                let Some(_) = constraint.satisfies(environment).await? else {
                     continue 'out;
                 };
             }
 
-            if Box::pin(
-                environment
-                    .query(&Outlives::new(query.operand.clone(), *bound_eq)),
-            )
-            .await?
-            .is_some()
+            if environment
+                .query(&Outlives::new(query.operand.clone(), *bound_eq))
+                .await?
+                .is_some()
             {
                 return Ok(Some(Arc::new(Satisfied)));
             }
