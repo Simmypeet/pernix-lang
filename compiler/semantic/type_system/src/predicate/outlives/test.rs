@@ -80,9 +80,14 @@ impl Property<Type> for ByEquality {
                     Kind::Trait,
                 ) == SetInputResult::Fresh;
 
-                // TODO: add implemented
+                let add_implemented = x.set_input(
+                    pernixc_symbol::implemented::Key(
+                        self.equality.id.target_id.make_global(self.trait_id),
+                    ),
+                    Arc::default(),
+                ) == SetInputResult::Fresh;
 
-                add_parent && add_kind
+                add_parent && add_kind && add_implemented
             });
 
             if !added {

@@ -408,22 +408,26 @@ impl Property<Type> for Mapping {
                 ) == SetInputResult::Fresh;
 
                 let add_kind = x.set_input(
-                    pernixc_symbol::kind::Key(self.trait_member.id),
+                    pernixc_symbol::kind::Key(
+                        self.trait_member
+                            .id
+                            .target_id
+                            .make_global(self.trait_id),
+                    ),
                     Kind::Trait,
                 ) == SetInputResult::Fresh;
 
-                /*
-                TODO: add it back
-                let add_implemented = table.add_component(
-                    GlobalID::new(
-                        self.trait_member.id.target_id,
-                        self.trait_id,
+                let add_implemented = x.set_input(
+                    pernixc_symbol::implemented::Key(
+                        self.trait_member
+                            .id
+                            .target_id
+                            .make_global(self.trait_id),
                     ),
-                    Implemented(HashSet::new()),
-                );
-                */
+                    Arc::default(),
+                ) == SetInputResult::Fresh;
 
-                add_parent && add_kind
+                add_parent && add_kind && add_implemented
             });
 
             if !added {
