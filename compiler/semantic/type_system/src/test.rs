@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use pernixc_query::Engine;
 use pernixc_term::{
     constant::Constant,
     generic_arguments::GenericArguments,
@@ -7,7 +10,7 @@ use pernixc_term::{
     visitor::{self, MutableRecursive},
 };
 
-use crate::term::Term;
+use crate::{order, term::Term};
 
 struct Purge;
 
@@ -72,4 +75,10 @@ pub(super) fn purge_trait_associated_type_in_generic_arguments(
             .map(purge_trait_associated_type)
             .collect(),
     }
+}
+
+pub fn create_engine() -> Arc<Engine> {
+    let mut engine = Engine::default();
+    engine.runtime.executor.register(Arc::new(order::ImplementsOrderExecutor));
+    Arc::new(engine)
 }

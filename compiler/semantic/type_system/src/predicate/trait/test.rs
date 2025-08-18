@@ -18,7 +18,7 @@ use pernixc_term::{
 
 use crate::{
     environment::{Environment, Premise},
-    normalizer,
+    normalizer, order,
 };
 
 #[tokio::test]
@@ -44,6 +44,12 @@ async fn single_implementation() {
     let trait_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(1));
 
     let mut engine = Arc::new(Engine::default());
+
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .runtime
+        .executor
+        .register(Arc::new(order::ImplementsOrderExecutor));
 
     let expected_instantiation =
         Arc::get_mut(&mut engine).unwrap().input_session(|x| {
@@ -183,6 +189,12 @@ async fn specialization_test_internal(case: SpecializationCase) {
     let trait_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(2));
 
     let mut engine = Arc::new(Engine::default());
+
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .runtime
+        .executor
+        .register(Arc::new(order::ImplementsOrderExecutor));
 
     let expected = Arc::get_mut(&mut engine).unwrap().input_session(|x| {
         x.set_input(

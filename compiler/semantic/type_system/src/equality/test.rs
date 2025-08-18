@@ -27,7 +27,7 @@ use crate::{
     normalizer,
     term::Term,
     test::{
-        purge_trait_associated_type,
+        create_engine, purge_trait_associated_type,
         purge_trait_associated_type_in_generic_arguments,
     },
     Error,
@@ -58,7 +58,7 @@ async fn reflexive() {
 
 #[tokio::test]
 async fn symmetric() {
-    let mut engine = Arc::new(Engine::default());
+    let mut engine = create_engine();
     let trait_member = TraitMember(MemberSymbol {
         id: TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
@@ -75,19 +75,18 @@ async fn symmetric() {
 
         x.set_input(
             pernixc_symbol::kind::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
             ),
             Kind::Trait,
         );
-    });
 
-    /*
-    TODO: bring back
-    assert!(table.add_component(
-        TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
-        Implemented(HashSet::new())
-    ));
-    */
+        x.set_input(
+            pernixc_symbol::implemented::Key(
+                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+            ),
+            Arc::default(),
+        );
+    });
 
     let equivalence = Type::Primitive(Primitive::Bool);
 
@@ -146,18 +145,18 @@ async fn not_equal() {
 
         x.set_input(
             pernixc_symbol::kind::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
             ),
             Kind::Trait,
         );
-    });
 
-    /*
-    assert!(table.add_component(
-        TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
-        Implemented(HashSet::new())
-    ));
-    */
+        x.set_input(
+            pernixc_symbol::implemented::Key(
+                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+            ),
+            Arc::default(),
+        );
+    });
 
     let mut premise = Premise::default();
     premise.predicates.insert(Predicate::TraitTypeCompatible(Compatible {
@@ -227,13 +226,13 @@ async fn transitivity() {
             ),
             Kind::Trait,
         );
+        x.set_input(
+            pernixc_symbol::implemented::Key(
+                TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+            ),
+            Arc::default(),
+        );
     });
-    /*
-    assert!(table.add_component(
-        TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
-        Implemented(HashSet::new())
-    ));
-    */
 
     let mut premise = Premise::default();
     premise.predicates.extend([
@@ -314,14 +313,13 @@ async fn congruence() {
             ),
             Kind::Trait,
         );
+        x.set_input(
+            pernixc_symbol::implemented::Key(
+                TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+            ),
+            Arc::default(),
+        );
     });
-
-    /*
-    assert!(table.add_component(
-        TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
-        Implemented(HashSet::new())
-    ));
-    */
 
     let mut premise = Premise::default();
     premise.predicates.extend([
@@ -521,32 +519,36 @@ impl Property<Type> for Mapping {
         premise: &'s mut Premise,
     ) -> BoxedFuture<'s, Type> {
         Box::pin(async move {
-            let (add_parent, add_kind) =
-                Arc::get_mut(engine).unwrap().input_session(|x| {
-                    let add_parent = x.set_input(
-                        pernixc_symbol::parent::Key(
-                            self.target_trait_member.id,
-                        ),
-                        Some(self.trait_id),
-                    ) == SetInputResult::Fresh;
+            let added = Arc::get_mut(engine).unwrap().input_session(|x| {
+                let add_parent = x.set_input(
+                    pernixc_symbol::parent::Key(self.target_trait_member.id),
+                    Some(self.trait_id),
+                ) == SetInputResult::Fresh;
 
-                    let add_kind = x.set_input(
-                        pernixc_symbol::kind::Key(self.target_trait_member.id),
-                        pernixc_symbol::kind::Kind::Trait,
-                    ) == SetInputResult::Fresh;
+                let add_kind = x.set_input(
+                    pernixc_symbol::kind::Key(
+                        self.target_trait_member
+                            .id
+                            .target_id
+                            .make_global(self.trait_id),
+                    ),
+                    pernixc_symbol::kind::Kind::Trait,
+                ) == SetInputResult::Fresh;
 
-                    (add_parent, add_kind)
-                });
+                let add_implemented = x.set_input(
+                    pernixc_symbol::implemented::Key(
+                        self.target_trait_member
+                            .id
+                            .target_id
+                            .make_global(self.trait_id),
+                    ),
+                    Arc::default(),
+                ) == SetInputResult::Fresh;
 
-            /*
-            TODO: bring back
-            let add_implemented = engine.add_component(
-                GlobalID::new(self.target_trait_member.id.target_id, self.trait_id),
-                Implemented(HashSet::new()),
-            );
-            */
+                add_parent && add_kind && add_implemented
+            });
 
-            if !add_parent || !add_kind {
+            if !added {
                 return Err(AbortError::IDCollision);
             }
 
@@ -793,7 +795,7 @@ async fn property_based_testing<T: Term + 'static>(
     decoy: Decoy,
 ) -> TestCaseResult {
     let mut premise = Premise::default();
-    let mut engine = Arc::new(Engine::default());
+    let mut engine = create_engine();
 
     let (term1, term2) = property
         .generate(&mut engine, &mut premise)
@@ -912,22 +914,30 @@ async fn property_based_testing<T: Term + 'static>(
     drop(environment);
 
     for (trait_member, trait_id) in &decoy.types {
-        let (add_parent, add_kind) =
-            Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-                let add_parent = x.set_input(
-                    pernixc_symbol::parent::Key(trait_member.lhs.id),
-                    Some(*trait_id),
-                ) == SetInputResult::Fresh;
+        let added = Arc::get_mut(&mut engine).unwrap().input_session(|x| {
+            let add_parent = x.set_input(
+                pernixc_symbol::parent::Key(trait_member.lhs.id),
+                Some(*trait_id),
+            ) == SetInputResult::Fresh;
 
-                let add_kind = x.set_input(
-                    pernixc_symbol::kind::Key(trait_member.lhs.id),
-                    pernixc_symbol::kind::Kind::Trait,
-                ) == SetInputResult::Fresh;
+            let add_kind = x.set_input(
+                pernixc_symbol::kind::Key(
+                    trait_member.lhs.id.target_id.make_global(*trait_id),
+                ),
+                pernixc_symbol::kind::Kind::Trait,
+            ) == SetInputResult::Fresh;
 
-                (add_parent, add_kind)
-            });
+            let add_implemented = x.set_input(
+                pernixc_symbol::implemented::Key(
+                    trait_member.lhs.id.target_id.make_global(*trait_id),
+                ),
+                Arc::default(),
+            ) == SetInputResult::Fresh;
 
-        if !add_parent || !add_kind {
+            add_parent && add_kind && add_implemented
+        });
+
+        if !added {
             return Err(TestCaseError::reject("ID collision"));
         }
 
