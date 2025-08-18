@@ -1,9 +1,8 @@
 //! Contains the definition of [`Error`] struct
 
-use pernixc_hash::HashSet;
-
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Diagnostic, Report};
+use pernixc_hash::HashSet;
 use pernixc_lexical::{
     kind,
     tree::{

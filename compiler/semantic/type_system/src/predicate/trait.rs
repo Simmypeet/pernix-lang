@@ -15,7 +15,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::{Call, Environment, Query},
+    environment::{BoxedFuture, Call, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
     Error, Satisfied, Succeeded,
@@ -62,81 +62,84 @@ impl Query for PositiveTrait {
     type Result = Succeeded<PositiveSatisfied>;
     type Error = Error;
 
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        // if this query was made in some trait implementation or trait, then
-        // check if the trait implementation is the same as the query one.
-        if let Some(result) =
-            is_in_trait(self.trait_id, &self.generic_arguments, environment)
-                .await?
-        {
-            return Ok(Some(Arc::new(Succeeded::with_constraints(
-                PositiveSatisfied::Environment,
-                result.constraints,
-            ))));
-        }
-
-        // manually search for the trait implementation
-        if let Some(result) = environment
-            .query(&resolution::Resolve::new(
-                self.trait_id,
-                self.generic_arguments.clone(),
-            ))
-            .await?
-        {
-            if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::PositiveImplementation
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            // if this query was made in some trait implementation or trait,
+            // then check if the trait implementation is the same as
+            // the query one.
+            if let Some(result) =
+                is_in_trait(self.trait_id, &self.generic_arguments, environment)
+                    .await?
             {
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
-                    PositiveSatisfied::Implementation(Implementation {
-                        instantiation: result.result.instantiation.clone(),
-                        id: result.result.id,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
-                    }),
-                    result.constraints.clone(),
+                    PositiveSatisfied::Environment,
+                    result.constraints,
                 ))));
             }
-        }
 
-        // look for the premise that matches
-        for trait_premise in environment
-            .premise()
-            .predicates
-            .iter()
-            .filter_map(Predicate::as_positive_trait)
-        {
-            // skip if the trait id is different
-            if trait_premise.trait_id != self.trait_id {
-                continue;
-            }
-
-            let Some(compatiblity) = environment
-                .subtypes_generic_arguments(
-                    &self.generic_arguments,
-                    &trait_premise.generic_arguments,
-                )
+            // manually search for the trait implementation
+            if let Some(result) = environment
+                .query(&resolution::Resolve::new(
+                    self.trait_id,
+                    self.generic_arguments.clone(),
+                ))
                 .await?
-            else {
-                continue;
-            };
-
-            if !compatiblity.result.forall_lifetime_errors.is_empty() {
-                continue;
+            {
+                if environment.tracked_engine().get_kind(result.result.id).await
+                    == Kind::PositiveImplementation
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        PositiveSatisfied::Implementation(Implementation {
+                            instantiation: result.result.instantiation.clone(),
+                            id: result.result.id,
+                            is_not_general_enough: result
+                                .result
+                                .is_not_general_enough,
+                        }),
+                        result.constraints.clone(),
+                    ))));
+                }
             }
 
-            return Ok(Some(Arc::new(Succeeded::with_constraints(
-                PositiveSatisfied::Premise,
-                compatiblity.constraints,
-            ))));
-        }
+            // look for the premise that matches
+            for trait_premise in environment
+                .premise()
+                .predicates
+                .iter()
+                .filter_map(Predicate::as_positive_trait)
+            {
+                // skip if the trait id is different
+                if trait_premise.trait_id != self.trait_id {
+                    continue;
+                }
 
-        Ok(None)
+                let Some(compatiblity) = environment
+                    .subtypes_generic_arguments(
+                        &self.generic_arguments,
+                        &trait_premise.generic_arguments,
+                    )
+                    .await?
+                else {
+                    continue;
+                };
+
+                if !compatiblity.result.forall_lifetime_errors.is_empty() {
+                    continue;
+                }
+
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    PositiveSatisfied::Premise,
+                    compatiblity.constraints,
+                ))));
+            }
+
+            Ok(None)
+        })
     }
 
     fn on_cyclic(
@@ -158,90 +161,92 @@ impl Query for NegativeTrait {
     type Result = Succeeded<NegativeSatisfied>;
     type Error = Error;
 
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        // manually search for the trait implementation
-        if let Some(result) = environment
-            .query(&resolution::Resolve::new(
-                self.trait_id,
-                self.generic_arguments.clone(),
-            ))
-            .await?
-        {
-            if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::NegativeImplementation
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            // manually search for the trait implementation
+            if let Some(result) = environment
+                .query(&resolution::Resolve::new(
+                    self.trait_id,
+                    self.generic_arguments.clone(),
+                ))
+                .await?
             {
+                if environment.tracked_engine().get_kind(result.result.id).await
+                    == Kind::NegativeImplementation
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        NegativeSatisfied::Implementation(Implementation {
+                            instantiation: result.result.instantiation.clone(),
+                            id: result.result.id,
+                            is_not_general_enough: result
+                                .result
+                                .is_not_general_enough,
+                        }),
+                        result.constraints.clone(),
+                    ))));
+                }
+            }
+
+            // look for the premise that matches
+            for trait_premise in environment
+                .premise()
+                .predicates
+                .iter()
+                .filter_map(Predicate::as_negative_trait)
+            {
+                // skip if the trait id is different
+                if trait_premise.trait_id != self.trait_id {
+                    continue;
+                }
+
+                let Some(compatiblity) = environment
+                    .subtypes_generic_arguments(
+                        &self.generic_arguments,
+                        &trait_premise.generic_arguments,
+                    )
+                    .await?
+                else {
+                    continue;
+                };
+
+                if !compatiblity.result.forall_lifetime_errors.is_empty() {
+                    continue;
+                }
+
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
-                    NegativeSatisfied::Implementation(Implementation {
-                        instantiation: result.result.instantiation.clone(),
-                        id: result.result.id,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
-                    }),
-                    result.constraints.clone(),
+                    NegativeSatisfied::Premise,
+                    compatiblity.constraints,
                 ))));
             }
-        }
 
-        // look for the premise that matches
-        for trait_premise in environment
-            .premise()
-            .predicates
-            .iter()
-            .filter_map(Predicate::as_negative_trait)
-        {
-            // skip if the trait id is different
-            if trait_premise.trait_id != self.trait_id {
-                continue;
-            }
-
-            let Some(compatiblity) = environment
-                .subtypes_generic_arguments(
-                    &self.generic_arguments,
-                    &trait_premise.generic_arguments,
-                )
+            // must be definite and failed to prove the positive trait
+            let Some(definition) = environment
+                .generic_arguments_definite(&self.generic_arguments)
                 .await?
             else {
-                continue;
+                return Ok(None);
             };
 
-            if !compatiblity.result.forall_lifetime_errors.is_empty() {
-                continue;
-            }
-
-            return Ok(Some(Arc::new(Succeeded::with_constraints(
-                NegativeSatisfied::Premise,
-                compatiblity.constraints,
-            ))));
-        }
-
-        // must be definite and failed to prove the positive trait
-        let Some(definition) = environment
-            .generic_arguments_definite(&self.generic_arguments)
-            .await?
-        else {
-            return Ok(None);
-        };
-
-        Ok(environment
-            .query(&PositiveTrait::new(
-                self.trait_id,
-                false,
-                self.generic_arguments.clone(),
-            ))
-            .await?
-            .is_none()
-            .then(|| {
-                Arc::new(Succeeded::with_constraints(
-                    NegativeSatisfied::UnsatisfiedPositive,
-                    definition.constraints,
+            Ok(environment
+                .query(&PositiveTrait::new(
+                    self.trait_id,
+                    false,
+                    self.generic_arguments.clone(),
                 ))
-            }))
+                .await?
+                .is_none()
+                .then(|| {
+                    Arc::new(Succeeded::with_constraints(
+                        NegativeSatisfied::UnsatisfiedPositive,
+                        definition.constraints,
+                    ))
+                }))
+        })
     }
 }
 

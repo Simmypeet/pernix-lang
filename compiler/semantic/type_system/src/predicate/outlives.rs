@@ -12,7 +12,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::{Environment, Query},
+    environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
     term::Term,
     Error, LifetimeConstraint, Satisfiability, Satisfied, Succeeded,
@@ -68,22 +68,22 @@ impl<T: Term> Query for Outlives<T> {
     type Error = Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<std::sync::Arc<Self::Result>>, Self::Error> {
-        Impl::outlives(self, environment).await
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(Impl::outlives(self, environment))
     }
 }
 
 #[doc(hidden)]
 pub trait Impl: Sized {
-    fn outlives<'x>(
-        query: &'x Outlives<Self>,
-        environment: &'x Environment<'x, impl Normalizer>,
-    ) -> impl Future<Output = Result<Option<Arc<Satisfied>>, Error>> + 'x;
+    fn outlives(
+        query: &Outlives<Self>,
+        environment: &Environment<impl Normalizer>,
+    ) -> impl Future<Output = Result<Option<Arc<Satisfied>>, Error>> + Send;
 }
 
 impl Impl for Lifetime {

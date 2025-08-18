@@ -18,7 +18,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::{Environment, Query},
+    environment::{BoxedFuture, Environment, Query},
     equality::Equality,
     normalizer::Normalizer,
     term::Term,
@@ -160,24 +160,24 @@ impl<T: Term> Query for Subtype<T> {
     type Result = Succeeded<Subtypable>;
     type Error = crate::Error;
 
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        Impl::query(self, environment).await
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(Impl::query(self, environment))
     }
 }
 
 #[doc(hidden)]
 pub trait Impl: Sized {
-    fn query<'a>(
-        subtype: &'a Subtype<Self>,
-        environment: &'a Environment<'a, impl Normalizer>,
+    fn query(
+        subtype: &Subtype<Self>,
+        environment: &Environment<impl Normalizer>,
     ) -> impl std::future::Future<
         Output = Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error>,
-    > + 'a;
+    > + Send;
 }
 
 impl Impl for Lifetime {
@@ -572,9 +572,9 @@ async fn handle_mapping(
 }
 
 impl Impl for Type {
-    async fn query<'a>(
-        subtype: &'a Subtype<Self>,
-        environment: &'a Environment<'a, impl Normalizer>,
+    async fn query(
+        subtype: &Subtype<Self>,
+        environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
         if let Some(result) = subtypable_without_mapping(
             &subtype.target,
@@ -633,9 +633,9 @@ impl Impl for Type {
 }
 
 impl Impl for Constant {
-    async fn query<'a>(
-        subtype: &'a Subtype<Self>,
-        environment: &'a Environment<'a, impl Normalizer>,
+    async fn query(
+        subtype: &Subtype<Self>,
+        environment: &Environment<'_, impl Normalizer>,
     ) -> Result<Option<Arc<Succeeded<Subtypable>>>, crate::Error> {
         // use strict equality in case of constant since the constant terms
         // don't havel lifetime anyway

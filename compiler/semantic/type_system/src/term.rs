@@ -60,6 +60,8 @@ pub trait Term:
         + Sized
         + Clone
         + Ord
+        + Send
+        + Sync
         + 'static;
 
     /// An algorithm that normalizes the term.
@@ -76,7 +78,8 @@ pub trait Term:
     fn normalize(
         &self,
         environment: &Environment<impl Normalizer>,
-    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Self>>, Error>>;
+    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Self>>, Error>>
+           + Send;
 
     #[doc(hidden)]
     fn as_trait_member(&self) -> Option<&Self::TraitMember>;

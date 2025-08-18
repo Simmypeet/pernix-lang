@@ -17,7 +17,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::{Environment, Query},
+    environment::{BoxedFuture, Environment, Query},
     equality::Equality,
     normalizer::Normalizer,
     term::Term,
@@ -216,21 +216,23 @@ impl<T: Term, P: PredicateA> Query for Unification<T, P> {
     type Result = Succeeded<Unifier<T>>;
     type Error = Error;
 
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (from_logs, to_logs): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        unify(
-            &self.from,
-            &self.to,
-            &from_logs,
-            &to_logs,
-            &self.predicate,
-            environment,
-        )
-        .await
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            unify(
+                &self.from,
+                &self.to,
+                &from_logs,
+                &to_logs,
+                &self.predicate,
+                environment,
+            )
+            .await
+        })
     }
 }
 

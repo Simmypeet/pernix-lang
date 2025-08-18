@@ -6,6 +6,7 @@ use std::{
     cmp::Ordering,
     collections::{hash_map::Entry, BTreeSet, HashMap},
     hash::{Hash, Hasher},
+    pin::Pin,
     sync::Arc,
 };
 
@@ -229,6 +230,13 @@ impl Ord for dyn DynIdent {
     fn cmp(&self, other: &Self) -> Ordering { self.dyn_ord(other) }
 }
 
+/// A type alias wrapping a boxed future.
+pub type BoxedFuture<'x, T, E> = Pin<
+    Box<
+        dyn std::future::Future<Output = Result<Option<Arc<T>>, E>> + Send + 'x,
+    >,
+>;
+
 /// The trait implemented by all the query types.
 pub trait Query: Clone + Eq + Ord + Hash + DynIdent {
     /// The optional parameter provided to the query
@@ -244,15 +252,12 @@ pub trait Query: Clone + Eq + Ord + Hash + DynIdent {
     type Error: From<OverflowError>;
 
     /// The function that computes the query.
-    #[allow(clippy::missing_errors_doc)]
-    fn query(
-        &self,
-        environment: &Environment<impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         parameter: Self::Parameter,
         in_progress: Self::InProgress,
-    ) -> impl std::future::Future<
-        Output = Result<Option<Arc<Self::Result>>, Self::Error>,
-    >;
+    ) -> BoxedFuture<'x, Self::Result, Self::Error>;
 
     /// The result to return of the query when the query is cyclic.
     #[allow(clippy::missing_errors_doc)]

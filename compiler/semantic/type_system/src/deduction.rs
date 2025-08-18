@@ -145,16 +145,22 @@ fn extract<K: Ord, V>(
     (positive, negative)
 }
 
-async fn mapping_equals<T: Term, N: Normalizer>(
+trait CompatiblePredicate<T> {
+    fn predicate(
+        &mut self,
+        left: &T,
+        right: &T,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> impl std::future::Future<
+        Output = Result<Option<Succeeded<Satisfied>>, Error>,
+    > + Send;
+}
+
+async fn mapping_equals<T: Term, N: Normalizer, P: CompatiblePredicate<T>>(
     unification: BTreeMap<T, BTreeSet<T>>,
     substitution: &Instantiation,
     environment: &Environment<'_, N>,
-    mut compatible: impl AsyncFnMut(
-        &T,
-        &T,
-        &Environment<N>,
-    )
-        -> Result<Option<Succeeded<Satisfied>>, Error>,
+    mut compatible: P,
 ) -> crate::Result<Satisfied, Error> {
     let mut constraints = BTreeSet::new();
 
@@ -165,7 +171,7 @@ async fn mapping_equals<T: Term, N: Normalizer>(
             let Some(Succeeded {
                 result: Satisfied,
                 constraints: new_constraint,
-            }) = compatible(&key, &value, environment).await?
+            }) = compatible.predicate(&key, &value, environment).await?
             else {
                 continue;
             };
@@ -181,12 +187,7 @@ async fn mapping_equals<T: Term, N: Normalizer>(
 async fn from_unification_to_substitution<T: Term, N: Normalizer>(
     unification: BTreeMap<T, BTreeSet<T>>,
     environment: &Environment<'_, N>,
-    mut compatible: impl AsyncFnMut(
-        &T,
-        &T,
-        &Environment<N>,
-    )
-        -> Result<Option<Succeeded<Satisfied>>, Error>,
+    mut compatible: impl CompatiblePredicate<T>,
 ) -> crate::Result<BTreeMap<T, T>, Error> {
     let mut result = BTreeMap::new();
 
@@ -199,7 +200,7 @@ async fn from_unification_to_substitution<T: Term, N: Normalizer>(
 
         for value in values {
             let Some(compat) =
-                compatible(&sampled, &value, environment).await?
+                compatible.predicate(&sampled, &value, environment).await?
             else {
                 return Ok(None);
             };
@@ -274,6 +275,123 @@ pub struct Deduction {
     /// If `true`, the lifetime parameter in the generic arguments of the
     /// implementation is not general to accomodate forall lifetimes.
     pub is_not_general_enough: bool,
+}
+
+struct UniToSubs<'a>(&'a mut bool);
+
+impl CompatiblePredicate<Lifetime> for UniToSubs<'_> {
+    async fn predicate(
+        &mut self,
+        lhs: &Lifetime,
+        rhs: &Lifetime,
+        _: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
+        if lhs == rhs {
+            Ok(Some(Succeeded::satisfied()))
+        } else if lhs.is_forall() || rhs.is_forall() {
+            *self.0 = true;
+
+            Ok(Some(Succeeded::satisfied()))
+        } else {
+            Ok(Some(Succeeded::satisfied_with(
+                [
+                    LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                        *lhs, *rhs,
+                    )),
+                    LifetimeConstraint::LifetimeOutlives(Outlives::new(
+                        *rhs, *lhs,
+                    )),
+                ]
+                .into_iter()
+                .collect(),
+            )))
+        }
+    }
+}
+
+impl CompatiblePredicate<Type> for UniToSubs<'_> {
+    async fn predicate(
+        &mut self,
+        lhs: &Type,
+        rhs: &Type,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
+        let Some(unifier) = environment
+            .query(&Unification::new(
+                lhs.clone(),
+                rhs.clone(),
+                LifetimeUnifyingPredicate,
+            ))
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut constraints = unifier.constraints.clone();
+
+        let mut mapping = Mapping::default();
+        mapping.append_from_unifier(unifier.result.clone());
+
+        assert!(mapping.types.is_empty());
+        assert!(mapping.constants.is_empty());
+
+        // all lifetimes must strictly matched
+        for (lhs, values) in mapping.lifetimes {
+            for rhs in values {
+                if lhs == rhs {
+                    continue;
+                }
+
+                if lhs.is_forall() || rhs.is_forall() {
+                    *self.0 = true;
+                } else {
+                    constraints.insert(LifetimeConstraint::LifetimeOutlives(
+                        Outlives::new(lhs, rhs),
+                    ));
+                    constraints.insert(LifetimeConstraint::LifetimeOutlives(
+                        Outlives::new(rhs, lhs),
+                    ));
+                }
+            }
+        }
+
+        Ok(Some(Succeeded::satisfied_with(constraints)))
+    }
+}
+
+impl CompatiblePredicate<Constant> for UniToSubs<'_> {
+    async fn predicate(
+        &mut self,
+        lhs: &Constant,
+        rhs: &Constant,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
+        Ok(environment
+            .query(&Equality::new(lhs.clone(), rhs.clone()))
+            .await
+            .map(|x| x.map(|x| (*x).clone()))?)
+    }
+}
+
+struct Equals<'a>(&'a mut bool);
+
+impl CompatiblePredicate<Type> for Equals<'_> {
+    async fn predicate(
+        &mut self,
+        left: &Type,
+        right: &Type,
+        environment: &Environment<'_, impl Normalizer>,
+    ) -> Result<Option<Succeeded<Satisfied>>, Error> {
+        environment
+            .subtypes(left.clone(), right.clone(), Variance::Covariant)
+            .await?
+            .map_or(Ok(None), |result| {
+                if !result.result.forall_lifetime_errors.is_empty() {
+                    *self.0 = true;
+                }
+
+                Ok(Some(Succeeded::satisfied_with(result.constraints.clone())))
+            })
+    }
 }
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -382,28 +500,7 @@ impl<N: Normalizer> Environment<'_, N> {
             }) = from_unification_to_substitution(
                 lifetime_param_map,
                 self,
-                async |lhs: &Lifetime, rhs: &Lifetime, _| {
-                    if lhs == rhs {
-                        Ok(Some(Succeeded::satisfied()))
-                    } else if lhs.is_forall() || rhs.is_forall() {
-                        is_not_general_enough = true;
-
-                        Ok(Some(Succeeded::satisfied()))
-                    } else {
-                        Ok(Some(Succeeded::satisfied_with(
-                            [
-                                LifetimeConstraint::LifetimeOutlives(
-                                    Outlives::new(*lhs, *rhs),
-                                ),
-                                LifetimeConstraint::LifetimeOutlives(
-                                    Outlives::new(*rhs, *lhs),
-                                ),
-                            ]
-                            .into_iter()
-                            .collect(),
-                        )))
-                    }
-                },
+                UniToSubs(&mut is_not_general_enough),
             )
             .await?
             else {
@@ -416,51 +513,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 from_unification_to_substitution(
                     type_param_map,
                     self,
-                    async |lhs, rhs, environment| {
-                        let Some(unifier) = environment
-                            .query(&Unification::new(
-                                lhs.clone(),
-                                rhs.clone(),
-                                LifetimeUnifyingPredicate,
-                            ))
-                            .await?
-                        else {
-                            return Ok(None);
-                        };
-                        let mut constraints = unifier.constraints.clone();
-
-                        let mut mapping = Mapping::default();
-                        mapping.append_from_unifier(unifier.result.clone());
-
-                        assert!(mapping.types.is_empty());
-                        assert!(mapping.constants.is_empty());
-
-                        // all lifetimes must strictly matched
-                        for (lhs, values) in mapping.lifetimes {
-                            for rhs in values {
-                                if lhs == rhs {
-                                    continue;
-                                }
-
-                                if lhs.is_forall() || rhs.is_forall() {
-                                    is_not_general_enough = true;
-                                } else {
-                                    constraints.insert(
-                                        LifetimeConstraint::LifetimeOutlives(
-                                            Outlives::new(lhs, rhs),
-                                        ),
-                                    );
-                                    constraints.insert(
-                                        LifetimeConstraint::LifetimeOutlives(
-                                            Outlives::new(rhs, lhs),
-                                        ),
-                                    );
-                                }
-                            }
-                        }
-
-                        Ok(Some(Succeeded::satisfied_with(constraints)))
-                    },
+                    UniToSubs(&mut is_not_general_enough),
                 )
                 .await?
             else {
@@ -474,12 +527,7 @@ impl<N: Normalizer> Environment<'_, N> {
             }) = from_unification_to_substitution(
                 constant_param_map,
                 self,
-                async |lhs, rhs, environment| {
-                    Ok(environment
-                        .query(&Equality::new(lhs.clone(), rhs.clone()))
-                        .await
-                        .map(|x| x.map(|x| (*x).clone()))?)
-                },
+                UniToSubs(&mut is_not_general_enough),
             )
             .await?
             else {
@@ -496,25 +544,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 trait_type_map,
                 &base_unification,
                 self,
-                async |term, target, environment| {
-                    environment
-                        .subtypes(
-                            term.clone(),
-                            target.clone(),
-                            Variance::Covariant,
-                        )
-                        .await?
-                        .map_or(Ok(None), |result| {
-                            if !result.result.forall_lifetime_errors.is_empty()
-                            {
-                                is_not_general_enough = true;
-                            }
-
-                            Ok(Some(Succeeded::satisfied_with(
-                                result.constraints.clone(),
-                            )))
-                        })
-                },
+                Equals(&mut is_not_general_enough),
             )
             .await?
         else {

@@ -65,16 +65,16 @@ pub trait Visitor<'a, T: Element> {
 }
 
 /// An asynchronous version of the [`Visitor`] trait.
-pub trait AsyncVisitor<T: Element> {
+pub trait AsyncVisitor<T: Element>: Send {
     /// Visits a term.
     ///
     /// Returns `true` if the visitor should continue visiting the sub-terms of
     /// the term.
-    fn visit<'a>(
-        &'a mut self,
-        term: &'a T,
+    fn visit(
+        &mut self,
+        term: &T,
         location: T::Location,
-    ) -> impl Future<Output = bool> + 'a;
+    ) -> impl Future<Output = bool> + Send;
 }
 
 /// Represents a mutable visitor that visits a term.
@@ -167,6 +167,7 @@ pub trait Element: Sized + SubTerm {
         + Ord
         + Hash
         + Into<TermLocation>
+        + Send
         + From<Self::ThisSubTermLocation>;
 
     /// Invokes the visitor on the term itself once.
@@ -261,7 +262,7 @@ pub trait Element: Sized + SubTerm {
     >(
         &'a self,
         visitor: &'a mut V,
-    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + 'a;
+    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + Send + 'a;
 
     /// Similar to [`Element::accept_one_level()`], but for mutable references.
     ///

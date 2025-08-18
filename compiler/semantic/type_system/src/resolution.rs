@@ -12,14 +12,17 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    implements_argument::get_implements_argument, instantiation::Instantiation,
-    predicate::Predicate, r#type::Type, variance::Variance,
-    where_clause::get_where_clause,
+    implements_argument::get_implements_argument,
+    instantiation::Instantiation,
+    predicate::Predicate,
+    r#type::Type,
+    variance::Variance,
+    where_clause::{self, get_where_clause},
 };
 
 use crate::{
     deduction::{self, Deduction},
-    environment::{Environment, Query},
+    environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
     order::{self, Order},
     Error, LifetimeConstraint, Succeeded,
@@ -59,191 +62,195 @@ impl Query for Resolve {
     type Error = Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        let symbol_kind =
-            environment.tracked_engine().get_kind(self.implemented_id).await;
-
-        // check that it must be trait or marker
-        assert!(matches!(symbol_kind, Kind::Trait | Kind::Marker));
-
-        // we might be in the implementation site already
-        if let Some(result) = is_in_active_implementation(
-            self.implemented_id,
-            &self.generic_arguments,
-            environment,
-        )
-        .await?
-        {
-            return Ok(Some(Arc::new(result)));
-        }
-
-        let definite = environment
-            .generic_arguments_definite(&self.generic_arguments)
-            .await?;
-
-        // the current candidate
-        #[allow(clippy::type_complexity)]
-        let mut candidate: Option<(
-            Global<pernixc_symbol::ID>,
-            Deduction,
-            BTreeSet<LifetimeConstraint>,
-            GenericArguments,
-        )> = None;
-
-        let implementations = environment
-            .tracked_engine()
-            .get_implemented(self.implemented_id)
-            .await
-            .iter()
-            .copied()
-            .collect::<Vec<_>>();
-
-        for current_impl_id in implementations {
-            let implementation_generic_arguments = environment
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            let symbol_kind = environment
                 .tracked_engine()
-                .get_implements_argument(current_impl_id)
-                .await?
-                .clone();
+                .get_kind(self.implemented_id)
+                .await;
 
-            // build the unification
-            let Succeeded {
-                result: deduction,
-                constraints: lifetime_constraints,
-            } = match environment
-                .deduce(
-                    &implementation_generic_arguments,
-                    &self.generic_arguments,
-                )
-                .await
+            // check that it must be trait or marker
+            assert!(matches!(symbol_kind, Kind::Trait | Kind::Marker));
+
+            // we might be in the implementation site already
+            if let Some(result) = is_in_active_implementation(
+                self.implemented_id,
+                &self.generic_arguments,
+                environment,
+            )
+            .await?
             {
-                Ok(unification) => unification,
-
-                Err(deduction::Error::Overflow(error)) => {
-                    return Err(error.into())
-                }
-
-                Err(deduction::Error::CyclicDependency(cyclic)) => {
-                    return Err(cyclic.into())
-                }
-
-                Err(
-                    deduction::Error::MismatchedGenericArgumentCount(_)
-                    | deduction::Error::UnificationFailure(_),
-                ) => continue,
-            };
-
-            let is_final = match symbol_kind {
-                Kind::Trait => {
-                    environment
-                        .tracked_engine()
-                        .is_trait_implements_final(current_impl_id)
-                        .await
-                }
-
-                // every marker's implementaions are final
-                Kind::Marker => true,
-
-                _ => unreachable!(),
-            };
-
-            if !is_final {
-                // the implementation is not final, therefore, it requires
-                // generic arguments to be definite
-                if definite.is_none() {
-                    continue;
-                }
-
-                // all predicates must satisfy to continue
-                let where_clause = environment
-                    .tracked_engine()
-                    .get_where_clause(current_impl_id)
-                    .await?;
-
-                if !predicate_satisfies(
-                    where_clause.iter().map(|x| &x.predicate),
-                    &deduction.instantiation,
-                    environment,
-                )
-                .await?
-                {
-                    continue;
-                }
+                return Ok(Some(Arc::new(result)));
             }
 
-            // compare with the current candidate
-            match &mut candidate {
-                Some((
-                    candidate_id,
-                    candidate_instantiation,
-                    candidate_lifetime_constraints,
-                    candidate_generic_arguments,
-                )) => {
-                    // check which one is more specific
-                    match environment
+            let definite = environment
+                .generic_arguments_definite(&self.generic_arguments)
+                .await?;
+
+            // the current candidate
+            #[allow(clippy::type_complexity)]
+            let mut candidate: Option<(
+                Global<pernixc_symbol::ID>,
+                Deduction,
+                BTreeSet<LifetimeConstraint>,
+                GenericArguments,
+            )> = None;
+
+            let implementations = environment
+                .tracked_engine()
+                .get_implemented(self.implemented_id)
+                .await
+                .iter()
+                .copied()
+                .collect::<Vec<_>>();
+
+            for current_impl_id in implementations {
+                let implementation_generic_arguments = environment
+                    .tracked_engine()
+                    .get_implements_argument(current_impl_id)
+                    .await?
+                    .clone();
+
+                // build the unification
+                let Succeeded {
+                    result: deduction,
+                    constraints: lifetime_constraints,
+                } = match environment
+                    .deduce(
+                        &implementation_generic_arguments,
+                        &self.generic_arguments,
+                    )
+                    .await
+                {
+                    Ok(unification) => unification,
+
+                    Err(deduction::Error::Overflow(error)) => {
+                        return Err(error.into())
+                    }
+
+                    Err(deduction::Error::CyclicDependency(cyclic)) => {
+                        return Err(cyclic.into())
+                    }
+
+                    Err(
+                        deduction::Error::MismatchedGenericArgumentCount(_)
+                        | deduction::Error::UnificationFailure(_),
+                    ) => continue,
+                };
+
+                let is_final = match symbol_kind {
+                    Kind::Trait => {
+                        environment
+                            .tracked_engine()
+                            .is_trait_implements_final(current_impl_id)
+                            .await
+                    }
+
+                    // every marker's implementaions are final
+                    Kind::Marker => true,
+
+                    _ => unreachable!(),
+                };
+
+                if !is_final {
+                    // the implementation is not final, therefore, it requires
+                    // generic arguments to be definite
+                    if definite.is_none() {
+                        continue;
+                    }
+
+                    // all predicates must satisfy to continue
+                    let where_clause = environment
                         .tracked_engine()
-                        .query(&order::Key {
-                            this: current_impl_id,
-                            other: *candidate_id,
-                        })
-                        .await?
+                        .get_where_clause(current_impl_id)
+                        .await?;
+
+                    if !predicate_satisfies(
+                        where_clause,
+                        &deduction.instantiation,
+                        environment,
+                    )
+                    .await?
                     {
-                        Ok(Order::Ambiguous | Order::Incompatible) => {
-                            return Ok(None);
-                        }
-
-                        Ok(Order::MoreGeneral) => {}
-                        Ok(Order::MoreSpecific) => {
-                            *candidate_id = current_impl_id;
-                            *candidate_instantiation = deduction;
-                            *candidate_lifetime_constraints =
-                                lifetime_constraints;
-                            *candidate_generic_arguments =
-                                implementation_generic_arguments;
-                        }
-
-                        Err(error) => {
-                            return Err(Error::Overflow(error));
-                        }
+                        continue;
                     }
                 }
 
-                candidate @ None => {
-                    *candidate = Some((
-                        current_impl_id,
-                        deduction,
-                        lifetime_constraints,
-                        implementation_generic_arguments,
-                    ));
+                // compare with the current candidate
+                match &mut candidate {
+                    Some((
+                        candidate_id,
+                        candidate_instantiation,
+                        candidate_lifetime_constraints,
+                        candidate_generic_arguments,
+                    )) => {
+                        // check which one is more specific
+                        match environment
+                            .tracked_engine()
+                            .query(&order::Key::new(
+                                current_impl_id,
+                                *candidate_id,
+                            ))
+                            .await?
+                        {
+                            Ok(Order::Ambiguous | Order::Incompatible) => {
+                                return Ok(None);
+                            }
+
+                            Ok(Order::MoreGeneral) => {}
+                            Ok(Order::MoreSpecific) => {
+                                *candidate_id = current_impl_id;
+                                *candidate_instantiation = deduction;
+                                *candidate_lifetime_constraints =
+                                    lifetime_constraints;
+                                *candidate_generic_arguments =
+                                    implementation_generic_arguments;
+                            }
+
+                            Err(error) => {
+                                return Err(Error::Overflow(error));
+                            }
+                        }
+                    }
+
+                    candidate @ None => {
+                        *candidate = Some((
+                            current_impl_id,
+                            deduction,
+                            lifetime_constraints,
+                            implementation_generic_arguments,
+                        ));
+                    }
                 }
             }
-        }
 
-        match candidate {
-            Some((
-                implementation_id,
-                deduction,
-                mut lifetime_constraints,
-                _,
-            )) => Ok(Some(Arc::new(Succeeded {
-                result: Implementation {
-                    instantiation: deduction.instantiation,
-                    id: implementation_id,
-                    is_not_general_enough: deduction.is_not_general_enough,
-                },
-                constraints: {
-                    lifetime_constraints.extend(
-                        definite.into_iter().flat_map(|x| x.constraints),
-                    );
-                    lifetime_constraints
-                },
-            }))),
-            None => Ok(None),
-        }
+            match candidate {
+                Some((
+                    implementation_id,
+                    deduction,
+                    mut lifetime_constraints,
+                    _,
+                )) => Ok(Some(Arc::new(Succeeded {
+                    result: Implementation {
+                        instantiation: deduction.instantiation,
+                        id: implementation_id,
+                        is_not_general_enough: deduction.is_not_general_enough,
+                    },
+                    constraints: {
+                        lifetime_constraints.extend(
+                            definite.into_iter().flat_map(|x| x.constraints),
+                        );
+                        lifetime_constraints
+                    },
+                }))),
+                None => Ok(None),
+            }
+        })
     }
 }
 
@@ -328,13 +335,13 @@ async fn is_in_active_implementation(
     Ok(None)
 }
 
-async fn predicate_satisfies<'a>(
-    predicates: impl IntoIterator<Item = &'a Predicate>,
+async fn predicate_satisfies(
+    predicates: Arc<[where_clause::Predicate]>,
     substitution: &Instantiation,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<bool, Error> {
     // check if satisfies all the predicate
-    for mut predicate in predicates.into_iter().cloned() {
+    for mut predicate in predicates.iter().map(|x| x.predicate.clone()) {
         predicate.instantiate(substitution);
 
         if !match predicate {

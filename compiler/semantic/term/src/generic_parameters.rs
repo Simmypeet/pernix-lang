@@ -89,7 +89,7 @@ pub struct GenericParameters {
 
 /// Implemented by all generic parameters [`LifetimeParameter`],
 /// [`TypeParameter`], and [`ConstantParameter`].
-pub trait GenericParameter: Sized + 'static {
+pub trait GenericParameter: Sized + Send + Sync + 'static {
     /// Gets the name of the generic parameter.
     ///
     /// If the generic parameter is anonymous, (i.e. elided lifetime parameter),

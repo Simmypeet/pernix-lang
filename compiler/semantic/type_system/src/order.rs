@@ -24,7 +24,7 @@ use crate::{
     normalizer::{self, Normalizer},
     term::Term,
     unification::{self, Log, Unification},
-    Error, Satisfied, Succeeded,
+    Error, OverflowError, Satisfied, Succeeded,
 };
 
 /// The order in terms of specificity of the generic arguments.
@@ -238,8 +238,9 @@ impl<N: Normalizer> Environment<'_, N> {
     Serialize,
     Deserialize,
     pernixc_query::Key,
+    derive_new::new,
 )]
-#[value(Result<Order, crate::OverflowError>)]
+#[value(Result<Order, OverflowError>)]
 pub struct Key {
     /// The `this` in the [`Environment::order`]
     pub this: Global<pernixc_symbol::ID>,
@@ -251,7 +252,7 @@ pub struct Key {
 pub async fn implements_order(
     Key { this, other }: &Key,
     tracked_engine: &TrackedEngine,
-) -> Result<Result<Order, crate::OverflowError>, executor::CyclicError> {
+) -> Result<Result<Order, OverflowError>, executor::CyclicError> {
     let lhs_generic_arguments =
         tracked_engine.get_implements_argument(*this).await?;
     let rhs_generic_arguments =

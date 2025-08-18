@@ -8,6 +8,8 @@ use std::{
 
 use dashmap::mapref::one::Ref;
 use pernixc_hash::DashMap;
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     database::{self, Dynamic, DynamicValue, TrackedEngine},
@@ -16,7 +18,18 @@ use crate::{
 
 /// A unit struct for signaling cyclic dependencies in query execution.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    thiserror::Error,
 )]
 #[error("cyclic dependency in the query system detected")]
 pub struct CyclicError;

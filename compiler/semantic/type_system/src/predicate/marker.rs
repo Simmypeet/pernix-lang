@@ -24,7 +24,7 @@ use pernixc_term::{
 
 use crate::{
     adt_fields::get_instantiated_adt_fields,
-    environment::{Call, DynArc, Environment, Query},
+    environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     resolution::{self, Implementation},
     Error, Satisfied, Succeeded,
@@ -165,151 +165,158 @@ impl Query for PositiveMarker {
     type Error = Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        // if this query was made in marker, then check if the marker is the
-        // same as the query one.
-        if let Some(result) =
-            is_in_marker(self.marker_id, &self.generic_arguments, environment)
-                .await?
-        {
-            return Ok(Some(Arc::new(Succeeded::with_constraints(
-                PositiveSatisfied::Environment,
-                result.constraints,
-            ))));
-        }
-
-        // look for the matching premise
-        for premise in environment
-            .premise()
-            .predicates
-            .iter()
-            .filter_map(Predicate::as_positive_marker)
-        {
-            // skip if id is different
-            if premise.marker_id != self.marker_id {
-                continue;
-            }
-
-            let Some(compatiblity) = environment
-                .subtypes_generic_arguments(
-                    &self.generic_arguments,
-                    &premise.generic_arguments,
-                )
-                .await?
-            else {
-                continue;
-            };
-
-            if !compatiblity.result.forall_lifetime_errors.is_empty() {
-                continue;
-            }
-
-            return Ok(Some(Arc::new(Succeeded::with_constraints(
-                PositiveSatisfied::Premise,
-                compatiblity.constraints,
-            ))));
-        }
-
-        // manually search for the trait implementation
-        if let Some(result) = environment
-            .query(&resolution::Resolve::new(
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            // if this query was made in marker, then check if the marker is the
+            // same as the query one.
+            if let Some(result) = is_in_marker(
                 self.marker_id,
-                self.generic_arguments.clone(),
-            ))
+                &self.generic_arguments,
+                environment,
+            )
             .await?
-        {
-            if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::PositiveImplementation
             {
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
-                    PositiveSatisfied::Implementation(Implementation {
-                        instantiation: result.result.instantiation.clone(),
-                        id: result.result.id,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
-                    }),
-                    result.constraints.clone(),
+                    PositiveSatisfied::Environment,
+                    result.constraints,
                 ))));
             }
 
-            // then it's a negative implementation
-            return Ok(None);
-        }
+            // look for the matching premise
+            for premise in environment
+                .premise()
+                .predicates
+                .iter()
+                .filter_map(Predicate::as_positive_marker)
+            {
+                // skip if id is different
+                if premise.marker_id != self.marker_id {
+                    continue;
+                }
 
-        // replace the first type argument with sub-terms/fields and check if
-        // all the replacements are satisfied
-        if let Some(ty) = self.generic_arguments.types.first() {
-            let mut visitor = Visitor {
-                original: self,
-                state: VisitorState::Succeeded(BTreeMap::new()),
-                environment,
-            };
+                let Some(compatiblity) = environment
+                    .subtypes_generic_arguments(
+                        &self.generic_arguments,
+                        &premise.generic_arguments,
+                    )
+                    .await?
+                else {
+                    continue;
+                };
 
-            let result = ty.accept_one_level_async(&mut visitor).await;
+                if !compatiblity.result.forall_lifetime_errors.is_empty() {
+                    continue;
+                }
 
-            match (visitor.state, result) {
-                // can't find the sub-term / failed
-                (VisitorState::Failed, _)
-                | (
-                    VisitorState::Succeeded(_),
-                    Err(visitor::VisitNonApplicationTermError),
-                ) => {}
+                return Ok(Some(Arc::new(Succeeded::with_constraints(
+                    PositiveSatisfied::Premise,
+                    compatiblity.constraints,
+                ))));
+            }
 
-                // abrupt error
-                (VisitorState::AbruptError(error), _) => return Err(error),
+            // manually search for the trait implementation
+            if let Some(result) = environment
+                .query(&resolution::Resolve::new(
+                    self.marker_id,
+                    self.generic_arguments.clone(),
+                ))
+                .await?
+            {
+                if environment.tracked_engine().get_kind(result.result.id).await
+                    == Kind::PositiveImplementation
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        PositiveSatisfied::Implementation(Implementation {
+                            instantiation: result.result.instantiation.clone(),
+                            id: result.result.id,
+                            is_not_general_enough: result
+                                .result
+                                .is_not_general_enough,
+                        }),
+                        result.constraints.clone(),
+                    ))));
+                }
 
-                (VisitorState::Succeeded(mut btree_map), Ok(_)) => {
-                    // including fields as well
-                    for field_ty in
-                        try_get_adt_fields(ty, environment.tracked_engine())
-                            .await?
-                            .into_iter()
-                            .flatten()
-                    {
-                        let new_query = Self {
-                            marker_id: self.marker_id,
-                            generic_arguments: GenericArguments {
-                                lifetimes: self
-                                    .generic_arguments
-                                    .lifetimes
-                                    .clone(),
-                                types: {
-                                    let mut types =
-                                        self.generic_arguments.types.clone();
-                                    types[0] = field_ty.clone();
-                                    types
-                                },
-                                constants: self
-                                    .generic_arguments
-                                    .constants
-                                    .clone(),
-                            },
-                        };
+                // then it's a negative implementation
+                return Ok(None);
+            }
 
-                        if let Some(result) =
-                            Box::pin(environment.query(&new_query)).await?
+            // replace the first type argument with sub-terms/fields and check
+            // if all the replacements are satisfied
+            if let Some(ty) = self.generic_arguments.types.first() {
+                let mut visitor = Visitor {
+                    original: self,
+                    state: VisitorState::Succeeded(BTreeMap::new()),
+                    environment,
+                };
+
+                let result = ty.accept_one_level_async(&mut visitor).await;
+
+                match (visitor.state, result) {
+                    // can't find the sub-term / failed
+                    (VisitorState::Failed, _)
+                    | (
+                        VisitorState::Succeeded(_),
+                        Err(visitor::VisitNonApplicationTermError),
+                    ) => {}
+
+                    // abrupt error
+                    (VisitorState::AbruptError(error), _) => return Err(error),
+
+                    (VisitorState::Succeeded(mut btree_map), Ok(_)) => {
+                        // including fields as well
+                        for field_ty in
+                            try_get_adt_fields(ty, environment.tracked_engine())
+                                .await?
+                                .into_iter()
+                                .flatten()
                         {
-                            btree_map.insert(new_query, result);
-                        } else {
-                            return Ok(None);
-                        }
-                    }
+                            let new_query = Self {
+                                marker_id: self.marker_id,
+                                generic_arguments: GenericArguments {
+                                    lifetimes: self
+                                        .generic_arguments
+                                        .lifetimes
+                                        .clone(),
+                                    types: {
+                                        let mut types = self
+                                            .generic_arguments
+                                            .types
+                                            .clone();
+                                        types[0] = field_ty.clone();
+                                        types
+                                    },
+                                    constants: self
+                                        .generic_arguments
+                                        .constants
+                                        .clone(),
+                                },
+                            };
 
-                    return Ok(Some(Arc::new(Succeeded {
-                        result: PositiveSatisfied::Congruence(btree_map),
-                        constraints: BTreeSet::new(),
-                    })));
+                            if let Some(result) =
+                                Box::pin(environment.query(&new_query)).await?
+                            {
+                                btree_map.insert(new_query, result);
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+
+                        return Ok(Some(Arc::new(Succeeded {
+                            result: PositiveSatisfied::Congruence(btree_map),
+                            constraints: BTreeSet::new(),
+                        })));
+                    }
                 }
             }
-        }
 
-        Ok(None)
+            Ok(None)
+        })
     }
 
     fn on_cyclic(
@@ -345,89 +352,91 @@ impl Query for NegativeMarker {
     type Result = Succeeded<NegativeSatisfied>;
     type Error = Error;
 
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        // manually search for the trait implementation
-        if let Some(result) = environment
-            .query(&resolution::Resolve::new(
-                self.marker_id,
-                self.generic_arguments.clone(),
-            ))
-            .await?
-        {
-            if environment.tracked_engine().get_kind(result.result.id).await
-                == Kind::NegativeImplementation
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            // manually search for the trait implementation
+            if let Some(result) = environment
+                .query(&resolution::Resolve::new(
+                    self.marker_id,
+                    self.generic_arguments.clone(),
+                ))
+                .await?
             {
+                if environment.tracked_engine().get_kind(result.result.id).await
+                    == Kind::NegativeImplementation
+                {
+                    return Ok(Some(Arc::new(Succeeded::with_constraints(
+                        NegativeSatisfied::Implementation(Implementation {
+                            instantiation: result.result.instantiation.clone(),
+                            id: result.result.id,
+                            is_not_general_enough: result
+                                .result
+                                .is_not_general_enough,
+                        }),
+                        result.constraints.clone(),
+                    ))));
+                }
+            }
+
+            // look for the premise that matches
+            for marker_premise in environment
+                .premise()
+                .predicates
+                .iter()
+                .filter_map(Predicate::as_negative_marker)
+            {
+                // skip if the trait id is different
+                if marker_premise.marker_id != self.marker_id {
+                    continue;
+                }
+
+                let Some(compatiblity) = environment
+                    .subtypes_generic_arguments(
+                        &self.generic_arguments,
+                        &marker_premise.generic_arguments,
+                    )
+                    .await?
+                else {
+                    continue;
+                };
+
+                if !compatiblity.result.forall_lifetime_errors.is_empty() {
+                    continue;
+                }
+
                 return Ok(Some(Arc::new(Succeeded::with_constraints(
-                    NegativeSatisfied::Implementation(Implementation {
-                        instantiation: result.result.instantiation.clone(),
-                        id: result.result.id,
-                        is_not_general_enough: result
-                            .result
-                            .is_not_general_enough,
-                    }),
-                    result.constraints.clone(),
+                    NegativeSatisfied::Premise,
+                    compatiblity.constraints,
                 ))));
             }
-        }
 
-        // look for the premise that matches
-        for marker_premise in environment
-            .premise()
-            .predicates
-            .iter()
-            .filter_map(Predicate::as_negative_marker)
-        {
-            // skip if the trait id is different
-            if marker_premise.marker_id != self.marker_id {
-                continue;
-            }
-
-            let Some(compatiblity) = environment
-                .subtypes_generic_arguments(
-                    &self.generic_arguments,
-                    &marker_premise.generic_arguments,
-                )
+            // must be definite and failed to prove the positive trait
+            let Some(definition) = environment
+                .generic_arguments_definite(&self.generic_arguments)
                 .await?
             else {
-                continue;
+                return Ok(None);
             };
 
-            if !compatiblity.result.forall_lifetime_errors.is_empty() {
-                continue;
-            }
-
-            return Ok(Some(Arc::new(Succeeded::with_constraints(
-                NegativeSatisfied::Premise,
-                compatiblity.constraints,
-            ))));
-        }
-
-        // must be definite and failed to prove the positive trait
-        let Some(definition) = environment
-            .generic_arguments_definite(&self.generic_arguments)
-            .await?
-        else {
-            return Ok(None);
-        };
-
-        Ok(environment
-            .query(&PositiveMarker::new(
-                self.marker_id,
-                self.generic_arguments.clone(),
-            ))
-            .await?
-            .is_none()
-            .then(|| {
-                Arc::new(Succeeded::with_constraints(
-                    NegativeSatisfied::UnsatisfiedPositive,
-                    definition.constraints,
+            Ok(environment
+                .query(&PositiveMarker::new(
+                    self.marker_id,
+                    self.generic_arguments.clone(),
                 ))
-            }))
+                .await?
+                .is_none()
+                .then(|| {
+                    Arc::new(Succeeded::with_constraints(
+                        NegativeSatisfied::UnsatisfiedPositive,
+                        definition.constraints,
+                    ))
+                }))
+        })
     }
 }
 

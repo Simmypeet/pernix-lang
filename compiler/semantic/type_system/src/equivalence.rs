@@ -9,7 +9,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    environment::{Environment, Query},
+    environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
     subtype::Subtype,
     term::Term,
@@ -23,7 +23,7 @@ pub trait Impl: Sized {
     fn get_equivalences_internal(
         &self,
         environment: &Environment<'_, impl Normalizer>,
-    ) -> impl Future<Output = Result<Vec<Succeeded<Self>>, Error>>;
+    ) -> impl Future<Output = Result<Vec<Succeeded<Self>>, Error>> + Send;
 }
 
 impl Impl for Lifetime {
@@ -121,15 +121,17 @@ impl<T: Term> Query for Equivalences<T> {
     type Result = Vec<Succeeded<T>>;
     type Error = Error;
 
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        Impl::get_equivalences_internal(&self.0, environment)
-            .await
-            .map(|x| Some(Arc::new(x)))
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            Impl::get_equivalences_internal(&self.0, environment)
+                .await
+                .map(|x| Some(Arc::new(x)))
+        })
     }
 }
 

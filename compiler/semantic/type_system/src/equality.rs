@@ -5,7 +5,7 @@ use std::sync::Arc;
 use pernixc_term::matching::Matching;
 
 use crate::{
-    environment::{Environment, Query},
+    environment::{BoxedFuture, Environment, Query},
     normalizer::Normalizer,
     term::Term,
     Error, Satisfied, Succeeded,
@@ -28,76 +28,80 @@ impl<T: Term> Query for Equality<T, T> {
     type Result = Succeeded<Satisfied>;
     type Error = Error;
 
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         (): Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        if let Some(result) =
-            equals_without_mapping(&self.lhs, &self.rhs, environment).await?
-        {
-            return Ok(Some(Arc::new(result)));
-        }
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            if let Some(result) =
+                equals_without_mapping(&self.lhs, &self.rhs, environment)
+                    .await?
+            {
+                return Ok(Some(Arc::new(result)));
+            }
 
-        for predicate in &environment.premise().predicates {
-            let Some(equality_predicate) =
-                T::as_trait_member_compatible_predicate(predicate)
-            else {
-                continue;
-            };
+            for predicate in &environment.premise().predicates {
+                let Some(equality_predicate) =
+                    T::as_trait_member_compatible_predicate(predicate)
+                else {
+                    continue;
+                };
 
-            let trait_member_term: T = equality_predicate.lhs.clone().into();
+                let trait_member_term: T =
+                    equality_predicate.lhs.clone().into();
 
-            if self.lhs.as_trait_member().is_some() {
-                if let Some(mut result) = equals_without_mapping(
-                    &self.lhs,
-                    &trait_member_term,
-                    environment,
-                )
-                .await?
-                {
-                    if let Some(inner_result) =
-                        Box::pin(environment.query(&Self::new(
-                            equality_predicate.rhs.clone(),
-                            self.rhs.clone(),
-                        )))
-                        .await?
+                if self.lhs.as_trait_member().is_some() {
+                    if let Some(mut result) = equals_without_mapping(
+                        &self.lhs,
+                        &trait_member_term,
+                        environment,
+                    )
+                    .await?
                     {
-                        result
-                            .constraints
-                            .extend(inner_result.constraints.iter().cloned());
-                        return Ok(Some(Arc::new(result)));
+                        if let Some(inner_result) =
+                            Box::pin(environment.query(&Self::new(
+                                equality_predicate.rhs.clone(),
+                                self.rhs.clone(),
+                            )))
+                            .await?
+                        {
+                            result.constraints.extend(
+                                inner_result.constraints.iter().cloned(),
+                            );
+                            return Ok(Some(Arc::new(result)));
+                        }
+                    }
+                }
+
+                if self.rhs.as_trait_member().is_some() {
+                    if let Some(mut result) = equals_without_mapping(
+                        &trait_member_term,
+                        &self.rhs,
+                        environment,
+                    )
+                    .await?
+                    {
+                        if let Some(inner_result) =
+                            Box::pin(environment.query(&Self::new(
+                                self.lhs.clone(),
+                                equality_predicate.rhs.clone(),
+                            )))
+                            .await?
+                        {
+                            result.constraints.extend(
+                                inner_result.constraints.iter().cloned(),
+                            );
+
+                            return Ok(Some(Arc::new(result)));
+                        }
                     }
                 }
             }
 
-            if self.rhs.as_trait_member().is_some() {
-                if let Some(mut result) = equals_without_mapping(
-                    &trait_member_term,
-                    &self.rhs,
-                    environment,
-                )
-                .await?
-                {
-                    if let Some(inner_result) =
-                        Box::pin(environment.query(&Self::new(
-                            self.lhs.clone(),
-                            equality_predicate.rhs.clone(),
-                        )))
-                        .await?
-                    {
-                        result
-                            .constraints
-                            .extend(inner_result.constraints.iter().cloned());
-
-                        return Ok(Some(Arc::new(result)));
-                    }
-                }
-            }
-        }
-
-        Ok(None)
+            Ok(None)
+        })
     }
 }
 

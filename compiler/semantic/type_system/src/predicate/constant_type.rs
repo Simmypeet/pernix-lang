@@ -15,7 +15,7 @@ use pernixc_term::{
 
 use crate::{
     adt_fields::get_instantiated_adt_fields,
-    environment::{Call, DynArc, Environment, Query},
+    environment::{BoxedFuture, Call, DynArc, Environment, Query},
     normalizer::Normalizer,
     Error, Satisfiability, Satisfied, Succeeded,
 };
@@ -126,141 +126,149 @@ impl Query for ConstantType {
     type Error = Error;
 
     #[allow(clippy::too_many_lines)]
-    async fn query(
-        &self,
-        environment: &Environment<'_, impl Normalizer>,
+    fn query<'x, N: Normalizer>(
+        &'x self,
+        environment: &'x Environment<'x, N>,
         (): Self::Parameter,
         _: Self::InProgress,
-    ) -> Result<Option<Arc<Self::Result>>, Self::Error> {
-        let satisfiability = match self.0 {
-            Type::Primitive(primitive_type) => match primitive_type {
-                Primitive::Int8
-                | Primitive::Int16
-                | Primitive::Int32
-                | Primitive::Int64
-                | Primitive::Uint8
-                | Primitive::Uint16
-                | Primitive::Uint32
-                | Primitive::Uint64
-                | Primitive::Bool
-                | Primitive::Usize
-                | Primitive::Isize => Satisfiability::Satisfied,
+    ) -> BoxedFuture<'x, Self::Result, Self::Error> {
+        Box::pin(async move {
+            let satisfiability = match self.0 {
+                Type::Primitive(primitive_type) => match primitive_type {
+                    Primitive::Int8
+                    | Primitive::Int16
+                    | Primitive::Int32
+                    | Primitive::Int64
+                    | Primitive::Uint8
+                    | Primitive::Uint16
+                    | Primitive::Uint32
+                    | Primitive::Uint64
+                    | Primitive::Bool
+                    | Primitive::Usize
+                    | Primitive::Isize => Satisfiability::Satisfied,
 
-                Primitive::Float32 | Primitive::Float64 => {
-                    Satisfiability::Unsatisfied
-                }
-            },
+                    Primitive::Float32 | Primitive::Float64 => {
+                        Satisfiability::Unsatisfied
+                    }
+                },
 
-            Type::Error(_)
-            | Type::FunctionSignature(_)
-            | Type::TraitMember(_)
-            | Type::Parameter(_)
-            | Type::Inference(_) => Satisfiability::Unsatisfied,
+                Type::Error(_)
+                | Type::FunctionSignature(_)
+                | Type::TraitMember(_)
+                | Type::Parameter(_)
+                | Type::Inference(_) => Satisfiability::Unsatisfied,
 
-            Type::Pointer(_)
-            | Type::Symbol(_)
-            | Type::MemberSymbol(_)
-            | Type::Reference(_)
-            | Type::Array(_)
-            | Type::Tuple(_)
-            | Type::Phantom(_) => Satisfiability::Congruent,
-        };
-
-        // trivially satisfiable
-        if satisfiability == Satisfiability::Satisfied {
-            return Ok(Some(Arc::new(Succeeded::satisfied())));
-        }
-
-        // if the term is congruent, then we need to check the sub-terms
-        if satisfiability == Satisfiability::Congruent {
-            let mut visitor = Visitor {
-                constant_type: Ok(Some(Succeeded::satisfied())),
-                environment,
+                Type::Pointer(_)
+                | Type::Symbol(_)
+                | Type::MemberSymbol(_)
+                | Type::Reference(_)
+                | Type::Array(_)
+                | Type::Tuple(_)
+                | Type::Phantom(_) => Satisfiability::Congruent,
             };
 
-            assert!(self.0.accept_one_level_async(&mut visitor).await.is_ok());
+            // trivially satisfiable
+            if satisfiability == Satisfiability::Satisfied {
+                return Ok(Some(Arc::new(Succeeded::satisfied())));
+            }
 
-            if let Some(mut result) = visitor.constant_type? {
-                // look for the fields of the term as well (if it's an ADT)
-                let mut found_error = false;
+            // if the term is congruent, then we need to check the sub-terms
+            if satisfiability == Satisfiability::Congruent {
+                let mut visitor = Visitor {
+                    constant_type: Ok(Some(Succeeded::satisfied())),
+                    environment,
+                };
 
-                if let Some(fields) =
-                    try_get_adt_fields(&self.0, environment.tracked_engine())
-                        .await?
-                {
-                    for field in fields {
-                        let Some(new_result) =
-                            Box::pin(environment.query_with(
-                                &Self(field.clone()),
-                                (),
-                                QuerySource::Normal,
-                            ))
-                            .await?
-                        else {
-                            found_error = true;
-                            break;
-                        };
+                assert!(self
+                    .0
+                    .accept_one_level_async(&mut visitor)
+                    .await
+                    .is_ok());
 
-                        result
-                            .constraints
-                            .extend(new_result.constraints.iter().cloned());
+                if let Some(mut result) = visitor.constant_type? {
+                    // look for the fields of the term as well (if it's an ADT)
+                    let mut found_error = false;
+
+                    if let Some(fields) = try_get_adt_fields(
+                        &self.0,
+                        environment.tracked_engine(),
+                    )
+                    .await?
+                    {
+                        for field in fields {
+                            let Some(new_result) =
+                                Box::pin(environment.query_with(
+                                    &Self(field.clone()),
+                                    (),
+                                    QuerySource::Normal,
+                                ))
+                                .await?
+                            else {
+                                found_error = true;
+                                break;
+                            };
+
+                            result
+                                .constraints
+                                .extend(new_result.constraints.iter().cloned());
+                        }
+                    }
+
+                    if !found_error {
+                        return Ok(Some(Arc::new(result)));
                     }
                 }
+            }
 
-                if !found_error {
-                    return Ok(Some(Arc::new(result)));
+            // satisfiable with premises
+            for premise_term in environment
+                .premise()
+                .predicates
+                .iter()
+                .filter_map(|x| x.as_constant_type())
+            {
+                if let Some(result) = environment
+                    .subtypes(
+                        self.0.clone(),
+                        premise_term.0.clone(),
+                        Variance::Covariant,
+                    )
+                    .await?
+                {
+                    if !result.result.forall_lifetime_errors.is_empty() {
+                        continue;
+                    }
+
+                    return Ok(Some(Arc::new(Succeeded::satisfied_with(
+                        result.constraints.clone(),
+                    ))));
                 }
             }
-        }
 
-        // satisfiable with premises
-        for premise_term in environment
-            .premise()
-            .predicates
-            .iter()
-            .filter_map(|x| x.as_constant_type())
-        {
-            if let Some(result) = environment
-                .subtypes(
-                    self.0.clone(),
-                    premise_term.0.clone(),
-                    Variance::Covariant,
-                )
+            // satisfiable with equivalence
+            for Succeeded { result: eq, constraints } in
+                environment.get_equivalences(&self.0).await?.iter()
+            {
+                if let Some(result) = Box::pin(environment.query_with(
+                    &Self(eq.clone()),
+                    (),
+                    QuerySource::FromEquivalence,
+                ))
                 .await?
-            {
-                if !result.result.forall_lifetime_errors.is_empty() {
-                    continue;
+                {
+                    return Ok(Some(Arc::new(Succeeded::satisfied_with(
+                        result
+                            .constraints
+                            .iter()
+                            .cloned()
+                            .chain(constraints.iter().cloned())
+                            .collect(),
+                    ))));
                 }
-
-                return Ok(Some(Arc::new(Succeeded::satisfied_with(
-                    result.constraints.clone(),
-                ))));
             }
-        }
 
-        // satisfiable with equivalence
-        for Succeeded { result: eq, constraints } in
-            environment.get_equivalences(&self.0).await?.iter()
-        {
-            if let Some(result) = Box::pin(environment.query_with(
-                &Self(eq.clone()),
-                (),
-                QuerySource::FromEquivalence,
-            ))
-            .await?
-            {
-                return Ok(Some(Arc::new(Succeeded::satisfied_with(
-                    result
-                        .constraints
-                        .iter()
-                        .cloned()
-                        .chain(constraints.iter().cloned())
-                        .collect(),
-                ))));
-            }
-        }
-
-        Ok(None)
+            Ok(None)
+        })
     }
 
     fn on_cyclic(

@@ -5,7 +5,7 @@ use pernixc_term::{constant::Constant, r#type::Type};
 use crate::{environment::Environment, Error, Succeeded};
 
 /// The object used to normalize the inference variables into the concrete term.
-pub trait Normalizer: Sized {
+pub trait Normalizer: Sized + Send + Sync {
     /// Normalizes the type inference variable into the concrete type
     /// term.
     ///
@@ -15,7 +15,8 @@ pub trait Normalizer: Sized {
     fn normalize_type(
         ty: &Type,
         environment: &Environment<Self>,
-    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Type>>, Error>>;
+    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Type>>, Error>>
+           + Send;
 
     /// Normalizes the constant inference variable into the concrete constant
     /// term.
@@ -26,7 +27,9 @@ pub trait Normalizer: Sized {
     fn normalize_constant(
         constant: &Constant,
         environment: &Environment<Self>,
-    ) -> impl std::future::Future<Output = Result<Option<Succeeded<Constant>>, Error>>;
+    ) -> impl std::future::Future<
+        Output = Result<Option<Succeeded<Constant>>, Error>,
+    > + Send;
 }
 
 /// The default normalizer that does not normalize the inference variables.
