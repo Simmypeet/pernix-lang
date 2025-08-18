@@ -8,6 +8,8 @@ pub mod error;
 pub mod fields;
 pub mod generic_arguments;
 pub mod generic_parameters;
+pub mod implemented;
+pub mod implements;
 pub mod implements_argument;
 pub mod implied_predicates;
 pub mod inference;

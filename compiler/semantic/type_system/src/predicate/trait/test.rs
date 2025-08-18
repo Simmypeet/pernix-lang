@@ -59,7 +59,7 @@ async fn single_implementation() {
             );
             x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait);
             x.set_input(
-                pernixc_symbol::implements::Key(implements_id),
+                pernixc_term::implements::Key(implements_id),
                 Some(trait_id),
             );
             x.set_input(
@@ -71,7 +71,7 @@ async fn single_implementation() {
                 Arc::default(),
             );
             x.set_input(
-                pernixc_symbol::implemented::Key(trait_id),
+                pernixc_term::implemented::Key(trait_id),
                 Arc::new(std::iter::once(implements_id).collect()),
             );
 
@@ -202,7 +202,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
             Kind::PositiveImplementation,
         );
         x.set_input(
-            pernixc_symbol::implements::Key(specialized_impl_id),
+            pernixc_term::implements::Key(specialized_impl_id),
             Some(trait_id),
         );
         x.set_input(
@@ -223,7 +223,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
                         Kind::Trait,
                     );
                     x.set_input(
-                        pernixc_symbol::implemented::Key(impossible_trait_id),
+                        pernixc_term::implemented::Key(impossible_trait_id),
                         Arc::default(),
                     );
 
@@ -298,7 +298,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
             Kind::PositiveImplementation,
         );
         x.set_input(
-            pernixc_symbol::implements::Key(general_impl_id),
+            pernixc_term::implements::Key(general_impl_id),
             Some(trait_id),
         );
         x.set_input(
@@ -349,7 +349,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
 
         x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait);
         x.set_input(
-            pernixc_symbol::implemented::Key(trait_id),
+            pernixc_term::implemented::Key(trait_id),
             Arc::new(
                 [specialized_impl_id, general_impl_id].into_iter().collect(),
             ),

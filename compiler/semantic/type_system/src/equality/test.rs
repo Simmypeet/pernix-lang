@@ -81,7 +81,7 @@ async fn symmetric() {
         );
 
         x.set_input(
-            pernixc_symbol::implemented::Key(
+            pernixc_term::implemented::Key(
                 TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
             ),
             Arc::default(),
@@ -151,7 +151,7 @@ async fn not_equal() {
         );
 
         x.set_input(
-            pernixc_symbol::implemented::Key(
+            pernixc_term::implemented::Key(
                 TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
             ),
             Arc::default(),
@@ -227,7 +227,7 @@ async fn transitivity() {
             Kind::Trait,
         );
         x.set_input(
-            pernixc_symbol::implemented::Key(
+            pernixc_term::implemented::Key(
                 TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
             ),
             Arc::default(),
@@ -314,7 +314,7 @@ async fn congruence() {
             Kind::Trait,
         );
         x.set_input(
-            pernixc_symbol::implemented::Key(
+            pernixc_term::implemented::Key(
                 TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
             ),
             Arc::default(),
@@ -536,7 +536,7 @@ impl Property<Type> for Mapping {
                 ) == SetInputResult::Fresh;
 
                 let add_implemented = x.set_input(
-                    pernixc_symbol::implemented::Key(
+                    pernixc_term::implemented::Key(
                         self.target_trait_member
                             .id
                             .target_id
@@ -928,7 +928,7 @@ async fn property_based_testing<T: Term + 'static>(
             ) == SetInputResult::Fresh;
 
             let add_implemented = x.set_input(
-                pernixc_symbol::implemented::Key(
+                pernixc_term::implemented::Key(
                     trait_member.lhs.id.target_id.make_global(*trait_id),
                 ),
                 Arc::default(),
@@ -940,14 +940,6 @@ async fn property_based_testing<T: Term + 'static>(
         if !added {
             return Err(TestCaseError::reject("ID collision"));
         }
-
-        /*
-        TODO: bring back
-        let add_implemented = engine.add_component(
-            GlobalID::new(trait_member.lhs.id.target_id, *trait_id),
-            Implemented(HashSet::new()),
-        );
-        */
     }
 
     premise.predicates.extend(

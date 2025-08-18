@@ -12,7 +12,7 @@ use crate::{
     accessibility::symbol_accessible,
     get_table_of_symbol, get_target_root_module_id,
     import::get_imports,
-    kind::get_kind,
+    kind::{get_kind, Kind},
     member::get_members,
     name::diagnostic::{Diagnostic, SymbolIsNotAccessible, SymbolNotFound},
     parent::{get_closest_module_id, get_parent},
@@ -273,6 +273,15 @@ pub async fn get_member_of(
     }
 
     // TODO: search the member in the adt implementations
+    let this_kind = self.get_kind(id).await;
 
-    None
+    match this_kind {
+        Kind::Module => {
+            let imports = self.get_imports(id).await;
+
+            imports.get(member_name).map(|x| x.id)
+        }
+
+        _ => None,
+    }
 }

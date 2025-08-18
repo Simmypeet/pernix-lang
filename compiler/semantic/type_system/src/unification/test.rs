@@ -418,7 +418,7 @@ impl Property<Type> for Mapping {
                 ) == SetInputResult::Fresh;
 
                 let add_implemented = x.set_input(
-                    pernixc_symbol::implemented::Key(
+                    pernixc_term::implemented::Key(
                         self.trait_member
                             .id
                             .target_id

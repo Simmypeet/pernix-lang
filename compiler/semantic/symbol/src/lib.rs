@@ -25,8 +25,11 @@ use pernixc_serialize::{
 };
 use pernixc_source_file::{calculate_path_id, SourceElement, SourceFile};
 use pernixc_stable_hash::StableHash;
-use pernixc_syntax::item::{
-    module::Member as ModuleMemberSyn, r#trait::Member as TraitMemberSyn,
+use pernixc_syntax::{
+    item::{
+        module::Member as ModuleMemberSyn, r#trait::Member as TraitMemberSyn,
+    },
+    QualifiedIdentifier,
 };
 use pernixc_target::{
     get_invocation_arguments, get_target_seed, Global, TargetID,
@@ -46,8 +49,6 @@ use crate::{
 pub mod accessibility;
 pub mod diagnostic;
 pub mod final_implements;
-pub mod implemented;
-pub mod implements;
 pub mod import;
 pub mod kind;
 pub mod member;
@@ -395,6 +396,10 @@ pub struct Table {
     pub import_syntaxes:
         Arc<ReadOnlyView<ID, Arc<[pernixc_syntax::item::module::Import]>>>,
 
+    /// Maps the implements ID to its qualified identifier syntax.
+    pub implements_qualified_identifier_syntaxes:
+        Arc<ReadOnlyView<ID, QualifiedIdentifier>>,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -720,6 +725,9 @@ pub async fn table_executor(
             context.variant_associated_type_syntaxes.into_read_only(),
         ),
         import_syntaxes: Arc::new(context.import_syntaxes.into_read_only()),
+        implements_qualified_identifier_syntaxes: Arc::new(
+            context.implements_qualified_identifier_syntaxes.into_read_only(),
+        ),
 
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),

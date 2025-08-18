@@ -81,7 +81,7 @@ impl Property<Type> for ByEquality {
                 ) == SetInputResult::Fresh;
 
                 let add_implemented = x.set_input(
-                    pernixc_symbol::implemented::Key(
+                    pernixc_term::implemented::Key(
                         self.equality.id.target_id.make_global(self.trait_id),
                     ),
                     Arc::default(),

@@ -4,14 +4,14 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use pernixc_symbol::{
     final_implements::is_trait_implements_final,
-    implemented::get_implemented,
-    implements::get_implements,
     kind::{get_kind, Kind},
     parent::scope_walker,
 };
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
+    implemented::get_implemented,
+    implements::get_implements,
     implements_argument::get_implements_argument,
     instantiation::Instantiation,
     predicate::Predicate,
@@ -104,7 +104,7 @@ impl Query for Resolve {
             let implementations = environment
                 .tracked_engine()
                 .get_implemented(self.implemented_id)
-                .await
+                .await?
                 .iter()
                 .copied()
                 .collect::<Vec<_>>();
@@ -281,7 +281,7 @@ async fn is_in_active_implementation(
         }
 
         // must be an implementation
-        if environment.tracked_engine().get_implements(current_id).await
+        if environment.tracked_engine().get_implements(current_id).await?
             != Some(implemented_id)
         {
             continue;
