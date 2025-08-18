@@ -21,6 +21,6 @@ use pernixc_target::Global;
     pernixc_query::Key,
     StableHash,
 )]
-#[value(Global<crate::ID>)]
+#[value(Option<Global<crate::ID>>)]
 #[extend(method(get_implements), no_cyclic)]
 pub struct Key(pub Global<crate::ID>);

@@ -282,7 +282,7 @@ async fn is_in_active_implementation(
 
         // must be an implementation
         if environment.tracked_engine().get_implements(current_id).await
-            != implemented_id
+            != Some(implemented_id)
         {
             continue;
         }

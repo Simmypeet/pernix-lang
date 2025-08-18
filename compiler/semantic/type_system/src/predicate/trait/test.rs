@@ -60,7 +60,7 @@ async fn single_implementation() {
             x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait);
             x.set_input(
                 pernixc_symbol::implements::Key(implements_id),
-                trait_id,
+                Some(trait_id),
             );
             x.set_input(
                 pernixc_symbol::final_implements::Key(implements_id),
@@ -203,7 +203,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
         );
         x.set_input(
             pernixc_symbol::implements::Key(specialized_impl_id),
-            trait_id,
+            Some(trait_id),
         );
         x.set_input(
             pernixc_symbol::final_implements::Key(specialized_impl_id),
@@ -297,7 +297,10 @@ async fn specialization_test_internal(case: SpecializationCase) {
             pernixc_symbol::kind::Key(general_impl_id),
             Kind::PositiveImplementation,
         );
-        x.set_input(pernixc_symbol::implements::Key(general_impl_id), trait_id);
+        x.set_input(
+            pernixc_symbol::implements::Key(general_impl_id),
+            Some(trait_id),
+        );
         x.set_input(
             pernixc_symbol::final_implements::Key(general_impl_id),
             false,
