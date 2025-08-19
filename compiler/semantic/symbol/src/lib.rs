@@ -15,7 +15,7 @@ use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
     runtime::{
-        executor::{CyclicError, Future},
+        executor::{self, CyclicError, Future},
         persistence::serde::DynamicRegistry,
     },
     TrackedEngine,
@@ -97,6 +97,7 @@ pub fn register_executors(
     executor.register(Arc::new(KindMapExecutor));
     executor.register(Arc::new(ExternalSubmoduleMapExecutor));
     executor.register(Arc::new(MapExecutor));
+    executor.register(Arc::new(AllSymbolIDExecutor));
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -141,6 +142,7 @@ pub fn register_serde<
     serde_registry.register::<KindMapKey>();
     serde_registry.register::<ExternalSubmoduleMapKey>();
     serde_registry.register::<MapKey>();
+    serde_registry.register::<AllSymbolIDKey>();
 }
 
 /// Registers the keys that should be skipped during serialization and
@@ -2240,6 +2242,22 @@ pub async fn map_executor(
                 .into_read_only(),
         ),
     })
+}
+
+/// Retrieves all symbol IDs for the given target ID.
+#[pernixc_query::query(
+    key(AllSymbolIDKey),
+    executor(AllSymbolIDExecutor),
+    value(Arc<[ID]>),
+    id(TargetID),
+    extend(method(all_symbol_ids), no_cyclic)
+)]
+pub async fn all_symbol_ids_executor(
+    id: TargetID,
+    engine: &TrackedEngine,
+) -> Result<Arc<[ID]>, executor::CyclicError> {
+    let map = engine.query(&MapKey(id)).await?;
+    Ok(map.keys_by_symbol_id.keys().copied().collect())
 }
 
 /// Gets the table node where the information of the given symbol ID is stored.

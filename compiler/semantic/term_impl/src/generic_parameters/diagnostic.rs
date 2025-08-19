@@ -1,10 +1,13 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
-use pernixc_symbol::{name::get_qualified_name, MemberID};
+use pernixc_symbol::{
+    name::get_qualified_name, source_map::to_absolute_span, MemberID,
+};
 use pernixc_term::generic_parameters::{
     get_generic_parameters, ConstantParameter, GenericKind, GenericParameter,
     LifetimeParameter, TypeParameter,
@@ -39,6 +42,34 @@ pub enum Diagnostic {
     ),
 }
 
+impl Report<&TrackedEngine> for Diagnostic {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        match self {
+            Self::Resolution(diagnostic) => diagnostic.report(engine).await,
+            Self::MisorderedGenericParameter(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::DefaultGenericParameterMustBeTrailing(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::LifetimeParameterRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::TypeParameterRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::ConstantParameterRedefinition(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+        }
+    }
+}
+
 /// The generic parameter was declared in the wrong order.
 #[derive(
     Debug,
@@ -60,16 +91,16 @@ pub struct MisorderedGenericParameter {
     pub generic_parameter_span: RelativeSpan,
 }
 
-impl Report<()> for MisorderedGenericParameter {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine> for MisorderedGenericParameter {
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        (): (),
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.generic_parameter_span,
+                engine.to_absolute_span(&self.generic_parameter_span).await,
                 match self.generic_kind {
                     GenericKind::Type => Some(
                         "can't be declared after constant parameters"
@@ -109,16 +140,20 @@ pub struct DefaultGenericParameterMustBeTrailing {
     pub invalid_generic_default_parameter_span: RelativeSpan,
 }
 
-impl Report<()> for DefaultGenericParameterMustBeTrailing {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine> for DefaultGenericParameterMustBeTrailing {
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        (): (),
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.invalid_generic_default_parameter_span,
+                engine
+                    .to_absolute_span(
+                        &self.invalid_generic_default_parameter_span,
+                    )
+                    .await,
                 None,
             )),
             message: "the default generic parameter must be trailing"
@@ -154,16 +189,16 @@ pub struct GenericParameterRedefinition<T> {
 impl<T: GenericParameter> Report<&TrackedEngine>
     for GenericParameterRedefinition<T>
 {
-    type Location = RelativeLocation;
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        table: &TrackedEngine,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let qualified_name = table
+        let qualified_name = engine
             .get_qualified_name(self.existing_generic_parameter_id.parent_id)
             .await;
-        let generic_parameters = table
+        let generic_parameters = engine
             .get_generic_parameters(
                 self.existing_generic_parameter_id.parent_id,
             )
@@ -177,7 +212,9 @@ impl<T: GenericParameter> Report<&TrackedEngine>
 
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.duplicating_generic_parameter_span,
+                engine
+                    .to_absolute_span(&self.duplicating_generic_parameter_span)
+                    .await,
                 Some("redefinition here".to_string()),
             )),
             message: format!(
@@ -187,16 +224,14 @@ impl<T: GenericParameter> Report<&TrackedEngine>
             ),
             severity: Severity::Error,
             help_message: None,
-            related: generic_parameter
-                .span()
-                .map(|x| {
-                    Highlight::new(
-                        *x,
-                        Some("previously defined here".to_string()),
-                    )
-                })
-                .into_iter()
-                .collect(),
+            related: if let Some(span) = generic_parameter.span() {
+                vec![Highlight::new(
+                    engine.to_absolute_span(span).await,
+                    Some("previously defined here".to_string()),
+                )]
+            } else {
+                Vec::new()
+            },
         }
     }
 }

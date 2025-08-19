@@ -2,15 +2,18 @@
 
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 // re-exports
 pub use pernixc_symbol::name::diagnostic::{
     SymbolIsNotAccessible, SymbolNotFound,
 };
-use pernixc_symbol::{kind::get_kind, name::get_qualified_name};
+use pernixc_symbol::{
+    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
+};
 use pernixc_target::Global;
 use pernixc_term::generic_parameters::GenericKind;
 
@@ -42,6 +45,42 @@ pub enum Diagnostic {
     ExpectType(ExpectType),
 }
 
+impl Report<&TrackedEngine> for Diagnostic {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        match self {
+            Self::MoreThanOneUnpackedInTupleType(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::MisorderedGenericArgument(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::ThisNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::SymbolNotFound(diagnostic) => diagnostic.report(engine).await,
+            Self::SymbolIsNotAccessible(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::LifetimeParameterNotFound(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::UnexpectedInference(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::MismatchedGenericArgumentCount(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::NoGenericArgumentsRequired(diagnostic) => {
+                diagnostic.report(engine).await
+            }
+            Self::ExpectType(diagnostic) => diagnostic.report(engine).await,
+        }
+    }
+}
+
 /// The `this` keyword was used in the wrong context.
 #[derive(
     Debug,
@@ -61,16 +100,16 @@ pub struct ThisNotFound {
     pub this_span: RelativeSpan,
 }
 
-impl Report<()> for ThisNotFound {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine> for ThisNotFound {
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        (): (),
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.this_span,
+                engine.to_absolute_span(&self.this_span).await,
                 Some(
                     "`this` keyword is only available in `implements`, \
                      `struct`, `enum`, or `trait`"
@@ -110,18 +149,18 @@ pub struct LifetimeParameterNotFound {
 }
 
 impl Report<&TrackedEngine> for LifetimeParameterNotFound {
-    type Location = RelativeLocation;
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        table: &TrackedEngine,
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         let referring_site_qualified_name =
-            table.get_qualified_name(self.referring_site).await;
+            engine.get_qualified_name(self.referring_site).await;
 
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.referred_span,
+                engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
                     "the lifetime parameter `{}` was not found in \
                      `{referring_site_qualified_name}`",
@@ -158,15 +197,18 @@ pub struct UnexpectedInference {
     pub generic_kind: GenericKind,
 }
 
-impl Report<()> for UnexpectedInference {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine> for UnexpectedInference {
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        (): (),
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
-            primary_highlight: Some(Highlight::new(self.unexpected_span, None)),
+            primary_highlight: Some(Highlight::new(
+                engine.to_absolute_span(&self.unexpected_span).await,
+                None,
+            )),
             message: format!("{} inference is not allowed here", match self
                 .generic_kind
             {
@@ -204,7 +246,7 @@ pub struct ExpectType {
 }
 
 impl Report<&TrackedEngine> for ExpectType {
-    type Location = RelativeLocation;
+    type Location = ByteIndex;
 
     async fn report(
         &self,
@@ -216,9 +258,9 @@ impl Report<&TrackedEngine> for ExpectType {
 
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.non_type_symbol_span,
+                table.to_absolute_span(&self.non_type_symbol_span).await,
                 Some(format!(
-                    "the type was expected buy found `{} {qualified_name}`",
+                    "the type was expected but found `{} {qualified_name}`",
                     kind.kind_str()
                 )),
             )),
@@ -249,16 +291,16 @@ pub struct MoreThanOneUnpackedInTupleType {
     pub illegal_tuple_type_span: RelativeSpan,
 }
 
-impl Report<()> for MoreThanOneUnpackedInTupleType {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine> for MoreThanOneUnpackedInTupleType {
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        (): (),
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.illegal_tuple_type_span,
+                engine.to_absolute_span(&self.illegal_tuple_type_span).await,
                 None,
             )),
             message: "the tuple type cannot contain more than one unpacked \
@@ -293,16 +335,16 @@ pub struct MisorderedGenericArgument {
     pub generic_argument: RelativeSpan,
 }
 
-impl Report<()> for MisorderedGenericArgument {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine> for MisorderedGenericArgument {
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        (): (),
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.generic_argument,
+                engine.to_absolute_span(&self.generic_argument).await,
                 match self.generic_kind {
                     GenericKind::Type => Some(
                         "can't be supplied after constant arguments"
@@ -352,16 +394,16 @@ pub struct MismatchedGenericArgumentCount {
     pub supplied_count: usize,
 }
 
-impl Report<()> for MismatchedGenericArgumentCount {
-    type Location = RelativeLocation;
+impl Report<&TrackedEngine> for MismatchedGenericArgumentCount {
+    type Location = ByteIndex;
 
     async fn report(
         &self,
-        (): (),
+        engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.generic_identifier_span,
+                engine.to_absolute_span(&self.generic_identifier_span).await,
                 Some(format!(
                     "expected {} {} arguments, but {} were supplied",
                     self.expected_count,
@@ -404,7 +446,7 @@ pub struct NoGenericArgumentsRequired {
 }
 
 impl Report<&TrackedEngine> for NoGenericArgumentsRequired {
-    type Location = RelativeLocation;
+    type Location = ByteIndex;
 
     async fn report(
         &self,
@@ -414,7 +456,7 @@ impl Report<&TrackedEngine> for NoGenericArgumentsRequired {
 
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
-                self.generic_argument_span,
+                engine.to_absolute_span(&self.generic_argument_span).await,
                 Some(format!(
                     "the symbol `{qualified_name}` doesn't require any \
                      generic arguments"

@@ -2,8 +2,11 @@
 
 use std::sync::Arc;
 
+use pernixc_lexical::error::ExpectIndentation;
 use pernixc_query::runtime::persistence::serde::DynamicRegistry;
 use pernixc_serialize::{de::Deserializer, ser::Serializer};
+
+pub mod diagnostic;
 
 mod build;
 mod generic_parameters;
@@ -16,6 +19,8 @@ pub fn register_executors(
     executor.register(Arc::new(generic_parameters::BuildExecutor));
     executor.register(Arc::new(generic_parameters::DiagnosticExecutor));
     executor.register(Arc::new(generic_parameters::Executor));
+
+    executor.register(Arc::new(diagnostic::SingleRenderedExecutor));
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -31,6 +36,8 @@ pub fn register_serde<
     serde_registry.register::<generic_parameters::BuildKey>();
     serde_registry.register::<generic_parameters::DiagnosticKey>();
     serde_registry.register::<generic_parameters::Key>();
+
+    serde_registry.register::<diagnostic::SingleRenderedKey>();
 }
 
 /// Registers the keys that should be skipped during serialization and
