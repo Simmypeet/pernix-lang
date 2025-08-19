@@ -2,7 +2,7 @@
 
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
-use pernixc_diagnostic::{Report, Severity};
+use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -204,7 +204,7 @@ impl Report<&TrackedEngine> for SymbolNotFound {
         );
 
         pernixc_diagnostic::Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.resolution_span).await,
                 Some(span_message),
             )),
@@ -256,7 +256,7 @@ impl Report<&TrackedEngine> for SymbolIsNotAccessible {
             engine.get_qualified_name(self.referred).await;
 
         pernixc_diagnostic::Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
                     "the symbol `{referred_qualified_name}` is not accessible \
@@ -306,7 +306,7 @@ impl Report<&TrackedEngine> for ExpectModule {
         let kind = engine.get_kind(self.found_id).await;
 
         pernixc_diagnostic::Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.module_path).await,
                 None,
             )),

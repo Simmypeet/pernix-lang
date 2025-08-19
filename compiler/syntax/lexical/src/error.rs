@@ -3,7 +3,7 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_diagnostic::{Diagnostic, Related, Report, Severity};
+use pernixc_diagnostic::{Diagnostic, Highlight, Report, Severity};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{AbsoluteSpan, ByteIndex};
 use pernixc_stable_hash::StableHash;
@@ -37,7 +37,7 @@ impl<T: Send> Report<T> for UndelimitedDelimiter {
 
     async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 self.opening_span,
                 Some(format!("need to be cloesd with `{}` pair", match self
                     .delimiter
@@ -83,7 +83,7 @@ impl<T: Send> Report<T> for UnterminatedStringLiteral {
 
     async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 self.span,
                 Some("need to be closed with a double quote".to_string()),
             )),
@@ -119,7 +119,7 @@ impl<T: Send> Report<T> for InvalidEscapeSequence {
 
     async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((self.span, None)),
+            primary_highlight: Some(Highlight::new(self.span, None)),
             message: "found an invalid escape sequence".to_string(),
             severity: Severity::Error,
             help_message: None,
@@ -179,7 +179,7 @@ impl<T: Send> Report<T> for InvalidIndentation {
 
     async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!("found {} space(s)", self.found_indentation)),
             )),
@@ -189,12 +189,14 @@ impl<T: Send> Report<T> for InvalidIndentation {
             related: self
                 .available_indentations
                 .iter()
-                .map(|span| Related {
-                    span: span.colon_span,
-                    message: format!(
-                        "previous indentation level is {} space(s)",
-                        span.indentation_size
-                    ),
+                .map(|span| {
+                    Highlight::new(
+                        span.colon_span,
+                        Some(format!(
+                            "previous indentation level is {} space(s)",
+                            span.indentation_size
+                        )),
+                    )
                 })
                 .collect(),
         }
@@ -228,14 +230,17 @@ impl<T: Send> Report<T> for ExpectIndentation {
 
     async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((self.span, Some("this is not indented".to_string()))),
+            primary_highlight: Some(Highlight::new(
+                self.span,
+                Some("this is not indented".to_string()),
+            )),
             message: "expect an indentation".to_string(),
             severity: Severity::Error,
             help_message: Some("add spaces before this to indent".to_string()),
-            related: vec![Related {
-                span: self.indentation_start,
-                message: "this colon starts the indentation level".to_string(),
-            }],
+            related: vec![Highlight::new(
+                self.indentation_start,
+                Some("this colon starts the indentation level".to_string()),
+            )],
         }
     }
 }
@@ -273,7 +278,7 @@ impl<T: Send> Report<T> for InvalidNewIndentationLevel {
 
     async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
                     "found {} space(s), but the previous indentation level is \
@@ -287,13 +292,13 @@ impl<T: Send> Report<T> for InvalidNewIndentationLevel {
                 "must be deeper than the previous indentation level"
                     .to_string(),
             ),
-            related: vec![Related {
-                span: self.previous_indentation_span,
-                message: format!(
+            related: vec![Highlight::new(
+                self.previous_indentation_span,
+                Some(format!(
                     "previous indentation level is {} space(s)",
                     self.latest_indentation
-                ),
-            }],
+                )),
+            )],
         }
     }
 }
@@ -326,7 +331,7 @@ impl<T: Send> Report<T> for UnexpectedClosingDelimiter {
 
     async fn report(&self, _: T) -> Diagnostic<Self::Location> {
         Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
                     "this closing delimiter `{}` does not have a \
@@ -377,7 +382,7 @@ impl<T: Send> Report<T> for MismatchedClosingDelimiter {
         let opening_delimiter_p = self.opening_delimiter.opening_character();
         let closing_delimiter_p = self.closing_delimiter.closing_character();
         Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
                     "this closing delimiter `{closing_delimiter_p}` does not \
@@ -390,12 +395,12 @@ impl<T: Send> Report<T> for MismatchedClosingDelimiter {
                 "replace with `{}` instead",
                 self.opening_delimiter.closing_character()
             )),
-            related: vec![Related {
-                span: self.opening_span,
-                message: format!(
+            related: vec![Highlight::new(
+                self.opening_span,
+                Some(format!(
                     "has an opening delimiter `{opening_delimiter_p}`",
-                ),
-            }],
+                )),
+            )],
         }
     }
 }

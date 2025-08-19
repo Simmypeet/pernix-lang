@@ -1,7 +1,7 @@
 //! Contains the diagnostics related to import statements.
 
 use flexstr::SharedStr;
-use pernixc_diagnostic::{Related, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -87,7 +87,7 @@ impl Report<&TrackedEngine> for TargetRootInImportIsNotAllowedwithFrom {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.target_root_span).await,
                 Some(
                     "the `target` root path is not allowed with `from` clause"
@@ -145,7 +145,7 @@ impl Report<&TrackedEngine> for ConflictingUsing {
             engine.get_qualified_name(self.module_id).await;
 
         pernixc_diagnostic::Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.using_span).await,
                 Some(format!(
                     "the using `{name}` conflicts with the existing name in \
@@ -160,13 +160,13 @@ impl Report<&TrackedEngine> for ConflictingUsing {
             help_message: None,
             related: match self.conflicting_span.as_ref() {
                 Some(span) => {
-                    vec![Related {
-                        span: engine.to_absolute_span(span).await,
-                        message: format!(
+                    vec![Highlight::new(
+                        engine.to_absolute_span(span).await,
+                        Some(format!(
                             "this symbol already defined the name `{}`",
                             self.name
-                        ),
-                    }]
+                        )),
+                    )]
                 }
                 None => vec![],
             },

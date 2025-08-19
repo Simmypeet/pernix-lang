@@ -1,6 +1,6 @@
 //! Contains the diagnostics related to accessibility of symbols.
 
-use pernixc_diagnostic::{Related, Report, Severity};
+use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
@@ -115,8 +115,8 @@ impl Report<&TrackedEngine> for SymbolIsMoreAccessibleThanParent {
             .await;
 
         pernixc_diagnostic::Diagnostic {
-            span: symbol_span.map(|span| {
-                (
+            primary_highlight: symbol_span.map(|span| {
+                Highlight::new(
                     span,
                     Some(format!(
                         "the symbol `{}` in `{parent_qualified_name}` is more \
@@ -136,12 +136,14 @@ impl Report<&TrackedEngine> for SymbolIsMoreAccessibleThanParent {
                 symbol_name.as_str()
             )),
             related: parent_span
-                .map(|x| Related {
-                    span: x,
-                    message: format!(
-                        "the parent symbol is \
-                         {parent_accessibility_description}",
-                    ),
+                .map(|x| {
+                    Highlight::new(
+                        x,
+                        Some(format!(
+                            "the parent symbol is \
+                             {parent_accessibility_description}",
+                        )),
+                    )
                 })
                 .into_iter()
                 .collect(),

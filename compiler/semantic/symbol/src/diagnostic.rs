@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use pernixc_diagnostic::Report;
+use pernixc_diagnostic::{Highlight, Report};
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
@@ -103,7 +103,7 @@ impl Report<&TrackedEngine> for ItemRedefinition {
         let in_name = engine.get_qualified_name(self.in_id).await;
 
         pernixc_diagnostic::Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some("redefinition here".to_string()),
             )),
@@ -115,13 +115,13 @@ impl Report<&TrackedEngine> for ItemRedefinition {
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
             related: match existing_symbol_span.as_ref() {
-                Some(span) => vec![pernixc_diagnostic::Related {
-                    span: engine.to_absolute_span(span).await,
-                    message: format!(
+                Some(span) => vec![pernixc_diagnostic::Highlight::new(
+                    engine.to_absolute_span(span).await,
+                    Some(format!(
                         "symbol `{existing_symbol_name}` is already defined \
                          here"
-                    ),
-                }],
+                    )),
+                )],
                 None => Vec::new(),
             },
         }
@@ -159,7 +159,7 @@ impl Report<&TrackedEngine> for RecursiveFileRequest {
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
         pernixc_diagnostic::Diagnostic {
-            span: Some((
+            primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.submodule_span).await,
                 Some(
                     "this module declaration causes recursive loading"
@@ -213,9 +213,9 @@ impl Report<&TrackedEngine> for SourceFileLoadFail {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        let (span, context_message) = match self.submodule_span.as_ref() {
+        let (highlight, context_message) = match self.submodule_span.as_ref() {
             Some(submodule_span) => (
-                Some((
+                Some(Highlight::new(
                     engine.to_absolute_span(submodule_span).await,
                     Some("submodule declaration here".to_string()),
                 )),
@@ -231,7 +231,7 @@ impl Report<&TrackedEngine> for SourceFileLoadFail {
         };
 
         pernixc_diagnostic::Diagnostic {
-            span,
+            primary_highlight: highlight,
             message: format!("{}: {}", context_message, self.error_message),
             severity: pernixc_diagnostic::Severity::Error,
             help_message: Some(

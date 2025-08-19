@@ -1,7 +1,7 @@
 //! Contains the definition of [`Error`] struct
 
 use pernixc_arena::ID;
-use pernixc_diagnostic::{Diagnostic, Report};
+use pernixc_diagnostic::{Diagnostic, Highlight, Report};
 use pernixc_hash::HashSet;
 use pernixc_lexical::{
     kind,
@@ -243,7 +243,7 @@ impl Report<&pernixc_lexical::tree::Tree> for Error {
             format!("unexpected {found_string}, expected {expected_string}");
 
         Diagnostic {
-            span: Some((found_span, None)),
+            primary_highlight: Some(Highlight::new(found_span, None)),
             message,
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
