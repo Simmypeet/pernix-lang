@@ -1,0 +1,6 @@
+public trait SomeTrait['a, T]:
+    pass
+
+public type Test[T] = T:
+    where:
+        trait for['x, 'x] SomeTrait['x, T]

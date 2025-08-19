@@ -4,10 +4,10 @@ expression: clean_run
 ---
 stderr:
 error: the generic parameter was declared in the wrong order
-  ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:1:22
+  ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:1:26
   │
-1 │ public type First[T, 'a] = &'a T:
-  │                      ^^ can't be declared after type or constant parameters
+1 │ public type First['x, T, 'a] = &'x T:
+  │                          ^^ can't be declared after type or constant parameters
 
 error: the generic parameter was declared in the wrong order
   ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:5:36

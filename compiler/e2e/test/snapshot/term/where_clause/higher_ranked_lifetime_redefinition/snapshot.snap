@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: high-ranked lifetime redefinition
+  ╭─ compiler/e2e/test/snapshot/term/where_clause/higher_ranked_lifetime_redefinition/main.pnx:6:23
+  │
+6 │         trait for['x, 'x] SomeTrait['x, T]
+  │                       ^^ higher-ranked lifetime with the same name already exists in this scope
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

@@ -1,6 +1,6 @@
-public type First[T, 'a] = &'a T:
+public type First['x, T, 'a] = &'x T:
     where:
-        T: 'a
+        T: 'x
 
 public type Second[const N: usize, 'a] = int32
 
