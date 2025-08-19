@@ -54,6 +54,30 @@ pub enum Severity {
     Info,
 }
 
+/// Represents a region got displayed to the user with additional information
+/// supplied.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_new::new,
+)]
+pub struct Highlight<L> {
+    /// Represents a region in the source code involved in the diagnostic
+    /// displaying
+    pub span: Span<L>,
+
+    /// The additional message to display at the highlighted region.
+    pub message: Option<String>,
+}
+
 /// A struct containing all the information required to display the diagnostic
 /// to the user.
 #[derive(
@@ -70,7 +94,7 @@ pub enum Severity {
 )]
 pub struct Diagnostic<L> {
     /// The span location where the diagnostic occurred.
-    pub span: Option<(Span<L>, Option<String>)>,
+    pub primary_highlight: Option<Highlight<L>>,
 
     /// The message to display to the user.
     pub message: String,
@@ -86,26 +110,5 @@ pub struct Diagnostic<L> {
     ///
     /// For example, for unimplemented methods, this could be a list of
     /// methods that need to be implemented.
-    pub related: Vec<Related<L>>,
-}
-
-/// The related information that is displayed alongside the main [`Diagnostic`].
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-)]
-pub struct Related<L> {
-    /// The span location to display the message.
-    pub span: Span<L>,
-
-    /// The message to display to the user.
-    pub message: String,
+    pub related: Vec<Highlight<L>>,
 }
