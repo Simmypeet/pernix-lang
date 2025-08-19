@@ -1237,10 +1237,14 @@ dependencies = [
 name = "pernixc_term_impl"
 version = "0.1.0-beta.2"
 dependencies = [
+ "pernixc_handler",
  "pernixc_lexical",
+ "pernixc_query",
  "pernixc_resolution",
  "pernixc_stable_hash",
+ "pernixc_symbol",
  "pernixc_syntax",
+ "pernixc_target",
  "pernixc_term",
  "pernixc_type_system",
 ]

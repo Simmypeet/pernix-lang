@@ -67,7 +67,18 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Serialize,
+        Deserialize
+    )]
     pub struct Unpackable {
         pub ellipsis: Ellipsis = ast::<Ellipsis>().optional(),
         pub r#type: Type = ast::<Type>(),
