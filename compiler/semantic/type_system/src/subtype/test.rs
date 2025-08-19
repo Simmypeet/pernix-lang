@@ -134,7 +134,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let mut generic_parameter = GenericParameters::default();
         let lifetime_id = generic_parameter
             .add_lifetime_parameter(LifetimeParameter {
-                name: "a".to_string(),
+                name: "a".into(),
                 span: None,
             })
             .unwrap();

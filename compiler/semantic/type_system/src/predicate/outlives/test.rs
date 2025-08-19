@@ -222,7 +222,7 @@ impl Property<Type> for LifetimeMatching {
                 for i in 0..self.lifetime_properties.len() {
                     let lifetime_param = generic_parameter
                         .add_lifetime_parameter(LifetimeParameter {
-                            name: format!("_{i}"),
+                            name: format!("_{i}").into(),
                             span: None,
                         })
                         .unwrap();

@@ -78,7 +78,7 @@ async fn single_implementation() {
             let mut trait_generic_param = GenericParameters::default();
             trait_generic_param
                 .add_type_parameter(TypeParameter {
-                    name: "T".to_string(),
+                    name: "T".into(),
                     span: None,
                 })
                 .unwrap();
@@ -92,14 +92,14 @@ async fn single_implementation() {
             let impl_a = impl_generic_param
                 .add_lifetime_parameter(
                     pernixc_term::generic_parameters::LifetimeParameter {
-                        name: "a".to_string(),
+                        name: "a".into(),
                         span: None,
                     },
                 )
                 .unwrap();
             let impl_t = impl_generic_param
                 .add_type_parameter(TypeParameter {
-                    name: "T".to_string(),
+                    name: "T".into(),
                     span: None,
                 })
                 .unwrap();
@@ -230,7 +230,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
                     let mut trait_generic_param = GenericParameters::default();
                     trait_generic_param
                         .add_type_parameter(TypeParameter {
-                            name: "T".to_string(),
+                            name: "T".into(),
                             span: None,
                         })
                         .unwrap();
@@ -264,10 +264,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
 
         let mut impl_generic_param = GenericParameters::default();
         let impl_specialized_t = impl_generic_param
-            .add_type_parameter(TypeParameter {
-                name: "T".to_string(),
-                span: None,
-            })
+            .add_type_parameter(TypeParameter { name: "T".into(), span: None })
             .unwrap();
 
         x.set_input(
@@ -312,16 +309,10 @@ async fn specialization_test_internal(case: SpecializationCase) {
 
         let mut impl_generic_param = GenericParameters::default();
         let impl_general_t = impl_generic_param
-            .add_type_parameter(TypeParameter {
-                name: "T".to_string(),
-                span: None,
-            })
+            .add_type_parameter(TypeParameter { name: "T".into(), span: None })
             .unwrap();
         let impl_general_u = impl_generic_param
-            .add_type_parameter(TypeParameter {
-                name: "U".to_string(),
-                span: None,
-            })
+            .add_type_parameter(TypeParameter { name: "U".into(), span: None })
             .unwrap();
 
         x.set_input(
@@ -357,17 +348,11 @@ async fn specialization_test_internal(case: SpecializationCase) {
 
         let mut trait_generic_param = GenericParameters::default();
         trait_generic_param
-            .add_type_parameter(TypeParameter {
-                name: "T".to_string(),
-                span: None,
-            })
+            .add_type_parameter(TypeParameter { name: "T".into(), span: None })
             .unwrap();
 
         trait_generic_param
-            .add_type_parameter(TypeParameter {
-                name: "U".to_string(),
-                span: None,
-            })
+            .add_type_parameter(TypeParameter { name: "U".into(), span: None })
             .unwrap();
 
         x.set_input(

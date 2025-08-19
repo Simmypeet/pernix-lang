@@ -1,6 +1,7 @@
 //! Contains the definition of [`GenericParameters`] component.
 use std::{collections::hash_map::Entry, sync::Arc};
 
+use flexstr::SharedStr;
 use getset::Getters;
 use paste::paste;
 use pernixc_arena::Arena;
@@ -149,7 +150,7 @@ pub trait GenericParameter: Sized + Send + Sync + 'static {
 pub struct LifetimeParameter {
     /// The name of the lifetime parameter (if none, then it is anonymous
     /// lifetime parameter )
-    pub name: String,
+    pub name: SharedStr,
 
     /// Location of where the lifetime parameter is declared.
     pub span: Option<RelativeSpan>,
@@ -203,7 +204,7 @@ impl GenericParameter for LifetimeParameter {
 )]
 pub struct TypeParameter {
     /// The name of the type parameter.
-    pub name: String,
+    pub name: SharedStr,
 
     /// The kind of the type parameter.
     pub span: Option<RelativeSpan>,
@@ -257,7 +258,7 @@ impl GenericParameter for TypeParameter {
 )]
 pub struct ConstantParameter {
     /// The name of the constant parameter.
-    pub name: String,
+    pub name: SharedStr,
 
     /// The type of the constant parameter.
     pub r#type: Type,
