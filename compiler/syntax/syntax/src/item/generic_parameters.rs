@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree::{self, AbstractTree},
@@ -54,7 +55,7 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum GenericParameter {
         Lifetime(LifetimeParameter = ast::<LifetimeParameter>()),
         Type(TypeParameter = ast::<TypeParameter>()),

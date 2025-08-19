@@ -16,11 +16,12 @@ use pernixc_resolution::{
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
-    syntax::get_where_clause_syntax,
+    syntax::{get_generic_parameters_syntax, get_where_clause_syntax},
 };
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::{MemberSymbol, TraitMember},
+    generic_parameters::{get_generic_parameters, TypeParameterID},
     lifetime::{self, Forall, Lifetime},
     predicate::{self, Compatible, NegativeMarker, PositiveMarker},
     r#type::Type,
@@ -524,6 +525,7 @@ async fn create_type_bound_predicates_internal(
 pub struct BuildExecutor;
 
 impl executor::Executor<BuildKey> for BuildExecutor {
+    #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
         engine: &TrackedEngine,
@@ -532,6 +534,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
         Build<Arc<[where_clause::Predicate]>, Diagnostic>,
         executor::CyclicError,
     > {
+        let kind = engine.get_kind(key.id).await;
         let where_clause_syntax_tree =
             engine.get_where_clause_syntax(key.id).await;
 
@@ -620,57 +623,53 @@ impl executor::Executor<BuildKey> for BuildExecutor {
             }
         }
 
-        /*
-        'out: {
-            if symbol_kind.has_generic_parameters() {
+        {
+            if kind.has_generic_parameters() {
                 let generic_parameters_syn =
-                    table.get::<syntax_tree_component::GenericParameters>(
-                        global_id,
-                    );
+                    engine.get_generic_parameters_syntax(key.id).await;
 
-                let Ok(generic_parameters) =
-                    table.query::<GenericParameters>(global_id)
-                else {
-                    break 'out;
-                };
+                let generic_parameters =
+                    engine.get_generic_parameters(key.id).await?;
 
                 for (ty_param, bounds) in generic_parameters_syn
-                    .iter()
-                    .flat_map(|x| {
-                        x.connected_list
-                            .iter()
-                            .flat_map(ConnectedList::elements)
-                    })
-                    .filter_map(|x| x.as_type())
-                    .filter_map(|x| x.bounds.as_ref().map(|y| (x, y)))
+                    .into_iter()
+                    .flat_map(|x| x.parameters().collect::<Vec<_>>())
+                    .filter_map(|x| x.into_type().ok())
+                    .filter_map(|x| x.bound().map(|y| (x, y)))
                 {
+                    let Some(identifier) = ty_param.identifier() else {
+                        continue;
+                    };
+
                     let Some(id) = generic_parameters
                         .type_parameter_ids_by_name()
-                        .get(ty_param.identifier.span.str())
+                        .get(identifier.kind.0.as_str())
                     else {
                         continue;
                     };
 
                     create_type_bound_predicates_internal(
-                        table,
-                        &Type::Parameter(TypeParameterID::new(global_id, *id)),
-                        &ty_param.identifier.span,
-                        global_id,
-                        bounds.bounds.elements(),
+                        engine,
+                        &Type::Parameter(TypeParameterID::new(key.id, *id)),
+                        &identifier.span,
+                        key.id,
+                        bounds.bounds(),
                         Config {
                             elided_lifetime_provider: None,
                             elided_type_provider: None,
                             elided_constant_provider: None,
-                            observer: Some(&mut occurrences::Observer),
+                            observer: Some(&mut occurrences),
                             extra_namespace: Some(&extra_namespace),
+                            consider_adt_implements: true,
+                            referring_site: key.id,
                         },
                         &mut where_clause,
-                        handler,
-                    );
+                        &storage,
+                    )
+                    .await?;
                 }
             }
         }
-        */
 
         Ok(Build {
             item: where_clause.into(),
