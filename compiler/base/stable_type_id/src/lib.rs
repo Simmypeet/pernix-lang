@@ -1,8 +1,6 @@
 //! Contains the definition of the [`StableTypeID`] type and [`Identifiable`]
 //! trait.
 
-use std::sync::Arc;
-
 pub use pernixc_identifiable_derive::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
