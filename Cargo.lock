@@ -1063,7 +1063,9 @@ dependencies = [
  "pernixc_lexical",
  "pernixc_parser",
  "pernixc_query",
+ "pernixc_serialize",
  "pernixc_source_file",
+ "pernixc_stable_hash",
  "pernixc_symbol",
  "pernixc_syntax",
  "pernixc_target",
@@ -1229,6 +1231,18 @@ dependencies = [
  "pernixc_target",
  "proptest",
  "thiserror 2.0.15",
+]
+
+[[package]]
+name = "pernixc_term_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "pernixc_lexical",
+ "pernixc_resolution",
+ "pernixc_stable_hash",
+ "pernixc_syntax",
+ "pernixc_term",
+ "pernixc_type_system",
 ]
 
 [[package]]

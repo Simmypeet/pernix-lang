@@ -1,0 +1,18 @@
+[package]
+name = "pernixc_term_impl"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_type_system = { path = "../type_system" }
+pernixc_resolution = { path = "../resolution" }
+pernixc_syntax = { path = "../../syntax/syntax" }
+pernixc_lexical = { path = "../../syntax/lexical" }
+pernixc_term = { path = "../term" }
+
+[lints]
+workspace = true

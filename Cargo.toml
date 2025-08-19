@@ -29,6 +29,7 @@ members = [
     "compiler/semantic/term",
     "compiler/semantic/type_system",
     "compiler/semantic/resolution",
+    "compiler/semantic/term_impl",
 
     "compiler/driver",
     "compiler/main",

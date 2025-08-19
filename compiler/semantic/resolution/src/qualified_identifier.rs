@@ -5,7 +5,9 @@ use std::ops::Deref;
 use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
 use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
+use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     get_target_root_module_id,
     import::get_imports,
@@ -30,7 +32,18 @@ use crate::{
 
 /// Repersents a resolution to a symbol that can be supplied with generic
 /// arguments such as `SYMBOl['a, T, U, V]`
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Generic {
     /// The resolved symbbol.
     ///
@@ -49,7 +62,18 @@ pub struct Generic {
 
 /// Represents a resolution to an enum-varaint symbol such as
 /// `Option[int32]::None`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct Variant {
     /// The resolved variant symbol.
     pub variant_id: Global<pernixc_symbol::ID>,
@@ -60,7 +84,18 @@ pub struct Variant {
 
 /// Represents a resolution to a symbol that is a member of an another symbol
 /// such as `Clone[T]::clone['a]`
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct MemberGeneric {
     /// The resolved member symbol.
     ///
@@ -78,7 +113,19 @@ pub struct MemberGeneric {
 }
 
 /// Represents a resolution of a qualified identifier syntax.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    EnumAsInner,
+)]
 pub enum Resolution {
     /// Resolved to a module symbol.
     Module(Global<pernixc_symbol::ID>),

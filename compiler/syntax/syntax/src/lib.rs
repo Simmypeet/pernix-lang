@@ -150,7 +150,18 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Serialize,
+        Deserialize
+    )]
     pub struct Lifetime {
         pub apostrophe: Punctuation = '\'',
         pub identifier: LifetimeIdentifier = ast::<LifetimeIdentifier>(),
