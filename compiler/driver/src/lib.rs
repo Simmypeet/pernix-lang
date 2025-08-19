@@ -6,6 +6,7 @@ use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
+use pernixc_diagnostic::Highlight;
 use pernixc_hash::HashMap;
 use pernixc_query::{
     runtime::persistence::{
@@ -62,20 +63,26 @@ fn pernix_diagnostic_to_codespan_diagnostic(
     }
     .with_message(diagnostic.message.to_string());
 
-    if let Some((span, label)) = &diagnostic.span {
+    if let Some(Highlight { span, message }) = &diagnostic.primary_highlight {
         result = result.with_labels(
             std::iter::once({
                 let mut primary = Label::primary(span.source_id, span.range());
 
-                if let Some(label_message) = label {
+                if let Some(label_message) = message {
                     primary = primary.with_message(label_message);
                 }
 
                 primary
             })
             .chain(diagnostic.related.iter().map(|x| {
-                Label::secondary(x.span.source_id, x.span.range())
-                    .with_message(x.message.to_string())
+                let mut label =
+                    Label::secondary(x.span.source_id, x.span.range());
+
+                if let Some(message) = x.message.as_ref() {
+                    label = label.with_message(message.clone());
+                }
+
+                label
             }))
             .collect(),
         );
