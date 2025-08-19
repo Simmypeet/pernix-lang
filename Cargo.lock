@@ -873,6 +873,7 @@ dependencies = [
 name = "pernixc_diagnostic"
 version = "0.1.0-beta.2"
 dependencies = [
+ "derive-new",
  "pernixc_serialize",
  "pernixc_source_file",
  "pernixc_stable_hash",
@@ -1046,6 +1047,27 @@ dependencies = [
  "proc-macro2 1.0.101",
  "quote 1.0.40",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "pernixc_resolution"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "enum-as-inner",
+ "flexstr",
+ "pernixc_diagnostic",
+ "pernixc_extend",
+ "pernixc_handler",
+ "pernixc_hash",
+ "pernixc_lexical",
+ "pernixc_parser",
+ "pernixc_query",
+ "pernixc_source_file",
+ "pernixc_symbol",
+ "pernixc_syntax",
+ "pernixc_target",
+ "pernixc_term",
 ]
 
 [[package]]
