@@ -24,6 +24,7 @@ pub mod arbitrary;
     StableHash,
     Serialize,
     Deserialize,
+    derive_new::new,
 )]
 pub struct Element<Term> {
     /// The term stored in this element.

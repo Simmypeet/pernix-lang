@@ -1,5 +1,7 @@
 //! Contains the query definition for retrieving `implements` generic arguments.
 
+use std::sync::Arc;
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -22,6 +24,6 @@ use crate::generic_arguments::GenericArguments;
     Deserialize,
     pernixc_query::Key,
 )]
-#[value(GenericArguments)]
+#[value(Option<Arc<GenericArguments>>)]
 #[extend(method(get_implements_argument))]
 pub struct Key(pub Global<pernixc_symbol::ID>);

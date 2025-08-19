@@ -1,0 +1,27 @@
+[package]
+name = "resolution"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_diagnostic = { path = "../../base/diagnostic" }
+pernixc_lexical = { path = "../../syntax/lexical" }
+pernixc_query = { path = "../../base/query" }
+pernixc_hash = { path = "../../base/hash" }
+pernixc_target = { path = "../../base/target" }
+pernixc_handler = { path = "../../base/handler" }
+pernixc_extend = { path = "../../base/extend" }
+pernixc_source_file = { path = "../../base/source_file" }
+pernixc_syntax = { path = "../../syntax/syntax" }
+pernixc_parser = { path = "../../syntax/parser" }
+pernixc_symbol = { path = "../symbol" }
+pernixc_term = { path = "../term" }
+flexstr = { workspace = true }
+enum-as-inner = { workspace = true }
+derive_more = { workspace = true }
+
+[lints]
+workspace = true
