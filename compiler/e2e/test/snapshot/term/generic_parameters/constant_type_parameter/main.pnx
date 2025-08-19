@@ -1,0 +1,3 @@
+public type Test[T, const N: T] = T:
+    where:
+        T: const
