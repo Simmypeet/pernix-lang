@@ -1,6 +1,6 @@
 //! Contains the logic for resolving implementation for traits and markers.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
 use pernixc_symbol::{
     final_implements::is_trait_implements_final,
@@ -110,11 +110,14 @@ impl Query for Resolve {
                 .collect::<Vec<_>>();
 
             for current_impl_id in implementations {
-                let implementation_generic_arguments = environment
+                let Some(implementation_generic_arguments) = environment
                     .tracked_engine()
                     .get_implements_argument(current_impl_id)
                     .await?
-                    .clone();
+                    .clone()
+                else {
+                    continue;
+                };
 
                 // build the unification
                 let Succeeded {
@@ -198,18 +201,23 @@ impl Query for Resolve {
                             ))
                             .await?
                         {
-                            Ok(Order::Ambiguous | Order::Incompatible) => {
+                            Ok(Some(
+                                Order::Ambiguous | Order::Incompatible,
+                            )) => {
                                 return Ok(None);
                             }
 
-                            Ok(Order::MoreGeneral) => {}
-                            Ok(Order::MoreSpecific) => {
+                            Ok(Some(Order::MoreGeneral) | None) => {}
+
+                            Ok(Some(Order::MoreSpecific)) => {
                                 *candidate_id = current_impl_id;
                                 *candidate_instantiation = deduction;
                                 *candidate_lifetime_constraints =
                                     lifetime_constraints;
                                 *candidate_generic_arguments =
-                                    implementation_generic_arguments;
+                                    implementation_generic_arguments
+                                        .deref()
+                                        .clone();
                             }
 
                             Err(error) => {
@@ -223,7 +231,7 @@ impl Query for Resolve {
                             current_impl_id,
                             deduction,
                             lifetime_constraints,
-                            implementation_generic_arguments,
+                            implementation_generic_arguments.deref().clone(),
                         ));
                     }
                 }
@@ -287,11 +295,14 @@ async fn is_in_active_implementation(
             continue;
         }
 
-        let implementation_arguments = environment
+        let Some(implementation_arguments) = environment
             .tracked_engine()
             .get_implements_argument(current_id)
             .await?
-            .clone();
+            .clone()
+        else {
+            continue;
+        };
 
         let Some(_) = environment
             .subtypes_generic_arguments(

@@ -111,7 +111,7 @@ async fn single_implementation() {
 
             x.set_input(
                 pernixc_term::implements_argument::Key(implements_id),
-                GenericArguments {
+                Some(Arc::new(GenericArguments {
                     lifetimes: vec![],
                     types: vec![Type::Reference(Reference {
                         qualifier: Qualifier::Immutable,
@@ -123,7 +123,7 @@ async fn single_implementation() {
                         )),
                     })],
                     constants: vec![],
-                },
+                })),
             );
 
             Instantiation {
@@ -277,7 +277,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
 
         x.set_input(
             pernixc_term::implements_argument::Key(specialized_impl_id),
-            GenericArguments {
+            Some(Arc::new(GenericArguments {
                 lifetimes: vec![],
                 types: vec![
                     Type::Parameter(TypeParameterID::new(
@@ -290,7 +290,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
                     )),
                 ],
                 constants: vec![],
-            },
+            })),
         );
 
         x.set_input(
@@ -331,7 +331,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
 
         x.set_input(
             pernixc_term::implements_argument::Key(general_impl_id),
-            GenericArguments {
+            Some(Arc::new(GenericArguments {
                 lifetimes: vec![],
                 types: vec![
                     Type::Parameter(TypeParameterID::new(
@@ -344,7 +344,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
                     )),
                 ],
                 constants: vec![],
-            },
+            })),
         );
 
         x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait);

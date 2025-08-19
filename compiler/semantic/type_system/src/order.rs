@@ -240,7 +240,7 @@ impl<N: Normalizer> Environment<'_, N> {
     pernixc_query::Key,
     derive_new::new,
 )]
-#[value(Result<Order, OverflowError>)]
+#[value(Result<Option<Order>, OverflowError>)]
 pub struct Key {
     /// The `this` in the [`Environment::order`]
     pub this: Global<pernixc_symbol::ID>,
@@ -252,11 +252,13 @@ pub struct Key {
 pub async fn implements_order(
     Key { this, other }: &Key,
     tracked_engine: &TrackedEngine,
-) -> Result<Result<Order, OverflowError>, executor::CyclicError> {
-    let lhs_generic_arguments =
-        tracked_engine.get_implements_argument(*this).await?;
-    let rhs_generic_arguments =
-        tracked_engine.get_implements_argument(*other).await?;
+) -> Result<Result<Option<Order>, OverflowError>, executor::CyclicError> {
+    let (Some(lhs_generic_arguments), Some(rhs_generic_arguments)) = (
+        tracked_engine.get_implements_argument(*this).await?,
+        tracked_engine.get_implements_argument(*other).await?,
+    ) else {
+        return Ok(Ok(None));
+    };
 
     let default_environment = Environment::new(
         Cow::Owned(Premise::default()),
@@ -268,7 +270,7 @@ pub async fn implements_order(
         .order(&lhs_generic_arguments, &rhs_generic_arguments)
         .await
     {
-        Ok(order) => Ok(Ok(order)),
+        Ok(order) => Ok(Ok(Some(order))),
         Err(Error::Overflow(overflow)) => Ok(Err(overflow)),
         Err(Error::CyclicDependency(cyclic)) => Err(cyclic),
     }
