@@ -19,10 +19,6 @@ impl<T, D> Key<T, D> {
     pub const fn new(id: Global<pernixc_symbol::ID>) -> Self {
         Self { id, _marker: PhantomData }
     }
-
-    /// Returns the ID of this key.
-    #[must_use]
-    pub const fn id(&self) -> Global<pernixc_symbol::ID> { self.id }
 }
 
 impl<T, D> Debug for Key<T, D> {

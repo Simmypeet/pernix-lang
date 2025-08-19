@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use pernixc_handler::{Handler, Storage};
-use pernixc_query::runtime::executor;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type, Config,
@@ -30,13 +30,16 @@ use crate::{
     },
     occurrences::Occurrences,
 };
+
 pub mod diagnostic;
 
+pub type BuildKey = build::Key<GenericParameters, Diagnostic>;
+
 #[derive(Debug)]
-pub struct Executor;
+pub struct BuildExecutor;
 
 impl executor::Executor<build::Key<GenericParameters, Diagnostic>>
-    for Executor
+    for BuildExecutor
 {
     #[allow(clippy::too_many_lines)]
     async fn execute(
@@ -274,4 +277,30 @@ impl executor::Executor<build::Key<GenericParameters, Diagnostic>>
             occurrences: Arc::new(occurrences),
         })
     }
+}
+
+#[pernixc_query::query(
+    key(DiagnosticKey),
+    executor(DiagnosticExecutor),
+    value(Arc<[Diagnostic]>),
+    id(Global<pernixc_symbol::ID>)
+)]
+pub async fn diagnostic_executor(
+    id: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
+) -> Result<Arc<[Diagnostic]>, executor::CyclicError> {
+    Ok(engine.query(&BuildKey::new(id)).await?.diagnostics)
+}
+
+#[pernixc_query::query(
+    key(Key),
+    executor(Executor),
+    value(Arc<GenericParameters>),
+    id(Global<pernixc_symbol::ID>)
+)]
+pub async fn generic_parameters_executor(
+    id: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
+) -> Result<Arc<GenericParameters>, executor::CyclicError> {
+    Ok(engine.query(&BuildKey::new(id)).await?.item)
 }
