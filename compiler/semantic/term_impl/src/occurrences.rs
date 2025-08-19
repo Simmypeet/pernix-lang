@@ -2,6 +2,7 @@ use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_resolution::qualified_identifier::Resolution;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
@@ -9,7 +10,17 @@ use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 /// Collects all the terms and symbols resolved during building a particular
 /// query.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, StableHash, Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    StableHash,
+    Serialize,
+    Deserialize,
 )]
 #[allow(missing_docs)]
 pub struct Occurrences {

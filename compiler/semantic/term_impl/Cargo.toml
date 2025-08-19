@@ -11,6 +11,8 @@ pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_handler = { path = "../../base/handler" }
+pernixc_serialize = { path = "../../base/serialize" }
+pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 pernixc_type_system = { path = "../type_system" }
 pernixc_resolution = { path = "../resolution" }
 pernixc_syntax = { path = "../../syntax/syntax" }
