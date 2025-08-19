@@ -1,0 +1,4 @@
+public struct Test[T: 'static, U]:
+    where:
+        for['x] &'x T: 'static
+        for['y] &'static T: 'y 
