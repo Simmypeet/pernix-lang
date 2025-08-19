@@ -20,6 +20,7 @@ pub fn register_executors(
     executor.register(Arc::new(generic_parameters::Executor));
 
     executor.register(Arc::new(diagnostic::SingleRenderedExecutor));
+    executor.register(Arc::new(diagnostic::AllRenderedExecutor));
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -34,9 +35,10 @@ pub fn register_serde<
 {
     serde_registry.register::<generic_parameters::BuildKey>();
     serde_registry.register::<generic_parameters::DiagnosticKey>();
-    serde_registry.register::<generic_parameters::Key>();
+    serde_registry.register::<pernixc_term::generic_parameters::Key>();
 
     serde_registry.register::<diagnostic::SingleRenderedKey>();
+    serde_registry.register::<diagnostic::AllRenderedKey>();
 }
 
 /// Registers the keys that should be skipped during serialization and

@@ -292,14 +292,12 @@ pub async fn diagnostic_executor(
     Ok(engine.query(&BuildKey::new(id)).await?.diagnostics)
 }
 
-#[pernixc_query::query(
-    key(Key),
-    executor(Executor),
-    value(Arc<GenericParameters>),
-    id(Global<pernixc_symbol::ID>)
+#[pernixc_query::executor(
+    key(pernixc_term::generic_parameters::Key),
+    name(Executor)
 )]
 pub async fn generic_parameters_executor(
-    id: Global<pernixc_symbol::ID>,
+    &pernixc_term::generic_parameters::Key(id): &pernixc_term::generic_parameters::Key,
     engine: &TrackedEngine,
 ) -> Result<Arc<GenericParameters>, executor::CyclicError> {
     Ok(engine.query(&BuildKey::new(id)).await?.item)

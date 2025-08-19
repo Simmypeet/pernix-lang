@@ -1,0 +1,3 @@
+public type TypeBeforeLifetime[T, 'a] = &'a T:
+    where:
+        T: 'a
