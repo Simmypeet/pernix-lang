@@ -1,18 +1,55 @@
 //! Contains the logic for resolving syntax tree into some form of semantic
 //! term/information.
 
+use std::sync::Arc;
+
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{
+    runtime::{executor, persistence::serde::DynamicRegistry},
+    TrackedEngine,
+};
+use pernixc_serialize::{
+    de::Deserializer, ser::Serializer, Deserialize, Serialize,
+};
+use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{diagnostic::Diagnostic, qualified_identifier::Resolution};
 
 pub mod diagnostic;
+pub mod generic_parameter_namespace;
 pub mod qualified_identifier;
 pub mod term;
+
+/// Registers all the required executors to run the queries.
+pub fn register_executors(
+    executor: &mut pernixc_query::runtime::executor::Registry,
+) {
+    executor.register(Arc::new(generic_parameter_namespace::Executor));
+}
+
+/// Registers all the necessary runtime information for the query engine.
+pub fn register_serde<
+    S: Serializer<Registry>,
+    D: Deserializer<Registry>,
+    Registry: DynamicRegistry<S, D> + Send + Sync,
+>(
+    serde_registry: &mut Registry,
+) where
+    S::Error: Send + Sync,
+{
+    serde_registry.register::<generic_parameter_namespace::Key>();
+}
+
+/// Registers the keys that should be skipped during serialization and
+/// deserialization in the query engine's persistence layer
+pub const fn skip_persistence(
+    _persistence: &mut pernixc_query::runtime::persistence::Persistence,
+) {
+}
 
 /// A trait for providing elided terms.
 pub trait ElidedTermProvider<T> {
@@ -22,7 +59,9 @@ pub trait ElidedTermProvider<T> {
 
 /// The extra namespace that is used to resolve the symbols prior to the
 /// resolution process.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, StableHash, Serialize, Deserialize,
+)]
 #[allow(missing_docs)]
 pub struct ExtraNamespace {
     pub lifetimes: HashMap<String, Lifetime>,
