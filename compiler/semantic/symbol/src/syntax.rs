@@ -14,7 +14,8 @@ use crate::{get_table_of_symbol, ID};
     key(ImportKey),
     id(Global<ID>),
     value(Arc<[pernixc_syntax::item::module::Import]>),
-    executor(ImportExecutor)
+    executor(ImportExecutor),
+    extend(method(get_module_imports_syntax), no_cyclic),
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn import_syntax_executor(
@@ -48,7 +49,40 @@ pub async fn implements_qualified_identifier_executor(
         .implements_qualified_identifier_syntaxes
         .get(&id.id)
         .unwrap_or_else(|| {
-            panic!("No import syntax found for symbol ID: {:?}", id.id)
+            panic!(
+                "No implements qualified identifier syntax found for symbol \
+                 ID: {:?}",
+                id.id
+            )
+        })
+        .clone())
+}
+
+/// Implementation of the `get_generic_parameters_syntax` method
+#[pernixc_query::query(
+    key(GenericParametersKey),
+    id(Global<ID>),
+    value(Option<pernixc_syntax::item::generic_parameters::GenericParameters>),
+    executor(GenericParametersExecutor),
+    extend(method(get_generic_parameters_syntax), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn generic_parameters_syntax(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<
+    Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
+    CyclicError,
+> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(table
+        .generic_parameter_syntaxes
+        .get(&id.id)
+        .unwrap_or_else(|| {
+            panic!(
+                "No generic parameter syntax found for symbol ID: {:?}",
+                id.id
+            )
         })
         .clone())
 }
