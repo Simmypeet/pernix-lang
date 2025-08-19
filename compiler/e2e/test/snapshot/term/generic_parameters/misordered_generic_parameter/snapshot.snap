@@ -4,12 +4,30 @@ expression: clean_run
 ---
 stderr:
 error: the generic parameter was declared in the wrong order
-  ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:1:35
+  ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:1:22
   │
-1 │ public type TypeBeforeLifetime[T, 'a] = &'a T:
-  │                                   ^^ can't be declared after type or constant parameters
+1 │ public type First[T, 'a] = &'a T:
+  │                      ^^ can't be declared after type or constant parameters
 
-error: Compilation aborted due to 1 error(s)
+error: the generic parameter was declared in the wrong order
+  ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:5:36
+  │
+5 │ public type Second[const N: usize, 'a] = int32
+  │                                    ^^ can't be declared after type or constant parameters
+
+error: the generic parameter was declared in the wrong order
+  ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:7:38
+  │
+7 │ public type Third[T, const N: usize, 'a] = float32
+  │                                      ^^ can't be declared after type or constant parameters
+
+error: the generic parameter was declared in the wrong order
+  ╭─ compiler/e2e/test/snapshot/term/generic_parameters/misordered_generic_parameter/main.pnx:9:36
+  │
+9 │ public type Fourth[const N: usize, T] = bool
+  │                                    ^ can't be declared after constant parameters
+
+error: Compilation aborted due to 4 error(s)
 
 
 

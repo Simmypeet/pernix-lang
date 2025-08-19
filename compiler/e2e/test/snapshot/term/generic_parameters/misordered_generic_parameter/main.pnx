@@ -1,3 +1,9 @@
-public type TypeBeforeLifetime[T, 'a] = &'a T:
+public type First[T, 'a] = &'a T:
     where:
         T: 'a
+
+public type Second[const N: usize, 'a] = int32
+
+public type Third[T, const N: usize, 'a] = float32
+
+public type Fourth[const N: usize, T] = bool
