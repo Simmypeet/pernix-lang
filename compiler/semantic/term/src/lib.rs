@@ -1,5 +1,6 @@
 //! Defines the various terms to be used with the type system.
 
+use enum_as_inner::EnumAsInner;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -52,7 +53,16 @@ pub enum Term {
 
 /// A reference to a term, which can be either a constant, lifetime, or type.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum TermRef<'a> {
@@ -63,7 +73,9 @@ pub enum TermRef<'a> {
 
 /// A mutable reference to a term, which can be either a constant, lifetime, or
 /// type.
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner, derive_more::From,
+)]
 #[allow(missing_docs)]
 pub enum TermMut<'a> {
     Constant(&'a mut constant::Constant),

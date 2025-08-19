@@ -25,7 +25,7 @@ reference! {
             .join(", ")
     )]
     pub struct LifetimeParameters for super::LifetimeParameters {
-        pub lifetimes (Vec<Lifetime>)
+        pub lifetimes (Vec<LifetimeParameter>)
     }
 }
 
@@ -34,7 +34,7 @@ impl Arbitrary for LifetimeParameters {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(Lifetime::arbitrary(), 1..10)
+        proptest::collection::vec(LifetimeParameter::arbitrary(), 1..10)
             .prop_map(|lifetimes| Self { lifetimes })
             .boxed()
     }

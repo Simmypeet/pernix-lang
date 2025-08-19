@@ -33,20 +33,18 @@ use crate::{
 
 pub mod diagnostic;
 
-pub type BuildKey = build::Key<GenericParameters, Diagnostic>;
+pub type BuildKey = build::Key<Arc<GenericParameters>, Diagnostic>;
 
 #[derive(Debug)]
 pub struct BuildExecutor;
 
-impl executor::Executor<build::Key<GenericParameters, Diagnostic>>
-    for BuildExecutor
-{
+impl executor::Executor<BuildKey> for BuildExecutor {
     #[allow(clippy::too_many_lines)]
     async fn execute(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        key: &build::Key<GenericParameters, Diagnostic>,
-    ) -> Result<Build<GenericParameters, Diagnostic>, executor::CyclicError>
+        key: &BuildKey,
+    ) -> Result<Build<Arc<GenericParameters>, Diagnostic>, executor::CyclicError>
     {
         let syntax_tree = engine.get_generic_parameters_syntax(key.id).await;
 

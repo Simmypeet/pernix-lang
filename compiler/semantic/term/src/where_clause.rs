@@ -5,6 +5,7 @@ use std::sync::Arc;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_stable_type_id::Identifiable;
 use pernixc_target::Global;
 
 /// Represents a predicate introduced by either a where clause or implication.
@@ -16,6 +17,7 @@ use pernixc_target::Global;
     PartialOrd,
     Ord,
     Hash,
+    Identifiable,
     StableHash,
     Serialize,
     Deserialize,

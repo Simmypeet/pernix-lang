@@ -1,6 +1,8 @@
 //! Contains the definition of the [`StableTypeID`] type and [`Identifiable`]
 //! trait.
 
+use std::sync::Arc;
+
 pub use pernixc_identifiable_derive::Identifiable;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -490,4 +492,18 @@ pub trait Identifiable {
     /// assert_eq!(id1, id2);
     /// ```
     const STABLE_TYPE_ID: StableTypeID;
+}
+
+impl<T: Identifiable + ?Sized> Identifiable for std::sync::Arc<T> {
+    const STABLE_TYPE_ID: StableTypeID = {
+        let base = StableTypeID::from_unique_type_name("std::sync::Arc");
+        base.combine(T::STABLE_TYPE_ID)
+    };
+}
+
+impl<T: Identifiable> Identifiable for [T] {
+    const STABLE_TYPE_ID: StableTypeID = {
+        let base = StableTypeID::from_unique_type_name("std::slice::Slice");
+        base.combine(T::STABLE_TYPE_ID)
+    };
 }

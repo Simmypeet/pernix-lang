@@ -32,6 +32,7 @@ pub mod arbitrary;
     StableHash,
     Serialize,
     Deserialize,
+    derive_new::new,
 )]
 pub struct NamedForall {
     /// The span where the named for all lifetime.

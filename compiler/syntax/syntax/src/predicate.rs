@@ -26,8 +26,8 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Delimited(DelimiterKind::Bracket)}
     pub struct LifetimeParameters {
-        pub lifetimes: #[multi] Lifetime
-            = ast::<Lifetime>().repeat_all_with_separator(','),
+        pub lifetimes: #[multi] LifetimeParameter
+            = ast::<LifetimeParameter>().repeat_all_with_separator(','),
     }
 }
 

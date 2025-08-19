@@ -85,6 +85,7 @@ pub fn register_executors(
     executor.register(Arc::new(syntax::ImportExecutor));
     executor.register(Arc::new(syntax::ImplementsQualifiedIdentifierExecutor));
     executor.register(Arc::new(syntax::GenericParametersExecutor));
+    executor.register(Arc::new(syntax::WhereClauseExecutor));
 
     executor.register(Arc::new(import::WithDiagnosticExecutor));
     executor.register(Arc::new(import::Executor));
@@ -130,6 +131,7 @@ pub fn register_serde<
     serde_registry.register::<syntax::ImportKey>();
     serde_registry.register::<syntax::ImplementsQualifiedIdentifierKey>();
     serde_registry.register::<syntax::GenericParametersKey>();
+    serde_registry.register::<syntax::WhereClauseKey>();
 
     serde_registry.register::<import::WithDiagnosticKey>();
     serde_registry.register::<import::Key>();

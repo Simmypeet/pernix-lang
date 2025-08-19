@@ -35,6 +35,15 @@ pub async fn single_rendered_executor(
         }
     }
 
+    if kind.has_where_clause() {
+        let diags =
+            engine.query(&crate::where_clause::DiagnosticKey(id)).await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
     Ok(final_diagnostics.into())
 }
 

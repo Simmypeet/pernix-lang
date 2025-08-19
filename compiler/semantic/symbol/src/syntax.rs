@@ -86,3 +86,27 @@ pub async fn generic_parameters_syntax(
         })
         .clone())
 }
+
+/// Implementation of the `get_where_clause_syntax` method
+#[pernixc_query::query(
+    key(WhereClauseKey),
+    id(Global<ID>),
+    value(Option<pernixc_syntax::item::where_clause::Predicates>),
+    executor(WhereClauseExecutor),
+    extend(method(get_where_clause_syntax), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn where_clause_syntax(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<Option<pernixc_syntax::item::where_clause::Predicates>, CyclicError>
+{
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(table
+        .where_clause_syntaxes
+        .get(&id.id)
+        .unwrap_or_else(|| {
+            panic!("No where clause syntax found for symbol ID: {:?}", id.id)
+        })
+        .clone())
+}

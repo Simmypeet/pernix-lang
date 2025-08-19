@@ -10,6 +10,7 @@ pub mod diagnostic;
 mod build;
 mod generic_parameters;
 mod occurrences;
+mod where_clause;
 
 /// Registers all the required executors to run the queries.
 pub fn register_executors(
@@ -18,6 +19,10 @@ pub fn register_executors(
     executor.register(Arc::new(generic_parameters::BuildExecutor));
     executor.register(Arc::new(generic_parameters::DiagnosticExecutor));
     executor.register(Arc::new(generic_parameters::Executor));
+
+    executor.register(Arc::new(where_clause::BuildExecutor));
+    executor.register(Arc::new(where_clause::DiagnosticExecutor));
+    executor.register(Arc::new(where_clause::Executor));
 
     executor.register(Arc::new(diagnostic::SingleRenderedExecutor));
     executor.register(Arc::new(diagnostic::AllRenderedExecutor));
@@ -36,6 +41,10 @@ pub fn register_serde<
     serde_registry.register::<generic_parameters::BuildKey>();
     serde_registry.register::<generic_parameters::DiagnosticKey>();
     serde_registry.register::<pernixc_term::generic_parameters::Key>();
+
+    serde_registry.register::<where_clause::BuildKey>();
+    serde_registry.register::<where_clause::DiagnosticKey>();
+    serde_registry.register::<pernixc_term::where_clause::Key>();
 
     serde_registry.register::<diagnostic::SingleRenderedKey>();
     serde_registry.register::<diagnostic::AllRenderedKey>();

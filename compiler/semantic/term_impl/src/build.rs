@@ -52,7 +52,7 @@ impl<T, D> Hash for Key<T, D> {
 }
 
 impl<
-        T: Debug + Identifiable + StableHash + Send + Sync + 'static,
+        T: Debug + Identifiable + Clone + StableHash + Send + Sync + 'static,
         D: Debug + Identifiable + StableHash + Send + Sync + 'static,
     > pernixc_query::Key for Key<T, D>
 {
@@ -73,7 +73,7 @@ impl<
 )]
 pub struct Build<T, D> {
     /// The main result of the query.
-    pub item: Arc<T>,
+    pub item: T,
 
     /// The diagnostics produced while building the query.
     pub diagnostics: Arc<[D]>,
@@ -84,7 +84,7 @@ pub struct Build<T, D> {
     pub occurrences: Arc<Occurrences>,
 }
 
-impl<T, D> Clone for Build<T, D> {
+impl<T: Clone, D> Clone for Build<T, D> {
     fn clone(&self) -> Self {
         Self {
             item: self.item.clone(),
