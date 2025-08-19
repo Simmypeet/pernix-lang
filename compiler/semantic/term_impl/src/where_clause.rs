@@ -97,15 +97,11 @@ async fn create_trait_member_predicates(
     let extra_namespace =
         with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-    let mut config = Config {
-        elided_lifetime_provider: None,
-        elided_type_provider: None,
-        elided_constant_provider: None,
-        observer: Some(occurrences),
-        extra_namespace: Some(extra_namespace),
-        consider_adt_implements: true,
-        referring_site: global_id,
-    };
+    let mut config = Config::builder()
+        .observer(occurrences)
+        .referring_site(global_id)
+        .extra_namespace(extra_namespace)
+        .build();
 
     let ty = engine.resolve_type(&lhs, config.reborrow(), handler).await?;
 
@@ -180,15 +176,11 @@ async fn create_trait_predicates(
         let resolution = match engine
             .resolve_qualified_identifier(
                 &qualified_identifier,
-                Config {
-                    elided_lifetime_provider: None,
-                    elided_type_provider: None,
-                    elided_constant_provider: None,
-                    observer: Some(occurrences),
-                    extra_namespace: Some(extra_namespace),
-                    referring_site: global_id,
-                    consider_adt_implements: true,
-                },
+                Config::builder()
+                    .observer(occurrences)
+                    .extra_namespace(extra_namespace)
+                    .referring_site(global_id)
+                    .build(),
                 handler,
             )
             .await
@@ -264,15 +256,11 @@ async fn create_outlives_predicates(
 
     let mut bounds = Vec::new();
 
-    let mut config = Config {
-        elided_lifetime_provider: None,
-        elided_type_provider: None,
-        elided_constant_provider: None,
-        observer: Some(occurrences),
-        extra_namespace: Some(extra_namespace),
-        consider_adt_implements: true,
-        referring_site: global_id,
-    };
+    let mut config = Config::builder()
+        .observer(occurrences)
+        .extra_namespace(extra_namespace)
+        .referring_site(global_id)
+        .build();
 
     for bound_syn in syntax_tree.bounds() {
         bounds.push(
@@ -341,15 +329,11 @@ async fn create_marker_predicate(
         let resolution = match engine
             .resolve_qualified_identifier(
                 &qualified_identifier,
-                Config {
-                    elided_lifetime_provider: None,
-                    elided_type_provider: None,
-                    elided_constant_provider: None,
-                    observer: Some(occurrences),
-                    extra_namespace: Some(extra_namespace),
-                    consider_adt_implements: true,
-                    referring_site: global_id,
-                },
+                Config::builder()
+                    .observer(occurrences)
+                    .extra_namespace(extra_namespace)
+                    .referring_site(global_id)
+                    .build(),
                 handler,
             )
             .await
@@ -417,15 +401,11 @@ async fn create_type_bound_predicates(
     let extra_namespace =
         with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
-    let mut config = Config {
-        elided_lifetime_provider: None,
-        elided_type_provider: None,
-        elided_constant_provider: None,
-        observer: Some(occurrences),
-        extra_namespace: Some(extra_namespace),
-        consider_adt_implements: true,
-        referring_site: global_id,
-    };
+    let mut config = Config::builder()
+        .observer(occurrences)
+        .extra_namespace(extra_namespace)
+        .referring_site(global_id)
+        .build();
 
     let ty = engine.resolve_type(&ty_syn, config.reborrow(), handler).await?;
 
@@ -654,15 +634,11 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                         &identifier.span,
                         key.id,
                         bounds.bounds(),
-                        Config {
-                            elided_lifetime_provider: None,
-                            elided_type_provider: None,
-                            elided_constant_provider: None,
-                            observer: Some(&mut occurrences),
-                            extra_namespace: Some(&extra_namespace),
-                            consider_adt_implements: true,
-                            referring_site: key.id,
-                        },
+                        Config::builder()
+                            .observer(&mut occurrences)
+                            .extra_namespace(&extra_namespace)
+                            .referring_site(key.id)
+                            .build(),
                         &mut where_clause,
                         &storage,
                     )

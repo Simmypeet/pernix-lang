@@ -31,7 +31,7 @@ siphasher = { workspace = true }
 flexstr = { workspace = true }
 enum-as-inner = { workspace = true }
 dashmap = { workspace = true }
-typed-builder = { workspace = true }
+bon = { workspace = true }
 derive_more = { workspace = true }
 rayon = { workspace = true }
 derive-new = { workspace = true }

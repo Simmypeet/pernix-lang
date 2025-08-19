@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use bon::Builder;
 use enum_as_inner::EnumAsInner;
 use flexstr::{FlexStr, SharedStr};
 use pernixc_extend::extend;
@@ -764,52 +765,42 @@ enum Naming {
     Implements(pernixc_syntax::QualifiedIdentifier),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, typed_builder::TypedBuilder)]
+#[derive(Debug, Clone, PartialEq, Eq, Builder)]
 #[allow(clippy::option_option)]
 struct Entry {
     pub naming: Naming,
     pub kind: kind::Kind,
 
-    #[builder(default, setter(strip_option))]
     pub member: Option<Arc<member::Member>>,
 
-    #[builder(default, setter(strip_option))]
     pub accessibility: Option<Option<pernixc_syntax::AccessModifier>>,
 
-    #[builder(default, setter(strip_option))]
     pub generic_parameters_syntax: Option<
         Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
     >,
 
-    #[builder(default, setter(strip_option))]
     pub where_clause_syntax:
         Option<Option<pernixc_syntax::item::where_clause::Predicates>>,
 
-    #[builder(default, setter(strip_option))]
     pub type_alias_syntax: Option<Option<pernixc_syntax::r#type::Type>>,
 
-    #[builder(default, setter(strip_option))]
     pub constant_type_annotation_syntax:
         Option<Option<pernixc_syntax::r#type::Type>>,
 
-    #[builder(default, setter(strip_option))]
     pub constant_expression_syntax:
         Option<Option<pernixc_syntax::expression::Expression>>,
 
-    #[builder(default, setter(strip_option))]
     pub function_signature_syntax: Option<(
         Option<pernixc_syntax::item::function::Parameters>,
         Option<pernixc_syntax::item::function::ReturnType>,
     )>,
 
-    #[builder(default, setter(strip_option))]
     pub fields_syntax: Option<
         Option<
             pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>,
         >,
     >,
 
-    #[builder(default, setter(strip_option))]
     pub variant_associated_type_syntax:
         Option<Option<pernixc_syntax::r#type::Type>>,
 }

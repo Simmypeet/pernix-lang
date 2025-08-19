@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use bon::Builder;
 use flexstr::SharedStr;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
@@ -143,7 +144,7 @@ pub trait Observer: Send {
 }
 
 /// The configuration struct specifying the behaviour of the resolution process.
-#[derive(Default)]
+#[derive(Default, Builder)]
 #[allow(missing_debug_implementations)]
 pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex> {
     /* These lifetimes are such a bad idea */
@@ -179,6 +180,7 @@ pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex> {
     /// This flag is primarily used when resolving a qualified identifier for
     /// the `implements` but cyclic query might happen when the resolution
     /// considers the ADT implementations as well.
+    #[builder(default = true)]
     pub consider_adt_implements: bool,
 
     /// Represents the site where the resolution occurred.
