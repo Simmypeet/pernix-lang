@@ -77,6 +77,19 @@ pub trait AsyncVisitor<T: Element>: Send {
     ) -> impl Future<Output = bool> + Send;
 }
 
+/// An asynchronous version of the [`Mutable`] trait.
+pub trait AsyncMutable<T: Element>: Send {
+    /// Visits a term.
+    ///
+    /// Returns `true` if the visitor should continue visiting the sub-terms of
+    /// the term.
+    fn visit(
+        &mut self,
+        term: &mut T,
+        location: T::Location,
+    ) -> impl Future<Output = bool> + Send;
+}
+
 /// Represents a mutable visitor that visits a term.
 pub trait Mutable<T: Element> {
     /// Visits a term.
@@ -207,6 +220,21 @@ pub trait Element: Sized + SubTerm {
         location: Self::Location,
     ) -> bool;
 
+    /// Similar to [`Element::accept_single_mut()`], but for asynchronous
+    /// visitors.
+    ///
+    /// # Returns
+    ///
+    /// Returns whatever the visitor `visit_*` method returns.
+    fn accept_single_async_mut<
+        'a,
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &'a mut self,
+        visitor: &'a mut V,
+        location: Self::Location,
+    ) -> impl Future<Output = bool> + 'a;
+
     /// Invokes the [`Recursive`] visitor on the term itself.
     fn accept_single_recursive<
         'a,
@@ -261,6 +289,16 @@ pub trait Element: Sized + SubTerm {
         V: AsyncVisitor<Lifetime> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
     >(
         &'a self,
+        visitor: &'a mut V,
+    ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + Send + 'a;
+
+    /// Similar to [`Element::accept_one_level_mut()`], but for asynchronous
+    /// visitors.
+    fn accept_one_level_async_mut<
+        'a,
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &'a mut self,
         visitor: &'a mut V,
     ) -> impl Future<Output = Result<bool, VisitNonApplicationTermError>> + Send + 'a;
 
@@ -364,6 +402,15 @@ where
         visitor: &mut V,
     ) -> bool {
         implements_tuple!(self, visitor, accept_single_mut, iter_mut)
+    }
+
+    async fn accept_one_level_async_mut<
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> bool {
+        implements_tuple!(self, visitor, accept_single_async_mut, iter_mut, await)
     }
 }
 
@@ -477,6 +524,29 @@ impl GenericArguments {
     {
         implements_generic_arguments!(
             self, visitor, visit, visit, visit, iter_mut, map_idx
+        )
+    }
+
+    #[allow(clippy::trait_duplication_in_bounds)]
+    async fn accept_one_level_async_mut<
+        T: Element,
+        Idx,
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        map_idx: impl Fn(usize) -> Idx,
+    ) -> bool
+    where
+        Idx: Into<T::SubConstantLocation>
+            + Into<T::SubTypeLocation>
+            + Into<T::SubLifetimeLocation>,
+        T::SubLifetimeLocation: Into<SubLifetimeLocation>,
+        T::SubTypeLocation: Into<SubTypeLocation>,
+        T::SubConstantLocation: Into<SubConstantLocation>,
+    {
+        implements_generic_arguments!(
+            self, visitor, visit, visit, visit, iter_mut, map_idx, await
         )
     }
 }
@@ -727,6 +797,34 @@ impl Element for Type {
             await
         )
     }
+
+    async fn accept_one_level_async_mut<
+        V: AsyncMutable<Lifetime> + AsyncMutable<Self> + AsyncMutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        implements_type!(
+            self,
+            visitor,
+            visit,
+            visit,
+            visit,
+            accept_one_level_async_mut,
+            [&mut],
+            await
+        )
+    }
+
+    async fn accept_single_async_mut<
+        V: AsyncMutable<Lifetime> + AsyncMutable<Self> + AsyncMutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        location: Self::Location,
+    ) -> bool {
+        visitor.visit(self, location).await
+    }
 }
 
 impl From<Never> for SubLifetimeLocation {
@@ -814,6 +912,25 @@ impl Element for Lifetime {
         V: AsyncVisitor<Self> + AsyncVisitor<Type> + AsyncVisitor<Constant>,
     >(
         &self,
+        _: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        Err(VisitNonApplicationTermError)
+    }
+
+    async fn accept_single_async_mut<
+        V: AsyncMutable<Self> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        location: Self::Location,
+    ) -> bool {
+        visitor.visit(self, location).await
+    }
+
+    async fn accept_one_level_async_mut<
+        V: AsyncMutable<Self> + AsyncMutable<Type> + AsyncMutable<Constant>,
+    >(
+        &mut self,
         _: &mut V,
     ) -> Result<bool, VisitNonApplicationTermError> {
         Err(VisitNonApplicationTermError)
@@ -1001,6 +1118,36 @@ impl Element for Constant {
             as_ref,
             iter,
             [&],
+            await
+        )
+    }
+
+    async fn accept_single_async_mut<
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Self>,
+    >(
+        &mut self,
+        visitor: &mut V,
+        location: Self::Location,
+    ) -> bool {
+        visitor.visit(self, location).await
+    }
+
+    async fn accept_one_level_async_mut<
+        V: AsyncMutable<Lifetime> + AsyncMutable<Type> + AsyncMutable<Self>,
+    >(
+        &mut self,
+        visitor: &mut V,
+    ) -> Result<bool, VisitNonApplicationTermError> {
+        implements_constant!(
+            self,
+            visitor,
+            visit_type,
+            visit_lifetime,
+            visit,
+            accept_one_level_async_mut,
+            as_mut,
+            iter_mut,
+            [&mut],
             await
         )
     }
