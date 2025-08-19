@@ -1,0 +1,29 @@
+public trait FirstTrait[T]:
+    public type Member[U]
+
+
+public trait SecondTrait[T]:
+    public type Member[U]
+
+
+public trait ThirdTrait[T]:
+    public type Member[U]
+
+
+public marker FirstMarker[T]
+
+
+public marker SecondMarker[T]
+
+
+public type Test['a, 'b, 'c, T, U, V] = usize:
+    where:
+        FirstTrait[T]::Member[U] = usize
+        trait FirstTrait[T] + const SecondTrait[U] + not ThirdTrait[V]
+        marker FirstMarker[T] + not SecondMarker[U]
+        T: tuple
+        U: tuple
+        V: const
+        U: const
+        T: 'a + 'b
+        'a: 'b + 'c

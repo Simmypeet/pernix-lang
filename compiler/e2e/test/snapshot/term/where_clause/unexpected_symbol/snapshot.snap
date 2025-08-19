@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unexpected symbol in the trait predicate
+  ╭─ compiler/e2e/test/snapshot/term/where_clause/unexpected_symbol/main.pnx:6:15
+  │
+6 │         trait Struct[(T,)]
+  │               ^^^^^^^^^^^^ expected trait symbol but found `struct main::Struct`
+
+error: unexpected symbol in the marker predicate
+  ╭─ compiler/e2e/test/snapshot/term/where_clause/unexpected_symbol/main.pnx:7:16
+  │
+7 │         marker Struct[(T, T)]
+  │                ^^^^^^^^^^^^^^ expected marker symbol but found `struct main::Struct`
+
+error: the left-hand side of the type equality predicate must be a trait associated type
+  ╭─ compiler/e2e/test/snapshot/term/where_clause/unexpected_symbol/main.pnx:8:9
+  │
+8 │         Struct[(T, T, T)] = usize
+  │         ^^^^^^^^^^^^^^^^^
+
+error: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

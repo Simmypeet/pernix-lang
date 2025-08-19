@@ -1,0 +1,8 @@
+public struct Struct[T]:
+    public x: T
+
+public type Test[T] = T:
+    where:
+        trait Struct[(T,)]
+        marker Struct[(T, T)]
+        Struct[(T, T, T)] = usize
