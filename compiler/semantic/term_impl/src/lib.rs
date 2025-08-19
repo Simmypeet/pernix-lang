@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use pernixc_lexical::error::ExpectIndentation;
 use pernixc_query::runtime::persistence::serde::DynamicRegistry;
 use pernixc_serialize::{de::Deserializer, ser::Serializer};
 

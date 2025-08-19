@@ -20,6 +20,9 @@ pernixc_hash = { path = "../base/hash" }
 pernixc_stable_type_id = { path = "../base/stable_type_id" }
 pernixc_symbol = { path = "../semantic/symbol" }
 pernixc_syntax = { path = "../syntax/syntax" }
+pernixc_type_system = { path = "../semantic/type_system" }
+pernixc_resolution = { path = "../semantic/resolution" }
+pernixc_term_impl = { path = "../semantic/term_impl" }
 clap = { workspace = true }
 codespan-reporting = { workspace = true }
 derive_more = { workspace = true }
