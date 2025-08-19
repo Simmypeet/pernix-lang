@@ -1,0 +1,13 @@
+public type First['a, 'a, 'b] = &'a int32
+
+public type Second[T, T, U] = T
+
+public type Third[const N: usize, const N: usize, const M: float32] = int32
+
+public type Fourth[
+    'a, 'a,
+    T, T,
+    const N: usize, const N: usize
+] = &'a T:
+    where:
+        T: 'a
