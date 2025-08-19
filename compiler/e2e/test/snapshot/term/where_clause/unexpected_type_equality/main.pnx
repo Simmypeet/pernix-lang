@@ -1,0 +1,7 @@
+public trait Identity[T]:
+    public type Output
+
+
+public type Test[T] = T:
+    where:
+        T = Identity[T]::Output
