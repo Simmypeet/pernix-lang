@@ -1,5 +1,5 @@
 [package]
-name = "resolution"
+name = "pernixc_resolution"
 version.workspace = true
 authors.workspace = true
 description.workspace = true
