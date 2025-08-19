@@ -12,13 +12,17 @@ pernixc_target = { path = "../../base/target" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_serialize = { path = "../../base/serialize" }
+pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_stable_type_id = { path = "../../base/stable_type_id" }
+pernixc_source_file = { path = "../../base/source_file" }
+pernixc_arena = { path = "../../base/arena" }
 pernixc_type_system = { path = "../type_system" }
 pernixc_resolution = { path = "../resolution" }
 pernixc_syntax = { path = "../../syntax/syntax" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }
+derive_more = { workspace = true }
 
 [lints]
 workspace = true

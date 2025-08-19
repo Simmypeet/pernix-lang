@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use flexstr::SharedStr;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
@@ -52,7 +53,7 @@ pub const fn skip_persistence(
 }
 
 /// A trait for providing elided terms.
-pub trait ElidedTermProvider<T> {
+pub trait ElidedTermProvider<T>: Send {
     /// Creates a new instance of the term to supply the required missing term.
     fn create(&mut self) -> T;
 }
@@ -64,9 +65,9 @@ pub trait ElidedTermProvider<T> {
 )]
 #[allow(missing_docs)]
 pub struct ExtraNamespace {
-    pub lifetimes: HashMap<String, Lifetime>,
-    pub types: HashMap<String, Type>,
-    pub constants: HashMap<String, Constant>,
+    pub lifetimes: HashMap<SharedStr, Lifetime>,
+    pub types: HashMap<SharedStr, Type>,
+    pub constants: HashMap<SharedStr, Constant>,
 }
 
 /// A trait for observing the resolution process.
@@ -77,7 +78,7 @@ pub struct ExtraNamespace {
 /// This is useful for collecting the resolved terms for further well-formedness
 /// checks such as checking whether the where clause is satisfied; those checks
 /// are not performed during the resolution process.
-pub trait Observer {
+pub trait Observer: Send {
     /// Notifies the observer when a resolution is resolved.
     fn on_resolution_resolved(
         &mut self,
