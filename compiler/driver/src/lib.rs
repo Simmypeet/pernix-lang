@@ -366,7 +366,20 @@ pub async fn run(
             .await
             .unwrap();
 
+        let term_errors = tracked_engine
+            .query(&pernixc_term_impl::diagnostic::AllRenderedKey(
+                TargetID::Local,
+            ))
+            .await
+            .unwrap();
+
         for diag in symbol_errors.as_ref() {
+            diagnostics.push(SortableDiagnostic(
+                pernix_diagnostic_to_codespan_diagnostic(diag),
+            ));
+        }
+
+        for diag in term_errors.iter().flat_map(|x| x.iter()) {
             diagnostics.push(SortableDiagnostic(
                 pernix_diagnostic_to_codespan_diagnostic(diag),
             ));
