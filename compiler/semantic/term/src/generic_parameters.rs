@@ -9,6 +9,7 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::MemberID;
 use pernixc_target::Global;
 
@@ -27,6 +28,7 @@ use crate::{
     PartialEq,
     Eq,
     Default,
+    Identifiable,
     Getters,
     StableHash,
     Serialize,
@@ -299,7 +301,19 @@ impl GenericParameter for ConstantParameter {
 }
 
 /// Enumeration of all kinds of generic parameters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 #[allow(missing_docs)]
 pub enum GenericKind {
     Type,

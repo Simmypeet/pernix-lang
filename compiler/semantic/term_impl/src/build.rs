@@ -56,8 +56,8 @@ impl<T, D> Hash for Key<T, D> {
 }
 
 impl<
-        T: Debug + Identifiable + StableHash + Hash + Send + Sync + 'static,
-        D: Debug + Identifiable + StableHash + Hash + Send + Sync + 'static,
+        T: Debug + Identifiable + StableHash + Send + Sync + 'static,
+        D: Debug + Identifiable + StableHash + Send + Sync + 'static,
     > pernixc_query::Key for Key<T, D>
 {
     type Value = Build<T, D>;

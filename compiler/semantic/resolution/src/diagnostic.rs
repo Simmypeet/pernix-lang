@@ -4,6 +4,8 @@ use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 // re-exports
 pub use pernixc_symbol::name::diagnostic::{
     SymbolIsNotAccessible, SymbolNotFound,
@@ -14,7 +16,17 @@ use pernixc_term::generic_parameters::GenericKind;
 
 /// Enumeration of all kinds of diagnostic generated during resolution.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum Diagnostic {
@@ -31,7 +43,19 @@ pub enum Diagnostic {
 }
 
 /// The `this` keyword was used in the wrong context.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct ThisNotFound {
     /// The span where the `this` keyword was used.
     pub this_span: RelativeSpan,
@@ -62,7 +86,18 @@ impl Report<()> for ThisNotFound {
 }
 
 /// The lifetime parameter was not found in the given scope.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct LifetimeParameterNotFound {
     /// The span where the lifetime parameter was referred from.
     pub referred_span: RelativeSpan,
@@ -102,7 +137,19 @@ impl Report<&TrackedEngine> for LifetimeParameterNotFound {
 }
 
 /// The inference term isn't allowed in the given context.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct UnexpectedInference {
     /// Span where the inference term was found.
     pub unexpected_span: RelativeSpan,
@@ -135,7 +182,19 @@ impl Report<()> for UnexpectedInference {
 }
 
 /// The type was expected but the non-type symbol was found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct ExpectType {
     /// The span where the non-type symbol was found.
     pub non_type_symbol_span: RelativeSpan,
@@ -172,7 +231,19 @@ impl Report<&TrackedEngine> for ExpectType {
 }
 
 /// The tuple type contains more than one unpacked type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct MoreThanOneUnpackedInTupleType {
     /// The span where the illegal tuple type was found.
     pub illegal_tuple_type_span: RelativeSpan,
@@ -201,7 +272,19 @@ impl Report<()> for MoreThanOneUnpackedInTupleType {
 }
 
 /// The generic arguments were supplied in the wrong order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct MisorderedGenericArgument {
     /// The kind of the mis-ordered generic argument.
     pub generic_kind: GenericKind,
@@ -242,7 +325,19 @@ impl Report<()> for MisorderedGenericArgument {
 }
 
 /// Generic arguments count mismatch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct MismatchedGenericArgumentCount {
     /// The kind of the generic parameter.
     pub generic_kind: GenericKind,
@@ -287,7 +382,19 @@ impl Report<()> for MismatchedGenericArgumentCount {
 }
 
 /// The symbol doesn't require any generic arguments but some were supplied.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct NoGenericArgumentsRequired {
     /// The symbol that  was supplied with generic arguments.
     pub global_id: Global<pernixc_symbol::ID>,
