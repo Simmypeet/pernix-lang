@@ -60,7 +60,7 @@ async fn reflexive() {
 async fn symmetric() {
     let mut engine = create_engine();
     let trait_member = TraitMember(MemberSymbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -68,21 +68,21 @@ async fn symmetric() {
     Arc::get_mut(&mut engine).unwrap().input_session(|x| {
         x.set_input(
             pernixc_symbol::parent::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(1)),
             ),
             Some(pernixc_symbol::ID(2)),
         );
 
         x.set_input(
             pernixc_symbol::kind::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(2)),
             ),
             Kind::Trait,
         );
 
         x.set_input(
             pernixc_term::implemented::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(2)),
             ),
             Arc::default(),
         );
@@ -127,7 +127,7 @@ async fn symmetric() {
 #[tokio::test]
 async fn not_equal() {
     let trait_member = TraitMember(MemberSymbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -138,21 +138,21 @@ async fn not_equal() {
     Arc::get_mut(&mut engine).unwrap().input_session(|x| {
         x.set_input(
             pernixc_symbol::parent::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(1)),
             ),
             Some(pernixc_symbol::ID(2)),
         );
 
         x.set_input(
             pernixc_symbol::kind::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(2)),
             ),
             Kind::Trait,
         );
 
         x.set_input(
             pernixc_term::implemented::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(2)),
             ),
             Arc::default(),
         );
@@ -194,12 +194,12 @@ async fn not_equal() {
 #[tokio::test]
 async fn transitivity() {
     let first_trait_member = TraitMember(MemberSymbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
     let second_trait_member = TraitMember(MemberSymbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -210,25 +210,25 @@ async fn transitivity() {
     Arc::get_mut(&mut engine).unwrap().input_session(|x| {
         x.set_input(
             pernixc_symbol::parent::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(1)),
             ),
             Some(pernixc_symbol::ID(3)),
         );
         x.set_input(
             pernixc_symbol::parent::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(2)),
             ),
             Some(pernixc_symbol::ID(3)),
         );
         x.set_input(
             pernixc_symbol::kind::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(3)),
             ),
             Kind::Trait,
         );
         x.set_input(
             pernixc_term::implemented::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(3)),
             ),
             Arc::default(),
         );
@@ -280,12 +280,12 @@ async fn transitivity() {
 #[tokio::test]
 async fn congruence() {
     let first_trait_member = TraitMember(MemberSymbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
     let second_trait_member = TraitMember(MemberSymbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -297,25 +297,25 @@ async fn congruence() {
     Arc::get_mut(&mut engine).unwrap().input_session(|x| {
         x.set_input(
             pernixc_symbol::parent::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(1)),
             ),
             Some(pernixc_symbol::ID(3)),
         );
         x.set_input(
             pernixc_symbol::parent::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(2)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(2)),
             ),
             Some(pernixc_symbol::ID(3)),
         );
         x.set_input(
             pernixc_symbol::kind::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(3)),
             ),
             Kind::Trait,
         );
         x.set_input(
             pernixc_term::implemented::Key(
-                TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+                TargetID::TEST.make_global(pernixc_symbol::ID(3)),
             ),
             Arc::default(),
         );
@@ -340,7 +340,7 @@ async fn congruence() {
     );
 
     let lhs = Type::Symbol(Symbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(3)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![
@@ -351,7 +351,7 @@ async fn congruence() {
         },
     });
     let rhs = Type::Symbol(Symbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(3)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(3)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![first_equivalence, second_equivalence],
@@ -381,7 +381,7 @@ async fn congruence() {
 #[tokio::test]
 async fn symbol() {
     let symbol = Type::Symbol(Symbol {
-        id: TargetID::Extern(1).make_global(pernixc_symbol::ID(1)),
+        id: TargetID::TEST.make_global(pernixc_symbol::ID(1)),
         generic_arguments: GenericArguments {
             lifetimes: Vec::new(),
             types: vec![Type::Primitive(Primitive::Bool)],

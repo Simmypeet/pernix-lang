@@ -939,6 +939,7 @@ dependencies = [
 name = "pernixc_diagnostic"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
  "derive-new",
  "pernixc_serialize",
  "pernixc_source_file",
@@ -1096,6 +1097,7 @@ dependencies = [
  "pernixc_serialize",
  "pernixc_stable_hash",
  "pernixc_stable_type_id",
+ "pernixc_tokio",
  "rand 0.8.5",
  "rayon",
  "redb",
@@ -1280,6 +1282,7 @@ dependencies = [
  "pernixc_stable_hash",
  "proptest",
  "rand 0.8.5",
+ "siphasher",
 ]
 
 [[package]]
@@ -1303,6 +1306,7 @@ dependencies = [
  "pernixc_target",
  "proptest",
  "thiserror 2.0.15",
+ "trait-variant",
 ]
 
 [[package]]
@@ -1313,6 +1317,7 @@ dependencies = [
  "flexstr",
  "pernixc_arena",
  "pernixc_diagnostic",
+ "pernixc_extend",
  "pernixc_handler",
  "pernixc_hash",
  "pernixc_lexical",
@@ -1353,11 +1358,13 @@ dependencies = [
  "getset",
  "parking_lot",
  "pernixc_arena",
+ "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_hash",
  "pernixc_lexical",
  "pernixc_query",
  "pernixc_serialize",
+ "pernixc_source_file",
  "pernixc_stable_hash",
  "pernixc_symbol",
  "pernixc_target",
@@ -2196,6 +2203,17 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "trait-variant"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70977707304198400eb4835a78f6a9f928bf41bba420deb8fdb175cd965d77a7"
+dependencies = [
+ "proc-macro2 1.0.101",
+ "quote 1.0.40",
+ "syn 2.0.106",
 ]
 
 [[package]]

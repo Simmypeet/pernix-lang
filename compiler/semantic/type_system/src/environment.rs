@@ -15,7 +15,7 @@ use getset::{CopyGetters, Getters};
 use parking_lot::RwLock;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
 use pernixc_term::{
@@ -50,7 +50,7 @@ pub struct Premise {
 pub async fn get_active_premise(
     self: &TrackedEngine,
     current_site: Global<pernixc_symbol::ID>,
-) -> Premise {
+) -> Result<Premise, executor::CyclicError> {
     let mut premise =
         Premise { predicates: BTreeSet::new(), query_site: Some(current_site) };
 
@@ -60,32 +60,30 @@ pub async fn get_active_premise(
         let kind = self.get_kind(current_id).await;
 
         if kind.has_where_clause() {
-            if let Ok(where_clause) = self.get_where_clause(current_id).await {
-                premise
-                    .predicates
-                    .extend(where_clause.iter().map(|x| x.predicate.clone()));
-            }
+            let where_clause = self.get_where_clause(current_id).await?;
+
+            premise
+                .predicates
+                .extend(where_clause.iter().map(|x| x.predicate.clone()));
         }
 
         if kind.has_implied_predicates() {
-            if let Ok(predicates) =
-                self.get_implied_predicates(current_id).await
-            {
-                premise.predicates.extend(
-                    predicates.implied_predicates.iter().map(|x| match x {
-                        ImpliedPredicate::LifetimeOutlives(outlives) => {
-                            Predicate::LifetimeOutlives(outlives.clone())
-                        }
-                        ImpliedPredicate::TypeOutlives(outlives) => {
-                            Predicate::TypeOutlives(outlives.clone())
-                        }
-                    }),
-                );
-            }
+            let predicates = self.get_implied_predicates(current_id).await?;
+
+            premise.predicates.extend(
+                predicates.implied_predicates.iter().map(|x| match x {
+                    ImpliedPredicate::LifetimeOutlives(outlives) => {
+                        Predicate::LifetimeOutlives(outlives.clone())
+                    }
+                    ImpliedPredicate::TypeOutlives(outlives) => {
+                        Predicate::TypeOutlives(outlives.clone())
+                    }
+                }),
+            );
         }
     }
 
-    premise
+    Ok(premise)
 }
 
 /// Retrieves the active premise of the current site with the span of the

@@ -15,6 +15,7 @@ use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
 pub mod adt_fields;
 pub mod deduction;
 pub mod definite;
+pub mod diagnostic;
 pub mod environment;
 pub mod equality;
 pub mod equivalence;

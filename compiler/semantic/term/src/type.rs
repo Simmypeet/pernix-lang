@@ -3,6 +3,7 @@
 use enum_as_inner::EnumAsInner;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_stable_type_id::Identifiable;
 
 use crate::{
     constant::Constant,
@@ -213,6 +214,7 @@ pub enum SubFunctionSignatureLocation {
     StableHash,
     Serialize,
     Deserialize,
+    Identifiable,
     derive_more::From,
     EnumAsInner,
 )]

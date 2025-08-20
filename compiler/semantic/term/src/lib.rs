@@ -5,6 +5,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 pub mod constant;
+pub mod display;
 pub mod error;
 pub mod fields;
 pub mod generic_arguments;

@@ -1,6 +1,6 @@
 //! This crate contains the information about the target of the compilation.
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, hash::Hasher, path::PathBuf, sync::Arc};
 
 use clap::{builder::styling, Args, Subcommand};
 use derive_new::new;
@@ -17,6 +17,7 @@ use pernixc_serialize::{
 };
 use pernixc_stable_hash::StableHash;
 use rand::Rng;
+use siphasher::sip128::Hasher128;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
@@ -36,20 +37,40 @@ pub mod arbitrary;
     Deserialize,
     StableHash,
 )]
-pub enum TargetID {
-    /// Representing a target that is being compiled at the moment.
-    #[default]
-    Local,
-
-    /// Representing a `core` target.
-    Core,
-
-    /// Represents an externally defined targets that are being consumed by the
-    /// current [`Self::Local`].
-    Extern(u64),
-}
+pub struct TargetID(u128);
 
 impl TargetID {
+    /// Represents a `core` target which is included in every compilation.
+    pub const CORE: Self = Self(0);
+
+    /// A placeholder target ID commonly used for testings.
+    pub const TEST: Self = Self(1);
+
+    /// Creates a new [`TargetID`] from the given ID.
+    #[must_use]
+    pub fn new(id: u128) -> Self {
+        assert!(
+            id != 0,
+            "TargetID(0) is reserved for `core` module, use `TargetID::CORE` \
+             to obtain the core target"
+        );
+
+        Self(id)
+    }
+
+    /// Creates a new [`TargetID`] from the given name.
+    #[must_use]
+    pub fn from_target_name(name: &str) -> Self {
+        let initial_key: u128 = 0xbfb4_e73d_a005_9e37_b30e_e65f_35cf_88b0;
+        let mut sip_hasher = siphasher::sip128::SipHasher24::new_with_key(
+            &initial_key.to_le_bytes(),
+        );
+
+        sip_hasher.write(name.as_bytes());
+
+        Self(sip_hasher.finish128().into())
+    }
+
     /// Creates a new [`Global`] identifier from the given [`TargetID`] and the
     /// given local identifier.
     #[must_use]

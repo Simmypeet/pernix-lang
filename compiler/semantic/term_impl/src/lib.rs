@@ -10,6 +10,7 @@ pub mod diagnostic;
 mod build;
 mod generic_parameters;
 mod occurrences;
+mod type_alias;
 mod where_clause;
 
 /// Registers all the required executors to run the queries.

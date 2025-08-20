@@ -18,6 +18,7 @@ pernixc_source_file = { path = "../../base/source_file" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_tokio = { path = "../../base/tokio" }
+pernixc_extend = { path = "../../base/extend" }
 pernixc_type_system = { path = "../type_system" }
 pernixc_resolution = { path = "../resolution" }
 pernixc_syntax = { path = "../../syntax/syntax" }

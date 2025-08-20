@@ -1,91 +1,115 @@
-//! Contains the diagnostic information related to the type system overflows.
+//! Defines the diagnostic related to the type system checking
 
-use derive_new::new;
-use pernixc_diagnostic::{Diagnostic, Related, Report};
-use pernixc_log::Severity;
-use pernixc_semantic::{
-    component::input::LocationSpan,
-    table::{self, DisplayObject, GlobalID, Table},
-    term::{generic_arguments::GenericArguments, predicate::Predicate, Model},
-};
-use pernixc_source_file::Span;
+use pernixc_diagnostic::{Highlight, Report};
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::TrackedEngine;
+use pernixc_source_file::ByteIndex;
+use pernixc_symbol::source_map::to_absolute_span;
+use pernixc_term::predicate::Predicate;
 
 use crate::OverflowError;
 
 /// An [`OverflowError`] occurred while calculating the type of an expression or
 /// symbol.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+)]
 pub struct TypeCalculatingOverflow {
     /// The span where the overflow occurred.
-    pub overflow_span: Span,
+    pub overflow_span: RelativeSpan,
 
     /// The [`OverflowError`] that occurred.
     pub overflow_error: OverflowError,
 }
 
-impl Report<&Table> for TypeCalculatingOverflow {
-    fn report(&self, _: &Table) -> Diagnostic {
-        Diagnostic {
-            span: self.overflow_span.clone(),
-            message: "overflow calculating the type".to_string(),
-            severity: Severity::Error,
-            help_message: Some(
-                "try reduce the complexity of the code; this error is the \
-                 limitation of the type-system/compiler"
-                    .to_string(),
-            ),
-            related: Vec::new(),
-        }
+impl Report<&TrackedEngine> for TypeCalculatingOverflow {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        pernixc_diagnostic::Diagnostic::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.overflow_span).await)
+                    .message(
+                        "couldn't calculate the type of this expression/symbol",
+                    )
+                    .build(),
+            )
+            .message("overflow calculating the type")
+            .help_message(
+                "this is due to the limitation of the compiler/language, try \
+                 reduce the complexity of the expression/symbol",
+            )
+            .build()
     }
 }
 
 /// An [`OverflowError`] occurred while performing a type check operation.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)] pub struct TypeCheckOverflow {
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+)]
+pub struct TypeCheckOverflow {
     /// The span where the overflow occurred.
-    pub overflow_span: Span,
+    pub overflow_span: RelativeSpan,
 
     /// The [`OverflowError`] that occurred.
     pub overflow_error: OverflowError,
 }
 
-impl Report<&Table> for TypeCheckOverflow {
-    fn report(&self, _: &Table) -> Diagnostic {
-        Diagnostic {
-            span: self.overflow_span.clone(),
-            message: "overflow checking the type".to_string(),
-            severity: Severity::Error,
-            help_message: Some(
+impl Report<&TrackedEngine> for TypeCheckOverflow {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        tracked_engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        pernixc_diagnostic::Diagnostic::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        tracked_engine
+                            .to_absolute_span(&self.overflow_span)
+                            .await,
+                    )
+                    .message("couldn't type check of this expression/symbol")
+                    .build(),
+            )
+            .message("overflow checking the type")
+            .help_message(
                 "try reduce the complexity of the code; this error is the \
-                 limitation of the type-system/compiler"
-                    .to_string(),
-            ),
-            related: Vec::new(),
-        }
+                 limitation of the type-system/compiler",
+            )
+            .build()
     }
 }
 
 /// The satisfiability of the predicate can't be decided (most likely Overflow
 /// error).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, new)]
-pub struct UndecidablePredicate<M: Model> {
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+)]
+pub struct UndecidablePredicate {
     /// The undecidable predicate.
-    pub predicate: Predicate<M>,
+    pub predicate: Predicate,
 
     /// The span where the where clause predicate was declared.
-    pub predicate_declaration_span: Option<Span>,
+    pub predicate_declaration_span: Option<RelativeSpan>,
 
     /// The span of the instantiation that causes the bound check.
-    pub instantiation_span: Span,
+    pub instantiation_span: RelativeSpan,
 
     /// The overflow error that occurred.
     pub overflow_error: OverflowError,
 }
 
-impl<M: Model> Report<&Table> for UndecidablePredicate<M>
-where
-    Predicate<M>: table::Display,
-{
-    fn report(&self, table: &Table) -> Diagnostic {
+/*
+impl Report<&TrackedEngine> for UndecidablePredicate {
+    type Location = ByteIndex;
+
+    async fn report(&self, table: &TrackedEngine) -> Diagnostic {
         Diagnostic {
             span: self.instantiation_span.clone(),
             message: format!(
@@ -199,3 +223,4 @@ where
         }
     }
 }
+*/

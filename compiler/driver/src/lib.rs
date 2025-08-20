@@ -320,11 +320,14 @@ pub async fn run(
     pernixc_term_impl::register_executors(&mut engine.runtime.executor);
 
     // set the initial input, the invocation arguments
+    let local_target_id =
+        TargetID::from_target_name(&argument.command.input().target_name());
+
     engine.input_session(|x| {
         x.always_reverify();
 
         x.set_input(
-            pernixc_target::LinkKey(TargetID::Local),
+            pernixc_target::LinkKey(local_target_id),
             Arc::new(std::iter::empty().collect()),
         );
         x.set_input(
@@ -332,7 +335,7 @@ pub async fn run(
             Arc::new(
                 std::iter::once((
                     argument.command.input().target_name(),
-                    TargetID::Local,
+                    local_target_id,
                 ))
                 .collect(),
             ),
@@ -340,12 +343,12 @@ pub async fn run(
 
         if let Some(explicit_seed) = argument.command.input().target_seed {
             x.set_input(
-                pernixc_target::SeedKey(TargetID::Local),
+                pernixc_target::SeedKey(local_target_id),
                 explicit_seed,
             );
         }
 
-        x.set_input(pernixc_target::Key(TargetID::Local), Arc::new(argument));
+        x.set_input(pernixc_target::Key(local_target_id), Arc::new(argument));
     });
 
     tracing::info!(
@@ -362,13 +365,13 @@ pub async fn run(
         let mut diagnostics = Vec::new();
 
         let symbol_errors = tracked_engine
-            .query(&pernixc_symbol::diagnostic::RenderedKey(TargetID::Local))
+            .query(&pernixc_symbol::diagnostic::RenderedKey(local_target_id))
             .await
             .unwrap();
 
         let term_errors = tracked_engine
             .query(&pernixc_term_impl::diagnostic::AllRenderedKey(
-                TargetID::Local,
+                local_target_id,
             ))
             .await
             .unwrap();
@@ -388,7 +391,7 @@ pub async fn run(
         diagnostics.sort();
 
         let source_map =
-            tracked_engine.create_source_map(TargetID::Local).await;
+            tracked_engine.create_source_map(local_target_id).await;
 
         for diagnostic in &diagnostics {
             let mut report_term =

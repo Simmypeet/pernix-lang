@@ -121,6 +121,7 @@ impl Instantiation {
     /// # Returns
     ///
     /// A list of collisions that occurred during the substitution.
+    #[allow(clippy::result_large_err)]
     pub fn append_from_generic_arguments(
         &mut self,
         generic_arguments: GenericArguments,
@@ -293,6 +294,7 @@ impl Instantiation {
     /// # Errors
     ///
     /// See [`MismatchedGenericArgumentCountError`].
+    #[allow(clippy::result_large_err)]
     pub fn from_generic_arguments(
         generic_arguments: GenericArguments,
         global_id: Global<pernixc_symbol::ID>,

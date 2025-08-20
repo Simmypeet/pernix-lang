@@ -22,8 +22,8 @@ fn tokenize(
     let source_map = SourceMap::new();
     let source_file = SourceFile::new(source, "test".into());
 
-    let id = source_map.register(TargetID::Local, source_file);
-    let id = TargetID::Local.make_global(id);
+    let id = source_map.register(TargetID::TEST, source_file);
+    let id = TargetID::TEST.make_global(id);
 
     let error_storage: Storage<Error> = Storage::new();
 

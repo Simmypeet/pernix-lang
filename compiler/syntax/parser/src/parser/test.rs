@@ -46,19 +46,18 @@ fn parse_token_tree(
     source_code: &str,
 ) -> (pernixc_lexical::tree::Tree, GlobalSourceID) {
     let source_id = source_map.register(
-        TargetID::Local,
+        TargetID::TEST,
         SourceFile::new(source_code.to_string(), "test".into()),
     );
-    let source =
-        source_map.get(TargetID::Local.make_global(source_id)).unwrap();
+    let source = source_map.get(TargetID::TEST.make_global(source_id)).unwrap();
 
     let tree = pernixc_lexical::tree::Tree::from_source(
         source.content(),
-        TargetID::Local.make_global(source_id),
+        TargetID::TEST.make_global(source_id),
         &pernixc_handler::Panic,
     );
 
-    (tree, TargetID::Local.make_global(source_id))
+    (tree, TargetID::TEST.make_global(source_id))
 }
 
 fn check_basic_sequence(

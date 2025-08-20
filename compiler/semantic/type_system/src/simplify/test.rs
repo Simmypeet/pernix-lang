@@ -21,7 +21,7 @@ use crate::{
 #[tokio::test]
 async fn basic() {
     let trait_member = TraitMember(MemberSymbol {
-        id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+        id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -55,7 +55,7 @@ async fn basic() {
 #[tokio::test]
 async fn sub_term() {
     let trait_member = TraitMember(MemberSymbol {
-        id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+        id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -77,11 +77,11 @@ async fn sub_term() {
 
     let result = environment
         .query(&Simplify(Type::Symbol(Symbol {
-            id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(2)),
+            id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(2)),
+                    id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![Type::TraitMember(trait_member)],
@@ -98,11 +98,11 @@ async fn sub_term() {
     assert_eq!(
         result.result,
         Type::Symbol(Symbol {
-            id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(2)),
+            id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
             generic_arguments: GenericArguments {
                 lifetimes: Vec::new(),
                 types: vec![Type::Symbol(Symbol {
-                    id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(2)),
+                    id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
                     generic_arguments: GenericArguments {
                         lifetimes: Vec::new(),
                         types: vec![equivalent],
@@ -120,7 +120,7 @@ async fn sub_term() {
 #[tokio::test]
 async fn already_simplified() {
     let trait_member = TraitMember(MemberSymbol {
-        id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+        id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -152,16 +152,16 @@ async fn already_simplified() {
 #[tokio::test]
 async fn with_lifetime_matching() {
     let first_lifetime = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+        parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
         id: pernixc_arena::ID::new(0),
     });
     let second_lifetime = Lifetime::Parameter(LifetimeParameterID {
-        parent_id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+        parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
         id: pernixc_arena::ID::new(1),
     });
 
     let to_be_simplified = TraitMember(MemberSymbol {
-        id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(2)),
+        id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
             lifetimes: vec![first_lifetime],
@@ -171,7 +171,7 @@ async fn with_lifetime_matching() {
     });
 
     let trait_member = TraitMember(MemberSymbol {
-        id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(2)),
+        id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
             lifetimes: vec![second_lifetime],
@@ -185,7 +185,7 @@ async fn with_lifetime_matching() {
     Arc::get_mut(&mut engine).unwrap().input_session(|x| {
         x.set_input(
             pernixc_symbol::parent::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(2),
             )),
             Some(pernixc_symbol::ID(3)),
@@ -193,7 +193,7 @@ async fn with_lifetime_matching() {
 
         x.set_input(
             pernixc_symbol::kind::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(3),
             )),
             Kind::Trait,
@@ -201,7 +201,7 @@ async fn with_lifetime_matching() {
 
         x.set_input(
             pernixc_term::implemented::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(3),
             )),
             Arc::default(),
@@ -245,12 +245,12 @@ async fn with_lifetime_matching() {
 #[tokio::test]
 async fn multiple_equivalences() {
     let first_trait_member = TraitMember(MemberSymbol {
-        id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+        id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
     let second_trait_member = TraitMember(MemberSymbol {
-        id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(2)),
+        id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments::default(),
     });
@@ -261,28 +261,28 @@ async fn multiple_equivalences() {
     Arc::get_mut(&mut engine).unwrap().input_session(|session| {
         session.set_input(
             pernixc_symbol::parent::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(1),
             )),
             Some(pernixc_symbol::ID(3)),
         );
         session.set_input(
             pernixc_symbol::parent::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(2),
             )),
             Some(pernixc_symbol::ID(3)),
         );
         session.set_input(
             pernixc_symbol::kind::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(3),
             )),
             Kind::Trait,
         );
         session.set_input(
             pernixc_term::implemented::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(3),
             )),
             Arc::default(),
@@ -336,7 +336,7 @@ async fn transitive() {
 
     let trait_member = |idx, lifetime| {
         TraitMember(MemberSymbol {
-            id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(idx)),
+            id: Global::new(TargetID::TEST, pernixc_symbol::ID(idx)),
             member_generic_arguments: GenericArguments::default(),
             parent_generic_arguments: GenericArguments {
                 lifetimes: vec![lifetime],
@@ -348,7 +348,7 @@ async fn transitive() {
 
     let lt = |idx| {
         Lifetime::Parameter(LifetimeParameterID {
-            parent_id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+            parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
             id: pernixc_arena::ID::new(idx),
         })
     };
@@ -367,14 +367,14 @@ async fn transitive() {
     Arc::get_mut(&mut engine).unwrap().input_session(|table| {
         table.set_input(
             pernixc_symbol::parent::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(2),
             )),
             Some(pernixc_symbol::ID(4)),
         );
         table.set_input(
             pernixc_symbol::parent::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(3),
             )),
             Some(pernixc_symbol::ID(4)),
@@ -382,14 +382,14 @@ async fn transitive() {
 
         table.set_input(
             pernixc_symbol::kind::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(4),
             )),
             Kind::Trait,
         );
         table.set_input(
             pernixc_term::implemented::Key(Global::new(
-                TargetID::Extern(1),
+                TargetID::TEST,
                 pernixc_symbol::ID(4),
             )),
             Arc::default(),

@@ -110,3 +110,26 @@ pub async fn where_clause_syntax(
         })
         .clone())
 }
+
+/// Implementation of the `get_type_alias_syntax` method
+#[pernixc_query::query(
+    key(TypeAliasKey),
+    id(Global<ID>),
+    value(Option<pernixc_syntax::r#type::Type>),
+    executor(TypeAliasExecutor),
+    extend(method(get_type_alias_syntax), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn get_type_alias_syntax(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<Option<pernixc_syntax::r#type::Type>, CyclicError> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(table
+        .type_alias_syntaxes
+        .get(&id.id)
+        .unwrap_or_else(|| {
+            panic!("No type alias syntax found for symbol ID: {:?}", id.id)
+        })
+        .clone())
+}

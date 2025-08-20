@@ -2,6 +2,7 @@
 
 use std::future::Future;
 
+use bon::Builder;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::Span;
 use pernixc_stable_hash::StableHash;
@@ -68,6 +69,7 @@ pub enum Severity {
     Serialize,
     Deserialize,
     derive_new::new,
+    Builder,
 )]
 pub struct Highlight<L> {
     /// Represents a region in the source code involved in the diagnostic
@@ -75,6 +77,7 @@ pub struct Highlight<L> {
     pub span: Span<L>,
 
     /// The additional message to display at the highlighted region.
+    #[builder(into)]
     pub message: Option<String>,
 }
 
@@ -91,24 +94,29 @@ pub struct Highlight<L> {
     Serialize,
     Deserialize,
     StableHash,
+    Builder,
 )]
 pub struct Diagnostic<L> {
     /// The span location where the diagnostic occurred.
     pub primary_highlight: Option<Highlight<L>>,
 
     /// The message to display to the user.
+    #[builder(into)]
     pub message: String,
 
     /// The severity of the diagnostic.
+    #[builder(default = Severity::Error)]
     pub severity: Severity,
 
     /// The optional help message to display to the user. This will be
     /// displayed alongside the main message.
+    #[builder(into)]
     pub help_message: Option<String>,
 
     /// List of related useful information to display to the user.
     ///
     /// For example, for unimplemented methods, this could be a list of
     /// methods that need to be implemented.
+    #[builder(default = Vec::new())]
     pub related: Vec<Highlight<L>>,
 }

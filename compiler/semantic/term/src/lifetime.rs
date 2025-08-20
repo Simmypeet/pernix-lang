@@ -1,14 +1,17 @@
 //! Contains the definition of [`Lifetime`] term.
 
+use std::fmt::Write;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
     constant::Constant,
     error::Error,
-    generic_parameters::LifetimeParameterID,
+    generic_parameters::{get_generic_parameters, LifetimeParameterID},
     inference::Inference,
     matching::{Match, Matching, Substructural},
     r#type::Type,
@@ -172,5 +175,38 @@ impl Match for Lifetime {
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         &mut substructural.lifetimes
+    }
+}
+
+impl crate::display::Display for Lifetime {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Parameter(member_id) => {
+                let generic_parameters = engine
+                    .get_generic_parameters(member_id.parent_id)
+                    .await
+                    .unwrap();
+
+                write!(
+                    formatter,
+                    "'{}",
+                    generic_parameters.lifetimes()[member_id.id].name
+                )
+            }
+
+            Self::Forall(forall) => match forall {
+                Forall::Named(named_forall) => {
+                    todo!()
+                }
+            },
+
+            Self::Static => write!(formatter, "'static"),
+
+            Self::Inference(_) | Self::Error(_) | Self::Erased => Ok(()),
+        }
     }
 }

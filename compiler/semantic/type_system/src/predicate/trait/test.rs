@@ -40,8 +40,8 @@ async fn single_implementation() {
         pointee: Box::new(tuple_with_i32.clone()),
     });
 
-    let implements_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(0));
-    let trait_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(1));
+    let implements_id = Global::new(TargetID::TEST, pernixc_symbol::ID(0));
+    let trait_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
 
     let mut engine = Arc::new(Engine::default());
 
@@ -183,10 +183,9 @@ async fn single_implementation() {
 #[allow(clippy::too_many_lines)]
 async fn specialization_test_internal(case: SpecializationCase) {
     let specialized_impl_id =
-        Global::new(TargetID::Extern(1), pernixc_symbol::ID(0));
-    let general_impl_id =
-        Global::new(TargetID::Extern(1), pernixc_symbol::ID(1));
-    let trait_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(2));
+        Global::new(TargetID::TEST, pernixc_symbol::ID(0));
+    let general_impl_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
+    let trait_id = Global::new(TargetID::TEST, pernixc_symbol::ID(2));
 
     let mut engine = Arc::new(Engine::default());
 
@@ -213,10 +212,8 @@ async fn specialization_test_internal(case: SpecializationCase) {
             pernixc_term::where_clause::Key(specialized_impl_id),
             if let SpecializationCase::SpecializedButFallback(ty) = &case {
                 Arc::from([{
-                    let impossible_trait_id = Global::new(
-                        TargetID::Extern(1),
-                        pernixc_symbol::ID(10),
-                    );
+                    let impossible_trait_id =
+                        Global::new(TargetID::TEST, pernixc_symbol::ID(10));
 
                     x.set_input(
                         pernixc_symbol::kind::Key(impossible_trait_id),

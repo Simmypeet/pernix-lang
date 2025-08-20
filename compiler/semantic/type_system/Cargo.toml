@@ -14,6 +14,8 @@ pernixc_arena = { path = "../../base/arena" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_diagnostic = { path = "../../base/diagnostic" }
+pernixc_source_file = { path = "../../base/source_file" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_term = { path = "../term" }

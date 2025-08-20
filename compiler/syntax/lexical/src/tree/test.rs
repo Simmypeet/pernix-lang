@@ -15,8 +15,8 @@ use crate::{
 fn basic_delimiter() {
     let source = "+ { - } *";
     let source_map = SourceMap::default();
-    let source_id = TargetID::Local.make_global(source_map.register(
-        TargetID::Local,
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
         SourceFile::new(source.to_string(), "test".into()),
     ));
 
@@ -73,8 +73,8 @@ fn basic_indentation() {
     let source: &str = "+:\n\t-\n*";
 
     let source_map = SourceMap::default();
-    let source_id = TargetID::Local.make_global(source_map.register(
-        TargetID::Local,
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
         SourceFile::new(source.to_string(), "test".into()),
     ));
 
@@ -135,8 +135,8 @@ const NESTED_SINGLE_POP_INDENTATION: &str = "+:
 #[test]
 fn nested_single_pop_indentation() {
     let source_map = SourceMap::default();
-    let source_id = TargetID::Local.make_global(source_map.register(
-        TargetID::Local,
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
         SourceFile::new(
             NESTED_SINGLE_POP_INDENTATION.to_string(),
             "test".into(),
@@ -228,8 +228,8 @@ const NESTED_MULTI_POP_INDENTATION: &str = "+:
 #[test]
 fn nested_multi_pop_indentation() {
     let source_map = SourceMap::default();
-    let source_id = TargetID::Local.make_global(source_map.register(
-        TargetID::Local,
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
         SourceFile::new(
             NESTED_MULTI_POP_INDENTATION.to_string(),
             "test".into(),
@@ -330,8 +330,8 @@ const INDENTATION_POP_IN_DELIMITER: &str = ":
 #[test]
 fn indentation_pop_in_delimiter() {
     let source_map = SourceMap::default();
-    let source_id = TargetID::Local.make_global(source_map.register(
-        TargetID::Local,
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
         SourceFile::new(
             INDENTATION_POP_IN_DELIMITER.to_string(),
             "test".into(),
@@ -414,8 +414,8 @@ const INDENTATION_POP_ALL_AT_END: &str = ":
 #[test]
 fn indentation_pop_all_at_end() {
     let source_map = SourceMap::default();
-    let source_id = TargetID::Local.make_global(source_map.register(
-        TargetID::Local,
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
         SourceFile::new(INDENTATION_POP_ALL_AT_END.to_string(), "test".into()),
     ));
 
@@ -475,8 +475,8 @@ const UNCLOSED_DELIMITER: &str = "-([{}";
 #[test]
 fn unclosed_delimiter() {
     let source_map = SourceMap::default();
-    let source_id = TargetID::Local.make_global(source_map.register(
-        TargetID::Local,
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
         SourceFile::new(UNCLOSED_DELIMITER.to_string(), "test".into()),
     ));
 
@@ -556,8 +556,8 @@ fn stable_hash_id() {
 
     fn get_hash(str: &str) -> ID<Branch> {
         let source_map = SourceMap::default();
-        let source_id = TargetID::Local.make_global(source_map.register(
-            TargetID::Local,
+        let source_id = TargetID::TEST.make_global(source_map.register(
+            TargetID::TEST,
             SourceFile::new(str.to_string(), "test".into()),
         ));
 
@@ -589,8 +589,8 @@ fn verify_tree(input: &arbitrary::Nodes) -> TestCaseResult {
 
     let source_file = SourceFile::new(source, "test".into());
 
-    let id = source_map.register(TargetID::Local, source_file);
-    let id = TargetID::Local.make_global(id);
+    let id = source_map.register(TargetID::TEST, source_file);
+    let id = TargetID::TEST.make_global(id);
 
     let storage = Storage::<Error>::new();
     let tree = super::Tree::from_source(

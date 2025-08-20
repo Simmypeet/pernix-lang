@@ -31,7 +31,7 @@ fn basic_subtyping(#[case] variance: Variance) {
         // Variance::Covariant: &'a bool :> &'static bool then 'a: 'static
 
         let a_lt = Lifetime::Parameter(LifetimeParameterID {
-            parent_id: Global::new(TargetID::Extern(1), pernixc_symbol::ID(1)),
+            parent_id: Global::new(TargetID::TEST, pernixc_symbol::ID(1)),
             id: pernixc_arena::ID::new(0),
         });
         let static_lt = Lifetime::Static;
@@ -116,8 +116,8 @@ fn basic_subtyping(#[case] variance: Variance) {
 #[case(Variance::Invariant)]
 fn subtyping_with_adt(#[case] variance: Variance) {
     let test = async move {
-        let global_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(1));
-        let adt_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(2));
+        let global_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
+        let adt_id = Global::new(TargetID::TEST, pernixc_symbol::ID(2));
 
         let a_lt = Lifetime::Parameter(LifetimeParameterID {
             parent_id: global_id,
@@ -228,7 +228,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
 async fn subtyping_with_mutable_reference() {
     // &'a mutable &'b bool == &'c mutable &'d bool
 
-    let global_id = Global::new(TargetID::Extern(1), pernixc_symbol::ID(1));
+    let global_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
     let a_lt = Lifetime::Parameter(LifetimeParameterID {
         parent_id: global_id,
         id: pernixc_arena::ID::new(0),
