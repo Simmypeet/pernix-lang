@@ -7,11 +7,12 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_stable_hash = { path = "../stable_hash" }
 pernixc_query_derive = { path = "../query_derive" }
-pernixc_stable_type_id = { path = "../../base/stable_type_id" }
-pernixc_serialize = { path = "../../base/serialize" }
-pernixc_hash = { path = "../../base/hash" }
+pernixc_stable_type_id = { path = "../stable_type_id" }
+pernixc_serialize = { path = "../serialize" }
+pernixc_hash = { path = "../hash" }
+pernixc_tokio = { path = "../tokio" }
 parking_lot = { workspace = true }
 smallbox = { workspace = true }
 getset = { workspace = true }

@@ -5,6 +5,7 @@ use std::{
     borrow::Borrow,
     fmt::Debug,
     hash::Hash,
+    ops::Deref,
     pin::Pin,
     sync::{
         atomic::{AtomicBool, AtomicU64},
@@ -18,6 +19,7 @@ use getset::CopyGetters;
 use parking_lot::RwLock;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_type_id::StableTypeID;
+use pernixc_tokio::scoped;
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tokio::sync::Notify;
@@ -36,12 +38,26 @@ mod input;
 
 pub use input::{SetInputLock, SetInputResult};
 
+#[derive(Debug, Clone, EnumAsInner, Serialize, Deserialize)]
+#[serde(
+    ser_extension(DynamicSerialize<__S>),
+    de_extension(DynamicDeserialize<__D>)
+)]
+enum DependencyExecution {
+    /// Reverify the query in a single threaded order manner
+    Single(DynamicKey),
+
+    /// All of the dependencies can be reverified in parallel, out-of-order.
+    Multithread(Vec<DynamicKey>),
+}
+
 #[derive(Debug)]
 struct Running {
     notify: Arc<Notify>,
-    dependencies_order: RwLock<Vec<DynamicKey>>,
+    dependencies_order: RwLock<Vec<DependencyExecution>>,
     dependencies_set: DashSet<DynamicKey>,
     is_in_scc: AtomicBool,
+    is_in_parallel: bool,
 }
 
 #[derive(
@@ -59,7 +75,7 @@ pub(crate) struct DerivedVersionInfo {
 #[serde(ser_extension(DynamicSerialize<__S>), de_extension(DynamicDeserialize<__D>))]
 pub(crate) struct DerivedMetadata {
     version_info: DerivedVersionInfo,
-    dependencies: Arc<[DynamicKey]>,
+    dependencies: Arc<[DependencyExecution]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,6 +201,66 @@ impl TrackedEngine {
 
         Ok(value)
     }
+
+    /// Marks the beginning of a parallel query execution.
+    ///
+    /// This should not be used for 99% of queries.
+    ///
+    /// This is purely for optimization in a very specific case that tells the
+    /// engine that; any queries after this point when are verified in the next
+    /// database tick, he query-engine can reverify the queries in parallel
+    /// out-of-order.
+    pub unsafe fn start_parallel(&self) {
+        let mut running = self
+            .engine
+            .database
+            .query_states_by_key
+            .get_mut(
+                &*self
+                    .called_from
+                    .as_ref()
+                    .expect("should be inside a running executor")
+                    .0 as &dyn Dynamic,
+            )
+            .expect("shold exist");
+
+        let running = running
+            .as_running_mut()
+            .expect("should be in a running query state");
+
+        assert!(!running.is_in_parallel, "nesting parallel isn't supported");
+
+        running.is_in_parallel = true;
+
+        running
+            .dependencies_order
+            .write()
+            .push(DependencyExecution::Multithread(Vec::new()));
+    }
+
+    /// Marks the end of a parallel query execution.
+    pub unsafe fn end_parallel(&self) {
+        let mut running = self
+            .engine
+            .database
+            .query_states_by_key
+            .get_mut(
+                &*self
+                    .called_from
+                    .as_ref()
+                    .expect("should be inside a running executor")
+                    .0 as &dyn Dynamic,
+            )
+            .expect("shold exist");
+
+        let running = running
+            .as_running_mut()
+            .expect("should be in a running query state");
+
+        assert!(running.is_in_parallel, "not in a parallel query state");
+
+        running.is_in_parallel = false;
+    }
 }
 
 enum FastPathDecision<V> {
@@ -203,6 +279,18 @@ enum SlowPathDecision<V> {
 struct ReVerify {
     derived_metadata: DerivedMetadata,
     value_store: Option<DynamicValue>,
+}
+
+impl Clone for ReVerify {
+    fn clone(&self) -> Self {
+        Self {
+            value_store: self
+                .value_store
+                .as_ref()
+                .map(|x| x.deref().boxed_clone()),
+            derived_metadata: self.derived_metadata.clone(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -565,6 +653,7 @@ impl Engine {
                             dependencies_order: RwLock::default(),
                             dependencies_set: DashSet::default(),
                             is_in_scc: AtomicBool::new(false),
+                            is_in_parallel: false,
                         });
 
                         SlowPathDecision::Continuation(continuation, notify)
@@ -619,6 +708,7 @@ impl Engine {
                                 dependencies_order: RwLock::default(),
                                 dependencies_set: DashSet::default(),
                                 is_in_scc: AtomicBool::new(false),
+                                is_in_parallel: false,
                             }));
 
                             return SlowPathDecision::Continuation(
@@ -654,6 +744,7 @@ impl Engine {
                         dependencies_order: RwLock::default(),
                         dependencies_set: DashSet::default(),
                         is_in_scc: AtomicBool::new(false),
+                        is_in_parallel: false,
                     }));
 
                     // the value is not up-to-date, need to re-verify it
@@ -676,6 +767,7 @@ impl Engine {
                     dependencies_order: RwLock::default(),
                     dependencies_set: DashSet::default(),
                     is_in_scc: AtomicBool::new(false),
+                    is_in_parallel: false,
                 }));
 
                 tracing::debug!(
@@ -727,7 +819,7 @@ impl Engine {
         return_value: bool,
         set_completed: impl FnOnce(
             Result<&K::Value, CyclicError>,
-            Vec<DynamicKey>,
+            Vec<DependencyExecution>,
         ) -> (DerivedMetadata, bool),
     ) -> Option<K::Value> {
         let cache = Arc::new(DashMap::default());
@@ -880,6 +972,83 @@ impl Engine {
         return_value
     }
 
+    async fn reverify_single_dependency<K: Key>(
+        self: &Arc<Self>,
+        re_verify: &ReVerify,
+        key: &K,
+        current_version: u64,
+        dependency: &DynamicKey,
+    ) -> bool {
+        tracing::debug!(
+            "Start re-verifying dependency `{}` `{:?} for `{}` `{key:?}`",
+            dependency.0.type_name(),
+            dependency.0,
+            key.type_name(),
+        );
+
+        let dep_ref = &*dependency.0;
+        let type_id = dep_ref.any().type_id();
+
+        // if the dependency is an input, skip
+        // re-verification
+        if !self.database.query_states_by_key.get(dependency).is_some_and(|x| {
+            x.as_completion().is_some_and(|x| x.metadata.is_input())
+        }) {
+            let re_verify_query = self
+                .runtime
+                .executor
+                .get_entry_with_id(type_id)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "No executor registered for key type `{}`",
+                        dep_ref.type_name()
+                    )
+                })
+                .get_re_verify_query();
+
+            let _ = (re_verify_query)(
+                self,
+                dep_ref.any(),
+                current_version,
+                key as &dyn Dynamic,
+            )
+            .await;
+        }
+
+        tracing::debug!(
+            "Re-verification completed dependency `{}` `{:?} for `{}` \
+             `{key:?}`",
+            dep_ref.type_name(),
+            dep_ref,
+            key.type_name(),
+        );
+
+        if let Some(state) = self.database.query_states_by_key.get(dependency) {
+            let updated_at = state
+                .as_completion()
+                .expect("should be completion since it was re-verified")
+                .metadata
+                .updated_at();
+            let key_verified_at =
+                re_verify.derived_metadata.version_info.verified_at;
+
+            if updated_at > key_verified_at {
+                tracing::info!(
+                    "Re-verification of `{}` `{key:?}` is required since \
+                     dependency `{}` `{:?}` has been updated; dependency was \
+                     updated at `{updated_at}` but the key was verified at \
+                     `{key_verified_at}`",
+                    key.type_name(),
+                    dependency.0.type_name(),
+                    dependency.0,
+                );
+                return true;
+            }
+        }
+
+        false
+    }
+
     async fn need_recompute<K: Key>(
         self: &Arc<Self>,
         re_verify: &ReVerify,
@@ -889,70 +1058,53 @@ impl Engine {
         // Sadly, rayon thread pool is not applicable as it could
         // cause thread pool starvation deadlocks.
         for x in re_verify.derived_metadata.dependencies.as_ref() {
-            tracing::debug!(
-                "Start re-verifying dependency `{}` `{:?} for `{}` `{key:?}`",
-                x.0.type_name(),
-                x.0,
-                key.type_name(),
-            );
-
-            let dep_ref = &*x.0;
-            let type_id = dep_ref.any().type_id();
-
-            // if the dependency is an input, skip
-            // re-verification
-            if !self.database.query_states_by_key.get(x).is_some_and(|x| {
-                x.as_completion().is_some_and(|x| x.metadata.is_input())
-            }) {
-                let re_verify_query = self
-                    .runtime
-                    .executor
-                    .get_entry_with_id(type_id)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "No executor registered for key type `{}`",
-                            dep_ref.type_name()
+            match x {
+                DependencyExecution::Single(x) => {
+                    if self
+                        .reverify_single_dependency(
+                            re_verify,
+                            key,
+                            current_version,
+                            x,
                         )
-                    })
-                    .get_re_verify_query();
+                        .await
+                    {
+                        return true;
+                    }
+                }
+                DependencyExecution::Multithread(items) => {
+                    let value = scoped!(|handles| async move {
+                        for dep in items {
+                            // everything here should be cheaply cloneable
+                            let re_verify = re_verify.clone();
+                            let key = key.clone();
+                            let engine = self.clone();
+                            let dep = dep.clone();
 
-                let _ = (re_verify_query)(
-                    self,
-                    dep_ref.any(),
-                    current_version,
-                    key as &dyn Dynamic,
-                )
-                .await;
-            }
+                            handles.spawn(async move {
+                                engine
+                                    .reverify_single_dependency(
+                                        &re_verify,
+                                        &key,
+                                        current_version,
+                                        &dep,
+                                    )
+                                    .await
+                            });
+                        }
 
-            tracing::debug!(
-                "Re-verification completed dependency `{}` `{:?} for `{}` \
-                 `{key:?}`",
-                dep_ref.type_name(),
-                dep_ref,
-                key.type_name(),
-            );
+                        while let Some(handle) = handles.next().await {
+                            if handle {
+                                return true;
+                            }
+                        }
 
-            if let Some(state) = self.database.query_states_by_key.get(x) {
-                let updated_at = state
-                    .as_completion()
-                    .expect("should be completion since it was re-verified")
-                    .metadata
-                    .updated_at();
-                let key_verified_at =
-                    re_verify.derived_metadata.version_info.verified_at;
+                        false
+                    });
 
-                if updated_at > key_verified_at {
-                    tracing::info!(
-                        "Re-verification of `{}` `{key:?}` is required since \
-                         dependency `{}` `{:?}` has been updated; dependency \
-                         was updated at `{updated_at}` but the key was \
-                         verified at `{key_verified_at}`",
-                        key.type_name(),
-                        x.0.type_name(),
-                        x.0,
-                    );
-                    return true;
+                    if value {
+                        return true;
+                    }
                 }
             }
         }
@@ -1321,10 +1473,23 @@ impl Engine {
                     key.type_name(),
                     called_from.type_name(),
                 );
-                running
-                    .dependencies_order
-                    .write()
-                    .push(DynamicKey(key.smallbox_clone()));
+
+                if running.is_in_parallel {
+                    running
+                        .dependencies_order
+                        .write()
+                        .last_mut()
+                        .unwrap()
+                        .as_multithread_mut()
+                        .unwrap()
+                        .push(DynamicKey(key.smallbox_clone()));
+                } else {
+                    running.dependencies_order.write().push(
+                        DependencyExecution::Single(DynamicKey(
+                            key.smallbox_clone(),
+                        )),
+                    );
+                }
                 running
                     .dependencies_set
                     .insert(DynamicKey(key.smallbox_clone()));
@@ -1500,9 +1665,12 @@ impl Hash for dyn Dynamic + '_ {
 pub(super) trait Value:
     Any + Send + Sync + std::fmt::Debug + 'static
 {
+    fn boxed_clone(&self) -> DynamicValue;
 }
 
-impl<T: Any + Send + Sync + std::fmt::Debug + 'static> Value for T {}
+impl<T: Any + Send + Sync + Clone + std::fmt::Debug + 'static> Value for T {
+    fn boxed_clone(&self) -> DynamicValue { smallbox::smallbox!(self.clone()) }
+}
 
 impl Drop for Database {
     fn drop(&mut self) {

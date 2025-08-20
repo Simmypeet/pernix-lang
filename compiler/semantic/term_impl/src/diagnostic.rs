@@ -64,6 +64,11 @@ pub async fn all_rendered_executor(
         let mut diagnostics = Vec::new();
         let all_ids = engine.all_symbol_ids(id).await;
 
+        /// SAFETY: the spawned tasks are independent and do not access shared
+        /// state therefore they can be safely parallelly re-verified.
+        unsafe {
+            engine.start_parallel();
+        }
         for id in all_ids.iter().map(|x| Global::new(id, *x)) {
             let engine = engine.clone();
             handles.spawn(
@@ -73,6 +78,10 @@ pub async fn all_rendered_executor(
 
         while let Some(handle) = handles.next().await {
             diagnostics.push(handle?);
+        }
+
+        unsafe {
+            engine.end_parallel();
         }
 
         Ok(diagnostics.into())
