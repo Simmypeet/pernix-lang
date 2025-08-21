@@ -2,8 +2,8 @@
 
 use std::{
     any::Any,
-    borrow::Borrow,
     cell::RefCell,
+    fmt::Debug,
     io::{BufReader, BufWriter, Cursor},
     path::PathBuf,
     sync::Arc,
@@ -18,13 +18,14 @@ use pernixc_serialize::{
 };
 use pernixc_stable_type_id::StableTypeID;
 use rand::Rng;
-use redb::{Result, TableDefinition, TableHandle};
+use redb::Result;
 use tracing::instrument;
 
 use crate::{
     database::ValueMetadata,
     runtime::persistence::{
-        background::{SaveTask, Table},
+        backend::{Backend, Table},
+        background::SaveTask,
         serde::{DynamicDeserialize, DynamicSerialize},
     },
     Engine, Key,
@@ -32,6 +33,7 @@ use crate::{
 
 pub mod serde;
 
+mod backend;
 mod background;
 
 impl Engine {
@@ -116,14 +118,6 @@ impl Engine {
         persistence.save_value::<K>(fingerprint, value);
     }
 }
-
-/// Table definition for the query value cache. The key is a tuple of
-/// `STABLE_TYPE_ID` of the key and fingerprint of the value.
-const VALUE_CACHE: TableDefinition<(u128, u128), &[u8]> =
-    TableDefinition::new("value_cache");
-
-const VALUE_METADATA: TableDefinition<(u128, u128), &[u8]> =
-    TableDefinition::new("value_metadata");
 
 /// Enumeration of writer that will be used throughout the persistence
 /// system.
@@ -239,12 +233,21 @@ impl std::io::Read for Reader {
         self
     }
 }
+fn to_byte_key<K: Key>(key_hash: u128) -> [u8; 32] {
+    let mut key_bytes = [0u8; 32];
+
+    // first 128, is stable type id 128
+    key_bytes[..16].copy_from_slice(&K::STABLE_TYPE_ID.as_u128().to_le_bytes());
+    // last 128, is key hash
+    key_bytes[16..].copy_from_slice(&key_hash.to_le_bytes());
+
+    key_bytes
+}
 
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
-pub struct Persistence {
-    database: Arc<redb::Database>,
-    read_transaction: Option<redb::ReadTransaction>,
+pub struct Persistence<B = backend::redb::RedbBackend> {
+    database: B,
 
     background_writer: RwLock<Option<background::Worker>>,
 
@@ -284,7 +287,7 @@ pub struct Persistence {
     serde_extension: Arc<dyn std::any::Any + Send + Sync>,
 }
 
-impl std::fmt::Debug for Persistence {
+impl<B: Debug> std::fmt::Debug for Persistence<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Persistence")
             .field("database", &self.database)
@@ -375,10 +378,9 @@ thread_local! {
     static BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-impl Persistence {
-    const DATABASE_FILE: &'static str = "persistence.db";
-    const VERSION_SNAPSHOT_FILE: &'static str = "version_snapshot.db";
+const VERSION_SNAPSHOT_FILE: &str = "version_snapshot.db";
 
+impl<B: Backend> Persistence<B> {
     /// Creates a new instance of [`Persistence`] with the specified path where
     /// the database is stored and the serde extension where the types that will
     /// be serialized and deserialized are registered.
@@ -393,61 +395,8 @@ impl Persistence {
         directory_path: PathBuf,
         serde_extension: Arc<E>,
     ) -> Result<Self, std::io::Error> {
-        // ensure the path is directory
-        if directory_path.exists() {
-            if !directory_path.is_dir() {
-                return Err(std::io::Error::other(format!(
-                    "Path {} is not a directory",
-                    directory_path.display(),
-                )));
-            }
-        }
-        // ensure the folder exists
-        else {
-            std::fs::create_dir_all(&directory_path)?;
-        }
-
-        let database_path = directory_path.join(Self::DATABASE_FILE);
-        let database = redb::Database::create(&database_path).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to create database at path {}: {e}",
-                database_path.display()
-            ))
-        })?;
-
-        // create the tables if they do not exist
-        let write = database.begin_write().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to begin write transaction: {e}",
-            ))
-        })?;
-
-        write.open_table(VALUE_CACHE).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to open table {}: {e}",
-                VALUE_CACHE.name()
-            ))
-        })?;
-        write.open_table(VALUE_METADATA).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to open table {}: {e}",
-                VALUE_METADATA.name()
-            ))
-        })?;
-
-        write.commit().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to commit write transaction: {e}",
-            ))
-        })?;
-
         Ok(Self {
-            read_transaction: Some(database.begin_read().map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to begin read transaction: {e}",
-                ))
-            })?),
-            database: Arc::new(database),
+            database: B::create(&directory_path)?,
 
             background_writer: RwLock::new(None),
 
@@ -469,53 +418,45 @@ impl Persistence {
         self.skip_keys.insert(K::STABLE_TYPE_ID);
     }
 
-    fn load_from_table<K: redb::Key, Q: for<'k> Borrow<K::SelfType<'k>>, V>(
-        read: &redb::ReadTransaction,
-        table_def: TableDefinition<'static, K, &'static [u8]>,
-        key: Q,
+    fn load_from_table<K: Key, V>(
+        &self,
+        table: backend::Table,
+        key: u128,
         deserialize: impl FnOnce(
             &mut BinaryDeserializer<Reader>,
         ) -> Result<V, std::io::Error>,
     ) -> Result<Option<V>, std::io::Error> {
-        let read = read.open_table(table_def).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to open table {}: {e}",
-                table_def.name()
-            ))
-        })?;
+        let key_bytes = to_byte_key::<K>(key);
 
-        let value = if let Some(value_access) = read.get(key).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to get value from table: {e}",
-            ))
-        })? {
-            let mut buffer =
-                BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
+        let mut buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
+        buffer.clear();
 
-            buffer.clear();
-            buffer.extend_from_slice(value_access.value());
+        let result = match self.database.read(table, &key_bytes, &mut buffer) {
+            Ok(true) => {
+                let reader = Reader::Vec(Cursor::new(buffer));
+                let mut deserializer = BinaryDeserializer::new(reader);
 
-            let reader = Reader::Vec(Cursor::new(buffer));
-            let mut deserializer = BinaryDeserializer::new(reader);
+                let value = deserialize(&mut deserializer)?;
 
-            let value = deserialize(&mut deserializer)?;
+                buffer =
+                    deserializer.into_inner().into_vec().unwrap().into_inner();
 
-            let mut buffer =
-                deserializer.into_inner().into_vec().unwrap().into_inner();
+                Ok(Some(value))
+            }
 
-            BUFFER.with(|b| {
-                // clear the buffer but keep the allocated memory
-                buffer.clear();
+            Ok(false) => Ok(None),
 
-                *b.borrow_mut() = buffer;
-            });
-
-            Ok(Some(value))
-        } else {
-            Ok(None)
+            Err(err) => Err(err),
         };
 
-        value
+        BUFFER.with(|b| {
+            // clear the buffer but keep the allocated memory
+            buffer.clear();
+
+            *b.borrow_mut() = buffer;
+        });
+
+        result
     }
 
     #[allow(unused)]
@@ -557,8 +498,8 @@ impl Persistence {
         let serde_extension = self.serde_extension.clone();
 
         self.ensure_background_writer().new_save_task(SaveTask {
-            key: (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
-            table: Table::Value,
+            key: to_byte_key::<K>(value_fingerprint),
+            table: Table::ValueCache,
             write: Box::new(move |buffer| {
                 let _span = tracing::info_span!(
                     "save_value",
@@ -610,8 +551,8 @@ impl Persistence {
         let serde_extension = self.serde_extension.clone();
 
         self.ensure_background_writer().new_save_task(SaveTask {
-            key: (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
-            table: Table::Metadata,
+            key: to_byte_key::<K>(key_fingerprint),
+            table: Table::ValueMetadata,
             write: Box::new(move |buffer| {
                 let _span = tracing::info_span!(
                     "save_value_metadata",
@@ -663,10 +604,9 @@ impl Persistence {
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<ValueMetadata>, std::io::Error> {
-        Self::load_from_table(
-            self.read_transaction.as_ref().unwrap(),
-            VALUE_METADATA,
-            (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
+        self.load_from_table::<K, ValueMetadata>(
+            backend::Table::ValueCache,
+            key_fingerprint,
             |deserializer| {
                 (self.deserialize_value_metadata)(
                     deserializer,
@@ -692,10 +632,9 @@ impl Persistence {
             return Ok(None);
         }
 
-        Self::load_from_table(
-            self.read_transaction.as_ref().unwrap(),
-            VALUE_CACHE,
-            (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
+        self.load_from_table::<K, K::Value>(
+            backend::Table::ValueCache,
+            value_fingerprint,
             |deserializer| {
                 let mut buffer: Option<K::Value> = None;
 
@@ -726,7 +665,10 @@ impl Persistence {
 
             let mut with_writer = self.background_writer.write();
             if with_writer.as_mut().is_none() {
-                with_writer.replace(background::Worker::new(2, &self.database));
+                with_writer.replace(background::Worker::new(
+                    2,
+                    self.database.background_writer(),
+                ));
             }
         }
     }
@@ -738,12 +680,9 @@ impl Persistence {
             tracing::info_span!("commit persistence database").entered();
 
         self.background_writer.write().take();
-
-        self.read_transaction = Some(
-            self.database
-                .begin_read()
-                .expect("Failed to begin read transaction"),
-        );
+        self.database
+            .refresh_read()
+            .expect("Failed to refresh read transaction");
     }
 }
 
@@ -757,7 +696,7 @@ impl Engine {
         };
 
         let file = std::fs::File::create(
-            persistence.directory_path.join(Persistence::VERSION_SNAPSHOT_FILE),
+            persistence.directory_path.join(VERSION_SNAPSHOT_FILE),
         )?;
 
         persistence.commit();
@@ -777,7 +716,7 @@ impl Persistence {
         &self,
     ) -> Result<crate::database::Database, std::io::Error> {
         let snapshot_file_path =
-            self.directory_path.join(Self::VERSION_SNAPSHOT_FILE);
+            self.directory_path.join(VERSION_SNAPSHOT_FILE);
 
         let (random_seed, version) = if snapshot_file_path.exists() {
             let file = std::fs::File::open(&snapshot_file_path)?;

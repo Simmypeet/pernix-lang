@@ -8,45 +8,30 @@ use crossbeam::{
     utils::Backoff,
 };
 use parking_lot::RwLock;
-use redb::{TableDefinition, WriteTransaction};
 
-/// Determines which table to save the value metadata to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(super) enum Table {
-    Value,
-    Metadata,
-}
-
-impl Table {
-    pub const fn definition(
-        self,
-    ) -> TableDefinition<'static, (u128, u128), &'static [u8]> {
-        match self {
-            Self::Value => super::VALUE_CACHE,
-            Self::Metadata => super::VALUE_METADATA,
-        }
-    }
-}
+use crate::runtime::persistence::backend::{
+    BackgroundWriter, Table, WriteTransaction, Writer,
+};
 
 #[allow(clippy::type_complexity)]
 pub struct SaveTask {
-    pub(super) key: (u128, u128),
+    pub(super) key: [u8; 32],
     pub(super) table: Table,
     pub(super) write: Box<dyn FnOnce(&mut Vec<u8>) -> bool + Send>,
 }
 
-pub struct Committer {
+pub struct Committer<B> {
     buffer_pool: RwLock<VecDeque<Vec<u8>>>,
-    database: Arc<redb::Database>,
+    database: B,
 }
 
 pub struct CommitTask {
     buffer: Vec<u8>,
     table: Table,
-    key: (u128, u128),
+    key: [u8; 32],
 }
 
-impl Committer {
+impl<B> Committer<B> {
     pub fn get_serialize_buffer(&self) -> Vec<u8> {
         let buffer = self.buffer_pool.write().pop_front();
 
@@ -70,12 +55,12 @@ pub struct Worker {
 }
 
 impl Worker {
-    pub fn new(worker_count: usize, database: &Arc<redb::Database>) -> Self {
+    pub fn new<B: BackgroundWriter>(worker_count: usize, database: B) -> Self {
         let injector = Arc::new(Injector::new());
         let shutdown = Arc::new(AtomicBool::new(false));
         let committer = Arc::new(Committer {
             buffer_pool: RwLock::new(VecDeque::default()),
-            database: database.clone(),
+            database,
         });
         let (send_commit, recv_commit) = std::sync::mpsc::channel();
 
@@ -139,24 +124,22 @@ impl Worker {
         }
     }
 
-    fn insert_task(
-        committer: &Committer,
-        write_transaction: &mut WriteTransaction,
+    fn insert_task<B: BackgroundWriter>(
+        committer: &Committer<B>,
+        write_transaction: &mut B::Transaction<'_>,
         task: CommitTask,
     ) {
-        let mut table = write_transaction
-            .open_table(task.table.definition())
-            .expect("Failed to open table");
+        let mut table = write_transaction.write(task.table);
 
         table
-            .insert(task.key, task.buffer.as_slice())
+            .insert(&task.key, task.buffer.as_slice())
             .expect("Failed to insert into table");
 
         committer.return_buffer(task.buffer);
     }
 
-    fn commit_worker_loop(
-        committer: &Committer,
+    fn commit_worker_loop<B: BackgroundWriter>(
+        committer: &Committer<B>,
         recv: &std::sync::mpsc::Receiver<CommitTask>,
     ) {
         loop {
@@ -168,10 +151,8 @@ impl Worker {
 
             let mut count = 1;
 
-            let mut write_transaction = committer
-                .database
-                .begin_write()
-                .expect("Failed to begin write transaction");
+            let mut write_transaction =
+                committer.database.new_write_transaction();
 
             Self::insert_task(committer, &mut write_transaction, first_task);
 
@@ -191,12 +172,12 @@ impl Worker {
         }
     }
 
-    fn serialize_worker_loop(
+    fn serialize_worker_loop<B: BackgroundWriter>(
         local: &crossbeam::deque::Worker<SaveTask>,
         global: &Injector<SaveTask>,
         stealers: &[Stealer<SaveTask>],
         shutdown: &AtomicBool,
-        committer: &Committer,
+        committer: &Committer<B>,
         send_commit: &std::sync::mpsc::Sender<CommitTask>,
     ) {
         let backoff = Backoff::new();
@@ -244,9 +225,9 @@ impl Worker {
         }
     }
 
-    fn process_task(
+    fn process_task<B: BackgroundWriter>(
         task: SaveTask,
-        committer: &Committer,
+        committer: &Committer<B>,
         mut buffer_frame: Vec<u8>,
         send_commit: &std::sync::mpsc::Sender<CommitTask>,
     ) {
