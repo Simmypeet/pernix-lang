@@ -106,6 +106,14 @@ impl super::Backend for FjallBackend {
     }
 
     fn refresh_read(&mut self) -> std::io::Result<()> { Ok(()) }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.keyspace.persist(fjall::PersistMode::SyncAll).map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to flush Fjall database: {e}"
+            ))
+        })
+    }
 }
 
 #[derive(Debug, Clone)]

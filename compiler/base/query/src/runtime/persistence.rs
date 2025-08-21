@@ -236,7 +236,7 @@ impl std::io::Read for Reader {
 
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
-pub struct Persistence<B = backend::redb::RedbBackend> {
+pub struct Persistence<B = backend::fjall::FjallBackend> {
     database: B,
 
     background_writer: RwLock<Option<background::Worker>>,
@@ -687,6 +687,8 @@ impl<B: Backend> Persistence<B> {
             tracing::info_span!("commit persistence database").entered();
 
         self.background_writer.write().take();
+        self.database.flush().expect("Failed to flush database");
+
         self.database
             .refresh_read()
             .expect("Failed to refresh read transaction");

@@ -24,6 +24,8 @@ pub trait Backend: Clone {
 
     fn background_writer(&self) -> Self::BackgroundWriter;
 
+    fn flush(&mut self) -> std::io::Result<()>;
+
     fn refresh_read(&mut self) -> std::io::Result<()>;
 
     fn read_owned(

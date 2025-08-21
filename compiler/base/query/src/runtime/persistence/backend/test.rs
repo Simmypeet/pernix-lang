@@ -22,6 +22,7 @@ fn basic_template<B: Backend>() {
 
         transaction.commit().unwrap();
 
+        db.flush().unwrap();
         db.refresh_read().unwrap();
 
         let mut buffer = Vec::new();

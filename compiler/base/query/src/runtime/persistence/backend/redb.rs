@@ -130,6 +130,8 @@ impl super::Backend for RedbBackend {
 
         Ok(())
     }
+
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
 }
 
 #[derive(Debug, Clone)]

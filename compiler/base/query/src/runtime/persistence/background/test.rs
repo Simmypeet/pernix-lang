@@ -31,6 +31,7 @@ fn basic<B: Backend>() {
         // shutting down worker, commit value
         drop(worker);
 
+        db.flush().unwrap();
         db.refresh_read().unwrap();
 
         assert_eq!(

@@ -8,7 +8,7 @@ use crate::{
     fingerprint::fingerprint,
     runtime::persistence::{
         self,
-        backend::{self, Backend},
+        backend::Backend,
         serde::{DynamicRegistry, SelfRegistry},
     },
 };
