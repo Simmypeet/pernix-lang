@@ -166,6 +166,8 @@ impl Worker {
                 Err(std::sync::mpsc::RecvError) => return, /* Exit if the channel is disconnected. */
             };
 
+            let mut count = 1;
+
             let mut write_transaction = committer
                 .database
                 .begin_write()
@@ -178,7 +180,10 @@ impl Worker {
 
             while let Ok(more_task) = recv.try_recv() {
                 Self::insert_task(committer, &mut write_transaction, more_task);
+                count += 1;
             }
+
+            tracing::info!("Committed {} task(s)", count);
 
             write_transaction
                 .commit()
