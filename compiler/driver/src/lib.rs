@@ -403,6 +403,21 @@ pub async fn run(
         diagnostics.len()
     };
 
+    if diagnostic_count != 0 {
+        let diag = codespan_reporting::diagnostic::Diagnostic::error()
+            .with_message(format!(
+                "Compilation aborted due to {diagnostic_count} error(s)"
+            ));
+
+        codespan_reporting::term::emit(
+            err_writer,
+            &report_config,
+            &simple_file,
+            &diag,
+        )
+        .unwrap();
+    }
+
     let mut engine =
         Arc::try_unwrap(engine).expect("Engine should be unique at this point");
 
@@ -420,20 +435,9 @@ pub async fn run(
         return ExitCode::FAILURE;
     }
 
-    if diagnostic_count != 0 {
-        let diag = codespan_reporting::diagnostic::Diagnostic::error()
-            .with_message(format!(
-                "Compilation aborted due to {diagnostic_count} error(s)"
-            ));
-
-        codespan_reporting::term::emit(
-            err_writer,
-            &report_config,
-            &simple_file,
-            &diag,
-        )
-        .unwrap();
+    if diagnostic_count == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
-
-    ExitCode::SUCCESS
 }
