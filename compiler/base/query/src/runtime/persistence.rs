@@ -244,7 +244,6 @@ impl std::io::Read for Reader {
 /// writing and reading the database to and from a storage path.
 pub struct Persistence {
     database: Arc<redb::Database>,
-    read_transaction: Option<redb::ReadTransaction>,
 
     background_writer: RwLock<Option<background::Worker>>,
 
@@ -442,11 +441,6 @@ impl Persistence {
         })?;
 
         Ok(Self {
-            read_transaction: Some(database.begin_read().map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to begin read transaction: {e}",
-                ))
-            })?),
             database: Arc::new(database),
 
             background_writer: RwLock::new(None),
@@ -663,8 +657,14 @@ impl Persistence {
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<ValueMetadata>, std::io::Error> {
+        let read_transaction = self.database.begin_read().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to begin read transaction: {e}",
+            ))
+        })?;
+
         Self::load_from_table(
-            self.read_transaction.as_ref().unwrap(),
+            &read_transaction,
             VALUE_METADATA,
             (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
             |deserializer| {
@@ -692,8 +692,14 @@ impl Persistence {
             return Ok(None);
         }
 
+        let read_transaction = self.database.begin_read().map_err(|e| {
+            std::io::Error::other(format!(
+                "Failed to begin read transaction: {e}",
+            ))
+        })?;
+
         Self::load_from_table(
-            self.read_transaction.as_ref().unwrap(),
+            &read_transaction,
             VALUE_CACHE,
             (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
             |deserializer| {
@@ -742,12 +748,6 @@ impl Persistence {
             tracing::info_span!("commit persistence database").entered();
 
         self.background_writer.write().take();
-
-        self.read_transaction = Some(
-            self.database
-                .begin_read()
-                .expect("Failed to begin read transaction"),
-        );
     }
 }
 
