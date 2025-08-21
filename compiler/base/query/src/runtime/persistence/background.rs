@@ -118,7 +118,7 @@ impl Worker {
         // worker threads.
         self.injector.push(task);
 
-        for thread in dbg!(&self.serialize_handles) {
+        for thread in &self.serialize_handles {
             // Wake up the worker thread to process the task.
             thread.thread().unpark();
         }
@@ -131,11 +131,6 @@ impl Worker {
     ) {
         let mut table = write_transaction.write(task.table);
 
-        println!(
-            "inserting key {:?} with buffer {}",
-            task.key,
-            String::from_utf8_lossy(&task.buffer)
-        );
         table
             .insert(task.key, task.buffer.as_slice())
             .expect("Failed to insert into table");
@@ -169,8 +164,7 @@ impl Worker {
                 count += 1;
             }
 
-            tracing::error!("Committed {} task(s)", count);
-            println!("Committed {count} task(s)");
+            tracing::info!("Committed {} task(s)", count);
 
             write_transaction
                 .commit()
@@ -209,7 +203,6 @@ impl Worker {
             });
 
             if let Some(task) = task {
-                println!("Processing task: {:?}", task.key);
                 backoff.reset(); // Reset backoff on successful task retrieval
 
                 let buffer = committer.get_serialize_buffer();
@@ -218,7 +211,6 @@ impl Worker {
                 Self::process_task(task, committer, buffer, send_commit);
             } else {
                 if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
-                    println!("Worker thread shutting down.");
                     break; // Exit the loop if shutdown is requested.
                 }
 

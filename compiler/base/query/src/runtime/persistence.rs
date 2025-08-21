@@ -565,8 +565,6 @@ impl<B: Backend> Persistence<B> {
 
                 *buffer = serializer.into_inner().into_vec().unwrap();
 
-                println!("saving buffer: {buffer:?}");
-
                 match result {
                     Ok(()) => {}
                     Err(err) => {

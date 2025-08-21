@@ -95,7 +95,6 @@ impl super::Backend for RedbBackend {
         key: (u128, u128),
         buffer: &mut Vec<u8>,
     ) -> std::io::Result<bool> {
-        println!("loading key: {key:?} from {table:?}");
         let table = self
             .0
             .read_transaction
@@ -122,7 +121,6 @@ impl super::Backend for RedbBackend {
             ))
         })?
         else {
-            tracing::error!("can't find value for key {:?}", key);
             return Ok(false);
         };
 

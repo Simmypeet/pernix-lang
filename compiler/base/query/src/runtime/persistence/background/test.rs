@@ -15,7 +15,6 @@ fn basic<B: Backend>() {
             table: Table::ValueCache,
             write: Box::new(|buffer| {
                 buffer.extend_from_slice(b"test_value");
-                println!("saved {}", String::from_utf8_lossy(buffer));
                 true
             }),
         });
@@ -25,7 +24,6 @@ fn basic<B: Backend>() {
             table: Table::ValueMetadata,
             write: Box::new(|buffer| {
                 buffer.extend_from_slice(b"test_meta");
-                println!("saved {}", String::from_utf8_lossy(buffer));
                 true
             }),
         });
