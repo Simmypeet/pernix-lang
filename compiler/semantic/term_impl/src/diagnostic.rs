@@ -64,8 +64,8 @@ pub async fn all_rendered_executor(
         let mut diagnostics = Vec::new();
         let all_ids = engine.all_symbol_ids(id).await;
 
-        /// SAFETY: the spawned tasks are independent and do not access shared
-        /// state therefore they can be safely parallelly re-verified.
+        // SAFETY: the spawned tasks are independent and do not access shared
+        // state therefore they can be safely parallelly re-verified.
         unsafe {
             engine.start_parallel();
         }

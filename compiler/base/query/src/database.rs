@@ -206,6 +206,8 @@ impl TrackedEngine {
     ///
     /// This should not be used for 99% of queries.
     ///
+    /// # Safety
+    ///
     /// This is purely for optimization in a very specific case that tells the
     /// engine that; any queries after this point when are verified in the next
     /// database tick, he query-engine can reverify the queries in parallel
@@ -239,6 +241,13 @@ impl TrackedEngine {
     }
 
     /// Marks the end of a parallel query execution.
+    /// 
+    /// # Safety
+    ///
+    /// This is purely for optimization in a very specific case that tells the
+    /// engine that; any queries after this point when are verified in the next
+    /// database tick, he query-engine can reverify the queries in parallel
+    /// out-of-order.
     pub unsafe fn end_parallel(&self) {
         let mut running = self
             .engine
