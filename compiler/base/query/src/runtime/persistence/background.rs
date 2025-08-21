@@ -262,7 +262,13 @@ impl Worker {
                     break; // Exit the loop if shutdown is requested.
                 }
 
-                backoff.snooze();
+                if backoff.is_completed() {
+                    // If no tasks were found, park the thread to avoid
+                    // busy-waiting.
+                    std::thread::park();
+                } else {
+                    backoff.snooze();
+                }
             }
         }
 

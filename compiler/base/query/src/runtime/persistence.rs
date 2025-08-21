@@ -732,11 +732,7 @@ impl Persistence {
 
             let mut with_writer = self.background_writer.write();
             if with_writer.as_mut().is_none() {
-                with_writer.replace(background::Worker::new(
-                    std::thread::available_parallelism()
-                        .map_or_else(|_| 4, std::num::NonZero::get),
-                    &self.database,
-                ));
+                with_writer.replace(background::Worker::new(2, &self.database));
             }
         }
     }
