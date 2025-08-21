@@ -80,8 +80,8 @@ pub(crate) struct DerivedMetadata {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct InputMetadata {
-    fingerprint: u128,
-    updated_at: u64,
+    pub(crate) fingerprint: u128,
+    pub(crate) updated_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, EnumAsInner)]
@@ -241,7 +241,7 @@ impl TrackedEngine {
     }
 
     /// Marks the end of a parallel query execution.
-    /// 
+    ///
     /// # Safety
     ///
     /// This is purely for optimization in a very specific case that tells the

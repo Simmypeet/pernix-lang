@@ -118,7 +118,7 @@ impl Worker {
         // worker threads.
         self.injector.push(task);
 
-        for thread in &self.serialize_handles {
+        for thread in dbg!(&self.serialize_handles) {
             // Wake up the worker thread to process the task.
             thread.thread().unpark();
         }
@@ -209,6 +209,7 @@ impl Worker {
             });
 
             if let Some(task) = task {
+                println!("Processing task: {:?}", task.key);
                 backoff.reset(); // Reset backoff on successful task retrieval
 
                 let buffer = committer.get_serialize_buffer();
@@ -217,6 +218,7 @@ impl Worker {
                 Self::process_task(task, committer, buffer, send_commit);
             } else {
                 if shutdown.load(std::sync::atomic::Ordering::Relaxed) {
+                    println!("Worker thread shutting down.");
                     break; // Exit the loop if shutdown is requested.
                 }
 
@@ -253,6 +255,11 @@ impl Worker {
 
 impl Drop for Worker {
     fn drop(&mut self) {
+        let backoff = Backoff::new();
+        while !self.injector.is_empty() {
+            backoff.snooze();
+        }
+
         // Signal shutdown to all worker threads.
         self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
 

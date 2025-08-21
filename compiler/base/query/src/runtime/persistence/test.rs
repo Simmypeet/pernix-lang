@@ -4,6 +4,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
+    database::InputMetadata,
     fingerprint::fingerprint,
     runtime::persistence::{
         self, backend,
@@ -30,14 +31,15 @@ pub struct Key(usize);
 
 #[test]
 fn basic() {
+    const COUNT: usize = 10;
+
     let tempdir = tempfile::tempdir().unwrap();
 
     let mut serde_registry = SelfRegistry::new();
     serde_registry.register::<Key>();
-    let serde_registry = Arc::new(serde_registry);
 
-    let target_string = "can you load this".to_string();
-    let initial_seed = 12345;
+    let serde_registry = Arc::new(serde_registry);
+    let initial_seed = 42;
 
     {
         let mut persistence =
@@ -47,10 +49,22 @@ fn basic() {
             )
             .unwrap();
 
-        persistence.save_value::<Key>(
-            fingerprint(initial_seed, &target_string),
-            target_string.clone(),
-        );
+        for i in 0..COUNT {
+            let string = format!("can you load this {i}");
+            let value_fingerprint = fingerprint(initial_seed, &string);
+
+            persistence.save_value::<Key>(value_fingerprint, string.clone());
+
+            let key = Key(i);
+
+            persistence.save_value_metadata::<Key>(
+                fingerprint(initial_seed, &key),
+                crate::database::ValueMetadata::Input(InputMetadata {
+                    fingerprint: value_fingerprint,
+                    updated_at: i as u64,
+                }),
+            );
+        }
 
         persistence.commit();
     }
@@ -64,11 +78,26 @@ fn basic() {
             )
             .unwrap();
 
-        let loaded_value: String = persistence
-            .load_value::<Key>(fingerprint(initial_seed, &target_string))
-            .unwrap()
-            .unwrap();
+        for i in 0..COUNT {
+            let string = format!("can you load this {i}");
+            let value_fingerprint = fingerprint(initial_seed, &string);
 
-        assert_eq!(loaded_value, target_string);
+            let loaded_value: String = persistence
+                .load_value::<Key>(value_fingerprint)
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(loaded_value, string);
+
+            let loaded_metadata: InputMetadata = persistence
+                .load_value_metadata::<Key>(fingerprint(initial_seed, &Key(i)))
+                .unwrap()
+                .unwrap()
+                .into_input()
+                .unwrap();
+
+            assert_eq!(loaded_metadata.fingerprint, value_fingerprint);
+            assert_eq!(loaded_metadata.updated_at, i as u64);
+        }
     }
 }

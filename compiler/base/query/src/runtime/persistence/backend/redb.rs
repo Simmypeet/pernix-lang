@@ -95,6 +95,7 @@ impl super::Backend for RedbBackend {
         key: (u128, u128),
         buffer: &mut Vec<u8>,
     ) -> std::io::Result<bool> {
+        println!("loading key: {key:?} from {table:?}");
         let table = self
             .0
             .read_transaction

@@ -499,7 +499,6 @@ impl<B: Backend> Persistence<B> {
                     value_fingerprint = value_fingerprint,
                 )
                 .entered();
-                println!("buffer: {buffer:?}");
 
                 let mut serializer =
                     BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
@@ -555,7 +554,6 @@ impl<B: Backend> Persistence<B> {
                 )
                 .entered();
 
-                println!("buffer: {buffer:?}");
                 let mut serializer =
                     BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
 
@@ -566,6 +564,8 @@ impl<B: Backend> Persistence<B> {
                 );
 
                 *buffer = serializer.into_inner().into_vec().unwrap();
+
+                println!("saving buffer: {buffer:?}");
 
                 match result {
                     Ok(()) => {}
@@ -600,7 +600,7 @@ impl<B: Backend> Persistence<B> {
         key_fingerprint: u128,
     ) -> Result<Option<ValueMetadata>, std::io::Error> {
         self.load_from_table::<K, ValueMetadata>(
-            backend::Table::ValueCache,
+            backend::Table::ValueMetadata,
             key_fingerprint,
             |deserializer| {
                 (self.deserialize_value_metadata)(
