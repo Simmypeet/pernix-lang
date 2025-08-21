@@ -7,7 +7,8 @@ use crate::{
     database::InputMetadata,
     fingerprint::fingerprint,
     runtime::persistence::{
-        self, backend,
+        self,
+        backend::{self, Backend},
         serde::{DynamicRegistry, SelfRegistry},
     },
 };
@@ -29,8 +30,7 @@ use crate::{
 #[value(String)]
 pub struct Key(usize);
 
-#[test]
-fn basic() {
+fn basic_template<B: Backend>() {
     const COUNT: usize = 10;
 
     let tempdir = tempfile::tempdir().unwrap();
@@ -42,12 +42,11 @@ fn basic() {
     let initial_seed = 42;
 
     {
-        let mut persistence =
-            persistence::Persistence::<backend::redb::RedbBackend>::new(
-                tempdir.path().to_owned(),
-                serde_registry.clone(),
-            )
-            .unwrap();
+        let mut persistence = persistence::Persistence::<B>::new(
+            tempdir.path().to_owned(),
+            serde_registry.clone(),
+        )
+        .unwrap();
 
         for i in 0..COUNT {
             let string = format!("can you load this {i}");
@@ -71,12 +70,11 @@ fn basic() {
 
     // try load again
     {
-        let persistence =
-            persistence::Persistence::<backend::redb::RedbBackend>::new(
-                tempdir.path().to_owned(),
-                serde_registry,
-            )
-            .unwrap();
+        let persistence = persistence::Persistence::<B>::new(
+            tempdir.path().to_owned(),
+            serde_registry,
+        )
+        .unwrap();
 
         for i in 0..COUNT {
             let string = format!("can you load this {i}");
@@ -101,3 +99,9 @@ fn basic() {
         }
     }
 }
+
+#[test]
+fn basic_redb() { basic_template::<backend::redb::RedbBackend>(); }
+
+#[test]
+fn basic_fjall() { basic_template::<backend::fjall::FjallBackend>(); }

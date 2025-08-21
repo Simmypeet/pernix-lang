@@ -29,20 +29,6 @@ impl super::Backend for RedbBackend {
     where
         Self: Sized,
     {
-        // ensure the path is directory
-        if directory_path.exists() {
-            if !directory_path.is_dir() {
-                return Err(std::io::Error::other(format!(
-                    "Path {} is not a directory",
-                    directory_path.display(),
-                )));
-            }
-        }
-        // ensure the folder exists
-        else {
-            std::fs::create_dir_all(directory_path)?;
-        }
-
         let database_path = directory_path.join(DATABASE_FILE);
         let database = redb::Database::create(&database_path).map_err(|e| {
             std::io::Error::other(format!(

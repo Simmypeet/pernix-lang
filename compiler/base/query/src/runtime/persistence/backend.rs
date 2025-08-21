@@ -1,5 +1,6 @@
 use std::path::Path;
 
+pub mod fjall;
 pub mod redb;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

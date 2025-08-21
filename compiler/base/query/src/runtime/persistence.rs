@@ -385,6 +385,20 @@ impl<B: Backend> Persistence<B> {
         directory_path: PathBuf,
         serde_extension: Arc<E>,
     ) -> Result<Self, std::io::Error> {
+        // ensure the path is directory
+        if directory_path.exists() {
+            if !directory_path.is_dir() {
+                return Err(std::io::Error::other(format!(
+                    "Path {} is not a directory",
+                    directory_path.display(),
+                )));
+            }
+        }
+        // ensure the folder exists
+        else {
+            std::fs::create_dir_all(&directory_path)?;
+        }
+
         Ok(Self {
             database: B::create(&directory_path)?,
 

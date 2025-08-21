@@ -60,3 +60,6 @@ fn basic<B: Backend>() {
 
 #[test]
 fn basic_redb() { basic::<backend::redb::RedbBackend>(); }
+
+#[test]
+fn basic_fjall() { basic::<backend::fjall::FjallBackend>(); }

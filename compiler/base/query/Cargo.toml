@@ -26,6 +26,7 @@ rand = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 static_assertions = { workspace = true }
+fjall = { workspace = true }
 
 [dev-dependencies]
 ron = { workspace = true }
