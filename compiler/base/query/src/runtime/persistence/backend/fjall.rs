@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use fjall::PartitionCreateOptions;
 
+use crate::runtime::persistence::backend::tuple_to_array_key;
+
 const DATABASE_FILE: &str = "persistence.db";
 
 const VALUE_CACHE: &str = "value_cache";
@@ -26,13 +28,6 @@ impl std::fmt::Debug for Impl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Impl").finish_non_exhaustive()
     }
-}
-
-fn tuple_to_array_key(key: (u128, u128)) -> [u8; 32] {
-    let mut array = [0u8; 32];
-    array[..16].copy_from_slice(&key.0.to_le_bytes());
-    array[16..].copy_from_slice(&key.1.to_le_bytes());
-    array
 }
 
 #[derive(Debug, Clone)]

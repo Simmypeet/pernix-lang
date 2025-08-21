@@ -2,6 +2,14 @@ use std::path::Path;
 
 pub mod fjall;
 pub mod redb;
+pub mod sled;
+
+fn tuple_to_array_key(key: (u128, u128)) -> [u8; 32] {
+    let mut array = [0u8; 32];
+    array[..16].copy_from_slice(&key.0.to_le_bytes());
+    array[16..].copy_from_slice(&key.1.to_le_bytes());
+    array
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Table {

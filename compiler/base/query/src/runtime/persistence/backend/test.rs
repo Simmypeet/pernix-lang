@@ -1,6 +1,6 @@
 use crate::runtime::persistence::backend::{
-    fjall::FjallBackend, redb::RedbBackend, Backend, BackgroundWriter, Table,
-    WriteTransaction, Writer,
+    fjall::FjallBackend, redb::RedbBackend, sled::SledBackend, Backend,
+    BackgroundWriter, Table, WriteTransaction, Writer,
 };
 
 fn basic_template<B: Backend>() {
@@ -52,3 +52,6 @@ fn basic_redb() { basic_template::<RedbBackend>(); }
 
 #[test]
 fn basic_fjall() { basic_template::<FjallBackend>(); }
+
+#[test]
+fn basic_sled() { basic_template::<SledBackend>(); }

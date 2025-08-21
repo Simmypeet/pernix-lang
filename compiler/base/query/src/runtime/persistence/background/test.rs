@@ -64,3 +64,6 @@ fn basic_redb() { basic::<backend::redb::RedbBackend>(); }
 
 #[test]
 fn basic_fjall() { basic::<backend::fjall::FjallBackend>(); }
+
+#[test]
+fn basic_sled() { basic::<backend::sled::SledBackend>(); }

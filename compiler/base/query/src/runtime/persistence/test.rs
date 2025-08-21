@@ -8,7 +8,7 @@ use crate::{
     fingerprint::fingerprint,
     runtime::persistence::{
         self,
-        backend::Backend,
+        backend::{self, Backend},
         serde::{DynamicRegistry, SelfRegistry},
     },
 };
@@ -105,3 +105,6 @@ fn basic_redb() { basic_template::<backend::redb::RedbBackend>(); }
 
 #[test]
 fn basic_fjall() { basic_template::<backend::fjall::FjallBackend>(); }
+
+#[test]
+fn basic_sled() { basic_template::<backend::sled::SledBackend>(); }
