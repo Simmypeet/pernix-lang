@@ -426,12 +426,14 @@ impl<B: Backend> Persistence<B> {
             &mut BinaryDeserializer<Reader>,
         ) -> Result<V, std::io::Error>,
     ) -> Result<Option<V>, std::io::Error> {
-        let key_bytes = to_byte_key::<K>(key);
-
         let mut buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
         buffer.clear();
 
-        let result = match self.database.read(table, &key_bytes, &mut buffer) {
+        let result = match self.database.read(
+            table,
+            (K::STABLE_TYPE_ID.as_u128(), key),
+            &mut buffer,
+        ) {
             Ok(true) => {
                 let reader = Reader::Vec(Cursor::new(buffer));
                 let mut deserializer = BinaryDeserializer::new(reader);
@@ -498,7 +500,7 @@ impl<B: Backend> Persistence<B> {
         let serde_extension = self.serde_extension.clone();
 
         self.ensure_background_writer().new_save_task(SaveTask {
-            key: to_byte_key::<K>(value_fingerprint),
+            key: (K::STABLE_TYPE_ID.as_u128(), value_fingerprint),
             table: Table::ValueCache,
             write: Box::new(move |buffer| {
                 let _span = tracing::info_span!(
@@ -507,6 +509,8 @@ impl<B: Backend> Persistence<B> {
                     value_fingerprint = value_fingerprint,
                 )
                 .entered();
+                println!("buffer: {buffer:?}");
+
                 let mut serializer =
                     BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
 
@@ -551,7 +555,7 @@ impl<B: Backend> Persistence<B> {
         let serde_extension = self.serde_extension.clone();
 
         self.ensure_background_writer().new_save_task(SaveTask {
-            key: to_byte_key::<K>(key_fingerprint),
+            key: (K::STABLE_TYPE_ID.as_u128(), key_fingerprint),
             table: Table::ValueMetadata,
             write: Box::new(move |buffer| {
                 let _span = tracing::info_span!(
@@ -561,6 +565,7 @@ impl<B: Backend> Persistence<B> {
                 )
                 .entered();
 
+                println!("buffer: {buffer:?}");
                 let mut serializer =
                     BinarySerializer::new(Writer::Vec(std::mem::take(buffer)));
 

@@ -15,7 +15,7 @@ use crate::runtime::persistence::backend::{
 
 #[allow(clippy::type_complexity)]
 pub struct SaveTask {
-    pub(super) key: [u8; 32],
+    pub(super) key: (u128, u128),
     pub(super) table: Table,
     pub(super) write: Box<dyn FnOnce(&mut Vec<u8>) -> bool + Send>,
 }
@@ -28,7 +28,7 @@ pub struct Committer<B> {
 pub struct CommitTask {
     buffer: Vec<u8>,
     table: Table,
-    key: [u8; 32],
+    key: (u128, u128),
 }
 
 impl<B> Committer<B> {
@@ -132,7 +132,7 @@ impl Worker {
         let mut table = write_transaction.write(task.table);
 
         table
-            .insert(&task.key, task.buffer.as_slice())
+            .insert(task.key, task.buffer.as_slice())
             .expect("Failed to insert into table");
 
         committer.return_buffer(task.buffer);
@@ -164,7 +164,7 @@ impl Worker {
                 count += 1;
             }
 
-            tracing::info!("Committed {} task(s)", count);
+            tracing::error!("Committed {} task(s)", count);
 
             write_transaction
                 .commit()

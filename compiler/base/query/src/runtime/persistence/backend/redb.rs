@@ -7,10 +7,10 @@ const DATABASE_FILE: &str = "persistence.db";
 
 /// Table definition for the query value cache. The key is a tuple of
 /// `STABLE_TYPE_ID` of the key and fingerprint of the value.
-const VALUE_CACHE: redb::TableDefinition<&[u8], &[u8]> =
+const VALUE_CACHE: redb::TableDefinition<(u128, u128), &[u8]> =
     redb::TableDefinition::new("value_cache");
 
-const VALUE_METADATA: redb::TableDefinition<&[u8], &[u8]> =
+const VALUE_METADATA: redb::TableDefinition<(u128, u128), &[u8]> =
     redb::TableDefinition::new("value_metadata");
 
 #[derive(Debug)]
@@ -92,7 +92,7 @@ impl super::Backend for RedbBackend {
     fn read(
         &self,
         table: super::Table,
-        key: &[u8],
+        key: (u128, u128),
         buffer: &mut Vec<u8>,
     ) -> std::io::Result<bool> {
         let table = self
@@ -121,6 +121,7 @@ impl super::Backend for RedbBackend {
             ))
         })?
         else {
+            tracing::error!("can't find value for key {:?}", key);
             return Ok(false);
         };
 
@@ -162,7 +163,7 @@ impl super::BackgroundWriter for BackgroundWriter {
 
 impl super::WriteTransaction for redb::WriteTransaction {
     type Writer<'cx>
-        = redb::Table<'cx, &'static [u8], &'static [u8]>
+        = redb::Table<'cx, (u128, u128), &'static [u8]>
     where
         Self: 'cx;
 
@@ -182,8 +183,12 @@ impl super::WriteTransaction for redb::WriteTransaction {
     }
 }
 
-impl super::Writer for redb::Table<'_, &'static [u8], &'static [u8]> {
-    fn insert(&mut self, key: &[u8], value: &[u8]) -> std::io::Result<()> {
+impl super::Writer for redb::Table<'_, (u128, u128), &'static [u8]> {
+    fn insert(
+        &mut self,
+        key: (u128, u128),
+        value: &[u8],
+    ) -> std::io::Result<()> {
         self.insert(key, value)
             .map_err(|e| {
                 std::io::Error::other(format!(

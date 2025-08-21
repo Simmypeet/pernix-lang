@@ -17,7 +17,7 @@ pub trait Backend: Clone {
     fn read(
         &self,
         table: Table,
-        key: &[u8],
+        key: (u128, u128),
         buffer: &mut Vec<u8>,
     ) -> std::io::Result<bool>;
 
@@ -45,5 +45,9 @@ pub trait WriteTransaction {
 }
 
 pub trait Writer {
-    fn insert(&mut self, key: &[u8], value: &[u8]) -> std::io::Result<()>;
+    fn insert(
+        &mut self,
+        key: (u128, u128),
+        value: &[u8],
+    ) -> std::io::Result<()>;
 }
