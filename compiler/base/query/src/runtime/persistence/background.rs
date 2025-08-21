@@ -131,6 +131,11 @@ impl Worker {
     ) {
         let mut table = write_transaction.write(task.table);
 
+        println!(
+            "inserting key {:?} with buffer {}",
+            task.key,
+            String::from_utf8_lossy(&task.buffer)
+        );
         table
             .insert(task.key, task.buffer.as_slice())
             .expect("Failed to insert into table");
@@ -165,6 +170,7 @@ impl Worker {
             }
 
             tracing::error!("Committed {} task(s)", count);
+            println!("Committed {count} task(s)");
 
             write_transaction
                 .commit()
@@ -267,3 +273,6 @@ impl Drop for Worker {
             .expect("Failed to join committer thread");
     }
 }
+
+#[cfg(test)]
+mod test;

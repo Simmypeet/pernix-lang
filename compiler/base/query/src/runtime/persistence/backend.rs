@@ -24,6 +24,20 @@ pub trait Backend: Clone {
     fn background_writer(&self) -> Self::BackgroundWriter;
 
     fn refresh_read(&mut self) -> std::io::Result<()>;
+
+    fn read_owned(
+        &self,
+        table: Table,
+        key: (u128, u128),
+    ) -> std::io::Result<Option<Vec<u8>>> {
+        let mut buffer = Vec::new();
+
+        if self.read(table, key, &mut buffer)? {
+            Ok(Some(buffer))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub trait BackgroundWriter: Clone + Send + Sync + 'static {
@@ -51,3 +65,6 @@ pub trait Writer {
         value: &[u8],
     ) -> std::io::Result<()>;
 }
+
+#[cfg(test)]
+mod test;

@@ -233,16 +233,6 @@ impl std::io::Read for Reader {
         self
     }
 }
-fn to_byte_key<K: Key>(key_hash: u128) -> [u8; 32] {
-    let mut key_bytes = [0u8; 32];
-
-    // first 128, is stable type id 128
-    key_bytes[..16].copy_from_slice(&K::STABLE_TYPE_ID.as_u128().to_le_bytes());
-    // last 128, is key hash
-    key_bytes[16..].copy_from_slice(&key_hash.to_le_bytes());
-
-    key_bytes
-}
 
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
@@ -738,3 +728,6 @@ impl Persistence {
         Ok(crate::database::Database::with_state(random_seed, version))
     }
 }
+
+#[cfg(test)]
+mod test;
