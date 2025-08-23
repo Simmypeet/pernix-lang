@@ -1,0 +1,6 @@
+public trait Fizz['a, T]:
+    public type Output
+
+public type Test['a, 'b, T] = Fizz['a, T]::Output:
+    where:
+        Fizz['b, T]::Output = int32

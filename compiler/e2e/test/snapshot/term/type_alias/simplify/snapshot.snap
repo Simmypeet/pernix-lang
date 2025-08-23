@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unsatisfied predicate
+  ╭─ compiler/e2e/test/snapshot/term/type_alias/simplify/main.pnx:4:31
+  │
+4 │ public type Test['a, 'b, T] = Fizz['a, T]::Output:
+  │                               ^^^^^^^^^^^^^^^^^^^ the predicate `'a: 'b` is not satisfied
+
+error: unsatisfied predicate
+  ╭─ compiler/e2e/test/snapshot/term/type_alias/simplify/main.pnx:4:31
+  │
+4 │ public type Test['a, 'b, T] = Fizz['a, T]::Output:
+  │                               ^^^^^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

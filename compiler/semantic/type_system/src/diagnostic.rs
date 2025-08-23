@@ -283,10 +283,6 @@ impl Report<&TrackedEngine> for UnsatisfiedPredicate {
                     .build(),
             )
             .message("unsatisfied predicate")
-            .help_message(
-                "try to satisfy the predicate by providing the necessary \
-                 constraints",
-            )
             .build()
     }
 }

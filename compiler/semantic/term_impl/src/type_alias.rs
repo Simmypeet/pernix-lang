@@ -89,8 +89,8 @@ impl executor::Executor<BuildKey> for BuildExecutor {
 
         Ok(Build {
             item: Arc::new(ty),
-            diagnostics: Arc::default(),
-            occurrences: Arc::default(),
+            diagnostics: storage.into_vec().into(),
+            occurrences: Arc::new(occurrences),
         })
     }
 }
