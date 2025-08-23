@@ -5,7 +5,10 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::source_map::to_absolute_span;
-use pernixc_term::predicate::Predicate;
+use pernixc_target::Global;
+use pernixc_term::{
+    display::Display, generic_arguments::GenericArguments, predicate::Predicate,
+};
 
 use crate::OverflowError;
 
@@ -91,7 +94,7 @@ impl Report<&TrackedEngine> for TypeCheckOverflow {
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
 )]
-pub struct UndecidablePredicate {
+pub struct PredicateSatisfiabilityOverflow {
     /// The undecidable predicate.
     pub predicate: Predicate,
 
@@ -105,122 +108,144 @@ pub struct UndecidablePredicate {
     pub overflow_error: OverflowError,
 }
 
-/*
-impl Report<&TrackedEngine> for UndecidablePredicate {
+impl Report<&TrackedEngine> for PredicateSatisfiabilityOverflow {
     type Location = ByteIndex;
 
-    async fn report(&self, table: &TrackedEngine) -> Diagnostic {
-        Diagnostic {
-            span: self.instantiation_span.clone(),
-            message: format!(
-                "the predicate `{}` is undecidable",
-                DisplayObject { display: &self.predicate, table }
-            ),
-            severity: Severity::Error,
-            help_message: Some(
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        pernixc_diagnostic::Diagnostic::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut message = String::new();
+                        message
+                            .push_str("the satisfiability of the predicate `");
+                        self.predicate
+                            .write_async(engine, &mut message)
+                            .await
+                            .unwrap();
+                        message.push_str("` can't be decided");
+                        message
+                    })
+                    .build(),
+            )
+            .message("overflow checking the predicate")
+            .help_message(
                 "try reduce the complexity of the code; this error is the \
-                 limitation of the type-system/compiler"
-                    .to_string(),
-            ),
-            related: self
-                .predicate_declaration_span
-                .as_ref()
-                .map(|predicate_span| Related {
-                    span: predicate_span.clone(),
-                    message: "predicate declared here".to_string(),
-                })
-                .into_iter()
-                .collect(),
-        }
+                 limitation of the type-system/compiler",
+            )
+            .build()
     }
 }
 
 /// The bound is not satisfied upon instantiation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UnsatisfiedPredicate<M: Model> {
+pub struct UnsatisfiedPredicate {
     /// The unsatisfied bound.
-    pub predicate: Predicate<M>,
+    pub predicate: Predicate,
 
     /// The span of the instantiation that causes the bound check.
-    pub instantiation_span: Span,
+    pub instantiation_span: RelativeSpan,
 
     /// The span of the predicate declaration.
-    pub predicate_declaration_span: Option<Span>,
+    pub predicate_declaration_span: Option<RelativeSpan>,
 }
 
-impl<M: Model> Report<&Table> for UnsatisfiedPredicate<M>
-where
-    Predicate<M>: table::Display,
-{
-    fn report(&self, table: &Table) -> Diagnostic {
-        Diagnostic {
-            span: self.instantiation_span.clone(),
-            message: format!(
-                "the predicate `{}` is not satisfied",
-                DisplayObject { display: &self.predicate, table }
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: self
-                .predicate_declaration_span
-                .as_ref()
-                .map(|predicate_span| Related {
-                    span: predicate_span.clone(),
-                    message: "predicate declared here".to_string(),
-                })
-                .into_iter()
-                .collect(),
-        }
+impl Report<&TrackedEngine> for UnsatisfiedPredicate {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        pernixc_diagnostic::Diagnostic::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut message = String::new();
+                        message.push_str("the predicate `");
+                        self.predicate
+                            .write_async(engine, &mut message)
+                            .await
+                            .unwrap();
+                        message.push_str("` is not satisfied");
+                        message
+                    })
+                    .build(),
+            )
+            .message("unsatisfied predicate")
+            .help_message(
+                "try to satisfy the predicate by providing the necessary \
+                 constraints",
+            )
+            .build()
     }
 }
 
 /// The implementation is not general enough to satisfy the required
 /// predicate's forall lifetimes.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ImplementationIsNotGeneralEnough<M: Model> {
+pub struct ImplementationIsNotGeneralEnough {
     /// The ID of the implementation where the predicate is not satisfied.
-    pub resolvable_implementation_id: GlobalID,
+    pub resolvable_implementation_id: Global<pernixc_symbol::ID>,
 
     /// The generic arguments required by the trait predicate.
-    pub generic_arguments: GenericArguments<M>,
+    pub generic_arguments: GenericArguments,
 
     /// The span where the trait predicate was declared.
-    pub predicate_declaration_span: Option<Span>,
+    pub predicate_declaration_span: Option<RelativeSpan>,
 
-    /// The span of the instantiation that cuases the error
-    pub instantiation_span: Span,
+    /// The span of the instantiation that causes the error
+    pub instantiation_span: RelativeSpan,
 }
 
-impl<M: Model> Report<&Table> for ImplementationIsNotGeneralEnough<M>
-where
-    GenericArguments<M>: table::Display,
-{
-    fn report(&self, table: &Table) -> pernixc_diagnostic::Diagnostic {
-        let span = table.get::<LocationSpan>(self.resolvable_implementation_id);
+impl Report<&TrackedEngine> for ImplementationIsNotGeneralEnough {
+    type Location = ByteIndex;
 
-        pernixc_diagnostic::Diagnostic {
-            span: self.instantiation_span.clone(),
-            message: format!(
-                "the implementation is not general enough to satisfy the \
-                 required forall lifetimes in the generic arguments: {}",
-                DisplayObject { table, display: &self.generic_arguments }
-            ),
-            severity: Severity::Error,
-            help_message: None,
-            related: self
-                .predicate_declaration_span
-                .as_ref()
-                .map(|span| Related {
-                    span: span.clone(),
-                    message: "the predicate is declared here".to_string(),
-                })
-                .into_iter()
-                .chain(span.span.as_ref().map(|span| Related {
-                    span: span.clone(),
-                    message: "the implementation is defined here".to_string(),
-                }))
-                .collect(),
-        }
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        pernixc_diagnostic::Diagnostic::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut message = "the implementation is not general \
+                                           enought to satisfy the required \
+                                           forall lifetimes in the generic \
+                                           arguments: "
+                            .to_string();
+
+                        self.generic_arguments
+                            .write_async(engine, &mut message)
+                            .await
+                            .unwrap();
+
+                        message
+                    })
+                    .build(),
+            )
+            .message("implementation is not general enough")
+            .related(match self.predicate_declaration_span.as_ref() {
+                Some(span) => {
+                    vec![Highlight::builder()
+                        .span(engine.to_absolute_span(span).await)
+                        .message("the predicate is declared here")
+                        .build()]
+                }
+                None => vec![],
+            })
+            .build()
     }
 }
-*/
