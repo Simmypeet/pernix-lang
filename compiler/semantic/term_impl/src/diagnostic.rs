@@ -44,6 +44,14 @@ pub async fn single_rendered_executor(
         }
     }
 
+    if kind.has_type_alias() {
+        let diags = engine.query(&crate::type_alias::DiagnosticKey(id)).await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
     Ok(final_diagnostics.into())
 }
 

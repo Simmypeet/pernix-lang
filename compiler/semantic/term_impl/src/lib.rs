@@ -25,6 +25,10 @@ pub fn register_executors(
     executor.register(Arc::new(where_clause::DiagnosticExecutor));
     executor.register(Arc::new(where_clause::Executor));
 
+    executor.register(Arc::new(type_alias::BuildExecutor));
+    executor.register(Arc::new(type_alias::DiagnosticExecutor));
+    executor.register(Arc::new(type_alias::Executor));
+
     executor.register(Arc::new(diagnostic::SingleRenderedExecutor));
     executor.register(Arc::new(diagnostic::AllRenderedExecutor));
 }
@@ -46,6 +50,10 @@ pub fn register_serde<
     serde_registry.register::<where_clause::BuildKey>();
     serde_registry.register::<where_clause::DiagnosticKey>();
     serde_registry.register::<pernixc_term::where_clause::Key>();
+
+    serde_registry.register::<type_alias::BuildKey>();
+    serde_registry.register::<type_alias::DiagnosticKey>();
+    serde_registry.register::<pernixc_term::type_alias::Key>();
 
     serde_registry.register::<diagnostic::SingleRenderedKey>();
     serde_registry.register::<diagnostic::AllRenderedKey>();

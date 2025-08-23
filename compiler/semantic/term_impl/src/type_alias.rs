@@ -1,13 +1,14 @@
 use std::{borrow::Cow, sync::Arc};
 
 use pernixc_handler::Storage;
-use pernixc_query::runtime::executor;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type, Config,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_type_alias_syntax;
+use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     environment::{get_active_premise, Environment},
@@ -92,4 +93,25 @@ impl executor::Executor<BuildKey> for BuildExecutor {
             occurrences: Arc::default(),
         })
     }
+}
+
+#[pernixc_query::query(
+    key(DiagnosticKey),
+    executor(DiagnosticExecutor),
+    value(Arc<[Diagnostic]>),
+    id(Global<pernixc_symbol::ID>)
+)]
+pub async fn diagnostic_executor(
+    id: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
+) -> Result<Arc<[Diagnostic]>, executor::CyclicError> {
+    Ok(engine.query(&BuildKey::new(id)).await?.diagnostics)
+}
+
+#[pernixc_query::executor(key(pernixc_term::type_alias::Key), name(Executor))]
+pub async fn type_alias_executor(
+    &pernixc_term::type_alias::Key(id): &pernixc_term::type_alias::Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<Type>, executor::CyclicError> {
+    Ok(engine.query(&BuildKey::new(id)).await?.item)
 }
