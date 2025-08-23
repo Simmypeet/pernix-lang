@@ -1,11 +1,18 @@
 //! Contains the definition of [`GenericArguments`] and related types.
 
+use std::{fmt::Write, ops::Not};
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_symbol::{
+    name::{get_name, get_qualified_name},
+    parent::get_parent,
+};
 use pernixc_target::Global;
 
 use crate::{
     constant::Constant,
+    generic_parameters::GenericKind,
     lifetime::Lifetime,
     matching::{Matching, Substructural},
     r#type::Type,
@@ -38,6 +45,86 @@ pub struct GenericArguments {
 
     /// The constants supplied to the term.
     pub constants: Vec<Constant>,
+}
+
+impl GenericArguments {
+    /// Checks if the generic arguments are empty.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.lifetimes.is_empty()
+            && self.types.is_empty()
+            && self.constants.is_empty()
+    }
+
+    /// Determines whether the generic arguments will be displayed using
+    /// [`crate::display::Display`].
+    #[must_use]
+    pub fn will_be_displayed(&self) -> bool {
+        self.lifetimes.iter().any(Lifetime::will_be_displayed)
+            || !self.types.is_empty()
+            || !self.constants.is_empty()
+    }
+}
+
+impl crate::display::Display for GenericArguments {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        if !self.will_be_displayed() {
+            return Ok(());
+        }
+
+        let last_is = if self.constants.is_empty().not() {
+            GenericKind::Constant
+        } else if self.types.is_empty().not() {
+            GenericKind::Type
+        } else if self.lifetimes.iter().any(Lifetime::will_be_displayed) {
+            GenericKind::Lifetime
+        } else {
+            unreachable!()
+        };
+
+        write!(formatter, "[")?;
+
+        let lts = self
+            .lifetimes
+            .iter()
+            .filter(|lt| lt.will_be_displayed())
+            .collect::<Vec<_>>();
+        let lts_len = lts.len();
+
+        for (i, lt) in lts.into_iter().enumerate() {
+            crate::display::Display::fmt(lt, engine, formatter).await?;
+
+            if i + 1 != lts_len || last_is != GenericKind::Lifetime {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        let tys_len = self.types.len();
+
+        for (i, ty) in self.types.iter().enumerate() {
+            crate::display::Display::fmt(ty, engine, formatter).await?;
+
+            if i + 1 != tys_len || last_is != GenericKind::Type {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        let consts_len = self.constants.len();
+
+        for (i, constant) in self.constants.iter().enumerate() {
+            crate::display::Display::fmt(constant, engine, formatter).await?;
+
+            if i + 1 != consts_len || last_is != GenericKind::Constant {
+                write!(formatter, ", ")?;
+            }
+        }
+
+        write!(formatter, "]")
+    }
 }
 
 /// A trait for retrieving the arguments array from a generic arguments.
@@ -309,6 +396,16 @@ impl GenericArguments {
 )]
 pub struct TraitMember(pub MemberSymbol);
 
+impl crate::display::Display for TraitMember {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.0.fmt(engine, formatter).await
+    }
+}
+
 impl GenericArguments {
     /// Checks if there's any errornous term in the generic arguments.
     #[must_use]
@@ -316,5 +413,42 @@ impl GenericArguments {
         self.lifetimes.iter().any(Lifetime::is_error)
             || self.types.iter().any(Type::is_error)
             || self.constants.iter().any(Constant::is_error)
+    }
+}
+
+impl crate::display::Display for Symbol {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let qualified_name = engine.get_qualified_name(self.id).await;
+
+        write!(formatter, "{qualified_name}")?;
+        self.generic_arguments.fmt(engine, formatter).await
+    }
+}
+
+impl crate::display::Display for MemberSymbol {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let parent_id = self
+            .id
+            .target_id
+            .make_global(engine.get_parent(self.id).await.unwrap());
+
+        let parent_qualified_name = engine.get_qualified_name(parent_id).await;
+        write!(formatter, "{parent_qualified_name}")?;
+        self.parent_generic_arguments.fmt(engine, formatter).await?;
+
+        let name = engine.get_name(self.id).await;
+        write!(formatter, "::{name}")?;
+
+        self.member_generic_arguments.fmt(engine, formatter).await?;
+
+        Ok(())
     }
 }

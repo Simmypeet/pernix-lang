@@ -566,3 +566,30 @@ pub async fn target_seed_executor(
 ) -> Result<u64, pernixc_query::runtime::executor::CyclicError> {
     Ok(rand::thread_rng().gen())
 }
+
+/// A query for retrieving the `TargetID` that's currently being compiled in
+/// the current session.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(TargetID)]
+pub struct LocalTargetIDKey;
+
+/// Gets the `TargetID` that's currently being compiled in the current session.
+#[extend]
+async fn get_local_target_id(self: &TrackedEngine) -> TargetID {
+    self.query(&LocalTargetIDKey)
+        .await
+        .expect("should have no cyclic dependencies")
+}

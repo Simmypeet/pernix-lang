@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -19,4 +21,18 @@ use pernixc_stable_hash::StableHash;
 pub struct Compatible<T, U = T> {
     pub lhs: T,
     pub rhs: U,
+}
+
+impl<T: crate::display::Display, U: crate::display::Display>
+    crate::display::Display for Compatible<T, U>
+{
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.lhs.fmt(engine, formatter).await?;
+        formatter.write_str(" = ")?;
+        self.rhs.fmt(engine, formatter).await
+    }
 }

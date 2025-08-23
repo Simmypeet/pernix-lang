@@ -178,6 +178,15 @@ impl Match for Lifetime {
     }
 }
 
+impl Lifetime {
+    /// Determines whether the lifetime will be displayed using
+    /// [`crate::display::Display`].
+    #[must_use]
+    pub const fn will_be_displayed(&self) -> bool {
+        !matches!(self, Self::Inference(_) | Self::Erased | Self::Error(_))
+    }
+}
+
 impl crate::display::Display for Lifetime {
     async fn fmt(
         &self,
@@ -198,11 +207,10 @@ impl crate::display::Display for Lifetime {
                 )
             }
 
-            Self::Forall(forall) => match forall {
-                Forall::Named(named_forall) => {
-                    todo!()
-                }
-            },
+            Self::Forall(forall) => {
+                let forall_number = formatter.forall_lifetime_names(forall);
+                write!(formatter, "'∀{forall_number}",)
+            }
 
             Self::Static => write!(formatter, "'static"),
 

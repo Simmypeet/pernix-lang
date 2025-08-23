@@ -1,6 +1,9 @@
+use std::fmt::Write;
+
 use derive_new::new;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_symbol::name::get_qualified_name;
 use pernixc_target::Global;
 
 use crate::{
@@ -42,6 +45,18 @@ impl Positive {
     }
 }
 
+impl crate::display::Display for Positive {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let qualified_name = engine.get_qualified_name(self.marker_id).await;
+        write!(formatter, "marker {qualified_name}")?;
+        self.generic_arguments.fmt(engine, formatter).await
+    }
+}
+
 /// The predicate specifying that the marker will never be satisfied.
 #[derive(
     Debug,
@@ -74,5 +89,17 @@ impl Negative {
     /// Applies the instantiation to the generic arguments.
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         self.generic_arguments.instantiate(instantiation);
+    }
+}
+
+impl crate::display::Display for Negative {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let qualified_name = engine.get_qualified_name(self.marker_id).await;
+        write!(formatter, "marker !{qualified_name}")?;
+        self.generic_arguments.fmt(engine, formatter).await
     }
 }

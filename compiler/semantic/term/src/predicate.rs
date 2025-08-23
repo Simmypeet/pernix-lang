@@ -106,3 +106,31 @@ impl Compatible<TraitMember, Type> {
         instantiation.instantiate(&mut self.rhs);
     }
 }
+
+impl crate::display::Display for Predicate {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::TraitTypeCompatible(equality) => {
+                equality.fmt(engine, formatter).await
+            }
+            Self::ConstantType(constant_type) => {
+                constant_type.fmt(engine, formatter).await
+            }
+            Self::LifetimeOutlives(outlives) => {
+                outlives.fmt(engine, formatter).await
+            }
+            Self::TypeOutlives(outlives) => {
+                outlives.fmt(engine, formatter).await
+            }
+            Self::TupleType(tuple) => tuple.fmt(engine, formatter).await,
+            Self::PositiveTrait(tr) => tr.fmt(engine, formatter).await,
+            Self::NegativeTrait(tr) => tr.fmt(engine, formatter).await,
+            Self::PositiveMarker(marker) => marker.fmt(engine, formatter).await,
+            Self::NegativeMarker(marker) => marker.fmt(engine, formatter).await,
+        }
+    }
+}

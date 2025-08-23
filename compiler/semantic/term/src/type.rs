@@ -1,5 +1,7 @@
 //! Contains the definition of [`Type`] term.
 
+use std::{fmt::Write, ops::Deref};
+
 use enum_as_inner::EnumAsInner;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -12,7 +14,7 @@ use crate::{
         MemberSymbol, SubMemberSymbolLocation, SubSymbolLocation,
         SubTraitMemberLocation, Symbol, TraitMember,
     },
-    generic_parameters::TypeParameterID,
+    generic_parameters::{get_generic_parameters, TypeParameterID},
     inference::Inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -123,21 +125,35 @@ pub struct Array {
     StableHash,
     Serialize,
     Deserialize,
+    derive_more::Display,
 )]
 #[allow(missing_docs)]
 pub enum Primitive {
+    #[display("int8")]
     Int8,
+    #[display("int16")]
     Int16,
+    #[display("int32")]
     Int32,
+    #[display("int64")]
     Int64,
+    #[display("uint8")]
     Uint8,
+    #[display("uint16")]
     Uint16,
+    #[display("uint32")]
     Uint32,
+    #[display("uint64")]
     Uint64,
+    #[display("float32")]
     Float32,
+    #[display("float64")]
     Float64,
+    #[display("bool")]
     Bool,
+    #[display("usize")]
     Usize,
+    #[display("isize")]
     Isize,
 }
 
@@ -982,5 +998,104 @@ impl Match for Type {
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         &mut substructural.types
+    }
+}
+
+impl crate::display::Display for Type {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Inference(_) => write!(formatter, "_"),
+
+            Self::Primitive(primitive) => write!(formatter, "{primitive}"),
+
+            Self::Parameter(member_id) => {
+                let generic_parameters = engine
+                    .get_generic_parameters(member_id.parent_id)
+                    .await
+                    .unwrap();
+
+                write!(
+                    formatter,
+                    "{}",
+                    generic_parameters.types()[member_id.id].name
+                )
+            }
+
+            Self::Symbol(symbol) => {
+                Box::pin(symbol.fmt(engine, formatter)).await
+            }
+
+            Self::Pointer(pointer) => {
+                write!(
+                    formatter,
+                    "*{}",
+                    if pointer.mutable { "mut " } else { "" }
+                )?;
+
+                Box::pin(pointer.pointee.deref().fmt(engine, formatter)).await
+            }
+
+            Self::Reference(reference) => {
+                write!(formatter, "&")?;
+
+                if reference.lifetime.will_be_displayed() {
+                    reference.lifetime.fmt(engine, formatter).await?;
+                    write!(formatter, " ")?;
+                }
+
+                if reference.qualifier == Qualifier::Mutable {
+                    write!(formatter, "mut ")?;
+                }
+
+                Box::pin(reference.pointee.deref().fmt(engine, formatter)).await
+            }
+
+            Self::Array(array) => {
+                write!(formatter, "[")?;
+                Box::pin(array.r#type.fmt(engine, formatter)).await?;
+                write!(formatter, " x ")?;
+                Box::pin(array.length.fmt(engine, formatter)).await?;
+                write!(formatter, "]")
+            }
+
+            Self::Tuple(tuple) => Box::pin(tuple.fmt(engine, formatter)).await,
+
+            Self::Phantom(phantom) => {
+                Box::pin(phantom.0.fmt(engine, formatter)).await
+            }
+
+            Self::MemberSymbol(member_symbol) => {
+                Box::pin(member_symbol.fmt(engine, formatter)).await
+            }
+
+            Self::TraitMember(trait_member) => {
+                Box::pin(trait_member.fmt(engine, formatter)).await
+            }
+
+            Self::FunctionSignature(function_signature) => {
+                write!(formatter, "function(")?;
+                for (i, ty) in function_signature.parameters.iter().enumerate()
+                {
+                    Box::pin(ty.fmt(engine, formatter)).await?;
+
+                    if i != function_signature.parameters.len() - 1 {
+                        write!(formatter, ", ")?;
+                    }
+                }
+
+                write!(formatter, ") -> ")?;
+
+                Box::pin(function_signature.return_type.fmt(engine, formatter))
+                    .await
+            }
+
+            Self::Error(_) => {
+                write!(formatter, "{{error}}")
+            }
+        }
     }
 }

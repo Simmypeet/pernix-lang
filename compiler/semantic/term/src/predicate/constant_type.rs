@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -27,5 +29,16 @@ impl ConstantType {
     /// Applies the instantiation to the type.
     pub fn instantiate(&mut self, instantiation: &Instantiation) {
         instantiation.instantiate(&mut self.0);
+    }
+}
+
+impl crate::display::Display for ConstantType {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.0.fmt(engine, formatter).await?;
+        write!(formatter, ": const")
     }
 }

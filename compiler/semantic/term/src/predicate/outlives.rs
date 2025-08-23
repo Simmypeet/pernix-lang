@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -48,5 +50,17 @@ impl<T> Outlives<T> {
     {
         instantiation.instantiate(&mut self.bound);
         instantiation.instantiate(&mut self.operand);
+    }
+}
+
+impl<T: crate::display::Display> crate::display::Display for Outlives<T> {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.operand.fmt(engine, formatter).await?;
+        write!(formatter, ": ")?;
+        self.bound.fmt(engine, formatter).await
     }
 }

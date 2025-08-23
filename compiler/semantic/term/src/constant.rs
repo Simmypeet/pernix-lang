@@ -1,15 +1,17 @@
 //! Contains the definition of [`Constant`] term.
 
-use std::ops::Deref as _;
+use std::{fmt::Write, ops::Deref};
 
+use derive_more::Display;
 use enum_as_inner::EnumAsInner;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_symbol::name::get_qualified_name;
 use pernixc_target::Global;
 
 use crate::{
     error::Error,
-    generic_parameters::ConstantParameterID,
+    generic_parameters::{get_generic_parameters, ConstantParameterID},
     inference::Inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
@@ -36,19 +38,31 @@ pub mod arbitrary;
     Serialize,
     Deserialize,
     EnumAsInner,
+    Display,
 )]
 #[allow(missing_docs)]
 pub enum Primitive {
+    #[display("{_0}i8")]
     Int8(i8),
+    #[display("{_0}i16")]
     Int16(i16),
+    #[display("{_0}i32")]
     Int32(i32),
+    #[display("{_0}i64")]
     Int64(i64),
+    #[display("{_0}isize")]
     Isize(i64),
+    #[display("{_0}u8")]
     Uint8(u8),
+    #[display("{_0}u16")]
     Uint16(u16),
+    #[display("{_0}u32")]
     Uint32(u32),
+    #[display("{_0}u64")]
     Uint64(u64),
+    #[display("{_0}usize")]
     Usize(u64),
+    #[display("{_0}bool")]
     Bool(bool),
 }
 
@@ -454,5 +468,83 @@ impl Match for Constant {
         >,
     ) -> &mut Vec<Matching<Self, Self::ThisSubTermLocation>> {
         &mut substructural.constants
+    }
+}
+
+impl crate::display::Display for Constant {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Primitive(primitive) => write!(formatter, "{primitive}"),
+
+            Self::Inference(_) => write!(formatter, "_"),
+
+            Self::Parameter(member_id) => {
+                let generic_parameters = engine
+                    .get_generic_parameters(member_id.parent_id)
+                    .await
+                    .unwrap();
+
+                write!(
+                    formatter,
+                    "{}",
+                    generic_parameters.constants()[member_id.id].name
+                )
+            }
+
+            Self::Struct(stu) => {
+                let qualified_name = engine.get_qualified_name(stu.id).await;
+
+                write!(formatter, "{qualified_name} {{ ")?;
+                for (i, field) in stu.fields.iter().enumerate() {
+                    Box::pin(field.fmt(engine, formatter)).await?;
+
+                    if i != stu.fields.len() - 1 {
+                        write!(formatter, ", ")?;
+                    }
+                }
+                write!(formatter, " }}")
+            }
+
+            Self::Enum(en) => {
+                let qualified_name =
+                    engine.get_qualified_name(en.variant_id).await;
+
+                write!(formatter, "{qualified_name}")?;
+
+                if let Some(variant) = en.associated_value.as_ref() {
+                    write!(formatter, "(")?;
+                    Box::pin(variant.fmt(engine, formatter)).await?;
+                    write!(formatter, ")")?;
+                }
+
+                Ok(())
+            }
+
+            Self::Array(array) => {
+                write!(formatter, "[")?;
+
+                for (i, element) in array.elements.iter().enumerate() {
+                    Box::pin(element.fmt(engine, formatter)).await?;
+
+                    if i != array.elements.len() - 1 {
+                        write!(formatter, ", ")?;
+                    }
+                }
+
+                write!(formatter, "]")?;
+
+                Ok(())
+            }
+
+            Self::Tuple(tuple) => Box::pin(tuple.fmt(engine, formatter)).await,
+
+            Self::Phantom => write!(formatter, "phantom"),
+
+            Self::Error(_) => write!(formatter, "{{error}}"),
+        }
     }
 }

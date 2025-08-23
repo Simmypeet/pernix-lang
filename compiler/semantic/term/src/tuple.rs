@@ -1,5 +1,7 @@
 //! Contains the definition of a [`Tuple`] term.
 
+use std::fmt::Write;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -51,6 +53,41 @@ pub struct Element<Term> {
 pub struct Tuple<Term> {
     /// The elements of the tuple.
     pub elements: Vec<Element<Term>>,
+}
+
+impl<T: crate::display::Display> crate::display::Display for Element<T> {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        if self.is_unpacked {
+            formatter.write_str("...")?;
+        }
+
+        self.term.fmt(engine, formatter).await
+    }
+}
+
+impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        formatter.write_str("(")?;
+
+        for (i, element) in self.elements.iter().enumerate() {
+            element.fmt(engine, formatter).await?;
+
+            if i < self.elements.len() - 1 {
+                formatter.write_str(", ")?;
+            }
+        }
+
+        formatter.write_str(")")?;
+        Ok(())
+    }
 }
 
 /// Represents a sub-term location where the sub-term is stored as an element of

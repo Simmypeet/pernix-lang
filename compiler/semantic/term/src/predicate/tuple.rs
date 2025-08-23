@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -38,5 +40,16 @@ impl<T> Tuple<T> {
         T: instantiation::Element + visitor::Element + Clone,
     {
         instantiation.instantiate(&mut self.0);
+    }
+}
+
+impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
+    async fn fmt(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.0.fmt(engine, formatter).await?;
+        write!(formatter, ": tuple")
     }
 }
