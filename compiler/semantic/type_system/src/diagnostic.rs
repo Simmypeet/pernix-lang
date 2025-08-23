@@ -5,7 +5,9 @@ use pernixc_diagnostic::{Highlight, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
+use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -16,7 +18,17 @@ use crate::OverflowError;
 
 /// Diagnostic messages for the type system.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::From,
 )]
 #[allow(missing_docs)]
 pub enum Diagnostic {
@@ -27,10 +39,49 @@ pub enum Diagnostic {
     ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
 }
 
+impl Report<&TrackedEngine> for Diagnostic {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        parameter: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        match self {
+            Self::TypeCalculatingOverflow(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::TypeCheckOverflow(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::UnsatisfiedPredicate(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::PredicateSatisfiabilityOverflow(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+            Self::ImplementationIsNotGeneralEnough(diagnostic) => {
+                diagnostic.report(parameter).await
+            }
+        }
+    }
+}
+
 /// An [`OverflowError`] occurred while calculating the type of an expression or
 /// symbol.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_new::new,
+    Builder,
 )]
 pub struct TypeCalculatingOverflow {
     /// The span where the overflow occurred.
@@ -67,7 +118,19 @@ impl Report<&TrackedEngine> for TypeCalculatingOverflow {
 
 /// An [`OverflowError`] occurred while performing a type check operation.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_new::new,
+    Builder,
 )]
 pub struct TypeCheckOverflow {
     /// The span where the overflow occurred.
@@ -107,7 +170,18 @@ impl Report<&TrackedEngine> for TypeCheckOverflow {
 /// The satisfiability of the predicate can't be decided (most likely Overflow
 /// error).
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_new::new,
+    Builder,
 )]
 pub struct PredicateSatisfiabilityOverflow {
     /// The undecidable predicate.
@@ -159,7 +233,19 @@ impl Report<&TrackedEngine> for PredicateSatisfiabilityOverflow {
 }
 
 /// The bound is not satisfied upon instantiation.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Builder)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Builder,
+)]
 pub struct UnsatisfiedPredicate {
     /// The unsatisfied bound.
     pub predicate: Predicate,
@@ -207,7 +293,19 @@ impl Report<&TrackedEngine> for UnsatisfiedPredicate {
 
 /// The implementation is not general enough to satisfy the required
 /// predicate's forall lifetimes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Builder,
+)]
 pub struct ImplementationIsNotGeneralEnough {
     /// The ID of the implementation where the predicate is not satisfied.
     pub resolvable_implementation_id: Global<pernixc_symbol::ID>,

@@ -6,6 +6,7 @@ use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type, Config,
 };
+use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_type_alias_syntax;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
@@ -47,15 +48,17 @@ impl executor::Executor<BuildKey> for BuildExecutor {
         let extra_namespace =
             engine.get_generic_parameter_namespace(key.id).await?;
 
-        let mut ty = engine.resolve_type(
-            &syntax_tree,
-            Config::builder()
-                .observer(&mut occurrences)
-                .extra_namespace(&extra_namespace)
-                .referring_site(key.id)
-                .build(),
-            &storage,
-        );
+        let mut ty = engine
+            .resolve_type(
+                &syntax_tree,
+                Config::builder()
+                    .observer(&mut occurrences)
+                    .extra_namespace(&extra_namespace)
+                    .referring_site(key.id)
+                    .build(),
+                &storage,
+            )
+            .await?;
 
         let premise = engine.get_active_premise(key.id).await?;
         let env = Environment::new(
@@ -64,14 +67,29 @@ impl executor::Executor<BuildKey> for BuildExecutor {
             normalizer::NO_OP,
         );
 
-        /*
-        ty = env.simplify_and_check_lifetime_constraints(
-            &ty,
-            &syntax_tree.span(),
-            handler,
-        );
-        */
+        ty = match env
+            .simplify_and_check_lifetime_constraints(
+                &ty,
+                &syntax_tree.span(),
+                &storage,
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => match error {
+                pernixc_type_system::Error::Overflow(_) => {
+                    Type::Error(pernixc_term::error::Error)
+                }
+                pernixc_type_system::Error::CyclicDependency(cyclic_error) => {
+                    return Err(cyclic_error)
+                }
+            },
+        };
 
-        todo!()
+        Ok(Build {
+            item: Arc::new(ty),
+            diagnostics: Arc::default(),
+            occurrences: Arc::default(),
+        })
     }
 }
