@@ -25,7 +25,9 @@ parking_lot = { workspace = true }
 enum-as-inner = { workspace = true }
 getset = { workspace = true }
 derive-new = { workspace = true }
+derive_more = { workspace = true }
 rstest = { workspace = true }
+bon = { workspace = true }
 
 
 [dev-dependencies]

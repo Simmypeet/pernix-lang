@@ -13,9 +13,10 @@ use pernixc_term::{
 
 use crate::{
     environment::{BoxedFuture, Environment, Query},
+    lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
-    Error, LifetimeConstraint, Satisfiability, Satisfied, Succeeded,
+    Error, Satisfiability, Satisfied, Succeeded,
 };
 
 struct Visitor<'a, 'e, N: Normalizer> {

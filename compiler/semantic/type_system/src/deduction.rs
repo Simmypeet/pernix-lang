@@ -15,11 +15,12 @@ use pernixc_term::{
 use crate::{
     environment::Environment,
     equality::Equality,
+    lifetime_constraint::LifetimeConstraint,
     mapping::Mapping,
     normalizer::Normalizer,
     term::Term,
     unification::{self, Log, Unification},
-    LifetimeConstraint, OverflowError, Satisfied, Succeeded,
+    OverflowError, Satisfied, Succeeded,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

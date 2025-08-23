@@ -10,7 +10,8 @@ use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
 use pernixc_stable_hash::StableHash;
-use pernixc_term::{lifetime::Lifetime, predicate::Outlives};
+
+use crate::lifetime_constraint::LifetimeConstraint;
 
 pub mod adt_fields;
 pub mod deduction;
@@ -19,6 +20,7 @@ pub mod diagnostic;
 pub mod environment;
 pub mod equality;
 pub mod equivalence;
+pub mod lifetime_constraint;
 pub mod mapping;
 pub mod normalizer;
 pub mod order;
@@ -103,13 +105,6 @@ pub enum Error {
 /// A tag type signaling that the predicate/query is satisfied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Satisfied;
-
-/// Contains constraints related to lifetimes.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-#[allow(missing_docs)]
-pub enum LifetimeConstraint {
-    LifetimeOutlives(Outlives<Lifetime>),
-}
 
 /// The result of the semantic logic in the success case.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

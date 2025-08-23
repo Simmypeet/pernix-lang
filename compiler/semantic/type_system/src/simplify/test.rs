@@ -13,9 +13,9 @@ use pernixc_term::{
 
 use crate::{
     environment::{Environment, Premise},
+    lifetime_constraint::LifetimeConstraint,
     normalizer,
     simplify::Simplify,
-    LifetimeConstraint,
 };
 
 #[tokio::test]

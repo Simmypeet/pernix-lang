@@ -1,5 +1,6 @@
 //! Defines the diagnostic related to the type system checking
 
+use bon::Builder;
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
@@ -12,6 +13,19 @@ use pernixc_term::{
 };
 
 use crate::OverflowError;
+
+/// Diagnostic messages for the type system.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
+)]
+#[allow(missing_docs)]
+pub enum Diagnostic {
+    TypeCalculatingOverflow(TypeCalculatingOverflow),
+    TypeCheckOverflow(TypeCheckOverflow),
+    UnsatisfiedPredicate(UnsatisfiedPredicate),
+    PredicateSatisfiabilityOverflow(PredicateSatisfiabilityOverflow),
+    ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
+}
 
 /// An [`OverflowError`] occurred while calculating the type of an expression or
 /// symbol.
@@ -145,7 +159,7 @@ impl Report<&TrackedEngine> for PredicateSatisfiabilityOverflow {
 }
 
 /// The bound is not satisfied upon instantiation.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Builder)]
 pub struct UnsatisfiedPredicate {
     /// The unsatisfied bound.
     pub predicate: Predicate,
@@ -264,44 +278,51 @@ pub struct Reported;
 impl OverflowError {
     /// Reports the [`OverflowError`] as a
     /// [`TypeCalculatingOverflow`] to be reported to the user.
+    #[must_use]
     pub fn report_as_type_calculating_overflow(
         self,
         overflow_span: RelativeSpan,
-        handler: &dyn Handler<TypeCalculatingOverflow>,
-    ) -> Reported {
-        handler.receive(TypeCalculatingOverflow::new(overflow_span, self));
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Self {
+        handler
+            .receive(TypeCalculatingOverflow::new(overflow_span, self).into());
 
-        Reported
+        self
     }
 
     /// Reports the [`OverflowError`] as a [`TypeCheckOverflow`] to
     /// be reported to the user.
+    #[must_use]
     pub fn report_as_type_check_overflow(
         self,
         overflow_span: RelativeSpan,
-        handler: &dyn Handler<TypeCheckOverflow>,
-    ) -> Reported {
-        handler.receive(TypeCheckOverflow::new(overflow_span, self));
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Self {
+        handler.receive(TypeCheckOverflow::new(overflow_span, self).into());
 
-        Reported
+        self
     }
 
     /// Reports the [`OverflowError`] as a [`PredicateSatisfiabilityOverflow`]
     /// to be reported to the user.
+    #[must_use]
     pub fn report_as_undecidable_predicate(
         self,
         predicate: Predicate,
         predicate_declaration_span: Option<RelativeSpan>,
         instantiation_span: RelativeSpan,
-        handler: &dyn Handler<PredicateSatisfiabilityOverflow>,
-    ) -> Reported {
-        handler.receive(PredicateSatisfiabilityOverflow::new(
-            predicate,
-            predicate_declaration_span,
-            instantiation_span,
-            self,
-        ));
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Self {
+        handler.receive(
+            PredicateSatisfiabilityOverflow::new(
+                predicate,
+                predicate_declaration_span,
+                instantiation_span,
+                self,
+            )
+            .into(),
+        );
 
-        Reported
+        self
     }
 }

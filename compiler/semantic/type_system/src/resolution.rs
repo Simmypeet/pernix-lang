@@ -23,9 +23,10 @@ use pernixc_term::{
 use crate::{
     deduction::{self, Deduction},
     environment::{BoxedFuture, Environment, Query},
+    lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     order::{self, Order},
-    Error, LifetimeConstraint, Succeeded,
+    Error, Succeeded,
 };
 
 /// A result of a implementation resolution query.

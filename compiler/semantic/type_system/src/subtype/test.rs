@@ -16,9 +16,9 @@ use pernixc_term::{
 
 use crate::{
     environment::{Environment, Premise},
+    lifetime_constraint::LifetimeConstraint,
     normalizer,
     subtype::Subtype,
-    LifetimeConstraint,
 };
 
 #[rstest::rstest]

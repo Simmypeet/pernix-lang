@@ -2,13 +2,17 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use pernixc_term::{variance::Variance, visitor::AsyncMutable};
+use pernixc_handler::Handler;
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_term::{r#type::Type, variance::Variance, visitor::AsyncMutable};
 
 use crate::{
+    diagnostic::Diagnostic,
     environment::{BoxedFuture, Environment, Query},
+    lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
-    Error, LifetimeConstraint, Succeeded,
+    Error, Succeeded,
 };
 
 struct Visitor<'e, N: Normalizer> {
@@ -39,234 +43,6 @@ impl<U: Term, N: Normalizer> AsyncMutable<U> for Visitor<'_, N> {
         }
     }
 }
-
-/*
-
-
-#[allow(clippy::too_many_lines)]
-fn simplify_internal<T: Term>(
-    term: &T,
-    environment: &Environment<T::Model, impl Normalizer<T::Model>>,
-    simplified: &mut Simplified<T::Model>,
-) -> Result<Option<Succeeded<T, T::Model>>, AbruptError> {
-    if !T::simplified_mut(simplified).insert(term.clone()) {
-        return Ok(None);
-    }
-
-    // recursively simplify the term
-    let mut new_term = term.clone();
-    let mut visitor = Visitor {
-        environment,
-        simplified,
-        lifetime_constraints: BTreeSet::new(),
-        abrupt_error: None,
-    };
-    let _ = new_term.accept_one_level_mut(&mut visitor);
-
-    // extract out the lifetime constraints
-    let Visitor {
-        lifetime_constraints: mut outside_constraints,
-        abrupt_error: overflow_error,
-        ..
-    } = visitor;
-
-    if let Some(err) = overflow_error {
-        return Err(err);
-    }
-
-    // check for trait type equality
-    'out: {
-        if new_term.as_trait_member().is_none() {
-            break 'out;
-        }
-
-        let mut equivalent = None;
-
-        let mut environment_cloned = environment.clone();
-        let all_trait_type_equalities = environment_cloned
-            .premise
-            .predicates
-            .iter()
-            .filter(|x| T::as_trait_member_equality_predicate(x).is_some())
-            .cloned()
-            .collect::<Vec<_>>();
-
-        // look for the equivalents
-        'choice: for (i, trait_type_equality) in
-            all_trait_type_equalities.iter().enumerate()
-        {
-            let Some(trait_type_equality_unwrapped) =
-                T::as_trait_member_equality_predicate(trait_type_equality)
-            else {
-                unreachable!()
-            };
-
-            let lhs_trait_member =
-                T::from(trait_type_equality_unwrapped.lhs.clone());
-
-            assert!(environment_cloned
-                .premise
-                .predicates
-                .remove(trait_type_equality));
-
-            if let Some(unifier) = environment.query(&Unification::new(
-                new_term.clone(),
-                lhs_trait_member,
-                Arc::new(LifetimeUnifyingPredicate),
-            ))? {
-                let mut constraints = unifier.constraints.clone();
-
-                for (j, another_trait_type_equality) in
-                    all_trait_type_equalities.iter().enumerate()
-                {
-                    // skip the current trait type equality
-                    if i == j {
-                        continue;
-                    }
-
-                    assert!(environment_cloned
-                        .premise
-                        .predicates
-                        .remove(another_trait_type_equality));
-
-                    // check if the current rhs is equivalent to the other lhs
-                    let Some(another_trait_type_equality_unwrapped) =
-                        T::as_trait_member_equality_predicate(
-                            another_trait_type_equality,
-                        )
-                    else {
-                        unreachable!()
-                    };
-
-                    let unification = environment.query(&Unification::new(
-                        trait_type_equality_unwrapped.rhs.clone(),
-                        T::from(
-                            another_trait_type_equality_unwrapped.lhs.clone(),
-                        ),
-                        Arc::new(LifetimeUnifyingPredicate),
-                    ))?;
-
-                    // add back the other trait type equality
-                    environment_cloned
-                        .premise
-                        .predicates
-                        .insert(another_trait_type_equality.clone());
-
-                    // skip if the unification is successful
-                    if matches!(unification, Some(_)) {
-                        environment_cloned
-                            .premise
-                            .predicates
-                            .insert(trait_type_equality.clone());
-                        continue 'choice;
-                    }
-                }
-
-                // multiple equivalent is not allowed
-                if equivalent.is_some() {
-                    break 'out;
-                }
-
-                let mappings = Mapping::from_unifier(unifier.result.clone());
-
-                assert!(mappings.types.is_empty());
-                assert!(mappings.constants.is_empty());
-
-                for (lhs, values) in mappings.lifetimes {
-                    for rhs in values {
-                        if lhs == rhs {
-                            continue;
-                        }
-
-                        constraints.insert(
-                            LifetimeConstraint::LifetimeOutlives(
-                                Outlives::new(lhs.clone(), rhs.clone()),
-                            ),
-                        );
-                        constraints.insert(
-                            LifetimeConstraint::LifetimeOutlives(
-                                Outlives::new(rhs.clone(), lhs.clone()),
-                            ),
-                        );
-                    }
-                }
-
-                equivalent = Some(Succeeded {
-                    result: trait_type_equality_unwrapped.rhs.clone(),
-                    constraints,
-                });
-            }
-
-            environment_cloned
-                .premise
-                .predicates
-                .insert(trait_type_equality.clone());
-        }
-
-        // there must be exactly only one equivalent to avoid ambiguity
-        if let Some(Succeeded { result: equivalent_term, constraints }) =
-            equivalent
-        {
-            let Some(Succeeded {
-                result: equivalent,
-                constraints: new_constraints,
-            }) = simplify_internal(&equivalent_term, environment, simplified)?
-            else {
-                break 'out;
-            };
-
-            outside_constraints.extend(constraints);
-            outside_constraints.extend(new_constraints);
-
-            assert!(T::simplified_mut(simplified).remove(term));
-
-            return Ok(Some(Succeeded {
-                result: equivalent,
-                constraints: outside_constraints,
-            }));
-        }
-    }
-
-    // do normalization
-    'out: {
-        let Ok(Some(Succeeded { result: normalized, constraints })) =
-            new_term.normalize(environment)
-        else {
-            break 'out;
-        };
-
-        let Some(Succeeded {
-            result: equivalent,
-            constraints: new_constraints,
-        }) = simplify_internal(&normalized, environment, simplified)?
-        else {
-            break 'out;
-        };
-
-        outside_constraints.extend(constraints);
-        outside_constraints.extend(new_constraints);
-
-        assert!(T::simplified_mut(simplified).remove(term));
-        return Ok(Some(Succeeded {
-            result: equivalent,
-            constraints: outside_constraints,
-        }));
-    }
-
-    assert!(T::simplified_mut(simplified).remove(term));
-    Ok(Some(Succeeded { result: new_term, constraints: outside_constraints }))
-}
-
-/// Simplifies a term by recursively applying the normalization and trait member
-/// equality.
-pub fn simplify<T: Term>(
-    term: &T,
-    environment: &mut Environment<T::Model, impl Normalizer<T::Model>>,
-) -> Result<Succeeded<T, T::Model>, AbruptError> {
-    simplify_internal(term, environment, &mut Simplified::default())
-        .map(|x| x.unwrap_or_else(|| Succeeded::new(term.clone())))
-}
-*/
 
 /// A query for simplifying a term by recursively applying the normalization and
 /// trait member equality.
@@ -401,6 +177,37 @@ impl<N: Normalizer> Environment<'_, N> {
         term: T,
     ) -> Result<Arc<Succeeded<T>>, Error> {
         Ok(self.query(&Simplify(term)).await?.unwrap())
+    }
+
+    /// Simplifies a type and checks its lifetime constraints.
+    pub async fn simplify_and_check_lifetime_constraints(
+        &self,
+        ty: &Type,
+        type_span: &RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Type, Error> {
+        match self.query(&Simplify(ty.clone())).await {
+            Ok(Some(result)) => {
+                self.check_lifetime_constraints(
+                    &result.constraints,
+                    type_span,
+                    handler,
+                )
+                .await?;
+
+                Ok(result.result.clone())
+            }
+
+            Ok(None) => unreachable!(),
+
+            Err(Error::CyclicDependency(error)) => {
+                Err(Error::CyclicDependency(error))
+            }
+
+            Err(Error::Overflow(error)) => Err(Error::Overflow(
+                error.report_as_type_calculating_overflow(*type_span, handler),
+            )),
+        }
     }
 }
 

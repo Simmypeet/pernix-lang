@@ -20,10 +20,11 @@ use pernixc_term::{
 use crate::{
     environment::{BoxedFuture, Environment, Query},
     equality::Equality,
+    lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     term::Term,
     variance::get_variance_of,
-    LifetimeConstraint, Succeeded,
+    Succeeded,
 };
 
 /// A query for subtyping.
