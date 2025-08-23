@@ -16,15 +16,17 @@ pernixc_serialize = { path = "../../base/serialize" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_source_file = { path = "../../base/source_file" }
+pernixc_handler = { path = "../../base/handler" }
+pernixc_term = { path = "../term" }
 pernixc_hash = { path = "../../base/hash" }
 pernixc_symbol = { path = "../symbol" }
-pernixc_term = { path = "../term" }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
 enum-as-inner = { workspace = true }
 getset = { workspace = true }
 derive-new = { workspace = true }
 rstest = { workspace = true }
+
 
 [dev-dependencies]
 pernixc_symbol = { path = "../symbol", features = ["arbitrary"] }

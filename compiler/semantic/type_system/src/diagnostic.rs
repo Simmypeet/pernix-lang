@@ -1,6 +1,7 @@
 //! Defines the diagnostic related to the type system checking
 
 use pernixc_diagnostic::{Highlight, Report};
+use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_source_file::ByteIndex;
@@ -247,5 +248,60 @@ impl Report<&TrackedEngine> for ImplementationIsNotGeneralEnough {
                 None => vec![],
             })
             .build()
+    }
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[error(
+    "overflow occurred during type checking, the error has been reported to \
+     the user"
+)]
+#[allow(missing_docs)]
+pub struct Reported;
+
+impl OverflowError {
+    /// Reports the [`OverflowError`] as a
+    /// [`TypeCalculatingOverflow`] to be reported to the user.
+    pub fn report_as_type_calculating_overflow(
+        self,
+        overflow_span: RelativeSpan,
+        handler: &dyn Handler<TypeCalculatingOverflow>,
+    ) -> Reported {
+        handler.receive(TypeCalculatingOverflow::new(overflow_span, self));
+
+        Reported
+    }
+
+    /// Reports the [`OverflowError`] as a [`TypeCheckOverflow`] to
+    /// be reported to the user.
+    pub fn report_as_type_check_overflow(
+        self,
+        overflow_span: RelativeSpan,
+        handler: &dyn Handler<TypeCheckOverflow>,
+    ) -> Reported {
+        handler.receive(TypeCheckOverflow::new(overflow_span, self));
+
+        Reported
+    }
+
+    /// Reports the [`OverflowError`] as a [`PredicateSatisfiabilityOverflow`]
+    /// to be reported to the user.
+    pub fn report_as_undecidable_predicate(
+        self,
+        predicate: Predicate,
+        predicate_declaration_span: Option<RelativeSpan>,
+        instantiation_span: RelativeSpan,
+        handler: &dyn Handler<PredicateSatisfiabilityOverflow>,
+    ) -> Reported {
+        handler.receive(PredicateSatisfiabilityOverflow::new(
+            predicate,
+            predicate_declaration_span,
+            instantiation_span,
+            self,
+        ));
+
+        Reported
     }
 }
