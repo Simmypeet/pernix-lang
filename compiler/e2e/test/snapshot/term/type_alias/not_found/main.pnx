@@ -1,0 +1,1 @@
+public type Fizz['a, 'b, T, U] = (&'a T, U, &'b mut What)
