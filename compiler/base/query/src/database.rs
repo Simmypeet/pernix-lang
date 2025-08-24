@@ -13,7 +13,7 @@ use std::{
     },
 };
 
-use dashmap::{DashMap, DashSet};
+use dashmap::{DashMap, DashSet, OccupiedEntry};
 use enum_as_inner::EnumAsInner;
 use getset::CopyGetters;
 use parking_lot::RwLock;
@@ -309,7 +309,7 @@ struct ReExecute {
 
 enum HandleCompletion<V> {
     Return(Option<V>),
-    Continuation(Continuation),
+    Continuation(Continuation, Arc<Notify>),
 }
 
 #[derive(Debug)]
@@ -547,10 +547,13 @@ impl Engine {
 
     async fn handle_completion<K: Key>(
         &self,
-        completion: &mut Completion,
+        key: &K,
+        mut entry: OccupiedEntry<'_, DynamicKey, State>,
         current_version: u64,
         return_value: bool,
     ) -> HandleCompletion<K::Value> {
+        let completion = entry.get_mut().as_completion_mut().unwrap();
+
         if completion
             .metadata
             .as_derived()
@@ -567,6 +570,30 @@ impl Engine {
                     ));
                 }
 
+                // the value is somehow not available, we must load from the db
+                // and save it to the memory of just recompute it if we couldn't
+                // load from the db somehow.
+
+                // change to running state so that we can signify that we're
+                // loading something from db.
+
+                let notify = Arc::new(Notify::new());
+                let mut completion = entry
+                    .insert(State::Running(Running {
+                        notify: notify.clone(),
+                        dependencies_order: RwLock::default(),
+                        dependencies_set: DashSet::default(),
+                        is_in_scc: AtomicBool::new(false),
+                        is_in_parallel: false,
+                    }))
+                    .into_completion()
+                    .unwrap();
+
+                drop(entry);
+
+                // from now on there should be no "entry lock", it's should be
+                // save to asynchronously load the value.
+
                 let value = match completion.metadata.value_fingerprint() {
                     Some(fingerprint) => {
                         self.try_load_value::<K>(fingerprint).await
@@ -578,6 +605,22 @@ impl Engine {
                 // return it
                 if let Some(value) = value {
                     completion.store = Some(smallbox::smallbox!(value.clone()));
+
+                    // restore the completion state and notify
+                    let mut write = self
+                        .database
+                        .query_states_by_key
+                        .get_mut(key as &dyn Dynamic)
+                        .unwrap();
+
+                    assert!(write.is_running());
+
+                    // restore the completion state
+                    *write = State::Completion(completion);
+
+                    // notify waiters while loading the value
+                    notify.notify_waiters();
+
                     return HandleCompletion::Return(Some(value));
                 }
 
@@ -602,6 +645,7 @@ impl Engine {
                         // the query a derived value.
                         ValueMetadata::Input(_) => Continuation::Fresh,
                     },
+                    notify,
                 );
             }
 
@@ -618,11 +662,27 @@ impl Engine {
                 .expect("should have been a derived value variant"),
         );
 
+        // set running state
+        let notify = Arc::new(Notify::new());
+
+        let continuation = HandleCompletion::Continuation(
+            Continuation::ReVerify(ReVerify {
+                derived_metadata,
+                value_store: std::mem::take(&mut completion.store),
+            }),
+            notify.clone(),
+        );
+
+        entry.insert(State::Running(Running {
+            notify,
+            dependencies_order: RwLock::default(),
+            dependencies_set: DashSet::default(),
+            is_in_scc: AtomicBool::new(false),
+            is_in_parallel: false,
+        }));
+
         // re-verify the value with the dependencies
-        HandleCompletion::Continuation(Continuation::ReVerify(ReVerify {
-            derived_metadata,
-            value_store: std::mem::take(&mut completion.store),
-        }))
+        continuation
     }
 
     #[allow(clippy::too_many_lines)]
@@ -643,34 +703,27 @@ impl Engine {
                     // and wait for the notification to be sent
                     State::Running(_) => SlowPathDecision::TryAgain,
 
-                    State::Completion(completion) => {
-                        let continuation = match self
+                    State::Completion(_) => {
+                        match self
                             .handle_completion::<K>(
-                                completion,
+                                key,
+                                occupied_entry,
                                 current_version,
                                 return_value,
                             )
                             .await
                         {
                             HandleCompletion::Return(value) => {
-                                return SlowPathDecision::Return(value)
+                                SlowPathDecision::Return(value)
                             }
-                            HandleCompletion::Continuation(continuation) => {
-                                continuation
-                            }
-                        };
-
-                        let notify = Arc::new(Notify::new());
-
-                        *occupied_entry.get_mut() = State::Running(Running {
-                            notify: notify.clone(),
-                            dependencies_order: RwLock::default(),
-                            dependencies_set: DashSet::default(),
-                            is_in_scc: AtomicBool::new(false),
-                            is_in_parallel: false,
-                        });
-
-                        SlowPathDecision::Continuation(continuation, notify)
+                            HandleCompletion::Continuation(
+                                continuation,
+                                notify,
+                            ) => SlowPathDecision::Continuation(
+                                continuation,
+                                notify,
+                            ),
+                        }
                     }
                 }
             }
@@ -678,7 +731,20 @@ impl Engine {
             dashmap::Entry::Vacant(vacant_entry) => {
                 let fingerprint = key.fingerprint(self.database.random_seed);
 
-                // try loading the version from the persistent storage
+                let notify = Arc::new(Notify::new());
+
+                // we'll drop the "write entry lock" of the map before we await
+                // the loading of the metadata to avoid unexpected deadlock
+                vacant_entry.insert(State::Running(Running {
+                    notify: notify.clone(),
+                    dependencies_order: RwLock::default(),
+                    dependencies_set: DashSet::default(),
+                    is_in_scc: AtomicBool::new(false),
+                    is_in_parallel: false,
+                }));
+
+                // vaccant entry lock should be gone now, try loading the
+                // version from the persistent storage
                 let loaded_metadata =
                     self.try_load_value_metadata::<K>(fingerprint).await;
 
@@ -704,27 +770,34 @@ impl Engine {
                             };
 
                             if let Some(value) = value {
-                                // store the value in the cache
-                                vacant_entry.insert(State::Completion(
-                                    Completion {
-                                        metadata: loaded_metadata,
-                                        store: Some(smallbox::smallbox!(
-                                            value.clone()
-                                        )),
-                                    },
-                                ));
+                                // save the value and turn it into a completion
+                                let mut entry = self
+                                    .database
+                                    .query_states_by_key
+                                    .get_mut(key as &dyn Dynamic)
+                                    .unwrap();
+
+                                assert!(
+                                    entry.is_running(),
+                                    "should've been running"
+                                );
+
+                                *entry = State::Completion(Completion {
+                                    metadata: loaded_metadata,
+                                    store: Some(smallbox::smallbox!(
+                                        value.clone()
+                                    )),
+                                });
+
+                                // release the write lock first
+                                drop(entry);
+
+                                // notify the waiting tasks that the value is
+                                // ready
+                                notify.notify_waiters();
 
                                 return SlowPathDecision::Return(Some(value));
                             }
-
-                            let notify = Arc::new(Notify::new());
-                            vacant_entry.insert(State::Running(Running {
-                                notify: notify.clone(),
-                                dependencies_order: RwLock::default(),
-                                dependencies_set: DashSet::default(),
-                                is_in_scc: AtomicBool::new(false),
-                                is_in_parallel: false,
-                            }));
 
                             return SlowPathDecision::Continuation(
                                 match loaded_metadata {
@@ -744,23 +817,27 @@ impl Engine {
                             );
                         }
 
-                        vacant_entry.insert(State::Completion(Completion {
+                        // save the value and turn it into a completion
+                        let mut entry = self
+                            .database
+                            .query_states_by_key
+                            .get_mut(key as &dyn Dynamic)
+                            .unwrap();
+
+                        *entry = State::Completion(Completion {
                             metadata: loaded_metadata,
                             store: None,
-                        }));
+                        });
+
+                        // release the write lock first
+                        drop(entry);
+
+                        // notifies all the waiters
+                        notify.notify_waiters();
 
                         // doesn't need the value, just return
                         return SlowPathDecision::Return(None);
                     }
-
-                    let notify = Arc::new(Notify::new());
-                    vacant_entry.insert(State::Running(Running {
-                        notify: notify.clone(),
-                        dependencies_order: RwLock::default(),
-                        dependencies_set: DashSet::default(),
-                        is_in_scc: AtomicBool::new(false),
-                        is_in_parallel: false,
-                    }));
 
                     // the value is not up-to-date, need to re-verify it
                     return SlowPathDecision::Continuation(
@@ -774,16 +851,6 @@ impl Engine {
                         notify,
                     );
                 }
-
-                // no version found, need to create a fresh query
-                let notify = Arc::new(Notify::new());
-                vacant_entry.insert(State::Running(Running {
-                    notify: notify.clone(),
-                    dependencies_order: RwLock::default(),
-                    dependencies_set: DashSet::default(),
-                    is_in_scc: AtomicBool::new(false),
-                    is_in_parallel: false,
-                }));
 
                 tracing::debug!(
                     "Fresh query for `{}` with metadata: {:?}",

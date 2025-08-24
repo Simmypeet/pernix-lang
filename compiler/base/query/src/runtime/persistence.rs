@@ -236,7 +236,7 @@ impl std::io::Read for Reader {
 
 /// Manages the persistence of the incremental compilation database including
 /// writing and reading the database to and from a storage path.
-pub struct Persistence<B = backend::sled::SledBackend> {
+pub struct Persistence<B = backend::redb::RedbBackend> {
     database: B,
 
     background_writer: RwLock<Option<background::Worker>>,

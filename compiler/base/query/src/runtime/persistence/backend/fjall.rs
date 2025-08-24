@@ -78,12 +78,11 @@ impl super::Backend for FjallBackend {
         key: (u128, u128),
         buffer: &mut Vec<u8>,
     ) -> std::io::Result<bool> {
-        let handle = self.0.get_handle(table);
-        let key = tuple_to_array_key(key);
+        let handle = self.0.clone();
 
-        let result = tokio::task::spawn_blocking({
-            let handle = handle.clone();
-            move || handle.get(key)
+        let result = tokio::task::spawn_blocking(move || {
+            let key = tuple_to_array_key(key);
+            handle.get_handle(table).get(key)
         })
         .await
         .expect("failed to join");
@@ -128,6 +127,7 @@ impl super::BackgroundWriter for BackgroundWriter {
         Self: 'cx;
 
     fn new_write_transaction(&self) -> Self::Transaction<'_> {
+        println!("new transaction");
         WriteTransaction {
             write_batch: self.0.keyspace.batch(),
             fjall: self.0.clone(),
@@ -154,9 +154,15 @@ impl super::WriteTransaction for WriteTransaction {
     }
 
     fn commit(self) -> Result<(), std::io::Error> {
-        self.write_batch.commit().map_err(|e| {
+        println!("starting commit");
+
+        let result = self.write_batch.commit().map_err(|e| {
             std::io::Error::other(format!("Failed to commit write batch: {e}"))
-        })
+        });
+
+        println!("done commit");
+
+        result
     }
 }
 
@@ -173,7 +179,9 @@ impl super::Writer for Writer<'_> {
     ) -> std::io::Result<()> {
         let key = tuple_to_array_key(key);
 
+        println!("inserting: {key:?}");
         self.write_batch.insert(self.partition_handle, key, value);
+        println!("done inserting: {key:?}");
 
         Ok(())
     }

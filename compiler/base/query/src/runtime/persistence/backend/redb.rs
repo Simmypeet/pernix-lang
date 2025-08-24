@@ -81,36 +81,45 @@ impl super::Backend for RedbBackend {
         key: (u128, u128),
         buffer: &mut Vec<u8>,
     ) -> std::io::Result<bool> {
-        let table = self
-            .0
-            .read_transaction
-            .read()
-            .as_ref()
-            .unwrap()
-            .open_table(match table {
-                super::Table::ValueCache => VALUE_CACHE,
-                super::Table::ValueMetadata => VALUE_METADATA,
-            })
-            .map_err(|e| {
-                std::io::Error::other(format!(
-                    "Failed to open table {}: {e}",
-                    match table {
-                        super::Table::ValueCache => VALUE_CACHE.name(),
-                        super::Table::ValueMetadata => VALUE_METADATA.name(),
-                    }
-                ))
-            })?;
+        let value = tokio::task::spawn_blocking({
+            let db = self.0.clone();
 
-        let Some(value) = table.get(key).map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to get value from table: {e}"
-            ))
-        })?
-        else {
+            move || {
+                let table = db
+                    .read_transaction
+                    .read()
+                    .as_ref()
+                    .unwrap()
+                    .open_table(match table {
+                        super::Table::ValueCache => VALUE_CACHE,
+                        super::Table::ValueMetadata => VALUE_METADATA,
+                    })
+                    .map_err(|e| {
+                        std::io::Error::other(format!(
+                            "Failed to open table {}: {e}",
+                            match table {
+                                super::Table::ValueCache => VALUE_CACHE.name(),
+                                super::Table::ValueMetadata =>
+                                    VALUE_METADATA.name(),
+                            }
+                        ))
+                    })?;
+
+                table.get(key).map_err(|e| {
+                    std::io::Error::other(format!(
+                        "Failed to get value from table: {e}"
+                    ))
+                })
+            }
+        })
+        .await
+        .expect("failed to join")?;
+
+        if let Some(value) = value {
+            buffer.extend_from_slice(value.value());
+        } else {
             return Ok(false);
-        };
-
-        buffer.extend_from_slice(value.value());
+        }
 
         Ok(true)
     }
