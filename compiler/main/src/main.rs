@@ -22,8 +22,7 @@ use tracing_subscriber::{
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[tokio::main]
-async fn main() -> ExitCode {
+async fn main_async() -> ExitCode {
     // if the program is compiled in release mode, set the panic hook to
     // nicely print the error message and exit.
     #[cfg(not(debug_assertions))]
@@ -42,6 +41,15 @@ async fn main() -> ExitCode {
         );
 
     pernixc_driver::run(argument, &mut stderr, &mut stdout).await
+}
+
+fn main() -> ExitCode {
+    tokio::runtime::Builder::new_multi_thread()
+        .max_blocking_threads(6)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(main_async())
 }
 
 fn init_tracing(chrome_tracing: bool) -> Option<FlushGuard> {
