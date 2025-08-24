@@ -127,7 +127,6 @@ impl super::BackgroundWriter for BackgroundWriter {
         Self: 'cx;
 
     fn new_write_transaction(&self) -> Self::Transaction<'_> {
-        println!("new transaction");
         WriteTransaction {
             write_batch: self.0.keyspace.batch(),
             fjall: self.0.clone(),
@@ -154,13 +153,9 @@ impl super::WriteTransaction for WriteTransaction {
     }
 
     fn commit(self) -> Result<(), std::io::Error> {
-        println!("starting commit");
-
         let result = self.write_batch.commit().map_err(|e| {
             std::io::Error::other(format!("Failed to commit write batch: {e}"))
         });
-
-        println!("done commit");
 
         result
     }
@@ -179,9 +174,7 @@ impl super::Writer for Writer<'_> {
     ) -> std::io::Result<()> {
         let key = tuple_to_array_key(key);
 
-        println!("inserting: {key:?}");
         self.write_batch.insert(self.partition_handle, key, value);
-        println!("done inserting: {key:?}");
 
         Ok(())
     }
