@@ -37,13 +37,13 @@ mod backend;
 mod background;
 
 impl Engine {
-    pub(crate) fn try_load_value<K: Key>(
+    pub(crate) async fn try_load_value<K: Key>(
         &self,
         value_fingerprint: u128,
     ) -> Option<K::Value> {
         let persistence = self.runtime.persistence.as_ref()?;
 
-        match persistence.load_value::<K>(value_fingerprint) {
+        match persistence.load_value::<K>(value_fingerprint).await {
             Ok(value) => {
                 tracing::debug!(
                     "Loaded value for key {} with value fingerprint {}",
@@ -65,13 +65,13 @@ impl Engine {
         }
     }
 
-    pub(crate) fn try_load_value_metadata<K: Key>(
+    pub(crate) async fn try_load_value_metadata<K: Key>(
         &self,
         key_fingerprint: u128,
     ) -> Option<ValueMetadata> {
         let persistence = self.runtime.persistence.as_ref()?;
 
-        match persistence.load_value_metadata::<K>(key_fingerprint) {
+        match persistence.load_value_metadata::<K>(key_fingerprint).await {
             Ok(value_metadata) => {
                 tracing::debug!(
                     "Loaded metadata for key {} with key fingerprint {} got \
@@ -422,7 +422,7 @@ impl<B: Backend> Persistence<B> {
         self.skip_keys.insert(K::STABLE_TYPE_ID);
     }
 
-    fn load_from_table<K: Key, V>(
+    async fn load_from_table<K: Key, V>(
         &self,
         table: backend::Table,
         key: u128,
@@ -433,11 +433,11 @@ impl<B: Backend> Persistence<B> {
         let mut buffer = BUFFER.with(|b| std::mem::take(&mut *b.borrow_mut()));
         buffer.clear();
 
-        let result = match self.database.read(
-            table,
-            (K::STABLE_TYPE_ID.as_u128(), key),
-            &mut buffer,
-        ) {
+        let result = match self
+            .database
+            .read(table, (K::STABLE_TYPE_ID.as_u128(), key), &mut buffer)
+            .await
+        {
             Ok(true) => {
                 let reader = Reader::Vec(Cursor::new(buffer));
                 let mut deserializer = BinaryDeserializer::new(reader);
@@ -607,7 +607,7 @@ impl<B: Backend> Persistence<B> {
         level = "info",
         skip_all
     )]
-    fn load_value_metadata<K: Key>(
+    async fn load_value_metadata<K: Key>(
         &self,
         key_fingerprint: u128,
     ) -> Result<Option<ValueMetadata>, std::io::Error> {
@@ -621,6 +621,7 @@ impl<B: Backend> Persistence<B> {
                 )
             },
         )
+        .await
     }
 
     #[instrument(
@@ -631,7 +632,7 @@ impl<B: Backend> Persistence<B> {
         level = "info",
         skip_all
     )]
-    fn load_value<K: Key>(
+    async fn load_value<K: Key>(
         &self,
         value_fingerprint: u128,
     ) -> Result<Option<K::Value>, std::io::Error> {
@@ -656,6 +657,7 @@ impl<B: Backend> Persistence<B> {
                 Ok(buffer.unwrap())
             },
         )
+        .await
     }
 
     fn ensure_background_writer(

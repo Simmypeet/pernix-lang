@@ -67,28 +67,46 @@ impl Property<Type> for ByEquality {
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x, Type> {
         Box::pin(async move {
-            let added = Arc::get_mut(engine).unwrap().input_session(|x| {
-                let add_parent = x.set_input(
-                    pernixc_symbol::parent::Key(self.equality.id),
-                    Some(self.trait_id),
-                ) == SetInputResult::Fresh;
+            let added = Arc::get_mut(engine)
+                .unwrap()
+                .input_session(async |x| {
+                    let add_parent = x
+                        .set_input(
+                            pernixc_symbol::parent::Key(self.equality.id),
+                            Some(self.trait_id),
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                let add_kind = x.set_input(
-                    pernixc_symbol::kind::Key(
-                        self.equality.id.target_id.make_global(self.trait_id),
-                    ),
-                    Kind::Trait,
-                ) == SetInputResult::Fresh;
+                    let add_kind = x
+                        .set_input(
+                            pernixc_symbol::kind::Key(
+                                self.equality
+                                    .id
+                                    .target_id
+                                    .make_global(self.trait_id),
+                            ),
+                            Kind::Trait,
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                let add_implemented = x.set_input(
-                    pernixc_term::implemented::Key(
-                        self.equality.id.target_id.make_global(self.trait_id),
-                    ),
-                    Arc::default(),
-                ) == SetInputResult::Fresh;
+                    let add_implemented = x
+                        .set_input(
+                            pernixc_term::implemented::Key(
+                                self.equality
+                                    .id
+                                    .target_id
+                                    .make_global(self.trait_id),
+                            ),
+                            Arc::default(),
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                add_parent && add_kind && add_implemented
-            });
+                    add_parent && add_kind && add_implemented
+                })
+                .await;
 
             if !added {
                 return Err(AbortError::IDCollision);
@@ -233,24 +251,38 @@ impl Property<Type> for LifetimeMatching {
                 }
             }
 
-            let added = Arc::get_mut(engine).unwrap().input_session(|table| {
-                let added_kind = table.set_input(
-                    pernixc_symbol::kind::Key(self.struct_id),
-                    Kind::Struct,
-                ) == SetInputResult::Fresh;
+            let added = Arc::get_mut(engine)
+                .unwrap()
+                .input_session(async |table| {
+                    let added_kind = table
+                        .set_input(
+                            pernixc_symbol::kind::Key(self.struct_id),
+                            Kind::Struct,
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                let added_variance = table.set_input(
-                    pernixc_term::variance::Key(self.struct_id),
-                    variance_map,
-                ) == SetInputResult::Fresh;
+                    let added_variance = table
+                        .set_input(
+                            pernixc_term::variance::Key(self.struct_id),
+                            variance_map,
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                let added_generic_parameters = table.set_input(
-                    pernixc_term::generic_parameters::Key(self.struct_id),
-                    Arc::new(generic_parameter),
-                ) == SetInputResult::Fresh;
+                    let added_generic_parameters = table
+                        .set_input(
+                            pernixc_term::generic_parameters::Key(
+                                self.struct_id,
+                            ),
+                            Arc::new(generic_parameter),
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                added_kind && added_variance && added_generic_parameters
-            });
+                    added_kind && added_variance && added_generic_parameters
+                })
+                .await;
 
             if !added {
                 return Err(AbortError::IDCollision);

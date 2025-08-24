@@ -3,7 +3,7 @@ use crate::runtime::persistence::{
     background::Worker,
 };
 
-fn basic<B: Backend>() {
+async fn basic<B: Backend>() {
     let tempdir = tempfile::tempdir().unwrap();
 
     {
@@ -35,11 +35,11 @@ fn basic<B: Backend>() {
         db.refresh_read().unwrap();
 
         assert_eq!(
-            db.read_owned(Table::ValueCache, (0, 0)).unwrap(),
+            db.read_owned(Table::ValueCache, (0, 0)).await.unwrap(),
             Some(b"test_value".to_vec())
         );
         assert_eq!(
-            db.read_owned(Table::ValueMetadata, (1, 1)).unwrap(),
+            db.read_owned(Table::ValueMetadata, (1, 1)).await.unwrap(),
             Some(b"test_meta".to_vec())
         );
     }
@@ -49,21 +49,21 @@ fn basic<B: Backend>() {
         let db = B::create(tempdir.path()).unwrap();
 
         assert_eq!(
-            db.read_owned(Table::ValueCache, (0, 0)).unwrap(),
+            db.read_owned(Table::ValueCache, (0, 0)).await.unwrap(),
             Some(b"test_value".to_vec())
         );
         assert_eq!(
-            db.read_owned(Table::ValueMetadata, (1, 1)).unwrap(),
+            db.read_owned(Table::ValueMetadata, (1, 1)).await.unwrap(),
             Some(b"test_meta".to_vec())
         );
     }
 }
 
-#[test]
-fn basic_redb() { basic::<backend::redb::RedbBackend>(); }
+#[tokio::test]
+async fn basic_redb() { basic::<backend::redb::RedbBackend>().await; }
 
-#[test]
-fn basic_fjall() { basic::<backend::fjall::FjallBackend>(); }
+#[tokio::test]
+async fn basic_fjall() { basic::<backend::fjall::FjallBackend>().await; }
 
-#[test]
-fn basic_sled() { basic::<backend::sled::SledBackend>(); }
+#[tokio::test]
+async fn basic_sled() { basic::<backend::sled::SledBackend>().await; }

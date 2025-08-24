@@ -3,7 +3,7 @@ use crate::runtime::persistence::backend::{
     BackgroundWriter, Table, WriteTransaction, Writer,
 };
 
-fn basic_template<B: Backend>() {
+async fn basic_template<B: Backend>() {
     let temp_file = tempfile::tempdir().unwrap();
 
     {
@@ -26,11 +26,14 @@ fn basic_template<B: Backend>() {
         db.refresh_read().unwrap();
 
         let mut buffer = Vec::new();
-        assert!(db.read(Table::ValueCache, (0, 0), &mut buffer).unwrap());
+        assert!(db.read(Table::ValueCache, (0, 0), &mut buffer).await.unwrap());
         assert_eq!(buffer, b"test_value");
 
         let mut buffer = Vec::new();
-        assert!(db.read(Table::ValueMetadata, (0, 0), &mut buffer).unwrap());
+        assert!(db
+            .read(Table::ValueMetadata, (0, 0), &mut buffer)
+            .await
+            .unwrap());
         assert_eq!(buffer, b"test_meta");
     }
 
@@ -38,20 +41,23 @@ fn basic_template<B: Backend>() {
     {
         let db = B::create(temp_file.path()).unwrap();
         let mut buffer = Vec::new();
-        assert!(db.read(Table::ValueCache, (0, 0), &mut buffer).unwrap());
+        assert!(db.read(Table::ValueCache, (0, 0), &mut buffer).await.unwrap());
         assert_eq!(buffer, b"test_value");
 
         let mut buffer = Vec::new();
-        assert!(db.read(Table::ValueMetadata, (0, 0), &mut buffer).unwrap());
+        assert!(db
+            .read(Table::ValueMetadata, (0, 0), &mut buffer)
+            .await
+            .unwrap());
         assert_eq!(buffer, b"test_meta");
     }
 }
 
-#[test]
-fn basic_redb() { basic_template::<RedbBackend>(); }
+#[tokio::test]
+async fn basic_redb() { basic_template::<RedbBackend>().await; }
 
-#[test]
-fn basic_fjall() { basic_template::<FjallBackend>(); }
+#[tokio::test]
+async fn basic_fjall() { basic_template::<FjallBackend>().await; }
 
-#[test]
-fn basic_sled() { basic_template::<SledBackend>(); }
+#[tokio::test]
+async fn basic_sled() { basic_template::<SledBackend>().await; }

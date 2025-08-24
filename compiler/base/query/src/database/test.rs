@@ -109,10 +109,13 @@ impl Executor<SumNegatedVariable> for SumNegatedVariableExecutor {
 async fn negate_variable() {
     let mut engine = Arc::new(Engine::default());
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("a".to_string()), 100);
-        x.set_input(Variable("b".to_string()), 200);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("a".to_string()), 100).await;
+            x.set_input(Variable("b".to_string()), 200).await;
+        })
+        .await;
 
     assert_eq!(engine.version(), 1);
 
@@ -135,10 +138,13 @@ async fn negate_variable() {
 
     assert_eq!(value, -300);
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("a".to_string()), 200);
-        x.set_input(Variable("b".to_string()), 300);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("a".to_string()), 200).await;
+            x.set_input(Variable("b".to_string()), 300).await;
+        })
+        .await;
 
     assert_eq!(engine.version(), 2);
 
@@ -150,10 +156,13 @@ async fn negate_variable() {
 
     assert_eq!(value, -500);
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("a".to_string()), -300);
-        x.set_input(Variable("b".to_string()), -300);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("a".to_string()), -300).await;
+            x.set_input(Variable("b".to_string()), -300).await;
+        })
+        .await;
 
     assert_eq!(engine.version(), 3);
     let value = engine
@@ -213,9 +222,12 @@ async fn skip_when_input_unchanged() {
     let mut engine = Arc::new(Engine::default());
 
     // set the initial input
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("x".to_string()), 42);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("x".to_string()), 42).await;
+        })
+        .await;
 
     assert_eq!(engine.version(), 1);
 
@@ -251,9 +263,12 @@ async fn skip_when_input_unchanged() {
     assert_eq!(executor_arc.get_call_count(), 1); // Executor NOT called again
 
     // Now change the input - should trigger recomputation
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("x".to_string()), 100);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("x".to_string()), 100).await;
+        })
+        .await;
 
     assert_eq!(engine.version(), 2); // Version should increment
 
@@ -275,10 +290,13 @@ async fn skip_when_input_unchanged() {
     assert_eq!(result5, 200); // Same result
     assert_eq!(executor_arc.get_call_count(), 2); // Executor NOT called again
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        // Set input again but same value
-        x.set_input(Variable("x".to_string()), 100);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            // Set input again but same value
+            x.set_input(Variable("x".to_string()), 100).await;
+        })
+        .await;
 
     assert_eq!(engine.version(), 2); // Version should NOT increment
 
@@ -388,10 +406,13 @@ async fn skip_when_intermediate_result_unchanged() {
     let mut engine = Arc::new(Engine::default());
 
     // Set initial inputs - both positive values
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("x".to_string()), 400);
-        x.set_input(Variable("y".to_string()), 300);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("x".to_string()), 400).await;
+            x.set_input(Variable("y".to_string()), 300).await;
+        })
+        .await;
 
     assert_eq!(engine.version(), 1);
 
@@ -433,9 +454,12 @@ async fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again
 
     // Change x from 400 to -400 (abs value stays the same)
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("x".to_string()), -400);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("x".to_string()), -400).await;
+        })
+        .await;
     assert_eq!(engine.version(), 2); // Version should increment
 
     // Query after input change - abs executor should be called for x, but add
@@ -451,9 +475,12 @@ async fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // NOT called again because abs values are the same
 
     // Change y from 300 to -300 (abs value stays the same)
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("y".to_string()), -300);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("y".to_string()), -300).await;
+        })
+        .await;
     assert_eq!(engine.version(), 3); // Version should increment again
 
     // Query after second input change - abs executor should be called for y,
@@ -468,9 +495,12 @@ async fn skip_when_intermediate_result_unchanged() {
     assert_eq!(add_executor.get_call_count(), 1); // STILL not called because both abs values are the same
 
     // Now change x to a value that actually changes the abs result
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(Variable("x".to_string()), 500);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(Variable("x".to_string()), 500).await;
+        })
+        .await;
     assert_eq!(engine.version(), 4); // Version should increment
 
     // Query after meaningful change - both executors should be called
@@ -901,9 +931,12 @@ async fn conditional_cyclic_dependency() {
         .register(Arc::clone(&executor_b));
 
     // Phase 1: Set control value to create NO cycle (control_value != 1)
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(CycleControlVariable, 5);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(CycleControlVariable, 5).await;
+        })
+        .await;
 
     // Query both A and B - they should compute normal values without cycles
     let result_a =
@@ -920,9 +953,12 @@ async fn conditional_cyclic_dependency() {
     assert_eq!(executor_b.get_call_count(), 1);
 
     // Phase 2: Change control value to CREATE a cycle (control_value == 1)
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(CycleControlVariable, 1);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(CycleControlVariable, 1).await;
+        })
+        .await;
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -943,9 +979,12 @@ async fn conditional_cyclic_dependency() {
 
     // Phase 3: Change control value back to break the cycle (control_value !=
     // 1)
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(CycleControlVariable, 3);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(CycleControlVariable, 3).await;
+        })
+        .await;
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -966,9 +1005,12 @@ async fn conditional_cyclic_dependency() {
 
     // Phase 4: Create cycle again with a different control value
     // (control_value // == 1)
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(CycleControlVariable, 1);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(CycleControlVariable, 1).await;
+        })
+        .await;
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -1014,9 +1056,12 @@ async fn conditional_cyclic_with_dependent_query() {
 
     // Phase 1: No cycle - dependent query should use computed values
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(CycleControlVariable, 2);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(CycleControlVariable, 2).await;
+        })
+        .await;
 
     let result_dependent =
         engine.tracked().query(&DependentQuery).await.unwrap();
@@ -1032,9 +1077,12 @@ async fn conditional_cyclic_with_dependent_query() {
 
     // Phase 2: Create cycle - dependent query should use default values
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(CycleControlVariable, 1);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(CycleControlVariable, 1).await;
+        })
+        .await;
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -1056,9 +1104,12 @@ async fn conditional_cyclic_with_dependent_query() {
 
     // Phase 3: Break cycle again - dependent query should use computed values
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(CycleControlVariable, 4);
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(CycleControlVariable, 4).await;
+        })
+        .await;
 
     executor_a.reset_call_count();
     executor_b.reset_call_count();
@@ -1284,20 +1335,24 @@ async fn persistence_input_invalidation() {
 
     Arc::get_mut(&mut engine).unwrap().runtime.persistence = Some(persistence);
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(
-            VariableMap,
-            Arc::new(
-                [
-                    ("a".to_string(), 1),
-                    ("b".to_string(), 2),
-                    ("c".to_string(), 3),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-        );
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(
+                VariableMap,
+                Arc::new(
+                    [
+                        ("a".to_string(), 1),
+                        ("b".to_string(), 2),
+                        ("c".to_string(), 3),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .await;
+        })
+        .await;
 
     let a = engine.tracked().query(&GetValue("a".to_string())).await.unwrap();
     let b = engine.tracked().query(&GetValue("b".to_string())).await.unwrap();
@@ -1365,20 +1420,24 @@ async fn persistence_input_invalidation() {
     Arc::get_mut(&mut engine).unwrap().database = database;
 
     // change the input for VariableMap
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(
-            VariableMap,
-            Arc::new(
-                [
-                    ("a".to_string(), 10),
-                    ("b".to_string(), 20),
-                    ("c".to_string(), 30),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-        );
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(
+                VariableMap,
+                Arc::new(
+                    [
+                        ("a".to_string(), 10),
+                        ("b".to_string(), 20),
+                        ("c".to_string(), 30),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .await;
+        })
+        .await;
 
     // Query again after changing the input
     let a3 = engine.tracked().query(&GetValue("a".to_string())).await.unwrap();
@@ -1690,10 +1749,13 @@ async fn reverify_change_dependencies() {
         .executor
         .register(Arc::clone(&double_all_executor));
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        // Set initial dependencies
-        x.set_input(DependencyListKey, Arc::new([1, 2, 3, 4]));
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            // Set initial dependencies
+            x.set_input(DependencyListKey, Arc::new([1, 2, 3, 4])).await;
+        })
+        .await;
 
     // Query DoubleAll, which should compute the sum of double values
     let result = engine.tracked().query(&DoubleAll).await.unwrap();
@@ -1713,9 +1775,12 @@ async fn reverify_change_dependencies() {
     double_key_executor.executed.clear();
 
     // Change the dependencies to a new set
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(DependencyListKey, Arc::new([5, 6, 7]));
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(DependencyListKey, Arc::new([5, 6, 7])).await;
+        })
+        .await;
 
     // Query DoubleAll again, which should now compute the new dependencies
     let result = engine.tracked().query(&DoubleAll).await.unwrap();
@@ -1790,22 +1855,26 @@ impl Executor<IndexValue> for IndexValueExecutor {
 async fn panic_indexing() {
     let mut engine = Arc::new(Engine::default());
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(
-            VariableMap,
-            Arc::new(
-                [
-                    ("a".to_string(), 1),
-                    ("b".to_string(), 2),
-                    ("c".to_string(), 3),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-        );
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(
+                VariableMap,
+                Arc::new(
+                    [
+                        ("a".to_string(), 1),
+                        ("b".to_string(), 2),
+                        ("c".to_string(), 3),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .await;
 
-        x.set_input(ReadKey, "a".to_string().into());
-    });
+            x.set_input(ReadKey, "a".to_string().into()).await;
+        })
+        .await;
 
     Arc::get_mut(&mut engine)
         .unwrap()
@@ -1823,22 +1892,26 @@ async fn panic_indexing() {
 
     assert_eq!(result.unwrap(), 1); // Should return the value for "a"
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(
-            VariableMap,
-            Arc::new(
-                [
-                    ("c".to_string(), 1),
-                    ("d".to_string(), 2),
-                    ("e".to_string(), 3),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-        );
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(
+                VariableMap,
+                Arc::new(
+                    [
+                        ("c".to_string(), 1),
+                        ("d".to_string(), 2),
+                        ("e".to_string(), 3),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .await;
 
-        x.set_input(ReadKey, "e".to_string().into());
-    });
+            x.set_input(ReadKey, "e".to_string().into()).await;
+        })
+        .await;
 
     // Query again after changing the VariableMap
     let result = engine.tracked().query(&GetVariableMap).await;

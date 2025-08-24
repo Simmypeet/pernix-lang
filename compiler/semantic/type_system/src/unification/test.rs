@@ -401,34 +401,46 @@ impl Property<Type> for Mapping {
         premise: &'x mut Premise,
     ) -> BoxedFuture<'x> {
         Box::pin(async move {
-            let added = Arc::get_mut(engine).unwrap().input_session(|x| {
-                let add_parent = x.set_input(
-                    pernixc_symbol::parent::Key(self.trait_member.id),
-                    Some(self.trait_id),
-                ) == SetInputResult::Fresh;
+            let added = Arc::get_mut(engine)
+                .unwrap()
+                .input_session(async |x| {
+                    let add_parent = x
+                        .set_input(
+                            pernixc_symbol::parent::Key(self.trait_member.id),
+                            Some(self.trait_id),
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                let add_kind = x.set_input(
-                    pernixc_symbol::kind::Key(
-                        self.trait_member
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    ),
-                    Kind::Trait,
-                ) == SetInputResult::Fresh;
+                    let add_kind = x
+                        .set_input(
+                            pernixc_symbol::kind::Key(
+                                self.trait_member
+                                    .id
+                                    .target_id
+                                    .make_global(self.trait_id),
+                            ),
+                            Kind::Trait,
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                let add_implemented = x.set_input(
-                    pernixc_term::implemented::Key(
-                        self.trait_member
-                            .id
-                            .target_id
-                            .make_global(self.trait_id),
-                    ),
-                    Arc::default(),
-                ) == SetInputResult::Fresh;
+                    let add_implemented = x
+                        .set_input(
+                            pernixc_term::implemented::Key(
+                                self.trait_member
+                                    .id
+                                    .target_id
+                                    .make_global(self.trait_id),
+                            ),
+                            Arc::default(),
+                        )
+                        .await
+                        == SetInputResult::Fresh;
 
-                add_parent && add_kind && add_implemented
-            });
+                    add_parent && add_kind && add_implemented
+                })
+                .await;
 
             if !added {
                 return Err(AbortError::IDCollision);

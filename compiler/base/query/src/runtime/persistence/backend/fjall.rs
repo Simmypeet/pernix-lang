@@ -72,7 +72,7 @@ impl super::Backend for FjallBackend {
         })))
     }
 
-    fn read(
+    async fn read(
         &self,
         table: super::Table,
         key: (u128, u128),
@@ -81,7 +81,14 @@ impl super::Backend for FjallBackend {
         let handle = self.0.get_handle(table);
         let key = tuple_to_array_key(key);
 
-        (handle.get(key).map_err(|e| {
+        let result = tokio::task::spawn_blocking({
+            let handle = handle.clone();
+            move || handle.get(key)
+        })
+        .await
+        .expect("failed to join");
+
+        (result.map_err(|e| {
             std::io::Error::other(format!(
                 "Failed to read from partition {}: {e}",
                 match table {

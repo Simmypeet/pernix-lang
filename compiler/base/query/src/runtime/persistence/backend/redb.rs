@@ -75,7 +75,7 @@ impl super::Backend for RedbBackend {
         })))
     }
 
-    fn read(
+    async fn read(
         &self,
         table: super::Table,
         key: (u128, u128),

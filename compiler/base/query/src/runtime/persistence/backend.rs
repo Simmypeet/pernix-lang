@@ -16,6 +16,7 @@ pub enum Table {
     ValueCache,
     ValueMetadata,
 }
+
 pub trait Backend: Clone {
     type BackgroundWriter: BackgroundWriter;
 
@@ -28,7 +29,7 @@ pub trait Backend: Clone {
         table: Table,
         key: (u128, u128),
         buffer: &mut Vec<u8>,
-    ) -> std::io::Result<bool>;
+    ) -> impl std::future::Future<Output = std::io::Result<bool>>;
 
     fn background_writer(&self) -> Self::BackgroundWriter;
 
@@ -40,13 +41,16 @@ pub trait Backend: Clone {
         &self,
         table: Table,
         key: (u128, u128),
-    ) -> std::io::Result<Option<Vec<u8>>> {
-        let mut buffer = Vec::new();
+    ) -> impl std::future::Future<Output = std::io::Result<Option<Vec<u8>>>>
+    {
+        async move {
+            let mut buffer = Vec::new();
 
-        if self.read(table, key, &mut buffer)? {
-            Ok(Some(buffer))
-        } else {
-            Ok(None)
+            if self.read(table, key, &mut buffer).await? {
+                Ok(Some(buffer))
+            } else {
+                Ok(None)
+            }
         }
     }
 }

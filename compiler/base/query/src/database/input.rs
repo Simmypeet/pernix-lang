@@ -30,12 +30,12 @@ impl Engine {
     }
 
     /// A helper method allowing setting the input queries via [`SetInputLock`]
-    pub fn input_session<'x, R>(
+    pub async fn input_session<'x, R>(
         &'x mut self,
-        f: impl FnOnce(&SetInputLock<'x>) -> R,
+        f: impl AsyncFnOnce(&SetInputLock<'x>) -> R,
     ) -> R {
         let input_lock = self.input_lock();
-        let result = f(&input_lock);
+        let result = f(&input_lock).await;
         drop(input_lock);
 
         result
@@ -85,7 +85,11 @@ impl SetInputLock<'_> {
     /// method.
     ///
     /// When setting the input, the dependencies of the key are cleared.
-    pub fn set_input<K: Key>(&self, key: K, value: K::Value) -> SetInputResult {
+    pub async fn set_input<K: Key>(
+        &self,
+        key: K,
+        value: K::Value,
+    ) -> SetInputResult {
         let key_fingerprint =
             fingerprint::fingerprint(self.engine.database.random_seed, &key);
         let value_fingerprint =
@@ -133,8 +137,10 @@ impl SetInputLock<'_> {
             }
 
             dashmap::Entry::Vacant(vacant_entry) => {
-                let version_info =
-                    self.engine.try_load_value_metadata::<K>(key_fingerprint);
+                let version_info = self
+                    .engine
+                    .try_load_value_metadata::<K>(key_fingerprint)
+                    .await;
 
                 if let Some(mut version_info) = version_info {
                     let update = self

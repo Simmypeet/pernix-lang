@@ -30,7 +30,7 @@ use crate::{
 #[value(String)]
 pub struct Key(usize);
 
-fn basic_template<B: Backend>() {
+async fn basic_template<B: Backend>() {
     const COUNT: usize = 10;
 
     let tempdir = tempfile::tempdir().unwrap();
@@ -82,6 +82,7 @@ fn basic_template<B: Backend>() {
 
             let loaded_value: String = persistence
                 .load_value::<Key>(value_fingerprint)
+                .await
                 .unwrap()
                 .unwrap();
 
@@ -89,6 +90,7 @@ fn basic_template<B: Backend>() {
 
             let loaded_metadata: InputMetadata = persistence
                 .load_value_metadata::<Key>(fingerprint(initial_seed, &Key(i)))
+                .await
                 .unwrap()
                 .unwrap()
                 .into_input()
@@ -100,11 +102,13 @@ fn basic_template<B: Backend>() {
     }
 }
 
-#[test]
-fn basic_redb() { basic_template::<backend::redb::RedbBackend>(); }
+#[tokio::test]
+async fn basic_redb() { basic_template::<backend::redb::RedbBackend>().await; }
 
-#[test]
-fn basic_fjall() { basic_template::<backend::fjall::FjallBackend>(); }
+#[tokio::test]
+async fn basic_fjall() {
+    basic_template::<backend::fjall::FjallBackend>().await;
+}
 
-#[test]
-fn basic_sled() { basic_template::<backend::sled::SledBackend>(); }
+#[tokio::test]
+async fn basic_sled() { basic_template::<backend::sled::SledBackend>().await; }

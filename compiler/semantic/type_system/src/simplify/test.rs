@@ -182,31 +182,37 @@ async fn with_lifetime_matching() {
 
     let equivalent = Type::Primitive(Primitive::Bool);
     let mut engine = Arc::new(Engine::default());
-    Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-        x.set_input(
-            pernixc_symbol::parent::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(2),
-            )),
-            Some(pernixc_symbol::ID(3)),
-        );
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(
+                pernixc_symbol::parent::Key(Global::new(
+                    TargetID::TEST,
+                    pernixc_symbol::ID(2),
+                )),
+                Some(pernixc_symbol::ID(3)),
+            )
+            .await;
 
-        x.set_input(
-            pernixc_symbol::kind::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(3),
-            )),
-            Kind::Trait,
-        );
+            x.set_input(
+                pernixc_symbol::kind::Key(Global::new(
+                    TargetID::TEST,
+                    pernixc_symbol::ID(3),
+                )),
+                Kind::Trait,
+            )
+            .await;
 
-        x.set_input(
-            pernixc_term::implemented::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(3),
-            )),
-            Arc::default(),
-        );
-    });
+            x.set_input(
+                pernixc_term::implemented::Key(Global::new(
+                    TargetID::TEST,
+                    pernixc_symbol::ID(3),
+                )),
+                Arc::default(),
+            )
+            .await;
+        })
+        .await;
 
     let mut premise = Premise::default();
     premise.predicates.insert(Predicate::TraitTypeCompatible(Compatible {
@@ -258,36 +264,47 @@ async fn multiple_equivalences() {
 
     let mut engine = Arc::new(Engine::default());
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|session| {
-        session.set_input(
-            pernixc_symbol::parent::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(1),
-            )),
-            Some(pernixc_symbol::ID(3)),
-        );
-        session.set_input(
-            pernixc_symbol::parent::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(2),
-            )),
-            Some(pernixc_symbol::ID(3)),
-        );
-        session.set_input(
-            pernixc_symbol::kind::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(3),
-            )),
-            Kind::Trait,
-        );
-        session.set_input(
-            pernixc_term::implemented::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(3),
-            )),
-            Arc::default(),
-        );
-    });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |session| {
+            session
+                .set_input(
+                    pernixc_symbol::parent::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(1),
+                    )),
+                    Some(pernixc_symbol::ID(3)),
+                )
+                .await;
+            session
+                .set_input(
+                    pernixc_symbol::parent::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(2),
+                    )),
+                    Some(pernixc_symbol::ID(3)),
+                )
+                .await;
+            session
+                .set_input(
+                    pernixc_symbol::kind::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(3),
+                    )),
+                    Kind::Trait,
+                )
+                .await;
+            session
+                .set_input(
+                    pernixc_term::implemented::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(3),
+                    )),
+                    Arc::default(),
+                )
+                .await;
+        })
+        .await;
 
     let mut premise = Premise::default();
     premise.predicates.extend([
@@ -364,37 +381,48 @@ async fn transitive() {
 
     let mut engine = Arc::new(Engine::default());
 
-    Arc::get_mut(&mut engine).unwrap().input_session(|table| {
-        table.set_input(
-            pernixc_symbol::parent::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(2),
-            )),
-            Some(pernixc_symbol::ID(4)),
-        );
-        table.set_input(
-            pernixc_symbol::parent::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(3),
-            )),
-            Some(pernixc_symbol::ID(4)),
-        );
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |table| {
+            table
+                .set_input(
+                    pernixc_symbol::parent::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(2),
+                    )),
+                    Some(pernixc_symbol::ID(4)),
+                )
+                .await;
+            table
+                .set_input(
+                    pernixc_symbol::parent::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(3),
+                    )),
+                    Some(pernixc_symbol::ID(4)),
+                )
+                .await;
 
-        table.set_input(
-            pernixc_symbol::kind::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(4),
-            )),
-            Kind::Trait,
-        );
-        table.set_input(
-            pernixc_term::implemented::Key(Global::new(
-                TargetID::TEST,
-                pernixc_symbol::ID(4),
-            )),
-            Arc::default(),
-        );
-    });
+            table
+                .set_input(
+                    pernixc_symbol::kind::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(4),
+                    )),
+                    Kind::Trait,
+                )
+                .await;
+            table
+                .set_input(
+                    pernixc_term::implemented::Key(Global::new(
+                        TargetID::TEST,
+                        pernixc_symbol::ID(4),
+                    )),
+                    Arc::default(),
+                )
+                .await;
+        })
+        .await;
 
     let premise = Premise {
         predicates: [

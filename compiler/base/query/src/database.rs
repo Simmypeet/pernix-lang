@@ -545,7 +545,7 @@ impl Engine {
         Ok(FastPathDecision::ToSlowPath)
     }
 
-    fn handle_completion<K: Key>(
+    async fn handle_completion<K: Key>(
         &self,
         completion: &mut Completion,
         current_version: u64,
@@ -566,11 +566,13 @@ impl Engine {
                             .clone(),
                     ));
                 }
-                let value =
-                    completion.metadata.value_fingerprint().map_or_else(
-                        || Some(K::scc_value()),
-                        |fingerprint| self.try_load_value::<K>(fingerprint),
-                    );
+
+                let value = match completion.metadata.value_fingerprint() {
+                    Some(fingerprint) => {
+                        self.try_load_value::<K>(fingerprint).await
+                    }
+                    None => Some(K::scc_value()),
+                };
 
                 // successfully loaded the value, store in the cache,
                 // return it
@@ -624,7 +626,7 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn slow_path<K: Key>(
+    async fn slow_path<K: Key>(
         &self,
         key: &K,
         current_version: u64,
@@ -642,11 +644,14 @@ impl Engine {
                     State::Running(_) => SlowPathDecision::TryAgain,
 
                     State::Completion(completion) => {
-                        let continuation = match self.handle_completion::<K>(
-                            completion,
-                            current_version,
-                            return_value,
-                        ) {
+                        let continuation = match self
+                            .handle_completion::<K>(
+                                completion,
+                                current_version,
+                                return_value,
+                            )
+                            .await
+                        {
                             HandleCompletion::Return(value) => {
                                 return SlowPathDecision::Return(value)
                             }
@@ -675,7 +680,7 @@ impl Engine {
 
                 // try loading the version from the persistent storage
                 let loaded_metadata =
-                    self.try_load_value_metadata::<K>(fingerprint);
+                    self.try_load_value_metadata::<K>(fingerprint).await;
 
                 tracing::debug!(
                     "Loaded metadata for `{}`: {:?}",
@@ -688,14 +693,15 @@ impl Engine {
                         x.version_info.verified_at == current_version
                     }) {
                         if return_value {
-                            let value = loaded_metadata
+                            let value = match loaded_metadata
                                 .value_fingerprint()
-                                .map_or_else(
-                                    || Some(K::scc_value()),
-                                    |fingerprint| {
-                                        self.try_load_value::<K>(fingerprint)
-                                    },
-                                );
+                            {
+                                Some(fingerprint) => {
+                                    self.try_load_value::<K>(fingerprint).await
+                                }
+
+                                None => Some(K::scc_value()),
+                            };
 
                             if let Some(value) = value {
                                 // store the value in the cache
@@ -1234,16 +1240,14 @@ impl Engine {
 
                     return Some(return_value);
                 }
-                None => re_verify
-                    .derived_metadata
-                    .version_info
-                    .fingerprint
-                    .map_or_else(
-                        || Some(Err(CyclicError)),
-                        |fingerprint| {
-                            self.try_load_value::<K>(fingerprint).map(Ok)
-                        },
-                    ),
+                None => {
+                    match re_verify.derived_metadata.version_info.fingerprint {
+                        Some(fingerprint) => {
+                            self.try_load_value::<K>(fingerprint).await.map(Ok)
+                        }
+                        None => Some(Err(CyclicError)),
+                    }
+                }
             };
 
             match value {
@@ -1523,14 +1527,16 @@ impl Engine {
             }
 
             // Slow Path: use `entry` obtaining a write lock for state mutation
-            let (continuation, notify) =
-                match self.slow_path(key, current_version, return_value) {
-                    SlowPathDecision::TryAgain => continue,
-                    SlowPathDecision::Return(value) => break value,
-                    SlowPathDecision::Continuation(continuation, notify) => {
-                        (continuation, notify)
-                    }
-                };
+            let (continuation, notify) = match self
+                .slow_path(key, current_version, return_value)
+                .await
+            {
+                SlowPathDecision::TryAgain => continue,
+                SlowPathDecision::Return(value) => break value,
+                SlowPathDecision::Continuation(continuation, notify) => {
+                    (continuation, notify)
+                }
+            };
 
             tracing::debug!(
                 "Executing query for `{}` with continuation: {:?}",

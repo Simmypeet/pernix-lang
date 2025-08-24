@@ -142,16 +142,22 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         let mut variance_map = Variances::default();
         variance_map.variances_by_lifetime_ids.insert(lifetime_id, variance);
 
-        Arc::get_mut(&mut engine).unwrap().input_session(|x| {
-            x.set_input(
-                pernixc_term::generic_parameters::Key(adt_id),
-                Arc::new(generic_parameter),
-            );
+        Arc::get_mut(&mut engine)
+            .unwrap()
+            .input_session(async |x| {
+                x.set_input(
+                    pernixc_term::generic_parameters::Key(adt_id),
+                    Arc::new(generic_parameter),
+                )
+                .await;
 
-            x.set_input(pernixc_term::variance::Key(adt_id), variance_map);
+                x.set_input(pernixc_term::variance::Key(adt_id), variance_map)
+                    .await;
 
-            x.set_input(pernixc_symbol::kind::Key(adt_id), Kind::Enum);
-        });
+                x.set_input(pernixc_symbol::kind::Key(adt_id), Kind::Enum)
+                    .await;
+            })
+            .await;
 
         // Adt['a]
         let a_t = Type::Symbol(Symbol {

@@ -323,33 +323,42 @@ pub async fn run(
     let local_target_id =
         TargetID::from_target_name(&argument.command.input().target_name());
 
-    engine.input_session(|x| {
-        x.always_reverify();
+    engine
+        .input_session(async |x| {
+            x.always_reverify();
 
-        x.set_input(
-            pernixc_target::LinkKey(local_target_id),
-            Arc::new(std::iter::empty().collect()),
-        );
-        x.set_input(
-            pernixc_target::MapKey,
-            Arc::new(
-                std::iter::once((
-                    argument.command.input().target_name(),
-                    local_target_id,
-                ))
-                .collect(),
-            ),
-        );
-
-        if let Some(explicit_seed) = argument.command.input().target_seed {
             x.set_input(
-                pernixc_target::SeedKey(local_target_id),
-                explicit_seed,
-            );
-        }
+                pernixc_target::LinkKey(local_target_id),
+                Arc::new(std::iter::empty().collect()),
+            )
+            .await;
+            x.set_input(
+                pernixc_target::MapKey,
+                Arc::new(
+                    std::iter::once((
+                        argument.command.input().target_name(),
+                        local_target_id,
+                    ))
+                    .collect(),
+                ),
+            )
+            .await;
 
-        x.set_input(pernixc_target::Key(local_target_id), Arc::new(argument));
-    });
+            if let Some(explicit_seed) = argument.command.input().target_seed {
+                x.set_input(
+                    pernixc_target::SeedKey(local_target_id),
+                    explicit_seed,
+                )
+                .await;
+            }
+
+            x.set_input(
+                pernixc_target::Key(local_target_id),
+                Arc::new(argument),
+            )
+            .await;
+        })
+        .await;
 
     tracing::info!(
         "Starting compilation with database version: {}",
