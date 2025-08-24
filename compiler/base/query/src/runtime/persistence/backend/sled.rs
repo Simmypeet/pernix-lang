@@ -87,23 +87,23 @@ impl super::Backend for SledBackend {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.0.database.flush().map_err(|e| {
-            std::io::Error::other(format!("Failed to flush Sled database: {e}"))
-        })?;
+        // self.0.database.flush().map_err(|e| {
+        //     std::io::Error::other(format!("Failed to flush Sled database:
+        // {e}")) })?;
 
-        self.0.value_cache.flush().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to flush Sled tree {}: {e}",
-                String::from_utf8_lossy(VALUE_CACHE)
-            ))
-        })?;
+        // self.0.value_cache.flush().map_err(|e| {
+        //     std::io::Error::other(format!(
+        //         "Failed to flush Sled tree {}: {e}",
+        //         String::from_utf8_lossy(VALUE_CACHE)
+        //     ))
+        // })?;
 
-        self.0.value_metadata.flush().map_err(|e| {
-            std::io::Error::other(format!(
-                "Failed to flush Sled tree {}: {e}",
-                String::from_utf8_lossy(VALUE_METADATA)
-            ))
-        })?;
+        // self.0.value_metadata.flush().map_err(|e| {
+        //     std::io::Error::other(format!(
+        //         "Failed to flush Sled tree {}: {e}",
+        //         String::from_utf8_lossy(VALUE_METADATA)
+        //     ))
+        // })?;
 
         Ok(())
     }
