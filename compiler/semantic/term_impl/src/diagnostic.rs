@@ -8,7 +8,13 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{all_symbol_ids, kind::get_kind};
 use pernixc_target::{Global, TargetID};
+use pernixc_term::{
+    generic_parameters::Key as GenericParametersKey,
+    type_alias::Key as TypeAliasKey, where_clause::Key as WhereClauseKey,
+};
 use pernixc_tokio::scoped;
+
+use crate::build::DiagnosticKey as BuildDiagnosticKey;
 
 #[pernixc_query::query(
     key(SingleRenderedKey),
@@ -28,7 +34,7 @@ pub async fn single_rendered_executor(
 
     if kind.has_generic_parameters() {
         let diags = engine
-            .query(&crate::generic_parameters::DiagnosticKey::new(id))
+            .query(&BuildDiagnosticKey::new(GenericParametersKey(id)))
             .await?;
 
         for diag in diags.iter() {
@@ -38,7 +44,7 @@ pub async fn single_rendered_executor(
 
     if kind.has_where_clause() {
         let diags =
-            engine.query(&crate::where_clause::DiagnosticKey::new(id)).await?;
+            engine.query(&BuildDiagnosticKey::new(WhereClauseKey(id))).await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);
@@ -47,7 +53,7 @@ pub async fn single_rendered_executor(
 
     if kind.has_type_alias() {
         let diags =
-            engine.query(&crate::type_alias::DiagnosticKey::new(id)).await?;
+            engine.query(&BuildDiagnosticKey::new(TypeAliasKey(id))).await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);

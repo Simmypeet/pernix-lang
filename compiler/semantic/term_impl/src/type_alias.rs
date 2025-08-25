@@ -1,7 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use pernixc_handler::Storage;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::runtime::executor;
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type, Config,
@@ -15,30 +15,26 @@ use pernixc_type_system::{
 };
 
 use crate::{
-    build::{self, impl_term_extract_executor, Build},
+    build::{self, Output},
     occurrences::Occurrences,
     type_alias::diagnostic::Diagnostic,
 };
 
 pub mod diagnostic;
 
-pub type BuildKey = build::Key<Arc<Type>, Diagnostic>;
-pub type DiagnosticKey = build::DiagnosticKey<Arc<Type>, Diagnostic>;
-pub type OccurrencesKey = build::OccurrencesKey<Arc<Type>, Diagnostic>;
-
 #[derive(Debug, Default)]
 pub struct BuildExecutor;
 
-impl executor::Executor<BuildKey> for BuildExecutor {
+impl build::Build for pernixc_term::type_alias::Key {
+    type Diagnostic = diagnostic::Diagnostic;
+
     async fn execute(
-        &self,
         engine: &pernixc_query::TrackedEngine,
-        key: &BuildKey,
-    ) -> Result<build::Build<Arc<Type>, Diagnostic>, executor::CyclicError>
-    {
-        let Some(syntax_tree) = engine.get_type_alias_syntax(key.id).await
+        key: &Self,
+    ) -> Result<build::Output<Self>, executor::CyclicError> {
+        let Some(syntax_tree) = engine.get_type_alias_syntax(key.0).await
         else {
-            return Ok(Build {
+            return Ok(Output {
                 item: Arc::new(Type::Error(pernixc_term::error::Error)),
                 diagnostics: Arc::default(),
                 occurrences: Arc::default(),
@@ -48,7 +44,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
         let storage = Storage::<Diagnostic>::default();
         let mut occurrences = Occurrences::default();
         let extra_namespace =
-            engine.get_generic_parameter_namespace(key.id).await?;
+            engine.get_generic_parameter_namespace(key.0).await?;
 
         let mut ty = engine
             .resolve_type(
@@ -56,13 +52,13 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 Config::builder()
                     .observer(&mut occurrences)
                     .extra_namespace(&extra_namespace)
-                    .referring_site(key.id)
+                    .referring_site(key.0)
                     .build(),
                 &storage,
             )
             .await?;
 
-        let premise = engine.get_active_premise(key.id).await?;
+        let premise = engine.get_active_premise(key.0).await?;
         let env = Environment::new(
             Cow::Borrowed(&premise),
             Cow::Borrowed(engine),
@@ -88,16 +84,10 @@ impl executor::Executor<BuildKey> for BuildExecutor {
             },
         };
 
-        Ok(Build {
+        Ok(Output {
             item: Arc::new(ty),
             diagnostics: storage.into_vec().into(),
             occurrences: Arc::new(occurrences),
         })
     }
 }
-
-impl_term_extract_executor!(
-    pernixc_term::type_alias::Key,
-    Arc<Type>,
-    Diagnostic
-);

@@ -1,7 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
 use pernixc_handler::{Handler, Storage};
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::runtime::executor;
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     term::resolve_type, Config,
@@ -23,7 +23,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    build::{self, impl_term_extract_executor, Build},
+    build::{self, Output},
     generic_parameters::diagnostic::{
         DefaultGenericParameterMustBeTrailing, Diagnostic,
         GenericParameterRedefinition, MisorderedGenericParameter,
@@ -33,24 +33,15 @@ use crate::{
 
 pub mod diagnostic;
 
-pub type BuildKey = build::Key<Arc<GenericParameters>, Diagnostic>;
-pub type DiagnosticKey =
-    build::DiagnosticKey<Arc<GenericParameters>, Diagnostic>;
-pub type OccurrencesKey =
-    build::OccurrencesKey<Arc<GenericParameters>, Diagnostic>;
+impl build::Build for pernixc_term::generic_parameters::Key {
+    type Diagnostic = diagnostic::Diagnostic;
 
-#[derive(Debug, Default)]
-pub struct BuildExecutor;
-
-impl executor::Executor<BuildKey> for BuildExecutor {
     #[allow(clippy::too_many_lines)]
     async fn execute(
-        &self,
         engine: &pernixc_query::TrackedEngine,
-        key: &BuildKey,
-    ) -> Result<Build<Arc<GenericParameters>, Diagnostic>, executor::CyclicError>
-    {
-        let syntax_tree = engine.get_generic_parameters_syntax(key.id).await;
+        key: &Self,
+    ) -> Result<build::Output<Self>, executor::CyclicError> {
+        let syntax_tree = engine.get_generic_parameters_syntax(key.0).await;
 
         let mut lifetime_parameter_syns = Vec::new();
         let mut type_parameter_syns = Vec::new();
@@ -155,8 +146,8 @@ impl executor::Executor<BuildKey> for BuildExecutor {
         let mut generic_parameters = GenericParameters::default();
         let mut extra_name_space = engine
             .get_generic_parameter_namespace(Global::new(
-                key.id.target_id,
-                engine.get_parent(key.id).await.unwrap(),
+                key.0.target_id,
+                engine.get_parent(key.0).await.unwrap(),
             ))
             .await?
             .deref()
@@ -170,14 +161,14 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 Ok(id) => {
                     extra_name_space.lifetimes.insert(
                         lifetime_parameter_syn.kind.0,
-                        Lifetime::Parameter(MemberID { parent_id: key.id, id }),
+                        Lifetime::Parameter(MemberID { parent_id: key.0, id }),
                     );
                 }
                 Err(id) => {
                     storage.receive(Diagnostic::LifetimeParameterRedefinition(
                         GenericParameterRedefinition {
                             existing_generic_parameter_id: MemberID {
-                                parent_id: key.id,
+                                parent_id: key.0,
                                 id,
                             },
                             duplicating_generic_parameter_span:
@@ -196,14 +187,14 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 Ok(id) => {
                     extra_name_space.types.insert(
                         type_parameter_syn.kind.0,
-                        Type::Parameter(MemberID { parent_id: key.id, id }),
+                        Type::Parameter(MemberID { parent_id: key.0, id }),
                     );
                 }
                 Err(id) => {
                     storage.receive(Diagnostic::TypeParameterRedefinition(
                         GenericParameterRedefinition {
                             existing_generic_parameter_id: MemberID {
-                                parent_id: key.id,
+                                parent_id: key.0,
                                 id,
                             },
                             duplicating_generic_parameter_span:
@@ -229,8 +220,8 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                             extra_namespace: Some(&extra_name_space),
                             consider_adt_implements: true,
                             referring_site: Global::new(
-                                key.id.target_id,
-                                engine.get_parent(key.id).await.unwrap(),
+                                key.0.target_id,
+                                engine.get_parent(key.0).await.unwrap(),
                             ),
                         },
                         &storage,
@@ -255,14 +246,14 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 Ok(id) => {
                     extra_name_space.constants.insert(
                         constant_parameter_syn.0.kind.0.clone(),
-                        Constant::Parameter(MemberID { parent_id: key.id, id }),
+                        Constant::Parameter(MemberID { parent_id: key.0, id }),
                     );
                 }
                 Err(id) => {
                     storage.receive(Diagnostic::ConstantParameterRedefinition(
                         GenericParameterRedefinition {
                             existing_generic_parameter_id: MemberID {
-                                parent_id: key.id,
+                                parent_id: key.0,
                                 id,
                             },
                             duplicating_generic_parameter_span:
@@ -273,16 +264,10 @@ impl executor::Executor<BuildKey> for BuildExecutor {
             }
         }
 
-        Ok(Build {
+        Ok(Output {
             item: Arc::new(generic_parameters),
             diagnostics: storage.into_vec().into(),
             occurrences: Arc::new(occurrences),
         })
     }
 }
-
-impl_term_extract_executor!(
-    pernixc_term::generic_parameters::Key,
-    Arc<GenericParameters>,
-    Diagnostic
-);

@@ -30,7 +30,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    build::{self, impl_term_extract_executor, Build},
+    build::{self, Output},
     occurrences::Occurrences,
     where_clause::diagnostic::{
         Diagnostic, ForallLifetimeIsNotAllowedInOutlivesPredicate,
@@ -40,11 +40,6 @@ use crate::{
 };
 
 pub mod diagnostic;
-
-pub type BuildKey = build::Key<Arc<[where_clause::Predicate]>, Diagnostic>;
-pub type DiagnosticKey = build::DiagnosticKey<Arc<[Diagnostic]>, Diagnostic>;
-pub type OccurrencesKey =
-    build::OccurrencesKey<Arc<[where_clause::Predicate]>, Diagnostic>;
 
 fn create_forall_lifetimes(
     namespace: &mut HashMap<SharedStr, Lifetime>,
@@ -504,22 +499,17 @@ async fn create_type_bound_predicates_internal(
     Ok(())
 }
 
-#[derive(Debug, Default)]
-pub struct BuildExecutor;
+impl build::Build for pernixc_term::where_clause::Key {
+    type Diagnostic = diagnostic::Diagnostic;
 
-impl executor::Executor<BuildKey> for BuildExecutor {
     #[allow(clippy::too_many_lines)]
     async fn execute(
-        &self,
-        engine: &TrackedEngine,
-        key: &BuildKey,
-    ) -> Result<
-        Build<Arc<[where_clause::Predicate]>, Diagnostic>,
-        executor::CyclicError,
-    > {
-        let kind = engine.get_kind(key.id).await;
+        engine: &pernixc_query::TrackedEngine,
+        key: &Self,
+    ) -> Result<Output<Self>, executor::CyclicError> {
+        let kind = engine.get_kind(key.0).await;
         let where_clause_syntax_tree =
-            engine.get_where_clause_syntax(key.id).await;
+            engine.get_where_clause_syntax(key.0).await;
 
         let mut where_clause = Vec::default();
 
@@ -527,7 +517,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
         let storage = Storage::<Diagnostic>::new();
 
         let extra_namespace =
-            engine.get_generic_parameter_namespace(key.id).await?;
+            engine.get_generic_parameter_namespace(key.0).await?;
 
         for predicate in where_clause_syntax_tree
             .into_iter()
@@ -538,7 +528,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 pernixc_syntax::predicate::Predicate::Type(ty_bound) => {
                     create_type_bound_predicates(
                         engine,
-                        key.id,
+                        key.0,
                         &ty_bound,
                         &extra_namespace,
                         &mut where_clause,
@@ -553,7 +543,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 ) => {
                     create_trait_member_predicates(
                         engine,
-                        key.id,
+                        key.0,
                         &trait_type_equality,
                         &extra_namespace,
                         &mut where_clause,
@@ -566,7 +556,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 pernixc_syntax::predicate::Predicate::Trait(tr) => {
                     create_trait_predicates(
                         engine,
-                        key.id,
+                        key.0,
                         &tr,
                         &extra_namespace,
                         &mut where_clause,
@@ -581,7 +571,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 ) => {
                     create_outlives_predicates(
                         engine,
-                        key.id,
+                        key.0,
                         &lifetime_outlives,
                         &extra_namespace,
                         &mut where_clause,
@@ -594,7 +584,7 @@ impl executor::Executor<BuildKey> for BuildExecutor {
                 pernixc_syntax::predicate::Predicate::Marker(marker) => {
                     create_marker_predicate(
                         engine,
-                        key.id,
+                        key.0,
                         &marker,
                         &extra_namespace,
                         &mut where_clause,
@@ -609,10 +599,10 @@ impl executor::Executor<BuildKey> for BuildExecutor {
         {
             if kind.has_generic_parameters() {
                 let generic_parameters_syn =
-                    engine.get_generic_parameters_syntax(key.id).await;
+                    engine.get_generic_parameters_syntax(key.0).await;
 
                 let generic_parameters =
-                    engine.get_generic_parameters(key.id).await?;
+                    engine.get_generic_parameters(key.0).await?;
 
                 for (ty_param, bounds) in generic_parameters_syn
                     .into_iter()
@@ -633,14 +623,14 @@ impl executor::Executor<BuildKey> for BuildExecutor {
 
                     create_type_bound_predicates_internal(
                         engine,
-                        &Type::Parameter(TypeParameterID::new(key.id, *id)),
+                        &Type::Parameter(TypeParameterID::new(key.0, *id)),
                         &identifier.span,
-                        key.id,
+                        key.0,
                         bounds.bounds(),
                         Config::builder()
                             .observer(&mut occurrences)
                             .extra_namespace(&extra_namespace)
-                            .referring_site(key.id)
+                            .referring_site(key.0)
                             .build(),
                         &mut where_clause,
                         &storage,
@@ -650,16 +640,10 @@ impl executor::Executor<BuildKey> for BuildExecutor {
             }
         }
 
-        Ok(Build {
+        Ok(Output {
             item: where_clause.into(),
             diagnostics: storage.into_vec().into(),
             occurrences: Arc::new(occurrences),
         })
     }
 }
-
-impl_term_extract_executor!(
-    pernixc_term::where_clause::Key,
-    Arc<[where_clause::Predicate]>,
-    Diagnostic
-);
