@@ -8,7 +8,6 @@ use pernixc_resolution::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_type_alias_syntax;
-use pernixc_target::Global;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     environment::{get_active_premise, Environment},
@@ -16,7 +15,7 @@ use pernixc_type_system::{
 };
 
 use crate::{
-    build::{self, Build},
+    build::{self, impl_term_extract_executor, Build},
     occurrences::Occurrences,
     type_alias::diagnostic::Diagnostic,
 };
@@ -24,8 +23,10 @@ use crate::{
 pub mod diagnostic;
 
 pub type BuildKey = build::Key<Arc<Type>, Diagnostic>;
+pub type DiagnosticKey = build::DiagnosticKey<Arc<Type>, Diagnostic>;
+pub type OccurrencesKey = build::OccurrencesKey<Arc<Type>, Diagnostic>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BuildExecutor;
 
 impl executor::Executor<BuildKey> for BuildExecutor {
@@ -95,23 +96,8 @@ impl executor::Executor<BuildKey> for BuildExecutor {
     }
 }
 
-#[pernixc_query::query(
-    key(DiagnosticKey),
-    executor(DiagnosticExecutor),
-    value(Arc<[Diagnostic]>),
-    id(Global<pernixc_symbol::ID>)
-)]
-pub async fn diagnostic_executor(
-    id: Global<pernixc_symbol::ID>,
-    engine: &TrackedEngine,
-) -> Result<Arc<[Diagnostic]>, executor::CyclicError> {
-    Ok(engine.query(&BuildKey::new(id)).await?.diagnostics)
-}
-
-#[pernixc_query::executor(key(pernixc_term::type_alias::Key), name(Executor))]
-pub async fn type_alias_executor(
-    &pernixc_term::type_alias::Key(id): &pernixc_term::type_alias::Key,
-    engine: &TrackedEngine,
-) -> Result<Arc<Type>, executor::CyclicError> {
-    Ok(engine.query(&BuildKey::new(id)).await?.item)
-}
+impl_term_extract_executor!(
+    pernixc_term::type_alias::Key,
+    Arc<Type>,
+    Diagnostic
+);

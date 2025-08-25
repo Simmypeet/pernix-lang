@@ -30,7 +30,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    build::{self, Build},
+    build::{self, impl_term_extract_executor, Build},
     occurrences::Occurrences,
     where_clause::diagnostic::{
         Diagnostic, ForallLifetimeIsNotAllowedInOutlivesPredicate,
@@ -42,6 +42,9 @@ use crate::{
 pub mod diagnostic;
 
 pub type BuildKey = build::Key<Arc<[where_clause::Predicate]>, Diagnostic>;
+pub type DiagnosticKey = build::DiagnosticKey<Arc<[Diagnostic]>, Diagnostic>;
+pub type OccurrencesKey =
+    build::OccurrencesKey<Arc<[where_clause::Predicate]>, Diagnostic>;
 
 fn create_forall_lifetimes(
     namespace: &mut HashMap<SharedStr, Lifetime>,
@@ -427,7 +430,7 @@ async fn create_type_bound_predicates_internal(
     engine: &TrackedEngine,
     ty: &Type,
     type_span: &RelativeSpan,
-    global_id: Global<pernixc_symbol::ID>,
+    _global_id: Global<pernixc_symbol::ID>,
     bounds: impl IntoIterator<Item = pernixc_syntax::predicate::TypeBound>,
     mut config: Config<'_, '_, '_, '_, '_>,
     where_clause: &mut Vec<where_clause::Predicate>,
@@ -436,7 +439,7 @@ async fn create_type_bound_predicates_internal(
     for bound in bounds {
         match bound {
             pernixc_syntax::predicate::TypeBound::QualifiedIdentifier(
-                qualified_identifier_bound,
+                _qualified_identifier_bound,
             ) => {
                 todo!()
             }
@@ -501,7 +504,7 @@ async fn create_type_bound_predicates_internal(
     Ok(())
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BuildExecutor;
 
 impl executor::Executor<BuildKey> for BuildExecutor {
@@ -655,23 +658,8 @@ impl executor::Executor<BuildKey> for BuildExecutor {
     }
 }
 
-#[pernixc_query::query(
-    key(DiagnosticKey),
-    executor(DiagnosticExecutor),
-    value(Arc<[Diagnostic]>),
-    id(Global<pernixc_symbol::ID>)
-)]
-pub async fn diagnostic_executor(
-    id: Global<pernixc_symbol::ID>,
-    engine: &TrackedEngine,
-) -> Result<Arc<[Diagnostic]>, executor::CyclicError> {
-    Ok(engine.query(&BuildKey::new(id)).await?.diagnostics)
-}
-
-#[pernixc_query::executor(key(pernixc_term::where_clause::Key), name(Executor))]
-pub async fn where_clause_executor(
-    &pernixc_term::where_clause::Key(id): &pernixc_term::where_clause::Key,
-    engine: &TrackedEngine,
-) -> Result<Arc<[where_clause::Predicate]>, executor::CyclicError> {
-    Ok(engine.query(&BuildKey::new(id)).await?.item)
-}
+impl_term_extract_executor!(
+    pernixc_term::where_clause::Key,
+    Arc<[where_clause::Predicate]>,
+    Diagnostic
+);

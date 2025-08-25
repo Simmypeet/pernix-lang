@@ -23,7 +23,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    build::{self, Build},
+    build::{self, impl_term_extract_executor, Build},
     generic_parameters::diagnostic::{
         DefaultGenericParameterMustBeTrailing, Diagnostic,
         GenericParameterRedefinition, MisorderedGenericParameter,
@@ -34,8 +34,12 @@ use crate::{
 pub mod diagnostic;
 
 pub type BuildKey = build::Key<Arc<GenericParameters>, Diagnostic>;
+pub type DiagnosticKey =
+    build::DiagnosticKey<Arc<GenericParameters>, Diagnostic>;
+pub type OccurrencesKey =
+    build::OccurrencesKey<Arc<GenericParameters>, Diagnostic>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BuildExecutor;
 
 impl executor::Executor<BuildKey> for BuildExecutor {
@@ -277,26 +281,8 @@ impl executor::Executor<BuildKey> for BuildExecutor {
     }
 }
 
-#[pernixc_query::query(
-    key(DiagnosticKey),
-    executor(DiagnosticExecutor),
-    value(Arc<[Diagnostic]>),
-    id(Global<pernixc_symbol::ID>)
-)]
-pub async fn diagnostic_executor(
-    id: Global<pernixc_symbol::ID>,
-    engine: &TrackedEngine,
-) -> Result<Arc<[Diagnostic]>, executor::CyclicError> {
-    Ok(engine.query(&BuildKey::new(id)).await?.diagnostics)
-}
-
-#[pernixc_query::executor(
-    key(pernixc_term::generic_parameters::Key),
-    name(Executor)
-)]
-pub async fn generic_parameters_executor(
-    &pernixc_term::generic_parameters::Key(id): &pernixc_term::generic_parameters::Key,
-    engine: &TrackedEngine,
-) -> Result<Arc<GenericParameters>, executor::CyclicError> {
-    Ok(engine.query(&BuildKey::new(id)).await?.item)
-}
+impl_term_extract_executor!(
+    pernixc_term::generic_parameters::Key,
+    Arc<GenericParameters>,
+    Diagnostic
+);

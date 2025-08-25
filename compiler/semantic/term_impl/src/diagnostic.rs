@@ -27,8 +27,9 @@ pub async fn single_rendered_executor(
     let kind = engine.get_kind(id).await;
 
     if kind.has_generic_parameters() {
-        let diags =
-            engine.query(&crate::generic_parameters::DiagnosticKey(id)).await?;
+        let diags = engine
+            .query(&crate::generic_parameters::DiagnosticKey::new(id))
+            .await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);
@@ -37,7 +38,7 @@ pub async fn single_rendered_executor(
 
     if kind.has_where_clause() {
         let diags =
-            engine.query(&crate::where_clause::DiagnosticKey(id)).await?;
+            engine.query(&crate::where_clause::DiagnosticKey::new(id)).await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);
@@ -45,7 +46,8 @@ pub async fn single_rendered_executor(
     }
 
     if kind.has_type_alias() {
-        let diags = engine.query(&crate::type_alias::DiagnosticKey(id)).await?;
+        let diags =
+            engine.query(&crate::type_alias::DiagnosticKey::new(id)).await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);
