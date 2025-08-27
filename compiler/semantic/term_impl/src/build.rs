@@ -170,7 +170,7 @@ impl<T: Build> Clone for Output<T> {
 }
 
 pub trait Build: pernixc_query::Key {
-    type Diagnostic: Debug + Identifiable + StableHash + Send + Sync + 'static;
+    type Diagnostic: Debug + StableHash + Send + Sync + 'static;
 
     fn execute<'x>(
         engine: &'x pernixc_query::TrackedEngine,

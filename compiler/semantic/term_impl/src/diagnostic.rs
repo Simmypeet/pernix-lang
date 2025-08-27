@@ -14,7 +14,10 @@ use pernixc_term::{
 };
 use pernixc_tokio::scoped;
 
-use crate::build::DiagnosticKey as BuildDiagnosticKey;
+use crate::{
+    build::DiagnosticKey as BuildDiagnosticKey,
+    implements_qualified_identifier::Key as ImplementsQualifiedIdentifierKey,
+};
 
 #[pernixc_query::query(
     key(SingleRenderedKey),
@@ -54,6 +57,18 @@ pub async fn single_rendered_executor(
     if kind.has_type_alias() {
         let diags =
             engine.query(&BuildDiagnosticKey::new(TypeAliasKey(id))).await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
+    if kind.is_implementation() {
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(ImplementsQualifiedIdentifierKey(
+                id,
+            )))
+            .await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);

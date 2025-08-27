@@ -13,6 +13,7 @@ pub mod diagnostic;
 
 mod build;
 mod generic_parameters;
+mod implements_qualified_identifier;
 mod occurrences;
 mod type_alias;
 mod where_clause;
@@ -55,6 +56,7 @@ pub fn register_executors(
     register_term_executors::<pernixc_term::generic_parameters::Key>(registry);
     register_term_executors::<pernixc_term::where_clause::Key>(registry);
     register_term_executors::<pernixc_term::type_alias::Key>(registry);
+    register_term_executors::<implements_qualified_identifier::Key>(registry);
 
     registry.register(Arc::new(diagnostic::SingleRenderedExecutor));
     registry.register(Arc::new(diagnostic::AllRenderedExecutor));
@@ -77,6 +79,9 @@ pub fn register_serde<
         serde_registry,
     );
     register_term_serde::<pernixc_term::type_alias::Key, _, _, _>(
+        serde_registry,
+    );
+    register_term_serde::<implements_qualified_identifier::Key, _, _, _>(
         serde_registry,
     );
 

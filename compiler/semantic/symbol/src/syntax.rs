@@ -37,7 +37,8 @@ pub async fn import_syntax_executor(
     key(ImplementsQualifiedIdentifierKey),
     id(Global<ID>),
     value(QualifiedIdentifier),
-    executor(ImplementsQualifiedIdentifierExecutor)
+    executor(ImplementsQualifiedIdentifierExecutor),
+    extend(method(get_implements_qualified_identifier), no_cyclic)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn implements_qualified_identifier_executor(
