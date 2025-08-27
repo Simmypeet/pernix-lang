@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the symbol could not be found
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt/main.pnx:21:28
+   │
+21 │ implements AdtWithGenerics[U]:
+   │                            ^ the symbol named `U` does not exist in `main`
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

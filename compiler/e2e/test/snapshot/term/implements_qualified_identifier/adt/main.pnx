@@ -1,0 +1,29 @@
+public struct Adt:
+    pass
+
+
+implements Adt:
+    pass
+
+
+public struct AdtWithGenerics[T]:
+    pass
+
+
+implements[T] AdtWithGenerics[T]:
+    pass
+
+
+implements AdtWithGenerics[int32]:
+    pass
+
+
+implements AdtWithGenerics[U]:
+    pass
+
+
+public type BehindType[T] = AdtWithGenerics[(T, T)]
+
+
+implements BehindType[int32]:
+    pass

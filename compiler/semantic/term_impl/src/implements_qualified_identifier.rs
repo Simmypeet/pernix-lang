@@ -3,6 +3,7 @@ use std::sync::Arc;
 use pernixc_handler::Storage;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_resolution::{
+    generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config,
 };
@@ -44,6 +45,8 @@ impl crate::build::Build for Key {
 
         let mut occurrences = occurrences::Occurrences::default();
         let storage = Storage::<diagnostic::Diagnostic>::new();
+        let generic_parameter_namespace =
+            engine.get_generic_parameter_namespace(key.0).await?;
 
         let resolution = match engine
             .resolve_qualified_identifier(
@@ -52,6 +55,7 @@ impl crate::build::Build for Key {
                     .consider_adt_implements(false)
                     .observer(&mut occurrences)
                     .referring_site(key.0)
+                    .extra_namespace(&generic_parameter_namespace)
                     .build(),
                 &storage,
             )
