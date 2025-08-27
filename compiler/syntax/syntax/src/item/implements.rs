@@ -103,7 +103,7 @@ abstract_tree::abstract_tree! {
     )]
     pub struct Implements {
         pub signature: Signature = ast::<Signature>(),
-        pub body: Body = ast::<Body>(),
+        pub body: Body = ast::<Body>().optional(),
     }
 }
 

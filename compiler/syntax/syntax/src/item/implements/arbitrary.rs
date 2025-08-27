@@ -320,7 +320,7 @@ reference! {
     #[derive(Debug, Clone)]
     pub struct Implements for super::Implements {
         pub signature (Signature),
-        pub body (Body),
+        pub body (Option<Body>),
     }
 }
 
@@ -329,7 +329,7 @@ impl Arbitrary for Implements {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        (Signature::arbitrary(), Body::arbitrary())
+        (Signature::arbitrary(), proptest::option::of(Body::arbitrary()))
             .prop_map(|(signature, body)| Self { signature, body })
             .boxed()
     }
@@ -342,6 +342,11 @@ impl IndentDisplay for Implements {
         indent: usize,
     ) -> std::fmt::Result {
         self.signature.indent_fmt(f, indent)?;
-        self.body.indent_fmt(f, indent)
+
+        if let Some(body) = &self.body {
+            body.indent_fmt(f, indent)?;
+        }
+
+        Ok(())
     }
 }
