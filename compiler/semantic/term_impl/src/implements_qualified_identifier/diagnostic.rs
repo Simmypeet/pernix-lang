@@ -6,7 +6,8 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
-    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
+    kind::get_kind, name::get_qualified_name, parent::get_parent_global,
+    source_map::to_absolute_span, span::get_span,
 };
 use pernixc_target::Global;
 use pernixc_term::{display::Display, r#type::Type};
@@ -29,6 +30,9 @@ pub enum Diagnostic {
     InvalidSymbolForImplements(InvalidSymbolForImplements),
     InvalidTypeForImplements(InvalidTypeForImplements),
     MarkerImplementsNotFinal(MarkerImplementsNotFinal),
+    MemberInMarkerImplementationIsNotAllowed(
+        MemberInMarkerImplementationIsNotAllowed,
+    ),
 }
 
 impl Report<&TrackedEngine> for Diagnostic {
@@ -47,6 +51,9 @@ impl Report<&TrackedEngine> for Diagnostic {
                 diag.report(parameter).await
             }
             Self::MarkerImplementsNotFinal(diag) => {
+                diag.report(parameter).await
+            }
+            Self::MemberInMarkerImplementationIsNotAllowed(diag) => {
                 diag.report(parameter).await
             }
         }
@@ -201,6 +208,80 @@ impl Report<&TrackedEngine> for MarkerImplementsNotFinal {
             .primary_highlight(Highlight::builder().span(span).build())
             .help_message(
                 "add the `final` keyword to the `implements`".to_string(),
+            )
+            .build()
+    }
+}
+
+/// The marker `implements` can not have any members.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct MemberInMarkerImplementationIsNotAllowed {
+    /// The member ID defined in the marker `implements`.
+    pub implements_member_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for MemberInMarkerImplementationIsNotAllowed {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let qualified_name =
+            engine.get_qualified_name(self.implements_member_id).await;
+
+        let parent =
+            engine.get_parent_global(self.implements_member_id).await.unwrap();
+
+        let parent_span = match engine.get_span(parent).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        let span = match engine.get_span(self.implements_member_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("member in marker implementation is not allowed")
+            .maybe_primary_highlight(span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(format!(
+                        "`{qualified_name}` cannot be declared in this \
+                         `implements`",
+                    ))
+                    .build()
+            }))
+            .help_message(
+                "marker implementations cannot have members".to_string(),
+            )
+            .related(
+                parent_span
+                    .map(|x| {
+                        Highlight::builder()
+                            .span(x)
+                            .message(
+                                "this is a marker `implements`".to_string(),
+                            )
+                            .build()
+                    })
+                    .into_iter()
+                    .collect(),
             )
             .build()
     }

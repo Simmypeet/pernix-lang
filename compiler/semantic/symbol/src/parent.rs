@@ -55,6 +55,15 @@ pub enum HierarchyRelationship {
 #[extend(method(get_parent), no_cyclic)]
 pub struct Key(pub Global<ID>);
 
+/// A helper function returning the parent symbol ID wrapped in a [`Global`].
+#[extend]
+pub async fn get_parent_global(
+    self: &TrackedEngine,
+    id: Global<ID>,
+) -> Option<Global<ID>> {
+    self.get_parent(id).await.map(|parent| id.target_id.make_global(parent))
+}
+
 /// Represents an iterator that walks through the scope of the given symbol. It
 /// goes through all the parent symbols until it reaches the root.
 ///

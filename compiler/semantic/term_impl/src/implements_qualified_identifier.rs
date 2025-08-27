@@ -15,6 +15,7 @@ use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     final_implements::is_implements_final,
     kind::{get_kind, Kind},
+    member::get_members,
     syntax::get_implements_qualified_identifier,
 };
 use pernixc_target::Global;
@@ -259,6 +260,30 @@ async fn check_marker(
                 qualified_identifier_span: qualified_identifier,
             },
         ));
+    }
+
+    // we'll check if he marker implementation has any members (it shouldn't).
+    if engine.get_kind(implements).await != Kind::PositiveImplementation {
+        return Ok(());
+    }
+
+    let members = engine.get_members(implements).await;
+
+    for member_id in members
+        .member_ids_by_name
+        .values()
+        .copied()
+        .chain(members.unnameds.iter().copied())
+    {
+        storage.receive(
+            diagnostic::Diagnostic::MemberInMarkerImplementationIsNotAllowed(
+                diagnostic::MemberInMarkerImplementationIsNotAllowed {
+                    implements_member_id: implements
+                        .target_id
+                        .make_global(member_id),
+                },
+            ),
+        );
     }
 
     Ok(())

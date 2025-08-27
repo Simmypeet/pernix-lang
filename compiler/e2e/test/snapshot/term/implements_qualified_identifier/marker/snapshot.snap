@@ -3,6 +3,16 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
+error: member in marker implementation is not allowed
+  ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/marker/main.pnx:5:21
+  │
+4 │ final implements Test[int32]:
+  │                  ----------- this is a marker `implements`
+5 │     public function someFunction():
+  │                     ^^^^^^^^^^^^ `main::Test[int32]::someFunction` cannot be declared in this `implements`
+  │
+  = marker implementations cannot have members
+
 error: the marker implements is not final
    ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/marker/main.pnx:10:12
    │
@@ -11,7 +21,7 @@ error: the marker implements is not final
    │
    = add the `final` keyword to the `implements`
 
-error: Compilation aborted due to 1 error(s)
+error: Compilation aborted due to 2 error(s)
 
 
 
