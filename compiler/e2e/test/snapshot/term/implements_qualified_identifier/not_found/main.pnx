@@ -1,0 +1,2 @@
+implements['a, T] NotFound['a, 'b, T, U]:
+    pass
