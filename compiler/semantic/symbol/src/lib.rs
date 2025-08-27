@@ -1204,6 +1204,7 @@ impl TableContext {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn handle_implements(
         self: &Arc<Self>,
         implements_syntax: pernixc_syntax::item::implements::Implements,
@@ -1218,24 +1219,25 @@ impl TableContext {
             return;
         };
 
-        let Some(body) = implements_syntax.body() else {
-            return;
-        };
-
+        let body = implements_syntax.body();
         let qualified_identifier_span = qualified_identifier.span();
 
         let generic_parameters = signature.generic_parameters();
         let where_clause = match &body {
-            pernixc_syntax::item::implements::Body::Negative(negative_body) => {
-                negative_body
-                    .trailing_where_clause()
-                    .and_then(|x| x.where_clause())
-                    .and_then(|x| x.predicates())
-            }
-            pernixc_syntax::item::implements::Body::Positive(body) => {
+            Some(pernixc_syntax::item::implements::Body::Negative(
+                negative_body,
+            )) => negative_body
+                .trailing_where_clause()
+                .and_then(|x| x.where_clause())
+                .and_then(|x| x.predicates()),
+
+            Some(pernixc_syntax::item::implements::Body::Positive(body)) => {
                 body.where_clause().and_then(|x| x.predicates())
             }
+
+            None => None,
         };
+
         let implements_id = self
             .engine
             .calculate_implements_id(&qualified_identifier_span, self.target_id)
@@ -1244,7 +1246,7 @@ impl TableContext {
         assert!(module_member_builder.unnameds.insert(implements_id));
 
         match body {
-            pernixc_syntax::item::implements::Body::Negative(_) => {
+            Some(pernixc_syntax::item::implements::Body::Negative(_)) => {
                 self.add_symbol_entry(
                     implements_id,
                     module_member_builder.symbol_id,
@@ -1264,7 +1266,30 @@ impl TableContext {
                 )
                 .await;
             }
-            pernixc_syntax::item::implements::Body::Positive(body) => {
+
+            None => {
+                self.add_symbol_entry(
+                    implements_id,
+                    module_member_builder.symbol_id,
+                    Entry::builder()
+                        .naming(Naming::Implements(
+                            qualified_identifier.clone(),
+                        ))
+                        .kind(Kind::PositiveImplementation)
+                        .generic_parameters_syntax(generic_parameters)
+                        .where_clause_syntax(where_clause)
+                        .final_keyword(
+                            implements_syntax
+                                .signature()
+                                .and_then(|x| x.final_keyword()),
+                        )
+                        .member(Arc::default())
+                        .build(),
+                )
+                .await;
+            }
+
+            Some(pernixc_syntax::item::implements::Body::Positive(body)) => {
                 let member_builder = self
                     .handle_positive_implementation(
                         implements_id,
@@ -1281,7 +1306,7 @@ impl TableContext {
                         .naming(Naming::Implements(
                             qualified_identifier.clone(),
                         ))
-                        .kind(Kind::NegativeImplementation)
+                        .kind(Kind::PositiveImplementation)
                         .generic_parameters_syntax(generic_parameters)
                         .where_clause_syntax(where_clause)
                         .final_keyword(

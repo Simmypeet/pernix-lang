@@ -103,7 +103,6 @@ impl crate::build::Build for Key {
         .await?;
 
         // performs extra necessary check
-
         if let Resolution::Generic(generic) = &resolution {
             let kind = engine.get_kind(generic.id).await;
 

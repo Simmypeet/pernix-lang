@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the marker implements is not final
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/marker/main.pnx:10:12
+   │
+10 │ implements Test[float32]
+   │            ^^^^^^^^^^^^^
+   │
+   = add the `final` keyword to the `implements`
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
