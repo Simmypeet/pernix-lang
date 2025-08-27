@@ -1,0 +1,10 @@
+public marker Test[T]
+
+
+final implements Test[int32]:
+    public function someFunction():
+        pass
+
+
+# marker implementations must always be final
+implements Test[float32]

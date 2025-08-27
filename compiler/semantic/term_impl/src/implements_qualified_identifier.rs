@@ -13,15 +13,21 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
+    final_implements::is_implements_final,
     kind::{get_kind, Kind},
     syntax::get_implements_qualified_identifier,
 };
 use pernixc_target::Global;
-use pernixc_term::{generic_arguments::Symbol, r#type::Type};
+use pernixc_term::{
+    generic_arguments::{GenericArguments, Symbol},
+    r#type::Type,
+};
 
 use crate::{
     build::Output,
-    implements_qualified_identifier::diagnostic::InvalidSymbolForImplements,
+    implements_qualified_identifier::diagnostic::{
+        InvalidSymbolForImplements, MarkerImplementsNotFinal,
+    },
     occurrences,
 };
 
@@ -95,6 +101,31 @@ impl crate::build::Build for Key {
             &storage,
         )
         .await?;
+
+        // performs extra necessary check
+
+        if let Resolution::Generic(generic) = &resolution {
+            let kind = engine.get_kind(generic.id).await;
+
+            #[allow(clippy::match_same_arms)]
+            match kind {
+                Kind::Marker => {
+                    check_marker(
+                        engine,
+                        generic.id,
+                        key.0,
+                        &generic.generic_arguments,
+                        qualified_identifier.span(),
+                        &storage,
+                    )
+                    .await?;
+                }
+
+                Kind::Trait => {}
+
+                _ => {}
+            }
+        }
 
         Ok(Output {
             item: Some(Arc::new(resolution)),
@@ -211,4 +242,25 @@ async fn is_adt_type(
 ) -> bool {
     let kind = engine.get_kind(sym_ty.id).await;
     matches!(kind, Kind::Struct | Kind::Enum)
+}
+
+async fn check_marker(
+    engine: &pernixc_query::TrackedEngine,
+    _marker: Global<pernixc_symbol::ID>,
+    implements: Global<pernixc_symbol::ID>,
+    _generic_arguments: &GenericArguments,
+    qualified_identifier: RelativeSpan,
+    storage: &Storage<diagnostic::Diagnostic>,
+) -> Result<(), executor::CyclicError> {
+    let is_final = engine.is_implements_final(implements).await;
+
+    if !is_final {
+        storage.receive(diagnostic::Diagnostic::MarkerImplementsNotFinal(
+            MarkerImplementsNotFinal {
+                qualified_identifier_span: qualified_identifier,
+            },
+        ));
+    }
+
+    Ok(())
 }

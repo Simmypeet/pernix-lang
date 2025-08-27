@@ -3,7 +3,7 @@
 use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
 use pernixc_symbol::{
-    final_implements::is_trait_implements_final,
+    final_implements::is_implements_final,
     kind::{get_kind, Kind},
     parent::scope_walker,
 };
@@ -151,7 +151,7 @@ impl Query for Resolve {
                     Kind::Trait => {
                         environment
                             .tracked_engine()
-                            .is_trait_implements_final(current_impl_id)
+                            .is_implements_final(current_impl_id)
                             .await
                     }
 

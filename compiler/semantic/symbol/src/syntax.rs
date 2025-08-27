@@ -134,3 +134,22 @@ pub async fn get_type_alias_syntax(
         })
         .clone())
 }
+
+/// Implementation of the `get_implements_final_keyword` method
+#[pernixc_query::query(
+    key(ImplementsFinalKeywordKey),
+    id(Global<ID>),
+    value(Option<pernixc_syntax::Keyword>),
+    executor(ImplementsFinalKeywordExecutor),
+    extend(method(get_implements_final_keyword), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn get_implements_final_keyword(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<Option<pernixc_syntax::Keyword>, CyclicError> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(*table.final_keywords.get(&id.id).unwrap_or_else(|| {
+        panic!("No final keyword found for symbol ID: {:?}", id.id)
+    }))
+}

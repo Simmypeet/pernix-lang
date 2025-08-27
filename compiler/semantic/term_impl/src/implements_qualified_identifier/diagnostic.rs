@@ -28,6 +28,7 @@ pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
     InvalidSymbolForImplements(InvalidSymbolForImplements),
     InvalidTypeForImplements(InvalidTypeForImplements),
+    MarkerImplementsNotFinal(MarkerImplementsNotFinal),
 }
 
 impl Report<&TrackedEngine> for Diagnostic {
@@ -43,6 +44,9 @@ impl Report<&TrackedEngine> for Diagnostic {
                 diag.report(parameter).await
             }
             Self::InvalidTypeForImplements(diag) => {
+                diag.report(parameter).await
+            }
+            Self::MarkerImplementsNotFinal(diag) => {
                 diag.report(parameter).await
             }
         }
@@ -158,6 +162,45 @@ impl Report<&TrackedEngine> for InvalidTypeForImplements {
             )
             .help_message(
                 "only `enum`, or `struct` can be implemented".to_string(),
+            )
+            .build()
+    }
+}
+
+/// The `marker implements` is not `final`
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct MarkerImplementsNotFinal {
+    /// The qualified identifier span of the resolved marker.
+    pub qualified_identifier_span: RelativeSpan,
+}
+
+impl Report<&TrackedEngine> for MarkerImplementsNotFinal {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let span =
+            engine.to_absolute_span(&self.qualified_identifier_span).await;
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("the marker implements is not final")
+            .primary_highlight(Highlight::builder().span(span).build())
+            .help_message(
+                "add the `final` keyword to the `implements`".to_string(),
             )
             .build()
     }

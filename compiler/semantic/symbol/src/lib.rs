@@ -83,11 +83,14 @@ pub fn register_executors(
 
     executor.register(Arc::new(source_map::FilePathExecutor));
 
+    executor.register(Arc::new(final_implements::Executor));
+
     executor.register(Arc::new(syntax::ImportExecutor));
     executor.register(Arc::new(syntax::ImplementsQualifiedIdentifierExecutor));
     executor.register(Arc::new(syntax::GenericParametersExecutor));
     executor.register(Arc::new(syntax::WhereClauseExecutor));
     executor.register(Arc::new(syntax::TypeAliasExecutor));
+    executor.register(Arc::new(syntax::ImplementsFinalKeywordExecutor));
 
     executor.register(Arc::new(import::WithDiagnosticExecutor));
     executor.register(Arc::new(import::Executor));
@@ -130,11 +133,14 @@ pub fn register_serde<
 
     serde_registry.register::<source_map::FilePathKey>();
 
+    serde_registry.register::<final_implements::Key>();
+
     serde_registry.register::<syntax::ImportKey>();
     serde_registry.register::<syntax::ImplementsQualifiedIdentifierKey>();
     serde_registry.register::<syntax::GenericParametersKey>();
     serde_registry.register::<syntax::WhereClauseKey>();
     serde_registry.register::<syntax::TypeAliasKey>();
+    serde_registry.register::<syntax::ImplementsFinalKeywordKey>();
 
     serde_registry.register::<import::WithDiagnosticKey>();
     serde_registry.register::<import::Key>();
@@ -411,6 +417,9 @@ pub struct Table {
     pub implements_qualified_identifier_syntaxes:
         Arc<ReadOnlyView<ID, QualifiedIdentifier>>,
 
+    /// Maps the implements ID to its `final` keyword.
+    pub final_keywords: Arc<ReadOnlyView<ID, Option<pernixc_syntax::Keyword>>>,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -531,6 +540,7 @@ struct TableContext {
     import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
     implements_qualified_identifier_syntaxes:
         DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
+    final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
 
     token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
     source_file: Option<Arc<SourceFile>>,
@@ -688,6 +698,7 @@ pub async fn table_executor(
         variant_associated_type_syntaxes: DashMap::default(),
         import_syntaxes: DashMap::default(),
         implements_qualified_identifier_syntaxes: DashMap::default(),
+        final_keywords: DashMap::default(),
 
         token_tree: token_tree_result.ok().map(|x| x.0),
         source_file: source_file.ok(),
@@ -739,6 +750,7 @@ pub async fn table_executor(
         implements_qualified_identifier_syntaxes: Arc::new(
             context.implements_qualified_identifier_syntaxes.into_read_only(),
         ),
+        final_keywords: Arc::new(context.final_keywords.into_read_only()),
 
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
@@ -805,6 +817,8 @@ struct Entry {
 
     pub variant_associated_type_syntax:
         Option<Option<pernixc_syntax::r#type::Type>>,
+
+    pub final_keyword: Option<Option<pernixc_syntax::Keyword>>,
 }
 
 impl TableContext {
@@ -939,6 +953,10 @@ impl TableContext {
                 id,
                 variant_associated_type_syntax,
             );
+        }
+
+        if let Some(final_keyword) = entry.final_keyword {
+            Self::insert_to_table(&self.final_keywords, id, final_keyword);
         }
     }
 
@@ -1237,6 +1255,11 @@ impl TableContext {
                         .kind(Kind::NegativeImplementation)
                         .generic_parameters_syntax(generic_parameters)
                         .where_clause_syntax(where_clause)
+                        .final_keyword(
+                            implements_syntax
+                                .signature()
+                                .and_then(|x| x.final_keyword()),
+                        )
                         .build(),
                 )
                 .await;
@@ -1261,6 +1284,11 @@ impl TableContext {
                         .kind(Kind::NegativeImplementation)
                         .generic_parameters_syntax(generic_parameters)
                         .where_clause_syntax(where_clause)
+                        .final_keyword(
+                            implements_syntax
+                                .signature()
+                                .and_then(|x| x.final_keyword()),
+                        )
                         .member(Arc::new(Member {
                             member_ids_by_name: member_builder
                                 .member_ids_by_name,
