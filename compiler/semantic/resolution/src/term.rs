@@ -402,20 +402,23 @@ pub fn resolve_lifetime_parameter(
     Lifetime::Error(pernixc_term::error::Error)
 }
 
+/// Enumeration of trying to interpreting [`Resolution`] as a type.
 #[derive(Debug, derive_more::From)]
-enum ResolutionToTypeError {
+#[allow(missing_docs)]
+pub enum ResolutionToTypeError {
     Cyclic(executor::CyclicError),
     Failed(Resolution),
 }
 
-#[allow(clippy::result_large_err)]
-async fn resolution_to_type(
-    tracked_engine: &TrackedEngine,
+/// Interprets the [`Resolution`] as a [`Type`].
+#[extend]
+pub async fn resolution_to_type(
+    self: &TrackedEngine,
     resolution: Resolution,
 ) -> Result<Type, ResolutionToTypeError> {
     match resolution {
         Resolution::Generic(symbol) => {
-            let symbol_kind = tracked_engine.get_kind(symbol.id).await;
+            let symbol_kind = self.get_kind(symbol.id).await;
 
             match symbol_kind {
                 Kind::Struct | Kind::Enum => Ok(Type::Symbol(Symbol {
@@ -424,9 +427,8 @@ async fn resolution_to_type(
                 })),
 
                 Kind::ImplementationType | Kind::Type => {
-                    let generic_parameters = tracked_engine
-                        .get_generic_parameters(symbol.id)
-                        .await?;
+                    let generic_parameters =
+                        self.get_generic_parameters(symbol.id).await?;
 
                     let instantiation = Instantiation::from_generic_arguments(
                         symbol.generic_arguments,
@@ -435,11 +437,8 @@ async fn resolution_to_type(
                     )
                     .unwrap();
 
-                    let mut result_ty = tracked_engine
-                        .get_type_alias(symbol.id)
-                        .await?
-                        .deref()
-                        .clone();
+                    let mut result_ty =
+                        self.get_type_alias(symbol.id).await?.deref().clone();
 
                     instantiation.instantiate(&mut result_ty);
 
@@ -453,7 +452,7 @@ async fn resolution_to_type(
         }
 
         Resolution::MemberGeneric(symbol) => {
-            let symbol_kind = tracked_engine.get_kind(symbol.id).await;
+            let symbol_kind = self.get_kind(symbol.id).await;
 
             match symbol_kind {
                 Kind::TraitType => {
@@ -528,7 +527,7 @@ pub async fn resolve_qualified_identifier_type(
         Err(Error::Cyclic(cyclic)) => return Err(cyclic),
     };
 
-    match resolution_to_type(self, resolution).await {
+    match self.resolution_to_type(resolution).await {
         Ok(ty) => Ok(ty),
         Err(ResolutionToTypeError::Failed(resolution)) => {
             handler.receive(Diagnostic::ExpectType(ExpectType {

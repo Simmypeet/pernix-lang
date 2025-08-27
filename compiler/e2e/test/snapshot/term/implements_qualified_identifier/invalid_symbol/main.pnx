@@ -1,0 +1,51 @@
+public module math:
+    pass
+
+
+public enum Direction:
+    North
+    South
+    East
+    West
+
+
+public trait Identity[T]:
+    public type Output
+
+
+implements Direction::North:
+    pass
+
+
+implements math:
+    pass
+
+
+implements[T] Identity[T]::Output:
+    pass
+
+
+public type Reference['a, T] = &'a T
+
+
+public type MutableReference['a, T] = &'a mut T
+
+
+implements['a, T] Reference['a, T]:
+    pass
+
+
+implements['a, T] MutableReference['a, T]:
+    pass
+
+
+public struct Vector2D[T]:
+    public x: T
+    public y: T
+
+
+public type Vector2DAlias[T] = Vector2D[T]
+
+
+implements[T] Vector2DAlias[T]:
+    pass
