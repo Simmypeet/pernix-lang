@@ -363,7 +363,7 @@ async fn check_trait(
                     diagnostic::Diagnostic::InaccessibleTraitMember(
                         diagnostic::InaccessibleTraitMember {
                             trait_member_id,
-                            implementation_id: implements,
+                            implementation_member_id: implements_member_id,
                         },
                     ),
                 );
@@ -403,26 +403,7 @@ async fn check_trait(
             trait_id.target_id.make_global(trait_member_id);
 
         if !implemented_member_by_name.contains_key(trait_member_name) {
-            // Check if the trait member is accessible before requiring its
-            // implementation
-            let is_accessible = engine
-                .symbol_accessible(implements, trait_member_global_id)
-                .await;
-
-            if is_accessible {
-                unimplemented_trait_members.push(trait_member_global_id);
-            } else {
-                // Emit accessibility diagnostic for unimplemented but
-                // inaccessible member
-                storage.receive(
-                    diagnostic::Diagnostic::InaccessibleTraitMember(
-                        diagnostic::InaccessibleTraitMember {
-                            trait_member_id: trait_member_global_id,
-                            implementation_id: implements,
-                        },
-                    ),
-                );
-            }
+            unimplemented_trait_members.push(trait_member_global_id);
         }
     }
 

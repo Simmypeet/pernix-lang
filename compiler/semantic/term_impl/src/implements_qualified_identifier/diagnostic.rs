@@ -530,8 +530,9 @@ pub struct InaccessibleTraitMember {
     /// The trait member ID that is not accessible.
     pub trait_member_id: Global<pernixc_symbol::ID>,
 
-    /// The implementation ID that cannot access the trait member.
-    pub implementation_id: Global<pernixc_symbol::ID>,
+    /// The implementation member ID that is trying to implement the
+    /// inaccessible trait member.
+    pub implementation_member_id: Global<pernixc_symbol::ID>,
 }
 
 impl Report<&TrackedEngine> for InaccessibleTraitMember {
@@ -544,10 +545,11 @@ impl Report<&TrackedEngine> for InaccessibleTraitMember {
         let member_name = engine.get_qualified_name(self.trait_member_id).await;
         let member_kind = engine.get_kind(self.trait_member_id).await;
 
-        let impl_span = match engine.get_span(self.implementation_id).await {
-            Some(span) => Some(engine.to_absolute_span(&span).await),
-            None => None,
-        };
+        let impl_member_span =
+            match engine.get_span(self.implementation_member_id).await {
+                Some(span) => Some(engine.to_absolute_span(&span).await),
+                None => None,
+            };
 
         let trait_member_span =
             match engine.get_span(self.trait_member_id).await {
@@ -558,7 +560,7 @@ impl Report<&TrackedEngine> for InaccessibleTraitMember {
         pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("trait member is not accessible")
-            .maybe_primary_highlight(impl_span.map(|x| {
+            .maybe_primary_highlight(impl_member_span.map(|x| {
                 Highlight::builder()
                     .span(x)
                     .message(format!(
