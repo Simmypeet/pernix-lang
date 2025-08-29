@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use pernixc_handler::{Handler, Storage};
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::{self, CyclicError};
 use pernixc_resolution::{
@@ -16,13 +17,11 @@ use pernixc_symbol::{
     final_implements::is_implements_final,
     kind::{get_kind, Kind},
     member::get_members,
+    name::get_name,
     syntax::get_implements_qualified_identifier,
 };
 use pernixc_target::Global;
-use pernixc_term::{
-    generic_arguments::{GenericArguments, Symbol},
-    r#type::Type,
-};
+use pernixc_term::{generic_arguments::Symbol, r#type::Type};
 
 use crate::{
     build::Output,
@@ -112,9 +111,7 @@ impl crate::build::Build for Key {
                 Kind::Marker => {
                     check_marker(
                         engine,
-                        generic.id,
                         key.0,
-                        &generic.generic_arguments,
                         qualified_identifier.span(),
                         &storage,
                     )
@@ -246,9 +243,7 @@ async fn is_adt_type(
 
 async fn check_marker(
     engine: &pernixc_query::TrackedEngine,
-    _marker: Global<pernixc_symbol::ID>,
     implements: Global<pernixc_symbol::ID>,
-    _generic_arguments: &GenericArguments,
     qualified_identifier: RelativeSpan,
     storage: &Storage<diagnostic::Diagnostic>,
 ) -> Result<(), executor::CyclicError> {
@@ -287,4 +282,35 @@ async fn check_marker(
     }
 
     Ok(())
+}
+
+async fn check_trait(
+    engine: &pernixc_query::TrackedEngine,
+    implements: Global<pernixc_symbol::ID>,
+    qualified_identifier: RelativeSpan,
+    trait_id: Global<pernixc_symbol::ID>,
+    storage: &Storage<diagnostic::Diagnostic>,
+) -> Result<(), executor::CyclicError> {
+    // no need to check the member
+    if engine.get_kind(implements).await != Kind::PositiveImplementation {
+        return Ok(());
+    }
+
+    let implements_members = engine.get_members(implements).await;
+    let trait_members = engine.get_members(trait_id).await;
+
+    let implemented_member_by_name = HashMap::default();
+
+    for implements_member_id in implements_members
+        .member_ids_by_name
+        .values()
+        .copied()
+        .map(|x| implements.target_id.make_global(x))
+    {
+        let member_name = engine.get_name(implements_member_id).await;
+        let trait_equivalent =
+            trait_members.member_ids_by_name.get(&member_name);
+    }
+
+    todo!()
 }
