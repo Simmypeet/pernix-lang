@@ -42,3 +42,7 @@ directory with descriptive name stating which feature to testing for in the
 source code that will trigger the diagnostic outputs. The whole compiler
 procedure will be ran on the `main.pnx` file and diagnostics will be emitted
 which we can validate and save as a snapshot later on.
+
+```bash
+cargo nextest r -p pernixc_e2e -- --skip regression
+```

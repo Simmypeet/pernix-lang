@@ -28,6 +28,7 @@ use pernixc_term::{generic_arguments::Symbol, r#type::Type};
 use crate::{
     build::Output,
     implements_qualified_identifier::diagnostic::{
+        AdtImplementationCannotBeFinal, AdtImplementationCannotBeNegative,
         InvalidSymbolForImplements, MarkerImplementsNotFinal,
     },
     occurrences,
@@ -122,6 +123,10 @@ impl crate::build::Build for Key {
 
                 Kind::Trait => {
                     check_trait(engine, key.0, generic.id, &storage).await?;
+                }
+
+                Kind::Struct | Kind::Enum => {
+                    check_adt(engine, key.0, &storage).await?;
                 }
 
                 _ => {}
@@ -407,6 +412,39 @@ async fn check_trait(
                 implementation_id: implements,
             },
         ));
+    }
+
+    Ok(())
+}
+
+async fn check_adt(
+    engine: &pernixc_query::TrackedEngine,
+    implements: Global<pernixc_symbol::ID>,
+    storage: &Storage<diagnostic::Diagnostic>,
+) -> Result<(), executor::CyclicError> {
+    let kind = engine.get_kind(implements).await;
+
+    // Check if it's a negative implementation
+    if kind == Kind::NegativeImplementation {
+        storage.receive(
+            diagnostic::Diagnostic::AdtImplementationCannotBeNegative(
+                AdtImplementationCannotBeNegative {
+                    implementation_id: implements,
+                },
+            ),
+        );
+    }
+
+    // Check if it's a final implementation
+    let is_final = engine.is_implements_final(implements).await;
+    if is_final {
+        storage.receive(
+            diagnostic::Diagnostic::AdtImplementationCannotBeFinal(
+                AdtImplementationCannotBeFinal {
+                    implementation_id: implements,
+                },
+            ),
+        );
     }
 
     Ok(())

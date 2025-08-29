@@ -37,6 +37,8 @@ pub enum Diagnostic {
     TraitMemberKindMismatch(TraitMemberKindMismatch),
     ExtraneousImplementationMember(ExtraneousImplementationMember),
     InaccessibleTraitMember(InaccessibleTraitMember),
+    AdtImplementationCannotBeNegative(AdtImplementationCannotBeNegative),
+    AdtImplementationCannotBeFinal(AdtImplementationCannotBeFinal),
 }
 
 impl Report<&TrackedEngine> for Diagnostic {
@@ -68,6 +70,12 @@ impl Report<&TrackedEngine> for Diagnostic {
                 diag.report(parameter).await
             }
             Self::InaccessibleTraitMember(diag) => diag.report(parameter).await,
+            Self::AdtImplementationCannotBeNegative(diag) => {
+                diag.report(parameter).await
+            }
+            Self::AdtImplementationCannotBeFinal(diag) => {
+                diag.report(parameter).await
+            }
         }
     }
 }
@@ -586,6 +594,106 @@ impl Report<&TrackedEngine> for InaccessibleTraitMember {
             .help_message(
                 "make the trait member publicly accessible or move the \
                  implementation to a scope where it is accessible"
+                    .to_string(),
+            )
+            .build()
+    }
+}
+
+/// ADT implementation cannot be negative.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct AdtImplementationCannotBeNegative {
+    /// The implementation ID that is negative.
+    pub implementation_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for AdtImplementationCannotBeNegative {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let span = match engine.get_span(self.implementation_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("cannot `delete` an `implements` on `struct` or `enum`")
+            .maybe_primary_highlight(span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message("`implements` must have a body")
+                    .build()
+            }))
+            .help_message(
+                "remove the `delete` keyword from the implementation, \
+                 negative `implements` is only allowed on `trait` or `marker`"
+                    .to_string(),
+            )
+            .build()
+    }
+}
+
+/// ADT implementation cannot be final.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct AdtImplementationCannotBeFinal {
+    /// The implementation ID that is final.
+    pub implementation_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for AdtImplementationCannotBeFinal {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let span = match engine.get_span(self.implementation_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("`implements` on `struct` or `enum` cannot be final")
+            .maybe_primary_highlight(span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(
+                        "`implements` on `struct` or `enum` cannot be final",
+                    )
+                    .build()
+            }))
+            .help_message(
+                "remove the `final` keyword from the `implements`, `final \
+                 implements` is only allowed on `trait` or `marker`"
                     .to_string(),
             )
             .build()

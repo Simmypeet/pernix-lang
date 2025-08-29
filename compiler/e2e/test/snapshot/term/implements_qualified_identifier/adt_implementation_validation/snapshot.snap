@@ -1,0 +1,74 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: cannot `delete` an `implements` on `struct` or `enum`
+  ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:7:12
+  │
+7 │ implements MyStruct delete
+  │            ^^^^^^^^ `implements` must have a body
+  │
+  = remove the `delete` keyword from the implementation, negative `implements` is only allowed on `trait` or `marker`
+
+error: cannot `delete` an `implements` on `struct` or `enum`
+  ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:9:18
+  │
+9 │ final implements MyStruct delete
+  │                  ^^^^^^^^ `implements` must have a body
+  │
+  = remove the `delete` keyword from the implementation, negative `implements` is only allowed on `trait` or `marker`
+
+error: `implements` on `struct` or `enum` cannot be final
+  ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:9:18
+  │
+9 │ final implements MyStruct delete
+  │                  ^^^^^^^^ `implements` on `struct` or `enum` cannot be final
+  │
+  = remove the `final` keyword from the `implements`, `final implements` is only allowed on `trait` or `marker`
+
+error: `implements` on `struct` or `enum` cannot be final
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:11:18
+   │
+11 │ final implements MyStruct:
+   │                  ^^^^^^^^ `implements` on `struct` or `enum` cannot be final
+   │
+   = remove the `final` keyword from the `implements`, `final implements` is only allowed on `trait` or `marker`
+
+error: cannot `delete` an `implements` on `struct` or `enum`
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:15:12
+   │
+15 │ implements MyEnum delete
+   │            ^^^^^^ `implements` must have a body
+   │
+   = remove the `delete` keyword from the implementation, negative `implements` is only allowed on `trait` or `marker`
+
+error: cannot `delete` an `implements` on `struct` or `enum`
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:17:18
+   │
+17 │ final implements MyEnum delete
+   │                  ^^^^^^ `implements` must have a body
+   │
+   = remove the `delete` keyword from the implementation, negative `implements` is only allowed on `trait` or `marker`
+
+error: `implements` on `struct` or `enum` cannot be final
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:17:18
+   │
+17 │ final implements MyEnum delete
+   │                  ^^^^^^ `implements` on `struct` or `enum` cannot be final
+   │
+   = remove the `final` keyword from the `implements`, `final implements` is only allowed on `trait` or `marker`
+
+error: `implements` on `struct` or `enum` cannot be final
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/adt_implementation_validation/main.pnx:19:18
+   │
+19 │ final implements MyEnum:
+   │                  ^^^^^^ `implements` on `struct` or `enum` cannot be final
+   │
+   = remove the `final` keyword from the `implements`, `final implements` is only allowed on `trait` or `marker`
+
+error: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

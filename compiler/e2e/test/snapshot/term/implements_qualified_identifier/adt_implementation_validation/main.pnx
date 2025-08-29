@@ -1,0 +1,23 @@
+public struct MyStruct:
+    pass
+
+public enum MyEnum:
+    pass
+
+implements MyStruct delete
+
+final implements MyStruct delete
+
+final implements MyStruct:
+    function test():
+        pass
+
+implements MyEnum delete
+
+final implements MyEnum delete
+
+final implements MyEnum:
+    function test():
+        pass
+
+
