@@ -121,14 +121,7 @@ impl crate::build::Build for Key {
                 }
 
                 Kind::Trait => {
-                    check_trait(
-                        engine,
-                        key.0,
-                        qualified_identifier.span(),
-                        generic.id,
-                        &storage,
-                    )
-                    .await?;
+                    check_trait(engine, key.0, generic.id, &storage).await?;
                 }
 
                 _ => {}
@@ -299,7 +292,6 @@ async fn check_marker(
 async fn check_trait(
     engine: &pernixc_query::TrackedEngine,
     implements: Global<pernixc_symbol::ID>,
-    _qualified_identifier: RelativeSpan,
     trait_id: Global<pernixc_symbol::ID>,
     storage: &Storage<diagnostic::Diagnostic>,
 ) -> Result<(), executor::CyclicError> {
