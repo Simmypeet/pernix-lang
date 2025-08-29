@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use flexstr::SharedStr;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
@@ -27,6 +28,8 @@ use crate::{
     build::Output,
     implements_qualified_identifier::diagnostic::{
         InvalidSymbolForImplements, MarkerImplementsNotFinal,
+        TraitMemberNotImplemented, TraitMemberImplementedMultipleTimes,
+        TraitMemberKindMismatch, ExtraneousImplementationMember,
     },
     occurrences,
 };
@@ -118,7 +121,16 @@ impl crate::build::Build for Key {
                     .await?;
                 }
 
-                Kind::Trait => {}
+                Kind::Trait => {
+                    check_trait(
+                        engine,
+                        key.0,
+                        qualified_identifier.span(),
+                        generic.id,
+                        &storage,
+                    )
+                    .await?;
+                }
 
                 _ => {}
             }
@@ -287,7 +299,7 @@ async fn check_marker(
 async fn check_trait(
     engine: &pernixc_query::TrackedEngine,
     implements: Global<pernixc_symbol::ID>,
-    qualified_identifier: RelativeSpan,
+    _qualified_identifier: RelativeSpan,
     trait_id: Global<pernixc_symbol::ID>,
     storage: &Storage<diagnostic::Diagnostic>,
 ) -> Result<(), executor::CyclicError> {
@@ -299,8 +311,13 @@ async fn check_trait(
     let implements_members = engine.get_members(implements).await;
     let trait_members = engine.get_members(trait_id).await;
 
-    let implemented_member_by_name = HashMap::default();
+    // Maps member name to (implementation_member_id, trait_member_id)
+    let mut implemented_member_by_name: HashMap<
+        SharedStr,
+        (Global<pernixc_symbol::ID>, Option<Global<pernixc_symbol::ID>>),
+    > = HashMap::default();
 
+    // Check each implementation member
     for implements_member_id in implements_members
         .member_ids_by_name
         .values()
@@ -308,9 +325,91 @@ async fn check_trait(
         .map(|x| implements.target_id.make_global(x))
     {
         let member_name = engine.get_name(implements_member_id).await;
-        let trait_equivalent =
-            trait_members.member_ids_by_name.get(&member_name);
+        let trait_equivalent_id = trait_members
+            .member_ids_by_name
+            .get(&member_name)
+            .map(|&id| trait_id.target_id.make_global(id));
+
+        // Check if this member is implemented multiple times
+        if let Some((first_impl_id, _)) =
+            implemented_member_by_name.get(&member_name)
+        {
+            storage.receive(
+                diagnostic::Diagnostic::TraitMemberImplementedMultipleTimes(
+                    diagnostic::TraitMemberImplementedMultipleTimes {
+                        first_implementation_member_id: *first_impl_id,
+                        second_implementation_member_id: implements_member_id,
+                    },
+                ),
+            );
+            continue;
+        }
+
+        if let Some(trait_member_id) = trait_equivalent_id {
+            // Check if the kinds match
+            let impl_kind = engine.get_kind(implements_member_id).await;
+            let trait_kind = engine.get_kind(trait_member_id).await;
+
+            let kinds_match = matches!(
+                (trait_kind, impl_kind),
+                (Kind::TraitFunction, Kind::ImplementationFunction)
+                    | (Kind::TraitType, Kind::ImplementationType)
+                    | (Kind::TraitConstant, Kind::ImplementationConstant)
+            );
+
+            if !kinds_match {
+                storage.receive(
+                    diagnostic::Diagnostic::TraitMemberKindMismatch(
+                        diagnostic::TraitMemberKindMismatch {
+                            trait_member_id,
+                            implementation_member_id: implements_member_id,
+                        },
+                    ),
+                );
+            }
+
+            implemented_member_by_name.insert(
+                member_name.clone(),
+                (implements_member_id, Some(trait_member_id)),
+            );
+        } else {
+            // Implementation member doesn't correspond to any trait member
+            storage.receive(
+                diagnostic::Diagnostic::ExtraneousImplementationMember(
+                    diagnostic::ExtraneousImplementationMember {
+                        implementation_member_id: implements_member_id,
+                    },
+                ),
+            );
+
+            implemented_member_by_name
+                .insert(member_name.clone(), (implements_member_id, None));
+        }
     }
 
-    todo!()
+    // Check for missing trait members
+    let mut unimplemented_trait_members = Vec::new();
+    
+    for (trait_member_name, &trait_member_id) in
+        &trait_members.member_ids_by_name
+    {
+        let trait_member_global_id =
+            trait_id.target_id.make_global(trait_member_id);
+
+        if !implemented_member_by_name.contains_key(trait_member_name) {
+            unimplemented_trait_members.push(trait_member_global_id);
+        }
+    }
+
+    // Emit a single diagnostic for all unimplemented members if any
+    if !unimplemented_trait_members.is_empty() {
+        storage.receive(diagnostic::Diagnostic::TraitMemberNotImplemented(
+            diagnostic::TraitMemberNotImplemented {
+                unimplemented_trait_member_ids: unimplemented_trait_members,
+                implementation_id: implements,
+            },
+        ));
+    }
+
+    Ok(())
 }

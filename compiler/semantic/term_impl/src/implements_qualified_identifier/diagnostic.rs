@@ -33,6 +33,10 @@ pub enum Diagnostic {
     MemberInMarkerImplementationIsNotAllowed(
         MemberInMarkerImplementationIsNotAllowed,
     ),
+    TraitMemberNotImplemented(TraitMemberNotImplemented),
+    TraitMemberImplementedMultipleTimes(TraitMemberImplementedMultipleTimes),
+    TraitMemberKindMismatch(TraitMemberKindMismatch),
+    ExtraneousImplementationMember(ExtraneousImplementationMember),
 }
 
 impl Report<&TrackedEngine> for Diagnostic {
@@ -54,6 +58,16 @@ impl Report<&TrackedEngine> for Diagnostic {
                 diag.report(parameter).await
             }
             Self::MemberInMarkerImplementationIsNotAllowed(diag) => {
+                diag.report(parameter).await
+            }
+            Self::TraitMemberNotImplemented(diag) => {
+                diag.report(parameter).await
+            }
+            Self::TraitMemberImplementedMultipleTimes(diag) => {
+                diag.report(parameter).await
+            }
+            Self::TraitMemberKindMismatch(diag) => diag.report(parameter).await,
+            Self::ExtraneousImplementationMember(diag) => {
                 diag.report(parameter).await
             }
         }
@@ -282,6 +296,295 @@ impl Report<&TrackedEngine> for MemberInMarkerImplementationIsNotAllowed {
                     })
                     .into_iter()
                     .collect(),
+            )
+            .build()
+    }
+}
+
+/// A required trait member is not implemented.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct TraitMemberNotImplemented {
+    /// The member IDs in the trait that are not implemented.
+    pub unimplemented_trait_member_ids: Vec<Global<pernixc_symbol::ID>>,
+
+    /// The implementation ID where the members should be implemented.
+    pub implementation_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for TraitMemberNotImplemented {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let implementation_span =
+            match engine.get_span(self.implementation_id).await {
+                Some(span) => Some(engine.to_absolute_span(&span).await),
+                None => None,
+            };
+
+        // Collect information about all unimplemented members
+        let mut member_names = Vec::new();
+        let mut related_highlights = Vec::new();
+
+        for &trait_member_id in &self.unimplemented_trait_member_ids {
+            let member_name = engine.get_qualified_name(trait_member_id).await;
+            let member_kind = engine.get_kind(trait_member_id).await;
+            member_names.push(format!("{}: `{member_name}`", member_kind.kind_str()));
+
+            if let Some(span) = engine.get_span(trait_member_id).await {
+                let trait_member_span = engine.to_absolute_span(&span).await;
+                related_highlights.push(
+                    Highlight::builder()
+                        .span(trait_member_span)
+                        .message(format!(
+                            "trait {} `{member_name}` declared here",
+                            member_kind.kind_str()
+                        ))
+                        .build(),
+                );
+            }
+        }
+
+        let message = if self.unimplemented_trait_member_ids.len() == 1 {
+            "trait member not implemented".to_string()
+        } else {
+            "trait members not implemented".to_string()
+        };
+
+        let primary_message = if self.unimplemented_trait_member_ids.len() == 1 {
+            format!("missing implementation for {}", member_names[0])
+        } else {
+            format!(
+                "missing implementations for: {}",
+                member_names.join(", ")
+            )
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message(message)
+            .maybe_primary_highlight(implementation_span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(primary_message)
+                    .build()
+            }))
+            .related(related_highlights)
+            .build()
+    }
+}
+
+/// A trait member is implemented multiple times.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct TraitMemberImplementedMultipleTimes {
+    /// The first implementation member ID.
+    pub first_implementation_member_id: Global<pernixc_symbol::ID>,
+
+    /// The second implementation member ID.
+    pub second_implementation_member_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for TraitMemberImplementedMultipleTimes {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let member_name = engine
+            .get_qualified_name(self.first_implementation_member_id)
+            .await;
+
+        let first_span =
+            match engine.get_span(self.first_implementation_member_id).await {
+                Some(span) => Some(engine.to_absolute_span(&span).await),
+                None => None,
+            };
+
+        let second_span =
+            match engine.get_span(self.second_implementation_member_id).await {
+                Some(span) => Some(engine.to_absolute_span(&span).await),
+                None => None,
+            };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("trait member implemented multiple times")
+            .maybe_primary_highlight(second_span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(format!("`{member_name}` is already implemented"))
+                    .build()
+            }))
+            .related(
+                first_span
+                    .map(|x| {
+                        Highlight::builder()
+                            .span(x)
+                            .message(format!(
+                                "first implementation of `{member_name}` here"
+                            ))
+                            .build()
+                    })
+                    .into_iter()
+                    .collect(),
+            )
+            .build()
+    }
+}
+
+/// A trait member is implemented with wrong kind (e.g., implementing function
+/// as type).
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct TraitMemberKindMismatch {
+    /// The trait member ID.
+    pub trait_member_id: Global<pernixc_symbol::ID>,
+
+    /// The implementation member ID with wrong kind.
+    pub implementation_member_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for TraitMemberKindMismatch {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let member_name = engine.get_qualified_name(self.trait_member_id).await;
+        let trait_kind = engine.get_kind(self.trait_member_id).await;
+        let impl_kind = engine.get_kind(self.implementation_member_id).await;
+
+        let impl_span =
+            match engine.get_span(self.implementation_member_id).await {
+                Some(span) => Some(engine.to_absolute_span(&span).await),
+                None => None,
+            };
+
+        let trait_span = match engine.get_span(self.trait_member_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("trait member kind mismatch")
+            .maybe_primary_highlight(impl_span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(format!(
+                        "expected {}, found {}",
+                        trait_kind.kind_str(),
+                        impl_kind.kind_str()
+                    ))
+                    .build()
+            }))
+            .related(
+                trait_span
+                    .map(|x| {
+                        Highlight::builder()
+                            .span(x)
+                            .message(format!(
+                                "trait {} `{member_name}` declared here",
+                                trait_kind.kind_str()
+                            ))
+                            .build()
+                    })
+                    .into_iter()
+                    .collect(),
+            )
+            .build()
+    }
+}
+
+/// An implementation member that doesn't correspond to any trait member.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct ExtraneousImplementationMember {
+    /// The implementation member ID that doesn't correspond to any trait
+    /// member.
+    pub implementation_member_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for ExtraneousImplementationMember {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let member_name =
+            engine.get_qualified_name(self.implementation_member_id).await;
+        let member_kind = engine.get_kind(self.implementation_member_id).await;
+
+        let span = match engine.get_span(self.implementation_member_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("extraneous implementation member")
+            .maybe_primary_highlight(span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(format!(
+                        "{} `{member_name}` is not a member of the trait",
+                        member_kind.kind_str()
+                    ))
+                    .build()
+            }))
+            .help_message(
+                "remove this member or add it to the trait definition"
+                    .to_string(),
             )
             .build()
     }
