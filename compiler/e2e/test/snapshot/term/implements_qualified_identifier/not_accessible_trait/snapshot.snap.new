@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+assertion_line: 120
+expression: clean_run
+---
+stderr:
+error: the symbol is not accessible
+  ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/not_accessible_trait/main.pnx:9:19
+  │
+9 │ implements inner::InAccessible[int32]:
+  │                   ^^^^^^^^^^^^ the symbol `main::inner::InAccessible` is not accessible from `main::[implements inner::InAccessible[int32]]`
+
+error: trait member is not accessible
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/not_accessible_trait/main.pnx:12:12
+   │
+ 6 │         private function inaccessible()
+   │                          ------------ trait function `main::inner::MemberInAccessible::inaccessible` declared here
+   ·
+12 │ implements inner::MemberInAccessible[int32]:
+   │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ cannot implement inaccessible trait function `main::inner::MemberInAccessible::inaccessible`
+   │
+   = make the trait member publicly accessible or move the implementation to a scope where it is accessible
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

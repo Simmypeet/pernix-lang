@@ -36,6 +36,7 @@ pub enum Diagnostic {
     TraitMemberNotImplemented(TraitMemberNotImplemented),
     TraitMemberKindMismatch(TraitMemberKindMismatch),
     ExtraneousImplementationMember(ExtraneousImplementationMember),
+    InaccessibleTraitMember(InaccessibleTraitMember),
 }
 
 impl Report<&TrackedEngine> for Diagnostic {
@@ -66,6 +67,7 @@ impl Report<&TrackedEngine> for Diagnostic {
             Self::ExtraneousImplementationMember(diag) => {
                 diag.report(parameter).await
             }
+            Self::InaccessibleTraitMember(diag) => diag.report(parameter).await,
         }
     }
 }
@@ -504,6 +506,84 @@ impl Report<&TrackedEngine> for ExtraneousImplementationMember {
             }))
             .help_message(
                 "remove this member or add it to the trait definition"
+                    .to_string(),
+            )
+            .build()
+    }
+}
+
+/// A trait member that is not accessible from the implementation site.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct InaccessibleTraitMember {
+    /// The trait member ID that is not accessible.
+    pub trait_member_id: Global<pernixc_symbol::ID>,
+
+    /// The implementation ID that cannot access the trait member.
+    pub implementation_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for InaccessibleTraitMember {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let member_name = engine.get_qualified_name(self.trait_member_id).await;
+        let member_kind = engine.get_kind(self.trait_member_id).await;
+
+        let impl_span = match engine.get_span(self.implementation_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        let trait_member_span =
+            match engine.get_span(self.trait_member_id).await {
+                Some(span) => Some(engine.to_absolute_span(&span).await),
+                None => None,
+            };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("trait member is not accessible")
+            .maybe_primary_highlight(impl_span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(format!(
+                        "cannot implement inaccessible {} `{member_name}`",
+                        member_kind.kind_str()
+                    ))
+                    .build()
+            }))
+            .related(
+                trait_member_span
+                    .map(|x| {
+                        Highlight::builder()
+                            .span(x)
+                            .message(format!(
+                                "{} `{member_name}` declared here",
+                                member_kind.kind_str()
+                            ))
+                            .build()
+                    })
+                    .into_iter()
+                    .collect(),
+            )
+            .help_message(
+                "make the trait member publicly accessible or move the \
+                 implementation to a scope where it is accessible"
                     .to_string(),
             )
             .build()

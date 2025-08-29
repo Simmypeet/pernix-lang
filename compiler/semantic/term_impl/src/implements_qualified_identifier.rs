@@ -15,6 +15,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
+    accessibility::symbol_accessible,
     final_implements::is_implements_final,
     kind::{get_kind, Kind},
     member::get_members,
@@ -294,6 +295,7 @@ async fn check_marker(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 async fn check_trait(
     engine: &pernixc_query::TrackedEngine,
     implements: Global<pernixc_symbol::ID>,
@@ -351,6 +353,22 @@ async fn check_trait(
                 );
             }
 
+            // Check if the trait member is accessible from the implementation
+            // site
+            let is_accessible =
+                engine.symbol_accessible(implements, trait_member_id).await;
+
+            if !is_accessible {
+                storage.receive(
+                    diagnostic::Diagnostic::InaccessibleTraitMember(
+                        diagnostic::InaccessibleTraitMember {
+                            trait_member_id,
+                            implementation_id: implements,
+                        },
+                    ),
+                );
+            }
+
             assert!(
                 implemented_member_by_name
                     .insert(
@@ -385,7 +403,26 @@ async fn check_trait(
             trait_id.target_id.make_global(trait_member_id);
 
         if !implemented_member_by_name.contains_key(trait_member_name) {
-            unimplemented_trait_members.push(trait_member_global_id);
+            // Check if the trait member is accessible before requiring its
+            // implementation
+            let is_accessible = engine
+                .symbol_accessible(implements, trait_member_global_id)
+                .await;
+
+            if is_accessible {
+                unimplemented_trait_members.push(trait_member_global_id);
+            } else {
+                // Emit accessibility diagnostic for unimplemented but
+                // inaccessible member
+                storage.receive(
+                    diagnostic::Diagnostic::InaccessibleTraitMember(
+                        diagnostic::InaccessibleTraitMember {
+                            trait_member_id: trait_member_global_id,
+                            implementation_id: implements,
+                        },
+                    ),
+                );
+            }
         }
     }
 
