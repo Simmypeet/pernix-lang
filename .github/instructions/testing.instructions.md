@@ -46,3 +46,6 @@ which we can validate and save as a snapshot later on.
 ```bash
 cargo nextest r -p pernixc_e2e -- --skip regression
 ```
+
+It's recommend to skip regression tests as it takes a lot of time and often
+unproductive.
