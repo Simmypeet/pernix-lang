@@ -28,8 +28,6 @@ use crate::{
     build::Output,
     implements_qualified_identifier::diagnostic::{
         InvalidSymbolForImplements, MarkerImplementsNotFinal,
-        TraitMemberNotImplemented, TraitMemberImplementedMultipleTimes,
-        TraitMemberKindMismatch, ExtraneousImplementationMember,
     },
     occurrences,
 };
@@ -330,21 +328,6 @@ async fn check_trait(
             .get(&member_name)
             .map(|&id| trait_id.target_id.make_global(id));
 
-        // Check if this member is implemented multiple times
-        if let Some((first_impl_id, _)) =
-            implemented_member_by_name.get(&member_name)
-        {
-            storage.receive(
-                diagnostic::Diagnostic::TraitMemberImplementedMultipleTimes(
-                    diagnostic::TraitMemberImplementedMultipleTimes {
-                        first_implementation_member_id: *first_impl_id,
-                        second_implementation_member_id: implements_member_id,
-                    },
-                ),
-            );
-            continue;
-        }
-
         if let Some(trait_member_id) = trait_equivalent_id {
             // Check if the kinds match
             let impl_kind = engine.get_kind(implements_member_id).await;
@@ -368,9 +351,14 @@ async fn check_trait(
                 );
             }
 
-            implemented_member_by_name.insert(
-                member_name.clone(),
-                (implements_member_id, Some(trait_member_id)),
+            assert!(
+                implemented_member_by_name
+                    .insert(
+                        member_name.clone(),
+                        (implements_member_id, Some(trait_member_id)),
+                    )
+                    .is_none(),
+                "should've no duplication"
             );
         } else {
             // Implementation member doesn't correspond to any trait member
@@ -389,7 +377,7 @@ async fn check_trait(
 
     // Check for missing trait members
     let mut unimplemented_trait_members = Vec::new();
-    
+
     for (trait_member_name, &trait_member_id) in
         &trait_members.member_ids_by_name
     {

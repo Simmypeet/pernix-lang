@@ -1,0 +1,22 @@
+public trait Fizz[T]:
+    public function first()
+    public type Second
+
+
+implements Fizz[int32]:
+    function Second():
+        pass
+
+    type Test = int32
+    
+
+implements Fizz[float32]:
+    function first():
+        pass
+
+    function first():
+        pass
+
+    type What = float32
+
+    
