@@ -32,3 +32,13 @@ so that the snapshots are created. After that, you can run `cargo insta review`
 where I will review the snapshots and approve them if they are correct. From
 there on, you can look at the accepted and rejected snapshots in the terminal
 or in the `snapshots` directory.
+
+# End to End Testing
+
+Testing funcionality related to diagnostics or semantic checking/analyzing are
+better done via end to end test with snapshot testing. Simply, create a
+directory with descriptive name stating which feature to testing for in the
+"compiler/e2e/test/snapshot/" directory, then create a `main.pnx` file with the
+source code that will trigger the diagnostic outputs. The whole compiler
+procedure will be ran on the `main.pnx` file and diagnostics will be emitted
+which we can validate and save as a snapshot later on.

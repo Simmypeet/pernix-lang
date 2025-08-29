@@ -825,13 +825,17 @@ impl TableContext {
     fn implements_qualified_identifier_name(
         &self,
         qualified_identifier_span: &RelativeSpan,
-    ) -> &str {
+    ) -> SharedStr {
         let source_file = self.source_file.as_ref().unwrap();
         let token_tree = self.token_tree.as_ref().unwrap();
 
-        &source_file.content()[qualified_identifier_span
-            .to_absolute_span(source_file, token_tree)
-            .range()]
+        format!(
+            "[implements {}]",
+            &source_file.content()[qualified_identifier_span
+                .to_absolute_span(source_file, token_tree)
+                .range()]
+        )
+        .into()
     }
 
     #[allow(clippy::too_many_lines)]
@@ -847,8 +851,7 @@ impl TableContext {
                     id,
                     self.implements_qualified_identifier_name(
                         &qualified_identifier.span(),
-                    )
-                    .into(),
+                    ),
                 );
                 Self::insert_to_table(
                     &self.spans,
@@ -1352,8 +1355,7 @@ impl TableContext {
                 .chain(std::iter::once(
                     self.implements_qualified_identifier_name(
                         qualified_identifier_span,
-                    )
-                    .into(),
+                    ),
                 ))
                 .collect(),
             self.target_id,

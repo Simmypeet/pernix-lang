@@ -100,7 +100,7 @@ error: symbol `Sixth` is already defined in the scope `main`
 49 │ public trait Sixth:
    │              ^^^^^ redefinition here
 
-error: symbol `test` is already defined in the scope `main::Test[int32]`
+error: symbol `test` is already defined in the scope `main::[implements Test[int32]]`
    ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:59:21
    │
 56 │     public function test():

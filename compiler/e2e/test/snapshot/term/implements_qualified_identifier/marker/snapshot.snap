@@ -9,7 +9,7 @@ error: member in marker implementation is not allowed
 4 │ final implements Test[int32]:
   │                  ----------- this is a marker `implements`
 5 │     public function someFunction():
-  │                     ^^^^^^^^^^^^ `main::Test[int32]::someFunction` cannot be declared in this `implements`
+  │                     ^^^^^^^^^^^^ `main::[implements Test[int32]]::someFunction` cannot be declared in this `implements`
   │
   = marker implementations cannot have members
 

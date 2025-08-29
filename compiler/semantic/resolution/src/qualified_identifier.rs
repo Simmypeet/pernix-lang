@@ -9,11 +9,15 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
+    accessibility::symbol_accessible,
     get_target_root_module_id,
     import::get_imports,
     kind::{get_kind, Kind},
     member::get_members,
-    name::{diagnostic::SymbolNotFound, get_member_of},
+    name::{
+        diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
+        get_member_of,
+    },
     parent::{get_closest_module_id, scope_walker},
 };
 use pernixc_syntax::{QualifiedIdentifier, QualifiedIdentifierRoot};
@@ -419,6 +423,20 @@ pub async fn resolve_qualified_identifier(
 
             return Err(Error::Abort);
         };
+
+        // check if the symbol is accessible
+        if !self.symbol_accessible(config.referring_site, resolved_id).await {
+            handler.receive(Diagnostic::SymbolIsNotAccessible(
+                SymbolIsNotAccessible {
+                    referring_site: config.referring_site,
+                    referred: resolved_id,
+                    referred_span: generic_identifier
+                        .identifier()
+                        .unwrap()
+                        .span,
+                },
+            ));
+        }
 
         let symbol_kind = self.get_kind(resolved_id).await;
 

@@ -25,7 +25,7 @@ error: extraneous implementation member
    ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/trait_implements_member/main.pnx:10:10
    │
 10 │     type Test = int32
-   │          ^^^^ implementation type `main::Fizz[int32]::Test` is not a member of the trait
+   │          ^^^^ implementation type `main::[implements Fizz[int32]]::Test` is not a member of the trait
    │
    = remove this member or add it to the trait definition
 
@@ -38,7 +38,7 @@ error: trait member not implemented
 13 │ implements Fizz[float32]:
    │            ^^^^^^^^^^^^^ missing implementation for trait type: `main::Fizz::Second`
 
-error: symbol `first` is already defined in the scope `main::Fizz[float32]`
+error: symbol `first` is already defined in the scope `main::[implements Fizz[float32]]`
    ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/trait_implements_member/main.pnx:17:14
    │
 14 │     function first():
@@ -51,7 +51,7 @@ error: extraneous implementation member
    ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/trait_implements_member/main.pnx:20:10
    │
 20 │     type What = float32
-   │          ^^^^ implementation type `main::Fizz[float32]::What` is not a member of the trait
+   │          ^^^^ implementation type `main::[implements Fizz[float32]]::What` is not a member of the trait
    │
    = remove this member or add it to the trait definition
 
