@@ -1,4 +1,4 @@
-//! Contains the definition of [`Field`] and [`Feilds`].
+//! Contains the definition of [`Field`] and [`Fields`].
 
 use pernixc_arena::Arena;
 use pernixc_hash::HashMap;

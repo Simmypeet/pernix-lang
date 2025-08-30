@@ -206,3 +206,29 @@ pub async fn get_variant_associated_type_syntax(
         })
         .clone())
 }
+
+/// Implementation of the `get_fields_syntax` method
+#[pernixc_query::query(
+    key(FieldsSyntaxKey),
+    id(Global<ID>),
+    value(Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>),
+    executor(FieldsSyntaxExecutor),
+    extend(method(get_fields_syntax), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn get_fields_syntax(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<
+    Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>,
+    CyclicError,
+> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(table
+        .fields_syntaxes
+        .get(&id.id)
+        .unwrap_or_else(|| {
+            panic!("No fields syntax found for symbol ID: {:?}", id.id)
+        })
+        .clone())
+}

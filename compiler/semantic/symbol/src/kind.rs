@@ -223,6 +223,10 @@ impl Kind {
     pub const fn has_variant_associated_type(&self) -> bool {
         matches!(self, Self::Variant)
     }
+
+    /// Checks if the symbol has fields
+    #[must_use]
+    pub const fn has_fields(&self) -> bool { matches!(self, Self::Struct) }
 }
 
 #[pernixc_query::executor(key(Key), name(Executor))]

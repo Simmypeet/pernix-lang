@@ -59,6 +59,7 @@ pub fn register_executors(
     register_term_executors::<pernixc_term::where_clause::Key>(registry);
     register_term_executors::<pernixc_term::type_alias::Key>(registry);
     register_term_executors::<pernixc_term::variant::Key>(registry);
+    register_term_executors::<pernixc_term::fields::Key>(registry);
     register_term_executors::<implements_qualified_identifier::Key>(registry);
 
     registry.register(Arc::new(
@@ -92,6 +93,7 @@ pub fn register_serde<
         serde_registry,
     );
     register_term_serde::<pernixc_term::variant::Key, _, _, _>(serde_registry);
+    register_term_serde::<pernixc_term::fields::Key, _, _, _>(serde_registry);
     register_term_serde::<implements_qualified_identifier::Key, _, _, _>(
         serde_registry,
     );
