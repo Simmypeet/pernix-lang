@@ -153,7 +153,7 @@ fn subtyping_with_adt(#[case] variance: Variance) {
 
                 x.set_input(
                     pernixc_semantic_element::variance::Key(adt_id),
-                    variance_map,
+                    Arc::new(variance_map),
                 )
                 .await;
 

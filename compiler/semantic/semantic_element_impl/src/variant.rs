@@ -71,7 +71,7 @@ impl build::Build for pernixc_semantic_element::variant::Key {
             .await?;
 
         Ok(Output {
-            item: Some(ty),
+            item: Some(Arc::new(ty)),
             diagnostics: storage.into_vec().into(),
             occurrences: Arc::new(occurrences),
         })

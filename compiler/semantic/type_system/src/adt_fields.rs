@@ -1,6 +1,6 @@
 //! Defines the convenient helper query [`get_adt_fields`].
 
-use std::sync::Arc;
+use std::{ops::Deref, sync::Arc};
 
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_symbol::{
@@ -48,7 +48,7 @@ pub async fn adt_fields(
                     continue;
                 };
 
-                results.push(ty);
+                results.push(ty.deref().clone());
             }
         }
 

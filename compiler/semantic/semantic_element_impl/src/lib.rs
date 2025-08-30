@@ -19,6 +19,7 @@ mod implements_qualified_identifier;
 mod occurrences;
 mod parameters;
 mod type_alias;
+mod variance;
 mod variant;
 mod where_clause;
 
@@ -83,6 +84,8 @@ pub fn register_executors(
     registry.register(Arc::new(function_signature::ImpliedPredicatesExecutor));
     registry.register(Arc::new(function_signature::ElidedLifetimesExecutor));
 
+    registry.register(Arc::new(variance::VariancesMapExecutor));
+
     registry.register(Arc::new(diagnostic::SingleRenderedExecutor));
     registry.register(Arc::new(diagnostic::AllRenderedExecutor));
 }
@@ -129,6 +132,8 @@ pub fn register_serde<
     serde_registry.register::<pernixc_semantic_element::elided_lifetime::Key>();
     serde_registry
         .register::<pernixc_semantic_element::late_bound_lifetime::Key>();
+
+    serde_registry.register::<variance::Key>();
 
     serde_registry.register::<diagnostic::SingleRenderedKey>();
     serde_registry.register::<diagnostic::AllRenderedKey>();

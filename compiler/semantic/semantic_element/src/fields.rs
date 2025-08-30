@@ -52,6 +52,7 @@ pub struct Field {
     Default,
 )]
 #[id(Global<pernixc_symbol::ID>)]
+#[extend(method(get_fields))]
 pub struct Fields {
     /// The arena storing all the fields in the struct.
     pub fields: Arena<Field>,

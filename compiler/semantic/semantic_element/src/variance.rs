@@ -1,4 +1,6 @@
 //! Contains the definition of [`Variance`] and [`Variances`] query.
+use std::sync::Arc;
+
 use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -108,6 +110,7 @@ impl Variance {
 )]
 #[id(Global<pernixc_symbol::ID>)]
 #[extend(method(get_variances))]
+#[value(Arc<Variances>)]
 pub struct Variances {
     /// Maps the lifetime parameter ID to its variance.
     pub variances_by_lifetime_ids:

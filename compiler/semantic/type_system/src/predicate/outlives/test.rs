@@ -267,7 +267,7 @@ impl Property<Type> for LifetimeMatching {
                             pernixc_semantic_element::variance::Key(
                                 self.struct_id,
                             ),
-                            variance_map,
+                            Arc::new(variance_map),
                         )
                         .await
                         == SetInputResult::Fresh;

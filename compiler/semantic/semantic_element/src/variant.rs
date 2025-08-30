@@ -1,5 +1,7 @@
 //!  Contains the definition of [`Key`]
 
+use std::sync::Arc;
+
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -21,5 +23,6 @@ use pernixc_term::r#type::Type;
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Option<Type>)]
+#[value(Option<Arc<Type>>)]
+#[extend(method(get_variant_associated_type))]
 pub struct Key(pub Global<pernixc_symbol::ID>);
