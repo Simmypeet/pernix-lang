@@ -13,10 +13,10 @@ pub mod diagnostic;
 
 mod build;
 mod fields;
-mod function_signature;
 mod generic_parameters;
 mod implements_qualified_identifier;
 mod occurrences;
+mod parameters;
 mod type_alias;
 mod variant;
 mod where_clause;

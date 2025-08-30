@@ -11,6 +11,8 @@ pub mod implemented;
 pub mod implements;
 pub mod implements_arguments;
 pub mod implied_predicates;
+pub mod parameters;
+pub mod return_type;
 pub mod type_alias;
 pub mod variance;
 pub mod variant;
