@@ -512,11 +512,6 @@ struct SimpleStruct {
     value: i32,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-enum SimpleEnum {
-    Unit,
-}
-
 // Basic manual Deserialize test
 #[test]
 fn manual_deserialize_test() {
@@ -1097,17 +1092,6 @@ fn const_generic_roundtrip() {
 
 #[test]
 fn higher_order_trait_bounds_roundtrip() {
-    // Test with higher-order trait bounds (HRTB)
-    #[derive(Serialize, Deserialize, Debug, PartialEq)]
-    struct HigherOrderStruct<F>
-    where
-        F: for<'a> Fn(&'a str) -> String + Clone + PartialEq,
-    {
-        transformer: F,
-        input: String,
-        output: String,
-    }
-
     // Since we can't easily serialize closures, we'll test with a simple struct
     #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
     struct TransformerStruct {

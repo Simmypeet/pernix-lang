@@ -114,7 +114,7 @@ impl<
         T: Debug + Clone + Term + From<Param> + 'static,
     > Property<T> for Basic<Param, T>
 {
-    fn apply(&self, _: &mut Arc<Engine>, _: &mut Premise) -> BoxedFuture {
+    fn apply(&self, _: &mut Arc<Engine>, _: &mut Premise) -> BoxedFuture<'_> {
         Box::pin(async move { Ok(()) })
     }
 
