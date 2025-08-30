@@ -334,6 +334,11 @@ pub struct Table {
     /// Maps the ID of the symbol to its accessibility.
     pub accessibilities: Arc<ReadOnlyView<ID, Accessibility<ID>>>,
 
+    /// Maps the ID of the implements member (type, function, constant) to its
+    /// extracted access modifier syntax.
+    pub implements_access_modifier_syntaxes:
+        Arc<ReadOnlyView<ID, Option<pernixc_syntax::AccessModifier>>>,
+
     /// Maps the ID of the symbol to its generic parameters declaration syntax.
     ///
     /// This represents the generic parameters `['a, T, const N: usize]`
@@ -508,6 +513,9 @@ struct TableContext {
     spans: DashMap<ID, Option<RelativeSpan>>,
     members: DashMap<ID, Arc<Member>>,
     accessibilities: DashMap<ID, Accessibility<ID>>,
+
+    implements_access_modifier_syntaxes:
+        DashMap<ID, Option<pernixc_syntax::AccessModifier>>,
 
     external_submodules: DashMap<ID, Arc<ExternalSubmodule>>,
 
@@ -685,6 +693,7 @@ pub async fn table_executor(
         spans: DashMap::default(),
         members: DashMap::default(),
         accessibilities: DashMap::default(),
+        implements_access_modifier_syntaxes: DashMap::default(),
 
         external_submodules: DashMap::default(),
 
@@ -722,6 +731,9 @@ pub async fn table_executor(
         spans: Arc::new(context.spans.into_read_only()),
         members: Arc::new(context.members.into_read_only()),
         accessibilities: Arc::new(context.accessibilities.into_read_only()),
+        implements_access_modifier_syntaxes: Arc::new(
+            context.implements_access_modifier_syntaxes.into_read_only(),
+        ),
 
         // syntax extractions
         generic_parameter_syntaxes: Arc::new(
@@ -867,23 +879,44 @@ impl TableContext {
         }
         Self::insert_to_table(&self.kinds, id, entry.kind);
 
+        // Handle accessibility based on symbol kind
         if let Some(accessibility) = entry.accessibility {
-            let accessibility = match accessibility {
-                Some(pernixc_syntax::AccessModifier::Private(_)) => {
-                    Accessibility::Scoped(parent_id)
+            // Implements members store raw access modifier syntax, others store
+            // processed accessibility
+            match entry.kind {
+                Kind::ImplementationConstant
+                | Kind::ImplementationFunction
+                | Kind::ImplementationType => {
+                    // Store raw access modifier syntax for implements members
+                    Self::insert_to_table(
+                        &self.implements_access_modifier_syntaxes,
+                        id,
+                        accessibility,
+                    );
                 }
-                Some(pernixc_syntax::AccessModifier::Internal(_)) => {
-                    Accessibility::Scoped(
-                        self.engine
-                            .get_target_root_module_id(self.target_id)
-                            .await,
-                    )
+                _ => {
+                    // Store processed accessibility for all other symbols
+                    let accessibility = match accessibility {
+                        Some(pernixc_syntax::AccessModifier::Private(_)) => {
+                            Accessibility::Scoped(parent_id)
+                        }
+                        Some(pernixc_syntax::AccessModifier::Internal(_)) => {
+                            Accessibility::Scoped(
+                                self.engine
+                                    .get_target_root_module_id(self.target_id)
+                                    .await,
+                            )
+                        }
+                        Some(pernixc_syntax::AccessModifier::Public(_))
+                        | None => Accessibility::Public,
+                    };
+                    Self::insert_to_table(
+                        &self.accessibilities,
+                        id,
+                        accessibility,
+                    );
                 }
-                Some(pernixc_syntax::AccessModifier::Public(_)) | None => {
-                    Accessibility::Public
-                }
-            };
-            Self::insert_to_table(&self.accessibilities, id, accessibility);
+            }
         }
 
         if let Some(member) = entry.member {
