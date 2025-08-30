@@ -58,6 +58,13 @@ pub fn register_executors(
     register_term_executors::<pernixc_term::type_alias::Key>(registry);
     register_term_executors::<implements_qualified_identifier::Key>(registry);
 
+    registry.register(Arc::new(
+        implements_qualified_identifier::ExtractImplementsID,
+    ));
+    registry.register(Arc::new(
+        implements_qualified_identifier::ExtractGenericArguments,
+    ));
+
     registry.register(Arc::new(diagnostic::SingleRenderedExecutor));
     registry.register(Arc::new(diagnostic::AllRenderedExecutor));
 }

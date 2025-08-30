@@ -23,7 +23,10 @@ use pernixc_symbol::{
     syntax::get_implements_qualified_identifier,
 };
 use pernixc_target::Global;
-use pernixc_term::{generic_arguments::Symbol, r#type::Type};
+use pernixc_term::{
+    generic_arguments::{GenericArguments, Symbol},
+    r#type::Type,
+};
 
 use crate::{
     build::Output,
@@ -448,4 +451,37 @@ async fn check_adt(
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct ExtractImplementsID;
+
+impl executor::Executor<pernixc_term::implements::Key> for ExtractImplementsID {
+    async fn execute(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        key: &pernixc_term::implements::Key,
+    ) -> Result<Option<Global<pernixc_symbol::ID>>, executor::CyclicError> {
+        let resolution = engine.query(&Key(key.0)).await?;
+        Ok(resolution.as_ref().map(|x| x.global_id()))
+    }
+}
+
+#[derive(Debug)]
+pub struct ExtractGenericArguments;
+
+impl executor::Executor<pernixc_term::implements_argument::Key>
+    for ExtractGenericArguments
+{
+    async fn execute(
+        &self,
+        engine: &pernixc_query::TrackedEngine,
+        key: &pernixc_term::implements_argument::Key,
+    ) -> Result<Option<Arc<GenericArguments>>, executor::CyclicError> {
+        let resolution = engine.query(&Key(key.0)).await?;
+        Ok(resolution
+            .as_ref()
+            .and_then(|x| x.as_generic())
+            .map(|x| Arc::new(x.generic_arguments.clone())))
+    }
 }
