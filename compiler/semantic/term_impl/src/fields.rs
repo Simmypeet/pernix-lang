@@ -69,9 +69,7 @@ impl build::Build for pernixc_term::fields::Key {
 
         let mut fields = Fields::default();
 
-        for (index, field) in
-            syntax_tree.members().filter_map(|x| x.into_line().ok()).enumerate()
-        {
+        for field in syntax_tree.members().filter_map(|x| x.into_line().ok()) {
             process_field(
                 engine,
                 key.0,
