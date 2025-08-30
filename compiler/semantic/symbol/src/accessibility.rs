@@ -11,7 +11,7 @@ use pernixc_target::{Global, TargetID};
 
 use crate::{
     accessibility::diagnostic::SymbolIsMoreAccessibleThanParent,
-    get_table_of_symbol,
+    get_table_of_symbol, get_target_root_module_id,
     kind::{get_kind, Kind},
     member::get_members,
     name::get_qualified_name,
@@ -19,6 +19,7 @@ use crate::{
         get_closest_module_id, get_parent, symbol_hierarchy_relationship,
         HierarchyRelationship,
     },
+    syntax::get_implements_member_access_modifier,
     ID,
 };
 
@@ -111,11 +112,36 @@ pub async fn executor(
             ))
             .await),
 
-        Kind::PositiveImplementation => todo!(),
-        Kind::NegativeImplementation => todo!(),
-        Kind::ImplementationType => todo!(),
-        Kind::ImplementationFunction => todo!(),
-        Kind::ImplementationConstant => todo!(),
+        Kind::PositiveImplementation | Kind::NegativeImplementation => {
+            // normally, you wouldn't retrieve the accessibility of the
+            // implementation we'll return default public
+            Ok(Accessibility::Public)
+        }
+        Kind::ImplementationType
+        | Kind::ImplementationFunction
+        | Kind::ImplementationConstant => {
+            let access_modifier =
+                engine.get_implements_member_access_modifier(id).await;
+
+            match access_modifier {
+                Some(pernixc_syntax::AccessModifier::Private(_)) => {
+                    let module_id = engine.get_closest_module_id(id).await;
+                    Ok(Accessibility::Scoped(module_id))
+                }
+
+                Some(pernixc_syntax::AccessModifier::Public(_)) => {
+                    Ok(Accessibility::Public)
+                }
+
+                Some(pernixc_syntax::AccessModifier::Internal(_)) => {
+                    Ok(Accessibility::Scoped(
+                        engine.get_target_root_module_id(id.target_id).await,
+                    ))
+                }
+
+                None => Ok(Accessibility::Public),
+            }
+        }
     }
 }
 
