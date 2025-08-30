@@ -1,8 +1,7 @@
 //! Contains the definition of [`Field`] and [`Feilds`].
 
-use std::collections::HashMap;
-
 use pernixc_arena::Arena;
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
