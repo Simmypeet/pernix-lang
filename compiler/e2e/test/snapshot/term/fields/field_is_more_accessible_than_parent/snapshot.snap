@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: field `notFine` is more accessible than struct `main::inner::NotFine`
+  ╭─ compiler/e2e/test/snapshot/term/fields/field_is_more_accessible_than_parent/main.pnx:3:9
+  │
+3 │         public notFine: int32
+  │         ^^^^^^^^^^^^^^^^^^^^^ field `notFine` is publicly accessible but struct is accessible in `main::inner`
+  │
+  = consider making the field accessible in `main::inner` or making the struct publicly accessible
+
+error: field `notFine` is more accessible than struct `main::inner::NotFine2`
+  ╭─ compiler/e2e/test/snapshot/term/fields/field_is_more_accessible_than_parent/main.pnx:6:9
+  │
+6 │         internal notFine: int32
+  │         ^^^^^^^^^^^^^^^^^^^^^^^ field `notFine` is accessible in `main` but struct is accessible in `main::inner`
+  │
+  = consider making the field accessible in `main::inner` or making the struct accessible in `main`
+
+error: field `notFineAsWell` is more accessible than struct `main::inner::NotFine2`
+  ╭─ compiler/e2e/test/snapshot/term/fields/field_is_more_accessible_than_parent/main.pnx:7:9
+  │
+7 │         public notFineAsWell: int32
+  │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `notFineAsWell` is publicly accessible but struct is accessible in `main::inner`
+  │
+  = consider making the field accessible in `main::inner` or making the struct publicly accessible
+
+error: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

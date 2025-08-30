@@ -74,15 +74,6 @@ pub async fn single_rendered_executor(
         }
     }
 
-    if kind.has_fields() {
-        let diags =
-            engine.query(&BuildDiagnosticKey::new(FieldsKey(id))).await?;
-
-        for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
-        }
-    }
-
     if kind.has_variant_associated_type() {
         let diags =
             engine.query(&BuildDiagnosticKey::new(VariantKey(id))).await?;

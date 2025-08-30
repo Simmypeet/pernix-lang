@@ -69,21 +69,20 @@ impl build::Build for pernixc_term::fields::Key {
 
         let mut fields = Fields::default();
 
-        for passable_field in syntax_tree.members() {
-            if let pernixc_syntax::Passable::Line(field_syntax) = passable_field
-            {
-                process_field(
-                    engine,
-                    key.0,
-                    struct_accessibility,
-                    &extra_namespace,
-                    field_syntax,
-                    &mut fields,
-                    &storage,
-                    &mut occurrences,
-                )
-                .await?;
-            }
+        for (index, field) in
+            syntax_tree.members().filter_map(|x| x.into_line().ok()).enumerate()
+        {
+            process_field(
+                engine,
+                key.0,
+                struct_accessibility,
+                &extra_namespace,
+                field,
+                &mut fields,
+                &storage,
+                &mut occurrences,
+            )
+            .await?;
         }
 
         Ok(Output {
@@ -284,7 +283,7 @@ async fn is_more_accessible(
                 )
                 .await;
 
-            Ok(matches!(relationship, HierarchyRelationship::Child))
+            Ok(matches!(relationship, HierarchyRelationship::Parent))
         }
     }
 }

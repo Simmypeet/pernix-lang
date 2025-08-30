@@ -1,0 +1,9 @@
+public enum Fizz:
+    Variant
+
+private struct Test['a, T: 'a, U: 'a]:
+    internal refT: &'a T
+    private refU: &'a U
+    private valueT: T
+    private valueU: U
+    private fizz: Fizz

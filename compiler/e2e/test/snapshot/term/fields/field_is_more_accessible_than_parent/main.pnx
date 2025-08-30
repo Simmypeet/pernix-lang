@@ -1,0 +1,7 @@
+public module inner:
+    private struct NotFine:
+        public notFine: int32
+
+    private struct NotFine2:
+        internal notFine: int32
+        public notFineAsWell: int32
