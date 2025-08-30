@@ -1,0 +1,40 @@
+public trait Displayable[T]:
+    public function display()
+
+public struct MyStruct:
+    pass
+
+public enum MyEnum:
+    Variant
+
+# Trait implementation - members should NOT have access modifiers
+implements Displayable[MyStruct]:
+    # This should generate an error: trait members cannot have access modifiers
+    public function display():
+        pass
+
+# ADT implementation - members SHOULD have access modifiers
+implements MyStruct:
+    # This should generate an error: ADT members must have access modifiers
+    function helper():
+        pass
+    
+    # This is correct: ADT member with access modifier
+    public function publicMethod():
+        pass
+    
+    private function privateMethod():
+        pass
+    
+    internal function internalMethod():
+        pass
+
+# ADT implementation with access modifiers on enum
+implements MyEnum:
+    # This should generate an error: ADT members must have access modifiers
+    function enumHelper():
+        pass
+    
+    # This is correct: ADT member with access modifier
+    public function enumMethod():
+        pass

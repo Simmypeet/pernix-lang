@@ -153,3 +153,30 @@ pub async fn get_implements_final_keyword(
         panic!("No final keyword found for symbol ID: {:?}", id.id)
     }))
 }
+
+/// Implementation of the `get_implements_member_access_modifier` method
+#[pernixc_query::query(
+    key(ImplementsMemberAccessModifierKey),
+    id(Global<ID>),
+    value(Option<pernixc_syntax::AccessModifier>),
+    executor(ImplementsMemberAccessModifierExecutor),
+    extend(method(get_implements_member_access_modifier), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn get_implements_member_access_modifier(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<Option<pernixc_syntax::AccessModifier>, CyclicError> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(table
+        .implements_access_modifier_syntaxes
+        .get(&id.id)
+        .unwrap_or_else(|| {
+            panic!(
+                "No implements member access modifier syntax found for symbol \
+                 ID: {:?}",
+                id.id
+            )
+        })
+        .clone())
+}

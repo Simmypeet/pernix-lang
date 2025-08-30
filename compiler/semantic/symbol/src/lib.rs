@@ -91,6 +91,7 @@ pub fn register_executors(
     executor.register(Arc::new(syntax::WhereClauseExecutor));
     executor.register(Arc::new(syntax::TypeAliasExecutor));
     executor.register(Arc::new(syntax::ImplementsFinalKeywordExecutor));
+    executor.register(Arc::new(syntax::ImplementsMemberAccessModifierExecutor));
 
     executor.register(Arc::new(import::WithDiagnosticExecutor));
     executor.register(Arc::new(import::Executor));
@@ -141,6 +142,7 @@ pub fn register_serde<
     serde_registry.register::<syntax::WhereClauseKey>();
     serde_registry.register::<syntax::TypeAliasKey>();
     serde_registry.register::<syntax::ImplementsFinalKeywordKey>();
+    serde_registry.register::<syntax::ImplementsMemberAccessModifierKey>();
 
     serde_registry.register::<import::WithDiagnosticKey>();
     serde_registry.register::<import::Key>();

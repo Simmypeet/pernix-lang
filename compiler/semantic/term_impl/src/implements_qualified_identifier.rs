@@ -20,7 +20,10 @@ use pernixc_symbol::{
     kind::{get_kind, Kind},
     member::get_members,
     name::get_name,
-    syntax::get_implements_qualified_identifier,
+    syntax::{
+        get_implements_member_access_modifier,
+        get_implements_qualified_identifier,
+    },
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -330,6 +333,21 @@ async fn check_trait(
             .get(&member_name)
             .map(|&id| trait_id.target_id.make_global(id));
 
+        // Check if trait implementation members have access modifiers (they
+        // shouldn't)
+        let access_modifier = engine
+            .get_implements_member_access_modifier(implements_member_id)
+            .await;
+        if access_modifier.is_some() {
+            storage.receive(
+                diagnostic::Diagnostic::TraitMemberCannotHaveAccessModifier(
+                    diagnostic::TraitMemberCannotHaveAccessModifier {
+                        implementation_member_id: implements_member_id,
+                    },
+                ),
+            );
+        }
+
         if let Some(trait_member_id) = trait_equivalent_id {
             // Check if the kinds match
             let impl_kind = engine.get_kind(implements_member_id).await;
@@ -448,6 +466,35 @@ async fn check_adt(
                 },
             ),
         );
+    }
+
+    // Check access modifiers for ADT implementation members (only for positive
+    // implementations)
+    if kind == Kind::PositiveImplementation {
+        let implements_members = engine.get_members(implements).await;
+
+        // Check each implementation member
+        for implements_member_id in implements_members
+            .member_ids_by_name
+            .values()
+            .copied()
+            .map(|x| implements.target_id.make_global(x))
+        {
+            // Check if ADT implementation members have access modifiers (they
+            // should)
+            let access_modifier = engine
+                .get_implements_member_access_modifier(implements_member_id)
+                .await;
+            if access_modifier.is_none() {
+                storage.receive(
+                    diagnostic::Diagnostic::AdtMemberMissingAccessModifier(
+                        diagnostic::AdtMemberMissingAccessModifier {
+                            implementation_member_id: implements_member_id,
+                        },
+                    ),
+                );
+            }
+        }
     }
 
     Ok(())

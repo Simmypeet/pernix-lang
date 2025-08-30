@@ -39,6 +39,8 @@ pub enum Diagnostic {
     InaccessibleTraitMember(InaccessibleTraitMember),
     AdtImplementationCannotBeNegative(AdtImplementationCannotBeNegative),
     AdtImplementationCannotBeFinal(AdtImplementationCannotBeFinal),
+    TraitMemberCannotHaveAccessModifier(TraitMemberCannotHaveAccessModifier),
+    AdtMemberMissingAccessModifier(AdtMemberMissingAccessModifier),
 }
 
 impl Report<&TrackedEngine> for Diagnostic {
@@ -74,6 +76,12 @@ impl Report<&TrackedEngine> for Diagnostic {
                 diag.report(parameter).await
             }
             Self::AdtImplementationCannotBeFinal(diag) => {
+                diag.report(parameter).await
+            }
+            Self::TraitMemberCannotHaveAccessModifier(diag) => {
+                diag.report(parameter).await
+            }
+            Self::AdtMemberMissingAccessModifier(diag) => {
                 diag.report(parameter).await
             }
         }
@@ -694,6 +702,118 @@ impl Report<&TrackedEngine> for AdtImplementationCannotBeFinal {
             .help_message(
                 "remove the `final` keyword from the `implements`, `final \
                  implements` is only allowed on `trait` or `marker`"
+                    .to_string(),
+            )
+            .build()
+    }
+}
+
+/// Trait implementation members cannot have access modifiers.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct TraitMemberCannotHaveAccessModifier {
+    /// The implementation member ID that has an access modifier.
+    pub implementation_member_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for TraitMemberCannotHaveAccessModifier {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let member_name =
+            engine.get_qualified_name(self.implementation_member_id).await;
+        let member_kind = engine.get_kind(self.implementation_member_id).await;
+
+        let span = match engine.get_span(self.implementation_member_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message(
+                "trait implementation members cannot have access modifiers",
+            )
+            .maybe_primary_highlight(span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(format!(
+                        "{} `{member_name}` cannot have an access modifier",
+                        member_kind.kind_str()
+                    ))
+                    .build()
+            }))
+            .help_message(
+                "remove the access modifier from this member".to_string(),
+            )
+            .build()
+    }
+}
+
+/// ADT implementation members must have access modifiers.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct AdtMemberMissingAccessModifier {
+    /// The implementation member ID that is missing an access modifier.
+    pub implementation_member_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report<&TrackedEngine> for AdtMemberMissingAccessModifier {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let member_name =
+            engine.get_qualified_name(self.implementation_member_id).await;
+        let member_kind = engine.get_kind(self.implementation_member_id).await;
+
+        let span = match engine.get_span(self.implementation_member_id).await {
+            Some(span) => Some(engine.to_absolute_span(&span).await),
+            None => None,
+        };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("ADT implementation members must have access modifiers")
+            .maybe_primary_highlight(span.map(|x| {
+                Highlight::builder()
+                    .span(x)
+                    .message(format!(
+                        "{} `{member_name}` is missing an access modifier",
+                        member_kind.kind_str()
+                    ))
+                    .build()
+            }))
+            .help_message(
+                "add an access modifier (`public`, `private`, or `internal`) \
+                 to this member"
                     .to_string(),
             )
             .build()
