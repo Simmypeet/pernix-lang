@@ -5,6 +5,9 @@ use std::ops::Deref;
 use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
 use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::{
+    implements::get_implements, implements_arguments::get_implements_argument,
+};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
 use pernixc_stable_hash::StableHash;
@@ -24,8 +27,7 @@ use pernixc_syntax::{QualifiedIdentifier, QualifiedIdentifierRoot};
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters, implements::get_implements,
-    implements_argument::get_implements_argument,
+    generic_parameters::get_generic_parameters,
 };
 
 use crate::{

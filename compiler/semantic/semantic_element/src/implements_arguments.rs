@@ -5,8 +5,7 @@ use std::sync::Arc;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
-
-use crate::generic_arguments::GenericArguments;
+use pernixc_term::generic_arguments::GenericArguments;
 
 /// A query for retrieving the generic arguments supplied to the `implements`
 /// item (`implements[GENERIC_PARAMETERS] symbol[IMPLEMENTS_ARGUMENTS]`)

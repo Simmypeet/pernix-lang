@@ -2,7 +2,10 @@
 
 use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
-use pernixc_semantic_element::implemented::get_implemented;
+use pernixc_semantic_element::{
+    implemented::get_implemented, implements::get_implements,
+    implements_arguments::get_implements_argument,
+};
 use pernixc_symbol::{
     final_implements::is_implements_final,
     kind::{get_kind, Kind},
@@ -11,8 +14,6 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    implements::get_implements,
-    implements_argument::get_implements_argument,
     instantiation::Instantiation,
     predicate::Predicate,
     r#type::Type,

@@ -5,8 +5,7 @@ use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
-
-use crate::{
+use pernixc_term::{
     lifetime::Lifetime,
     predicate::{Outlives, Predicate},
     r#type::Type,

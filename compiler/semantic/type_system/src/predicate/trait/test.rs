@@ -61,7 +61,7 @@ async fn single_implementation() {
             .await;
             x.set_input(pernixc_symbol::kind::Key(trait_id), Kind::Trait).await;
             x.set_input(
-                pernixc_term::implements::Key(implements_id),
+                pernixc_semantic_element::implements::Key(implements_id),
                 Some(trait_id),
             )
             .await;
@@ -118,7 +118,9 @@ async fn single_implementation() {
             .await;
 
             x.set_input(
-                pernixc_term::implements_argument::Key(implements_id),
+                pernixc_semantic_element::implements_arguments::Key(
+                    implements_id,
+                ),
                 Some(Arc::new(GenericArguments {
                     lifetimes: vec![],
                     types: vec![Type::Reference(Reference {
@@ -214,7 +216,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
             )
             .await;
             x.set_input(
-                pernixc_term::implements::Key(specialized_impl_id),
+                pernixc_semantic_element::implements::Key(specialized_impl_id),
                 Some(trait_id),
             )
             .await;
@@ -296,7 +298,9 @@ async fn specialization_test_internal(case: SpecializationCase) {
             .await;
 
             x.set_input(
-                pernixc_term::implements_argument::Key(specialized_impl_id),
+                pernixc_semantic_element::implements_arguments::Key(
+                    specialized_impl_id,
+                ),
                 Some(Arc::new(GenericArguments {
                     lifetimes: vec![],
                     types: vec![
@@ -320,7 +324,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
             )
             .await;
             x.set_input(
-                pernixc_term::implements::Key(general_impl_id),
+                pernixc_semantic_element::implements::Key(general_impl_id),
                 Some(trait_id),
             )
             .await;
@@ -356,7 +360,9 @@ async fn specialization_test_internal(case: SpecializationCase) {
             .await;
 
             x.set_input(
-                pernixc_term::implements_argument::Key(general_impl_id),
+                pernixc_semantic_element::implements_arguments::Key(
+                    general_impl_id,
+                ),
                 Some(Arc::new(GenericArguments {
                     lifetimes: vec![],
                     types: vec![

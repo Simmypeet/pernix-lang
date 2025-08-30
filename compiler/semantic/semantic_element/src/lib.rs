@@ -8,3 +8,6 @@
 
 pub mod fields;
 pub mod implemented;
+pub mod implements;
+pub mod implements_arguments;
+pub mod implied_predicates;

@@ -9,13 +9,13 @@ use std::{
 };
 
 use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
-    implements_argument::get_implements_argument, lifetime::Lifetime,
-    r#type::Type,
+    lifetime::Lifetime, r#type::Type,
 };
 
 use crate::{

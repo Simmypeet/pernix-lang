@@ -503,11 +503,13 @@ async fn check_adt(
 #[derive(Debug)]
 pub struct ExtractImplementsID;
 
-impl executor::Executor<pernixc_term::implements::Key> for ExtractImplementsID {
+impl executor::Executor<pernixc_semantic_element::implements::Key>
+    for ExtractImplementsID
+{
     async fn execute(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        key: &pernixc_term::implements::Key,
+        key: &pernixc_semantic_element::implements::Key,
     ) -> Result<Option<Global<pernixc_symbol::ID>>, executor::CyclicError> {
         let resolution = engine.query(&Key(key.0)).await?;
         Ok(resolution.as_ref().map(|x| x.global_id()))
@@ -517,13 +519,13 @@ impl executor::Executor<pernixc_term::implements::Key> for ExtractImplementsID {
 #[derive(Debug)]
 pub struct ExtractGenericArguments;
 
-impl executor::Executor<pernixc_term::implements_argument::Key>
+impl executor::Executor<pernixc_semantic_element::implements_arguments::Key>
     for ExtractGenericArguments
 {
     async fn execute(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        key: &pernixc_term::implements_argument::Key,
+        key: &pernixc_semantic_element::implements_arguments::Key,
     ) -> Result<Option<Arc<GenericArguments>>, executor::CyclicError> {
         let resolution = engine.query(&Key(key.0)).await?;
         Ok(resolution
