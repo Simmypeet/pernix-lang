@@ -76,6 +76,13 @@ pub fn register_executors(
         implements_qualified_identifier::ExtractGenericArguments,
     ));
 
+    registry.register(Arc::new(function_signature::ParametersExecutor));
+    registry.register(Arc::new(function_signature::ReturnTypeExecutor));
+    registry
+        .register(Arc::new(function_signature::LateBooundLifetimesExecutor));
+    registry.register(Arc::new(function_signature::ImpliedPredicatesExecutor));
+    registry.register(Arc::new(function_signature::ElidedLifetimesExecutor));
+
     registry.register(Arc::new(diagnostic::SingleRenderedExecutor));
     registry.register(Arc::new(diagnostic::AllRenderedExecutor));
 }
@@ -109,6 +116,19 @@ pub fn register_serde<
         serde_registry,
     );
     register_term_serde::<function_signature::Key, _, _, _>(serde_registry);
+
+    serde_registry.register::<pernixc_semantic_element::implemented::Key>();
+    serde_registry.register::<pernixc_semantic_element::implements::Key>();
+    serde_registry
+        .register::<pernixc_semantic_element::implements_arguments::Key>();
+
+    serde_registry.register::<pernixc_semantic_element::parameter::Key>();
+    serde_registry.register::<pernixc_semantic_element::return_type::Key>();
+    serde_registry
+        .register::<pernixc_semantic_element::implied_predicate::Key>();
+    serde_registry.register::<pernixc_semantic_element::elided_lifetime::Key>();
+    serde_registry
+        .register::<pernixc_semantic_element::late_bound_lifetime::Key>();
 
     serde_registry.register::<diagnostic::SingleRenderedKey>();
     serde_registry.register::<diagnostic::AllRenderedKey>();

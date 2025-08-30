@@ -10,8 +10,11 @@ use pernixc_resolution::{
     term::resolve_type, Config, ElidedTermProvider, ExtraNamespace,
 };
 use pernixc_semantic_element::{
-    implied_predicate::ImpliedPredicate,
-    parameter::{Parameter, Parameters},
+    elided_lifetime,
+    implied_predicate::{self, ImpliedPredicate},
+    late_bound_lifetime,
+    parameter::{self, Parameter, Parameters},
+    return_type,
     where_clause::get_where_clause,
 };
 use pernixc_serialize::{Deserialize, Serialize};
@@ -488,4 +491,58 @@ impl AllLifetimeParameters {
 
         // Constant should not have lifetime parameters (at most 'static).
     }
+}
+
+#[pernixc_query::executor(key(parameter::Key), name(ParametersExecutor))]
+pub async fn parameters_executor(
+    parameter::Key(id): &parameter::Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<Parameters>, executor::CyclicError> {
+    let signature = engine.query(&Key(*id)).await?;
+    Ok(signature.parameters)
+}
+
+#[pernixc_query::executor(key(return_type::Key), name(ReturnTypeExecutor))]
+pub async fn return_type_executor(
+    return_type::Key(id): &return_type::Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<Type>, executor::CyclicError> {
+    let signature = engine.query(&Key(*id)).await?;
+    Ok(signature.return_type)
+}
+
+#[pernixc_query::executor(
+    key(implied_predicate::Key),
+    name(ImpliedPredicatesExecutor)
+)]
+pub async fn implied_predicates_executor(
+    implied_predicate::Key(id): &implied_predicate::Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<HashSet<ImpliedPredicate>>, executor::CyclicError> {
+    let signature = engine.query(&Key(*id)).await?;
+    Ok(signature.implied_predicates)
+}
+
+#[pernixc_query::executor(
+    key(elided_lifetime::Key),
+    name(ElidedLifetimesExecutor)
+)]
+pub async fn elided_lifetimes_executor(
+    elided_lifetime::Key(id): &elided_lifetime::Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<Arena<ElidedLifetime>>, executor::CyclicError> {
+    let signature = engine.query(&Key(*id)).await?;
+    Ok(signature.elided_lifetimes)
+}
+
+#[pernixc_query::executor(
+    key(late_bound_lifetime::Key),
+    name(LateBooundLifetimesExecutor)
+)]
+pub async fn late_bound_lifetimes_executor(
+    late_bound_lifetime::Key(id): &late_bound_lifetime::Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<HashSet<ID<LifetimeParameter>>>, executor::CyclicError> {
+    let signature = engine.query(&Key(*id)).await?;
+    Ok(signature.late_bound_lifetime_parameters)
 }
