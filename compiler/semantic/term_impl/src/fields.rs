@@ -3,10 +3,10 @@ use std::{borrow::Cow, sync::Arc};
 use pernixc_arena::Arena;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
-use pernixc_query::runtime::executor;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
-    term::resolve_type, Config,
+    term::resolve_type, Config, ExtraNamespace,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -15,6 +15,7 @@ use pernixc_symbol::{
     parent::get_closest_module_id,
     syntax::get_fields_syntax,
 };
+use pernixc_target::Global;
 use pernixc_term::{
     fields::{Field, Fields},
     r#type::Type,
@@ -40,13 +41,14 @@ pub struct BuildExecutor;
 impl build::Build for pernixc_term::fields::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
+    #[allow(clippy::too_many_lines)]
     async fn execute(
         engine: &pernixc_query::TrackedEngine,
         key: &Self,
     ) -> Result<build::Output<Self>, executor::CyclicError> {
         let syntax = engine.get_fields_syntax(key.0).await;
 
-        let Some(syntax_tree) = syntax else {
+        let Some(syntax_tree) = syntax.and_then(|x| x.members()) else {
             return Ok(Output {
                 item: Fields {
                     fields: Arena::default(),
@@ -65,140 +67,163 @@ impl build::Build for pernixc_term::fields::Key {
 
         let struct_accessibility = engine.get_accessibility(key.0).await;
 
-        let mut fields = Arena::new();
-        let mut field_ids_by_name = HashMap::default();
-        let mut field_declaration_order = Vec::new();
+        let mut fields = Fields::default();
 
-        if let Some(members) = syntax_tree.members() {
-            for passable_field in members.members() {
-                if let pernixc_syntax::Passable::Line(field_syntax) =
-                    passable_field
-                {
-                    // Get field identifier, skip if missing
-                    let field_identifier = match field_syntax.identifier() {
-                        Some(identifier) => identifier,
-                        None => continue,
-                    };
-                    let field_name = field_identifier.kind.0.to_string();
-
-                    // Check for field redefinition
-                    if let Some(&existing_field_id) =
-                        field_ids_by_name.get(&field_name)
-                    {
-                        let existing_field: &Field =
-                            fields.get(existing_field_id).unwrap();
-
-                        storage.receive(Diagnostic::FieldRedefinition(
-                            FieldRedefinition {
-                                field_name: field_name.clone(),
-                                redefinition_span: field_syntax.span(),
-                                original_span: existing_field.span,
-                                struct_id: key.0,
-                            },
-                        ));
-                        continue;
-                    }
-
-                    // Resolve field accessibility
-                    let field_accessibility = if let Some(access_modifier) =
-                        field_syntax.access_modifier()
-                    {
-                        create_accessibility_from_modifier(
-                            &access_modifier,
-                            key.0.id,
-                            key.0.target_id,
-                            engine,
-                        )
-                        .await
-                    } else {
-                        struct_accessibility
-                    };
-
-                    // Get field type, skip if missing
-                    let field_type_syntax = match field_syntax.r#type() {
-                        Some(type_syntax) => type_syntax,
-                        None => continue,
-                    };
-
-                    // Resolve field type
-                    let mut field_type = engine
-                        .resolve_type(
-                            &field_type_syntax,
-                            Config::builder()
-                                .observer(&mut occurrences)
-                                .extra_namespace(&extra_namespace)
-                                .referring_site(key.0)
-                                .build(),
-                            &storage,
-                        )
-                        .await?;
-
-                    let premise = engine.get_active_premise(key.0).await?;
-                    let env = Environment::new(
-                        Cow::Borrowed(&premise),
-                        Cow::Borrowed(engine),
-                        normalizer::NO_OP,
-                    );
-
-                    field_type = match env
-                        .simplify_and_check_lifetime_constraints(
-                            &field_type,
-                            &field_type_syntax.span(),
-                            &storage,
-                        )
-                        .await
-                    {
-                        Ok(result) => result,
-                        Err(error) => match error {
-                            pernixc_type_system::Error::Overflow(_) => {
-                                Type::Error(pernixc_term::error::Error)
-                            }
-                            pernixc_type_system::Error::CyclicDependency(
-                                cyclic_error,
-                            ) => return Err(cyclic_error),
-                        },
-                    };
-
-                    let field = Field {
-                        accessibility: field_accessibility,
-                        name: field_name.clone(),
-                        r#type: field_type,
-                        span: Some(field_syntax.span()),
-                    };
-
-                    // Check if field is more accessible than struct
-                    if is_more_accessible(
-                        field_accessibility,
-                        struct_accessibility,
-                        key.0.target_id,
-                        engine,
-                    )
-                    .await?
-                    {
-                        storage.receive(
-                            Diagnostic::FieldMoreAccessibleThanStruct(
-                                FieldMoreAccessibleThanStruct {
-                                    field: field.clone(),
-                                    struct_accessibility,
-                                    struct_id: key.0,
-                                },
-                            ),
-                        );
-                    }
-
-                    let field_id = fields.insert(field);
-                    field_ids_by_name.insert(field_name, field_id);
-                    field_declaration_order.push(field_id);
-                }
+        for passable_field in syntax_tree.members() {
+            if let pernixc_syntax::Passable::Line(field_syntax) = passable_field
+            {
+                process_field(
+                    engine,
+                    key.0,
+                    struct_accessibility,
+                    &extra_namespace,
+                    field_syntax,
+                    &mut fields,
+                    &storage,
+                    &mut occurrences,
+                )
+                .await?;
             }
         }
 
         Ok(Output {
-            item: Fields { fields, field_ids_by_name, field_declaration_order },
+            item: fields,
             diagnostics: storage.into_vec().into(),
             occurrences: Arc::new(occurrences),
         })
     }
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+async fn process_field(
+    engine: &TrackedEngine,
+    struct_id: Global<pernixc_symbol::ID>,
+    struct_access: Accessibility<pernixc_symbol::ID>,
+    extra_namespace: &ExtraNamespace,
+    field_syntax: pernixc_syntax::item::r#struct::Field,
+    fields: &mut Fields,
+    storage: &Storage<Diagnostic>,
+    occurrences: &mut Occurrences,
+) -> Result<(), executor::CyclicError> {
+    // Get field identifier, skip if missing
+    let Some(field_identifier) = field_syntax.identifier() else {
+        return Ok(());
+    };
+
+    let field_name = field_identifier.kind.0.clone();
+
+    // Check for field redefinition
+    let redefinition = if let Some(&existing_field_id) =
+        fields.field_ids_by_name.get(&field_name)
+    {
+        let existing_field: &Field =
+            fields.fields.get(existing_field_id).unwrap();
+
+        storage.receive(Diagnostic::FieldRedefinition(FieldRedefinition {
+            field_name: field_name.clone(),
+            redefinition_span: field_syntax.span(),
+            original_span: existing_field.span,
+            struct_id,
+        }));
+
+        true
+    } else {
+        false
+    };
+
+    // Resolve field accessibility
+    let field_accessibility =
+        if let Some(access_modifier) = field_syntax.access_modifier() {
+            create_accessibility_from_modifier(
+                &access_modifier,
+                struct_id.id,
+                struct_id.target_id,
+                engine,
+            )
+            .await
+        } else {
+            struct_access
+        };
+
+    let field_type = if let Some(field_type_syntax) = field_syntax.r#type() {
+        // Resolve field type
+        let field_type = engine
+            .resolve_type(
+                &field_type_syntax,
+                Config::builder()
+                    .observer(occurrences)
+                    .extra_namespace(extra_namespace)
+                    .referring_site(struct_id)
+                    .build(),
+                storage,
+            )
+            .await?;
+
+        let premise = engine.get_active_premise(struct_id).await?;
+        let env = Environment::new(
+            Cow::Borrowed(&premise),
+            Cow::Borrowed(engine),
+            normalizer::NO_OP,
+        );
+
+        match env
+            .simplify_and_check_lifetime_constraints(
+                &field_type,
+                &field_type_syntax.span(),
+                storage,
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => match error {
+                pernixc_type_system::Error::Overflow(_) => {
+                    Type::Error(pernixc_term::error::Error)
+                }
+                pernixc_type_system::Error::CyclicDependency(cyclic_error) => {
+                    return Err(cyclic_error)
+                }
+            },
+        }
+    } else {
+        Type::Error(pernixc_term::error::Error)
+    };
+
+    // Check if field is more accessible than struct
+    if is_more_accessible(
+        field_accessibility,
+        struct_access,
+        struct_id.target_id,
+        engine,
+    )
+    .await?
+    {
+        storage.receive(Diagnostic::FieldMoreAccessibleThanStruct(
+            FieldMoreAccessibleThanStruct {
+                struct_accessibility: struct_access,
+                struct_id,
+                field_span: field_syntax.span(),
+                field_accessibility,
+                field_name: field_name.clone(),
+            },
+        ));
+    }
+
+    let field = Field {
+        accessibility: field_accessibility,
+        name: field_name.clone(),
+        r#type: field_type,
+        span: Some(field_syntax.span()),
+    };
+
+    let field_id = fields.fields.insert(field);
+
+    if !redefinition {
+        fields.field_ids_by_name.insert(field_name, field_id);
+    }
+
+    fields.field_declaration_order.push(field_id);
+
+    Ok(())
 }
 
 /// Creates accessibility from an access modifier syntax.
@@ -240,8 +265,12 @@ async fn is_more_accessible(
 
     match (first, second) {
         (Accessibility::Public, Accessibility::Scoped(_)) => Ok(true),
-        (Accessibility::Scoped(_), Accessibility::Public) => Ok(false),
-        (Accessibility::Public, Accessibility::Public) => Ok(false),
+
+        (
+            Accessibility::Scoped(_) | Accessibility::Public,
+            Accessibility::Public,
+        ) => Ok(false),
+
         (
             Accessibility::Scoped(first_module),
             Accessibility::Scoped(second_module),

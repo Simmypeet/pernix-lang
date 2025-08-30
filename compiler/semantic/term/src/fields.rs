@@ -1,5 +1,6 @@
 //! Contains the definition of [`Field`] and [`Fields`].
 
+use flexstr::SharedStr;
 use pernixc_arena::Arena;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
@@ -30,7 +31,7 @@ pub struct Field {
     pub accessibility: Accessibility<pernixc_symbol::ID>,
 
     /// The name of the field.
-    pub name: String,
+    pub name: SharedStr,
 
     /// The type of the field.
     pub r#type: Type,
@@ -41,7 +42,15 @@ pub struct Field {
 
 /// Represents a list of fields defined in the struct.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash, Value,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    StableHash,
+    Value,
+    Default,
 )]
 #[id(Global<pernixc_symbol::ID>)]
 pub struct Fields {
@@ -49,7 +58,7 @@ pub struct Fields {
     pub fields: Arena<Field>,
 
     /// Maps the field name to its ID.
-    pub field_ids_by_name: HashMap<String, pernixc_arena::ID<Field>>,
+    pub field_ids_by_name: HashMap<SharedStr, pernixc_arena::ID<Field>>,
 
     /// The order in which the fields are declared.
     pub field_declaration_order: Vec<pernixc_arena::ID<Field>>,

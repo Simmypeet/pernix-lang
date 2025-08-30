@@ -26,6 +26,7 @@ use crate::{
     value(Arc<[pernixc_diagnostic::Diagnostic<ByteIndex>]>),
     id(Global<pernixc_symbol::ID>)
 )]
+#[allow(clippy::cognitive_complexity)]
 pub async fn single_rendered_executor(
     id: Global<pernixc_symbol::ID>,
     engine: &TrackedEngine,

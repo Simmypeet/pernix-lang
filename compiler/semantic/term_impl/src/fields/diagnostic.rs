@@ -1,3 +1,4 @@
+use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -5,7 +6,6 @@ use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::accessibility::Accessibility;
-use pernixc_term::fields::Field;
 
 #[derive(
     Debug,
@@ -64,7 +64,7 @@ impl pernixc_diagnostic::Report<&TrackedEngine> for Diagnostic {
 )]
 pub struct FieldRedefinition {
     /// The name of the field that is being redefined.
-    pub field_name: String,
+    pub field_name: SharedStr,
 
     /// The span of the redefinition.
     pub redefinition_span: RelativeSpan,
@@ -133,8 +133,14 @@ impl pernixc_diagnostic::Report<&TrackedEngine> for FieldRedefinition {
     Deserialize,
 )]
 pub struct FieldMoreAccessibleThanStruct {
-    /// The field that is more accessible.
-    pub field: Field,
+    /// The span to the field that is more accessible.
+    pub field_span: RelativeSpan,
+
+    /// The accessibility of the field.
+    pub field_accessibility: Accessibility<pernixc_symbol::ID>,
+
+    /// The name of the field.
+    pub field_name: SharedStr,
 
     /// The accessibility of the struct.
     pub struct_accessibility: Accessibility<pernixc_symbol::ID>,
@@ -162,7 +168,7 @@ impl pernixc_diagnostic::Report<&TrackedEngine>
 
         let field_accessibility_description = engine
             .accessibility_description(
-                self.field.accessibility.into_global(self.struct_id.target_id),
+                self.field_accessibility.into_global(self.struct_id.target_id),
             )
             .await;
 
@@ -172,31 +178,28 @@ impl pernixc_diagnostic::Report<&TrackedEngine>
             )
             .await;
 
-        let primary_highlight = if let Some(span) = &self.field.span {
+        let primary_highlight = {
             Some(Highlight::new(
-                engine.to_absolute_span(span).await,
+                engine.to_absolute_span(&self.field_span).await,
                 Some(format!(
                     "field `{}` is {} but struct is {}",
-                    self.field.name,
+                    self.field_name,
                     field_accessibility_description,
                     struct_accessibility_description
                 )),
             ))
-        } else {
-            None
         };
 
         pernixc_diagnostic::Diagnostic {
             primary_highlight,
             message: format!(
                 "field `{}` is more accessible than struct `{}`",
-                self.field.name, struct_name
+                self.field_name, struct_name
             ),
             severity: Severity::Error,
             help_message: Some(format!(
-                "consider making the field {} or making the struct {}",
-                struct_accessibility_description,
-                field_accessibility_description
+                "consider making the field {struct_accessibility_description} \
+                 or making the struct {field_accessibility_description}"
             )),
             related: Vec::new(),
         }
