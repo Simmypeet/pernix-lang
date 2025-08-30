@@ -1,0 +1,19 @@
+public trait Fizz['a, T]:
+    public type Output
+
+
+public struct MyStruct:
+    pass
+
+
+public enum Test['a, 'b, T, U]:
+    where:
+        Fizz['a, T]::Output = int32
+        
+    UseT(T)
+    UseU(U)
+    UseTU((T, U))
+    UseUnknown(Unknown)
+    Plain
+    UseAnother(MyStruct)
+    UseTraitAssociatedType(Fizz['b, T]::Output)

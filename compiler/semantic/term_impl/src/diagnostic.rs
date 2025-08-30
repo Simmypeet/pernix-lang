@@ -10,7 +10,8 @@ use pernixc_symbol::{all_symbol_ids, kind::get_kind};
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
     generic_parameters::Key as GenericParametersKey,
-    type_alias::Key as TypeAliasKey, where_clause::Key as WhereClauseKey,
+    type_alias::Key as TypeAliasKey, variant::Key as VariantKey,
+    where_clause::Key as WhereClauseKey,
 };
 use pernixc_tokio::scoped;
 
@@ -57,6 +58,15 @@ pub async fn single_rendered_executor(
     if kind.has_type_alias() {
         let diags =
             engine.query(&BuildDiagnosticKey::new(TypeAliasKey(id))).await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
+    if kind.has_variant_associated_type() {
+        let diags =
+            engine.query(&BuildDiagnosticKey::new(VariantKey(id))).await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);

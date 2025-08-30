@@ -180,3 +180,29 @@ pub async fn get_implements_member_access_modifier(
         })
         .clone())
 }
+
+/// Implementation of the `get_variant_associated_type_syntax` method
+#[pernixc_query::query(
+    key(VariantAssociatedTypeSyntaxKey),
+    id(Global<ID>),
+    value(Option<pernixc_syntax::r#type::Type>),
+    executor(VariantAssociatedTypeSyntaxExecutor),
+    extend(method(get_variant_associated_type_syntax), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn get_variant_associated_type_syntax(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<Option<pernixc_syntax::r#type::Type>, CyclicError> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(table
+        .variant_associated_type_syntaxes
+        .get(&id.id)
+        .unwrap_or_else(|| {
+            panic!(
+                "No variant associated type syntax found for symbol ID: {:?}",
+                id.id
+            )
+        })
+        .clone())
+}

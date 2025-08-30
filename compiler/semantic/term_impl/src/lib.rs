@@ -12,10 +12,12 @@ use crate::build::Build;
 pub mod diagnostic;
 
 mod build;
+mod fields;
 mod generic_parameters;
 mod implements_qualified_identifier;
 mod occurrences;
 mod type_alias;
+mod variant;
 mod where_clause;
 
 fn register_term_executors<K: Build>(
@@ -56,6 +58,7 @@ pub fn register_executors(
     register_term_executors::<pernixc_term::generic_parameters::Key>(registry);
     register_term_executors::<pernixc_term::where_clause::Key>(registry);
     register_term_executors::<pernixc_term::type_alias::Key>(registry);
+    register_term_executors::<pernixc_term::variant::Key>(registry);
     register_term_executors::<implements_qualified_identifier::Key>(registry);
 
     registry.register(Arc::new(
@@ -88,6 +91,7 @@ pub fn register_serde<
     register_term_serde::<pernixc_term::type_alias::Key, _, _, _>(
         serde_registry,
     );
+    register_term_serde::<pernixc_term::variant::Key, _, _, _>(serde_registry);
     register_term_serde::<implements_qualified_identifier::Key, _, _, _>(
         serde_registry,
     );

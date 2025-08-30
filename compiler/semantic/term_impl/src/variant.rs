@@ -1,0 +1,94 @@
+use std::{borrow::Cow, sync::Arc};
+
+use pernixc_handler::Storage;
+use pernixc_query::runtime::executor;
+use pernixc_resolution::{
+    generic_parameter_namespace::get_generic_parameter_namespace,
+    term::resolve_type, Config,
+};
+use pernixc_source_file::SourceElement;
+use pernixc_symbol::syntax::get_variant_associated_type_syntax;
+use pernixc_term::r#type::Type;
+use pernixc_type_system::{
+    environment::{get_active_premise, Environment},
+    normalizer,
+};
+
+use crate::{
+    build::{self, Output},
+    occurrences::Occurrences,
+    variant::diagnostic::Diagnostic,
+};
+
+pub mod diagnostic;
+
+#[derive(Debug, Default)]
+pub struct BuildExecutor;
+
+impl build::Build for pernixc_term::variant::Key {
+    type Diagnostic = diagnostic::Diagnostic;
+
+    async fn execute(
+        engine: &pernixc_query::TrackedEngine,
+        key: &Self,
+    ) -> Result<build::Output<Self>, executor::CyclicError> {
+        let syntax = engine.get_variant_associated_type_syntax(key.0).await;
+
+        let Some(syntax_tree) = syntax else {
+            return Ok(Output {
+                item: None,
+                diagnostics: Arc::default(),
+                occurrences: Arc::default(),
+            });
+        };
+
+        let storage = Storage::<Diagnostic>::default();
+        let mut occurrences = Occurrences::default();
+        let extra_namespace =
+            engine.get_generic_parameter_namespace(key.0).await?;
+
+        let mut ty = engine
+            .resolve_type(
+                &syntax_tree,
+                Config::builder()
+                    .observer(&mut occurrences)
+                    .extra_namespace(&extra_namespace)
+                    .referring_site(key.0)
+                    .build(),
+                &storage,
+            )
+            .await?;
+
+        let premise = engine.get_active_premise(key.0).await?;
+        let env = Environment::new(
+            Cow::Borrowed(&premise),
+            Cow::Borrowed(engine),
+            normalizer::NO_OP,
+        );
+
+        ty = match env
+            .simplify_and_check_lifetime_constraints(
+                &ty,
+                &syntax_tree.span(),
+                &storage,
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => match error {
+                pernixc_type_system::Error::Overflow(_) => {
+                    Type::Error(pernixc_term::error::Error)
+                }
+                pernixc_type_system::Error::CyclicDependency(cyclic_error) => {
+                    return Err(cyclic_error)
+                }
+            },
+        };
+
+        Ok(Output {
+            item: Some(ty),
+            diagnostics: storage.into_vec().into(),
+            occurrences: Arc::new(occurrences),
+        })
+    }
+}

@@ -217,6 +217,12 @@ impl Kind {
     pub const fn has_function_body(&self) -> bool {
         matches!(self, Self::Function | Self::ImplementationFunction)
     }
+
+    /// Checks if the symbol has a variant associated type
+    #[must_use]
+    pub const fn has_variant_associated_type(&self) -> bool {
+        matches!(self, Self::Variant)
+    }
 }
 
 #[pernixc_query::executor(key(Key), name(Executor))]
