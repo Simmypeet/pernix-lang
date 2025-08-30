@@ -53,14 +53,14 @@ public trait Test[T]:
     public function test()
 
 implements Test[int32]:
-    public function test():
+    function test():
         pass
 
-    public function test():
+    function test():
         pass
 
 implements Test[float32]:
-    public function test():
+    function test():
         pass
 
 public function main():

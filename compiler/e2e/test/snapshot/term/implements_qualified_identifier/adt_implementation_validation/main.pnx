@@ -9,7 +9,7 @@ implements MyStruct delete
 final implements MyStruct delete
 
 final implements MyStruct:
-    function test():
+    public function test():
         pass
 
 implements MyEnum delete
@@ -17,7 +17,7 @@ implements MyEnum delete
 final implements MyEnum delete
 
 final implements MyEnum:
-    function test():
+    public function test():
         pass
 
 

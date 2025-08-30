@@ -101,13 +101,13 @@ error: symbol `Sixth` is already defined in the scope `main`
    │              ^^^^^ redefinition here
 
 error: symbol `test` is already defined in the scope `main::[implements Test[int32]]`
-   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:59:21
+   ╭─ compiler/e2e/test/snapshot/symbol/redefinition/main.pnx:59:14
    │
-56 │     public function test():
-   │                     ---- symbol `test` is already defined here
+56 │     function test():
+   │              ---- symbol `test` is already defined here
    ·
-59 │     public function test():
-   │                     ^^^^ redefinition here
+59 │     function test():
+   │              ^^^^ redefinition here
 
 error: Compilation aborted due to 12 error(s)
 
