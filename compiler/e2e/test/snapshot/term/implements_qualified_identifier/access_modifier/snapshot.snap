@@ -1,18 +1,17 @@
 ---
 source: compiler/e2e/test/snapshot/mod.rs
-assertion_line: 120
 expression: clean_run
 ---
 stderr:
 error: trait implementation members cannot have access modifiers
-   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/access_modifier/main.pnx:13:21
+   ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/access_modifier/main.pnx:13:5
    │
 13 │     public function display():
-   │                     ^^^^^^^ implementation function `main::[implements Displayable[MyStruct]]::display` cannot have an access modifier
+   │     ^^^^^^ implementation function `main::[implements Displayable[MyStruct]]::display` cannot have an access modifier
    │
    = remove the access modifier from this member
 
-error: ADT implementation members must have access modifiers
+error: struct or enum implementation members must have access modifiers
    ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/access_modifier/main.pnx:19:14
    │
 19 │     function helper():
@@ -20,7 +19,7 @@ error: ADT implementation members must have access modifiers
    │
    = add an access modifier (`public`, `private`, or `internal`) to this member
 
-error: ADT implementation members must have access modifiers
+error: struct or enum implementation members must have access modifiers
    ╭─ compiler/e2e/test/snapshot/term/implements_qualified_identifier/access_modifier/main.pnx:35:14
    │
 35 │     function enumHelper():

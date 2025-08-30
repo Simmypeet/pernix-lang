@@ -3,11 +3,12 @@ use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::ByteIndex;
+use pernixc_source_file::{ByteIndex, SourceElement};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     kind::get_kind, name::get_qualified_name, parent::get_parent_global,
     source_map::to_absolute_span, span::get_span,
+    syntax::get_implements_member_access_modifier,
 };
 use pernixc_target::Global;
 use pernixc_term::{display::Display, r#type::Type};
@@ -738,9 +739,26 @@ impl Report<&TrackedEngine> for TraitMemberCannotHaveAccessModifier {
             engine.get_qualified_name(self.implementation_member_id).await;
         let member_kind = engine.get_kind(self.implementation_member_id).await;
 
-        let span = match engine.get_span(self.implementation_member_id).await {
-            Some(span) => Some(engine.to_absolute_span(&span).await),
-            None => None,
+        // Try to get the access modifier syntax to highlight it specifically
+        let access_modifier = engine
+            .get_implements_member_access_modifier(
+                self.implementation_member_id,
+            )
+            .await;
+
+        let span = match &access_modifier {
+            Some(access_mod) => {
+                // Get the span of the access modifier itself
+                Some(engine.to_absolute_span(&access_mod.span()).await)
+            }
+            None => {
+                // Fallback to the symbol span if access modifier span is not
+                // available
+                match engine.get_span(self.implementation_member_id).await {
+                    Some(span) => Some(engine.to_absolute_span(&span).await),
+                    None => None,
+                }
+            }
         };
 
         pernixc_diagnostic::Diagnostic::builder()
@@ -801,7 +819,10 @@ impl Report<&TrackedEngine> for AdtMemberMissingAccessModifier {
 
         pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
-            .message("ADT implementation members must have access modifiers")
+            .message(
+                "struct or enum implementation members must have access \
+                 modifiers",
+            )
             .maybe_primary_highlight(span.map(|x| {
                 Highlight::builder()
                     .span(x)

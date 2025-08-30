@@ -7,9 +7,9 @@ use pernixc_target::Global;
 use crate::syntax::get_implements_final_keyword;
 
 #[pernixc_query::query(
-    key(Key), 
-    value(bool), 
-    id(Global<crate::ID>), 
+    key(Key),
+    value(bool),
+    id(Global<crate::ID>),
     executor(Executor),
     extend(method(is_implements_final), no_cyclic)
 )]
