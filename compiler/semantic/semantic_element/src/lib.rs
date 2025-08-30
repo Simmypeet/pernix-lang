@@ -7,3 +7,4 @@
 //! `pernixc_ir` crate.
 
 pub mod fields;
+pub mod implemented;

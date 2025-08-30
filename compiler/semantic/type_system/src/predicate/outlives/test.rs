@@ -93,7 +93,7 @@ impl Property<Type> for ByEquality {
 
                     let add_implemented = x
                         .set_input(
-                            pernixc_term::implemented::Key(
+                            pernixc_semantic_element::implemented::Key(
                                 self.equality
                                     .id
                                     .target_id

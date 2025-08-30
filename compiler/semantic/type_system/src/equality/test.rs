@@ -85,7 +85,7 @@ async fn symmetric() {
             .await;
 
             x.set_input(
-                pernixc_term::implemented::Key(
+                pernixc_semantic_element::implemented::Key(
                     TargetID::TEST.make_global(pernixc_symbol::ID(2)),
                 ),
                 Arc::default(),
@@ -161,7 +161,7 @@ async fn not_equal() {
             .await;
 
             x.set_input(
-                pernixc_term::implemented::Key(
+                pernixc_semantic_element::implemented::Key(
                     TargetID::TEST.make_global(pernixc_symbol::ID(2)),
                 ),
                 Arc::default(),
@@ -244,7 +244,7 @@ async fn transitivity() {
             )
             .await;
             x.set_input(
-                pernixc_term::implemented::Key(
+                pernixc_semantic_element::implemented::Key(
                     TargetID::TEST.make_global(pernixc_symbol::ID(3)),
                 ),
                 Arc::default(),
@@ -338,7 +338,7 @@ async fn congruence() {
             )
             .await;
             x.set_input(
-                pernixc_term::implemented::Key(
+                pernixc_semantic_element::implemented::Key(
                     TargetID::TEST.make_global(pernixc_symbol::ID(3)),
                 ),
                 Arc::default(),
@@ -573,7 +573,7 @@ impl Property<Type> for Mapping {
 
                     let add_implemented = x
                         .set_input(
-                            pernixc_term::implemented::Key(
+                            pernixc_semantic_element::implemented::Key(
                                 self.target_trait_member
                                     .id
                                     .target_id
@@ -981,7 +981,7 @@ async fn property_based_testing<T: Term + 'static>(
 
                 let add_implemented = x
                     .set_input(
-                        pernixc_term::implemented::Key(
+                        pernixc_semantic_element::implemented::Key(
                             trait_member
                                 .lhs
                                 .id

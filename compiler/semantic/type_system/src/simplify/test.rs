@@ -204,7 +204,7 @@ async fn with_lifetime_matching() {
             .await;
 
             x.set_input(
-                pernixc_term::implemented::Key(Global::new(
+                pernixc_semantic_element::implemented::Key(Global::new(
                     TargetID::TEST,
                     pernixc_symbol::ID(3),
                 )),
@@ -296,7 +296,7 @@ async fn multiple_equivalences() {
                 .await;
             session
                 .set_input(
-                    pernixc_term::implemented::Key(Global::new(
+                    pernixc_semantic_element::implemented::Key(Global::new(
                         TargetID::TEST,
                         pernixc_symbol::ID(3),
                     )),
@@ -414,7 +414,7 @@ async fn transitive() {
                 .await;
             table
                 .set_input(
-                    pernixc_term::implemented::Key(Global::new(
+                    pernixc_semantic_element::implemented::Key(Global::new(
                         TargetID::TEST,
                         pernixc_symbol::ID(4),
                     )),

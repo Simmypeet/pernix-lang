@@ -427,7 +427,7 @@ impl Property<Type> for Mapping {
 
                     let add_implemented = x
                         .set_input(
-                            pernixc_term::implemented::Key(
+                            pernixc_semantic_element::implemented::Key(
                                 self.trait_member
                                     .id
                                     .target_id
