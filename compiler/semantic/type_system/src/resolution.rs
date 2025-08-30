@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
 use pernixc_semantic_element::{
     implemented::get_implemented, implements::get_implements,
-    implements_arguments::get_implements_argument,
+    implements_arguments::get_implements_argument, variance::Variance,
 };
 use pernixc_symbol::{
     final_implements::is_implements_final,
@@ -17,7 +17,6 @@ use pernixc_term::{
     instantiation::Instantiation,
     predicate::Predicate,
     r#type::Type,
-    variance::Variance,
     where_clause::{self, get_where_clause},
 };
 

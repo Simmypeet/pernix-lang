@@ -3,8 +3,7 @@ use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
-
-use crate::generic_parameters::{LifetimeParameter, TypeParameter};
+use pernixc_term::generic_parameters::{LifetimeParameter, TypeParameter};
 
 /// Representing a variance used by the sub-typing system to determine the
 /// relationship between two types.

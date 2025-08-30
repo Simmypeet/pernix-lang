@@ -1,6 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use pernixc_query::Engine;
+use pernixc_semantic_element::variance::{Variance, Variances};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
@@ -11,7 +12,6 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::Outlives,
     r#type::{Primitive, Qualifier, Reference, Type},
-    variance::{Variance, Variances},
 };
 
 use crate::{
@@ -151,8 +151,11 @@ fn subtyping_with_adt(#[case] variance: Variance) {
                 )
                 .await;
 
-                x.set_input(pernixc_term::variance::Key(adt_id), variance_map)
-                    .await;
+                x.set_input(
+                    pernixc_semantic_element::variance::Key(adt_id),
+                    variance_map,
+                )
+                .await;
 
                 x.set_input(pernixc_symbol::kind::Key(adt_id), Kind::Enum)
                     .await;

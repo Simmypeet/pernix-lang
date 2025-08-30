@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, TraitMember},
@@ -13,7 +14,6 @@ use pernixc_term::{
     predicate::{self, Outlives},
     r#type::Type,
     sub_term::{SubLifetimeLocation, SubTypeLocation, TermLocation},
-    variance::Variance,
     visitor,
 };
 

@@ -4,7 +4,8 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_term::{r#type::Type, variance::Variance, visitor::AsyncMutable};
+use pernixc_semantic_element::variance::Variance;
+use pernixc_term::{r#type::Type, visitor::AsyncMutable};
 
 use crate::{
     diagnostic::Diagnostic,

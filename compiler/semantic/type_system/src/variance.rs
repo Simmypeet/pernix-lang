@@ -2,12 +2,12 @@
 
 use pernixc_extend::extend;
 use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::variance::{get_variances, Variance};
 use pernixc_symbol::kind::{get_kind, Kind};
 use pernixc_term::{
     generic_parameters::get_generic_parameters,
     r#type::{self, Type},
     sub_term::{Location, SubLifetimeLocation, SubTypeLocation, TermLocation},
-    variance::{get_variances, Variance},
 };
 
 /// Retrieves the variance of the term at the given location.

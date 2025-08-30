@@ -1,6 +1,7 @@
 use std::{borrow::Cow, fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
 use pernixc_query::{database::SetInputResult, Engine};
+use pernixc_semantic_element::variance::{Variance, Variances};
 use pernixc_symbol::kind::Kind;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -10,7 +11,6 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
     r#type::Type,
-    variance::{Variance, Variances},
 };
 use proptest::{
     arbitrary::Arbitrary,
@@ -264,7 +264,9 @@ impl Property<Type> for LifetimeMatching {
 
                     let added_variance = table
                         .set_input(
-                            pernixc_term::variance::Key(self.struct_id),
+                            pernixc_semantic_element::variance::Key(
+                                self.struct_id,
+                            ),
                             variance_map,
                         )
                         .await

@@ -11,3 +11,5 @@ pub mod implemented;
 pub mod implements;
 pub mod implements_arguments;
 pub mod implied_predicates;
+pub mod type_alias;
+pub mod variance;

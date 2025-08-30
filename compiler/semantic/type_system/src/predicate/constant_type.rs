@@ -3,13 +3,13 @@
 use std::sync::Arc;
 
 use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_semantic_element::variance::Variance;
 use pernixc_symbol::kind::{get_kind, Kind};
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
     predicate::ConstantType,
     r#type::{Primitive, Type},
-    variance::Variance,
     visitor::{self, Element},
 };
 

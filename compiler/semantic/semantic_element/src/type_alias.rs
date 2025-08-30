@@ -5,8 +5,7 @@ use std::sync::Arc;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
-
-use crate::r#type::Type;
+use pernixc_term::r#type::Type;
 
 /// A key for retrieving the type alias of various kinds of type alias symbols.
 #[derive(

@@ -58,7 +58,9 @@ pub fn register_executors(
 ) {
     register_term_executors::<pernixc_term::generic_parameters::Key>(registry);
     register_term_executors::<pernixc_term::where_clause::Key>(registry);
-    register_term_executors::<pernixc_term::type_alias::Key>(registry);
+    register_term_executors::<pernixc_semantic_element::type_alias::Key>(
+        registry,
+    );
     register_term_executors::<pernixc_term::variant::Key>(registry);
     register_term_executors::<pernixc_semantic_element::fields::Key>(registry);
     register_term_executors::<implements_qualified_identifier::Key>(registry);
@@ -90,7 +92,7 @@ pub fn register_serde<
     register_term_serde::<pernixc_term::where_clause::Key, _, _, _>(
         serde_registry,
     );
-    register_term_serde::<pernixc_term::type_alias::Key, _, _, _>(
+    register_term_serde::<pernixc_semantic_element::type_alias::Key, _, _, _>(
         serde_registry,
     );
     register_term_serde::<pernixc_term::variant::Key, _, _, _>(serde_registry);

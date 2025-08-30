@@ -2,6 +2,7 @@
 
 use std::{fmt::Debug, hash::Hash};
 
+use pernixc_semantic_element::type_alias::get_type_alias;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     member::get_members,
@@ -17,7 +18,6 @@ use pernixc_term::{
     predicate::{Compatible, Outlives, Predicate},
     r#type::Type,
     tuple::{Element, Tuple},
-    type_alias::get_type_alias,
     Never,
 };
 

@@ -2,12 +2,12 @@
 
 use std::{future::Future, sync::Arc};
 
+use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{
     constant::Constant,
     lifetime::Lifetime,
     predicate::Outlives,
     r#type::Type,
-    variance::Variance,
     visitor::{self, Element},
 };
 

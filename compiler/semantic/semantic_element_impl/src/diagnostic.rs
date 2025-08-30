@@ -5,14 +5,15 @@ use std::sync::Arc;
 
 use pernixc_diagnostic::Report;
 use pernixc_query::{runtime::executor, TrackedEngine};
-use pernixc_semantic_element::fields::Key as FieldsKey;
+use pernixc_semantic_element::{
+    fields::Key as FieldsKey, type_alias::Key as TypeAliasKey,
+};
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{all_symbol_ids, kind::get_kind};
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
     generic_parameters::Key as GenericParametersKey,
-    type_alias::Key as TypeAliasKey, variant::Key as VariantKey,
-    where_clause::Key as WhereClauseKey,
+    variant::Key as VariantKey, where_clause::Key as WhereClauseKey,
 };
 use pernixc_tokio::scoped;
 

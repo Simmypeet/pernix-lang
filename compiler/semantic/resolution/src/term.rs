@@ -7,6 +7,7 @@ use pernixc_extend::extend;
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_semantic_element::type_alias::get_type_alias;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::kind::{get_kind, Kind};
 use pernixc_syntax::{GenericIdentifier, LifetimeIdentifier};
@@ -18,7 +19,6 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Array, Phantom, Pointer, Primitive, Qualifier, Reference, Type},
     tuple,
-    type_alias::get_type_alias,
 };
 
 use crate::{

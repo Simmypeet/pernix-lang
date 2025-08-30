@@ -6,10 +6,11 @@ use std::{
 };
 
 use pernixc_query::runtime::executor;
+use pernixc_semantic_element::variance::Variance;
 use pernixc_term::{
     constant::Constant, generic_arguments::GenericArguments,
     generic_parameters::GenericKind, instantiation::Instantiation,
-    lifetime::Lifetime, predicate::Outlives, r#type::Type, variance::Variance,
+    lifetime::Lifetime, predicate::Outlives, r#type::Type,
 };
 
 use crate::{

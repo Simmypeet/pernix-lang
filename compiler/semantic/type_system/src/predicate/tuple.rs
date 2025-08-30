@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use pernixc_term::{predicate::Tuple, r#type::Type, variance::Variance};
+use pernixc_semantic_element::variance::Variance;
+use pernixc_term::{predicate::Tuple, r#type::Type};
 
 use crate::{
     environment::{BoxedFuture, Environment, Query},
