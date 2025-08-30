@@ -13,6 +13,7 @@ pub mod diagnostic;
 
 mod build;
 mod fields;
+mod function_signature;
 mod generic_parameters;
 mod implements_qualified_identifier;
 mod occurrences;
@@ -66,6 +67,7 @@ pub fn register_executors(
     register_term_executors::<pernixc_semantic_element::variant::Key>(registry);
     register_term_executors::<pernixc_semantic_element::fields::Key>(registry);
     register_term_executors::<implements_qualified_identifier::Key>(registry);
+    register_term_executors::<function_signature::Key>(registry);
 
     registry.register(Arc::new(
         implements_qualified_identifier::ExtractImplementsID,
@@ -106,6 +108,7 @@ pub fn register_serde<
     register_term_serde::<implements_qualified_identifier::Key, _, _, _>(
         serde_registry,
     );
+    register_term_serde::<function_signature::Key, _, _, _>(serde_registry);
 
     serde_registry.register::<diagnostic::SingleRenderedKey>();
     serde_registry.register::<diagnostic::AllRenderedKey>();

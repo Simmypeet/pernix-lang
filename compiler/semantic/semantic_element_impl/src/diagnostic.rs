@@ -17,6 +17,7 @@ use pernixc_tokio::scoped;
 
 use crate::{
     build::DiagnosticKey as BuildDiagnosticKey,
+    function_signature::Key as FunctionSignatureKey,
     implements_qualified_identifier::Key as ImplementsQualifiedIdentifierKey,
 };
 
@@ -88,6 +89,16 @@ pub async fn single_rendered_executor(
             .query(&BuildDiagnosticKey::new(ImplementsQualifiedIdentifierKey(
                 id,
             )))
+            .await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
+    if kind.has_function_signature() {
+        let diags = engine
+            .query(&BuildDiagnosticKey::new(FunctionSignatureKey(id)))
             .await?;
 
         for diag in diags.iter() {

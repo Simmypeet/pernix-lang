@@ -45,7 +45,6 @@ pub struct Element<Term> {
     PartialOrd,
     Ord,
     Hash,
-    Default,
     StableHash,
     Serialize,
     Deserialize,
@@ -53,6 +52,10 @@ pub struct Element<Term> {
 pub struct Tuple<Term> {
     /// The elements of the tuple.
     pub elements: Vec<Element<Term>>,
+}
+
+impl<Term> Default for Tuple<Term> {
+    fn default() -> Self { Self { elements: Vec::new() } }
 }
 
 impl<T: crate::display::Display> crate::display::Display for Element<T> {

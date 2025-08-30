@@ -8,7 +8,6 @@ use pernixc_resolution::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_variant_associated_type_syntax;
-use pernixc_term::r#type::Type;
 use pernixc_type_system::{
     environment::{get_active_premise, Environment},
     normalizer,
@@ -66,24 +65,13 @@ impl build::Build for pernixc_semantic_element::variant::Key {
             normalizer::NO_OP,
         );
 
-        ty = match env
+        ty = env
             .simplify_and_check_lifetime_constraints(
                 &ty,
                 &syntax_tree.span(),
                 &storage,
             )
-            .await
-        {
-            Ok(result) => result,
-            Err(error) => match error {
-                pernixc_type_system::Error::Overflow(_) => {
-                    Type::Error(pernixc_term::error::Error)
-                }
-                pernixc_type_system::Error::CyclicDependency(cyclic_error) => {
-                    return Err(cyclic_error)
-                }
-            },
-        };
+            .await?;
 
         Ok(Output {
             item: Some(ty),

@@ -17,7 +17,7 @@ use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
-    implied_predicates::{get_implied_predicates, ImpliedPredicate},
+    implied_predicate::{get_implied_predicates, ImpliedPredicate},
     where_clause::get_where_clause,
 };
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
@@ -72,16 +72,14 @@ pub async fn get_active_premise(
         if kind.has_implied_predicates() {
             let predicates = self.get_implied_predicates(current_id).await?;
 
-            premise.predicates.extend(
-                predicates.implied_predicates.iter().map(|x| match x {
-                    ImpliedPredicate::LifetimeOutlives(outlives) => {
-                        Predicate::LifetimeOutlives(outlives.clone())
-                    }
-                    ImpliedPredicate::TypeOutlives(outlives) => {
-                        Predicate::TypeOutlives(outlives.clone())
-                    }
-                }),
-            );
+            premise.predicates.extend(predicates.iter().map(|x| match x {
+                ImpliedPredicate::LifetimeOutlives(outlives) => {
+                    Predicate::LifetimeOutlives(outlives.clone())
+                }
+                ImpliedPredicate::TypeOutlives(outlives) => {
+                    Predicate::TypeOutlives(outlives.clone())
+                }
+            }));
         }
     }
 

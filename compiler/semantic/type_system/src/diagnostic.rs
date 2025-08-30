@@ -372,41 +372,34 @@ pub struct Reported;
 impl OverflowError {
     /// Reports the [`OverflowError`] as a
     /// [`TypeCalculatingOverflow`] to be reported to the user.
-    #[must_use]
     pub fn report_as_type_calculating_overflow(
         self,
         overflow_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Self {
+    ) {
         handler
             .receive(TypeCalculatingOverflow::new(overflow_span, self).into());
-
-        self
     }
 
     /// Reports the [`OverflowError`] as a [`TypeCheckOverflow`] to
     /// be reported to the user.
-    #[must_use]
     pub fn report_as_type_check_overflow(
         self,
         overflow_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Self {
+    ) {
         handler.receive(TypeCheckOverflow::new(overflow_span, self).into());
-
-        self
     }
 
     /// Reports the [`OverflowError`] as a [`PredicateSatisfiabilityOverflow`]
     /// to be reported to the user.
-    #[must_use]
     pub fn report_as_undecidable_predicate(
         self,
         predicate: Predicate,
         predicate_declaration_span: Option<RelativeSpan>,
         instantiation_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Self {
+    ) {
         handler.receive(
             PredicateSatisfiabilityOverflow::new(
                 predicate,
@@ -416,7 +409,5 @@ impl OverflowError {
             )
             .into(),
         );
-
-        self
     }
 }

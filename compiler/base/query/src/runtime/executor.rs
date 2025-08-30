@@ -64,11 +64,13 @@ pub trait Executor<K: Key>: Any + Send + Sync + std::fmt::Debug {
     /// Returns `Ok(value)` on successful computation, or `Err(CyclicError)`
     /// when the query is part of a strongly connected component (SCC) with
     /// cyclic dependencies.
-    fn execute<'a>(
-        &'a self,
-        engine: &'a TrackedEngine,
-        key: &'a K,
-    ) -> impl Future<'a, K::Value>;
+    fn execute<'s, 't, 'k>(
+        &'s self,
+        engine: &'t TrackedEngine,
+        key: &'k K,
+    ) -> impl std::future::Future<Output = Result<K::Value, CyclicError>>
+           + Send
+           + use<'s, 't, 'k, Self, K>;
 }
 
 fn invoke_executor<'a, E: Executor<K> + 'static, K: Key + 'static>(
@@ -125,7 +127,7 @@ impl Registry {
 
     /// Retrieves the executor for the given key type [`K`]. If no executor
     /// is registered for the key type, it returns `None`.
-    pub(crate) fn get_entry<K: Key>(&self) -> Option<Ref<TypeId, Entry>> {
+    pub(crate) fn get_entry<K: Key>(&self) -> Option<Ref<'_, TypeId, Entry>> {
         self.executors_by_key_type_id.get(&TypeId::of::<K>())
     }
 
@@ -133,7 +135,7 @@ impl Registry {
     pub(crate) fn get_entry_with_id(
         &self,
         type_id: TypeId,
-    ) -> Option<Ref<TypeId, Entry>> {
+    ) -> Option<Ref<'_, TypeId, Entry>> {
         self.executors_by_key_type_id.get(&type_id)
     }
 }

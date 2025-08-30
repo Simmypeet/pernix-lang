@@ -94,6 +94,7 @@ pub fn register_executors(
     executor.register(Arc::new(syntax::ImplementsMemberAccessModifierExecutor));
     executor.register(Arc::new(syntax::VariantAssociatedTypeSyntaxExecutor));
     executor.register(Arc::new(syntax::FieldsSyntaxExecutor));
+    executor.register(Arc::new(syntax::FunctionSignatureSyntaxExecutor));
 
     executor.register(Arc::new(import::WithDiagnosticExecutor));
     executor.register(Arc::new(import::Executor));
@@ -147,6 +148,7 @@ pub fn register_serde<
     serde_registry.register::<syntax::ImplementsMemberAccessModifierKey>();
     serde_registry.register::<syntax::VariantAssociatedTypeSyntaxKey>();
     serde_registry.register::<syntax::FieldsSyntaxKey>();
+    serde_registry.register::<syntax::FunctionSignatureSyntaxKey>();
 
     serde_registry.register::<import::WithDiagnosticKey>();
     serde_registry.register::<import::Key>();

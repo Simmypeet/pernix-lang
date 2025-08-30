@@ -1,7 +1,9 @@
-//! Contains the definition of the [`ImpliedPredicates`] component.
+//! Contains the query definition for retrieving all the "implied predicate"s
+//! that appear on the function signature.
+
+use std::sync::Arc;
 
 use pernixc_hash::HashSet;
-use pernixc_query::Value;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -43,24 +45,22 @@ impl From<ImpliedPredicate> for Predicate {
     }
 }
 
-/// A **presistent-derived** component representing the predicates that have
-/// been inferred by signature/definition of the symbol.
-///
-/// This component can only be found in the function symbol.
+/// A query for retrieving all the "implied predicate"s appear on the function
+/// signature.
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
-    Default,
+    PartialOrd,
+    Ord,
+    Hash,
     StableHash,
     Serialize,
     Deserialize,
-    Value,
+    pernixc_query::Key,
 )]
-#[id(Global<pernixc_symbol::ID>)]
+#[value(Arc<HashSet<ImpliedPredicate>>)]
 #[extend(method(get_implied_predicates))]
-pub struct ImpliedPredicates {
-    /// The predicates that have been inferred by the compiler.
-    pub implied_predicates: HashSet<ImpliedPredicate>,
-}
+pub struct Key(pub Global<pernixc_symbol::ID>);

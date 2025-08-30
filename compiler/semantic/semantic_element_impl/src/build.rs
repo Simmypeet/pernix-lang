@@ -172,11 +172,11 @@ impl<T: Build> Clone for Output<T> {
 pub trait Build: pernixc_query::Key {
     type Diagnostic: Debug + StableHash + Send + Sync + 'static;
 
-    fn execute<'x>(
+    fn execute<'x, 'y>(
         engine: &'x pernixc_query::TrackedEngine,
-        key: &'x Self,
+        key: &'y Self,
     ) -> impl std::future::Future<
         Output = Result<Output<Self>, executor::CyclicError>,
-    > + use<'x, Self>
+    > + use<'x,'y, Self>
            + Send;
 }

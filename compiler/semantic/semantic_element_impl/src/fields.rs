@@ -161,24 +161,12 @@ async fn process_field(
             normalizer::NO_OP,
         );
 
-        match env
-            .simplify_and_check_lifetime_constraints(
-                &field_type,
-                &field_type_syntax.span(),
-                storage,
-            )
-            .await
-        {
-            Ok(result) => result,
-            Err(error) => match error {
-                pernixc_type_system::Error::Overflow(_) => {
-                    Type::Error(pernixc_term::error::Error)
-                }
-                pernixc_type_system::Error::CyclicDependency(cyclic_error) => {
-                    return Err(cyclic_error)
-                }
-            },
-        }
+        env.simplify_and_check_lifetime_constraints(
+            &field_type,
+            &field_type_syntax.span(),
+            storage,
+        )
+        .await?
     } else {
         Type::Error(pernixc_term::error::Error)
     };
