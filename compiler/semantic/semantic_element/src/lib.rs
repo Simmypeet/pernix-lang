@@ -6,11 +6,13 @@
 //! This crate also doesn't contain the IR of the function, it's defined in
 //! `pernixc_ir` crate.
 
+pub mod elided_lifetimes;
 pub mod fields;
 pub mod implemented;
 pub mod implements;
 pub mod implements_arguments;
 pub mod implied_predicates;
+pub mod late_bound_lifetimes;
 pub mod parameters;
 pub mod return_type;
 pub mod type_alias;

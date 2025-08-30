@@ -7,6 +7,7 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_symbol::MemberID;
 
 use crate::{
     constant::Constant,
@@ -66,6 +67,30 @@ pub enum Forall {
     Named(NamedForall),
 }
 
+/// Represents a lifetime that has been generated implicitly by the compiler
+/// in the case where the lifetime is elided such as `number: &int32`.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct ElidedLifetime {
+    /// The order in which the elided lifetime was encountered in the function
+    /// signature.
+    pub order: usize,
+}
+
+/// The ID to a elided lifetime.
+pub type ElidedLifetimeID = MemberID<pernixc_arena::ID<ElidedLifetime>>;
+
 /// Represents a lifetime term.
 #[derive(
     Debug,
@@ -86,6 +111,7 @@ pub enum Forall {
 pub enum Lifetime {
     Inference(pernixc_arena::ID<Inference<Self>>),
     Parameter(LifetimeParameterID),
+    Elided(ElidedLifetimeID),
     Forall(Forall),
     Static,
     Erased,
@@ -214,7 +240,10 @@ impl crate::display::Display for Lifetime {
 
             Self::Static => write!(formatter, "'static"),
 
-            Self::Inference(_) | Self::Error(_) | Self::Erased => Ok(()),
+            Self::Elided(_)
+            | Self::Inference(_)
+            | Self::Error(_)
+            | Self::Erased => Ok(()),
         }
     }
 }
