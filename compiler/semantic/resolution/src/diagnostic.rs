@@ -207,7 +207,14 @@ impl Report<&TrackedEngine> for UnexpectedInference {
         pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.unexpected_span).await,
-                None,
+                Some(format!(
+                    "expected an explicit {} to be inserted here",
+                    match self.generic_kind {
+                        GenericKind::Type => "type",
+                        GenericKind::Lifetime => "lifetime",
+                        GenericKind::Constant => "constant",
+                    }
+                )),
             )),
             message: format!("{} inference is not allowed here", match self
                 .generic_kind
