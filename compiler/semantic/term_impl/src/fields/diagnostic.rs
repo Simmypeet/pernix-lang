@@ -5,7 +5,6 @@ use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::accessibility::Accessibility;
-use pernixc_target::TargetID;
 use pernixc_term::fields::Field;
 
 #[derive(
@@ -74,10 +73,7 @@ pub struct FieldRedefinition {
     pub original_span: Option<RelativeSpan>,
 
     /// The ID of the struct containing the field.
-    pub struct_id: pernixc_symbol::ID,
-
-    /// The target ID.
-    pub target_id: TargetID,
+    pub struct_id: pernixc_target::Global<pernixc_symbol::ID>,
 }
 
 impl pernixc_diagnostic::Report<&TrackedEngine> for FieldRedefinition {
@@ -92,9 +88,7 @@ impl pernixc_diagnostic::Report<&TrackedEngine> for FieldRedefinition {
             name::get_qualified_name, source_map::to_absolute_span,
         };
 
-        let struct_name = engine
-            .get_qualified_name(self.target_id.make_global(self.struct_id))
-            .await;
+        let struct_name = engine.get_qualified_name(self.struct_id).await;
 
         let primary_highlight = Some(Highlight::new(
             engine.to_absolute_span(&self.redefinition_span).await,
@@ -146,10 +140,7 @@ pub struct FieldMoreAccessibleThanStruct {
     pub struct_accessibility: Accessibility<pernixc_symbol::ID>,
 
     /// The ID of the struct.
-    pub struct_id: pernixc_symbol::ID,
-
-    /// The target ID.
-    pub target_id: TargetID,
+    pub struct_id: pernixc_target::Global<pernixc_symbol::ID>,
 }
 
 impl pernixc_diagnostic::Report<&TrackedEngine>
@@ -167,19 +158,17 @@ impl pernixc_diagnostic::Report<&TrackedEngine>
             source_map::to_absolute_span,
         };
 
-        let struct_name = engine
-            .get_qualified_name(self.target_id.make_global(self.struct_id))
-            .await;
+        let struct_name = engine.get_qualified_name(self.struct_id).await;
 
         let field_accessibility_description = engine
             .accessibility_description(
-                self.field.accessibility.into_global(self.target_id),
+                self.field.accessibility.into_global(self.struct_id.target_id),
             )
             .await;
 
         let struct_accessibility_description = engine
             .accessibility_description(
-                self.struct_accessibility.into_global(self.target_id),
+                self.struct_accessibility.into_global(self.struct_id.target_id),
             )
             .await;
 

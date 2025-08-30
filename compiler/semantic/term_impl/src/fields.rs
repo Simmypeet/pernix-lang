@@ -11,6 +11,7 @@ use pernixc_resolution::{
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     accessibility::{get_accessibility, Accessibility},
+    get_target_root_module_id,
     parent::get_closest_module_id,
     syntax::get_fields_syntax,
 };
@@ -68,101 +69,128 @@ impl build::Build for pernixc_term::fields::Key {
         let mut field_ids_by_name = HashMap::default();
         let mut field_declaration_order = Vec::new();
 
-        for field_syntax in &syntax_tree.members.members {
-            let field_name = field_syntax.identifier.to_string();
+        if let Some(members) = syntax_tree.members() {
+            for passable_field in members.members() {
+                if let pernixc_syntax::Passable::Line(field_syntax) =
+                    passable_field
+                {
+                    // Get field identifier, skip if missing
+                    let field_identifier = match field_syntax.identifier() {
+                        Some(identifier) => identifier,
+                        None => continue,
+                    };
+                    let field_name = field_identifier.kind.0.to_string();
 
-            // Check for field redefinition
-            if let Some(&existing_field_id) = field_ids_by_name.get(&field_name)
-            {
-                let existing_field = fields.get(existing_field_id).unwrap();
+                    // Check for field redefinition
+                    if let Some(&existing_field_id) =
+                        field_ids_by_name.get(&field_name)
+                    {
+                        let existing_field: &Field =
+                            fields.get(existing_field_id).unwrap();
 
-                storage.receive(Diagnostic::FieldRedefinition(
-                    FieldRedefinition {
-                        field_name: field_name.clone(),
-                        redefinition_span: field_syntax.span(),
-                        original_span: existing_field.span,
-                        struct_id: key.0.id,
-                        target_id: key.0.target_id,
-                    },
-                ));
-                continue;
-            }
+                        storage.receive(Diagnostic::FieldRedefinition(
+                            FieldRedefinition {
+                                field_name: field_name.clone(),
+                                redefinition_span: field_syntax.span(),
+                                original_span: existing_field.span,
+                                struct_id: key.0,
+                            },
+                        ));
+                        continue;
+                    }
 
-            // Resolve field accessibility
-            let field_accessibility =
-                if let Some(access_modifier) = &field_syntax.access_modifier {
-                    create_accessibility_from_modifier(
-                        access_modifier,
-                        key.0.id,
+                    // Resolve field accessibility
+                    let field_accessibility = if let Some(access_modifier) =
+                        field_syntax.access_modifier()
+                    {
+                        create_accessibility_from_modifier(
+                            &access_modifier,
+                            key.0.id,
+                            key.0.target_id,
+                            engine,
+                        )
+                        .await
+                    } else {
+                        struct_accessibility
+                    };
+
+                    // Get field type, skip if missing
+                    let field_type_syntax = match field_syntax.r#type() {
+                        Some(type_syntax) => type_syntax,
+                        None => continue,
+                    };
+
+                    // Resolve field type
+                    let mut field_type = engine
+                        .resolve_type(
+                            &field_type_syntax,
+                            Config::builder()
+                                .observer(&mut occurrences)
+                                .extra_namespace(&extra_namespace)
+                                .referring_site(key.0)
+                                .build(),
+                            &storage,
+                        )
+                        .await?;
+
+                    let premise = engine.get_active_premise(key.0).await?;
+                    let env = Environment::new(
+                        Cow::Borrowed(&premise),
+                        Cow::Borrowed(engine),
+                        normalizer::NO_OP,
+                    );
+
+                    field_type = match env
+                        .simplify_and_check_lifetime_constraints(
+                            &field_type,
+                            &field_type_syntax.span(),
+                            &storage,
+                        )
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(error) => match error {
+                            pernixc_type_system::Error::Overflow(_) => {
+                                Type::Error(pernixc_term::error::Error)
+                            }
+                            pernixc_type_system::Error::CyclicDependency(
+                                cyclic_error,
+                            ) => return Err(cyclic_error),
+                        },
+                    };
+
+                    let field = Field {
+                        accessibility: field_accessibility,
+                        name: field_name.clone(),
+                        r#type: field_type,
+                        span: Some(field_syntax.span()),
+                    };
+
+                    // Check if field is more accessible than struct
+                    if is_more_accessible(
+                        field_accessibility,
+                        struct_accessibility,
                         key.0.target_id,
                         engine,
                     )
-                    .await
-                } else {
-                    struct_accessibility
-                };
-
-            // Resolve field type
-            let mut field_type = engine
-                .resolve_type(
-                    &field_syntax.r#type,
-                    Config::builder()
-                        .observer(&mut occurrences)
-                        .extra_namespace(&extra_namespace)
-                        .referring_site(key.0)
-                        .build(),
-                    &storage,
-                )
-                .await?;
-
-            let premise = engine.get_active_premise(key.0).await?;
-            let env = Environment::new(
-                Cow::Borrowed(&premise),
-                Cow::Borrowed(engine),
-                normalizer::NO_OP,
-            );
-
-            field_type = match env
-                .simplify_and_check_lifetime_constraints(
-                    &field_type,
-                    &field_syntax.r#type.span(),
-                    &storage,
-                )
-                .await
-            {
-                Ok(result) => result,
-                Err(error) => match error {
-                    pernixc_type_system::Error::Overflow(_) => {
-                        Type::Error(pernixc_term::error::Error)
+                    .await?
+                    {
+                        storage.receive(
+                            Diagnostic::FieldMoreAccessibleThanStruct(
+                                FieldMoreAccessibleThanStruct {
+                                    field: field.clone(),
+                                    struct_accessibility,
+                                    struct_id: key.0,
+                                },
+                            ),
+                        );
                     }
-                    pernixc_type_system::Error::CyclicDependency(
-                        cyclic_error,
-                    ) => return Err(cyclic_error),
-                },
-            };
 
-            let field = Field {
-                accessibility: field_accessibility,
-                name: field_name.clone(),
-                r#type: field_type,
-                span: Some(field_syntax.span()),
-            };
-
-            // Check if field is more accessible than struct
-            if is_more_accessible(field_accessibility, struct_accessibility) {
-                storage.receive(Diagnostic::FieldMoreAccessibleThanStruct(
-                    FieldMoreAccessibleThanStruct {
-                        field: field.clone(),
-                        struct_accessibility,
-                        struct_id: key.0.id,
-                        target_id: key.0.target_id,
-                    },
-                ));
+                    let field_id = fields.insert(field);
+                    field_ids_by_name.insert(field_name, field_id);
+                    field_declaration_order.push(field_id);
+                }
             }
-
-            let field_id = fields.insert(field);
-            field_ids_by_name.insert(field_name, field_id);
-            field_declaration_order.push(field_id);
         }
 
         Ok(Output {
@@ -191,22 +219,43 @@ async fn create_accessibility_from_modifier(
         }
         pernixc_syntax::AccessModifier::Public(_) => Accessibility::Public,
         pernixc_syntax::AccessModifier::Internal(_) => {
-            // Internal means accessible within the compilation target
-            // For now, treat as public - this might need refinement
-            Accessibility::Public
+            let root_module_id =
+                engine.get_target_root_module_id(target_id).await;
+            Accessibility::Scoped(root_module_id)
         }
     }
 }
 
 /// Checks if the first accessibility is more accessible than the second.
-fn is_more_accessible(
+async fn is_more_accessible(
     first: pernixc_symbol::accessibility::Accessibility<pernixc_symbol::ID>,
     second: pernixc_symbol::accessibility::Accessibility<pernixc_symbol::ID>,
-) -> bool {
-    use pernixc_symbol::accessibility::Accessibility;
+    target_id: pernixc_target::TargetID,
+    engine: &pernixc_query::TrackedEngine,
+) -> Result<bool, executor::CyclicError> {
+    use pernixc_symbol::{
+        accessibility::Accessibility,
+        parent::{symbol_hierarchy_relationship, HierarchyRelationship},
+    };
 
     match (first, second) {
-        (Accessibility::Public, Accessibility::Scoped(_)) => true,
-        _ => false,
+        (Accessibility::Public, Accessibility::Scoped(_)) => Ok(true),
+        (Accessibility::Scoped(_), Accessibility::Public) => Ok(false),
+        (Accessibility::Public, Accessibility::Public) => Ok(false),
+        (
+            Accessibility::Scoped(first_module),
+            Accessibility::Scoped(second_module),
+        ) => {
+            // If first is a child of second, then first is more accessible
+            let relationship = engine
+                .symbol_hierarchy_relationship(
+                    target_id,
+                    first_module,
+                    second_module,
+                )
+                .await;
+
+            Ok(matches!(relationship, HierarchyRelationship::Child))
+        }
     }
 }
