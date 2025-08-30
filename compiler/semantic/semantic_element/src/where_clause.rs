@@ -24,7 +24,7 @@ use pernixc_target::Global;
 )]
 pub struct Predicate {
     /// The predicate itself.
-    pub predicate: crate::predicate::Predicate,
+    pub predicate: pernixc_term::predicate::Predicate,
 
     /// The span where the predicate was declared.
     pub span: Option<RelativeSpan>,

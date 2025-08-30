@@ -13,6 +13,7 @@ use pernixc_resolution::{
     term::{resolve_lifetime, resolve_type},
     Config, ExtraNamespace,
 };
+use pernixc_semantic_element::where_clause;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
@@ -26,7 +27,6 @@ use pernixc_term::{
     predicate::{self, Compatible, NegativeMarker, PositiveMarker},
     r#type::Type,
     visitor::RecursiveIterator,
-    where_clause,
 };
 
 use crate::{
@@ -499,7 +499,7 @@ async fn create_type_bound_predicates_internal(
     Ok(())
 }
 
-impl build::Build for pernixc_term::where_clause::Key {
+impl build::Build for pernixc_semantic_element::where_clause::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     #[allow(clippy::too_many_lines)]

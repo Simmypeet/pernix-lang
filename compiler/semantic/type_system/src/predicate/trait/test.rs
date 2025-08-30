@@ -1,6 +1,7 @@
 use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 use pernixc_query::Engine;
+use pernixc_semantic_element::where_clause::Predicate;
 use pernixc_symbol::kind::Kind;
 use pernixc_target::{Global, TargetID};
 use pernixc_term::{
@@ -13,7 +14,6 @@ use pernixc_term::{
     predicate::{self, PositiveTrait},
     r#type::{Primitive, Qualifier, Reference, Type},
     tuple::{self, Tuple},
-    where_clause::Predicate,
 };
 
 use crate::{
@@ -71,7 +71,7 @@ async fn single_implementation() {
             )
             .await;
             x.set_input(
-                pernixc_term::where_clause::Key(implements_id),
+                pernixc_semantic_element::where_clause::Key(implements_id),
                 Arc::default(),
             )
             .await;
@@ -226,7 +226,9 @@ async fn specialization_test_internal(case: SpecializationCase) {
             )
             .await;
             x.set_input(
-                pernixc_term::where_clause::Key(specialized_impl_id),
+                pernixc_semantic_element::where_clause::Key(
+                    specialized_impl_id,
+                ),
                 if let SpecializationCase::SpecializedButFallback(ty) = &case {
                     Arc::from([{
                         let impossible_trait_id =
@@ -334,7 +336,7 @@ async fn specialization_test_internal(case: SpecializationCase) {
             )
             .await;
             x.set_input(
-                pernixc_term::where_clause::Key(general_impl_id),
+                pernixc_semantic_element::where_clause::Key(general_impl_id),
                 Arc::default(),
             )
             .await;

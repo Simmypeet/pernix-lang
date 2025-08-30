@@ -40,7 +40,7 @@ pub async fn adt_fields(
                 .chain(variants.unnameds.iter().copied())
             {
                 let Some(ty) = engine
-                    .query(&pernixc_term::variant::Key(
+                    .query(&pernixc_semantic_element::variant::Key(
                         adt_id.target_id.make_global(variant_id),
                     ))
                     .await?

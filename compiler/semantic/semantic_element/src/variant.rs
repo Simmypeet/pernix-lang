@@ -3,8 +3,7 @@
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
-
-use crate::r#type::Type;
+use pernixc_term::r#type::Type;
 
 /// A query key for retrieving the optional associated type of a variant. Every
 /// variant symbol shall have this key whether or not they have associated type.

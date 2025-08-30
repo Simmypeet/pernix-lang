@@ -3,8 +3,11 @@
 use std::{collections::BTreeSet, ops::Deref, sync::Arc};
 
 use pernixc_semantic_element::{
-    implemented::get_implemented, implements::get_implements,
-    implements_arguments::get_implements_argument, variance::Variance,
+    implemented::get_implemented,
+    implements::get_implements,
+    implements_arguments::get_implements_argument,
+    variance::Variance,
+    where_clause::{self, get_where_clause},
 };
 use pernixc_symbol::{
     final_implements::is_implements_final,
@@ -13,11 +16,8 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::GenericArguments,
-    instantiation::Instantiation,
-    predicate::Predicate,
-    r#type::Type,
-    where_clause::{self, get_where_clause},
+    generic_arguments::GenericArguments, instantiation::Instantiation,
+    predicate::Predicate, r#type::Type,
 };
 
 use crate::{

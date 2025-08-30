@@ -16,8 +16,9 @@ use parking_lot::RwLock;
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor, TrackedEngine};
-use pernixc_semantic_element::implied_predicates::{
-    get_implied_predicates, ImpliedPredicate,
+use pernixc_semantic_element::{
+    implied_predicates::{get_implied_predicates, ImpliedPredicate},
+    where_clause::get_where_clause,
 };
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
@@ -25,7 +26,6 @@ use pernixc_term::{
     generic_arguments::{GenericArguments, TraitMember},
     predicate::{Compatible, Predicate},
     r#type::Type,
-    where_clause::get_where_clause,
 };
 
 use crate::{normalizer::Normalizer, OverflowError};

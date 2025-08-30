@@ -25,7 +25,7 @@ pub mod diagnostic;
 #[derive(Debug, Default)]
 pub struct BuildExecutor;
 
-impl build::Build for pernixc_term::variant::Key {
+impl build::Build for pernixc_semantic_element::variant::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(

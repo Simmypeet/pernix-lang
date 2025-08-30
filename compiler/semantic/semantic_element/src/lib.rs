@@ -13,3 +13,5 @@ pub mod implements_arguments;
 pub mod implied_predicates;
 pub mod type_alias;
 pub mod variance;
+pub mod variant;
+pub mod where_clause;
