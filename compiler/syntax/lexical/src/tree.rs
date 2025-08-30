@@ -1024,8 +1024,11 @@ impl Converter<'_, '_> {
         for _ in 0..pop_count {
             let marker = self.indentation_stack.pop().unwrap();
 
+            // Ensure end_index includes at least the colon and newline
+            let marker_end_index = (marker.colon_index + 2).max(end_index);
+
             let mut iter =
-                self.current_nodes.drain(marker.colon_index..end_index);
+                self.current_nodes.drain(marker.colon_index..marker_end_index);
 
             // extract colon and new line
             let colon = iter
@@ -1051,7 +1054,7 @@ impl Converter<'_, '_> {
             );
 
             let mut fragment_kind = FragmentKind::Indentation(Indentation {
-                indentation_size: marker.indentation_size.unwrap(),
+                indentation_size: marker.indentation_size.unwrap_or(0),
                 colon,
                 new_line,
             });
@@ -1127,7 +1130,9 @@ impl Converter<'_, '_> {
                 relative_to: ROOT_BRANCH_ID,
             },
             fragment_kind: FragmentKind::Indentation(Indentation {
-                indentation_size: indentation_marker.indentation_size.unwrap(),
+                indentation_size: indentation_marker
+                    .indentation_size
+                    .unwrap_or(0),
                 colon: Token {
                     kind: colon.kind.into_punctuation().unwrap(),
                     span: colon.span,
