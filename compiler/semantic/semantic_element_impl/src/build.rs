@@ -177,6 +177,6 @@ pub trait Build: pernixc_query::Key {
         key: &'y Self,
     ) -> impl std::future::Future<
         Output = Result<Output<Self>, executor::CyclicError>,
-    > + use<'x,'y, Self>
+    > + use<'x, 'y, Self>
            + Send;
 }

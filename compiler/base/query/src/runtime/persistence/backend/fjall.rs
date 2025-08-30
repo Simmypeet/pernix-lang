@@ -4,9 +4,12 @@ use fjall::PartitionCreateOptions;
 
 use crate::runtime::persistence::backend::tuple_to_array_key;
 
+#[allow(unused)]
 const DATABASE_FILE: &str = "persistence.db";
 
+#[allow(unused)]
 const VALUE_CACHE: &str = "value_cache";
+#[allow(unused)]
 const VALUE_METADATA: &str = "value_metadata";
 
 pub struct Impl {
@@ -31,6 +34,7 @@ impl std::fmt::Debug for Impl {
 }
 
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct FjallBackend(Arc<Impl>);
 
 impl super::Backend for FjallBackend {

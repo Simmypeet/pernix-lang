@@ -100,7 +100,7 @@ impl ScopeWalker<'_> {
 ///
 /// See [`ScopeWalker`] for more information.
 #[extend]
-pub fn scope_walker(self: &TrackedEngine, id: Global<ID>) -> ScopeWalker {
+pub fn scope_walker(self: &TrackedEngine, id: Global<ID>) -> ScopeWalker<'_> {
     ScopeWalker {
         engine: self,
         current_id: Some(id.id),

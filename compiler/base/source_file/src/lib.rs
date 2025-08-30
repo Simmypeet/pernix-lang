@@ -699,7 +699,7 @@ impl SourceMap {
     pub fn get(
         &self,
         id: GlobalSourceID,
-    ) -> Option<Ref<GlobalSourceID, SourceFile>> {
+    ) -> Option<Ref<'_, GlobalSourceID, SourceFile>> {
         self.source_files_by_id.get(&id)
     }
 
@@ -708,7 +708,7 @@ impl SourceMap {
     pub fn get_mut(
         &self,
         id: GlobalSourceID,
-    ) -> Option<RefMut<GlobalSourceID, SourceFile>> {
+    ) -> Option<RefMut<'_, GlobalSourceID, SourceFile>> {
         self.source_files_by_id.get_mut(&id)
     }
 }

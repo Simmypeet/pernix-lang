@@ -33,9 +33,6 @@ use crate::{
 
 pub mod diagnostic;
 
-#[derive(Debug, Default)]
-pub struct BuildExecutor;
-
 impl build::Build for pernixc_semantic_element::fields::Key {
     type Diagnostic = diagnostic::Diagnostic;
 

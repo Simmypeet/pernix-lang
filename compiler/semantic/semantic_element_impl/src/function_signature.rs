@@ -40,7 +40,7 @@ use crate::{
     occurrences::Occurrences, Build,
 };
 
-mod diagnostic;
+pub mod diagnostic;
 
 #[derive(
     Debug,

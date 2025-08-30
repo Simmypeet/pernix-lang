@@ -33,10 +33,12 @@ impl<T: Send + Sync> Storage<T> {
     pub fn into_vec(self) -> Vec<T> { self.errors.into_inner() }
 
     /// Returns a reference to the underlying vector of errors.
-    pub fn as_vec(&self) -> RwLockReadGuard<Vec<T>> { self.errors.read() }
+    pub fn as_vec(&self) -> RwLockReadGuard<'_, Vec<T>> { self.errors.read() }
 
     /// Returns a mutable reference to the underlying vector of errors.
-    pub fn as_vec_mut(&self) -> RwLockWriteGuard<Vec<T>> { self.errors.write() }
+    pub fn as_vec_mut(&self) -> RwLockWriteGuard<'_, Vec<T>> {
+        self.errors.write()
+    }
 
     /// Propagates all diagnostics to the given handler.
     ///

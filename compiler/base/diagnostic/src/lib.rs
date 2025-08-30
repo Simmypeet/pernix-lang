@@ -26,7 +26,7 @@ pub trait Report<Param> {
     fn report(
         &self,
         parameter: Param,
-    ) -> impl Future<Output = Diagnostic<Self::Location>> + Send;
+    ) -> impl Future<Output = Diagnostic<Self::Location>> + Send + use<'_, Self, Param>;
 }
 
 /// Enumeration of the severity levels of a diagnostic.

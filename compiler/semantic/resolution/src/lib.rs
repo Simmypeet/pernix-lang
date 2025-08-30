@@ -190,7 +190,7 @@ pub struct Config<'lp, 'tp, 'cp, 'ob, 'ex> {
 impl Config<'_, '_, '_, '_, '_> {
     /// Creates a new instance of the config.
     #[allow(clippy::option_if_let_else)]
-    pub fn reborrow(&mut self) -> Config {
+    pub fn reborrow(&mut self) -> Config<'_, '_, '_, '_, '_> {
         Config {
             elided_lifetime_provider: match &mut self.elided_lifetime_provider {
                 Some(provider) => Some(&mut **provider),

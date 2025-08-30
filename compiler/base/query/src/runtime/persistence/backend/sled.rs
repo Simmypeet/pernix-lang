@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use crate::runtime::persistence::backend::tuple_to_array_key;
 
+#[allow(unused)]
 const VALUE_CACHE: &[u8] = b"value_cache";
+#[allow(unused)]
 const VALUE_METADATA: &[u8] = b"value_metadata";
 
 #[derive(Debug)]
@@ -22,6 +24,7 @@ impl Impl {
 }
 
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct SledBackend(Arc<Impl>);
 
 impl super::Backend for SledBackend {
