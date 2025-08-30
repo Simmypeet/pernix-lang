@@ -55,7 +55,7 @@ pub async fn adt_fields(
         Kind::Struct => {
             results.extend(
                 engine
-                    .query(&pernixc_term::fields::Key(adt_id))
+                    .query(&pernixc_semantic_element::fields::Key(adt_id))
                     .await?
                     .fields
                     .iter()

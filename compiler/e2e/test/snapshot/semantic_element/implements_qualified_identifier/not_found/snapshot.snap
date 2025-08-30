@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the symbol could not be found
+  ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/not_found/main.pnx:1:19
+  │
+1 │ implements['a, T] NotFound['a, 'b, T, U]:
+  │                   ^^^^^^^^ the symbol named `NotFound` does not exist in `main`
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

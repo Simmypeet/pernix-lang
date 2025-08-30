@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the left-hand side of the type equality predicate must be a trait associated type
+  ╭─ compiler/e2e/test/snapshot/semantic_element/where_clause/unexpected_type_equality/main.pnx:7:9
+  │
+7 │         T = Identity[T]::Output
+  │         ^
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

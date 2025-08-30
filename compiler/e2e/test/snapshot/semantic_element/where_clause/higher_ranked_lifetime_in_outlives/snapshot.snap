@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: forall lifetimes cannot appear in the outlives predicate
+  ╭─ compiler/e2e/test/snapshot/semantic_element/where_clause/higher_ranked_lifetime_in_outlives/main.pnx:3:17
+  │
+3 │         for['x] &'x T: 'static
+  │                 ^^^^^ the forall lifetime(s) `x` cannot appear in the outlives predicate
+
+error: forall lifetimes cannot appear in the outlives predicate
+  ╭─ compiler/e2e/test/snapshot/semantic_element/where_clause/higher_ranked_lifetime_in_outlives/main.pnx:4:29
+  │
+4 │         for['y] &'static T: 'y 
+  │                             ^^ the forall lifetime(s) `y` cannot appear in the outlives predicate
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

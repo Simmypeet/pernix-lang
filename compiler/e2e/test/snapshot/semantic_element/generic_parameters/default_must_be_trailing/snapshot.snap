@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the default generic parameter must be trailing
+  ╭─ compiler/e2e/test/snapshot/semantic_element/generic_parameters/default_must_be_trailing/main.pnx:1:23
+  │
+1 │ public type Test[T, U = int32, V] = int32
+  │                       ^^^^^^^
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

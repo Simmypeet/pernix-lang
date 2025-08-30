@@ -1,0 +1,28 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the symbol could not be found
+   ╭─ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:16:16
+   │
+16 │     UseUnknown(Unknown)
+   │                ^^^^^^^ the symbol named `Unknown` does not exist in `main`
+
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:19:28
+   │
+19 │     UseTraitAssociatedType(Fizz['b, T]::Output)
+   │                            ^^^^^^^^^^^^^^^^^^^ the predicate `'a: 'b` is not satisfied
+
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/semantic_element/variant/main.pnx:19:28
+   │
+19 │     UseTraitAssociatedType(Fizz['b, T]::Output)
+   │                            ^^^^^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+
+error: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

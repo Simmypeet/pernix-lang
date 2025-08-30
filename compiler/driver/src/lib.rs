@@ -245,7 +245,7 @@ pub async fn run(
     pernixc_symbol::register_serde(&mut serde_registry);
     pernixc_type_system::register_serde(&mut serde_registry);
     pernixc_resolution::register_serde(&mut serde_registry);
-    pernixc_term_impl::register_serde(&mut serde_registry);
+    pernixc_semantic_element_impl::register_serde(&mut serde_registry);
 
     let mut engine = Engine::default();
 
@@ -306,7 +306,7 @@ pub async fn run(
         pernixc_symbol::skip_persistence(persistence);
         pernixc_type_system::skip_persistence(persistence);
         pernixc_resolution::skip_persistence(persistence);
-        pernixc_term_impl::skip_persistence(persistence);
+        pernixc_semantic_element_impl::skip_persistence(persistence);
     }
 
     // final step, setup the query executors for the engine
@@ -317,7 +317,9 @@ pub async fn run(
     pernixc_symbol::register_executors(&mut engine.runtime.executor);
     pernixc_type_system::register_executors(&mut engine.runtime.executor);
     pernixc_resolution::register_executors(&mut engine.runtime.executor);
-    pernixc_term_impl::register_executors(&mut engine.runtime.executor);
+    pernixc_semantic_element_impl::register_executors(
+        &mut engine.runtime.executor,
+    );
 
     // set the initial input, the invocation arguments
     let local_target_id =
@@ -379,7 +381,7 @@ pub async fn run(
             .unwrap();
 
         let term_errors = tracked_engine
-            .query(&pernixc_term_impl::diagnostic::AllRenderedKey(
+            .query(&pernixc_semantic_element_impl::diagnostic::AllRenderedKey(
                 local_target_id,
             ))
             .await

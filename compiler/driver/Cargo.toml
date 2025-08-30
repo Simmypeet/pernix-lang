@@ -22,7 +22,7 @@ pernixc_symbol = { path = "../semantic/symbol" }
 pernixc_syntax = { path = "../syntax/syntax" }
 pernixc_type_system = { path = "../semantic/type_system" }
 pernixc_resolution = { path = "../semantic/resolution" }
-pernixc_term_impl = { path = "../semantic/term_impl" }
+pernixc_semantic_element_impl = { path = "../semantic/semantic_element_impl" }
 clap = { workspace = true }
 codespan-reporting = { workspace = true }
 derive_more = { workspace = true }
