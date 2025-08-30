@@ -1,0 +1,7 @@
+public enum A['a, T: 'a]: 
+    Invariant(&'a mut T)
+    Covariant(B['a, T])
+
+
+public struct B['a, T: 'a]:
+    public a: A['a, T]

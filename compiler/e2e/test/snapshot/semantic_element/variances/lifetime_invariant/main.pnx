@@ -1,0 +1,6 @@
+public struct Ref['a, T: 'a]:
+    public value: &'a T
+
+
+public struct Test['a, 'b, T: 'a]:
+    public test: &'a mut Ref['b, T]

@@ -1,0 +1,3 @@
+public struct Test[Co, In: 'static]:
+    public covariant: (Co,)
+    public invariant: &'static mut In
