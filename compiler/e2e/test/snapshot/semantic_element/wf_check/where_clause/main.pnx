@@ -9,14 +9,45 @@ public trait Identity[T]:
     public type Output
 
 
-public type Constrained['x, 'a, T] = T:
+public type ConstrainedInvariant['x, 'a, T] = T:
     where:
         'a: 'x
         Identity[T]::Output = Invariant['x, 'a]
 
 
-public type Use['x, 'a, 'b, T] = Constrained['x, 'a, T]:
+# should error with 'b: 'a and 'a: 'b
+public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
     where:
         'a: 'x
         'b: 'x
         Identity[T]::Output = Invariant['x, 'b]
+
+
+public struct Covariant['a]:
+    private immutableRef: &'a int32
+
+
+public type ConstrainedCovariant['a, T] = T:
+    where:
+        Identity[T]::Output = Covariant['a]
+
+
+# should error with 'b: 'a
+public type UseVariant['a, 'b, T] = ConstrainedCovariant['a, T]:
+    where:
+        Identity[T]::Output = Covariant['b]
+
+
+public struct ConstraintLifetime['a, T]:
+    where:
+        T: 'a
+
+
+# should have no error since T: 'static
+public type UseConstraintLifetimeWithStatic['a, T] = ConstraintLifetime['a, T]:
+    where:
+        T: 'static 
+
+
+# should error with T: 'a
+public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
