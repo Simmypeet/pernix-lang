@@ -37,6 +37,7 @@ pub fn register_executors(
     executor: &mut pernixc_query::runtime::executor::Registry,
 ) {
     executor.register(Arc::new(order::ImplementsOrderExecutor));
+    executor.register(Arc::new(adt_fields::Executor));
 }
 
 /// Registers all the necessary runtime information for the query engine.
@@ -50,6 +51,7 @@ pub fn register_serde<
     S::Error: Send + Sync,
 {
     serde_registry.register::<order::Key>();
+    serde_registry.register::<adt_fields::Key>();
 }
 
 /// Registers the keys that should be skipped during serialization and
