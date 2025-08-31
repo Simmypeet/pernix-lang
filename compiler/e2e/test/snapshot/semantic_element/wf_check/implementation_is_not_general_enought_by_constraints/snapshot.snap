@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: implementation is not general enough
+   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/implementation_is_not_general_enought_by_constraints/main.pnx:26:29
+   │
+ 9 │ final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
+   │                                 ------------------- this implementation was used but its lifetimes are not general enough
+   ·
+16 │         trait for['x] Fizz['x, T]
+   │               ------------------- the predicate is declared here
+   ·
+26 │ public type Second['a, T] = WithRequirement[&'a mut T]:
+   │                             ^^^^^^^^^^^^^^^^^^^^^^^^^^ the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, &'a mut T]
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

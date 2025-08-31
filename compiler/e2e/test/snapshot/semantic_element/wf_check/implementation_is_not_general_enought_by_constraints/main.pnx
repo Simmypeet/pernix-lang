@@ -1,0 +1,28 @@
+public trait Fizz['a, T]:
+    pass
+
+
+final implements['a, 'b, T: 'b] Fizz['a, &'b T]:
+    pass
+
+
+final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
+    where:
+        'a: 'b # this constraint makes lifetime 'a be specific to 'b
+
+
+public type WithRequirement[T] = T:
+    where:
+        trait for['x] Fizz['x, T]
+
+
+# this instantiation is valid
+public type First['a, T] = WithRequirement[&'a T]:
+    where:
+        T: 'a
+
+
+# this instantiation is invalid (not general enough)
+public type Second['a, T] = WithRequirement[&'a mut T]:
+    where:
+        T: 'a
