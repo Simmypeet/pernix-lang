@@ -1475,6 +1475,7 @@ dependencies = [
  "pernixc_serialize",
  "pernixc_source_file",
  "pernixc_stable_hash",
+ "pernixc_stable_type_id",
  "pernixc_syntax",
  "pernixc_target",
  "pernixc_tokio",

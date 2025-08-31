@@ -334,6 +334,13 @@ pub async fn run(
                 Arc::new(std::iter::empty().collect()),
             )
             .await;
+
+            x.set_input(
+                pernixc_target::AllTargetIDsKey,
+                Arc::new(std::iter::once(local_target_id).collect()),
+            )
+            .await;
+
             x.set_input(
                 pernixc_target::MapKey,
                 Arc::new(

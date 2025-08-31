@@ -43,7 +43,7 @@ use crate::{
     diagnostic::{
         Diagnostic, ItemRedefinition, RecursiveFileRequest, SourceFileLoadFail,
     },
-    kind::Kind,
+    kind::{EqualsFilter, Kind},
     member::Member,
 };
 
@@ -70,7 +70,9 @@ pub fn register_executors(
     executor.register(Arc::new(accessibility::MemberIsMoreAccessibleExecutor));
 
     executor.register(Arc::new(kind::Executor));
-    executor.register(Arc::new(kind::AllSymbolOfKindExecutor));
+    executor.register::<kind::FilterKey<EqualsFilter>, _>(Arc::new(
+        kind::FilterExecutor,
+    ));
 
     executor.register(Arc::new(member::Executor));
 
@@ -124,7 +126,7 @@ pub fn register_serde<
     serde_registry.register::<accessibility::MemberIsMoreAaccessibleKey>();
 
     serde_registry.register::<kind::Key>();
-    serde_registry.register::<kind::AllSymbolOfKindKey>();
+    serde_registry.register::<kind::FilterKey<EqualsFilter>>();
 
     serde_registry.register::<member::Key>();
 

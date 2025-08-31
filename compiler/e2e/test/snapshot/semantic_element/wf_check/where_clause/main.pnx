@@ -1,0 +1,14 @@
+public struct Invariant['a]:
+    private mutableRef: &'a mut int32
+
+
+public trait Identity[T]:
+    public type Output
+
+
+public type Constrained['a, T] = T:
+    where:
+        Identity[T]::Output = Invariant['a]
+
+
+public type Use['a, 'b, T] = Constrained['a, T]

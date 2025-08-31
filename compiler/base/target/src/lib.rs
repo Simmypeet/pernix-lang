@@ -483,6 +483,8 @@ pub fn register_serde<
     serde_registry.register::<LinkKey>();
     serde_registry.register::<MapKey>();
     serde_registry.register::<SeedKey>();
+    serde_registry.register::<LocalTargetIDKey>();
+    serde_registry.register::<AllTargetIDsKey>();
 }
 
 /// Registers the keys that should be skipped during serialization and
@@ -590,6 +592,35 @@ pub struct LocalTargetIDKey;
 #[extend]
 async fn get_local_target_id(self: &TrackedEngine) -> TargetID {
     self.query(&LocalTargetIDKey)
+        .await
+        .expect("should have no cyclic dependencies")
+}
+
+/// A query for retrieving all the target IDs, including the downstream
+/// dependencies.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    pernixc_query::Key,
+)]
+#[value(Arc<HashSet<TargetID>>)]
+pub struct AllTargetIDsKey;
+
+/// Retrieves all the target IDs possible in the current session.
+///
+/// This includes all the target IDs of all the downstream dependencies.
+#[extend]
+async fn get_all_target_ids(self: &TrackedEngine) -> Arc<HashSet<TargetID>> {
+    self.query(&AllTargetIDsKey)
         .await
         .expect("should have no cyclic dependencies")
 }

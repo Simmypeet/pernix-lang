@@ -17,7 +17,7 @@ use pernixc_target::{Global, TargetID};
 use pernixc_tokio::{join_list::JoinList, scoped};
 
 use crate::{
-    kind::Kind,
+    kind::{get_all_symbols_of_kind, Kind},
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
     span::get_span,
@@ -323,12 +323,8 @@ async fn populate_module_import_diagnostics(
         Result<(ID, Arc<[crate::import::diagnostic::Diagnostic]>), CyclicError>,
     >,
 ) -> Result<(), CyclicError> {
-    let all_modules = engine
-        .query(&crate::kind::AllSymbolOfKindKey {
-            target_id,
-            kind: Kind::Module,
-        })
-        .await?;
+    let all_modules =
+        engine.get_all_symbols_of_kind(target_id, Kind::Module).await;
 
     for module_id in all_modules.iter().copied() {
         let engine = engine.clone();
@@ -357,12 +353,8 @@ async fn populate_member_is_more_accessible_diagnostics(
         >,
     >,
 ) -> Result<(), CyclicError> {
-    let all_traits = engine
-        .query(&crate::kind::AllSymbolOfKindKey {
-            target_id,
-            kind: Kind::Trait,
-        })
-        .await?;
+    let all_traits =
+        engine.get_all_symbols_of_kind(target_id, Kind::Trait).await;
 
     for trait_id in all_traits.iter().copied() {
         let engine = engine.clone();
