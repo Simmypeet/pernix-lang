@@ -1033,19 +1033,11 @@ impl Checker<'_> {
 }
 
 pub(super) async fn check_occurrences(
-    engine: &TrackedEngine,
     occurrences: &Occurrences,
-    global_id: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, normalizer::NoOp>,
     storage: &Storage<Diagnostic>,
 ) -> Result<(), executor::CyclicError> {
-    let active_premise = engine.get_active_premise(global_id).await?;
-    let environment = Environment::new(
-        Cow::Borrowed(&active_premise),
-        Cow::Borrowed(engine),
-        normalizer::NO_OP,
-    );
-
-    let checker = Checker { environment: &environment, handler: storage };
+    let checker = Checker { environment, handler: storage };
 
     // check resolution occurrences
     for (resolution, span) in &occurrences.resolutions {
@@ -1155,10 +1147,16 @@ pub async fn wf_check_executors(
         );
     }
 
+    let active_premise = tracked_engine.get_active_premise(global_id).await?;
+    let environment = Environment::new(
+        Cow::Borrowed(&active_premise),
+        Cow::Borrowed(tracked_engine),
+        normalizer::NO_OP,
+    );
+
     let storage = Storage::<Diagnostic>::default();
     for occurrence in occurrences {
-        check_occurrences(tracked_engine, &occurrence, global_id, &storage)
-            .await?;
+        check_occurrences(&occurrence, &environment, &storage).await?;
     }
 
     Ok(storage.into_vec().into())

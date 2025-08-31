@@ -6,8 +6,9 @@ use pernixc_query::runtime::persistence::serde::DynamicRegistry;
 use pernixc_serialize::{
     de::Deserializer, ser::Serializer, Deserialize, Serialize,
 };
+use pernixc_symbol::kind::FilterKey;
 
-use crate::build::Build;
+use crate::{build::Build, implemented::ImplementationFilter};
 
 pub mod diagnostic;
 
@@ -15,6 +16,7 @@ mod build;
 mod fields;
 mod function_signature;
 mod generic_parameters;
+mod implemented;
 mod implements_qualified_identifier;
 mod occurrences;
 mod parameters;
@@ -78,6 +80,12 @@ pub fn register_executors(
         implements_qualified_identifier::ExtractGenericArguments,
     ));
 
+    registry.register(Arc::new(implemented::InTargetExecutor));
+    registry.register::<FilterKey<ImplementationFilter>, _>(Arc::new(
+        pernixc_symbol::kind::FilterExecutor,
+    ));
+    registry.register(Arc::new(implemented::Executor));
+
     registry.register(Arc::new(function_signature::ParametersExecutor));
     registry.register(Arc::new(function_signature::ReturnTypeExecutor));
     registry
@@ -85,7 +93,8 @@ pub fn register_executors(
     registry.register(Arc::new(function_signature::ImpliedPredicatesExecutor));
     registry.register(Arc::new(function_signature::ElidedLifetimesExecutor));
 
-    registry.register(Arc::new(variance::VariancesMapExecutor));
+    registry.register(Arc::new(variance::MapExecutor));
+    registry.register(Arc::new(variance::Executor));
 
     registry.register(Arc::new(wf_check::Executor));
 
@@ -123,10 +132,13 @@ pub fn register_serde<
     );
     register_term_serde::<function_signature::Key, _, _, _>(serde_registry);
 
-    serde_registry.register::<pernixc_semantic_element::implemented::Key>();
     serde_registry.register::<pernixc_semantic_element::implements::Key>();
     serde_registry
         .register::<pernixc_semantic_element::implements_arguments::Key>();
+
+    serde_registry.register::<pernixc_semantic_element::implemented::Key>();
+    serde_registry.register::<FilterKey<ImplementationFilter>>();
+    serde_registry.register::<implemented::InTargetKey>();
 
     serde_registry.register::<pernixc_semantic_element::parameter::Key>();
     serde_registry.register::<pernixc_semantic_element::return_type::Key>();
@@ -136,7 +148,8 @@ pub fn register_serde<
     serde_registry
         .register::<pernixc_semantic_element::late_bound_lifetime::Key>();
 
-    serde_registry.register::<variance::Key>();
+    serde_registry.register::<variance::MapKey>();
+    serde_registry.register::<pernixc_semantic_element::variance::Key>();
 
     serde_registry.register::<wf_check::Key>();
 

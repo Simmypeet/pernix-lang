@@ -481,10 +481,10 @@ impl Context {
 }
 
 #[pernixc_query::query(
-    key(Key),
+    key(MapKey),
     value(Arc<HashMap<pernixc_symbol::ID, Arc<Variances>>>),
     id(TargetID),
-    executor(VariancesMapExecutor)
+    executor(MapExecutor)
 )]
 pub async fn get_variance_maps(
     target_id: TargetID,
@@ -566,4 +566,19 @@ pub async fn get_variance_maps(
             .map(|(k, v)| (k, Arc::new(v)))
             .collect(),
     ))
+}
+
+#[pernixc_query::executor(
+    key(pernixc_semantic_element::variance::Key),
+    name(Executor)
+)]
+pub async fn executor(
+    key: &pernixc_semantic_element::variance::Key,
+    engine: &TrackedEngine,
+) -> Result<Arc<Variances>, executor::CyclicError> {
+    let variance_maps = engine.query(&MapKey(key.0.target_id)).await?;
+
+    let variances = variance_maps.get(&key.0.id).cloned().unwrap();
+
+    Ok(variances)
 }

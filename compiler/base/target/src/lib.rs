@@ -619,7 +619,9 @@ pub struct AllTargetIDsKey;
 ///
 /// This includes all the target IDs of all the downstream dependencies.
 #[extend]
-async fn get_all_target_ids(self: &TrackedEngine) -> Arc<HashSet<TargetID>> {
+pub async fn get_all_target_ids(
+    self: &TrackedEngine,
+) -> Arc<HashSet<TargetID>> {
     self.query(&AllTargetIDsKey)
         .await
         .expect("should have no cyclic dependencies")
