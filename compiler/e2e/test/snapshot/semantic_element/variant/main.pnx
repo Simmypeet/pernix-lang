@@ -9,6 +9,7 @@ public struct MyStruct:
 public enum Test['a, 'b, T, U]:
     where:
         Fizz['a, T]::Output = int32
+        trait for['x] Fizz['x, T]
         
     UseT(T)
     UseU(U)

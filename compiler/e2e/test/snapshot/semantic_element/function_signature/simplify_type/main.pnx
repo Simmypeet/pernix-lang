@@ -9,5 +9,6 @@ public function simplifyType['x, 'y, 'z, T](
 ) -> Identity[T]::Output['z]:
     where:
         Identity[T]::Output['x] = int32
+        trait Identity[T]
         
     return first

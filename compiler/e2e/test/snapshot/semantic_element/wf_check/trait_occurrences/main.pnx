@@ -1,0 +1,14 @@
+public trait Foo['a, T]:
+    public type Output
+
+
+public struct Bar['a, T]:
+    public first: Foo['a, T]::Output
+
+
+public struct Qux['a, 'b, T]:
+    where:
+        trait Foo['a, T]
+
+    public first: Foo['b, T]::Output
+ 

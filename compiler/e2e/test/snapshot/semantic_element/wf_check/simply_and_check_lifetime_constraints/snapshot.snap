@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/simply_and_check_lifetime_constraints/main.pnx:10:19
+   │
+10 │     public first: Foo['b, T]::Bar # this is an error
+   │                   ^^^^^^^^^^^^^^^ the predicate `'a: 'b` is not satisfied
+
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/simply_and_check_lifetime_constraints/main.pnx:10:19
+   │
+10 │     public first: Foo['b, T]::Bar # this is an error
+   │                   ^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

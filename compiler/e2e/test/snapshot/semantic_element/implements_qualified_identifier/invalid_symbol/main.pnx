@@ -21,9 +21,6 @@ implements math:
     pass
 
 
-implements[T] Identity[T]::Output:
-    pass
-
 
 public type Reference['a, T] = &'a T:
     where:

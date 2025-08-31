@@ -1,0 +1,12 @@
+public trait Foo['a, T]:
+    public type Bar
+
+
+public struct Baz['a, 'b, T] :
+    where:
+        trait for['x] Foo['x, T]
+        Foo['a, T]::Bar = int32
+
+    public first: Foo['b, T]::Bar # this is an error
+    public second: &'a int32
+    public third: &'b int32

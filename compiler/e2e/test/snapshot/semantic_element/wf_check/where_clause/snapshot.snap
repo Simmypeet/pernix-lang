@@ -4,30 +4,30 @@ expression: clean_run
 ---
 stderr:
 error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:19:43
+   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:20:43
    │
-19 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
+20 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
    │                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'a: 'b` is not satisfied
 
 error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:19:43
+   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:20:43
    │
-19 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
+20 │ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
    │                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
 
 error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:36:37
+   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:39:37
    │
-36 │ public type UseVariant['a, 'b, T] = ConstrainedCovariant['a, T]:
+39 │ public type UseVariant['a, 'b, T] = ConstrainedCovariant['a, T]:
    │                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
 
 error: unsatisfied predicate
-   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:53:44
+   ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:57:44
    │
-43 │         T: 'a
+47 │         T: 'a
    │            -- the required predicate was declared here
    ·
-53 │ public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
+57 │ public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
    │                                            ^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `T: 'a` is not satisfied
 
 error: Compilation aborted due to 4 error(s)

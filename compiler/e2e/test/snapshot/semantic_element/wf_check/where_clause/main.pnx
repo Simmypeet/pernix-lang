@@ -13,6 +13,7 @@ public type ConstrainedInvariant['x, 'a, T] = T:
     where:
         'a: 'x
         Identity[T]::Output = Invariant['x, 'a]
+        trait Identity[T]
 
 
 # should error with 'b: 'a and 'a: 'b
@@ -21,6 +22,7 @@ public type UseInvariant['x, 'a, 'b, T] = ConstrainedInvariant['x, 'a, T]:
         'a: 'x
         'b: 'x
         Identity[T]::Output = Invariant['x, 'b]
+        trait Identity[T]
 
 
 public struct Covariant['a]:
@@ -30,12 +32,14 @@ public struct Covariant['a]:
 public type ConstrainedCovariant['a, T] = T:
     where:
         Identity[T]::Output = Covariant['a]
+        trait Identity[T]
 
 
 # should error with 'b: 'a
 public type UseVariant['a, 'b, T] = ConstrainedCovariant['a, T]:
     where:
         Identity[T]::Output = Covariant['b]
+        trait Identity[T]
 
 
 public struct ConstraintLifetime['a, T]:
@@ -60,6 +64,7 @@ public struct Bivariant['a]:
 public type ConstraintBivariant['a, T] = T:
     where:
         Identity[T]::Output = Bivariant['a]
+        trait Identity[T]
 
 
 # should have no lifetime errors, since the lifetime 'a  of `Bivariant` is
@@ -67,3 +72,4 @@ public type ConstraintBivariant['a, T] = T:
 public type UseConstraintBivariant['a, 'b, T] = ConstraintBivariant['a, T]:
     where:
         Identity[T]::Output = Bivariant['b]
+        trait Identity[T]

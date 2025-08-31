@@ -306,7 +306,8 @@ impl Checker<'_> {
                             trait_id,
                             member_generic.parent_generic_arguments.clone(),
                             resolution_span,
-                        );
+                        )
+                        .await;
 
                         None
                     }
