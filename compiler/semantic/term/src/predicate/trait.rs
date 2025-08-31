@@ -60,7 +60,7 @@ impl crate::display::Display for Positive {
         formatter: &mut crate::display::Formatter<'_>,
     ) -> std::fmt::Result {
         let qualified_name = engine.get_qualified_name(self.trait_id).await;
-        write!(formatter, "marker {qualified_name}")?;
+        write!(formatter, "trait {qualified_name}")?;
         self.generic_arguments.fmt(engine, formatter).await
     }
 }
@@ -110,7 +110,7 @@ impl crate::display::Display for Negative {
         formatter: &mut crate::display::Formatter<'_>,
     ) -> std::fmt::Result {
         let qualified_name = engine.get_qualified_name(self.trait_id).await;
-        write!(formatter, "marker !{qualified_name}")?;
+        write!(formatter, "trait !{qualified_name}")?;
         self.generic_arguments.fmt(engine, formatter).await
     }
 }

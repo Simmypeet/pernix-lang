@@ -1,0 +1,21 @@
+public trait Fizz['a, T]:
+    pass
+
+
+public trait Identity[T]:
+    public type Output
+
+
+implements[T] Identity[T]:
+    type Output = int32
+
+
+public type Qux['a, T] = &'a T:
+    where:
+        trait Fizz['a, T] + Identity[T]
+        Identity[T]::Output = T
+        T: 'a + const + tuple
+        'a: 'static
+
+
+public type Instantiate['a, 'b] = Qux['a, &'b float32]
