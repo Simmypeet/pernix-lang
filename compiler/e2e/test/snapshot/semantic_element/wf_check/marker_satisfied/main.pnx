@@ -1,0 +1,36 @@
+public marker Marker[T]
+
+
+final implements Marker[int32]
+
+
+final implements Marker[bool]
+
+
+public struct MyStruct:
+    public a: int32
+    public b: bool
+
+
+public struct EmptyStruct:
+    pass
+
+
+public enum MyEnum:
+    A(int32)
+    B(bool)
+
+
+public enum EmptyEnum:
+    pass
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker Marker[T]
+
+
+public type InstMyStruct    = WithRequirement[MyStruct]
+public type InstEmptyStruct = WithRequirement[EmptyStruct]
+public type InstMyEnum      = WithRequirement[MyEnum]
+public type InstEmptyEnum   = WithRequirement[EmptyEnum]

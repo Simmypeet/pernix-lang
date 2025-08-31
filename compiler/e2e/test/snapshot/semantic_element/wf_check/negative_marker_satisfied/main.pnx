@@ -1,0 +1,18 @@
+public marker Marker[T]
+
+
+final implements Marker[int32]:
+    pass
+
+
+public struct MyStruct:
+    public a: int32
+    public b: bool
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker not Marker[T]
+
+
+public type InstMyStruct = WithRequirement[MyStruct]

@@ -1,0 +1,22 @@
+public marker Marker[T]
+
+
+final implements Marker[int32]:
+    pass
+
+
+public struct EmptyStruct:
+    pass
+    
+
+public enum EmptyEnum:
+    pass
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker not Marker[T]
+
+
+public type InstEmptyStruct = WithRequirement[EmptyStruct]
+public type InstEmptyEnum   = WithRequirement[EmptyEnum]

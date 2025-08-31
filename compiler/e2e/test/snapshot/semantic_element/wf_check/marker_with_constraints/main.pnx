@@ -1,0 +1,24 @@
+public marker Fizz[T]
+public marker Buzz[T]
+
+
+final implements Fizz[int32]:
+    pass
+
+
+final implements[T] Buzz[(T,)]:
+    where:
+        marker Fizz[T]
+
+
+public struct MyStruct:
+    public a: (int32,)
+    public b: (bool,)
+
+
+public type WithRequirement[T] = T:
+    where:
+        marker Buzz[T]
+
+
+public type InstMyStruct = WithRequirement[MyStruct]
