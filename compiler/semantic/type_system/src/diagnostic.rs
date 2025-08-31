@@ -228,6 +228,17 @@ impl Report<&TrackedEngine> for PredicateSatisfiabilityOverflow {
                 "try reduce the complexity of the code; this error is the \
                  limitation of the type-system/compiler",
             )
+            .related(match &self.predicate_declaration_span {
+                Some(span) => {
+                    let declaration_span = engine.to_absolute_span(span).await;
+
+                    vec![Highlight::builder()
+                        .span(declaration_span)
+                        .message("the required predicate was declared here")
+                        .build()]
+                }
+                None => Vec::new(),
+            })
             .build()
     }
 }
@@ -283,6 +294,17 @@ impl Report<&TrackedEngine> for UnsatisfiedPredicate {
                     .build(),
             )
             .message("unsatisfied predicate")
+            .related(match &self.predicate_declaration_span {
+                Some(span) => {
+                    let declaration_span = engine.to_absolute_span(span).await;
+
+                    vec![Highlight::builder()
+                        .span(declaration_span)
+                        .message("the required predicate was declared here")
+                        .build()]
+                }
+                None => Vec::new(),
+            })
             .build()
     }
 }

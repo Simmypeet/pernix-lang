@@ -24,6 +24,9 @@ error: unsatisfied predicate
 error: unsatisfied predicate
    ╭─ compiler/e2e/test/snapshot/semantic_element/wf_check/where_clause/main.pnx:53:44
    │
+43 │         T: 'a
+   │            -- the required predicate was declared here
+   ·
 53 │ public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
    │                                            ^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `T: 'a` is not satisfied
 

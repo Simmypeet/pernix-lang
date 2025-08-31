@@ -81,17 +81,20 @@ pub async fn implemented_in_target_executor(
                 let engine = engine.clone();
 
                 scoped.spawn(async move {
-                    engine.get_implements(implementation).await
+                    engine
+                        .get_implements(implementation)
+                        .await
+                        .map(|x| (implementation, x))
                 });
             }
 
             while let Some(result) = scoped.next().await {
-                let Some(result) = result? else {
+                let (implementation_id, Some(implemented_id)) = result? else {
                     continue;
                 };
 
-                if result == key.implementable_id {
-                    results.insert(result);
+                if implemented_id == key.implementable_id {
+                    results.insert(implementation_id);
                 }
             }
 

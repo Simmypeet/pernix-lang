@@ -1,0 +1,15 @@
+public trait Fizz[T]:
+    pass
+
+
+final implements[T] Fizz[T]:
+    where:
+        T: 'static
+
+
+public struct RequiresFizz[T]:
+    where:
+        trait Fizz[T]
+
+
+public type UseFizz[T] = RequiresFizz[T]
