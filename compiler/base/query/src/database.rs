@@ -208,9 +208,9 @@ impl TrackedEngine {
     ///
     /// # Safety
     ///
-    /// This is purely for optimization in a very specific case that tells the
+    /// This is purely for optimization in a very specific case telling the
     /// engine that; any queries after this point when are verified in the next
-    /// database tick, he query-engine can reverify the queries in parallel
+    /// database tick, the query-engine can reverify the queries in parallel
     /// out-of-order.
     pub unsafe fn start_parallel(&self) {
         let mut running = self
@@ -244,9 +244,9 @@ impl TrackedEngine {
     ///
     /// # Safety
     ///
-    /// This is purely for optimization in a very specific case that tells the
+    /// This is purely for optimization in a very specific case telling the
     /// engine that; any queries after this point when are verified in the next
-    /// database tick, he query-engine can reverify the queries in parallel
+    /// database tick, the query-engine can reverify the queries in parallel
     /// out-of-order.
     pub unsafe fn end_parallel(&self) {
         let mut running = self

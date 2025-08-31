@@ -96,6 +96,7 @@ pub fn register_executors(
     registry.register(Arc::new(function_signature::ElidedLifetimesExecutor));
 
     registry.register(Arc::new(variance::MapExecutor));
+    registry.register(Arc::new(variance::ConstraintsExecutor));
     registry.register(Arc::new(variance::Executor));
     registry.register::<FilterKey<AdtFilter>, _>(Arc::new(
         pernixc_symbol::kind::FilterExecutor,
@@ -155,6 +156,7 @@ pub fn register_serde<
 
     serde_registry.register::<variance::MapKey>();
     serde_registry.register::<pernixc_semantic_element::variance::Key>();
+    serde_registry.register::<variance::ConstraintsKey>();
     serde_registry.register::<FilterKey<AdtFilter>>();
 
     serde_registry.register::<wf_check::Key>();
