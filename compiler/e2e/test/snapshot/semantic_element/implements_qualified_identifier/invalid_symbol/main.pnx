@@ -25,17 +25,27 @@ implements[T] Identity[T]::Output:
     pass
 
 
-public type Reference['a, T] = &'a T
+public type Reference['a, T] = &'a T:
+    where:
+        T: 'a
 
 
-public type MutableReference['a, T] = &'a mut T
+public type MutableReference['a, T] = &'a mut T:
+    where:
+        T: 'a
 
 
 implements['a, T] Reference['a, T]:
+    where:
+        T: 'a
+
     pass
 
 
 implements['a, T] MutableReference['a, T]:
+    where:
+        T: 'a
+
     pass
 
 

@@ -19,6 +19,7 @@ use crate::{
     build::DiagnosticKey as BuildDiagnosticKey,
     function_signature::Key as FunctionSignatureKey,
     implements_qualified_identifier::Key as ImplementsQualifiedIdentifierKey,
+    wf_check,
 };
 
 #[pernixc_query::query(
@@ -101,6 +102,13 @@ pub async fn single_rendered_executor(
             .query(&BuildDiagnosticKey::new(FunctionSignatureKey(id)))
             .await?;
 
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
+    {
+        let diags = engine.query(&wf_check::Key(id)).await?;
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);
         }

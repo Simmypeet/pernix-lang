@@ -21,6 +21,7 @@ mod parameters;
 mod type_alias;
 mod variance;
 mod variant;
+mod wf_check;
 mod where_clause;
 
 fn register_term_executors<K: Build>(
@@ -86,6 +87,8 @@ pub fn register_executors(
 
     registry.register(Arc::new(variance::VariancesMapExecutor));
 
+    registry.register(Arc::new(wf_check::Executor));
+
     registry.register(Arc::new(diagnostic::SingleRenderedExecutor));
     registry.register(Arc::new(diagnostic::AllRenderedExecutor));
 }
@@ -134,6 +137,8 @@ pub fn register_serde<
         .register::<pernixc_semantic_element::late_bound_lifetime::Key>();
 
     serde_registry.register::<variance::Key>();
+
+    serde_registry.register::<wf_check::Key>();
 
     serde_registry.register::<diagnostic::SingleRenderedKey>();
     serde_registry.register::<diagnostic::AllRenderedKey>();

@@ -28,17 +28,17 @@ error: the symbol cannot be implemented
    = only `trait`, `marker`, `enum`, or `struct` can be implemented
 
 error: the type cannot be implemented
-   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:34:19
+   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:38:19
    │
-34 │ implements['a, T] Reference['a, T]:
+38 │ implements['a, T] Reference['a, T]:
    │                   ^^^^^^^^^^^^^^^^ the type `&'a T` cannot be implemented
    │
    = only `enum`, or `struct` can be implemented
 
 error: the type cannot be implemented
-   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:38:19
+   ╭─ compiler/e2e/test/snapshot/semantic_element/implements_qualified_identifier/invalid_symbol/main.pnx:45:19
    │
-38 │ implements['a, T] MutableReference['a, T]:
+45 │ implements['a, T] MutableReference['a, T]:
    │                   ^^^^^^^^^^^^^^^^^^^^^^^ the type `&'a mut T` cannot be implemented
    │
    = only `enum`, or `struct` can be implemented

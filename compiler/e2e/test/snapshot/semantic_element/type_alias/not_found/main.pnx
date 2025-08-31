@@ -1,1 +1,3 @@
-public type Fizz['a, 'b, T, U] = (&'a T, U, &'b mut What)
+public type Fizz['a, 'b, T, U] = (&'a T, U, What):
+    where:
+        T: 'a
