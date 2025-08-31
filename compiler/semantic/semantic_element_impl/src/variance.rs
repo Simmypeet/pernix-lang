@@ -8,9 +8,11 @@ use pernixc_semantic_element::{
     variance::{get_variances, Variance, Variances},
     variant::get_variant_associated_type,
 };
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
+use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
-    all_symbol_ids,
-    kind::{get_kind, Kind},
+    kind::{get_kind, Filter, Kind},
     member::get_members,
 };
 use pernixc_target::TargetID;
@@ -96,8 +98,11 @@ impl Context {
         engine: &TrackedEngine,
     ) -> Result<(), executor::CyclicError> {
         for global_id in engine
-            .all_symbol_ids(target_id)
-            .await
+            .query(&pernixc_symbol::kind::FilterKey {
+                target_id,
+                filter: AdtFilter,
+            })
+            .await?
             .iter()
             .map(|x| target_id.make_global(*x))
         {
@@ -480,6 +485,26 @@ impl Context {
     }
 }
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct AdtFilter;
+
+impl Filter for AdtFilter {
+    async fn filter(&self, kind: Kind) -> bool { kind.is_adt() }
+}
+
 #[pernixc_query::query(
     key(MapKey),
     value(Arc<HashMap<pernixc_symbol::ID, Arc<Variances>>>),
@@ -493,7 +518,7 @@ pub async fn get_variance_maps(
     Arc<HashMap<pernixc_symbol::ID, Arc<Variances>>>,
     executor::CyclicError,
 > {
-    let context = {
+    let mut context = {
         let mut context = Context::default();
 
         context.collect_constraints(target_id, engine).await?;
@@ -558,6 +583,35 @@ pub async fn get_variance_maps(
 
         context
     };
+
+    // finalizing: if the struct or enum doesn't appear in the variances map
+    // due to their type/lifetime parameters are declared but not used, add to
+    // to the map with default bivariant
+    for adt_id in engine
+        .query(&pernixc_symbol::kind::FilterKey {
+            target_id,
+            filter: AdtFilter,
+        })
+        .await?
+        .iter()
+        .map(|x| target_id.make_global(*x))
+    {
+        let generic_parameters = engine.get_generic_parameters(adt_id).await?;
+
+        let map = context.variance_maps.entry(adt_id.id).or_default();
+
+        for lt_param in generic_parameters.lifetime_order() {
+            map.variances_by_lifetime_ids
+                .entry(*lt_param)
+                .or_insert(Variance::Bivariant);
+        }
+
+        for ty_param in generic_parameters.type_order() {
+            map.variances_by_type_ids
+                .entry(*ty_param)
+                .or_insert(Variance::Bivariant);
+        }
+    }
 
     Ok(Arc::new(
         context

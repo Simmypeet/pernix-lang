@@ -51,3 +51,19 @@ public type UseConstraintLifetimeWithStatic['a, T] = ConstraintLifetime['a, T]:
 
 # should error with T: 'a
 public type UseConstraintLifetime['a, T] = ConstraintLifetime['a, T]
+
+
+public struct Bivariant['a]:
+    pass
+
+
+public type ConstraintBivariant['a, T] = T:
+    where:
+        Identity[T]::Output = Bivariant['a]
+
+
+# should have no lifetime errors, since the lifetime 'a  of `Bivariant` is
+# bivariant
+public type UseConstraintBivariant['a, 'b, T] = ConstraintBivariant['a, T]:
+    where:
+        Identity[T]::Output = Bivariant['b]
