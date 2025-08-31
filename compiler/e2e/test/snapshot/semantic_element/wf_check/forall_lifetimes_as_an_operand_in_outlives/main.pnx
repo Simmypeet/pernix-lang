@@ -1,0 +1,29 @@
+public trait Fizz['a, T]:
+    pass
+
+
+final implements['a, 'b, T] Fizz['a, &'b T]:
+    where:
+        T: 'b
+
+
+final implements['a, 'b, T: 'b] Fizz['a, &'b mut T]:
+    where:
+        'b: 'a
+
+
+public type WithRequirement[T] = T:
+    where:
+        trait for['x] Fizz['x, T]
+
+
+# this instantiation is valid
+public type First['a, T] = WithRequirement[&'a T]:
+    where:
+        T: 'a
+
+
+# this instantiation is invalid ('a: 'static is not satisfied) 
+public type Second['a, T] = WithRequirement[&'a mut T]:
+    where:
+        T: 'a
