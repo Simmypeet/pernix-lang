@@ -8,7 +8,7 @@ use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
-use pernixc_symbol::source_map::to_absolute_span;
+use pernixc_symbol::{source_map::to_absolute_span, span::get_span};
 use pernixc_target::Global;
 use pernixc_term::{
     display::Display, generic_arguments::GenericArguments, predicate::Predicate,
@@ -345,6 +345,14 @@ impl Report<&TrackedEngine> for ImplementationIsNotGeneralEnough {
         &self,
         engine: &TrackedEngine,
     ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let implementation_span = if let Some(span) =
+            engine.get_span(self.resolvable_implementation_id).await
+        {
+            Some(engine.to_absolute_span(&span).await)
+        } else {
+            None
+        };
+
         pernixc_diagnostic::Diagnostic::builder()
             .primary_highlight(
                 Highlight::builder()
@@ -368,14 +376,31 @@ impl Report<&TrackedEngine> for ImplementationIsNotGeneralEnough {
                     .build(),
             )
             .message("implementation is not general enough")
-            .related(match self.predicate_declaration_span.as_ref() {
-                Some(span) => {
-                    vec![Highlight::builder()
-                        .span(engine.to_absolute_span(span).await)
-                        .message("the predicate is declared here")
-                        .build()]
+            .related({
+                let mut related = Vec::new();
+
+                if let Some(span) = self.predicate_declaration_span.as_ref() {
+                    related.push(
+                        Highlight::builder()
+                            .span(engine.to_absolute_span(span).await)
+                            .message("the predicate is declared here")
+                            .build(),
+                    );
                 }
-                None => vec![],
+
+                if let Some(span) = implementation_span.as_ref() {
+                    related.push(
+                        Highlight::builder()
+                            .span(*span)
+                            .message(
+                                "this implementation was used but its \
+                                 lifetimes are not general enough",
+                            )
+                            .build(),
+                    );
+                }
+
+                related
             })
             .build()
     }

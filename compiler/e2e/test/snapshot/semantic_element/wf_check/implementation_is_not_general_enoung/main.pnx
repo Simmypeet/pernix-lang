@@ -1,0 +1,14 @@
+public trait Fizz['a, 'b, T]:
+    public type Buzz
+
+
+implements['a, T] Fizz['a, 'a, T]:
+    type Buzz = T
+
+
+public type Qux[T] = T:
+    where:
+        trait for['x, 'y] Fizz['x, 'y, T]
+
+
+public type Instantiate = Qux[int32]
