@@ -32,6 +32,8 @@ pub async fn import_syntax_executor(
         .clone())
 }
 
+pernixc_register::register!(ImportKey, ImportExecutor);
+
 /// Implementation of the `get_module_imports_syntax` method
 #[pernixc_query::query(
     key(ImplementsQualifiedIdentifierKey),
@@ -58,6 +60,11 @@ pub async fn implements_qualified_identifier_executor(
         })
         .clone())
 }
+
+pernixc_register::register!(
+    ImplementsQualifiedIdentifierKey,
+    ImplementsQualifiedIdentifierExecutor
+);
 
 /// Implementation of the `get_generic_parameters_syntax` method
 #[pernixc_query::query(
@@ -88,6 +95,8 @@ pub async fn generic_parameters_syntax(
         .clone())
 }
 
+pernixc_register::register!(GenericParametersKey, GenericParametersExecutor);
+
 /// Implementation of the `get_where_clause_syntax` method
 #[pernixc_query::query(
     key(WhereClauseKey),
@@ -112,6 +121,8 @@ pub async fn where_clause_syntax(
         .clone())
 }
 
+pernixc_register::register!(WhereClauseKey, WhereClauseExecutor);
+
 /// Implementation of the `get_type_alias_syntax` method
 #[pernixc_query::query(
     key(TypeAliasKey),
@@ -135,6 +146,8 @@ pub async fn get_type_alias_syntax(
         .clone())
 }
 
+pernixc_register::register!(TypeAliasKey, TypeAliasExecutor);
+
 /// Implementation of the `get_implements_final_keyword` method
 #[pernixc_query::query(
     key(ImplementsFinalKeywordKey),
@@ -153,6 +166,11 @@ pub async fn get_implements_final_keyword(
         panic!("No final keyword found for symbol ID: {:?}", id.id)
     }))
 }
+
+pernixc_register::register!(
+    ImplementsFinalKeywordKey,
+    ImplementsFinalKeywordExecutor
+);
 
 /// Implementation of the `get_implements_member_access_modifier` method
 #[pernixc_query::query(
@@ -181,12 +199,17 @@ pub async fn get_implements_member_access_modifier(
         .clone())
 }
 
+pernixc_register::register!(
+    ImplementsMemberAccessModifierKey,
+    ImplementsMemberAccessModifierExecutor
+);
+
 /// Implementation of the `get_variant_associated_type_syntax` method
 #[pernixc_query::query(
-    key(VariantAssociatedTypeSyntaxKey),
+    key(VariantAssociatedTypeKey),
     id(Global<ID>),
     value(Option<pernixc_syntax::r#type::Type>),
-    executor(VariantAssociatedTypeSyntaxExecutor),
+    executor(VariantAssociatedTypeExecutor),
     extend(method(get_variant_associated_type_syntax), no_cyclic),
 )]
 #[allow(clippy::unnecessary_wraps)]
@@ -207,12 +230,17 @@ pub async fn get_variant_associated_type_syntax(
         .clone())
 }
 
+pernixc_register::register!(
+    VariantAssociatedTypeKey,
+    VariantAssociatedTypeExecutor
+);
+
 /// Implementation of the `get_fields_syntax` method
 #[pernixc_query::query(
-    key(FieldsSyntaxKey),
+    key(FieldsKey),
     id(Global<ID>),
     value(Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>),
-    executor(FieldsSyntaxExecutor),
+    executor(FieldsExecutor),
     extend(method(get_fields_syntax), no_cyclic),
 )]
 #[allow(clippy::unnecessary_wraps)]
@@ -233,15 +261,17 @@ pub async fn get_fields_syntax(
         .clone())
 }
 
+pernixc_register::register!(FieldsKey, FieldsExecutor);
+
 /// Implementation of the `get_fields_syntax` method
 #[pernixc_query::query(
-    key(FunctionSignatureSyntaxKey),
+    key(FunctionSignatureKey),
     id(Global<ID>),
     value((
         Option<pernixc_syntax::item::function::Parameters>,
         Option<pernixc_syntax::item::function::ReturnType>,
     )),
-    executor(FunctionSignatureSyntaxExecutor),
+    executor(FunctionSignatureExecutor),
     extend(method(get_function_signature_syntax), no_cyclic),
 )]
 #[allow(clippy::unnecessary_wraps)]
@@ -267,3 +297,5 @@ pub async fn get_function_signature_syntax(
         })
         .clone())
 }
+
+pernixc_register::register!(FunctionSignatureKey, FunctionSignatureExecutor);

@@ -42,6 +42,8 @@ pub async fn executor(
         .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id)))
 }
 
+pernixc_register::register!(Key, Executor);
+
 /// Gets the qualified name of the symbol such as `module::function`.
 #[extend]
 pub async fn get_qualified_name(

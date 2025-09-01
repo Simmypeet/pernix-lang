@@ -20,3 +20,5 @@ pub async fn is_implements_final(
     let kw = engine.get_implements_final_keyword(id).await;
     Ok(kw.is_some())
 }
+
+pernixc_register::register!(Key, Executor);

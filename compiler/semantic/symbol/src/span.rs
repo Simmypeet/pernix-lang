@@ -33,6 +33,8 @@ use crate::{get_table_of_symbol, ID};
 #[value(Option<RelativeSpan>)]
 pub struct Key(pub Global<ID>);
 
+pernixc_register::register!(Key, Executor);
+
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn executor(

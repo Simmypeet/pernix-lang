@@ -55,6 +55,8 @@ pub enum HierarchyRelationship {
 #[extend(method(get_parent), no_cyclic)]
 pub struct Key(pub Global<ID>);
 
+pernixc_register::register!(Key, Executor);
+
 /// A helper function returning the parent symbol ID wrapped in a [`Global`].
 #[extend]
 pub async fn get_parent_global(
@@ -242,3 +244,5 @@ pub async fn intermediate_executor(
 
     Ok(Arc::new(parent_map))
 }
+
+pernixc_register::register!(IntermediateKey, IntermediateExecutor);

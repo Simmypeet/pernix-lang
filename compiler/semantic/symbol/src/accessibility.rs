@@ -45,6 +45,8 @@ pub mod diagnostic;
 #[extend(method(get_accessibility), no_cyclic)]
 pub struct Key(pub Global<ID>);
 
+pernixc_register::register!(Key, Executor);
+
 /// The accessibility defined to a symbol
 #[derive(
     Debug,
@@ -305,3 +307,8 @@ pub async fn member_is_more_accessible_executor(
         Ok(Some(Arc::from(diagnostic)))
     }
 }
+
+pernixc_register::register!(
+    MemberIsMoreAaccessibleKey,
+    MemberIsMoreAccessibleExecutor
+);

@@ -260,6 +260,8 @@ impl Report<&TrackedEngine> for SourceFileLoadFail {
 #[value(Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>)]
 pub struct RenderedKey(pub TargetID);
 
+pernixc_register::register!(RenderedKey, RenderedExecutor);
+
 struct FileError {
     lexicals: Option<Arc<[pernixc_lexical::error::Error]>>,
     syntaxes: Option<Arc<[pernixc_parser::error::Error]>>,

@@ -7,19 +7,8 @@ use codespan_reporting::{
     term::termcolor::WriteColor,
 };
 use pernixc_diagnostic::Highlight;
-use pernixc_hash::HashMap;
-use pernixc_query::{
-    runtime::persistence::{
-        serde::{DynamicDeserialize, DynamicRegistry, DynamicSerialize},
-        Persistence,
-    },
-    Engine, Key,
-};
-use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
-};
+use pernixc_query::{runtime::persistence::Persistence, Engine};
 use pernixc_source_file::{ByteIndex, GlobalSourceID};
-use pernixc_stable_type_id::StableTypeID;
 use pernixc_symbol::source_map::{create_source_map, SourceMap};
 use pernixc_target::{Arguments, TargetID};
 use tracing::instrument;
@@ -92,67 +81,6 @@ fn pernix_diagnostic_to_codespan_diagnostic(
         result.with_notes(vec![msg.to_string()])
     } else {
         result
-    }
-}
-
-/// An object for serialization support
-struct SerdeExtension<S: Serializer<Self>, D: Deserializer<Self>> {
-    pub registry:
-        pernixc_query::runtime::persistence::serde::Registry<S, D, Self>,
-}
-
-impl<S: Serializer<Self>, D: Deserializer<Self>> Default
-    for SerdeExtension<S, D>
-{
-    fn default() -> Self {
-        Self {
-            registry:
-                pernixc_query::runtime::persistence::serde::Registry::default(),
-        }
-    }
-}
-
-impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicSerialize<S>
-    for SerdeExtension<S, D>
-{
-    fn serialization_helper_by_type_id(
-        &self,
-    ) -> &HashMap<
-        StableTypeID,
-        pernixc_query::runtime::persistence::serde::SerializationHelper<
-            S,
-            Self,
-        >,
-    > {
-        self.registry.serialization_helpers_by_type_id()
-    }
-}
-
-impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicDeserialize<D>
-    for SerdeExtension<S, D>
-{
-    fn deserialization_helper_by_type_id(
-        &self,
-    ) -> &HashMap<
-        StableTypeID,
-        pernixc_query::runtime::persistence::serde::DeserializationHelper<
-            D,
-            Self,
-        >,
-    > {
-        self.registry.deserialization_helpers_by_type_id()
-    }
-}
-
-impl<S: Serializer<Self>, D: Deserializer<Self>> DynamicRegistry<S, D>
-    for SerdeExtension<S, D>
-{
-    fn register<K: Key + Serialize<S, Self> + Deserialize<D, Self>>(&mut self)
-    where
-        K::Value: Serialize<S, Self> + Deserialize<D, Self>,
-        S::Error: Send + Sync,
-    {
-        self.registry.register::<K>();
     }
 }
 
@@ -232,17 +160,20 @@ pub async fn run(
     err_writer: &mut dyn WriteColor,
     _out_writer: &mut dyn WriteColor,
 ) -> ExitCode {
-    let mut serde_registry = SerdeExtension::default();
+    let mut serde_registry = pernixc_register::SerdeRegistry::default();
+
     let report_config = term::get_coonfig();
     let simple_file = codespan_reporting::files::SimpleFile::new("", "");
 
     // all the serialization/deserialization runtime information must be
     // registered before creating a persistence layer
+    pernixc_register::Registration::register_serde_registry(
+        &mut serde_registry,
+    );
     pernixc_target::register_serde(&mut serde_registry);
     pernixc_source_file::register_serde(&mut serde_registry);
     pernixc_lexical::register_serde(&mut serde_registry);
     pernixc_syntax::register_serde(&mut serde_registry);
-    pernixc_symbol::register_serde(&mut serde_registry);
     pernixc_type_system::register_serde(&mut serde_registry);
     pernixc_resolution::register_serde(&mut serde_registry);
     pernixc_semantic_element_impl::register_serde(&mut serde_registry);
@@ -299,22 +230,24 @@ pub async fn run(
     // if persistence is set, setup the value that will be skipped from saving
     // into the persistence layer.
     if let Some(persistence) = engine.runtime.persistence.as_mut() {
+        pernixc_register::Registration::register_skip_persistence(persistence);
         pernixc_target::skip_persistence(persistence);
         pernixc_source_file::skip_persistence(persistence);
         pernixc_lexical::skip_persistence(persistence);
         pernixc_syntax::skip_persistence(persistence);
-        pernixc_symbol::skip_persistence(persistence);
         pernixc_type_system::skip_persistence(persistence);
         pernixc_resolution::skip_persistence(persistence);
         pernixc_semantic_element_impl::skip_persistence(persistence);
     }
 
     // final step, setup the query executors for the engine
+    pernixc_register::Registration::register_executor(
+        &mut engine.runtime.executor,
+    );
     pernixc_target::register_executors(&mut engine.runtime.executor);
     pernixc_source_file::register_executors(&mut engine.runtime.executor);
     pernixc_lexical::register_executors(&mut engine.runtime.executor);
     pernixc_syntax::register_executors(&mut engine.runtime.executor);
-    pernixc_symbol::register_executors(&mut engine.runtime.executor);
     pernixc_type_system::register_executors(&mut engine.runtime.executor);
     pernixc_resolution::register_executors(&mut engine.runtime.executor);
     pernixc_semantic_element_impl::register_executors(

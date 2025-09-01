@@ -134,6 +134,8 @@ pub async fn import_executor(
     Ok((Arc::new(import_map), storage.into_vec().into()))
 }
 
+pernixc_register::register!(WithDiagnosticKey, WithDiagnosticExecutor);
+
 #[pernixc_query::query(
     key(DiagnosticKey),
     value(Arc<[Diagnostic]>),
@@ -148,6 +150,8 @@ pub async fn diagnostic_executor(
 
     Ok(import_with_diagnostic.1)
 }
+
+pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
 
 #[pernixc_query::query(
     key(Key),
@@ -167,6 +171,8 @@ pub async fn import_executor(
 
     Ok(import_with_diagnostic.0)
 }
+
+pernixc_register::register!(Key, Executor);
 
 #[allow(clippy::too_many_lines)]
 async fn process_import_items(

@@ -30,6 +30,8 @@ use pernixc_target::{Global, TargetID};
 #[extend(method(get_source_file_path), no_cyclic)]
 pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
 
+pernixc_register::register!(FilePathKey, FilePathExecutor);
+
 #[pernixc_query::executor(key(FilePathKey), name(FilePathExecutor))]
 pub async fn file_path_executor(
     FilePathKey(source_file_id): &FilePathKey,

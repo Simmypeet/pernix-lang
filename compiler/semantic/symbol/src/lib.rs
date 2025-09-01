@@ -15,15 +15,10 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_hash::{DashMap, HashMap, HashSet, ReadOnlyView};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
-    runtime::{
-        executor::{self, CyclicError, Future},
-        persistence::serde::DynamicRegistry,
-    },
+    runtime::executor::{self, CyclicError, Future},
     TrackedEngine,
 };
-use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
-};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{calculate_path_id, SourceElement, SourceFile};
 use pernixc_stable_hash::StableHash;
 use pernixc_syntax::{
@@ -43,7 +38,7 @@ use crate::{
     diagnostic::{
         Diagnostic, ItemRedefinition, RecursiveFileRequest, SourceFileLoadFail,
     },
-    kind::{EqualsFilter, Kind},
+    kind::Kind,
     member::Member,
 };
 
@@ -61,117 +56,6 @@ pub mod syntax;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
-
-/// Registers all the required executors to run the queries.
-pub fn register_executors(
-    executor: &mut pernixc_query::runtime::executor::Registry,
-) {
-    executor.register(Arc::new(accessibility::Executor));
-    executor.register(Arc::new(accessibility::MemberIsMoreAccessibleExecutor));
-
-    executor.register(Arc::new(kind::Executor));
-    executor.register::<kind::FilterKey<EqualsFilter>, _>(Arc::new(
-        kind::FilterExecutor,
-    ));
-
-    executor.register(Arc::new(member::Executor));
-
-    executor.register(Arc::new(name::Executor));
-
-    executor.register(Arc::new(parent::IntermediateExecutor));
-    executor.register(Arc::new(parent::Executor));
-
-    executor.register(Arc::new(span::Executor));
-
-    executor.register(Arc::new(source_map::FilePathExecutor));
-
-    executor.register(Arc::new(final_implements::Executor));
-
-    executor.register(Arc::new(syntax::ImportExecutor));
-    executor.register(Arc::new(syntax::ImplementsQualifiedIdentifierExecutor));
-    executor.register(Arc::new(syntax::GenericParametersExecutor));
-    executor.register(Arc::new(syntax::WhereClauseExecutor));
-    executor.register(Arc::new(syntax::TypeAliasExecutor));
-    executor.register(Arc::new(syntax::ImplementsFinalKeywordExecutor));
-    executor.register(Arc::new(syntax::ImplementsMemberAccessModifierExecutor));
-    executor.register(Arc::new(syntax::VariantAssociatedTypeSyntaxExecutor));
-    executor.register(Arc::new(syntax::FieldsSyntaxExecutor));
-    executor.register(Arc::new(syntax::FunctionSignatureSyntaxExecutor));
-
-    executor.register(Arc::new(import::WithDiagnosticExecutor));
-    executor.register(Arc::new(import::Executor));
-    executor.register(Arc::new(import::DiagnosticExecutor));
-
-    executor.register(Arc::new(diagnostic::RenderedExecutor));
-
-    executor.register(Arc::new(TableExecutor));
-    executor.register(Arc::new(DiagnosticExecutor));
-    executor.register(Arc::new(KindMapExecutor));
-    executor.register(Arc::new(ExternalSubmoduleMapExecutor));
-    executor.register(Arc::new(MapExecutor));
-    executor.register(Arc::new(AllSymbolIDExecutor));
-}
-
-/// Registers all the necessary runtime information for the query engine.
-pub fn register_serde<
-    S: Serializer<Registry>,
-    D: Deserializer<Registry>,
-    Registry: DynamicRegistry<S, D> + Send + Sync,
->(
-    serde_registry: &mut Registry,
-) where
-    S::Error: Send + Sync,
-{
-    serde_registry.register::<accessibility::Key>();
-    serde_registry.register::<accessibility::MemberIsMoreAaccessibleKey>();
-
-    serde_registry.register::<kind::Key>();
-    serde_registry.register::<kind::FilterKey<EqualsFilter>>();
-
-    serde_registry.register::<member::Key>();
-
-    serde_registry.register::<name::Key>();
-
-    serde_registry.register::<parent::IntermediateKey>();
-    serde_registry.register::<parent::Key>();
-
-    serde_registry.register::<span::Key>();
-
-    serde_registry.register::<source_map::FilePathKey>();
-
-    serde_registry.register::<final_implements::Key>();
-
-    serde_registry.register::<syntax::ImportKey>();
-    serde_registry.register::<syntax::ImplementsQualifiedIdentifierKey>();
-    serde_registry.register::<syntax::GenericParametersKey>();
-    serde_registry.register::<syntax::WhereClauseKey>();
-    serde_registry.register::<syntax::TypeAliasKey>();
-    serde_registry.register::<syntax::ImplementsFinalKeywordKey>();
-    serde_registry.register::<syntax::ImplementsMemberAccessModifierKey>();
-    serde_registry.register::<syntax::VariantAssociatedTypeSyntaxKey>();
-    serde_registry.register::<syntax::FieldsSyntaxKey>();
-    serde_registry.register::<syntax::FunctionSignatureSyntaxKey>();
-
-    serde_registry.register::<import::WithDiagnosticKey>();
-    serde_registry.register::<import::Key>();
-    serde_registry.register::<import::DiagnosticKey>();
-
-    serde_registry.register::<diagnostic::RenderedKey>();
-
-    serde_registry.register::<TableKey>();
-    serde_registry.register::<DiagnosticKey>();
-    serde_registry.register::<KindMapKey>();
-    serde_registry.register::<ExternalSubmoduleMapKey>();
-    serde_registry.register::<MapKey>();
-    serde_registry.register::<AllSymbolIDKey>();
-}
-
-/// Registers the keys that should be skipped during serialization and
-/// deserialization in the query engine's persistence layer
-pub const fn skip_persistence(
-    _persistence: &mut pernixc_query::runtime::persistence::Persistence,
-) {
-}
 
 /// Represents a unique identifier for the symbols in the compilation target.
 /// This ID is only unique within the context of a single target. If wants to
@@ -299,6 +183,8 @@ pub struct ExternalSubmodule {
 #[value(Arc<Table>)]
 pub struct TableKey(pub Key);
 
+pernixc_register::register!(TableKey, TableExecutor);
+
 /// A query for retrieving only the diagnostics from a [`Table`] node.
 #[derive(
     Debug,
@@ -315,6 +201,8 @@ pub struct TableKey(pub Key);
 )]
 #[value(Arc<HashSet<Diagnostic>>)]
 pub struct DiagnosticKey(pub Key);
+
+pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
 
 /// A symbol table from parsing a single file.
 #[derive(Debug, Clone, Serialize, Deserialize, StableHash)]
@@ -464,6 +352,8 @@ pub struct Table {
 #[value(Arc<ReadOnlyView<ID, Kind>>)]
 pub struct KindMapKey(pub Key);
 
+pernixc_register::register!(KindMapKey, KindMapExecutor);
+
 #[pernixc_query::executor(key(KindMapKey), name(KindMapExecutor))]
 pub async fn kind_map_executor(
     KindMapKey(key): &KindMapKey,
@@ -489,6 +379,11 @@ pub async fn kind_map_executor(
 )]
 #[value(Arc<ReadOnlyView<ID, Arc<ExternalSubmodule>>>)]
 pub struct ExternalSubmoduleMapKey(pub Key);
+
+pernixc_register::register!(
+    ExternalSubmoduleMapKey,
+    ExternalSubmoduleMapExecutor
+);
 
 #[pernixc_query::executor(
     key(ExternalSubmoduleMapKey),
@@ -2204,6 +2099,8 @@ pub struct Map {
     >,
 }
 
+pernixc_register::register!(MapKey, MapExecutor);
+
 #[pernixc_query::executor(key(MapKey), name(MapExecutor))]
 #[allow(clippy::too_many_lines)]
 pub async fn map_executor(
@@ -2352,6 +2249,8 @@ pub async fn all_symbol_ids_executor(
     let map = engine.query(&MapKey(id)).await?;
     Ok(map.keys_by_symbol_id.keys().copied().collect())
 }
+
+pernixc_register::register!(AllSymbolIDKey, AllSymbolIDExecutor);
 
 /// Gets the table node where the information of the given symbol ID is stored.
 #[extend]

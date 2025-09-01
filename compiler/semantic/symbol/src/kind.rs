@@ -249,6 +249,8 @@ pub async fn executor(
         .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
 }
 
+pernixc_register::register!(Key, Executor);
+
 /// A trait for filtering symbols based on their kind.
 ///
 /// Primarily used with [`FilterKey`] to create custom filters for symbol
@@ -298,6 +300,8 @@ impl<
 {
     type Value = Arc<[ID]>;
 }
+
+pernixc_register::register!(FilterKey<EqualsFilter>, FilterExecutor);
 
 /// An executor implementation for the [`FilterKey`] query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]

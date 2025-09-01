@@ -25,6 +25,7 @@ pernixc_arena = { path = "../../base/arena" }
 pernixc_tokio = { path = "../../base/tokio" }
 pernixc_parser = { path = "../../syntax/parser" }
 pernixc_stable_type_id = { path = "../../base/stable_type_id" }
+pernixc_register = { path = "../../base/register" }
 codespan-reporting = { workspace = true }
 tokio = { workspace = true }
 strsim = { workspace = true }

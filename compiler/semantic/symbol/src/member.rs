@@ -50,6 +50,8 @@ pub async fn executor(
         .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id)))
 }
 
+pernixc_register::register!(Key, Executor);
+
 /// Optionally returns `None` if the given symbol is of a kind that does not
 /// have members.
 #[extend]

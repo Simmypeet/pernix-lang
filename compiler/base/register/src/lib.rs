@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+pub use inventory::submit;
 use pernixc_query::{
     runtime::{
         executor::{self, Executor},
@@ -44,7 +45,7 @@ impl Registration {
     ///
     /// By default, the value is cached.
     #[must_use]
-    pub fn register_key<
+    pub const fn register_key<
         T: Key
             + Serialize<persistence::Serializer, SerdeRegistry>
             + Deserialize<persistence::Deserializer, SerdeRegistry>,
@@ -112,4 +113,21 @@ fn register_serde_registry<
 
 fn skip_persistence<T: Key>(persistence: &mut Persistence) {
     persistence.skip_cache_value::<T>();
+}
+
+/// Registers the key and executor for the main compiler driver.
+#[macro_export]
+macro_rules! register {
+    ($key:ty, $executor:ty) => {
+        $crate::submit! {
+            $crate::Registration::register_key::<$key, $executor>()
+        }
+    };
+
+    ($key:ty, $executor:ty, skip_cache) => {
+        $crate::submit! {
+            $crate::Registration::register_key::<$key, $executor>()
+                .skip_persistence()
+        }
+    };
 }
