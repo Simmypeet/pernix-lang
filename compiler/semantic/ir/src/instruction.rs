@@ -1,9 +1,10 @@
 //! Contains the definition of [`Instruction`] and its variants.
 
-use std::{borrow::Cow, collections::HashMap, num::NonZero};
+use std::{borrow::Cow, num::NonZero};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;

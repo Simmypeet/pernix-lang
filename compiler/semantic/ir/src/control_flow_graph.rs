@@ -1,12 +1,10 @@
 //! Contains the definition of [`Block`] and [`ControlFlowGraph`].
 
-use std::{
-    collections::{HashMap, HashSet},
-    ops::{Not, RangeBounds},
-};
+use std::ops::{Not, RangeBounds};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
+use pernixc_hash::{HashMap, HashSet};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_transitive_closure::TransitiveClosure;
@@ -236,7 +234,7 @@ impl ControlFlowGraph {
     pub fn traverse(&self) -> Traverser<'_> {
         Traverser {
             graph: self,
-            visited: HashSet::new(),
+            visited: HashSet::default(),
             stack: vec![self.entry_block_id],
         }
     }
@@ -258,7 +256,7 @@ impl ControlFlowGraph {
     /// reachability of particular blocks.
     #[must_use]
     pub fn reachability(&self) -> Reachability {
-        let mut block_ids_to_index = HashMap::new();
+        let mut block_ids_to_index = HashMap::default();
         let mut index_to_block_ids = Vec::new();
 
         for (index, id) in self.blocks().ids().enumerate() {
@@ -346,7 +344,7 @@ impl ControlFlowGraph {
             from_instruction_index,
             true,
             &mut predicate,
-            &mut HashSet::new(),
+            &mut HashSet::default(),
         )
     }
 
@@ -465,7 +463,7 @@ impl ControlFlowGraph {
     pub fn new_block(&mut self) -> ID<Block> {
         self.blocks.insert(Block {
             instructions: Vec::new(),
-            predecessors: HashSet::new(),
+            predecessors: HashSet::default(),
             terminator: None,
             is_entry: false,
         })
@@ -480,7 +478,7 @@ impl ControlFlowGraph {
         self.blocks
             .insert_with_id(id, Block {
                 instructions: Vec::new(),
-                predecessors: HashSet::new(),
+                predecessors: HashSet::default(),
                 terminator: None,
                 is_entry: false,
             })
@@ -501,7 +499,7 @@ impl ControlFlowGraph {
         self.is_reachable_from_internal(
             from_block_id,
             to_block_id,
-            &mut HashSet::new(),
+            &mut HashSet::default(),
         )
     }
 
@@ -628,7 +626,7 @@ impl Default for ControlFlowGraph {
         // create an entry block
         let entry_block_id = blocks.insert(Block {
             instructions: Vec::new(),
-            predecessors: HashSet::new(),
+            predecessors: HashSet::default(),
             terminator: None,
             is_entry: true,
         });

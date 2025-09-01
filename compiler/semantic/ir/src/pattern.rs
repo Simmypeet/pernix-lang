@@ -1,12 +1,11 @@
 //! Contains the definition of patterns
 
-use std::collections::HashMap;
-
 use diagnostic::AlreadyBoundName;
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::{RelativeLocation, RelativeSpan};
 use pernixc_semantic_element::fields::Field;
 use pernixc_source_file::SourceElement;

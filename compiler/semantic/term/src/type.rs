@@ -3,6 +3,7 @@
 use std::{fmt::Write, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
@@ -236,7 +237,7 @@ pub enum SubFunctionSignatureLocation {
 )]
 #[allow(missing_docs)]
 pub enum Type {
-    Inference(Inference<Self>),
+    Inference(ID<Inference<Self>>),
     #[from]
     Primitive(Primitive),
     #[from]

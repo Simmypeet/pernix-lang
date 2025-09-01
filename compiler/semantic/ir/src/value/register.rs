@@ -3,13 +3,11 @@
 //! The register is a place where SSA values are stored. The assignment is the
 //! value that is stored in the register.
 
-use std::{
-    collections::{BTreeSet, HashMap},
-    ops::Deref,
-};
+use std::{collections::BTreeSet, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
+use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_semantic_element::{fields::Field, return_type::get_return_type};

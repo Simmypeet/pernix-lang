@@ -21,6 +21,7 @@ pernixc_query = { path = "../../base/query" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_type_system = { path = "../type_system" }
+pernixc_hash = { path = "../../base/hash" }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
 getset = { workspace = true }
