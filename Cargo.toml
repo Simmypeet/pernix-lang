@@ -33,6 +33,7 @@ members = [
     "compiler/semantic/resolution",
     "compiler/semantic/semantic_element",
     "compiler/semantic/semantic_element_impl",
+    "compiler/semantic/bind",
     "compiler/semantic/ir",
 
     "compiler/driver",
