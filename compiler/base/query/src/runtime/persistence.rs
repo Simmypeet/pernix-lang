@@ -370,13 +370,19 @@ thread_local! {
 
 const VERSION_SNAPSHOT_FILE: &str = "version_snapshot.db";
 
+/// The choosen serializer for the persistence layer to use.
+pub type Serializer = BinarySerializer<Writer>;
+
+/// The choosen deserializer for the persistence layer to use.
+pub type Deserializer = BinaryDeserializer<Reader>;
+
 impl<B: Backend> Persistence<B> {
     /// Creates a new instance of [`Persistence`] with the specified path where
     /// the database is stored and the serde extension where the types that will
     /// be serialized and deserialized are registered.
     pub fn new<
-        E: DynamicSerialize<BinarySerializer<Writer>>
-            + DynamicDeserialize<BinaryDeserializer<Reader>>
+        E: DynamicSerialize<Serializer>
+            + DynamicDeserialize<Deserializer>
             + Any
             + Send
             + Sync

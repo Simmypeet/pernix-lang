@@ -20,6 +20,7 @@ members = [
     "compiler/base/query",
     "compiler/base/query_derive",
     "compiler/base/tokio",
+    "compiler/base/register",
 
     "compiler/syntax/lexical",
     "compiler/syntax/parser",
@@ -48,6 +49,7 @@ derive_more = { version = "2.0.1", features = [
     "deref_mut",
     "from",
 ] }
+inventory = "0.3.2"
 enum-as-inner = "0.6.0"
 thiserror = "2.0.12"
 getset = "0.1.2"
