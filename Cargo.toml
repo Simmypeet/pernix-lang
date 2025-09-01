@@ -21,6 +21,7 @@ members = [
     "compiler/base/query_derive",
     "compiler/base/tokio",
     "compiler/base/register",
+    "compiler/base/transitive_closure",
 
     "compiler/syntax/lexical",
     "compiler/syntax/parser",
@@ -32,6 +33,7 @@ members = [
     "compiler/semantic/resolution",
     "compiler/semantic/semantic_element",
     "compiler/semantic/semantic_element_impl",
+    "compiler/semantic/ir",
 
     "compiler/driver",
     "compiler/main",
@@ -48,6 +50,8 @@ derive_more = { version = "2.0.1", features = [
     "deref",
     "deref_mut",
     "from",
+    "index",
+    "index_mut",
 ] }
 inventory = "0.3.2"
 enum-as-inner = "0.6.0"

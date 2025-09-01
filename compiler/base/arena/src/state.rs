@@ -29,6 +29,13 @@ pub trait Generator<T>: State<T> {
     fn next_id(&mut self, items: &HashMap<Self::ID, T>, value: &T) -> Self::ID;
 }
 
+/// A trait for generating unique IDs for items in the [`crate::Arena`] without
+/// having to see the item itself.
+pub trait FreeGenerator<T>: State<T> {
+    /// Generates a new ID for an item in the [`crate::Arena`].
+    fn next_id(&mut self, items: &HashMap<Self::ID, T>) -> Self::ID;
+}
+
 /// A trait for rebinding an [`crate::Arena`]'s state to a different arena type.
 pub trait Rebind<T, U>: State<T> {
     /// The result of the rebind operation, which is a new state for the new
@@ -114,6 +121,15 @@ impl<T> State<T> for Serial {
 
 impl<T> Generator<T> for Serial {
     fn next_id(&mut self, _: &HashMap<Self::ID, T>, _: &T) -> Self::ID {
+        let next_id = self.0;
+        self.0 += 1;
+
+        ID::new(next_id)
+    }
+}
+
+impl<T> FreeGenerator<T> for Serial {
+    fn next_id(&mut self, _: &HashMap<Self::ID, T>) -> Self::ID {
         let next_id = self.0;
         self.0 += 1;
 

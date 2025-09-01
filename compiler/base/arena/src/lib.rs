@@ -16,6 +16,8 @@ use pernixc_serialize::{
 use pernixc_stable_hash::StableHash;
 use state::{Generator, Rebind, State};
 
+use crate::state::FreeGenerator;
+
 pub mod state;
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -175,6 +177,18 @@ impl<T, G: State<T>> Arena<T, G> {
     {
         let next_id = self.generator.next_id(&self.items, &item);
         assert!(self.items.insert(next_id, item).is_none());
+
+        next_id
+    }
+
+    /// Inserts a new item into the [`Arena`] by invoking the given closure with
+    /// the new ID for that item.
+    pub fn insert_with(&mut self, f: impl FnOnce(G::ID) -> T) -> G::ID
+    where
+        G: FreeGenerator<T>,
+    {
+        let next_id = self.generator.next_id(&self.items);
+        assert!(self.items.insert(next_id, f(next_id)).is_none());
 
         next_id
     }
