@@ -3,24 +3,36 @@
 //! The register is a place where SSA values are stored. The assignment is the
 //! value that is stored in the register.
 
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeSet, HashMap},
+    ops::Deref,
+};
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_semantic_element::fields::Field;
+use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::{fields::Field, return_type::get_return_type};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_symbol::{member::get_members, parent::get_parent};
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::GenericArguments,
+    constant::Constant,
+    generic_arguments::{GenericArguments, Symbol},
     instantiation::Instantiation,
     lifetime::Lifetime,
-    r#type::{Qualifier, Type},
+    r#type::{Primitive, Qualifier, Type},
+    tuple,
+};
+use pernixc_type_system::{
+    environment::Environment, normalizer::Normalizer, Error, Succeeded,
 };
 
 use super::Value;
-use crate::{address::Address, control_flow_graph::Block};
+use crate::{
+    address::Address, control_flow_graph::Block, value::TypeOf, Values,
+};
 
 /// Represents an element of a [`Tuple`].
 #[derive(
@@ -72,6 +84,39 @@ impl Tuple {
     }
 }
 
+async fn type_of_tuple_assignment(
+    values: &Values,
+    tuple: &Tuple,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Succeeded<Type>, Error> {
+    let mut constraints = BTreeSet::new();
+    let mut elements = Vec::new();
+
+    for element in &tuple.elements {
+        let Succeeded { result: ty, constraints: new_constraint } =
+            Box::pin(values.type_of(&element.value, current_site, environment))
+                .await?;
+
+        constraints.extend(new_constraint);
+
+        if element.is_unpacked {
+            match ty {
+                Type::Tuple(ty) => elements.extend(ty.elements),
+                ty => elements
+                    .push(tuple::Element { term: ty, is_unpacked: true }),
+            }
+        } else {
+            elements.push(tuple::Element { term: ty, is_unpacked: false });
+        }
+    }
+
+    Ok(Succeeded::with_constraints(
+        Type::Tuple(tuple::Tuple { elements }),
+        constraints,
+    ))
+}
+
 /// Represents a load/read from an address in memory. (The type must be Copy)
 #[derive(
     Debug,
@@ -88,6 +133,15 @@ impl Tuple {
 pub struct Load {
     /// The address where the value is stored and will be read from.
     pub address: Address,
+}
+
+async fn type_of_load_assignment(
+    values: &Values,
+    load: &Load,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Succeeded<Type>, Error> {
+    values.type_of(&load.address, current_site, environment).await
 }
 
 /// Obtains a reference at the given address.
@@ -112,6 +166,25 @@ pub struct Borrow {
 
     /// The lifetime introduces by the reference of operation.
     pub lifetime: Lifetime,
+}
+
+async fn type_of_reference_of_assignment(
+    values: &Values,
+    reference_of: &Borrow,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Succeeded<Type>, Error> {
+    values.type_of(&reference_of.address, current_site, environment).await.map(
+        |x| {
+            x.map(|x| {
+                Type::Reference(pernixc_term::r#type::Reference {
+                    qualifier: reference_of.qualifier,
+                    lifetime: reference_of.lifetime,
+                    pointee: Box::new(x),
+                })
+            })
+        },
+    )
 }
 
 /// An enumeration of the different kinds of prefix operators.
@@ -168,6 +241,23 @@ impl Prefix {
     }
 }
 
+async fn type_of_prefix_assignment(
+    values: &Values,
+    prefix: &Prefix,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Succeeded<Type>, Error> {
+    let operand_type =
+        Box::pin(values.type_of(&prefix.operand, current_site, environment))
+            .await?;
+
+    match prefix.operator {
+        PrefixOperator::Negate
+        | PrefixOperator::LogicalNot
+        | PrefixOperator::BitwiseNot => Ok(operand_type),
+    }
+}
+
 /// Represents a struct value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
 pub struct Struct {
@@ -190,6 +280,13 @@ impl Struct {
             .filter_map(|x| x.as_register().copied())
             .collect()
     }
+}
+
+fn type_of_struct_assignment(st: &Struct) -> Type {
+    Type::Symbol(Symbol {
+        id: st.struct_id,
+        generic_arguments: st.generic_arguments.clone(),
+    })
 }
 
 /// Represents a variant value.
@@ -229,6 +326,18 @@ impl Variant {
     }
 }
 
+async fn type_of_variant_assignment(
+    variant: &Variant,
+    engine: &TrackedEngine,
+) -> Type {
+    let enum_id = engine.get_parent(variant.variant_id).await.unwrap();
+
+    Type::Symbol(Symbol {
+        id: Global::new(variant.variant_id.target_id, enum_id),
+        generic_arguments: variant.generic_arguments.clone(),
+    })
+}
+
 /// Represents a function call.
 #[derive(
     Debug,
@@ -259,6 +368,21 @@ impl FunctionCall {
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
         self.arguments.iter().filter_map(|x| x.as_register().copied()).collect()
     }
+}
+
+async fn type_of_function_call_assignment(
+    function_call: &FunctionCall,
+    engine: &TrackedEngine,
+) -> Result<Type, Error> {
+    let mut return_type = engine
+        .get_return_type(function_call.callable_id)
+        .await?
+        .deref()
+        .clone();
+
+    function_call.instantiation.instantiate(&mut return_type);
+
+    Ok(return_type)
 }
 
 /// Represents an arithmetic operator that works on numbers.
@@ -429,6 +553,22 @@ impl Binary {
     }
 }
 
+async fn type_of_binary(
+    values: &Values,
+    binary: &Binary,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Result<Succeeded<Type>, Error> {
+    // the return type always based on the lhs field
+    if let BinaryOperator::Relational(_) = binary.operator {
+        Ok(Succeeded::new(Type::Primitive(
+            pernixc_term::r#type::Primitive::Bool,
+        )))
+    } else {
+        Box::pin(values.type_of(&binary.lhs, current_site, environment)).await
+    }
+}
+
 /// Represents a phi node in the SSA form.
 ///
 /// A phi node is used to determine the value based on the flow of the
@@ -547,6 +687,41 @@ pub struct VariantNumber {
     pub enum_id: Global<pernixc_symbol::ID>,
 }
 
+async fn type_of_variant_number(
+    variant_number: &VariantNumber,
+    environment: &Environment<'_, impl Normalizer>,
+) -> Type {
+    let mut answer = Primitive::Bool;
+    let members =
+        environment.tracked_engine().get_members(variant_number.enum_id).await;
+
+    let variant_count =
+        members.member_ids_by_name.len() + members.unnameds.iter().len();
+
+    let int_capacity = |a: Primitive| match a {
+        Primitive::Bool => 2u64,
+        Primitive::Uint8 => 2u64.pow(8),
+        Primitive::Uint16 => 2u64.pow(16),
+        Primitive::Uint32 => 2u64.pow(32),
+        Primitive::Uint64 => 2u64.pow(64),
+        _ => unreachable!(),
+    };
+
+    let next = |a: Primitive| match a {
+        Primitive::Bool => Primitive::Uint8,
+        Primitive::Uint8 => Primitive::Uint16,
+        Primitive::Uint16 => Primitive::Uint32,
+        Primitive::Uint32 => Primitive::Uint64,
+        _ => unreachable!(),
+    };
+
+    while int_capacity(answer) < variant_count as u64 {
+        answer = next(answer);
+    }
+
+    Type::Primitive(answer)
+}
+
 /// An enumeration of the different kinds of values that can be assigned in the
 /// register.
 #[derive(
@@ -600,4 +775,90 @@ pub struct Register {
 
     /// The span where the value was defined.
     pub span: Option<RelativeSpan>,
+}
+
+impl TypeOf<ID<Register>> for Values {
+    async fn type_of<N: Normalizer>(
+        &self,
+        id: ID<Register>,
+        current_site: Global<pernixc_symbol::ID>,
+        environment: &Environment<'_, N>,
+    ) -> Result<Succeeded<Type>, Error> {
+        let register = &self.registers[id];
+
+        let ty = match &register.assignment {
+            Assignment::Tuple(tuple) => {
+                return type_of_tuple_assignment(
+                    self,
+                    tuple,
+                    current_site,
+                    environment,
+                )
+                .await
+            }
+            Assignment::Load(load) => {
+                return type_of_load_assignment(
+                    self,
+                    load,
+                    current_site,
+                    environment,
+                )
+                .await
+            }
+            Assignment::Borrow(reference_of) => {
+                return type_of_reference_of_assignment(
+                    self,
+                    reference_of,
+                    current_site,
+                    environment,
+                )
+                .await
+            }
+            Assignment::Prefix(prefix) => {
+                return type_of_prefix_assignment(
+                    self,
+                    prefix,
+                    current_site,
+                    environment,
+                )
+                .await
+            }
+            Assignment::Struct(st) => Ok(type_of_struct_assignment(st)),
+            Assignment::Variant(variant) => Ok(type_of_variant_assignment(
+                variant,
+                environment.tracked_engine(),
+            )
+            .await),
+            Assignment::FunctionCall(function_call) => {
+                type_of_function_call_assignment(
+                    function_call,
+                    environment.tracked_engine(),
+                )
+                .await
+            }
+            Assignment::Binary(binary) => {
+                return type_of_binary(self, binary, current_site, environment)
+                    .await;
+            }
+            Assignment::Phi(phi_node) => Ok(phi_node.r#type.clone()),
+            Assignment::Array(array) => {
+                Ok(Type::Array(pernixc_term::r#type::Array {
+                    r#type: Box::new(array.element_type.clone()),
+                    length: Constant::Primitive(
+                        pernixc_term::constant::Primitive::Usize(
+                            array.elements.len() as u64,
+                        ),
+                    ),
+                }))
+            }
+            Assignment::Cast(cast) => Ok(cast.r#type.clone()),
+            Assignment::VariantNumber(variant) => {
+                return Ok(Succeeded::new(
+                    type_of_variant_number(variant, environment).await,
+                ))
+            }
+        }?;
+
+        Ok(environment.simplify(ty).await?.deref().clone())
+    }
 }

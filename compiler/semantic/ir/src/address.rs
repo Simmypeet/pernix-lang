@@ -1,14 +1,33 @@
 //! Contains the definition of [`Address`] and its variants.
 
+use std::ops::Deref;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
-use pernixc_semantic_element::{fields, parameter::Parameter};
+use pernixc_semantic_element::{
+    fields::{self, get_fields},
+    parameter::{get_parameters, Parameter},
+    variant::get_variant_associated_type,
+};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
-use pernixc_term::r#type::Qualifier;
+use pernixc_term::{
+    generic_arguments::Symbol,
+    generic_parameters::get_generic_parameters,
+    instantiation::Instantiation,
+    r#type::{Qualifier, Type},
+    tuple,
+};
+use pernixc_type_system::{
+    environment::Environment, normalizer::Normalizer, Error, Succeeded,
+};
 
-use crate::{alloca::Alloca, value::Value};
+use crate::{
+    alloca::Alloca,
+    value::{TypeOf, Value},
+    Values,
+};
 
 /// The address points to a field in a struct.
 #[derive(
@@ -325,6 +344,196 @@ impl Address {
                         .min(parent_qualifier.unwrap_or(Qualifier::Mutable)),
                 )
             }
+        }
+    }
+}
+
+impl TypeOf<&Address> for Values {
+    #[allow(clippy::too_many_lines)]
+    async fn type_of<N: Normalizer>(
+        &self,
+        address: &Address,
+        current_site: Global<pernixc_symbol::ID>,
+        environment: &Environment<'_, N>,
+    ) -> Result<Succeeded<Type>, Error> {
+        match address {
+            Address::Memory(Memory::Parameter(parameter)) => {
+                let function_signature = environment
+                    .tracked_engine()
+                    .get_parameters(current_site)
+                    .await?;
+
+                let ty =
+                    function_signature.parameters[*parameter].r#type.clone();
+
+                Ok(environment.simplify(ty).await?.deref().clone())
+            }
+
+            Address::Memory(Memory::Alloca(parameter)) => {
+                let alloca = &self.allocas[*parameter];
+
+                Ok(environment
+                    .simplify(alloca.r#type.clone())
+                    .await?
+                    .deref()
+                    .clone())
+            }
+
+            Address::Field(field_address) => {
+                // the type of address should've been simplified
+                let Succeeded { result, mut constraints } =
+                    Box::pin(self.type_of(
+                        &*field_address.struct_address,
+                        current_site,
+                        environment,
+                    ))
+                    .await?;
+                let Type::Symbol(Symbol { id: struct_id, generic_arguments }) =
+                    result
+                else {
+                    panic!("expected struct type");
+                };
+
+                let generic_parameters = environment
+                    .tracked_engine()
+                    .get_generic_parameters(struct_id)
+                    .await?;
+
+                let fields =
+                    environment.tracked_engine().get_fields(struct_id).await?;
+
+                let instantiation = Instantiation::from_generic_arguments(
+                    generic_arguments,
+                    struct_id,
+                    &generic_parameters,
+                )
+                .unwrap();
+
+                let mut field_ty =
+                    fields.fields[field_address.id].r#type.clone();
+
+                instantiation.instantiate(&mut field_ty);
+                let simplification = environment.simplify(field_ty).await?;
+                constraints.extend(simplification.constraints.iter().cloned());
+
+                Ok(Succeeded {
+                    result: simplification.result.clone(),
+                    constraints,
+                })
+            }
+
+            Address::Tuple(tuple) => {
+                Ok(Box::pin(self.type_of(
+                    &*tuple.tuple_address,
+                    current_site,
+                    environment,
+                ))
+                .await?
+                .map(|x| {
+                    // extract tuple type
+                    let Type::Tuple(mut tuple_ty) = x else {
+                        panic!("expected tuple type");
+                    };
+
+                    match match tuple.offset {
+                        Offset::FromStart(id) => Some(id),
+                        Offset::FromEnd(id) => tuple_ty
+                            .elements
+                            .len()
+                            .checked_sub(1)
+                            .and_then(|x| x.checked_sub(id)),
+                        Offset::Unpacked => {
+                            let Some(unpacked_ty) = tuple_ty
+                                .elements
+                                .iter()
+                                .find_map(|x| x.is_unpacked.then_some(&x.term))
+                            else {
+                                panic!("expected unpacked tuple element");
+                            };
+
+                            return unpacked_ty.clone();
+                        }
+                    } {
+                        Some(id) if id < tuple_ty.elements.len() => {
+                            let element_ty = tuple_ty.elements.remove(id);
+
+                            if element_ty.is_unpacked {
+                                Type::Tuple(tuple::Tuple {
+                                    elements: vec![tuple::Element {
+                                        term: element_ty.term,
+                                        is_unpacked: true,
+                                    }],
+                                })
+                            } else {
+                                element_ty.term
+                            }
+                        }
+
+                        _ => panic!("invalid tuple offset"),
+                    }
+                }))
+            }
+
+            Address::Index(index) => Ok(Box::pin(self.type_of(
+                &*index.array_address,
+                current_site,
+                environment,
+            ))
+            .await?
+            .map(|x| *x.into_array().unwrap().r#type)),
+
+            Address::Variant(variant) => {
+                let Succeeded { result, mut constraints } =
+                    Box::pin(self.type_of(
+                        &*variant.enum_address,
+                        current_site,
+                        environment,
+                    ))
+                    .await?;
+
+                let Type::Symbol(Symbol { id: enum_id, generic_arguments }) =
+                    result
+                else {
+                    panic!("expected enum type");
+                };
+
+                let enum_generic_params = environment
+                    .tracked_engine()
+                    .get_generic_parameters(enum_id)
+                    .await?;
+
+                let instantiation = Instantiation::from_generic_arguments(
+                    generic_arguments,
+                    enum_id,
+                    &enum_generic_params,
+                )
+                .unwrap();
+
+                let variant = environment
+                    .tracked_engine()
+                    .get_variant_associated_type(variant.id)
+                    .await?;
+
+                let mut variant_ty = variant.as_deref().cloned().unwrap();
+
+                instantiation.instantiate(&mut variant_ty);
+
+                let simplification = environment.simplify(variant_ty).await?;
+                constraints.extend(simplification.constraints.iter().cloned());
+
+                Ok(Succeeded::with_constraints(
+                    simplification.result.clone(),
+                    constraints,
+                ))
+            }
+
+            Address::Reference(value) => Ok(Box::pin(self.type_of(
+                &*value.reference_address,
+                current_site,
+                environment,
+            ))
+            .await?
+            .map(|x| *x.into_reference().unwrap().pointee)),
         }
     }
 }

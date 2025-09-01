@@ -1,14 +1,20 @@
 //! Contains the definition of [`Literal`].
 
+use std::ops::Deref;
+
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
 use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Array, Primitive, Qualifier, Reference, Type},
     tuple,
 };
+use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+
+use crate::{value::TypeOf, Values};
 
 /// Represents a numeric literal value.
 #[derive(
@@ -268,5 +274,17 @@ impl Literal {
             Self::Unreachable(u) => u.span.as_ref(),
             Self::Phantom(p) => p.span.as_ref(),
         }
+    }
+}
+
+impl TypeOf<&Literal> for Values {
+    async fn type_of<N: Normalizer>(
+        &self,
+        literal: &Literal,
+        _: Global<pernixc_symbol::ID>,
+        environment: &Environment<'_, N>,
+    ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
+    {
+        environment.simplify(literal.r#type()).await.map(|x| x.deref().clone())
     }
 }

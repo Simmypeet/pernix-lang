@@ -847,6 +847,7 @@ dependencies = [
  "pernixc_target",
  "pernixc_term",
  "pernixc_transitive_closure",
+ "pernixc_type_system",
 ]
 
 [[package]]

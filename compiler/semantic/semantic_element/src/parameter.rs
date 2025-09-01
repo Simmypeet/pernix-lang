@@ -43,6 +43,7 @@ pub struct Parameter {
 )]
 #[id(Global<pernixc_symbol::ID>)]
 #[value(Arc<Parameters>)]
+#[extend(method(get_parameters))]
 pub struct Parameters {
     /// The parameters of the function.
     pub parameters: Arena<Parameter>,

@@ -23,4 +23,5 @@ use pernixc_term::r#type::Type;
     pernixc_query::Key,
 )]
 #[value(Arc<Type>)]
+#[extend(method(get_return_type))]
 pub struct Key(pub Global<pernixc_symbol::ID>);
