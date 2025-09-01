@@ -22,6 +22,7 @@ pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_query = { path = "../../base/query" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_target = { path = "../../base/target" }
+pernixc_register = { path = "../../base/register" }
 proptest = { workspace = true, optional = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }

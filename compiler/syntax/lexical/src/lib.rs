@@ -3,16 +3,8 @@
 use std::{path::Path, sync::Arc};
 
 use pernixc_handler::Storage;
-use pernixc_query::{
-    runtime::{
-        executor::CyclicError,
-        persistence::{serde::DynamicRegistry, Persistence},
-    },
-    TrackedEngine,
-};
-use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
-};
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::calculate_path_id;
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
@@ -21,32 +13,6 @@ pub mod error;
 pub mod kind;
 pub mod token;
 pub mod tree;
-
-/// Registers all the required executors to run the queries.
-pub fn register_executors(
-    executor: &mut pernixc_query::runtime::executor::Registry,
-) {
-    executor.register(Arc::new(Executor));
-    executor.register(Arc::new(DiagnosticExecutor));
-}
-
-/// Registers all the necessary runtime information for the query engine.
-pub fn register_serde<
-    S: Serializer<Registry>,
-    D: Deserializer<Registry>,
-    Registry: DynamicRegistry<S, D> + Send + Sync,
->(
-    serde_registry: &mut Registry,
-) where
-    S::Error: Send + Sync,
-{
-    serde_registry.register::<Key>();
-    serde_registry.register::<DiagnosticKey>();
-}
-
-/// Registers the keys that should be skipped during serialization and
-/// deserialization in the query engine's persistence layer
-pub const fn skip_persistence(_persistence: &mut Persistence) {}
 
 /// Query for parsing a token tree from the given source file path.
 #[derive(
@@ -70,6 +36,8 @@ pub struct Key {
     /// The target ID that requested the source file parsing.
     pub target_id: TargetID,
 }
+
+pernixc_register::register!(Key, Executor);
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::type_complexity)]
@@ -121,6 +89,8 @@ pub async fn parse_executor(
 )]
 #[value(Result<Arc<[error::Error]>, pernixc_source_file::Error>)]
 pub struct DiagnosticKey(pub Key);
+
+pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
 #[allow(clippy::type_complexity)]

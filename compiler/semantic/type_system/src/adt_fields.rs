@@ -69,6 +69,8 @@ pub async fn adt_fields(
     Ok(results.into())
 }
 
+pernixc_register::register!(Key, Executor);
+
 /// Retrieves all the fields of an ADT (struct or enum) with an instantiation
 /// from the given [`generic_arguments`] applied.
 #[pernixc_extend::extend]

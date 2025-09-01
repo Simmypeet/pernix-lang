@@ -16,16 +16,8 @@ use pernixc_parser::{
     expect::{self, Ext as _},
     parser::{ast, Parser as _},
 };
-use pernixc_query::{
-    runtime::{
-        executor::CyclicError,
-        persistence::{serde::DynamicRegistry, Persistence},
-    },
-    TrackedEngine,
-};
-use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
-};
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::TargetID;
 use r#type::Type;
@@ -39,37 +31,6 @@ pub mod r#type;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
-
-/// Registers all the required executors to run the queries.
-pub fn register_executors(
-    executor: &mut pernixc_query::runtime::executor::Registry,
-) {
-    executor.register(Arc::new(Executor));
-    executor.register(Arc::new(DiagnosticExecutor));
-}
-
-/// Registers all the necessary runtime information for the query engine.
-pub fn register_serde<
-    S: Serializer<Registry>,
-    D: Deserializer<Registry>,
-    Registry: DynamicRegistry<S, D> + Send + Sync,
->(
-    serde_registry: &mut Registry,
-) where
-    S::Error: Send + Sync,
-{
-    serde_registry.register::<Key>();
-    serde_registry.register::<DiagnosticKey>();
-}
-
-/// Registers the keys that should be skipped during serialization and
-/// deserialization in the query engine's persistence layer
-pub fn skip_persistence(persistence: &mut Persistence) {
-    // Since most of the time, syntax are not accessed directly, and if
-    // there's a slight change to the source text, the whole syntax tree
-    // is invalidated, we can skip the persistence of the syntax tree.
-    persistence.skip_cache_value::<Key>();
-}
 
 /// Type alias for [`Token`] categorized as a [`kind::Keyword`].
 pub type Keyword = Token<kind::Keyword, RelativeLocation>;
@@ -346,6 +307,8 @@ pub struct Key {
     pub target_id: TargetID,
 }
 
+pernixc_register::register!(Key, Executor, skip_cache);
+
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::type_complexity)]
 pub async fn parse_executor(
@@ -392,6 +355,8 @@ pub async fn parse_executor(
 )]
 #[value(Result<Arc<[pernixc_parser::error::Error]>, pernixc_source_file::Error>)]
 pub struct DiagnosticKey(pub Key);
+
+pernixc_register::register!(DiagnosticKey, DiagnosticExecutor);
 
 #[pernixc_query::executor(key(DiagnosticKey), name(DiagnosticExecutor))]
 #[allow(clippy::type_complexity)]

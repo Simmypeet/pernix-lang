@@ -248,6 +248,8 @@ pub struct Key {
     pub other: Global<pernixc_symbol::ID>,
 }
 
+pernixc_register::register!(Key, ImplementsOrderExecutor);
+
 #[pernixc_query::executor(key(Key), name(ImplementsOrderExecutor))]
 pub async fn implements_order(
     Key { this, other }: &Key,

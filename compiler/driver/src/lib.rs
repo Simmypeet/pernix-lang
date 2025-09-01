@@ -170,9 +170,6 @@ pub async fn run(
     pernixc_register::Registration::register_serde_registry(
         &mut serde_registry,
     );
-    pernixc_lexical::register_serde(&mut serde_registry);
-    pernixc_syntax::register_serde(&mut serde_registry);
-    pernixc_type_system::register_serde(&mut serde_registry);
     pernixc_resolution::register_serde(&mut serde_registry);
     pernixc_semantic_element_impl::register_serde(&mut serde_registry);
 
@@ -229,9 +226,6 @@ pub async fn run(
     // into the persistence layer.
     if let Some(persistence) = engine.runtime.persistence.as_mut() {
         pernixc_register::Registration::register_skip_persistence(persistence);
-        pernixc_lexical::skip_persistence(persistence);
-        pernixc_syntax::skip_persistence(persistence);
-        pernixc_type_system::skip_persistence(persistence);
         pernixc_resolution::skip_persistence(persistence);
         pernixc_semantic_element_impl::skip_persistence(persistence);
     }
@@ -240,9 +234,6 @@ pub async fn run(
     pernixc_register::Registration::register_executor(
         &mut engine.runtime.executor,
     );
-    pernixc_lexical::register_executors(&mut engine.runtime.executor);
-    pernixc_syntax::register_executors(&mut engine.runtime.executor);
-    pernixc_type_system::register_executors(&mut engine.runtime.executor);
     pernixc_resolution::register_executors(&mut engine.runtime.executor);
     pernixc_semantic_element_impl::register_executors(
         &mut engine.runtime.executor,
