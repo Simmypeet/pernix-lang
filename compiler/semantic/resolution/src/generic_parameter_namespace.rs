@@ -83,3 +83,5 @@ pub async fn get_generic_parameter_namespace(
 
     Ok(Arc::new(extra_namespace))
 }
+
+pernixc_register::register!(Key, Executor);

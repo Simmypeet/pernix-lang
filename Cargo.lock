@@ -1345,6 +1345,7 @@ dependencies = [
  "pernixc_lexical",
  "pernixc_parser",
  "pernixc_query",
+ "pernixc_register",
  "pernixc_semantic_element",
  "pernixc_serialize",
  "pernixc_source_file",
