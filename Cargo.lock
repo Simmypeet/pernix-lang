@@ -1433,6 +1433,7 @@ dependencies = [
  "pernixc_arena",
  "pernixc_extend",
  "pernixc_query",
+ "pernixc_register",
  "pernixc_serialize",
  "pernixc_stable_hash",
  "pernixc_stable_type_id",

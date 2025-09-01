@@ -21,46 +21,12 @@ use fnv::FnvHasher;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_query::{
-    runtime::{
-        executor::CyclicError,
-        persistence::{serde::DynamicRegistry, Persistence},
-    },
-    TrackedEngine,
-};
-use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
-};
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::{StableHash, Value};
 use pernixc_stable_type_id::Identifiable;
 use pernixc_target::{get_target_seed, Global, TargetID};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
-
-/// Registers all the required executors to run the queries.
-pub fn register_executors(
-    executor: &mut pernixc_query::runtime::executor::Registry,
-) {
-    executor.register(Arc::new(Executor));
-}
-
-/// Registers all the necessary runtime information for the query engine.
-pub fn register_serde<
-    S: Serializer<Registry>,
-    D: Deserializer<Registry>,
-    Registry: DynamicRegistry<S, D> + Send + Sync,
->(
-    serde_registry: &mut Registry,
-) where
-    S::Error: Send + Sync,
-{
-    serde_registry.register::<Key>();
-}
-
-/// Registers the keys that should be skipped during serialization and
-/// deserialization in the query engine's persistence layer
-pub fn skip_persistence(persistence: &mut Persistence) {
-    persistence.skip_cache_value::<Key>();
-}
 
 /// Represents an source file input for the compiler.
 #[derive(Clone, PartialEq, Eq, Hash, Getters, Serialize, Deserialize)]
@@ -841,6 +807,8 @@ pub struct Key {
     /// The target that requested the source file loading
     pub target_id: TargetID,
 }
+
+pernixc_register::register!(Key, Executor, skip_cache);
 
 /// The string formatted error from the [`std::io::Error`] when loading
 /// the source file.
