@@ -1733,3 +1733,26 @@ where
         Ok(std::rc::Rc::new(value))
     }
 }
+
+macro_rules! non_zero_impl {
+    (
+        $($ty:ty),*
+    ) => {
+        $(
+            impl<D, E> Deserialize<D, E> for std::num::NonZero<$ty>
+            where
+                D: Deserializer<E>,
+            {
+                fn deserialize(
+                    deserialize: &mut D,
+                    e: &E,
+                ) -> Result<Self, D::Error> {
+                    let value = <$ty as Deserialize<D, E>>::deserialize(deserialize, e)?;
+                    Self::new(value).ok_or_else(|| D::Error::custom("value must be non-zero"))
+                }
+            }
+        )*
+    };
+}
+
+non_zero_impl!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize);

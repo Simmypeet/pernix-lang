@@ -1184,3 +1184,26 @@ where
         (**self).serialize(serializer, e)
     }
 }
+
+macro_rules! non_zero_impl {
+    (
+        $($ty:ty),*
+    ) => {
+        $(
+            impl<S, E> Serialize<S, E> for std::num::NonZero<$ty>
+            where
+                S: Serializer<E>,
+            {
+                fn serialize(
+                    &self,
+                    serializer: &mut S,
+                    e: &E,
+                ) -> Result<(), S::Error> {
+                    self.get().serialize(serializer, e)
+                }
+            }
+        )*
+    };
+}
+
+non_zero_impl!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize);
