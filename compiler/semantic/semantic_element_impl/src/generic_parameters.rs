@@ -271,3 +271,5 @@ impl build::Build for pernixc_term::generic_parameters::Key {
         })
     }
 }
+
+build::register_build!(pernixc_term::generic_parameters::Key);

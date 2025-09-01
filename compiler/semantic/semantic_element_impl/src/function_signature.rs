@@ -39,8 +39,10 @@ use pernixc_type_system::{
 };
 
 use crate::{
-    build::Output, function_signature::diagnostic::Diagnostic,
-    occurrences::Occurrences, Build,
+    build::{self, Output},
+    function_signature::diagnostic::Diagnostic,
+    occurrences::Occurrences,
+    Build,
 };
 
 pub mod diagnostic;
@@ -357,6 +359,8 @@ impl Build for Key {
     }
 }
 
+build::register_build!(Key);
+
 struct ParametersElidedLifetimeProvider<'a> {
     global_id: Global<pernixc_symbol::ID>,
     elided_lifetimes: &'a mut Arena<ElidedLifetime>,
@@ -502,6 +506,8 @@ pub async fn parameters_executor(
     Ok(signature.parameters)
 }
 
+pernixc_register::register!(parameter::Key, ParametersExecutor);
+
 #[pernixc_query::executor(key(return_type::Key), name(ReturnTypeExecutor))]
 pub async fn return_type_executor(
     return_type::Key(id): &return_type::Key,
@@ -510,6 +516,8 @@ pub async fn return_type_executor(
     let signature = engine.query(&Key(*id)).await?;
     Ok(signature.return_type)
 }
+
+pernixc_register::register!(return_type::Key, ReturnTypeExecutor);
 
 #[pernixc_query::executor(
     key(implied_predicate::Key),
@@ -523,6 +531,8 @@ pub async fn implied_predicates_executor(
     Ok(signature.implied_predicates)
 }
 
+pernixc_register::register!(implied_predicate::Key, ImpliedPredicatesExecutor);
+
 #[pernixc_query::executor(
     key(elided_lifetime::Key),
     name(ElidedLifetimesExecutor)
@@ -535,6 +545,8 @@ pub async fn elided_lifetimes_executor(
     Ok(signature.elided_lifetimes)
 }
 
+pernixc_register::register!(elided_lifetime::Key, ElidedLifetimesExecutor);
+
 #[pernixc_query::executor(
     key(late_bound_lifetime::Key),
     name(LateBooundLifetimesExecutor)
@@ -546,3 +558,8 @@ pub async fn late_bound_lifetimes_executor(
     let signature = engine.query(&Key(*id)).await?;
     Ok(signature.late_bound_lifetime_parameters)
 }
+
+pernixc_register::register!(
+    late_bound_lifetime::Key,
+    LateBooundLifetimesExecutor
+);

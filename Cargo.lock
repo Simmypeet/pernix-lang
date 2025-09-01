@@ -1388,6 +1388,7 @@ dependencies = [
  "pernixc_hash",
  "pernixc_lexical",
  "pernixc_query",
+ "pernixc_register",
  "pernixc_resolution",
  "pernixc_semantic_element",
  "pernixc_serialize",

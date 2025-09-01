@@ -77,3 +77,5 @@ impl build::Build for pernixc_semantic_element::type_alias::Key {
         })
     }
 }
+
+build::register_build!(pernixc_semantic_element::type_alias::Key);

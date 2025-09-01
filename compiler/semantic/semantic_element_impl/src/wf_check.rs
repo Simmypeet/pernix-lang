@@ -1065,6 +1065,8 @@ pub(super) async fn check_occurrences(
     Ok(())
 }
 
+pernixc_register::register!(Key, Executor);
+
 #[pernixc_query::query(
     key(Key),
     value(Arc<[Diagnostic]>),

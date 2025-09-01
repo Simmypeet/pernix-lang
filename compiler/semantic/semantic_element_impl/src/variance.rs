@@ -12,7 +12,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
-    kind::{get_kind, Filter, Kind},
+    kind::{get_kind, Filter, FilterExecutor, FilterKey, Kind},
     member::get_members,
 };
 use pernixc_target::{Global, TargetID};
@@ -65,6 +65,8 @@ pub struct Constraints {
     lifetime_parameter_constraints:
         Vec<(ID<LifetimeParameter>, pernixc_symbol::ID, VarianceVariable)>,
 }
+
+pernixc_register::register!(ConstraintsKey, ConstraintsExecutor);
 
 #[pernixc_query::query(
     key(ConstraintsKey),
@@ -483,6 +485,8 @@ impl Constraints {
 )]
 pub struct AdtFilter;
 
+pernixc_register::register!(FilterKey<AdtFilter>, FilterExecutor);
+
 impl Filter for AdtFilter {
     async fn filter(&self, kind: Kind) -> bool { kind.is_adt() }
 }
@@ -528,6 +532,8 @@ async fn collect_constraints(
 
     Ok(constraints_list)
 }
+
+pernixc_register::register!(MapKey, MapExecutor);
 
 #[pernixc_query::query(
     key(MapKey),
@@ -645,6 +651,8 @@ pub async fn get_variance_maps(
         variances_map.into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
     ))
 }
+
+pernixc_register::register!(pernixc_semantic_element::variance::Key, Executor);
 
 #[pernixc_query::executor(
     key(pernixc_semantic_element::variance::Key),

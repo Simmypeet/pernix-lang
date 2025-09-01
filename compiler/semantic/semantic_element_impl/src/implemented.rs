@@ -6,6 +6,7 @@ use pernixc_semantic_element::implements::get_implements;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
+use pernixc_symbol::kind::FilterKey;
 use pernixc_target::{get_all_target_ids, Global, TargetID};
 use pernixc_tokio::scoped;
 
@@ -31,6 +32,11 @@ impl pernixc_symbol::kind::Filter for ImplementationFilter {
     }
 }
 
+pernixc_register::register!(
+    FilterKey<ImplementationFilter>,
+    pernixc_symbol::kind::FilterExecutor
+);
+
 #[derive(
     Debug,
     Clone,
@@ -50,6 +56,8 @@ pub struct InTargetKey {
     pub implementable_id: Global<pernixc_symbol::ID>,
     pub target_id: TargetID,
 }
+
+pernixc_register::register!(InTargetKey, InTargetExecutor);
 
 #[pernixc_query::executor(key(InTargetKey), name(InTargetExecutor))]
 pub async fn implemented_in_target_executor(
@@ -108,6 +116,11 @@ pub async fn implemented_in_target_executor(
 
     result
 }
+
+pernixc_register::register!(
+    pernixc_semantic_element::implemented::Key,
+    Executor
+);
 
 #[pernixc_query::executor(
     key(pernixc_semantic_element::implemented::Key),

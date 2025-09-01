@@ -32,7 +32,7 @@ use pernixc_term::{
 };
 
 use crate::{
-    build::Output,
+    build::{self, Output},
     implements_qualified_identifier::diagnostic::{
         AdtImplementationCannotBeFinal, AdtImplementationCannotBeNegative,
         InvalidSymbolForImplements, MarkerImplementsNotFinal,
@@ -58,6 +58,8 @@ pub mod diagnostic;
 )]
 #[value(Option<Arc<Resolution>>)]
 pub struct Key(pub Global<pernixc_symbol::ID>);
+
+build::register_build!(Key);
 
 impl crate::build::Build for Key {
     type Diagnostic = diagnostic::Diagnostic;
@@ -500,7 +502,7 @@ async fn check_adt(
     Ok(())
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ExtractImplementsID;
 
 impl executor::Executor<pernixc_semantic_element::implements::Key>
@@ -516,7 +518,12 @@ impl executor::Executor<pernixc_semantic_element::implements::Key>
     }
 }
 
-#[derive(Debug)]
+pernixc_register::register!(
+    pernixc_semantic_element::implements::Key,
+    ExtractImplementsID
+);
+
+#[derive(Debug, Default)]
 pub struct ExtractGenericArguments;
 
 impl executor::Executor<pernixc_semantic_element::implements_arguments::Key>
@@ -534,3 +541,8 @@ impl executor::Executor<pernixc_semantic_element::implements_arguments::Key>
             .map(|x| Arc::new(x.generic_arguments.clone())))
     }
 }
+
+pernixc_register::register!(
+    pernixc_semantic_element::implements_arguments::Key,
+    ExtractGenericArguments
+);

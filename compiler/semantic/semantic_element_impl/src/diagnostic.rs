@@ -117,6 +117,8 @@ pub async fn single_rendered_executor(
     Ok(final_diagnostics.into())
 }
 
+pernixc_register::register!(SingleRenderedKey, SingleRenderedExecutor);
+
 #[pernixc_query::query(
     key(AllRenderedKey),
     executor(AllRenderedExecutor),
@@ -157,3 +159,5 @@ pub async fn all_rendered_executor(
         Ok(diagnostics.into())
     })
 }
+
+pernixc_register::register!(AllRenderedKey, AllRenderedExecutor);

@@ -647,3 +647,5 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
         })
     }
 }
+
+build::register_build!(pernixc_semantic_element::where_clause::Key);

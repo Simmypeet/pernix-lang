@@ -86,6 +86,8 @@ impl build::Build for pernixc_semantic_element::fields::Key {
     }
 }
 
+build::register_build!(pernixc_semantic_element::fields::Key);
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 async fn process_field(
     engine: &TrackedEngine,

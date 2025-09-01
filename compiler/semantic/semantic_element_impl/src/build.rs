@@ -1,6 +1,8 @@
 use std::{fmt::Debug, hash::Hash, marker::PhantomData, sync::Arc};
 
 use pernixc_query::runtime::executor;
+#[allow(unused)]
+pub use pernixc_register;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
@@ -72,7 +74,7 @@ impl_key!(T, Key, Output<T>);
 impl_key!(T, DiagnosticKey, Arc<[T::Diagnostic]>);
 impl_key!(T, OccurrencesKey, Arc<Occurrences>);
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BuildExecutor;
 
 impl<T: Build> executor::Executor<Key<T>> for BuildExecutor {
@@ -85,7 +87,7 @@ impl<T: Build> executor::Executor<Key<T>> for BuildExecutor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DiagnosticExecutor;
 
 impl<T: Build> executor::Executor<DiagnosticKey<T>> for DiagnosticExecutor {
@@ -100,7 +102,7 @@ impl<T: Build> executor::Executor<DiagnosticKey<T>> for DiagnosticExecutor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct OccurrencesExecutor;
 
 impl<T: Build> executor::Executor<OccurrencesKey<T>> for OccurrencesExecutor {
@@ -115,10 +117,10 @@ impl<T: Build> executor::Executor<OccurrencesKey<T>> for OccurrencesExecutor {
     }
 }
 
-#[derive(Debug)]
-pub struct TermExtractExecutor;
+#[derive(Debug, Default)]
+pub struct ElementExtractExecutor;
 
-impl<T: Build> executor::Executor<T> for TermExtractExecutor {
+impl<T: Build> executor::Executor<T> for ElementExtractExecutor {
     async fn execute(
         &self,
         engine: &pernixc_query::TrackedEngine,
@@ -180,3 +182,31 @@ pub trait Build: pernixc_query::Key {
     > + use<'x, 'y, Self>
            + Send;
 }
+
+/// Registers the necessary executors for the given type.
+#[macro_export]
+macro_rules! register_build {
+    ($ty:ty) => {
+        $crate::build::pernixc_register::register!(
+            $crate::build::Key<$ty>,
+            $crate::build::BuildExecutor
+        );
+
+        $crate::build::pernixc_register::register!(
+            $crate::build::DiagnosticKey<$ty>,
+            $crate::build::DiagnosticExecutor
+        );
+
+        $crate::build::pernixc_register::register!(
+            $crate::build::OccurrencesKey<$ty>,
+            $crate::build::OccurrencesExecutor
+        );
+
+        $crate::build::pernixc_register::register!(
+            $ty,
+            $crate::build::ElementExtractExecutor
+        );
+    };
+}
+
+pub use register_build;
