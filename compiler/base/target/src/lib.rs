@@ -8,13 +8,8 @@ use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_extend::extend;
 use pernixc_hash::HashSet;
-use pernixc_query::{
-    runtime::persistence::{serde::DynamicRegistry, Persistence},
-    TrackedEngine,
-};
-use pernixc_serialize::{
-    de::Deserializer, ser::Serializer, Deserialize, Serialize,
-};
+use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use rand::Rng;
 use siphasher::sip128::Hasher128;
@@ -421,6 +416,8 @@ pub struct Arguments {
 #[extend(method(get_invocation_arguments), no_cyclic)]
 pub struct Key(pub TargetID);
 
+pernixc_register::register!(Key);
+
 #[must_use]
 const fn get_styles() -> clap::builder::Styles {
     clap::builder::Styles::styled()
@@ -462,39 +459,6 @@ const fn get_styles() -> clap::builder::Styles {
         )
 }
 
-/// Registers all the required executors to run the queries.
-pub fn register_executors(
-    executor: &mut pernixc_query::runtime::executor::Registry,
-) {
-    executor.register(Arc::new(SeedExecutor));
-}
-
-/// Registers all the necessary runtime information for the query engine.
-pub fn register_serde<
-    S: Serializer<Registry>,
-    D: Deserializer<Registry>,
-    Registry: DynamicRegistry<S, D> + Send + Sync,
->(
-    serde_registry: &mut Registry,
-) where
-    S::Error: Send + Sync,
-{
-    serde_registry.register::<Key>();
-    serde_registry.register::<LinkKey>();
-    serde_registry.register::<MapKey>();
-    serde_registry.register::<SeedKey>();
-    serde_registry.register::<LocalTargetIDKey>();
-    serde_registry.register::<AllTargetIDsKey>();
-}
-
-/// Registers the keys that should be skipped during serialization and
-/// deserialization in the query engine's persistence layer
-pub fn skip_persistence(persistence: &mut Persistence) {
-    persistence.skip_cache_value::<Key>();
-    persistence.skip_cache_value::<LinkKey>();
-    persistence.skip_cache_value::<MapKey>();
-}
-
 /// A query input for mapping names to their target IDs.
 #[derive(
     Debug,
@@ -512,6 +476,8 @@ pub fn skip_persistence(persistence: &mut Persistence) {
 )]
 #[value(Arc<HashMap<SharedStr, TargetID>>)]
 pub struct MapKey;
+
+pernixc_register::register!(MapKey);
 
 /// Gets the map from the name of the target to its ID.
 #[extend]
@@ -540,6 +506,8 @@ pub async fn get_target_map(
 #[extend(method(get_linked_targets), no_cyclic)]
 pub struct LinkKey(pub TargetID);
 
+pernixc_register::register!(LinkKey);
+
 /// A query for retrieving the linked targets of a given target ID.
 #[derive(
     Debug,
@@ -558,6 +526,8 @@ pub struct LinkKey(pub TargetID);
 #[value(u64)]
 #[extend(method(get_target_seed), no_cyclic)]
 pub struct SeedKey(pub TargetID);
+
+pernixc_register::register!(SeedKey, SeedExecutor);
 
 /// Gets the initial random seed for ID generation.
 #[pernixc_query::executor(key(SeedKey), name(SeedExecutor))]
@@ -588,6 +558,8 @@ pub async fn target_seed_executor(
 #[value(TargetID)]
 pub struct LocalTargetIDKey;
 
+pernixc_register::register!(LocalTargetIDKey);
+
 /// Gets the `TargetID` that's currently being compiled in the current session.
 #[extend]
 async fn get_local_target_id(self: &TrackedEngine) -> TargetID {
@@ -614,6 +586,8 @@ async fn get_local_target_id(self: &TrackedEngine) -> TargetID {
 )]
 #[value(Arc<HashSet<TargetID>>)]
 pub struct AllTargetIDsKey;
+
+pernixc_register::register!(AllTargetIDsKey);
 
 /// Retrieves all the target IDs possible in the current session.
 ///

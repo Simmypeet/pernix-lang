@@ -63,6 +63,28 @@ impl Registration {
         }
     }
 
+    /// Registers the key without executor specified.
+    ///
+    /// This typically means that the key's value will be explicitly
+    /// specified as an input.
+    #[must_use]
+    pub const fn register_key_no_executor<
+        T: Key
+            + Serialize<persistence::Serializer, SerdeRegistry>
+            + Deserialize<persistence::Deserializer, SerdeRegistry>,
+    >() -> Self
+    where
+        T::Value: Serialize<persistence::Serializer, SerdeRegistry>
+            + Deserialize<persistence::Deserializer, SerdeRegistry>,
+    {
+        Self {
+            register_executor: |_: &mut executor::Registry| {},
+            register_serde_registry: register_serde_registry::<T>,
+            skip_persistence: skip_persistence::<T>,
+            skip_persistence_toggle: false,
+        }
+    }
+
     /// Registers the helper with a flag to skip persistence.
     #[must_use]
     pub const fn skip_persistence(mut self) -> Self {
@@ -118,6 +140,12 @@ fn skip_persistence<T: Key>(persistence: &mut Persistence) {
 /// Registers the key and executor for the main compiler driver.
 #[macro_export]
 macro_rules! register {
+    ($key:ty) => {
+        $crate::submit! {
+            $crate::Registration::register_key_no_executor::<$key>()
+        }
+    };
+
     ($key:ty, $executor:ty) => {
         $crate::submit! {
             $crate::Registration::register_key::<$key, $executor>()

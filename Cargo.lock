@@ -1536,6 +1536,7 @@ dependencies = [
  "pernixc_extend",
  "pernixc_hash",
  "pernixc_query",
+ "pernixc_register",
  "pernixc_serialize",
  "pernixc_stable_hash",
  "proptest",
