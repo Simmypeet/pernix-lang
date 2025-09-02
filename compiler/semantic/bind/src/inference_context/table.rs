@@ -1,3 +1,5 @@
+//! Contains the definition of the inference table.
+
 use std::{
     clone::Clone,
     collections::{hash_map::Entry, HashMap},
@@ -9,26 +11,13 @@ use enum_as_inner::EnumAsInner;
 use pernixc_arena::{Arena, ID};
 use pernixc_term::inference;
 
-use crate::inference_context::table::history::History;
+use crate::inference_context::{
+    constraint::Constraint, table::history::History,
+};
 
-mod history;
+pub mod history;
 
 pub use history::Checkpoint;
-
-/// Implements by a constraint type. Representing a restrict domain of what
-/// terms can be inferred.
-pub trait Constraint: Debug + Clone + Eq {
-    /// The type of terms that can be inferred.
-    type Term: Debug + Clone + Eq + Hash;
-
-    /// Checks if the given term satisfies the constraint.
-    fn satisfies(&self, term: &Self::Term) -> bool;
-
-    /// Tries to combine this constraint with another constraint.
-    fn combine(&self, another: &Self) -> Option<Self>
-    where
-        Self: Sized;
-}
 
 /// Either the inference variable is known or is inferring.
 #[derive(
@@ -162,7 +151,6 @@ impl<C: Constraint> Table<C> {
                         },
                     ));
                 }
-
                 Ok(())
             }
 

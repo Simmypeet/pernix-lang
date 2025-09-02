@@ -12,6 +12,7 @@ pernixc_type_system = { path = "../type_system" }
 pernixc_term = { path = "../term" }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
+derive_more = { workspace = true }
 
 
 [lints]

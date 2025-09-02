@@ -1,3 +1,5 @@
+//! Contains the logic for checkpointing the inference table.
+
 use pernixc_arena::ID;
 use pernixc_term::inference;
 
