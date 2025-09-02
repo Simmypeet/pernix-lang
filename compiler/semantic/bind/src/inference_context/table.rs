@@ -109,13 +109,6 @@ pub enum AssignConstraintError<C: Constraint> {
     CombineConstraint(#[from] CombineConstraintError<C>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum AssignKnownValueError<C: Constraint> {
-    #[error(transparent)]
-    UnsatisfiedConstraintError(#[from] UnsatisfiedConstraintError<C>),
-}
-
 impl<C: Constraint> Table<C> {
     /// Registers the inference variable to the table and assign the constraint
     /// to it.
@@ -199,23 +192,21 @@ impl<C: Constraint> Table<C> {
     }
 
     /// Assigns a known value to the constraint.
-    pub fn assign_infer_to_known(
+    pub fn assign_known(
         &mut self,
         constraint_id: ID<C>,
         known: C::Term,
-    ) -> Result<(), AssignKnownValueError<C>> {
+    ) -> Result<(), UnsatisfiedConstraintError<C>> {
         // check if the known value satisfies the constraint
         let constraint =
             self.constraints.get(constraint_id).expect("invalid constraint ID");
 
         // check if the known value satisfies the constraint
         if !constraint.satisfies(&known) {
-            return Err(AssignKnownValueError::UnsatisfiedConstraintError(
-                UnsatisfiedConstraintError {
-                    term: known,
-                    constraint: constraint.clone(),
-                },
-            ));
+            return Err(UnsatisfiedConstraintError {
+                term: known,
+                constraint: constraint.clone(),
+            });
         }
 
         let current_constraint = constraint.clone();
@@ -248,6 +239,61 @@ impl<C: Constraint> Table<C> {
         Ok(())
     }
 
+    /// Attemps to unify two constraint variables.
+    pub fn unify_infers(
+        &mut self,
+        left: ID<C>,
+        right: ID<C>,
+    ) -> Result<(), CombineConstraintError<C>> {
+        if left == right {
+            return Ok(());
+        }
+
+        let left_constraint = self.constraints.get(left).unwrap();
+        let right_constraint = self.constraints.get(right).unwrap();
+
+        let Some(combined) = left_constraint.combine(right_constraint) else {
+            return Err(CombineConstraintError {
+                lhs: left_constraint.clone(),
+                rhs: right_constraint.clone(),
+            });
+        };
+
+        let old_left_constraint = left_constraint.clone();
+        let old_right_constraint = right_constraint.clone();
+
+        *self.constraints.get_mut(left).unwrap() = combined;
+
+        // remove the rhs id and then reassign all inference variables that
+        // pointing to rhs constraint to lhs constraint
+        self.constraints.remove(right).unwrap();
+        let mut redirected_variables = Vec::new();
+
+        for (id, infer) in &mut self.inference_by_ids {
+            let Inference::Inferring(constraint_id) = infer else {
+                continue;
+            };
+            let constraint_id = *constraint_id;
+
+            if constraint_id != right {
+                continue;
+            }
+
+            redirected_variables.push(*id);
+            *infer = Inference::Inferring(left);
+        }
+
+        self.add_unify_constraint_log(
+            left,
+            right,
+            old_left_constraint,
+            old_right_constraint,
+            redirected_variables,
+        );
+
+        Ok(())
+    }
+
     /// Retrieves the current state of the inference variable. It can be either
     /// has been inferred to a known value or is still being inferred.
     #[must_use]
@@ -261,5 +307,14 @@ impl<C: Constraint> Table<C> {
                 self.constraints.get(*constraint_id).unwrap(),
             )),
         }
+    }
+
+    /// Retrieves the current inference state of the variable.
+    #[must_use]
+    pub fn get_inference(
+        &self,
+        inference_variable: inference::Variable<C::Term>,
+    ) -> Option<&Inference<C>> {
+        self.inference_by_ids.get(&inference_variable)
     }
 }
