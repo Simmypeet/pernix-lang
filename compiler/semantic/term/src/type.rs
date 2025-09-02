@@ -3,7 +3,6 @@
 use std::{fmt::Write, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
@@ -16,7 +15,7 @@ use crate::{
         SubTraitMemberLocation, Symbol, TraitMember,
     },
     generic_parameters::{get_generic_parameters, TypeParameterID},
-    inference::Inference,
+    inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     sub_term::{self, Location, SubTerm, TermLocation},
@@ -237,7 +236,7 @@ pub enum SubFunctionSignatureLocation {
 )]
 #[allow(missing_docs)]
 pub enum Type {
-    Inference(ID<Inference<Self>>),
+    Inference(inference::Variable<Self>),
     #[from]
     Primitive(Primitive),
     #[from]

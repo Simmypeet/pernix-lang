@@ -143,7 +143,9 @@ version = "0.1.0-beta.2"
 dependencies = [
  "enum-as-inner",
  "pernixc_arena",
+ "pernixc_term",
  "pernixc_type_system",
+ "thiserror 2.0.15",
 ]
 
 [[package]]

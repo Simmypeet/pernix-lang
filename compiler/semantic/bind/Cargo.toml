@@ -9,7 +9,9 @@ rust-version.workspace = true
 [dependencies]
 pernixc_arena = { path = "../../base/arena" }
 pernixc_type_system = { path = "../type_system" }
+pernixc_term = { path = "../term" }
 enum-as-inner = { workspace = true }
+thiserror = { workspace = true }
 
 
 [lints]

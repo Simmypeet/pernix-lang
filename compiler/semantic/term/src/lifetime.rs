@@ -3,7 +3,6 @@
 use std::fmt::Write;
 
 use enum_as_inner::EnumAsInner;
-use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -14,7 +13,7 @@ use crate::{
     constant::Constant,
     error::Error,
     generic_parameters::{get_generic_parameters, LifetimeParameterID},
-    inference::Inference,
+    inference,
     matching::{Match, Matching, Substructural},
     r#type::Type,
     sub_term::{Location, SubTerm},
@@ -110,7 +109,7 @@ pub type ElidedLifetimeID = MemberID<pernixc_arena::ID<ElidedLifetime>>;
 )]
 #[allow(missing_docs)]
 pub enum Lifetime {
-    Inference(ID<Inference<Self>>),
+    Inference(inference::Variable<Self>),
     Parameter(LifetimeParameterID),
     Elided(ElidedLifetimeID),
     Forall(Forall),

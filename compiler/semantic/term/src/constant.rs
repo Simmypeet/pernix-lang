@@ -4,7 +4,6 @@ use std::{fmt::Write, ops::Deref};
 
 use derive_more::Display;
 use enum_as_inner::EnumAsInner;
-use pernixc_arena::ID;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::name::get_qualified_name;
@@ -13,7 +12,7 @@ use pernixc_target::Global;
 use crate::{
     error::Error,
     generic_parameters::{get_generic_parameters, ConstantParameterID},
-    inference::Inference,
+    inference,
     lifetime::Lifetime,
     matching::{Match, Matching, Substructural},
     r#type::Type,
@@ -151,7 +150,7 @@ pub enum Constant {
     #[from]
     Primitive(Primitive),
     #[from]
-    Inference(ID<Inference<Self>>),
+    Inference(inference::Variable<Self>),
     #[from]
     Parameter(ConstantParameterID),
     #[from]
