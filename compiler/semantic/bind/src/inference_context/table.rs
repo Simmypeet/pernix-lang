@@ -306,3 +306,6 @@ impl<C: Constraint> Table<C> {
         self.inference_by_ids.get(&inference_variable)
     }
 }
+
+#[cfg(test)]
+mod test;
