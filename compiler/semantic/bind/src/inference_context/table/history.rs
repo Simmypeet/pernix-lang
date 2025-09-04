@@ -237,3 +237,6 @@ impl<C: Constraint> Table<C> {
         }
     }
 }
+
+#[cfg(test)]
+mod test;
