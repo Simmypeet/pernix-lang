@@ -1,5 +1,5 @@
 [package]
-name = "ir"
+name = "pernixc_ir"
 version.workspace = true
 authors.workspace = true
 description.workspace = true

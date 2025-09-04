@@ -138,18 +138,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230c5f1ca6a325a32553f8640d31ac9b49f2411e901e427570154868b46da4f7"
 
 [[package]]
-name = "bind"
-version = "0.1.0-beta.2"
-dependencies = [
- "derive_more",
- "enum-as-inner",
- "pernixc_arena",
- "pernixc_term",
- "pernixc_type_system",
- "thiserror 2.0.15",
-]
-
-[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -839,31 +827,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ir"
-version = "0.1.0-beta.2"
-dependencies = [
- "derive_more",
- "enum-as-inner",
- "flexstr",
- "getset",
- "pernixc_arena",
- "pernixc_diagnostic",
- "pernixc_handler",
- "pernixc_hash",
- "pernixc_lexical",
- "pernixc_query",
- "pernixc_semantic_element",
- "pernixc_serialize",
- "pernixc_source_file",
- "pernixc_stable_hash",
- "pernixc_symbol",
- "pernixc_target",
- "pernixc_term",
- "pernixc_transitive_closure",
- "pernixc_type_system",
-]
-
-[[package]]
 name = "is_terminal_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1170,6 +1133,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_bind"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "enum-as-inner",
+ "pernixc_arena",
+ "pernixc_term",
+ "pernixc_type_system",
+ "thiserror 2.0.15",
+]
+
+[[package]]
 name = "pernixc_diagnostic"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1266,6 +1241,31 @@ dependencies = [
  "proc-macro2 1.0.101",
  "quote 1.0.40",
  "syn 2.0.106",
+]
+
+[[package]]
+name = "pernixc_ir"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive_more",
+ "enum-as-inner",
+ "flexstr",
+ "getset",
+ "pernixc_arena",
+ "pernixc_diagnostic",
+ "pernixc_handler",
+ "pernixc_hash",
+ "pernixc_lexical",
+ "pernixc_query",
+ "pernixc_semantic_element",
+ "pernixc_serialize",
+ "pernixc_source_file",
+ "pernixc_stable_hash",
+ "pernixc_symbol",
+ "pernixc_target",
+ "pernixc_term",
+ "pernixc_transitive_closure",
+ "pernixc_type_system",
 ]
 
 [[package]]
