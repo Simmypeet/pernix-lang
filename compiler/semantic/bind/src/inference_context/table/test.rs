@@ -419,3 +419,358 @@ fn multiple_variables_unified_then_constrained() {
         assert_eq!(table.get_view(var).unwrap(), View::Known(&int32_type));
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+fn unrelated_variables_stay_unchanged_during_unification() {
+    let mut table = TypeTable::default();
+
+    // Create variables that will be unified
+    let unified_var1 = create_inference_variable();
+    let unified_var2 = create_inference_variable();
+    let unified_var3 = create_inference_variable();
+
+    // Create unrelated variables that should remain unchanged
+    let unrelated_var1 = create_inference_variable();
+    let unrelated_var2 = create_inference_variable();
+    let unrelated_var3 = create_inference_variable();
+
+    // Register all variables with different constraints
+    table.register(unified_var1, constraint::Type::All(true));
+    table.register(unified_var2, constraint::Type::Number);
+    table.register(unified_var3, constraint::Type::Integer);
+
+    table.register(unrelated_var1, constraint::Type::UnsignedInteger);
+    table.register(unrelated_var2, constraint::Type::Floating);
+    table.register(unrelated_var3, constraint::Type::Signed);
+
+    // Get constraint IDs for unified variables
+    let unified_var1_id = match table.get_inference(unified_var1).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+    let unified_var2_id = match table.get_inference(unified_var2).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+    let unified_var3_id = match table.get_inference(unified_var3).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+
+    // Verify initial states of unrelated variables before any unification
+    match table.get_view(unrelated_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var3).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Signed);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Unify the specific variables
+    table.unify_infers(unified_var1_id, unified_var2_id).unwrap();
+    table.unify_infers(unified_var1_id, unified_var3_id).unwrap();
+
+    // Verify unified variables now have the most restrictive constraint
+    // (Integer)
+    match table.get_view(unified_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Integer);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unified_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Integer);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unified_var3).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Integer);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Verify unrelated variables remain completely unchanged
+    match table.get_view(unrelated_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var3).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Signed);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Further verify by assigning a concrete type to unified variables
+    let int32_type = create_int32_type();
+    table.assign_known(unified_var1_id, int32_type.clone()).unwrap();
+
+    // All unified variables should be known
+    assert_eq!(table.get_view(unified_var1).unwrap(), View::Known(&int32_type));
+    assert_eq!(table.get_view(unified_var2).unwrap(), View::Known(&int32_type));
+    assert_eq!(table.get_view(unified_var3).unwrap(), View::Known(&int32_type));
+
+    // Unrelated variables should still be unchanged
+    match table.get_view(unrelated_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var3).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Signed);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+fn partial_unification_preserves_other_variables() {
+    let mut table = TypeTable::default();
+
+    // Create multiple groups of variables
+    let group1_var1 = create_inference_variable();
+    let group1_var2 = create_inference_variable();
+
+    let group2_var1 = create_inference_variable();
+    let group2_var2 = create_inference_variable();
+
+    let independent_var = create_inference_variable();
+
+    // Register with different constraints
+    table.register(group1_var1, constraint::Type::Number);
+    table.register(group1_var2, constraint::Type::Integer);
+
+    table.register(group2_var1, constraint::Type::Floating);
+    table.register(group2_var2, constraint::Type::Floating);
+
+    table.register(independent_var, constraint::Type::UnsignedInteger);
+
+    // Get constraint IDs
+    let group1_var1_id = match table.get_inference(group1_var1).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+    let group1_var2_id = match table.get_inference(group1_var2).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+    let group2_var1_id = match table.get_inference(group2_var1).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+    let group2_var2_id = match table.get_inference(group2_var2).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+
+    // Verify initial states before any unification
+    match table.get_view(group2_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(group2_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(independent_var).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Unify only group1 variables
+    table.unify_infers(group1_var1_id, group1_var2_id).unwrap();
+
+    // Group1 variables should be unified with Integer constraint
+    match table.get_view(group1_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Integer);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(group1_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Integer);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Group2 and independent variables should be unchanged
+    match table.get_view(group2_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(group2_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(independent_var).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Now unify group2 variables
+    table.unify_infers(group2_var1_id, group2_var2_id).unwrap();
+
+    // Group2 variables should be unified with Floating constraint
+    match table.get_view(group2_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(group2_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Group1 should still have Integer constraint and independent should be
+    // unchanged
+    match table.get_view(group1_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Integer);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(group1_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Integer);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(independent_var).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+}
+
+#[test]
+fn assignment_to_unified_group_preserves_unrelated_variables() {
+    let mut table = TypeTable::default();
+
+    // Create unified group and unrelated variables
+    let unified_var1 = create_inference_variable();
+    let unified_var2 = create_inference_variable();
+
+    let unrelated_var1 = create_inference_variable();
+    let unrelated_var2 = create_inference_variable();
+
+    // Register all variables
+    table.register(unified_var1, constraint::Type::All(true));
+    table.register(unified_var2, constraint::Type::Number);
+    table.register(unrelated_var1, constraint::Type::UnsignedInteger);
+    table.register(unrelated_var2, constraint::Type::Floating);
+
+    // Get constraint IDs for unified variables
+    let unified_var1_id = match table.get_inference(unified_var1).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+    let unified_var2_id = match table.get_inference(unified_var2).unwrap() {
+        Inference::Inferring(id) => *id,
+        Inference::Known(_) => panic!("Expected inferring state"),
+    };
+
+    // Verify initial states of unrelated variables
+    match table.get_view(unrelated_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Unify the variables
+    table.unify_infers(unified_var1_id, unified_var2_id).unwrap();
+
+    // Assign concrete type to the unified group
+    let int32_type = create_int32_type();
+    table.assign_known(unified_var1_id, int32_type.clone()).unwrap();
+
+    // Unified variables should be known
+    assert_eq!(table.get_view(unified_var1).unwrap(), View::Known(&int32_type));
+    assert_eq!(table.get_view(unified_var2).unwrap(), View::Known(&int32_type));
+
+    // Unrelated variables should remain completely unchanged
+    match table.get_view(unrelated_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+    match table.get_view(unrelated_var2).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::Floating);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Further assign constraints to unrelated variables to verify they still
+    // work independently
+    table
+        .assign_constraint(unrelated_var1, constraint::Type::UnsignedInteger)
+        .unwrap();
+
+    // This should still work and not affect the unified group
+    match table.get_view(unrelated_var1).unwrap() {
+        View::Constraint(constraint) => {
+            assert_eq!(*constraint, constraint::Type::UnsignedInteger);
+        }
+        View::Known(_) => panic!("Expected constraint view"),
+    }
+
+    // Unified variables should still be known to the same type
+    assert_eq!(table.get_view(unified_var1).unwrap(), View::Known(&int32_type));
+    assert_eq!(table.get_view(unified_var2).unwrap(), View::Known(&int32_type));
+}
