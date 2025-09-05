@@ -5,6 +5,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
+use getset::Getters;
 use pernixc_arena::ID;
 use pernixc_query::TrackedEngine;
 use pernixc_term::{
@@ -35,9 +36,14 @@ pub mod table;
 /// The type itself can also be used as a [`Normalizer`] to normalize types and
 /// constants by resolving inference variables to their known values when
 /// possible.
-#[derive(Debug)]
+#[derive(Debug, Default, Getters)]
 pub struct InferenceContext {
+    /// The inference table for the type term.
+    #[get = "pub"]
     type_table: table::Table<constraint::Type>,
+
+    /// The inference table for the constant term.
+    #[get = "pub"]
     const_table: table::Table<constraint::Constant>,
 }
 
@@ -154,10 +160,10 @@ pub enum UnifyError {
     CombineConstraint(#[from] CombineConstraintError<constraint::Type>),
 
     #[error(transparent)]
-    CyclicConstantInference(#[from] CyclicInferenceError<Type>),
+    CyclicConstantInference(#[from] CyclicInferenceError<Constant>),
 
     #[error(transparent)]
-    CyclicTypeInference(#[from] CyclicInferenceError<Constant>),
+    CyclicTypeInference(#[from] CyclicInferenceError<Type>),
 }
 
 trait Unifiable: Term {
@@ -171,6 +177,10 @@ trait Unifiable: Term {
 
     fn from_combine_constraint_error(
         error: CombineConstraintError<Self::Constraint>,
+    ) -> UnifyError;
+
+    fn from_cyclic_inference_error(
+        error: CyclicInferenceError<Self>,
     ) -> UnifyError;
 
     fn as_inference(&self) -> Option<&inference::Variable<Self>>;
@@ -232,6 +242,12 @@ impl Unifiable for Type {
             None
         }
     }
+
+    fn from_cyclic_inference_error(
+        error: CyclicInferenceError<Self>,
+    ) -> UnifyError {
+        UnifyError::CyclicTypeInference(error)
+    }
 }
 
 impl Unifiable for Constant {
@@ -279,6 +295,12 @@ impl Unifiable for Constant {
         } else {
             None
         }
+    }
+
+    fn from_cyclic_inference_error(
+        error: CyclicInferenceError<Self>,
+    ) -> UnifyError {
+        UnifyError::CyclicConstantInference(error)
     }
 }
 
@@ -374,7 +396,12 @@ impl InferenceContext {
                         | (
                             Inference::Inferring(inferring),
                             Inference::Known(known),
-                        ) => self.handle_known_and_infer(inferring, &known)?,
+                        ) => {
+                            self.handle_known_and_infer(
+                                inferring, &known, premise, engine,
+                            )
+                            .await?;
+                        }
 
                         // merge the constraints of the two inferences and make
                         // them use the same constraint
@@ -406,8 +433,15 @@ impl InferenceContext {
                             ))
                             .await?;
                         }
-                        Inference::Inferring(inferring) => self
-                            .handle_known_and_infer(inferring, another_known)?,
+                        Inference::Inferring(inferring) => {
+                            self.handle_known_and_infer(
+                                inferring,
+                                another_known,
+                                premise,
+                                engine,
+                            )
+                            .await?
+                        }
                     }
                 }
 
@@ -419,16 +453,25 @@ impl InferenceContext {
     }
 
     #[allow(clippy::result_large_err)]
-    fn handle_known_and_infer<T: Unifiable>(
+    async fn handle_known_and_infer<T: Unifiable>(
         &mut self,
         inferring: ID<T::Constraint>,
         known: &T,
+        premise: &Premise,
+        engine: &TrackedEngine,
     ) -> Result<(), UnifyError>
     where
         UnifyError: From<CyclicInferenceError<T>>,
     {
         // check if there's a constraint with the given ID on the known
-        for (term, _) in RecursiveIterator::new(known) {
+        let env = Environment::new(
+            Cow::Borrowed(premise),
+            Cow::Borrowed(engine),
+            self,
+        );
+        let simplfied = env.simplify(known.clone()).await?;
+
+        for (term, _) in RecursiveIterator::new(&simplfied.result) {
             let Some(inference_variable) =
                 T::try_from_term_ref(term).and_then(|x| x.as_inference())
             else {
@@ -443,8 +486,11 @@ impl InferenceContext {
                 continue;
             };
 
+            dbg!(inference, inferring);
             if inference == inferring {
-                return Err(CyclicInferenceError(*inference_variable).into());
+                return Err(T::from_cyclic_inference_error(
+                    CyclicInferenceError(*inference_variable),
+                ));
             }
         }
 
@@ -457,3 +503,6 @@ impl InferenceContext {
         }
     }
 }
+
+#[cfg(test)]
+mod test;

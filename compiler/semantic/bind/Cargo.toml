@@ -11,10 +11,13 @@ pernixc_arena = { path = "../../base/arena" }
 pernixc_query = { path = "../../base/query" }
 pernixc_type_system = { path = "../type_system" }
 pernixc_term = { path = "../term" }
+getset = { workspace = true }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
 
+[dev-dependencies]
+tokio = { workspace = true }
 
 [lints]
 workspace = true
