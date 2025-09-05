@@ -236,6 +236,7 @@ pub enum SubFunctionSignatureLocation {
 )]
 #[allow(missing_docs)]
 pub enum Type {
+    #[from]
     Inference(inference::Variable<Self>),
     #[from]
     Primitive(Primitive),

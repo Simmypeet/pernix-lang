@@ -14,6 +14,7 @@ use pernixc_term::{
     constant::Constant,
     generic_arguments::TraitMember,
     generic_parameters::{get_generic_parameters, GenericParameter},
+    inference,
     lifetime::Lifetime,
     predicate::{Compatible, Outlives, Predicate},
     r#type::Type,
@@ -47,6 +48,7 @@ pub trait Term:
     + Hash
     + Send
     + Sync
+    + From<inference::Variable<Self>>
     + 'static
 {
     /// The type of generic parameters of this term kind.
