@@ -22,6 +22,7 @@ use pernixc_type_system::{
 
 use crate::inference_context::{
     constraint::Constraint,
+    sealed::Sealed,
     table::{CombineConstraintError, Inference, UnsatisfiedConstraintError},
 };
 
@@ -166,37 +167,53 @@ pub enum UnifyError {
     CyclicTypeInference(#[from] CyclicInferenceError<Type>),
 }
 
-trait Unifiable: Term {
-    type Constraint: Constraint<Term = Self>;
+mod sealed {
+    use super::{
+        inference, table, CombineConstraintError, Constraint,
+        CyclicInferenceError, InferenceContext, Term, UnifyError,
+        UnsatisfiedConstraintError,
+    };
 
-    fn from_incompatible_error(lhs: &Self, rhs: &Self) -> UnifyError;
+    pub trait Sealed: Term {
+        type Constraint: Constraint<Term = Self>;
 
-    fn from_constraint_error(
-        error: UnsatisfiedConstraintError<Self::Constraint>,
-    ) -> UnifyError;
+        fn from_incompatible_error(lhs: &Self, rhs: &Self) -> UnifyError;
 
-    fn from_combine_constraint_error(
-        error: CombineConstraintError<Self::Constraint>,
-    ) -> UnifyError;
+        fn from_constraint_error(
+            error: UnsatisfiedConstraintError<Self::Constraint>,
+        ) -> UnifyError;
 
-    fn from_cyclic_inference_error(
-        error: CyclicInferenceError<Self>,
-    ) -> UnifyError;
+        fn from_combine_constraint_error(
+            error: CombineConstraintError<Self::Constraint>,
+        ) -> UnifyError;
 
-    fn as_inference(&self) -> Option<&inference::Variable<Self>>;
+        fn from_cyclic_inference_error(
+            error: CyclicInferenceError<Self>,
+        ) -> UnifyError;
 
-    fn inference_table(
-        ctx: &InferenceContext,
-    ) -> &table::Table<Self::Constraint>;
+        fn as_inference(&self) -> Option<&inference::Variable<Self>>;
 
-    fn inference_table_mut(
-        ctx: &mut InferenceContext,
-    ) -> &mut table::Table<Self::Constraint>;
+        fn inference_table(
+            ctx: &InferenceContext,
+        ) -> &table::Table<Self::Constraint>;
 
-    fn try_from_term_ref(kind: pernixc_term::TermRef<'_>) -> Option<&'_ Self>;
+        fn inference_table_mut(
+            ctx: &mut InferenceContext,
+        ) -> &mut table::Table<Self::Constraint>;
+
+        fn try_from_term_ref(
+            kind: pernixc_term::TermRef<'_>,
+        ) -> Option<&'_ Self>;
+    }
 }
 
-impl Unifiable for Type {
+/// A trait implemented internally by the types and constants, which can be
+/// unified.
+pub trait Unifiable: Sealed {}
+
+impl<T> Unifiable for T where T: Sealed {}
+
+impl sealed::Sealed for Type {
     type Constraint = constraint::Type;
 
     fn from_incompatible_error(lhs: &Self, rhs: &Self) -> UnifyError {
@@ -250,7 +267,7 @@ impl Unifiable for Type {
     }
 }
 
-impl Unifiable for Constant {
+impl sealed::Sealed for Constant {
     type Constraint = constraint::Constant;
 
     fn from_incompatible_error(lhs: &Self, rhs: &Self) -> UnifyError {
@@ -332,8 +349,16 @@ impl InferenceContext {
 }
 
 impl InferenceContext {
+    /// Registers a new inference variable with the given constraint.
+    pub fn register<T: Unifiable>(
+        &mut self,
+        inference_variable: inference::Variable<T>,
+        constraint: T::Constraint,
+    ) -> bool {
+        T::inference_table_mut(self).register(inference_variable, constraint)
+    }
+
     /// Unifies two types/constants
-    #[allow(private_bounds)]
     pub async fn unify<T: Unifiable>(
         &mut self,
         lhs: &T,
