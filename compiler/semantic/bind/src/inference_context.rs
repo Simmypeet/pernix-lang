@@ -304,6 +304,33 @@ impl Unifiable for Constant {
     }
 }
 
+/// A checkpoint for both type and constant inference tables.
+#[derive(Debug)]
+pub struct Checkpoint {
+    type_checkpoint: table::Checkpoint,
+    const_checkpoint: table::Checkpoint,
+}
+
+impl InferenceContext {
+    /// Start a new checkpoint for both type and constant inference tables.
+    /// The checkpoint can be replayed later via [`Self::restore`].
+    #[must_use]
+    pub fn start_checkpoint(&mut self) -> Checkpoint {
+        Checkpoint {
+            type_checkpoint: self.type_table.start_checkpoint(),
+            const_checkpoint: self.const_table.start_checkpoint(),
+        }
+    }
+
+    /// Restores both type and constant inference tables to the state at the
+    /// checkpoint.
+    #[allow(clippy::needless_pass_by_value)] // intentionally pass by value
+    pub fn restore(&mut self, checkpoint: Checkpoint) {
+        self.type_table.restore(checkpoint.type_checkpoint);
+        self.const_table.restore(checkpoint.const_checkpoint);
+    }
+}
+
 impl InferenceContext {
     /// Unifies two types/constants
     #[allow(private_bounds)]
@@ -440,7 +467,7 @@ impl InferenceContext {
                                 premise,
                                 engine,
                             )
-                            .await?
+                            .await?;
                         }
                     }
                 }
