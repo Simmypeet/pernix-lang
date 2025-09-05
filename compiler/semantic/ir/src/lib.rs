@@ -1,11 +1,14 @@
 //! Contains all the definitions related to the intermediate representation of
 //! the function body.
 
+use std::sync::Arc;
+
 use alloca::Alloca;
 use control_flow_graph::ControlFlowGraph;
 use pernixc_arena::Arena;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
 
 use crate::value::register::Register;
 
@@ -31,8 +34,18 @@ pub struct Values {
 
 /// An intermediate representation of the program.
 #[derive(
-    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Default,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Value,
 )]
+#[id(Global<pernixc_symbol::ID>)]
+#[value(Arc<IR>)]
 pub struct IR {
     /// Contains the registers and allocas used in the program.
     pub values: Values,
