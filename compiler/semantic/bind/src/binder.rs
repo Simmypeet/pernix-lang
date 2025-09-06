@@ -591,6 +591,15 @@ impl Binder<'_> {
         Ok(resolution)
     }
 
+    /// Gets the span of the given `value`.
+    #[must_use]
+    pub fn span_of_value(&self, value: &Value) -> RelativeSpan {
+        match value {
+            Value::Register(id) => self.ir.values.registers[*id].span.unwrap(),
+            Value::Literal(literal) => *literal.span().unwrap(),
+        }
+    }
+
     /*
     /// Gets the type of the given `address`.
     fn type_of_address(

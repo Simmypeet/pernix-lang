@@ -15,6 +15,7 @@ use crate::{
     inference_context::constraint,
 };
 
+pub mod array;
 pub mod block;
 pub mod boolean;
 pub mod numeric;
@@ -124,7 +125,9 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::QualifiedIdentifier(
                 qualified_identifier,
             ) => todo!(),
-            pernixc_syntax::expression::unit::Unit::Array(array) => todo!(),
+            pernixc_syntax::expression::unit::Unit::Array(array) => {
+                self.bind(array, config, handler).await
+            }
             pernixc_syntax::expression::unit::Unit::Phantom(phantom) => todo!(),
             pernixc_syntax::expression::unit::Unit::String(_) => todo!(),
             pernixc_syntax::expression::unit::Unit::Character(character) => {
