@@ -10,6 +10,7 @@ use crate::{
 };
 
 pub mod block;
+pub mod boolean;
 pub mod numeric;
 pub mod postfix;
 
@@ -101,7 +102,9 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            pernixc_syntax::expression::unit::Unit::Boolean(boolean) => todo!(),
+            pernixc_syntax::expression::unit::Unit::Boolean(boolean) => {
+                self.bind(boolean, config, handler).await
+            }
             pernixc_syntax::expression::unit::Unit::Numeric(numeric) => {
                 self.bind(numeric, config, handler).await
             }

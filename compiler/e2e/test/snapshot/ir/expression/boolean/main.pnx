@@ -1,0 +1,4 @@
+# what could go wrong
+public function main():
+    true
+    false
