@@ -1,0 +1,24 @@
+public struct Test:
+    public first: int32
+    public second: float32
+    public third: bool
+
+
+public function main():
+    # valid instantiation
+    Test { first: 32, second: 0.12f32, third: true }
+
+    # missing field
+    Test { first: 32, second: 0.12f32 }
+    Test { first: 32, third: true }
+    Test { second: 0.12f32, third: true }
+
+    # all fields missing
+    Test {}
+
+    # duplicate fields
+    Test { first: 32, second: 0.12f32, third: true, first: 54 }
+    Test { first: 32, second: 0.12f32, second: 0.54f32, third: true }
+
+    # missing fields and duplicate fields
+    Test { first: 32, second: 0.12f32, first: 54 }
