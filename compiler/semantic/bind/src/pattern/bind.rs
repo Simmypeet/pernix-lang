@@ -872,3 +872,16 @@ impl Binder<'_> {
         }
     }
 }
+
+impl Binder<'_> {
+    /// Binds a syntax tree pattern into a semantic pattern given the expected
+    /// type.
+    pub async fn bind_pattern<T: Bind>(
+        &mut self,
+        syntax_tree: &T::SyntaxTree,
+        ty: &Type,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<Option<T>, UnrecoverableError> {
+        T::bind(self, ty, syntax_tree, handler).await
+    }
+}
