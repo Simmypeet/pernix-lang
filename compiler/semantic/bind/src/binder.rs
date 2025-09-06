@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, num::NonZeroUsize, sync::Arc};
 
-use getset::Getters;
+use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_extend::extend;
 use pernixc_handler::{Handler, Storage};
@@ -41,13 +41,19 @@ use crate::{
 };
 
 pub mod stack;
+pub mod type_check;
 
 /// The binder used for building the IR.
-#[derive(Debug, Getters)]
+#[derive(Debug, Getters, CopyGetters)]
 pub struct Binder<'t> {
+    /// Gets the engine used for querying information about the program.
+    #[get = "pub"]
     engine: &'t TrackedEngine,
 
+    /// The current site where the binder is operating on.
+    #[get_copy = "pub"]
     current_site: Global<pernixc_symbol::ID>,
+
     premise: Arc<Premise>,
     extra_namespace: Arc<ExtraNamespace>,
 
@@ -165,6 +171,12 @@ pub enum UnrecoverableError {
     Reported,
 }
 
+impl From<executor::CyclicError> for Error {
+    fn from(value: executor::CyclicError) -> Self {
+        Self::Unrecoverable(UnrecoverableError::CyclicDependency(value))
+    }
+}
+
 /// Is an error occurred while binding the syntax tree
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
@@ -211,12 +223,12 @@ impl<T: Default + Clone + Send + Sync + 'static, U: Term + From<T>>
 pub fn report_as_type_calculating_overflow(
     self: pernixc_type_system::Error,
     overflow_span: RelativeSpan,
-    handler: &Storage<Diagnostic>,
+    handler: &dyn Handler<Diagnostic>,
 ) -> UnrecoverableError {
     match self {
         pernixc_type_system::Error::Overflow(overflow) => {
             overflow
-                .report_as_type_calculating_overflow(overflow_span, handler);
+                .report_as_type_calculating_overflow(overflow_span, &handler);
 
             UnrecoverableError::Reported
         }
@@ -232,11 +244,11 @@ pub fn report_as_type_calculating_overflow(
 pub fn report_as_type_check_overflow(
     self: pernixc_type_system::Error,
     overflow_span: RelativeSpan,
-    handler: &Storage<Diagnostic>,
+    handler: &dyn Handler<Diagnostic>,
 ) -> UnrecoverableError {
     match self {
         pernixc_type_system::Error::Overflow(overflow) => {
-            overflow.report_as_type_check_overflow(overflow_span, handler);
+            overflow.report_as_type_check_overflow(overflow_span, &handler);
 
             UnrecoverableError::Reported
         }
@@ -809,178 +821,5 @@ impl Binder<'_> {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
-    fn type_check_as_diagnostic(
-        &mut self,
-        ty: &Type<infer::Model>,
-        expected_ty: Expected<infer::Model>,
-        type_check_span: Span,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Box<dyn Diagnostic>>, Abort> {
-        let environment = self.create_environment();
-
-        // simplify the types
-        let simplified_ty = environment.simplify(ty.clone()).map_err(|x| {
-            x.report_overflow(|x| {
-                x.report_as_type_calculating_overflow(
-                    type_check_span.clone(),
-                    handler,
-                )
-            })
-        })?;
-
-        match expected_ty {
-            Expected::Known(expected_ty) => {
-                let simplified_expected =
-                    environment.simplify(expected_ty).map_err(|x| {
-                        x.report_overflow(|x| {
-                            x.report_as_type_calculating_overflow(
-                                type_check_span.clone(),
-                                handler,
-                            )
-                        })
-                    })?;
-
-                let error: Option<Box<dyn Diagnostic>> = match self
-                    .inference_context
-                    .unify_type(
-                        &simplified_ty.result,
-                        &simplified_expected.result,
-                        &self.premise,
-                        self.engine,
-                    ) {
-                    Ok(()) => None,
-
-                    Err(
-                        UnifyError::CyclicTypeInference(_)
-                        | UnifyError::CyclicConstantInference(_),
-                    ) => Some(Box::new(CyclicInference {
-                        first: self
-                            .inference_context
-                            .transform_type_into_constraint_model(
-                                simplified_ty.result.clone(),
-                                type_check_span.clone(),
-                                self.engine,
-                                handler,
-                            )?,
-                        second: self
-                            .inference_context
-                            .transform_type_into_constraint_model(
-                                simplified_expected.result.clone(),
-                                type_check_span.clone(),
-                                self.engine,
-                                handler,
-                            )?,
-                        span: type_check_span,
-                    })),
-
-                    Err(UnifyError::TypeSystem(type_system_error)) => {
-                        return Err(type_system_error.report_overflow(|x| {
-                            x.report_as_type_check_overflow(
-                                type_check_span.clone(),
-                                handler,
-                            )
-                        }));
-                    }
-
-                    Err(
-                        UnifyError::IncompatibleTypes { .. }
-                        | UnifyError::IncompatibleConstants { .. }
-                        | UnifyError::UnsatisfiedConstraint(_)
-                        | UnifyError::CombineConstraint(_),
-                    ) => Some(Box::new(MismatchedType {
-                        expected_type: self
-                            .inference_context
-                            .transform_type_into_constraint_model(
-                                simplified_expected.result.clone(),
-                                type_check_span.clone(),
-                                self.engine,
-                                handler,
-                            )?,
-                        found_type: self
-                            .inference_context
-                            .transform_type_into_constraint_model(
-                                simplified_ty.result.clone(),
-                                type_check_span.clone(),
-                                self.engine,
-                                handler,
-                            )?,
-                        span: type_check_span,
-                    })),
-                };
-
-                // report the error
-                Ok(error)
-            }
-            Expected::Constraint(constraint) => {
-                let result = if let Type::Inference(inference_var) =
-                    &simplified_ty.result
-                {
-                    self.inference_context
-                        .unify_with_constraint(*inference_var, &constraint)
-                        .is_ok()
-                } else {
-                    constraint.satisfies(&simplified_ty.result)
-                };
-
-                // report the error
-                if result {
-                    Ok(None)
-                } else {
-                    let error = Box::new(MismatchedType {
-                        expected_type: Type::Inference(constraint),
-                        found_type: self
-                            .inference_context
-                            .transform_type_into_constraint_model(
-                                simplified_ty.result.clone(),
-                                type_check_span.clone(),
-                                self.engine,
-                                handler,
-                            )?,
-                        span: type_check_span,
-                    });
-
-                    Ok(Some(error))
-                }
-            }
-        }
-    }
-
-    /// Performs type checking on the given `ty`.
-    ///
-    /// This function performs type inference as well as type checking. Any
-    /// error, error found will make the binder suboptimal.
-    ///
-    /// # Parameters
-    ///
-    /// - `ty`: The type to check.
-    /// - `expected_ty`: The type or constraint that `ty` should satisfy.
-    /// - `type_check_span`: The span of the type check. This is used for error
-    ///   reoprting.
-    /// - `handler`: The handler to report errors to.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if an unregistered inference variable is found.
-    #[allow(clippy::too_many_lines)]
-    fn type_check(
-        &mut self,
-        ty: &Type<infer::Model>,
-        expected_ty: Expected<infer::Model>,
-        type_check_span: Span,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<bool, Abort> {
-        let error = self.type_check_as_diagnostic(
-            ty,
-            expected_ty,
-            type_check_span,
-            handler,
-        )?;
-
-        error.map_or(Ok(true), |error| {
-            handler.receive(error);
-            Ok(false)
-        })
-    }
     */
 }

@@ -3,6 +3,8 @@
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
+use crate::binder;
+
 diagnostic_enum! {
     /// An enumeration of all diagnostics that can occur during binding the
     /// IR phase.
@@ -11,9 +13,6 @@ diagnostic_enum! {
         Clone,
         PartialEq,
         Eq,
-        PartialOrd,
-        Ord,
-        Hash,
         StableHash,
         Serialize,
         Deserialize,
@@ -23,7 +22,9 @@ diagnostic_enum! {
     pub enum Diagnostic {
         Resolution(pernixc_resolution::diagnostic::Diagnostic),
         TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
-        Numeric(expression::numeric::diagnostic::Diagnostic)
+        TypeCheck(binder::type_check::diagnostic::Diagnostic),
+        Numeric(expression::numeric::diagnostic::Diagnostic),
+        Struct(expression::r#struct::diagnostic::Diagnostic),
     }
 }
 
@@ -36,7 +37,7 @@ macro_rules! diagnostic_enum {
         $enum_vis:vis enum $ident:ident {
             $(
                 $variant:ident($ty:ty)
-            ),*
+            ),* $(,)?
         }
     } => {
         $( #[$enum_meta] )*

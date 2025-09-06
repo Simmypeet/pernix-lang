@@ -1,10 +1,16 @@
 //! Contains the definition of [`Type`].
 
-use std::{fmt::Debug, hash::Hash};
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+};
+
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 /// Implements by a constraint type. Representing a restrict domain of what
 /// terms can be inferred.
-pub trait Constraint: Debug + Clone + Eq {
+pub trait Constraint: Debug + Clone + Eq + Display {
     /// The type of terms that can be inferred.
     type Term: Debug + Clone + Eq + Hash;
 
@@ -27,6 +33,9 @@ pub trait Constraint: Debug + Clone + Eq {
     PartialOrd,
     Ord,
     Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
     derive_more::Display,
 )]
 pub enum Type {
@@ -219,7 +228,21 @@ impl Constraint for Type {
 }
 
 /// The set of types that can be inferred. Used in type inference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::Display,
+)]
+#[display("_")]
 pub struct Constant;
 
 impl Constraint for Constant {

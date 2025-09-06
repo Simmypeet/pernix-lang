@@ -1,6 +1,7 @@
 use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_semantic_element::fields::{get_fields, Field};
@@ -21,9 +22,6 @@ diagnostic_enum! {
         Clone,
         PartialEq,
         Eq,
-        PartialOrd,
-        Ord,
-        Hash,
         StableHash,
         Serialize,
         Deserialize,
@@ -32,6 +30,8 @@ diagnostic_enum! {
         ExpectedStructSymbol(ExpectedStructSymbol),
         FieldNotFound(FieldNotFound),
         FieldIsNotAccessible(FieldIsNotAccessible),
+        DuplicatedFieldInitialization(DuplicatedFieldInitialization),
+        UninitializedFields(UninitializedFields),
     }
 }
 
@@ -203,6 +203,140 @@ impl Report<&TrackedEngine> for FieldIsNotAccessible {
                 "field '{}' is {}",
                 field.name, field_accessibility_description
             ))
+            .build()
+    }
+}
+
+/// The field is initialized more than once.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct DuplicatedFieldInitialization {
+    /// The ID of the field that is initialized more than once.
+    pub field_id: ID<Field>,
+
+    /// The ID of the struct where the field is initialized.
+    pub struct_id: Global<pernixc_symbol::ID>,
+
+    /// The span of the first initialization.
+    pub prior_initialization_span: RelativeSpan,
+
+    /// The span of the duplicate initialization.
+    pub duplicate_initialization_span: RelativeSpan,
+}
+
+impl Report<&TrackedEngine> for DuplicatedFieldInitialization {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let duplicate_span =
+            engine.to_absolute_span(&self.duplicate_initialization_span).await;
+        let prior_span =
+            engine.to_absolute_span(&self.prior_initialization_span).await;
+        let struct_name = engine.get_qualified_name(self.struct_id).await;
+
+        // Get the field name
+        let fields = engine.get_fields(self.struct_id).await.unwrap();
+        let field = &fields.fields[self.field_id];
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("field is initialized multiple times")
+            .primary_highlight(
+                Highlight::builder()
+                    .message(format!(
+                        "field '{}' of struct '{}' is initialized here again",
+                        field.name, struct_name
+                    ))
+                    .span(duplicate_span)
+                    .build(),
+            )
+            .related(vec![Highlight::builder()
+                .message("field was first initialized here".to_string())
+                .span(prior_span)
+                .build()])
+            .build()
+    }
+}
+
+/// The struct expression contains uninitialized fields.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct UninitializedFields {
+    /// The ID of the struct where the fields are uninitialized.
+    pub struct_id: Global<pernixc_symbol::ID>,
+
+    /// The set of uninitialized fields.
+    pub uninitialized_fields: HashSet<ID<Field>>,
+
+    /// The span of the struct expression.
+    pub struct_expression_span: RelativeSpan,
+}
+
+impl Report<&TrackedEngine> for UninitializedFields {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let struct_span =
+            engine.to_absolute_span(&self.struct_expression_span).await;
+        let struct_name = engine.get_qualified_name(self.struct_id).await;
+
+        // Get the field names
+        let fields = engine.get_fields(self.struct_id).await.unwrap();
+        let uninitialized_field_names: Vec<String> = self
+            .uninitialized_fields
+            .iter()
+            .map(|field_id| fields.fields[*field_id].name.to_string())
+            .collect();
+
+        let field_list = if uninitialized_field_names.len() == 1 {
+            format!("field '{}'", uninitialized_field_names[0])
+        } else if uninitialized_field_names.len() == 2 {
+            format!(
+                "fields '{}' and '{}'",
+                uninitialized_field_names[0], uninitialized_field_names[1]
+            )
+        } else {
+            let (last, rest) = uninitialized_field_names.split_last().unwrap();
+            format!(
+                "fields {} and '{}'",
+                rest.iter()
+                    .map(|name| format!("'{}'", name))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                last
+            )
+        };
+
+        let verb =
+            if uninitialized_field_names.len() == 1 { "is" } else { "are" };
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .severity(Severity::Error)
+            .message("struct has uninitialized fields")
+            .primary_highlight(
+                Highlight::builder()
+                    .message(format!(
+                        "{} of struct '{}' {} not initialized",
+                        field_list, struct_name, verb
+                    ))
+                    .span(struct_span)
+                    .build(),
+            )
             .build()
     }
 }

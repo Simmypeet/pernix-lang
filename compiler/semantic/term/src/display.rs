@@ -4,6 +4,8 @@
 use flexstr::SharedStr;
 use pernixc_hash::HashMap;
 use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 
 use crate::{
     constant::Constant,
@@ -13,7 +15,18 @@ use crate::{
 };
 
 /// Specifies how to write the inference variable during formatting.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub enum InferenceRendering<T> {
     /// Attempt to recursively write the inference variable using the given
     /// term.

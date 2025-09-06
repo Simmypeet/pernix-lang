@@ -23,11 +23,14 @@ pernixc_term = { path = "../term" }
 pernixc_symbol = { path = "../symbol" }
 pernixc_resolution = { path = "../resolution" }
 pernixc_ir = { path = "../ir" }
+pernixc_semantic_element = { path = "../semantic_element" }
+pernixc_hash = { path = "../../base/hash" }
 getset = { workspace = true }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
 derive-new = { workspace = true }
+flexstr = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

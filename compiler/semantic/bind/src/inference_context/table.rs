@@ -305,6 +305,34 @@ impl<C: Constraint> Table<C> {
     ) -> Option<&Inference<C>> {
         self.inference_by_ids.get(&inference_variable)
     }
+
+    /// Retrieves a map of inference variables to their rendering for display
+    /// purpose.
+    #[must_use]
+    pub fn get_inference_rendering_map(
+        &self,
+    ) -> pernixc_term::display::InferenceRenderingMap<C::Term> {
+        self.inference_by_ids
+            .iter()
+            .map(|(var, infer)| match infer {
+                Inference::Known(term) => (
+                    *var,
+                    pernixc_term::display::InferenceRendering::Recurse(
+                        term.clone(),
+                    ),
+                ),
+                Inference::Inferring(id) => {
+                    let constraint = self.constraints.get(*id).unwrap();
+                    (
+                        *var,
+                        pernixc_term::display::InferenceRendering::Rendered(
+                            constraint.to_string().into(),
+                        ),
+                    )
+                }
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

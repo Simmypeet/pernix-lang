@@ -23,7 +23,10 @@ use pernixc_type_system::{
 use crate::inference_context::{
     constraint::Constraint,
     sealed::Sealed,
-    table::{CombineConstraintError, Inference, UnsatisfiedConstraintError},
+    table::{
+        AssignConstraintError, CombineConstraintError, Inference,
+        UnsatisfiedConstraintError,
+    },
 };
 
 pub mod constraint;
@@ -356,6 +359,17 @@ impl InferenceContext {
         constraint: T::Constraint,
     ) -> bool {
         T::inference_table_mut(self).register(inference_variable, constraint)
+    }
+
+    /// Unifies an inference variable with a constraint, ensuring that the
+    /// variable satisfies the constraint.
+    pub fn unify_with_constraint<T: Unifiable>(
+        &mut self,
+        inference_variable: inference::Variable<T>,
+        constraint: T::Constraint,
+    ) -> Result<(), AssignConstraintError<T::Constraint>> {
+        T::inference_table_mut(self)
+            .assign_constraint(inference_variable, constraint)
     }
 
     /// Unifies two types/constants

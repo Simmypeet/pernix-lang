@@ -1,18 +1,25 @@
 #![allow(missing_docs)]
 
 use pernixc_handler::Handler;
+use pernixc_ir::value::{
+    literal::{self, Literal},
+    Value,
+};
 use pernixc_source_file::SourceElement;
+use pernixc_term::r#type::Type;
 
 use crate::{
     bind::{Bind, Config, Expression},
-    binder::{BindingError, Error},
+    binder::{Binder, BindingError, Error, UnrecoverableError},
     diagnostic::Diagnostic,
+    inference_context::constraint,
 };
 
 pub mod block;
 pub mod boolean;
 pub mod numeric;
 pub mod postfix;
+pub mod r#struct;
 
 impl Bind<&pernixc_syntax::expression::Expression>
     for crate::binder::Binder<'_>
@@ -111,7 +118,9 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::Parenthesized(
                 parenthesized,
             ) => todo!(),
-            pernixc_syntax::expression::unit::Unit::Struct(_) => todo!(),
+            pernixc_syntax::expression::unit::Unit::Struct(st) => {
+                self.bind(st, config, handler).await
+            }
             pernixc_syntax::expression::unit::Unit::QualifiedIdentifier(
                 qualified_identifier,
             ) => todo!(),
@@ -173,6 +182,41 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
             pernixc_syntax::expression::terminator::Terminator::Break(_) => {
                 todo!()
             }
+        }
+    }
+}
+
+impl Binder<'_> {
+    /// Binds the given syntax tree as a value. In case of an error, an error
+    /// register is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnrecoverableError`] that is returned by the [`Bind::bind()`]
+    /// function.
+    pub async fn bind_value_or_error<T>(
+        &mut self,
+        syntax_tree: T,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Value, UnrecoverableError>
+    where
+        Self: Bind<T>,
+    {
+        match self
+            .bind(syntax_tree, Config::new(super::Target::RValue), handler)
+            .await
+        {
+            Ok(value) => Ok(value.into_r_value().unwrap()),
+            Err(Error::Binding(semantic_error)) => {
+                let inference =
+                    self.create_type_inference(constraint::Type::All(false));
+
+                Ok(Value::Literal(Literal::Error(literal::Error {
+                    r#type: Type::Inference(inference),
+                    span: Some(semantic_error.0),
+                })))
+            }
+            Err(Error::Unrecoverable(internal_error)) => Err(internal_error),
         }
     }
 }
