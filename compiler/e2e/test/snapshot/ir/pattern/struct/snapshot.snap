@@ -1,0 +1,72 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: not all fields are bound in the pattern: b, c
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:15:1
+   │
+15 │     {a, a}: Test,                # duplicate field binding
+   │ ^^^^^^^^^^ these fields are not bound in the pattern: b, c
+   │
+   = try to handle all fields in the pattern or use the `..` syntax after the fields to ignore the rest
+
+error: the field `a` is already bound in the pattern
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:15:9
+   │
+15 │     {a, a}: Test,                # duplicate field binding
+   │      -  ^ the field `a` is already bound in the pattern of struct `main::Test`
+   │      │   
+   │      the field `a` is first bound here
+
+error: not all fields are bound in the pattern: b, c
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:16:1
+   │
+16 │     {a: first, a: second}: Test, # duplicate field binding
+   │ ^^^^^^^^^^^^^^^^^^^^^^^^^ these fields are not bound in the pattern: b, c
+   │
+   = try to handle all fields in the pattern or use the `..` syntax after the fields to ignore the rest
+
+error: the field `a` is already bound in the pattern
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:16:16
+   │
+16 │     {a: first, a: second}: Test, # duplicate field binding
+   │         -----  ^^^^^^^^^ the field `a` is already bound in the pattern of struct `main::Test`
+   │         │       
+   │         the field `a` is first bound here
+
+error: the name `second` has already been bound in the scope
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:22:30
+   │
+22 │     {a: first, b: second, c: second}: Test, # duplicate name binding
+   │                   ------     ^^^^^^
+   │                   │           
+   │                   the name is already bound here
+
+error: not all fields are bound in the pattern: b, a, c
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:1
+   │
+39 │     {unknown}: Test, # unknown field 
+   │ ^^^^^^^^^^^^^ these fields are not bound in the pattern: b, a, c
+   │
+   = try to handle all fields in the pattern or use the `..` syntax after the fields to ignore the rest
+
+error: field not found in struct
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:39:6
+   │
+39 │     {unknown}: Test, # unknown field 
+   │      ^^^^^^^ field 'unknown' not found in struct 'main::Test'
+
+error: field is not accessible
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:50:6
+   │
+50 │     {hidden}: inner::Inaccessible, # inaccessible field
+   │      ^^^^^^ field 'hidden' of struct 'main::inner::Inaccessible' is not accessible from 'main::test7'
+   │
+   = field 'hidden' is accessible in `main::inner`
+
+error: Compilation aborted due to 8 error(s)
+
+
+
+stdout:

@@ -1,0 +1,52 @@
+public struct Test:
+    public a: int32
+    public b: int32
+    public c: int32
+
+
+public function test(
+    {a, b, c}: Test,
+    {a: first, b: second, c: third}: Test,
+):
+    pass
+
+
+public function test2(
+    {a, a}: Test,                # duplicate field binding
+    {a: first, a: second}: Test, # duplicate field binding
+):
+    pass
+
+
+public function test3(
+    {a: first, b: second, c: second}: Test, # duplicate name binding
+):
+    pass
+
+
+public function test4(
+    {a, b, ..}: Test,
+):
+    pass
+
+
+public function test5(
+    {..}: &Test,
+):
+    pass
+
+public function test6(
+    {unknown}: Test, # unknown field 
+):
+    pass
+
+
+public module inner:
+    public struct Inaccessible:
+        private hidden: int32
+
+
+public function test7(
+    {hidden}: inner::Inaccessible, # inaccessible field
+):
+    pass
