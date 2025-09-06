@@ -1,15 +1,18 @@
+use std::collections::hash_map::Entry;
+
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_hash::HashMap;
-use pernixc_ir::value::Value;
+use pernixc_hash::{HashMap, HashSet};
+use pernixc_ir::value::{
+    register::{Assignment, Struct},
+    Value,
+};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::{Generic, Resolution};
-use pernixc_semantic_element::fields::{get_fields, Field};
+use pernixc_semantic_element::fields::{get_fields, Field, Fields};
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
-    accessibility::{
-        is_accessible_from, is_accessible_from_globally, symbol_accessible,
-    },
+    accessibility::is_accessible_from_globally,
     kind::{get_kind, Kind},
 };
 use pernixc_target::Global;
@@ -20,12 +23,12 @@ use pernixc_term::{
 use crate::{
     bind::{
         expression::r#struct::diagnostic::{
-            Diagnostic, ExpectedStructSymbol, FieldIsNotAccessible,
-            FieldNotFound,
+            Diagnostic, DuplicatedFieldInitialization, ExpectedStructSymbol,
+            FieldIsNotAccessible, FieldNotFound, UninitializedFields,
         },
         Bind, Config, Expression,
     },
-    binder::{Binder, BindingError, Error},
+    binder::{type_check::Expected, Binder, BindingError, Error},
 };
 
 pub mod diagnostic;
@@ -36,7 +39,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Struct,
-        config: Config,
+        _: Config,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(qualified_identifier) = syntax_tree.qualified_identifier()
@@ -70,7 +73,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
             handler.receive(
                 Diagnostic::ExpectedStructSymbol(ExpectedStructSymbol {
                     span: syntax_tree.span(),
-                    id: resolution.global_id(),
+                    id: struct_id,
                 })
                 .into(),
             );
@@ -87,26 +90,41 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
         )
         .unwrap();
 
+        let fields = self.engine().get_fields(struct_id).await?;
+
+        let fields_initializers = Box::pin(collect_fields(
+            self,
+            struct_id,
+            &instantiation,
+            &fields,
+            syntax_tree,
+            handler,
+        ))
+        .await?;
+
         // check for uninitialized fields
         let uninitialized_fields = fields
             .fields
             .ids()
-            .filter(|field_id| !initializers_by_field_id.contains_key(field_id))
+            .filter(|field_id| !fields_initializers.contains_key(field_id))
             .collect::<HashSet<_>>();
 
         if !uninitialized_fields.is_empty() {
-            handler.receive(Box::new(UninitializedFields {
-                struct_id,
-                uninitialized_fields,
-                struct_expression_span: syntax_tree.span(),
-            }));
+            handler.receive(
+                Diagnostic::UninitializedFields(UninitializedFields {
+                    struct_id,
+                    uninitialized_fields,
+                    struct_expression_span: syntax_tree.span(),
+                })
+                .into(),
+            );
         }
 
         let value = Value::Register(
-            self.create_register_assignmnet(
+            self.create_register_assignment(
                 Assignment::Struct(Struct {
                     struct_id,
-                    initializers_by_field_id: initializers_by_field_id
+                    initializers_by_field_id: fields_initializers
                         .into_iter()
                         .map(|(id, (register_id, _))| (id, register_id))
                         .collect(),
@@ -124,11 +142,10 @@ async fn collect_fields(
     binder: &mut Binder<'_>,
     struct_id: Global<pernixc_symbol::ID>,
     instantiation: &Instantiation,
+    fields: &Fields,
     syntax_tree: &pernixc_syntax::expression::unit::Struct,
     handler: &dyn Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<HashMap<ID<Field>, (Value, RelativeSpan)>, Error> {
-    let fields = binder.engine().get_fields(struct_id).await?;
-
     let Some(field_initializers) = syntax_tree.field_initializer_body() else {
         // no fields to initialize
         return Ok(HashMap::default());
@@ -193,21 +210,28 @@ async fn collect_fields(
         }
 
         // type check the field
-        let _ = self.type_check(
-            &self.type_of_value(&value, handler)?,
-            Expected::Known(field_ty),
-            field_syn.expression.span(),
-            handler,
-        )?;
+        let _ = binder
+            .type_check(
+                &binder.type_of_value(&value, handler).await?,
+                Expected::Known(field_ty),
+                field_expr.span(),
+                handler,
+            )
+            .await?;
 
         match initializers_by_field_id.entry(field_id) {
             Entry::Occupied(entry) => {
-                handler.receive(Box::new(DuplicatedFieldInitialization {
-                    field_id,
-                    struct_id,
-                    prior_initialization_span: entry.get().1.clone(),
-                    duplicate_initialization_span: field_syn.span(),
-                }));
+                handler.receive(
+                    Diagnostic::DuplicatedFieldInitialization(
+                        DuplicatedFieldInitialization {
+                            field_id,
+                            struct_id,
+                            prior_initialization_span: entry.get().1,
+                            duplicate_initialization_span: field_syn.span(),
+                        },
+                    )
+                    .into(),
+                );
             }
             Entry::Vacant(entry) => {
                 entry.insert((value, field_syn.span()));
@@ -215,5 +239,5 @@ async fn collect_fields(
         }
     }
 
-    todo!()
+    Ok(initializers_by_field_id)
 }
