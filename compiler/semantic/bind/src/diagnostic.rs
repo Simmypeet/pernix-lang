@@ -23,6 +23,7 @@ diagnostic_enum! {
         Resolution(pernixc_resolution::diagnostic::Diagnostic),
         TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
         TypeCheck(binder::type_check::diagnostic::Diagnostic),
+        Parenthesized(expression::parenthesized::diagnostic::Diagnostic),
         Numeric(expression::numeric::diagnostic::Diagnostic),
         Struct(expression::r#struct::diagnostic::Diagnostic),
     }

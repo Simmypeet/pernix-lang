@@ -69,8 +69,8 @@ impl Binder<'_> {
     #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
     pub fn bind_variable_declaration(
         &mut self,
-        syntax_tree: &pernixc_syntax::statement::VariableDeclaration,
-        handler: &Storage<Diagnostic>,
+        _syntax_tree: &pernixc_syntax::statement::VariableDeclaration,
+        _handler: &Storage<Diagnostic>,
     ) -> Result<(Address, bool), UnrecoverableError> {
         todo!()
         /*

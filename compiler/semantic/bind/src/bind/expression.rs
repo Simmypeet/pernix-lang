@@ -19,6 +19,7 @@ pub mod array;
 pub mod block;
 pub mod boolean;
 pub mod numeric;
+pub mod parenthesized;
 pub mod postfix;
 pub mod r#struct;
 
@@ -93,7 +94,7 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefixable>
             pernixc_syntax::expression::prefix::Prefixable::Postfix(
                 postfix,
             ) => self.bind(postfix, config, handler).await,
-            pernixc_syntax::expression::prefix::Prefixable::Prefix(prefix) => {
+            pernixc_syntax::expression::prefix::Prefixable::Prefix(_prefix) => {
                 todo!()
             }
         }
@@ -118,22 +119,24 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             }
             pernixc_syntax::expression::unit::Unit::Parenthesized(
                 parenthesized,
-            ) => todo!(),
+            ) => self.bind(parenthesized, config, handler).await,
             pernixc_syntax::expression::unit::Unit::Struct(st) => {
                 self.bind(st, config, handler).await
             }
             pernixc_syntax::expression::unit::Unit::QualifiedIdentifier(
-                qualified_identifier,
+                _qualified_identifier,
             ) => todo!(),
             pernixc_syntax::expression::unit::Unit::Array(array) => {
                 self.bind(array, config, handler).await
             }
-            pernixc_syntax::expression::unit::Unit::Phantom(phantom) => todo!(),
-            pernixc_syntax::expression::unit::Unit::String(_) => todo!(),
-            pernixc_syntax::expression::unit::Unit::Character(character) => {
+            pernixc_syntax::expression::unit::Unit::Phantom(_phantom) => {
                 todo!()
             }
-            pernixc_syntax::expression::unit::Unit::Panic(panic) => todo!(),
+            pernixc_syntax::expression::unit::Unit::String(_) => todo!(),
+            pernixc_syntax::expression::unit::Unit::Character(_character) => {
+                todo!()
+            }
+            pernixc_syntax::expression::unit::Unit::Panic(_panic) => todo!(),
         }
     }
 }
@@ -144,11 +147,11 @@ impl Bind<&pernixc_syntax::expression::block::Block>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::block::Block,
-        config: Config,
-        handler: &dyn Handler<Diagnostic>,
+        _config: Config,
+        _handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            pernixc_syntax::expression::block::Block::Scope(scope) => todo!(),
+            pernixc_syntax::expression::block::Block::Scope(_scope) => todo!(),
             pernixc_syntax::expression::block::Block::IfElse(if_else) => {
                 Ok(Expression::RValue(pernixc_ir::value::Value::Literal(
                     self.create_unreachable(if_else.span()),
@@ -167,8 +170,8 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::terminator::Terminator,
-        config: Config,
-        handler: &dyn Handler<Diagnostic>,
+        _config: Config,
+        _handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::terminator::Terminator::Return(ret) => {
@@ -180,7 +183,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
                 todo!()
             }
             pernixc_syntax::expression::terminator::Terminator::Express(
-                express,
+                _express,
             ) => todo!(),
             pernixc_syntax::expression::terminator::Terminator::Break(_) => {
                 todo!()

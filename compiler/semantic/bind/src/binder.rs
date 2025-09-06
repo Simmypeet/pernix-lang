@@ -28,9 +28,13 @@ use pernixc_resolution::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
-use pernixc_term::{inference, lifetime::Lifetime, r#type::Type};
-use pernixc_type_system::environment::{
-    get_active_premise, Environment, Premise,
+use pernixc_term::{
+    constant::Constant, display::InferenceRenderingMap, inference,
+    lifetime::Lifetime, r#type::Type,
+};
+use pernixc_type_system::{
+    environment::{get_active_premise, Environment, Premise},
+    Succeeded,
 };
 
 use crate::{
@@ -72,7 +76,7 @@ impl<'t> Binder<'t> {
     pub async fn new_function(
         engine: &'t TrackedEngine,
         function_id: Global<pernixc_symbol::ID>,
-        handler: &dyn Handler<Diagnostic>,
+        _handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
         let premise = engine.get_active_premise(function_id).await?;
         let generic_parameter_namespace =
@@ -274,6 +278,36 @@ impl Binder<'_> {
         inference_variable
     }
 
+    /// Creates a new error literal with an inferred type.
+    pub fn create_error(&mut self, span: RelativeSpan) -> Literal {
+        Literal::Error(pernixc_ir::value::literal::Error {
+            r#type: {
+                let inference = self.next_type_inference_variable();
+
+                assert!(self
+                    .inference_context
+                    .register(inference, constraint::Type::All(true)));
+
+                Type::Inference(inference)
+            },
+            span: Some(span),
+        })
+    }
+
+    /// Returns the inference rendering map for types.
+    #[must_use]
+    pub fn type_inference_rendering_map(&self) -> InferenceRenderingMap<Type> {
+        self.inference_context.type_table().get_inference_rendering_map()
+    }
+
+    /// Returns the inference rendering map for constants.
+    #[must_use]
+    pub fn constant_inference_rendering_map(
+        &self,
+    ) -> InferenceRenderingMap<Constant> {
+        self.inference_context.const_table().get_inference_rendering_map()
+    }
+
     /// Creates a new unreachable literal with an inferred type.
     pub fn create_unreachable(&mut self, span: RelativeSpan) -> Literal {
         Literal::Unreachable(Unreachable {
@@ -422,6 +456,20 @@ impl Binder<'_> {
         );
 
         environment
+    }
+
+    /// Simplifies the type and possibly reports overflow error as a type
+    /// calculating overflow.
+    pub async fn simplify_type(
+        &self,
+        ty: Type,
+        span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Arc<Succeeded<Type>>, UnrecoverableError> {
+        self.create_environment()
+            .simplify(ty)
+            .await
+            .map_err(|x| x.report_as_type_calculating_overflow(span, handler))
     }
 
     /// Creates a new register and assigns the given `assignment` to it.
