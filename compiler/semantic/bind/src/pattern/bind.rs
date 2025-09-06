@@ -701,7 +701,7 @@ impl Binder<'_> {
         );
 
         // report the unbound fields
-        if !unbound_fields.is_empty() && found_wildcard {
+        if !unbound_fields.is_empty() && !found_wildcard {
             handler.receive(
                 Diagnostic::UnboundFields(UnboundFields {
                     field_ids: unbound_fields,
