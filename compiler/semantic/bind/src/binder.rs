@@ -23,8 +23,10 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
-    ElidedTermProvider, ExtraNamespace,
+    qualified_identifier::{resolve_qualified_identifier, Resolution},
+    Config, ElidedTermProvider, ExtraNamespace,
 };
+use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
 use pernixc_term::{inference, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::{
@@ -33,7 +35,7 @@ use pernixc_type_system::{
 };
 
 use crate::{
-    binder::stack::Stack,
+    binder::{self, stack::Stack},
     diagnostic::Diagnostic,
     inference_context::{constraint, InferenceContext},
 };
@@ -509,6 +511,59 @@ impl Binder<'_> {
     /// Finishes the building process and returns the built IR.
     #[must_use]
     pub fn finish(self) -> IR { self.ir }
+
+    /// Resolves a qualified identifier with possible type and constant
+    /// inferences.
+    pub async fn resolve_qualified_identifier_with_inference(
+        &mut self,
+        syntax_tree: &pernixc_syntax::QualifiedIdentifier,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Resolution, Error> {
+        let mut type_inferences = InferenceProvider::default();
+        let mut constant_inferences = InferenceProvider::default();
+
+        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+
+        let config = Config::builder()
+            .extra_namespace(&self.extra_namespace)
+            .elided_lifetime_provider(&mut lifetime_inference_providers)
+            .elided_type_provider(&mut type_inferences)
+            .elided_constant_provider(&mut constant_inferences)
+            .referring_site(self.current_site)
+            .build();
+
+        let resolution = match self
+            .engine
+            .resolve_qualified_identifier(syntax_tree, config, &handler)
+            .await
+        {
+            Ok(result) => result,
+            Err(pernixc_resolution::Error::Cyclic(error)) => {
+                return Err(binder::Error::Unrecoverable(
+                    UnrecoverableError::CyclicDependency(error),
+                ))
+            }
+            Err(pernixc_resolution::Error::Abort) => {
+                return Err(binder::Error::Binding(BindingError(
+                    syntax_tree.span(),
+                )))
+            }
+        };
+
+        for inference in type_inferences.created_inferences {
+            assert!(self
+                .inference_context
+                .register(inference, constraint::Type::All(false)));
+        }
+
+        for inference in constant_inferences.created_inferences {
+            assert!(self
+                .inference_context
+                .register(inference, constraint::Constant));
+        }
+
+        Ok(resolution)
+    }
 
     /*
     /// Gets the type of the given `address`.

@@ -17,6 +17,10 @@ pub trait Handler<T>: Send + Sync {
     fn receive(&self, error: T);
 }
 
+impl<T, U: From<T>> Handler<T> for &dyn Handler<U> {
+    fn receive(&self, error: T) { (*self).receive(error.into()) }
+}
+
 /// Is a struct that implements [`Handler`] trait by storing all errors in a
 /// vector.
 #[derive(Debug, Deref, DerefMut)]
