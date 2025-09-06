@@ -263,7 +263,7 @@ pub async fn get_fields_syntax(
 
 pernixc_register::register!(FieldsKey, FieldsExecutor);
 
-/// Implementation of the `get_fields_syntax` method
+/// Implementation of the `get_function_signature` method
 #[pernixc_query::query(
     key(FunctionSignatureKey),
     id(Global<ID>),
@@ -288,6 +288,39 @@ pub async fn get_function_signature_syntax(
     let table = engine.get_table_of_symbol(id).await;
     Ok(table
         .function_signature_syntaxes
+        .get(&id.id)
+        .unwrap_or_else(|| {
+            panic!(
+                "No function signature syntax found for symbol ID: {:?}",
+                id.id
+            )
+        })
+        .clone())
+}
+
+pernixc_register::register!(FunctionSignatureKey, FunctionSignatureExecutor);
+
+/// Implementation of the `get_fields_syntax` method
+#[pernixc_query::query(
+    key(FunctionBodyKey),
+    id(Global<ID>),
+    value(Option<
+        pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
+    >),
+    executor(FunctionBodyExecutor),
+    extend(method(get_function_body_syntax), no_cyclic),
+)]
+#[allow(clippy::unnecessary_wraps)]
+pub async fn get_function_body_syntax(
+    id: Global<ID>,
+    engine: &TrackedEngine,
+) -> Result<
+    Option<pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>>,
+    CyclicError,
+> {
+    let table = engine.get_table_of_symbol(id).await;
+    Ok(table
+        .function_body_syntaxes
         .get(&id.id)
         .unwrap_or_else(|| {
             panic!(

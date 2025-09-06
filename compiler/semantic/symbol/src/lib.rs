@@ -323,6 +323,19 @@ pub struct Table {
     /// Maps the implements ID to its `final` keyword.
     pub final_keywords: Arc<ReadOnlyView<ID, Option<pernixc_syntax::Keyword>>>,
 
+    /// Maps the function ID to its body syntax, which contains a list of
+    /// statements.
+    pub function_body_syntaxes: Arc<
+        ReadOnlyView<
+            ID,
+            Option<
+                pernixc_syntax::item::Members<
+                    pernixc_syntax::statement::Statement,
+                >,
+            >,
+        >,
+    >,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -454,6 +467,13 @@ struct TableContext {
     implements_qualified_identifier_syntaxes:
         DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
     final_keywords: DashMap<ID, Option<pernixc_syntax::Keyword>>,
+
+    function_body_syntaxes: DashMap<
+        ID,
+        Option<
+            pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
+        >,
+    >,
 
     token_tree: Option<Arc<pernixc_lexical::tree::Tree>>,
     source_file: Option<Arc<SourceFile>>,
@@ -592,16 +612,13 @@ pub async fn table_executor(
         engine: engine.clone(),
         storage,
         target_id,
-
         kinds: DashMap::default(),
         names: DashMap::default(),
         spans: DashMap::default(),
         members: DashMap::default(),
         accessibilities: DashMap::default(),
         implements_access_modifier_syntaxes: DashMap::default(),
-
         external_submodules: DashMap::default(),
-
         generic_parameter_syntaxes: DashMap::default(),
         where_clause_syntaxes: DashMap::default(),
         type_alias_syntaxes: DashMap::default(),
@@ -613,10 +630,9 @@ pub async fn table_executor(
         import_syntaxes: DashMap::default(),
         implements_qualified_identifier_syntaxes: DashMap::default(),
         final_keywords: DashMap::default(),
-
+        function_body_syntaxes: DashMap::default(),
         token_tree: token_tree_result.ok().map(|x| x.0),
         source_file: source_file.ok(),
-
         is_root,
     });
 
@@ -668,6 +684,9 @@ pub async fn table_executor(
             context.implements_qualified_identifier_syntaxes.into_read_only(),
         ),
         final_keywords: Arc::new(context.final_keywords.into_read_only()),
+        function_body_syntaxes: Arc::new(
+            context.function_body_syntaxes.into_read_only(),
+        ),
 
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
@@ -734,6 +753,12 @@ struct Entry {
 
     pub variant_associated_type_syntax:
         Option<Option<pernixc_syntax::r#type::Type>>,
+
+    pub function_body_syntax: Option<
+        Option<
+            pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>,
+        >,
+    >,
 
     pub final_keyword: Option<Option<pernixc_syntax::Keyword>>,
 }
@@ -898,6 +923,14 @@ impl TableContext {
 
         if let Some(final_keyword) = entry.final_keyword {
             Self::insert_to_table(&self.final_keywords, id, final_keyword);
+        }
+
+        if let Some(function_body_syntax) = entry.function_body_syntax {
+            Self::insert_to_table(
+                &self.function_body_syntaxes,
+                id,
+                function_body_syntax,
+            );
         }
     }
 
@@ -1362,6 +1395,9 @@ impl TableContext {
                                     .and_then(|x| x.signature())
                                     .and_then(|x| x.return_type()),
                             ))
+                            .function_body_syntax(
+                                fun.body().and_then(|x| x.members()),
+                            )
                             .build()
                     }
                     pernixc_syntax::item::implements::Member::Type(ty) => {
@@ -1747,6 +1783,11 @@ impl TableContext {
                                     .signature()
                                     .and_then(|x| x.return_type()),
                             ))
+                            .function_body_syntax(
+                                function_syntax
+                                    .body()
+                                    .and_then(|x| x.members()),
+                            )
                             .build()
                     }
 
