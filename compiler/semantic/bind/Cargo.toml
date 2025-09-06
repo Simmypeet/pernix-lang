@@ -10,10 +10,12 @@ rust-version.workspace = true
 pernixc_arena = { path = "../../base/arena" }
 pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
+pernixc_source_file = { path = "../../base/source_file" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_handler = { path = "../../base/handler" }
 pernixc_extend = { path = "../../base/extend" }
+pernixc_diagnostic = { path = "../../base/diagnostic" }
 pernixc_type_system = { path = "../type_system" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_syntax = { path = "../../syntax/syntax" }
@@ -25,6 +27,7 @@ getset = { workspace = true }
 enum-as-inner = { workspace = true }
 thiserror = { workspace = true }
 derive_more = { workspace = true }
+derive-new = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

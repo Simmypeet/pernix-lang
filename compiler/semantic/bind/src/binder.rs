@@ -536,7 +536,7 @@ impl Binder<'_> {
             self.engine.verify_generic_arguments_for(
                 generic_arguments,
                 resolved_id,
-                generic_identifier_span,
+                generic_identifier_spa,
                 pernixc_resolution::Config {
                     elided_lifetime_provider: Some(
                         &mut LifetimeInferenceProvider,

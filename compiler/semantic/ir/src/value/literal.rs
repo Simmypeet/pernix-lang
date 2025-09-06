@@ -3,6 +3,7 @@
 use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
+use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -31,10 +32,10 @@ use crate::{value::TypeOf, Values};
 )]
 pub struct Numeric {
     /// The numeric value for the integer part as a string.
-    pub integer_string: std::string::String,
+    pub integer_string: SharedStr,
 
     /// The numeric value for the decimal part as a string.
-    pub decimal_stirng: Option<std::string::String>,
+    pub decimal_string: Option<SharedStr>,
 
     /// The type of the numeric value.
     ///
