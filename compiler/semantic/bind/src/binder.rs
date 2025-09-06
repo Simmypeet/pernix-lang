@@ -11,6 +11,7 @@ use pernixc_ir::{
     alloca::Alloca,
     control_flow_graph::Block,
     instruction::{self, Instruction, ScopePop, ScopePush},
+    pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
     value::{
         literal::{Literal, Unreachable},
@@ -26,11 +27,16 @@ use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config, ElidedTermProvider, ExtraNamespace,
 };
+use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::SourceElement;
+use pernixc_symbol::syntax::get_function_signature_syntax;
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant, display::InferenceRenderingMap, inference,
-    lifetime::Lifetime, r#type::Type,
+    constant::Constant,
+    display::InferenceRenderingMap,
+    inference,
+    lifetime::Lifetime,
+    r#type::{Qualifier, Type},
 };
 use pernixc_type_system::{
     environment::{get_active_premise, Environment, Premise},
@@ -41,6 +47,7 @@ use crate::{
     binder::{self, stack::Stack},
     diagnostic::Diagnostic,
     inference_context::{constraint, InferenceContext},
+    pattern::insert_name_binding,
 };
 
 pub mod stack;
@@ -76,7 +83,7 @@ impl<'t> Binder<'t> {
     pub async fn new_function(
         engine: &'t TrackedEngine,
         function_id: Global<pernixc_symbol::ID>,
-        _handler: &dyn Handler<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
         let premise = engine.get_active_premise(function_id).await?;
         let generic_parameter_namespace =
@@ -104,45 +111,59 @@ impl<'t> Binder<'t> {
 
         let root_scope_id = binder.ir.scope_tree.root_scope_id();
 
-        let _ = binder.current_block_mut().add_instruction(
-            instruction::Instruction::ScopePush(ScopePush(root_scope_id)),
-        );
+        binder.push_instruction(instruction::Instruction::ScopePush(
+            ScopePush(root_scope_id),
+        ));
 
-        // let function_signature =
-        //     binder.engine.query::<FunctionSignature>(function_id)?;
+        let (parameters_syn, _) =
+            binder.engine.get_function_signature_syntax(function_id).await;
 
-        // // bind the parameter patterns
-        // #[allow(clippy::significant_drop_in_scrutinee)]
-        // for ((parameter_id, parameter_sym), syntax_tree) in
-        // function_signature     .parameter_order
-        //     .iter()
-        //     .copied()
-        //     .map(|x| (x, &function_signature.parameters[x]))
-        //     .zip(parameter_pattern_syns)
-        // {
-        //     let parameter_type =
-        //         infer::Model::from_default_type(parameter_sym.r#type.
-        // clone());
+        let parameters = binder.engine.get_parameters(function_id).await?;
+        let mut name_binding_point = NameBindingPoint::default();
 
-        //     // TODO: add the binding point
-        //     let pattern = binder
-        //         .bind_pattern(&parameter_type, syntax_tree, handler)?
-        //         .unwrap_or_else(|| {
-        //             Wildcard { span: syntax_tree.span() }.into()
-        //         });
+        // bind the parameter patterns
+        #[allow(clippy::significant_drop_in_scrutinee)]
+        if let Some(parameters_syn) = parameters_syn {
+            for ((parameter_id, parameter_sym), syntax_tree) in parameters
+                .parameter_order
+                .iter()
+                .copied()
+                .map(|x| (x, &parameters.parameters[x]))
+                .zip(parameters_syn.parameters().filter_map(|x| {
+                    x.into_regular().ok().and_then(|x| x.irrefutable_pattern())
+                }))
+            {
+                let pattern = binder
+                    .bind_pattern(&syntax_tree, &parameter_sym.r#type, handler)
+                    .await?
+                    .unwrap_or_else(|| {
+                        Irrefutable::Wildcard(Wildcard {
+                            span: syntax_tree.span(),
+                        })
+                    });
 
-        //     binder.insert_irrefutable_named_binding_point(
-        //         &mut parameter_name_binding_point,
-        //         &pattern,
-        //         &parameter_type,
-        //         Address::Memory(Memory::Parameter(parameter_id)),
-        //         None,
-        //         Qualifier::Mutable,
-        //         false,
-        //         root_scope_id,
-        //         handler,
-        //     )?;
-        // }
+                binder
+                    .insert_irrefutable_named_binding_point(
+                        &mut name_binding_point,
+                        &pattern,
+                        &parameter_sym.r#type,
+                        Address::Memory(Memory::Parameter(parameter_id)),
+                        Qualifier::Mutable,
+                        &insert_name_binding::Config {
+                            must_copy: false,
+                            scope_id: root_scope_id,
+                            address_span: None,
+                        },
+                        handler,
+                    )
+                    .await?;
+            }
+        }
+
+        binder
+            .stack
+            .current_scope_mut()
+            .add_named_binding_point(name_binding_point);
 
         Ok(binder)
     }
