@@ -5,7 +5,7 @@ use pernixc_handler::Storage;
 use pernixc_query::runtime::executor;
 use pernixc_symbol::{kind::get_kind, syntax::get_function_body_syntax};
 
-use crate::build::{Build, Output};
+use crate::build::{self, Build, Output};
 
 async fn build_ir_for_function(
     engine: &pernixc_query::TrackedEngine,
@@ -80,3 +80,5 @@ impl Build for pernixc_ir::Key {
         })
     }
 }
+
+build::register_build!(pernixc_ir::Key);

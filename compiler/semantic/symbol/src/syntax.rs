@@ -331,4 +331,4 @@ pub async fn get_function_body_syntax(
         .clone())
 }
 
-pernixc_register::register!(FunctionSignatureKey, FunctionSignatureExecutor);
+pernixc_register::register!(FunctionBodyKey, FunctionBodyExecutor);

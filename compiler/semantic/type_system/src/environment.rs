@@ -96,7 +96,7 @@ pub async fn get_active_premise(
     Ok(Arc::new(premise))
 }
 
-pernixc_register::register!(ActivePremiseKey);
+pernixc_register::register!(ActivePremiseKey, ActivePremiseExecutor);
 
 /// Retrieves the active premise of the current site with the span of the
 /// predicates.

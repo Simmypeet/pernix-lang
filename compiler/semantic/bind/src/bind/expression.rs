@@ -83,7 +83,7 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefixable>
         match syntax_tree {
             pernixc_syntax::expression::prefix::Prefixable::Postfix(
                 postfix,
-            ) => todo!(),
+            ) => self.bind(postfix, config, handler).await,
             pernixc_syntax::expression::prefix::Prefixable::Prefix(prefix) => {
                 todo!()
             }
@@ -135,7 +135,9 @@ impl Bind<&pernixc_syntax::expression::block::Block>
         match syntax_tree {
             pernixc_syntax::expression::block::Block::Scope(scope) => todo!(),
             pernixc_syntax::expression::block::Block::IfElse(if_else) => {
-                todo!()
+                Ok(Expression::RValue(pernixc_ir::value::Value::Literal(
+                    self.create_unreachable(if_else.span()),
+                )))
             }
             pernixc_syntax::expression::block::Block::Loop(_) => todo!(),
             pernixc_syntax::expression::block::Block::Match(_) => todo!(),
@@ -154,8 +156,10 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            pernixc_syntax::expression::terminator::Terminator::Return(_) => {
-                todo!()
+            pernixc_syntax::expression::terminator::Terminator::Return(ret) => {
+                Ok(Expression::RValue(pernixc_ir::value::Value::Literal(
+                    self.create_unreachable(ret.span()),
+                )))
             }
             pernixc_syntax::expression::terminator::Terminator::Continue(_) => {
                 todo!()

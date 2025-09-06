@@ -1,0 +1,7 @@
+public function main():
+    32test
+    0.12f32
+    0.54f64
+    0.12i32
+    0us
+    0is
