@@ -24,6 +24,9 @@ diagnostic_enum! {
         TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
         TypeCheck(binder::type_check::diagnostic::Diagnostic),
         PatternBinding(pattern::bind::diagnostic::Diagnostic),
+        PatternInsertNameBinding(
+            pattern::insert_name_binding::diagnostic::Diagnostic
+        ),
         Parenthesized(expression::parenthesized::diagnostic::Diagnostic),
         Numeric(expression::numeric::diagnostic::Diagnostic),
         Struct(expression::r#struct::diagnostic::Diagnostic),

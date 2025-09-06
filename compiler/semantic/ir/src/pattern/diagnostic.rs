@@ -4,11 +4,24 @@ use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
+use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
 
 /// A particular name has already been bound in the given scope.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
 pub struct AlreadyBoundName {
     /// The span of the already bound identifier.
     pub already_bound_identifier_span: RelativeSpan,

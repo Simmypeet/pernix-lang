@@ -38,10 +38,13 @@ pub mod arbitrary;
     StableHash,
     Serialize,
     Deserialize,
+    derive_more::Display,
 )]
 #[allow(missing_docs)]
 pub enum Qualifier {
+    #[display("immutable")]
     Immutable,
+    #[display("mutable")]
     Mutable,
 }
 
