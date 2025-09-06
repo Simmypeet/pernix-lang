@@ -445,7 +445,7 @@ impl Binder<'_> {
     pub async fn type_of_register(
         &self,
         register_id: ID<Register>,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Type, UnrecoverableError> {
         self.ir
             .values
@@ -461,10 +461,10 @@ impl Binder<'_> {
     }
 
     /// Gets the type of the given `value`.
-    async fn type_of_value(
+    pub async fn type_of_value(
         &self,
         value: &Value,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Type, UnrecoverableError> {
         match value {
             Value::Register(register_id) => {

@@ -1,3 +1,5 @@
+//! Contains the type checking/unification logic for the binder.
+
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -43,6 +45,7 @@ pub enum Expected {
 impl Binder<'_> {
     /// Performs type checking on the given `ty` and returns a diagnostic if
     /// there is an error.
+    #[allow(clippy::too_many_lines)]
     pub async fn type_check_as_diagnostic(
         &mut self,
         ty: &Type,
@@ -55,10 +58,7 @@ impl Binder<'_> {
         // simplify the types
         let simplified_ty =
             environment.simplify(ty.clone()).await.map_err(|x| {
-                x.report_as_type_calculating_overflow(
-                    type_check_span.clone(),
-                    handler,
-                )
+                x.report_as_type_calculating_overflow(type_check_span, handler)
             })?;
 
         match expected_ty {
@@ -66,7 +66,7 @@ impl Binder<'_> {
                 let simplified_expected =
                     environment.simplify(expected_ty).await.map_err(|x| {
                         x.report_as_type_calculating_overflow(
-                            type_check_span.clone(),
+                            type_check_span,
                             handler,
                         )
                     })?;
@@ -108,7 +108,7 @@ impl Binder<'_> {
                     Err(UnifyError::TypeSystem(type_system_error)) => {
                         return Err(type_system_error
                             .report_as_type_check_overflow(
-                                type_check_span.clone(),
+                                type_check_span,
                                 handler,
                             ));
                     }
