@@ -140,6 +140,7 @@ impl Report<&TrackedEngine> for FieldNotFound {
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -211,6 +212,7 @@ impl Report<&TrackedEngine> for FieldIsNotAccessible {
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -315,7 +317,7 @@ impl Report<&TrackedEngine> for UninitializedFields {
             format!(
                 "fields {} and '{}'",
                 rest.iter()
-                    .map(|name| format!("'{}'", name))
+                    .map(|name| format!("'{name}'"))
                     .collect::<Vec<_>>()
                     .join(", "),
                 last
@@ -331,8 +333,8 @@ impl Report<&TrackedEngine> for UninitializedFields {
             .primary_highlight(
                 Highlight::builder()
                     .message(format!(
-                        "{} of struct '{}' {} not initialized",
-                        field_list, struct_name, verb
+                        "{field_list} of struct '{struct_name}' {verb} not \
+                         initialized"
                     ))
                     .span(struct_span)
                     .build(),
