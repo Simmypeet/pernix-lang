@@ -1,4 +1,4 @@
-use pernixc_handler::{Handler, Storage};
+use pernixc_handler::Handler;
 use pernixc_ir::value::{
     literal::{Literal, Numeric},
     Value,
@@ -9,12 +9,12 @@ use pernixc_term::r#type::{Primitive, Type};
 use crate::{
     bind::{
         expression::numeric::diagnostic::{
-            FloatingPointLiteralHasIntegralSuffix, InvalidNumericSuffix,
+            Diagnostic, FloatingPointLiteralHasIntegralSuffix,
+            InvalidNumericSuffix,
         },
         Bind, Config, Expression,
     },
     binder::{Binder, BindingError, Error},
-    diagnostic::Diagnostic,
     inference_context::constraint,
 };
 
@@ -25,7 +25,7 @@ impl Bind<&pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Numeric,
         _: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let numeric_ty = if let Some(suffix) = syntax_tree.identifier() {
             // the literal type is specified, no need to infer
@@ -44,9 +44,10 @@ impl Bind<&pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
                 "is" => Primitive::Isize,
                 _ => {
                     handler.receive(
-                        diagnostic::Diagnostic::InvalidNumericSuffix(
+                        Diagnostic::InvalidNumericSuffix(
                             InvalidNumericSuffix { suffix_span: suffix.span() },
-                        ),
+                        )
+                        .into(),
                     );
 
                     return Err(Error::Binding(BindingError(
@@ -73,9 +74,14 @@ impl Bind<&pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
             // decimal point
 
             if syntax_tree.decimal().is_some() && primitive_type_is_integral {
-                handler.receive(diagnostic::Diagnostic::FloatingPointLiteralHasIntegralSuffix(FloatingPointLiteralHasIntegralSuffix {
-                                    numeric_literal_span: syntax_tree.span(),
-                                }));
+                handler.receive(
+                    Diagnostic::FloatingPointLiteralHasIntegralSuffix(
+                        FloatingPointLiteralHasIntegralSuffix {
+                            numeric_literal_span: syntax_tree.span(),
+                        },
+                    )
+                    .into(),
+                );
                 return Err(Error::Binding(BindingError(syntax_tree.span())));
             }
 

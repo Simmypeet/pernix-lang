@@ -1,7 +1,7 @@
 //! Contains the code that binds the syntax tree into IR using binder.
 
 use enum_as_inner::EnumAsInner;
-use pernixc_handler::Storage;
+use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, value::Value};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::r#type::Qualifier;
@@ -76,7 +76,7 @@ pub trait Bind<T> {
         &'s mut self,
         syntax_tree: T,
         config: Config,
-        handler: &'h Storage<Diagnostic>,
+        handler: &'h dyn Handler<Diagnostic>,
     ) -> impl std::future::Future<Output = Result<Expression, Error>>
            + use<'s, 'h, T, Self>;
 }

@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use pernixc_handler::Storage;
+use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
 
 use crate::{
@@ -21,7 +21,7 @@ impl Bind<&pernixc_syntax::expression::Expression>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::Expression,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::Expression::Binary(binary) => {
@@ -41,7 +41,7 @@ impl Bind<&pernixc_syntax::expression::binary::Binary>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::binary::Binary,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         // TODO: implements proper binary expression binding
         let Some(first) = syntax_tree.first() else {
@@ -59,7 +59,7 @@ impl Bind<&pernixc_syntax::expression::binary::Node>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::binary::Node,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::binary::Node::Prefixable(
@@ -79,7 +79,7 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefixable>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::prefix::Prefixable,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::prefix::Prefixable::Postfix(
@@ -99,7 +99,7 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Unit,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::unit::Unit::Boolean(boolean) => {
@@ -133,7 +133,7 @@ impl Bind<&pernixc_syntax::expression::block::Block>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::block::Block,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::block::Block::Scope(scope) => todo!(),
@@ -156,7 +156,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::terminator::Terminator,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::terminator::Terminator::Return(ret) => {

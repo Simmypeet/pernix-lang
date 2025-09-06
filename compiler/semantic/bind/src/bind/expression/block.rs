@@ -1,4 +1,4 @@
-use pernixc_handler::Storage;
+use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
 
 use crate::{
@@ -14,7 +14,7 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::postfix::Postfix,
         config: Config,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(unit) = syntax_tree.unit() else {
             return Err(Error::Binding(BindingError(syntax_tree.span())));

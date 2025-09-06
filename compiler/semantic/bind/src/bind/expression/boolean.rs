@@ -1,4 +1,4 @@
-use pernixc_handler::Storage;
+use pernixc_handler::Handler;
 use pernixc_ir::value::{
     literal::{Boolean, Literal},
     Value,
@@ -18,7 +18,7 @@ impl Bind<&pernixc_syntax::expression::unit::Boolean>
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Boolean,
         _: Config,
-        _: &Storage<Diagnostic>,
+        _: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         let value = match syntax_tree {
             pernixc_syntax::expression::unit::Boolean::True(_) => true,

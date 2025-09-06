@@ -5,7 +5,7 @@ use std::{borrow::Cow, num::NonZeroUsize, sync::Arc};
 use getset::Getters;
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_handler::Storage;
+use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
     address::{Address, Memory},
     alloca::Alloca,
@@ -65,7 +65,7 @@ impl<'t> Binder<'t> {
     pub async fn new_function(
         engine: &'t TrackedEngine,
         function_id: Global<pernixc_symbol::ID>,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
         let premise = engine.get_active_premise(function_id).await?;
         let generic_parameter_namespace =
@@ -508,7 +508,7 @@ impl Binder<'_> {
 
     /// Finishes the building process and returns the built IR.
     #[must_use]
-    pub fn finish(mut self) -> IR { self.ir }
+    pub fn finish(self) -> IR { self.ir }
 
     /*
     /// Gets the type of the given `address`.
