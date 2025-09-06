@@ -3,7 +3,7 @@
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
-use crate::binder;
+use crate::{binder, pattern};
 
 diagnostic_enum! {
     /// An enumeration of all diagnostics that can occur during binding the
@@ -23,6 +23,7 @@ diagnostic_enum! {
         Resolution(pernixc_resolution::diagnostic::Diagnostic),
         TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
         TypeCheck(binder::type_check::diagnostic::Diagnostic),
+        PatternBinding(pattern::bind::diagnostic::Diagnostic),
         Parenthesized(expression::parenthesized::diagnostic::Diagnostic),
         Numeric(expression::numeric::diagnostic::Diagnostic),
         Struct(expression::r#struct::diagnostic::Diagnostic),

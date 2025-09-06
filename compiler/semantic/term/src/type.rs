@@ -264,6 +264,19 @@ pub enum Type {
     Error(Error),
 }
 
+impl Type {
+    /// Keeps removing the reference until it reaches a non-reference type.
+    ///
+    /// This is useful for pattern matching.
+    #[must_use]
+    pub const fn reduce_reference(mut self: &Self) -> &Self {
+        while let Self::Reference(reference) = self {
+            self = &*reference.pointee;
+        }
+        self
+    }
+}
+
 impl TryFrom<Type> for Tuple {
     type Error = Type;
 

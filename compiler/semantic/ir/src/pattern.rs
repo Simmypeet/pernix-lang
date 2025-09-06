@@ -40,7 +40,7 @@ pub struct Boolean {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Named {
     /// The name of the pattern.
-    pub name: String,
+    pub name: SharedStr,
 
     /// Whether the binding is mutable or not.
     pub is_mutable: bool,
