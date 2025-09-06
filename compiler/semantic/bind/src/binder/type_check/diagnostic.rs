@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
@@ -90,8 +92,7 @@ impl Report<&TrackedEngine> for CyclicInference {
                 Highlight::builder()
                     .message(format!(
                         "cannot infer type due to circular dependency between \
-                         '{}' and '{}'",
-                        first_type_str, second_type_str
+                         '{first_type_str}' and '{second_type_str}'"
                     ))
                     .span(span)
                     .build(),
@@ -149,7 +150,7 @@ impl Report<&TrackedEngine> for MismatchedType {
                 // constraint::Type implements Display, so we can format it
                 // directly
                 use std::fmt::Write;
-                let _ = write!(expected_str, "{}", constraint_ty);
+                let _ = write!(expected_str, "{constraint_ty}");
             }
         }
 
@@ -169,14 +170,13 @@ impl Report<&TrackedEngine> for MismatchedType {
         pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message(format!(
-                "mismatched types: expected `{}`, found `{}`",
-                expected_str, found_str
+                "mismatched types: expected `{expected_str}`, found \
+                 `{found_str}`"
             ))
             .primary_highlight(
                 Highlight::builder()
                     .message(format!(
-                        "expected `{}`, found `{}`",
-                        expected_str, found_str
+                        "expected `{expected_str}`, found `{found_str}`"
                     ))
                     .span(span)
                     .build(),
