@@ -111,7 +111,7 @@ impl crate::display::Display for Predicate {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         match self {
             Self::TraitTypeCompatible(equality) => {

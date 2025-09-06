@@ -47,7 +47,7 @@ impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.0.fmt(engine, formatter).await?;
         write!(formatter, ": tuple")

@@ -70,7 +70,7 @@ impl crate::display::Display for GenericArguments {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         if !self.will_be_displayed() {
             return Ok(());
@@ -400,7 +400,7 @@ impl crate::display::Display for TraitMember {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.0.fmt(engine, formatter).await
     }
@@ -420,7 +420,7 @@ impl crate::display::Display for Symbol {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let qualified_name = engine.get_qualified_name(self.id).await;
 
@@ -433,7 +433,7 @@ impl crate::display::Display for MemberSymbol {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let parent_id = self
             .id

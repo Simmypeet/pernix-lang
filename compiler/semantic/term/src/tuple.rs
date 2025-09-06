@@ -62,7 +62,7 @@ impl<T: crate::display::Display> crate::display::Display for Element<T> {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         if self.is_unpacked {
             formatter.write_str("...")?;
@@ -76,7 +76,7 @@ impl<T: crate::display::Display> crate::display::Display for Tuple<T> {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         formatter.write_str("(")?;
 

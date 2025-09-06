@@ -49,7 +49,7 @@ impl crate::display::Display for Positive {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let qualified_name = engine.get_qualified_name(self.marker_id).await;
         write!(formatter, "marker {qualified_name}")?;
@@ -96,7 +96,7 @@ impl crate::display::Display for Negative {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         let qualified_name = engine.get_qualified_name(self.marker_id).await;
         write!(formatter, "marker not {qualified_name}")?;

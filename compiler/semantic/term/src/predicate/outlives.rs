@@ -57,7 +57,7 @@ impl<T: crate::display::Display> crate::display::Display for Outlives<T> {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.operand.fmt(engine, formatter).await?;
         write!(formatter, ": ")?;

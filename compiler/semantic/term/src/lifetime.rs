@@ -217,7 +217,7 @@ impl crate::display::Display for Lifetime {
     async fn fmt(
         &self,
         engine: &TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         match self {
             Self::Parameter(member_id) => {
@@ -240,10 +240,25 @@ impl crate::display::Display for Lifetime {
 
             Self::Static => write!(formatter, "'static"),
 
-            Self::Elided(_)
-            | Self::Inference(_)
-            | Self::Error(_)
-            | Self::Erased => Ok(()),
+            Self::Inference(inference) => {
+                let Some(rendering) = formatter
+                    .lifetime_inference_map
+                    .and_then(|x| x.get(inference))
+                else {
+                    return Ok(());
+                };
+
+                match rendering {
+                    crate::display::InferenceRendering::Recurse(lt) => {
+                        Box::pin(lt.fmt(engine, formatter)).await
+                    }
+                    crate::display::InferenceRendering::Rendered(flex_str) => {
+                        write!(formatter, "{flex_str}")
+                    }
+                }
+            }
+
+            Self::Elided(_) | Self::Error(_) | Self::Erased => Ok(()),
         }
     }
 }

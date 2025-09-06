@@ -475,12 +475,28 @@ impl crate::display::Display for Constant {
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         match self {
             Self::Primitive(primitive) => write!(formatter, "{primitive}"),
 
-            Self::Inference(_) => write!(formatter, "_"),
+            Self::Inference(inference) => {
+                let Some(rendering) = formatter
+                    .constant_inference_map
+                    .and_then(|x| x.get(inference))
+                else {
+                    return write!(formatter, "_");
+                };
+
+                match rendering {
+                    crate::display::InferenceRendering::Recurse(ty) => {
+                        Box::pin(ty.fmt(engine, formatter)).await
+                    }
+                    crate::display::InferenceRendering::Rendered(flex_str) => {
+                        write!(formatter, "{flex_str}")
+                    }
+                }
+            }
 
             Self::Parameter(member_id) => {
                 let generic_parameters = engine

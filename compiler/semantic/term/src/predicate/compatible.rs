@@ -29,7 +29,7 @@ impl<T: crate::display::Display, U: crate::display::Display>
     async fn fmt(
         &self,
         engine: &pernixc_query::TrackedEngine,
-        formatter: &mut crate::display::Formatter<'_>,
+        formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
         self.lhs.fmt(engine, formatter).await?;
         formatter.write_str(" = ")?;
