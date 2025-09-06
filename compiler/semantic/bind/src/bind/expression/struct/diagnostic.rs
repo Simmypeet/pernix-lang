@@ -8,7 +8,8 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
-    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
+    accessibility::accessibility_description, kind::get_kind,
+    name::get_qualified_name, source_map::to_absolute_span,
 };
 use pernixc_target::Global;
 
@@ -179,6 +180,13 @@ impl Report<&TrackedEngine> for FieldIsNotAccessible {
         let fields = engine.get_fields(self.struct_id).await.unwrap();
         let field = &fields.fields[self.field_id];
 
+        // Get the field's accessibility description for the help message
+        let field_accessibility_description = engine
+            .accessibility_description(
+                field.accessibility.into_global(self.struct_id.target_id),
+            )
+            .await;
+
         pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("field is not accessible")
@@ -191,6 +199,10 @@ impl Report<&TrackedEngine> for FieldIsNotAccessible {
                     .span(identifier_span)
                     .build(),
             )
+            .help_message(format!(
+                "field '{}' is {}",
+                field.name, field_accessibility_description
+            ))
             .build()
     }
 }
