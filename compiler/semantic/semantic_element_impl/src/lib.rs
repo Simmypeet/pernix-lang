@@ -10,6 +10,7 @@ mod function_signature;
 mod generic_parameters;
 mod implemented;
 mod implements_qualified_identifier;
+mod ir;
 mod occurrences;
 mod type_alias;
 mod variance;

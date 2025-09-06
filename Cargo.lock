@@ -1136,10 +1136,12 @@ dependencies = [
 name = "pernixc_bind"
 version = "0.1.0-beta.2"
 dependencies = [
+ "derive-new",
  "derive_more",
  "enum-as-inner",
  "getset",
  "pernixc_arena",
+ "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",
  "pernixc_ir",
@@ -1147,6 +1149,7 @@ dependencies = [
  "pernixc_query",
  "pernixc_resolution",
  "pernixc_serialize",
+ "pernixc_source_file",
  "pernixc_stable_hash",
  "pernixc_symbol",
  "pernixc_syntax",
@@ -1432,10 +1435,12 @@ dependencies = [
  "enum-as-inner",
  "flexstr",
  "pernixc_arena",
+ "pernixc_bind",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",
  "pernixc_hash",
+ "pernixc_ir",
  "pernixc_lexical",
  "pernixc_query",
  "pernixc_register",

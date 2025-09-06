@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use pernixc_diagnostic::Report;
+use pernixc_ir::Key as IRKey;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
     fields::Key as FieldsKey, type_alias::Key as TypeAliasKey,
@@ -101,6 +102,14 @@ pub async fn single_rendered_executor(
         let diags = engine
             .query(&BuildDiagnosticKey::new(FunctionSignatureKey(id)))
             .await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await);
+        }
+    }
+
+    if kind.has_function_body() {
+        let diags = engine.query(&BuildDiagnosticKey::new(IRKey(id))).await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await);

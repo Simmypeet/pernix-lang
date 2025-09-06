@@ -20,10 +20,10 @@ use crate::{
 
 pub mod diagnostic;
 
-impl Bind<pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
+impl Bind<&pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::unit::Numeric,
+        syntax_tree: &pernixc_syntax::expression::unit::Numeric,
         _: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {

@@ -13,12 +13,12 @@ pub mod block;
 pub mod numeric;
 pub mod postfix;
 
-impl Bind<pernixc_syntax::expression::Expression>
+impl Bind<&pernixc_syntax::expression::Expression>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::Expression,
+        syntax_tree: &pernixc_syntax::expression::Expression,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -33,12 +33,12 @@ impl Bind<pernixc_syntax::expression::Expression>
     }
 }
 
-impl Bind<pernixc_syntax::expression::binary::Binary>
+impl Bind<&pernixc_syntax::expression::binary::Binary>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::binary::Binary,
+        syntax_tree: &pernixc_syntax::expression::binary::Binary,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -47,16 +47,16 @@ impl Bind<pernixc_syntax::expression::binary::Binary>
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
-        self.bind(first, config, handler).await
+        self.bind(&first, config, handler).await
     }
 }
 
-impl Bind<pernixc_syntax::expression::binary::Node>
+impl Bind<&pernixc_syntax::expression::binary::Node>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::binary::Node,
+        syntax_tree: &pernixc_syntax::expression::binary::Node,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -71,12 +71,12 @@ impl Bind<pernixc_syntax::expression::binary::Node>
     }
 }
 
-impl Bind<pernixc_syntax::expression::prefix::Prefixable>
+impl Bind<&pernixc_syntax::expression::prefix::Prefixable>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::prefix::Prefixable,
+        syntax_tree: &pernixc_syntax::expression::prefix::Prefixable,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -91,12 +91,12 @@ impl Bind<pernixc_syntax::expression::prefix::Prefixable>
     }
 }
 
-impl Bind<pernixc_syntax::expression::unit::Unit>
+impl Bind<&pernixc_syntax::expression::unit::Unit>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::unit::Unit,
+        syntax_tree: &pernixc_syntax::expression::unit::Unit,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -123,12 +123,12 @@ impl Bind<pernixc_syntax::expression::unit::Unit>
     }
 }
 
-impl Bind<pernixc_syntax::expression::block::Block>
+impl Bind<&pernixc_syntax::expression::block::Block>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::block::Block,
+        syntax_tree: &pernixc_syntax::expression::block::Block,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -144,12 +144,12 @@ impl Bind<pernixc_syntax::expression::block::Block>
     }
 }
 
-impl Bind<pernixc_syntax::expression::terminator::Terminator>
+impl Bind<&pernixc_syntax::expression::terminator::Terminator>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::terminator::Terminator,
+        syntax_tree: &pernixc_syntax::expression::terminator::Terminator,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {

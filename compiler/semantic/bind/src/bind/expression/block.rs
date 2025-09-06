@@ -7,12 +7,12 @@ use crate::{
     diagnostic::Diagnostic,
 };
 
-impl Bind<pernixc_syntax::expression::postfix::Postfix>
+impl Bind<&pernixc_syntax::expression::postfix::Postfix>
     for crate::binder::Binder<'_>
 {
     async fn bind(
         &mut self,
-        syntax_tree: pernixc_syntax::expression::postfix::Postfix,
+        syntax_tree: &pernixc_syntax::expression::postfix::Postfix,
         config: Config,
         handler: &Storage<Diagnostic>,
     ) -> Result<Expression, Error> {
@@ -20,6 +20,6 @@ impl Bind<pernixc_syntax::expression::postfix::Postfix>
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
-        self.bind(unit, config, handler).await
+        self.bind(&unit, config, handler).await
     }
 }

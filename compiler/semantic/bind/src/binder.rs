@@ -1,6 +1,6 @@
 //! Contains the definition of [`Binder`], the struct used for building the IR.
 
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, num::NonZeroUsize, sync::Arc};
 
 use getset::Getters;
 use pernixc_arena::ID;
@@ -10,7 +10,8 @@ use pernixc_ir::{
     address::{Address, Memory},
     alloca::Alloca,
     control_flow_graph::Block,
-    instruction, scope,
+    instruction::{self, Instruction, ScopePop, ScopePush},
+    scope,
     value::{
         literal::{Literal, Unreachable},
         register::{Assignment, Register},
@@ -20,15 +21,19 @@ use pernixc_ir::{
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor, TrackedEngine};
-use pernixc_resolution::{ElidedTermProvider, ExtraNamespace};
+use pernixc_resolution::{
+    generic_parameter_namespace::get_generic_parameter_namespace,
+    ElidedTermProvider, ExtraNamespace,
+};
 use pernixc_target::Global;
 use pernixc_term::{inference, lifetime::Lifetime, r#type::Type};
 use pernixc_type_system::{
-    environment::{Environment, Premise},
+    environment::{get_active_premise, Environment, Premise},
     term::Term,
 };
 
 use crate::{
+    binder::stack::Stack,
     diagnostic::Diagnostic,
     inference_context::{constraint, InferenceContext},
 };
@@ -42,7 +47,7 @@ pub struct Binder<'t> {
 
     current_site: Global<pernixc_symbol::ID>,
     premise: Arc<Premise>,
-    extra_namespace: ExtraNamespace,
+    extra_namespace: Arc<ExtraNamespace>,
 
     /// The intermediate representation that is being built.
     #[get = "pub"]
@@ -57,48 +62,34 @@ pub struct Binder<'t> {
 
 impl<'t> Binder<'t> {
     /// Creates the binder for building the IR.
-    ///
-    /// # Errors
-    ///
-    /// See [`Abort`] for more information
-    pub fn new_function<'a>(
-        table: &'t TrackedEngine,
+    pub async fn new_function(
+        engine: &'t TrackedEngine,
         function_id: Global<pernixc_symbol::ID>,
-        parameter_pattern_syns: impl IntoIterator<
-            Item = &'a pernixc_syntax::pattern::Irrefutable,
-        >,
         handler: &Storage<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
-        /*
-        let premise = table.get_active_premise::<infer::Model>(function_id);
+        let premise = engine.get_active_premise(function_id).await?;
         let generic_parameter_namespace =
-            table.get_generic_parameter_namepsace::<infer::Model>(function_id);
+            engine.get_generic_parameter_namespace(function_id).await?;
 
-        let intermediate_representation = Representation::default();
-        let current_block_id =
-            intermediate_representation.control_flow_graph.entry_block_id();
+        let ir = IR::default();
+        let current_block_id = ir.control_flow_graph.entry_block_id();
 
-        let stack = Stack::new(
-            intermediate_representation.scope_tree.root_scope_id(),
-            false,
-        );
+        let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
 
         let mut binder = Self {
-            engine: table,
+            engine,
             current_site: function_id,
             premise,
-            ir: intermediate_representation,
+            ir,
             stack,
             extra_namespace: generic_parameter_namespace,
             current_block_id,
 
-            inference_context: Context::default(),
+            inference_context: InferenceContext::default(),
 
-            block_states_by_scope_id: HashMap::new(),
-            loop_states_by_scope_id: HashMap::new(),
+            type_inference_counter: 0,
+            const_inference_counter: 0,
         };
-
-        let mut parameter_name_binding_point = NameBindingPoint::default();
 
         let root_scope_id = binder.ir.scope_tree.root_scope_id();
 
@@ -106,49 +97,43 @@ impl<'t> Binder<'t> {
             instruction::Instruction::ScopePush(ScopePush(root_scope_id)),
         );
 
-        let function_signature =
-            binder.engine.query::<FunctionSignature>(function_id)?;
+        // let function_signature =
+        //     binder.engine.query::<FunctionSignature>(function_id)?;
 
-        // bind the parameter patterns
-        #[allow(clippy::significant_drop_in_scrutinee)]
-        for ((parameter_id, parameter_sym), syntax_tree) in function_signature
-            .parameter_order
-            .iter()
-            .copied()
-            .map(|x| (x, &function_signature.parameters[x]))
-            .zip(parameter_pattern_syns)
-        {
-            let parameter_type =
-                infer::Model::from_default_type(parameter_sym.r#type.clone());
+        // // bind the parameter patterns
+        // #[allow(clippy::significant_drop_in_scrutinee)]
+        // for ((parameter_id, parameter_sym), syntax_tree) in
+        // function_signature     .parameter_order
+        //     .iter()
+        //     .copied()
+        //     .map(|x| (x, &function_signature.parameters[x]))
+        //     .zip(parameter_pattern_syns)
+        // {
+        //     let parameter_type =
+        //         infer::Model::from_default_type(parameter_sym.r#type.
+        // clone());
 
-            // TODO: add the binding point
-            let pattern = binder
-                .bind_pattern(&parameter_type, syntax_tree, handler)?
-                .unwrap_or_else(|| {
-                    Wildcard { span: syntax_tree.span() }.into()
-                });
+        //     // TODO: add the binding point
+        //     let pattern = binder
+        //         .bind_pattern(&parameter_type, syntax_tree, handler)?
+        //         .unwrap_or_else(|| {
+        //             Wildcard { span: syntax_tree.span() }.into()
+        //         });
 
-            binder.insert_irrefutable_named_binding_point(
-                &mut parameter_name_binding_point,
-                &pattern,
-                &parameter_type,
-                Address::Memory(Memory::Parameter(parameter_id)),
-                None,
-                Qualifier::Mutable,
-                false,
-                root_scope_id,
-                handler,
-            )?;
-        }
-
-        binder
-            .stack
-            .current_scope_mut()
-            .add_named_binding_point(parameter_name_binding_point);
+        //     binder.insert_irrefutable_named_binding_point(
+        //         &mut parameter_name_binding_point,
+        //         &pattern,
+        //         &parameter_type,
+        //         Address::Memory(Memory::Parameter(parameter_id)),
+        //         None,
+        //         Qualifier::Mutable,
+        //         false,
+        //         root_scope_id,
+        //         handler,
+        //     )?;
+        // }
 
         Ok(binder)
-        */
-        todo!()
     }
 }
 
@@ -390,6 +375,11 @@ impl Binder<'_> {
         &mut self.ir.control_flow_graph[self.current_block_id]
     }
 
+    /// Adds a new instruction to the current block.
+    pub fn push_instruction(&mut self, instruction: Instruction) {
+        let _ = self.current_block_mut().add_instruction(instruction);
+    }
+
     /// Creates a new type inference variable and assigns it to the inference
     /// context with the given constraint.
     pub fn create_type_inference(
@@ -480,6 +470,45 @@ impl Binder<'_> {
                 .clone()),
         }
     }
+
+    /// Creates a new scope at the current instruction pointer and pushes it to
+    /// the stack.
+    pub fn push_scope(&mut self, is_unsafe: bool) -> ID<scope::Scope> {
+        let scope_id = self
+            .ir
+            .scope_tree
+            .new_child_branch(
+                self.stack.current_scope().scope_id(),
+                NonZeroUsize::new(1).unwrap(),
+            )
+            .unwrap()[0];
+
+        self.push_scope_with(scope_id, is_unsafe);
+
+        scope_id
+    }
+
+    /// Pops the current scope from the stack.
+    pub fn pop_scope(&mut self, scope_id: ID<scope::Scope>) {
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(scope_id)
+        );
+        let _ = self
+            .current_block_mut()
+            .add_instruction(Instruction::ScopePop(ScopePop(scope_id)));
+    }
+
+    fn push_scope_with(&mut self, scope_id: ID<scope::Scope>, is_unsafe: bool) {
+        self.stack.push_scope(scope_id, is_unsafe);
+        let _ = self
+            .current_block_mut()
+            .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
+    }
+
+    /// Finishes the building process and returns the built IR.
+    #[must_use]
+    pub fn finish(mut self) -> IR { self.ir }
 
     /*
     /// Gets the type of the given `address`.
@@ -636,41 +665,6 @@ impl Binder<'_> {
         }
 
         Ok(resolution)
-    }
-
-    fn push_scope_with(&mut self, scope_id: ID<scope::Scope>, is_unsafe: bool) {
-        self.stack.push_scope(scope_id, is_unsafe);
-        let _ = self
-            .current_block_mut()
-            .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
-    }
-
-    /// Creates a new scope at the current instruction pointer and pushes it to
-    /// the stack.
-    fn push_scope(&mut self, is_unsafe: bool) -> ID<scope::Scope> {
-        let scope_id = self
-            .ir
-            .scope_tree
-            .new_child_branch(
-                self.stack.current_scope().scope_id(),
-                NonZeroUsize::new(1).unwrap(),
-            )
-            .unwrap()[0];
-
-        self.push_scope_with(scope_id, is_unsafe);
-
-        scope_id
-    }
-
-    /// Pops the current scope from the stack.
-    fn pop_scope(&mut self, scope_id: ID<scope::Scope>) {
-        assert_eq!(
-            self.stack.pop_scope().map(|x| x.scope_id()),
-            Some(scope_id)
-        );
-        let _ = self
-            .current_block_mut()
-            .add_instruction(Instruction::ScopePop(ScopePop(scope_id)));
     }
 
     /// Resolves the given `syntax_tree` to a type where inference is allowed.
