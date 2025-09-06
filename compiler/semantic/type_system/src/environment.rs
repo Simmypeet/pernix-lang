@@ -20,6 +20,8 @@ use pernixc_semantic_element::{
     implied_predicate::{get_implied_predicates, ImpliedPredicate},
     where_clause::get_where_clause,
 };
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
 use pernixc_term::{
@@ -31,7 +33,9 @@ use pernixc_term::{
 use crate::{normalizer::Normalizer, OverflowError};
 
 /// Contains the premise of the semantic logic.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+)]
 pub struct Premise {
     /// List of predicates that will be considered as facts.
     pub predicates: BTreeSet<Predicate>,
@@ -48,21 +52,27 @@ pub struct Premise {
 ///
 /// This works by iterating down the symbol hierarchy and collecting all the
 /// predicates that are defined in the current site and its children.
-#[extend]
+#[pernixc_query::query(
+    key(ActivePremiseKey),
+    value(Arc<Premise>),
+    id(Global<pernixc_symbol::ID>),
+    executor(ActivePremiseExecutor),
+    extend(method(get_active_premise))
+)]
 pub async fn get_active_premise(
-    self: &TrackedEngine,
     current_site: Global<pernixc_symbol::ID>,
-) -> Result<Premise, executor::CyclicError> {
+    engine: &TrackedEngine,
+) -> Result<Arc<Premise>, executor::CyclicError> {
     let mut premise =
         Premise { predicates: BTreeSet::new(), query_site: Some(current_site) };
 
-    let mut scope_walker = self.scope_walker(current_site);
+    let mut scope_walker = engine.scope_walker(current_site);
     while let Some(id) = scope_walker.next().await {
         let current_id = current_site.target_id.make_global(id);
-        let kind = self.get_kind(current_id).await;
+        let kind = engine.get_kind(current_id).await;
 
         if kind.has_where_clause() {
-            let where_clause = self.get_where_clause(current_id).await?;
+            let where_clause = engine.get_where_clause(current_id).await?;
 
             premise
                 .predicates
@@ -70,7 +80,7 @@ pub async fn get_active_premise(
         }
 
         if kind.has_implied_predicates() {
-            let predicates = self.get_implied_predicates(current_id).await?;
+            let predicates = engine.get_implied_predicates(current_id).await?;
 
             premise.predicates.extend(predicates.iter().map(|x| match x {
                 ImpliedPredicate::LifetimeOutlives(outlives) => {
@@ -83,8 +93,10 @@ pub async fn get_active_premise(
         }
     }
 
-    Ok(premise)
+    Ok(Arc::new(premise))
 }
+
+pernixc_register::register!(ActivePremiseKey);
 
 /// Retrieves the active premise of the current site with the span of the
 /// predicates.

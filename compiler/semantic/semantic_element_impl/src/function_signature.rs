@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, ops::Deref, sync::Arc};
 
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Storage;
@@ -178,7 +178,9 @@ impl Build for Key {
                     .target_id
                     .make_global(engine.get_parent(key.0).await.unwrap()),
             )
-            .await?;
+            .await?
+            .deref()
+            .clone();
 
         let where_clause = engine.get_where_clause(key.0).await?;
 
