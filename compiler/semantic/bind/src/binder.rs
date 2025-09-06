@@ -29,9 +29,8 @@ use pernixc_resolution::{
 use pernixc_source_file::SourceElement;
 use pernixc_target::Global;
 use pernixc_term::{inference, lifetime::Lifetime, r#type::Type};
-use pernixc_type_system::{
-    environment::{get_active_premise, Environment, Premise},
-    term::Term,
+use pernixc_type_system::environment::{
+    get_active_premise, Environment, Premise,
 };
 
 use crate::{
@@ -200,17 +199,22 @@ impl ElidedTermProvider<Lifetime> for LifetimeInferenceProvider {
     fn create(&mut self) -> Lifetime { Lifetime::Erased }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct InferenceProvider<T> {
-    created_inferences: Vec<T>,
+    created_inferences: Vec<inference::Variable<T>>,
+    counter: u64,
 }
 
-impl<T: Default + Clone + Send + Sync + 'static, U: Term + From<T>>
-    ElidedTermProvider<U> for InferenceProvider<T>
+impl<T: From<inference::Variable<T>>> ElidedTermProvider<T>
+    for InferenceProvider<T>
 {
-    fn create(&mut self) -> U {
-        let inference = T::default();
-        let inference_term = inference.clone().into();
+    fn create(&mut self) -> T {
+        let counter = self.counter;
+        self.counter += 1;
+
+        let inference = inference::Variable::new(counter);
+
+        let inference_term = T::from(inference);
         self.created_inferences.push(inference);
 
         inference_term
@@ -531,8 +535,14 @@ impl Binder<'_> {
         syntax_tree: &pernixc_syntax::QualifiedIdentifier,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Resolution, Error> {
-        let mut type_inferences = InferenceProvider::default();
-        let mut constant_inferences = InferenceProvider::default();
+        let mut type_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.type_inference_counter,
+        };
+        let mut constant_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.const_inference_counter,
+        };
 
         let mut lifetime_inference_providers = LifetimeInferenceProvider;
 
@@ -544,11 +554,15 @@ impl Binder<'_> {
             .referring_site(self.current_site)
             .build();
 
-        let resolution = match self
+        let resolution = self
             .engine
             .resolve_qualified_identifier(syntax_tree, config, &handler)
-            .await
-        {
+            .await;
+
+        self.type_inference_counter = type_inferences.counter;
+        self.const_inference_counter = constant_inferences.counter;
+
+        let resolution = match resolution {
             Ok(result) => result,
             Err(pernixc_resolution::Error::Cyclic(error)) => {
                 return Err(binder::Error::Unrecoverable(
