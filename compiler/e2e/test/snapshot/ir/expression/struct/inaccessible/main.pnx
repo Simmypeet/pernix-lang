@@ -1,0 +1,21 @@
+from target::inner import Normal, Inaccessible, Fields
+
+
+public module inner:
+    public struct Normal:
+        pass
+
+
+    private struct Inaccessible:
+        pass
+
+
+    public struct Fields:
+        public accessible: int32
+        private inaccessible: int32
+
+
+public function main():
+    Normal {}
+    Inaccessible {}
+    Fields { accessible: 32, inaccessible: 54 }

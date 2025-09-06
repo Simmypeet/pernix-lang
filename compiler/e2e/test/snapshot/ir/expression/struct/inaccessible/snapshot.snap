@@ -1,0 +1,24 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the symbol is not accessible
+  ╭─ compiler/e2e/test/snapshot/ir/expression/struct/inaccessible/main.pnx:1:35
+  │
+1 │ from target::inner import Normal, Inaccessible, Fields
+  │                                   ^^^^^^^^^^^^ the symbol `main::inner::Inaccessible` is not accessible from `main`
+
+error: field is not accessible
+   ╭─ compiler/e2e/test/snapshot/ir/expression/struct/inaccessible/main.pnx:21:30
+   │
+21 │     Fields { accessible: 32, inaccessible: 54 }
+   │                              ^^^^^^^^^^^^ field 'inaccessible' of struct 'main::inner::Fields' is not accessible from 'main::main'
+   │
+   = field 'inaccessible' is accessible in `main::inner`
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
