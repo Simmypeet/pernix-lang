@@ -1,0 +1,6 @@
+public function main():
+    [0, 0.0, 0.0f32, true]
+    [0, 0.0, 0.0f64, 0.0]
+    [true, false, true, false]
+    [0, 0.0, 0.0f64, 0.0, 0i32]
+    [0, 0.0, 0i32]

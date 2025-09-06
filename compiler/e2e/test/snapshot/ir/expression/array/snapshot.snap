@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mismatched types: expected `float32`, found `bool`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/array/main.pnx:2:22
+  │
+2 │     [0, 0.0, 0.0f32, true]
+  │                      ^^^^ expected `float32`, found `bool`
+  │
+  = ensure the expression type matches the expected type
+
+error: mismatched types: expected `float64`, found `int32`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/array/main.pnx:5:27
+  │
+5 │     [0, 0.0, 0.0f64, 0.0, 0i32]
+  │                           ^^^^ expected `float64`, found `int32`
+  │
+  = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{floating}`, found `int32`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/array/main.pnx:6:14
+  │
+6 │     [0, 0.0, 0i32]
+  │              ^^^^ expected `{floating}`, found `int32`
+  │
+  = ensure the expression type matches the expected type
+
+error: Compilation aborted due to 3 error(s)
+
+
+
+stdout:
