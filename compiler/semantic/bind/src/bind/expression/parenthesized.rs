@@ -78,16 +78,9 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
             .await?;
 
         // more than one unpacked elements
-        if tuple_type
-            .result
-            .as_tuple()
-            .unwrap()
-            .elements
-            .iter()
-            .filter(|x| x.is_unpacked)
-            .count()
-            > 1
-        {
+        if tuple_type.result.as_tuple().is_some_and(|x| {
+            x.elements.iter().filter(|x| x.is_unpacked).count() > 1
+        }) {
             handler.receive(
                 Diagnostic::MoreThanOneUnpackedInTupleExpression(
                     MoreThanOneUnpackedInTupleExpression {

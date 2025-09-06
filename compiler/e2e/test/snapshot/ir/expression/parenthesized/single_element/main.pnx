@@ -1,0 +1,15 @@
+public struct Test:
+    public justNumber: int32
+    public singleTupleElement: (int32,)
+
+
+public function main():
+    Test {
+        justNumber: (32),
+        singleTupleElement: (32,),
+    }
+    
+    Test {
+        justNumber: (32,),
+        singleTupleElement: (32),
+    }
