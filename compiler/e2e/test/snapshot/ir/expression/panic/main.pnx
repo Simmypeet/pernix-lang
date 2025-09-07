@@ -1,0 +1,12 @@
+public struct Test:
+    public a: int32
+    public b: float32
+    public c: bool
+
+
+public function main():
+    Test {
+        a: panic,
+        b: panic,
+        c: panic,
+    }
