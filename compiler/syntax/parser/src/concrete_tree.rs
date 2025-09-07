@@ -10,7 +10,7 @@ use pernixc_lexical::{
     tree::{OffsetMode, RelativeLocation, RelativeSpan},
 };
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{GlobalSourceID, Span};
+use pernixc_source_file::{GlobalSourceID, SourceElement, Span};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::StableTypeID;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -127,10 +127,10 @@ impl Drop for Tree {
     }
 }
 
-impl Tree {
-    /// Obtains the [`RelativeSpan`] of the tree.
-    #[must_use]
-    pub fn span(&self) -> RelativeSpan {
+impl SourceElement for Tree {
+    type Location = RelativeLocation;
+
+    fn span(&self) -> Span<Self::Location> {
         if let Some(step_into_fragment) =
             self.ast_info.as_ref().and_then(|x| x.step_into_fragment)
         {
