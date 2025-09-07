@@ -1,0 +1,12 @@
+public struct TestCharacter:
+    public asU8: uint8
+    public asInt32: int32
+    public asFloat32: float32
+
+
+public function main():
+    TestCharacter {
+        asU8: 'a',
+        asInt32: 'a',
+        asFloat32: 'a', # can't be float
+    }
