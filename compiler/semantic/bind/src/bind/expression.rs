@@ -18,6 +18,7 @@ use crate::{
 pub mod array;
 pub mod block;
 pub mod boolean;
+pub mod character;
 pub mod numeric;
 pub mod panic;
 pub mod parenthesized;
@@ -139,8 +140,8 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::String(string) => {
                 self.bind(string, config, handler).await
             }
-            pernixc_syntax::expression::unit::Unit::Character(_character) => {
-                todo!()
+            pernixc_syntax::expression::unit::Unit::Character(character) => {
+                self.bind(character, config, handler).await
             }
             pernixc_syntax::expression::unit::Unit::Panic(panic) => {
                 self.bind(panic, config, handler).await
