@@ -1,0 +1,10 @@
+public trait variable:
+    pass
+
+
+public function test(variable: int32):
+    variable # should refer to parameter
+
+
+public function notParameter():
+    variable # should refer to trait `variable`
