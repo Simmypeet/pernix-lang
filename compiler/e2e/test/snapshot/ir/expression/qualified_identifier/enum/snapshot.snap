@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: expected associated value for variant `main::MyEnum::WithValue`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/qualified_identifier/enum/main.pnx:8:5
+  │
+8 │     MyEnum::WithValue # expect associated value
+  │     ^^^^^^^^^^^^^^^^^ expected associated value here
+  │
+  = consider adding an associated value by adding `(EXPRESSION)` after the variant name
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

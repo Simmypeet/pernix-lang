@@ -1,0 +1,8 @@
+public enum MyEnum:
+    Simple
+    WithValue(int32)
+
+
+public function main():
+    MyEnum::Simple
+    MyEnum::WithValue # expect associated value
