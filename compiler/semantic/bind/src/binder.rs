@@ -30,6 +30,7 @@ use pernixc_resolution::{
 use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_function_signature_syntax;
+use pernixc_syntax::item::function;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
@@ -71,6 +72,9 @@ pub struct Binder<'t> {
     #[get = "pub"]
     ir: IR,
     current_block_id: ID<Block>,
+
+    /// The stack used for managing scopes and named bindings.
+    #[get = "pub"]
     stack: stack::Stack,
 
     inference_context: InferenceContext,
@@ -669,45 +673,96 @@ impl Binder<'_> {
         }
     }
 
-    /*
+    /// Returns the mutability qualifier accounting for all references the
+    /// address is possibly behind.
+    pub async fn get_behind_reference_qualifier(
+        &self,
+        mut address: &Address,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Option<Qualifier>, UnrecoverableError> {
+        loop {
+            match address {
+                Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => {
+                    return Ok(None)
+                }
+
+                Address::Field(ad) => {
+                    address = &ad.struct_address;
+                }
+                Address::Tuple(ad) => {
+                    address = &ad.tuple_address;
+                }
+                Address::Index(ad) => {
+                    address = &ad.array_address;
+                }
+                Address::Variant(ad) => {
+                    address = &ad.enum_address;
+                }
+                Address::Reference(ad) => {
+                    let ty = self
+                        .type_of_address(&ad.reference_address, handler)
+                        .await?;
+
+                    let ref_ty = match ty {
+                        Type::Reference(ref_ty) => ref_ty,
+                        found => {
+                            panic!(
+                                "expected a reference type, found: {found:#?}",
+                            );
+                        }
+                    };
+
+                    let mut qualifier = ref_ty.qualifier;
+
+                    if let Some(inner_qual) =
+                        Box::pin(self.get_behind_reference_qualifier(
+                            &ad.reference_address,
+                            handler,
+                        ))
+                        .await?
+                    {
+                        qualifier = qualifier.min(inner_qual);
+                    }
+
+                    return Ok(Some(qualifier));
+                }
+            }
+        }
+    }
+
     /// Gets the type of the given `address`.
-    fn type_of_address(
+    async fn type_of_address(
         &self,
         address: &Address,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Type, UnrecoverableError> {
-        self.ir
+        match self
+            .ir
             .values
             .type_of(address, self.current_site, &self.create_environment())
-            .map(|x| x.result)
-            .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_calculating_overflow(
-                        match address.get_root_memory() {
-                            Memory::Parameter(id) => {
-                                let signature = match self
-                                    .engine
-                                    .query::<FunctionSignature>(
-                                    self.current_site,
-                                ) {
-                                    Ok(signature) => signature,
-                                    Err(error) => return error,
-                                };
+            .await
+        {
+            Ok(x) => Ok(x.result),
+            Err(err) => Err(err.report_as_type_calculating_overflow(
+                match address.get_root_memory() {
+                    Memory::Parameter(id) => {
+                        let parameters = self
+                            .engine
+                            .get_parameters(self.current_site)
+                            .await?;
 
-                                let parameter = &signature.parameters[*id];
-
-                                parameter.span.clone().unwrap()
-                            }
-                            Memory::Alloca(id) => self.ir.values.allocas[*id]
-                                .span
-                                .clone()
-                                .unwrap(),
-                        },
-                        handler,
-                    )
-                })
-            })
+                        parameters.parameters[*id].span.clone().unwrap()
+                    }
+                    Memory::Alloca(id) => {
+                        self.ir.values.allocas[*id].span.clone().unwrap()
+                    }
+                },
+                handler,
+            )),
+        }
     }
+
+    /*
 
     #[allow(clippy::type_complexity)]
     fn verify_generic_arguments_for_with_inference(
@@ -866,52 +921,6 @@ impl Binder<'_> {
         ty
     }
 
-    fn get_behind_reference_qualifier(
-        &self,
-        address: &Address<infer::Model>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Qualifier>, Abort> {
-        match address {
-            Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => {
-                Ok(None)
-            }
-
-            Address::Field(ad) => {
-                self.get_behind_reference_qualifier(&ad.struct_address, handler)
-            }
-            Address::Tuple(ad) => {
-                self.get_behind_reference_qualifier(&ad.tuple_address, handler)
-            }
-            Address::Index(ad) => {
-                self.get_behind_reference_qualifier(&ad.array_address, handler)
-            }
-            Address::Variant(ad) => {
-                self.get_behind_reference_qualifier(&ad.enum_address, handler)
-            }
-            Address::Reference(ad) => {
-                let ty =
-                    self.type_of_address(&ad.reference_address, handler)?;
-
-                let ref_ty = match ty {
-                    Type::Reference(ref_ty) => ref_ty,
-                    found => {
-                        panic!("expected a reference type, found: {found:#?}",);
-                    }
-                };
-
-                let mut qualifier = ref_ty.qualifier;
-
-                if let Some(inner_qual) = self.get_behind_reference_qualifier(
-                    &ad.reference_address,
-                    handler,
-                )? {
-                    qualifier = qualifier.min(inner_qual);
-                }
-
-                Ok(Some(qualifier))
-            }
-        }
-    }
 
     */
 }

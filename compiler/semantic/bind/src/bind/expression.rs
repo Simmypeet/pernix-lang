@@ -21,6 +21,7 @@ pub mod boolean;
 pub mod numeric;
 pub mod parenthesized;
 pub mod postfix;
+pub mod qualified_identifier;
 pub mod r#struct;
 
 impl Bind<&pernixc_syntax::expression::Expression>
