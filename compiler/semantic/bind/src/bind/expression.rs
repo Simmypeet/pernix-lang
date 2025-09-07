@@ -125,8 +125,8 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
                 self.bind(st, config, handler).await
             }
             pernixc_syntax::expression::unit::Unit::QualifiedIdentifier(
-                _qualified_identifier,
-            ) => todo!(),
+                qualified_identifier,
+            ) => self.bind(qualified_identifier, config, handler).await,
             pernixc_syntax::expression::unit::Unit::Array(array) => {
                 self.bind(array, config, handler).await
             }
