@@ -1097,6 +1097,7 @@ impl crate::display::Display for Type {
             Self::Tuple(tuple) => Box::pin(tuple.fmt(engine, formatter)).await,
 
             Self::Phantom(phantom) => {
+                write!(formatter, "phantom ")?;
                 Box::pin(phantom.0.fmt(engine, formatter)).await
             }
 
