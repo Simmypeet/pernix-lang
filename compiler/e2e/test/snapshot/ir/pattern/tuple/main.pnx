@@ -1,0 +1,62 @@
+public function expectedTupleType(
+    (first, second): int32 # expected tuple type
+):
+    pass
+
+
+public function moreThanOnceUnpack(
+    (...first, ...second): (int32, int32) # more than one unpack
+):
+    pass
+
+
+public function mismatchedTuplePatternLengthWithUnpack(
+    (first, ...second, third): (int32) # mismatched tuple pattern length with unpack
+):
+    pass
+
+
+public function expectedTuplePackPattern[T: tuple](
+    (a, b, c): (int32, ...T, int32)
+):
+    pass
+
+
+public function mismatchedTuplePackPosition[T: tuple](
+    (...a, b, c): (int32, ...T, int32)
+):
+    pass
+
+
+public function moreThanOnceUnpack2[T: tuple](
+    (...a, ...b, c): (int32, ...T, int32)
+):
+    pass
+
+
+public function mismatchedTuplePatternLength(
+    (a, b, c): (int32, int32) # mismatched tuple
+):
+    pass
+
+
+public function packTuplePattern(
+    (a, ...b, c): (int32, int32, int32, int32)
+):
+    pass
+
+
+public struct Empty:
+    pass
+
+
+public function packImmediatelyWithTuple(
+    (a, ...({}, {}), b): (int32, Empty, Empty, int32)
+):
+    pass
+
+
+public function packImmediatelyWithTupleButLengthMismatched(
+    (a, ...({}, {}, {}), b): (int32, Empty, Empty, int32)
+):
+    pass
