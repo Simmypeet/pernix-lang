@@ -1,0 +1,24 @@
+public module moduleSymbol:
+    pass
+
+
+public type MyType = int32
+
+
+public struct MyStruct:
+    public field: int32
+
+
+public function myFunction():
+    pass
+
+
+public enum MyEnum:
+    Simple
+
+
+public function main():
+    moduleSymbol
+    MyStruct
+    myFunction
+    MyEnum 
