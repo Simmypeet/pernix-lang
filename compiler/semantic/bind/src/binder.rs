@@ -10,7 +10,7 @@ use pernixc_ir::{
     address::{Address, Memory},
     alloca::Alloca,
     control_flow_graph::Block,
-    instruction::{self, Instruction, ScopePop, ScopePush},
+    instruction::{self, Instruction, ScopePop, ScopePush, Terminator},
     pattern::{Irrefutable, NameBindingPoint, Wildcard},
     scope,
     value::{
@@ -759,6 +759,13 @@ impl Binder<'_> {
                 handler,
             )),
         }
+    }
+
+    /// Inserts a panic terminator to the current block.
+    pub fn insert_panic_terminator(&mut self) {
+        self.ir
+            .control_flow_graph
+            .insert_terminator(self.current_block_id, Terminator::Panic);
     }
 
     /*

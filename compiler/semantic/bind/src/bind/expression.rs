@@ -19,6 +19,7 @@ pub mod array;
 pub mod block;
 pub mod boolean;
 pub mod numeric;
+pub mod panic;
 pub mod parenthesized;
 pub mod phantom;
 pub mod postfix;
@@ -138,7 +139,9 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::Character(_character) => {
                 todo!()
             }
-            pernixc_syntax::expression::unit::Unit::Panic(_panic) => todo!(),
+            pernixc_syntax::expression::unit::Unit::Panic(panic) => {
+                self.bind(panic, config, handler).await
+            }
         }
     }
 }
