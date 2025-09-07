@@ -20,6 +20,7 @@ pub mod block;
 pub mod boolean;
 pub mod numeric;
 pub mod parenthesized;
+pub mod phantom;
 pub mod postfix;
 pub mod qualified_identifier;
 pub mod r#struct;
@@ -130,8 +131,8 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::Array(array) => {
                 self.bind(array, config, handler).await
             }
-            pernixc_syntax::expression::unit::Unit::Phantom(_phantom) => {
-                todo!()
+            pernixc_syntax::expression::unit::Unit::Phantom(phantom) => {
+                self.bind(phantom, config, handler).await
             }
             pernixc_syntax::expression::unit::Unit::String(_) => todo!(),
             pernixc_syntax::expression::unit::Unit::Character(_character) => {
