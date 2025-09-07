@@ -65,7 +65,13 @@ error: field is not accessible
    │
    = field 'hidden' is accessible in `main::inner`
 
-error: Compilation aborted due to 8 error(s)
+error: mismatched pattern binding type: expected struct but found `int32`
+   ╭─ compiler/e2e/test/snapshot/ir/pattern/struct/main.pnx:56:1
+   │
+56 │     {field}: int32, # not a struct
+   │ ^^^^^^^^^^^ this pattern expects struct type but found `int32`
+
+error: Compilation aborted due to 9 error(s)
 
 
 

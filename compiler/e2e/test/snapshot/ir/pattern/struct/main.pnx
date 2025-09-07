@@ -50,3 +50,9 @@ public function test7(
     {hidden}: inner::Inaccessible, # inaccessible field
 ):
     pass
+
+
+public function test8(
+    {field}: int32, # not a struct
+):
+    pass
