@@ -24,6 +24,7 @@ pub mod parenthesized;
 pub mod phantom;
 pub mod postfix;
 pub mod qualified_identifier;
+pub mod string;
 pub mod r#struct;
 
 impl Bind<&pernixc_syntax::expression::Expression>
@@ -135,7 +136,9 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::Phantom(phantom) => {
                 self.bind(phantom, config, handler).await
             }
-            pernixc_syntax::expression::unit::Unit::String(_) => todo!(),
+            pernixc_syntax::expression::unit::Unit::String(string) => {
+                self.bind(string, config, handler).await
+            }
             pernixc_syntax::expression::unit::Unit::Character(_character) => {
                 todo!()
             }

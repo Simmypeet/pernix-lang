@@ -147,7 +147,7 @@ pub struct Unreachable {
 )]
 pub struct String {
     /// The value of the string.
-    pub value: std::string::String,
+    pub value: SharedStr,
 
     /// The span location of the string.
     pub span: Option<RelativeSpan>,
