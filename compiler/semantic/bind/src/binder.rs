@@ -30,7 +30,6 @@ use pernixc_resolution::{
 use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::syntax::get_function_signature_syntax;
-use pernixc_syntax::item::function;
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
@@ -751,10 +750,10 @@ impl Binder<'_> {
                             .get_parameters(self.current_site)
                             .await?;
 
-                        parameters.parameters[*id].span.clone().unwrap()
+                        parameters.parameters[*id].span.unwrap()
                     }
                     Memory::Alloca(id) => {
-                        self.ir.values.allocas[*id].span.clone().unwrap()
+                        self.ir.values.allocas[*id].span.unwrap()
                     }
                 },
                 handler,
