@@ -1,0 +1,12 @@
+public struct TestPhantom:
+    public phantomInt32: phantom int32
+    public phantomBool: phantom bool
+    public notPhantom: int32
+
+
+public function main():
+    TestPhantom {
+        phantomInt32: phantom, # fine
+        phantomBool: phantom,  # fine
+        notPhantom: phantom,   # not fine
+    }
