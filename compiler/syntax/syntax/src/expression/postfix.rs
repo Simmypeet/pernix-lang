@@ -9,7 +9,7 @@ use pernixc_parser::{
 use crate::{
     expression::{unit::Unit, Call, Expression},
     r#type::Type,
-    GenericIdentifier, Keyword, Numeric, Punctuation,
+    GenericIdentifier, Identifier, Keyword, Numeric, Punctuation,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -82,7 +82,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub enum AccessKind {
-        GenericIdentifier(GenericIdentifier = ast::<GenericIdentifier>()),
+        StructField(Identifier = expect::Identifier),
         TupleIndex(TupleIndex = ast::<TupleIndex>()),
         ArrayIndex(ArrayIndex = ast::<ArrayIndex>()),
     }

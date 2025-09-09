@@ -1,7 +1,7 @@
 use std::fmt::{Display, Write};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_lexical::kind::arbitrary::Numeric;
+use pernixc_lexical::kind::{self, arbitrary::Numeric};
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _},
     prop_oneof,
@@ -203,7 +203,8 @@ impl Arbitrary for ArrayIndex {
 reference! {
     #[derive(Debug, Clone, EnumAsInner)]
     pub enum AccessKind for super::AccessKind {
-        GenericIdentifier(GenericIdentifier),
+        #{map_input_assert(StructField, &StructField.kind)}
+        StructField(kind::Identifier),
         TupleIndex(TupleIndex),
         ArrayIndex(ArrayIndex),
     }
@@ -216,7 +217,7 @@ impl IndentDisplay for AccessKind {
         indent: usize,
     ) -> std::fmt::Result {
         match self {
-            Self::GenericIdentifier(x) => x.indent_fmt(f, indent),
+            Self::StructField(x) => x.fmt(f),
             Self::TupleIndex(x) => x.fmt(f),
             Self::ArrayIndex(x) => x.indent_fmt(f, indent),
         }
@@ -224,15 +225,13 @@ impl IndentDisplay for AccessKind {
 }
 
 impl Arbitrary for AccessKind {
-    type Parameters =
-        (Option<BoxedStrategy<Expression>>, Option<BoxedStrategy<Type>>);
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((expression, ty): Self::Parameters) -> Self::Strategy {
+    fn arbitrary_with(expression: Self::Parameters) -> Self::Strategy {
         let expression = expression.unwrap_or_else(Expression::arbitrary);
         prop_oneof![
-            GenericIdentifier::arbitrary_with((ty, Some(expression.clone())))
-                .prop_map(Self::GenericIdentifier),
+            kind::Identifier::arbitrary().prop_map(Self::StructField),
             TupleIndex::arbitrary().prop_map(Self::TupleIndex),
             ArrayIndex::arbitrary_with(Some(expression))
                 .prop_map(Self::ArrayIndex),
@@ -261,12 +260,11 @@ impl IndentDisplay for Access {
 }
 
 impl Arbitrary for Access {
-    type Parameters =
-        (Option<BoxedStrategy<Expression>>, Option<BoxedStrategy<Type>>);
+    type Parameters = Option<BoxedStrategy<Expression>>;
     type Strategy = BoxedStrategy<Self>;
 
-    fn arbitrary_with((expression, ty): Self::Parameters) -> Self::Strategy {
-        (AccessMode::arbitrary(), AccessKind::arbitrary_with((expression, ty)))
+    fn arbitrary_with(expression: Self::Parameters) -> Self::Strategy {
+        (AccessMode::arbitrary(), AccessKind::arbitrary_with(expression))
             .prop_map(|(mode, kind)| Self { mode, kind })
             .boxed()
     }
@@ -350,9 +348,9 @@ impl Arbitrary for Operator {
         prop_oneof![
             MethodCall::arbitrary_with((expression.clone(), ty.clone()))
                 .prop_map(Self::MethodCall),
-            Cast::arbitrary_with((expression.clone(), ty.clone(), qi))
+            Cast::arbitrary_with((expression.clone(), ty, qi))
                 .prop_map(Self::Cast),
-            Access::arbitrary_with((expression, ty,)).prop_map(Self::Access),
+            Access::arbitrary_with(expression).prop_map(Self::Access),
         ]
         .boxed()
     }
