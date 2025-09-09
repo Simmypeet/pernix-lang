@@ -1619,6 +1619,7 @@ dependencies = [
  "getset",
  "paste",
  "pernixc_arena",
+ "pernixc_extend",
  "pernixc_hash",
  "pernixc_lexical",
  "pernixc_query",

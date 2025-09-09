@@ -3,9 +3,11 @@
 use std::{collections::BTreeMap, hash::Hash};
 
 use pernixc_arena::ID;
+use pernixc_extend::extend;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_symbol::MemberID;
+use pernixc_symbol::{parent::get_parent, MemberID};
 use pernixc_target::Global;
 
 use super::{
@@ -16,8 +18,8 @@ use crate::{
     constant::Constant,
     generic_arguments::GenericArguments,
     generic_parameters::{
-        ConstantParameterID, GenericKind, GenericParameters,
-        LifetimeParameterID, TypeParameterID,
+        get_generic_parameters, ConstantParameterID, GenericKind,
+        GenericParameters, LifetimeParameterID, TypeParameterID,
     },
     lifetime::Lifetime,
     r#type::Type,
@@ -319,6 +321,65 @@ impl Instantiation {
         let mut instantiater = Instantiater { substitution: self };
         visitor::accept_recursive_mut(element, &mut instantiater);
     }
+}
+
+/// Retrieves the [`Instantiation`] for the given generic ID with the given
+/// generic arguments.
+#[extend]
+pub async fn get_generic_parameters_instantiation(
+    self: &TrackedEngine,
+    id: Global<pernixc_symbol::ID>,
+    generic_arguments: GenericArguments,
+) -> Result<
+    Result<Instantiation, MismatchedGenericArgumentCountError>,
+    executor::CyclicError,
+> {
+    let generic_parameters = self.get_generic_parameters(id).await?;
+
+    Ok(Instantiation::from_generic_arguments(
+        generic_arguments,
+        id,
+        &generic_parameters,
+    ))
+}
+
+/// Retrieves the [`Instantiation`] for the given associated symbol ID with the
+/// given generic arguments (both member level and parent level).
+#[extend]
+pub async fn get_generic_parameters_instantiation_for_associated_symbol(
+    self: &TrackedEngine,
+    id: Global<pernixc_symbol::ID>,
+    parent_generic_arguments: GenericArguments,
+    member_generic_arguments: GenericArguments,
+) -> Result<
+    Result<Instantiation, MismatchedGenericArgumentCountError>,
+    executor::CyclicError,
+> {
+    let member_generic_parameters = self.get_generic_parameters(id).await?;
+    let mut instantiation = match Instantiation::from_generic_arguments(
+        member_generic_arguments,
+        id,
+        &member_generic_parameters,
+    ) {
+        Ok(inst) => inst,
+        Err(err) => return Ok(Err(err)),
+    };
+
+    let parent_id =
+        id.target_id.make_global(self.get_parent(id).await.unwrap());
+
+    let parent_generic_parameters =
+        self.get_generic_parameters(parent_id).await?;
+
+    if let Err(err) = instantiation.append_from_generic_arguments(
+        parent_generic_arguments,
+        parent_id,
+        &parent_generic_parameters,
+    ) {
+        return Ok(Err(err));
+    }
+
+    Ok(Ok(instantiation))
 }
 
 /// A trait for retrieving the instantiation map from the [`Instantiation`]

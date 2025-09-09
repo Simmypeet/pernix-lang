@@ -19,6 +19,7 @@ pernixc_target = { path = "../../base/target" }
 pernixc_query = { path = "../../base/query" }
 pernixc_arena = { path = "../../base/arena" }
 pernixc_hash = { path = "../../base/hash" }
+pernixc_extend = { path = "../../base/extend/" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_stable_hash = { path = "../../base/stable_hash" }
 pernixc_stable_type_id = { path = "../../base/stable_type_id" }
