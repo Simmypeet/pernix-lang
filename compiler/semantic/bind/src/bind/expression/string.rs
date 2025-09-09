@@ -14,7 +14,7 @@ impl Bind<&pernixc_syntax::expression::unit::String> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::String,
-        _: Config,
+        _: &Config<'_>,
         _: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(string) = syntax_tree.string() else {

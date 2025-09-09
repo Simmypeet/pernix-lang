@@ -18,7 +18,7 @@ impl Bind<&pernixc_syntax::expression::unit::Phantom>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Phantom,
-        _: Config,
+        _: &Config<'_>,
         _: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         Ok(Expression::RValue(Value::Literal(Literal::Phantom(Phantom {

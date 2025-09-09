@@ -25,7 +25,7 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Parenthesized,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<crate::bind::Expression, Error> {
         let element = syntax_tree.unpackables().collect::<Vec<_>>();

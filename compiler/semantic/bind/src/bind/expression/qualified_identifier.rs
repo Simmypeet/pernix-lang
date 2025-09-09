@@ -37,7 +37,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::QualifiedIdentifier,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, crate::binder::Error> {
         // search for the variable/parameter in the stack
@@ -163,7 +163,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
 async fn bind_simple_identifier(
     binder: &mut Binder<'_>,
     syn: &pernixc_syntax::QualifiedIdentifier,
-    config: Config,
+    config: &Config<'_>,
     handler: &dyn Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<Option<Expression>, crate::binder::Error> {
     let Some(QualifiedIdentifierRoot::GenericIdentifier(ident)) = syn.root()
@@ -191,14 +191,14 @@ async fn bind_simple_identifier(
 
     match config.target {
         // load the value
-        crate::bind::Target::RValue => Ok(Some(Expression::RValue(
+        crate::bind::Target::RValue(_) => Ok(Some(Expression::RValue(
             Value::Register(binder.create_register_assignment(
                 Assignment::Load(Load { address: name.load_address.clone() }),
                 syn.span(),
             )),
         ))),
 
-        crate::bind::Target::LValue | crate::bind::Target::Statement => {
+        crate::bind::Target::LValue(_) | crate::bind::Target::Statement => {
             let name_qualifier = if name.mutable {
                 Qualifier::Mutable
             } else {

@@ -19,7 +19,7 @@ impl Bind<&pernixc_syntax::expression::unit::Character>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Character,
-        _: Config,
+        _: &Config<'_>,
         _: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(character) = syntax_tree.character() else {

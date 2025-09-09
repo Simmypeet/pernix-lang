@@ -13,7 +13,7 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::postfix::Postfix,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(unit) = syntax_tree.unit() else {

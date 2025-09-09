@@ -34,7 +34,7 @@ impl Bind<&pernixc_syntax::expression::Expression>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::Expression,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
@@ -54,7 +54,7 @@ impl Bind<&pernixc_syntax::expression::binary::Binary>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::binary::Binary,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         // TODO: implements proper binary expression binding
@@ -72,7 +72,7 @@ impl Bind<&pernixc_syntax::expression::binary::Node>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::binary::Node,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
@@ -92,7 +92,7 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefixable>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::prefix::Prefixable,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
@@ -112,7 +112,7 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Unit,
-        config: Config,
+        config: &Config<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
@@ -156,7 +156,7 @@ impl Bind<&pernixc_syntax::expression::block::Block>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::block::Block,
-        _config: Config,
+        _config: &Config<'_>,
         _handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
@@ -179,7 +179,7 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::terminator::Terminator,
-        _config: Config,
+        _config: &Config<'_>,
         _handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
@@ -218,7 +218,11 @@ impl Binder<'_> {
         Self: Bind<T>,
     {
         match self
-            .bind(syntax_tree, Config::new(super::Target::RValue), handler)
+            .bind(
+                syntax_tree,
+                &Config::new(super::Target::RValue(None)),
+                handler,
+            )
             .await
         {
             Ok(value) => Ok(value.into_r_value().unwrap()),

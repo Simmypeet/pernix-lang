@@ -32,7 +32,7 @@ impl Binder<'_> {
                 let scope_id = self.push_scope(false);
 
                 let result = self
-                    .bind(expression, Config::new(Target::Statement), handler)
+                    .bind(expression, &Config::new(Target::Statement), handler)
                     .await;
 
                 let result = match result {

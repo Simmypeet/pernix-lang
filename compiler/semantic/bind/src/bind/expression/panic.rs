@@ -19,7 +19,7 @@ impl Bind<&pernixc_syntax::expression::unit::Panic>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Panic,
-        _: Config,
+        _: &Config<'_>,
         _: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         self.insert_panic_terminator();

@@ -12,7 +12,7 @@ impl Bind<&pernixc_syntax::expression::unit::Array> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Array,
-        _: Config,
+        _: &Config<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let mut values = Vec::new();
