@@ -11,7 +11,7 @@ use proptest::{
 
 use crate::{
     arbitrary::{IndentDisplay, IntoSeparated, QualifiedIdentifier},
-    expression::arbitrary::Expression,
+    expression::arbitrary::{Call, Expression},
     r#type::arbitrary::Type,
     reference,
 };
@@ -22,6 +22,7 @@ reference! {
         Boolean(Boolean),
         Numeric(Numeric),
         Parenthesized(Parenthesized),
+        FunctionCall(FunctionCall),
         QualifiedIdentifier(QualifiedIdentifier),
         Struct(Struct),
         Array(Array),
@@ -49,6 +50,9 @@ impl IndentDisplay for Unit {
             Self::Array(array) => array.indent_fmt(f, indent),
             Self::Phantom(phantom) => phantom.fmt(f),
             Self::Panic(panic) => panic.fmt(f),
+            Self::FunctionCall(function_call) => {
+                function_call.indent_fmt(f, indent)
+            }
         }
     }
 }
@@ -75,13 +79,57 @@ impl Arbitrary for Unit {
                 .prop_map(Unit::QualifiedIdentifier),
             Parenthesized::arbitrary_with(expr.clone())
                 .prop_map(Unit::Parenthesized),
-            Struct::arbitrary_with((ty, expr.clone(), qi))
+            Struct::arbitrary_with((ty.clone(), expr.clone(), qi.clone()))
                 .prop_map(Unit::Struct),
-            Array::arbitrary_with(expr).prop_map(Unit::Array),
+            Array::arbitrary_with(expr.clone()).prop_map(Unit::Array),
+            FunctionCall::arbitrary_with((expr, ty, qi))
+                .prop_map(Unit::FunctionCall),
             Just(Self::Phantom(Phantom {})),
             Just(Self::Panic(Panic {}))
         ]
         .boxed()
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct FunctionCall for super::FunctionCall {
+        pub qualified_identifier (QualifiedIdentifier),
+        pub call (Call),
+    }
+}
+
+impl Arbitrary for FunctionCall {
+    type Parameters = (
+        Option<BoxedStrategy<Expression>>,
+        Option<BoxedStrategy<Type>>,
+        Option<BoxedStrategy<QualifiedIdentifier>>,
+    );
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((expr, ty, qi): Self::Parameters) -> Self::Strategy {
+        (
+            qi.unwrap_or_else(|| {
+                QualifiedIdentifier::arbitrary_with((ty.clone(), expr.clone()))
+            }),
+            Call::arbitrary_with(expr),
+        )
+            .prop_map(|(qualified_identifier, call)| Self {
+                qualified_identifier,
+                call,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for FunctionCall {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.qualified_identifier.indent_fmt(f, indent)?;
+        self.call.indent_fmt(f, indent)
     }
 }
 

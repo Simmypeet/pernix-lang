@@ -7,8 +7,8 @@ use pernixc_parser::{
 };
 
 use crate::{
-    expression::Expression, Ellipsis, Identifier, Keyword, Punctuation,
-    QualifiedIdentifier,
+    expression::{Call, Expression},
+    Ellipsis, Identifier, Keyword, Punctuation, QualifiedIdentifier,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -21,12 +21,22 @@ abstract_tree::abstract_tree! {
         Numeric(Numeric = ast::<Numeric>()),
         Parenthesized(Parenthesized = ast::<Parenthesized>()),
         Struct(Struct = ast::<Struct>()),
+        FunctionCall(FunctionCall = ast::<FunctionCall>()),
         QualifiedIdentifier(QualifiedIdentifier = ast::<QualifiedIdentifier>()),
         Array(Array = ast::<Array>()),
         Phantom(Phantom = ast::<Phantom>()),
         String(String = ast::<String>()),
         Character(Character = ast::<Character>()),
         Panic(Panic = ast::<Panic>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct FunctionCall {
+        pub qualified_identifier: QualifiedIdentifier
+            = ast::<QualifiedIdentifier>(),
+        pub call: Call = ast::<Call>(),
     }
 }
 

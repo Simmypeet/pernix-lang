@@ -146,6 +146,9 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
             pernixc_syntax::expression::unit::Unit::Panic(panic) => {
                 self.bind(panic, config, handler).await
             }
+            pernixc_syntax::expression::unit::Unit::FunctionCall(
+                _function_call,
+            ) => todo!(),
         }
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use enum_as_inner::EnumAsInner;
 use proptest::{
     prelude::{Arbitrary, BoxedStrategy, Strategy},
@@ -12,7 +14,7 @@ use super::{
     unit::arbitrary::{Boolean, Numeric, Unit},
 };
 use crate::{
-    arbitrary::{IndentDisplay, QualifiedIdentifier},
+    arbitrary::{IndentDisplay, IntoSeparated, QualifiedIdentifier},
     r#type::arbitrary::Type,
     reference,
     statement::arbitrary::Statement,
@@ -86,5 +88,38 @@ impl IndentDisplay for Expression {
             Self::Binary(binary) => binary.indent_fmt(f, indent),
             Self::Terminator(terminator) => terminator.indent_fmt(f, indent),
         }
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct Call for super::Call {
+        pub expressions (Vec<Expression>)
+    }
+}
+
+impl IndentDisplay for Call {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('(')?;
+        self.expressions.into_separated(", ").indent_fmt(f, indent)?;
+        f.write_char(')')
+    }
+}
+
+impl Arbitrary for Call {
+    type Parameters = Option<BoxedStrategy<Expression>>;
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(
+            args.unwrap_or_else(Expression::arbitrary),
+            0..10,
+        )
+        .prop_map(|expressions| Self { expressions })
+        .boxed()
     }
 }

@@ -8,10 +8,11 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{
-        GenericIdentifier, IndentDisplay, IntoSeparated, QualifiedIdentifier,
+    arbitrary::{GenericIdentifier, IndentDisplay, QualifiedIdentifier},
+    expression::{
+        arbitrary::{Call, Expression},
+        unit::arbitrary::Unit,
     },
-    expression::{arbitrary::Expression, unit::arbitrary::Unit},
     r#type::arbitrary::Type,
     reference,
 };
@@ -85,39 +86,6 @@ impl Arbitrary for Postfix {
                 },
             )
             .boxed()
-    }
-}
-
-reference! {
-    #[derive(Debug, Clone)]
-    pub struct Call for super::Call {
-        pub expressions (Vec<Expression>)
-    }
-}
-
-impl IndentDisplay for Call {
-    fn indent_fmt(
-        &self,
-        f: &mut std::fmt::Formatter,
-        indent: usize,
-    ) -> std::fmt::Result {
-        f.write_char('(')?;
-        self.expressions.into_separated(", ").indent_fmt(f, indent)?;
-        f.write_char(')')
-    }
-}
-
-impl Arbitrary for Call {
-    type Parameters = Option<BoxedStrategy<Expression>>;
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(
-            args.unwrap_or_else(Expression::arbitrary),
-            0..10,
-        )
-        .prop_map(|expressions| Self { expressions })
-        .boxed()
     }
 }
 
@@ -305,9 +273,50 @@ impl Arbitrary for Access {
 }
 
 reference! {
+    #[derive(Debug, Clone)]
+    pub struct MethodCall for super::MethodCall {
+        pub access_mode (AccessMode),
+        pub generic_identifier (GenericIdentifier),
+        pub call (Call),
+    }
+}
+
+impl IndentDisplay for MethodCall {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.access_mode.fmt(f)?;
+        self.generic_identifier.indent_fmt(f, indent)?;
+        self.call.indent_fmt(f, indent)
+    }
+}
+
+impl Arbitrary for MethodCall {
+    type Parameters =
+        (Option<BoxedStrategy<Expression>>, Option<BoxedStrategy<Type>>);
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((expression, ty): Self::Parameters) -> Self::Strategy {
+        (
+            AccessMode::arbitrary(),
+            GenericIdentifier::arbitrary_with((ty, expression.clone())),
+            Call::arbitrary_with(expression),
+        )
+            .prop_map(|(access_mode, generic_identifier, call)| Self {
+                access_mode,
+                generic_identifier,
+                call,
+            })
+            .boxed()
+    }
+}
+
+reference! {
     #[derive(Debug, Clone, EnumAsInner)]
     pub enum Operator for super::Operator {
-        Call(Call),
+        MethodCall(MethodCall),
         Cast(Cast),
         Access(Access),
     }
@@ -320,7 +329,7 @@ impl IndentDisplay for Operator {
         indent: usize,
     ) -> std::fmt::Result {
         match self {
-            Self::Call(x) => x.indent_fmt(f, indent),
+            Self::MethodCall(x) => x.indent_fmt(f, indent),
             Self::Cast(x) => x.indent_fmt(f, indent),
             Self::Access(x) => x.indent_fmt(f, indent),
         }
@@ -339,7 +348,8 @@ impl Arbitrary for Operator {
         (expression, ty, qi): Self::Parameters,
     ) -> Self::Strategy {
         prop_oneof![
-            Call::arbitrary_with(expression.clone()).prop_map(Self::Call),
+            MethodCall::arbitrary_with((expression.clone(), ty.clone()))
+                .prop_map(Self::MethodCall),
             Cast::arbitrary_with((expression.clone(), ty.clone(), qi))
                 .prop_map(Self::Cast),
             Access::arbitrary_with((expression, ty,)).prop_map(Self::Access),

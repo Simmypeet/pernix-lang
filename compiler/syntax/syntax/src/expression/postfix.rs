@@ -7,7 +7,7 @@ use pernixc_parser::{
 };
 
 use crate::{
-    expression::{unit::Unit, Expression},
+    expression::{unit::Unit, Call, Expression},
     r#type::Type,
     GenericIdentifier, Keyword, Numeric, Punctuation,
 };
@@ -26,18 +26,9 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Operator {
-        Call(Call = ast::<Call>()),
+        MethodCall(MethodCall = ast::<MethodCall>()),
         Cast(Cast = ast::<Cast>()),
         Access(Access = ast::<Access>()),
-    }
-}
-
-abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
-    pub struct Call {
-        pub expressions: #[multi] Expression
-            = ast::<Expression>().repeat_all_with_separator(','),
     }
 }
 
@@ -102,5 +93,14 @@ abstract_tree::abstract_tree! {
     pub struct Access {
         pub mode: AccessMode = ast::<AccessMode>(),
         pub kind: AccessKind = ast::<AccessKind>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct MethodCall {
+        pub access_mode: AccessMode = ast::<AccessMode>(),
+        pub generic_identifier: GenericIdentifier = ast::<GenericIdentifier>(),
+        pub call: Call = ast::<Call>(),
     }
 }
