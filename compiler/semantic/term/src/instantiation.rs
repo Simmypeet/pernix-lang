@@ -326,7 +326,7 @@ impl Instantiation {
 /// Retrieves the [`Instantiation`] for the given generic ID with the given
 /// generic arguments.
 #[extend]
-pub async fn get_generic_parameters_instantiation(
+pub async fn get_instantiation(
     self: &TrackedEngine,
     id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
@@ -346,7 +346,7 @@ pub async fn get_generic_parameters_instantiation(
 /// Retrieves the [`Instantiation`] for the given associated symbol ID with the
 /// given generic arguments (both member level and parent level).
 #[extend]
-pub async fn get_generic_parameters_instantiation_for_associated_symbol(
+pub async fn get_instantiation_for_associated_symbol(
     self: &TrackedEngine,
     id: Global<pernixc_symbol::ID>,
     parent_generic_arguments: GenericArguments,
