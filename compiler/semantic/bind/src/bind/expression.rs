@@ -212,6 +212,7 @@ impl Binder<'_> {
     pub async fn bind_value_or_error<T>(
         &mut self,
         syntax_tree: T,
+        type_hint: Option<&Type>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Value, UnrecoverableError>
     where
@@ -220,7 +221,7 @@ impl Binder<'_> {
         match self
             .bind(
                 syntax_tree,
-                &Config::new(super::Target::RValue(None)),
+                &Config::new(super::Target::RValue(type_hint)),
                 handler,
             )
             .await

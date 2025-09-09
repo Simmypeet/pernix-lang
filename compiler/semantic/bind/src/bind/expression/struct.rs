@@ -161,9 +161,6 @@ async fn collect_fields(
             continue;
         };
 
-        // get the field ID by name
-        let value = binder.bind_value_or_error(&field_expr, handler).await?;
-
         let (field_id, field_ty, field_accessibility) = {
             let Some(field_id) = fields
                 .field_ids_by_name
@@ -188,6 +185,11 @@ async fn collect_fields(
 
             (field_id, field_ty, field.accessibility)
         };
+
+        // get the field ID by name
+        let value = binder
+            .bind_value_or_error(&field_expr, Some(&field_ty), handler)
+            .await?;
 
         // field accessibility check
         if !binder

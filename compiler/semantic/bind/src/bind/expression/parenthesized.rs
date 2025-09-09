@@ -54,7 +54,8 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
                     );
                 };
 
-                Box::pin(self.bind_value_or_error(&expression, handler)).await?
+                Box::pin(self.bind_value_or_error(&expression, None, handler))
+                    .await?
             };
 
             elements.push(register::TupleElement {

@@ -17,10 +17,15 @@ impl Bind<&pernixc_syntax::expression::unit::Array> for Binder<'_> {
     ) -> Result<Expression, Error> {
         let mut values = Vec::new();
 
+        let array_ty = Type::Inference(
+            self.create_type_inference(constraint::Type::All(false)),
+        );
+
         Box::pin(async {
             for element in syntax_tree.expressions() {
-                let expression =
-                    self.bind_value_or_error(&element, handler).await?;
+                let expression = self
+                    .bind_value_or_error(&element, Some(&array_ty), handler)
+                    .await?;
 
                 values.push(expression);
             }
@@ -29,15 +34,13 @@ impl Bind<&pernixc_syntax::expression::unit::Array> for Binder<'_> {
         })
         .await?;
 
-        let array_ty = self.create_type_inference(constraint::Type::All(false));
-
         for value in &values {
             let value_ty = self.type_of_value(value, handler).await?;
             let span = self.span_of_value(value);
 
             self.type_check(
                 &value_ty,
-                Expected::Known(Type::Inference(array_ty)),
+                Expected::Known(array_ty.clone()),
                 span,
                 handler,
             )
@@ -48,7 +51,7 @@ impl Bind<&pernixc_syntax::expression::unit::Array> for Binder<'_> {
             pernixc_ir::value::register::Assignment::Array(
                 pernixc_ir::value::register::Array {
                     elements: values,
-                    element_type: Type::Inference(array_ty),
+                    element_type: array_ty,
                 },
             ),
             syntax_tree.span(),
