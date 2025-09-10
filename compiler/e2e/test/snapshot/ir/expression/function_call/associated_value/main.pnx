@@ -1,0 +1,12 @@
+public enum Option[T]:
+    Some(T)
+    None
+
+
+public function main():
+    Option::Some()              # expected 1 value
+    Option::Some(53, 42)        # expected 1 value
+    Option[int32]::None()       # can't call
+    Option[int32]::None(32)     # can't call
+    Option[int32]::None(32, 64) # can't call
+    Option::Some(32)

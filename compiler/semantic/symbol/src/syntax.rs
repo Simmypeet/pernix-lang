@@ -7,7 +7,7 @@ use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
 
-use crate::{get_table_of_symbol, ID};
+use crate::{get_table_of_symbol, name::get_qualified_name, ID};
 
 /// Implementation of the `get_module_imports_syntax` method
 #[pernixc_query::query(
@@ -83,16 +83,17 @@ pub async fn generic_parameters_syntax(
     CyclicError,
 > {
     let table = engine.get_table_of_symbol(id).await;
-    Ok(table
-        .generic_parameter_syntaxes
-        .get(&id.id)
-        .unwrap_or_else(|| {
-            panic!(
-                "No generic parameter syntax found for symbol ID: {:?}",
-                id.id
-            )
-        })
-        .clone())
+
+    Ok(if let Some(value) = table.generic_parameter_syntaxes.get(&id.id) {
+        value.clone()
+    } else {
+        let qualified_name = engine.get_qualified_name(id).await;
+        panic!(
+            "No generic parameters syntax found for symbol ID: {:?} \
+             ({qualified_name})",
+            id.id
+        )
+    })
 }
 
 pernixc_register::register!(GenericParametersKey, GenericParametersExecutor);

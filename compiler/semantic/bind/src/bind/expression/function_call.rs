@@ -8,7 +8,10 @@ use pernixc_semantic_element::{
     parameter::get_parameters, variant::get_variant_associated_type,
 };
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::kind::{get_kind, Kind};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    parent::get_parent,
+};
 use pernixc_target::Global;
 use pernixc_term::{
     generic_parameters::get_generic_parameters,
@@ -54,7 +57,13 @@ async fn get_function_instantiation(
             binder
                 .engine()
                 .get_instantiation(
-                    variant.variant_id,
+                    variant.variant_id.target_id.make_global(
+                        binder
+                            .engine()
+                            .get_parent(variant.variant_id)
+                            .await
+                            .unwrap(),
+                    ),
                     variant.generic_arguments,
                 )
                 .await?,
@@ -207,7 +216,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
 
                     1 => {
                         Box::pin(self.bind_value_or_error(
-                            syntax_tree,
+                            &arguments[0],
                             Some(&expected_types.pop().unwrap()),
                             handler,
                         ))
@@ -230,7 +239,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                         );
 
                         Box::pin(self.bind_value_or_error(
-                            syntax_tree,
+                            &arguments[0],
                             Some(&expected_types.pop().unwrap()),
                             handler,
                         ))
@@ -238,8 +247,11 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                     }
                 };
 
+                let enum_id = callable_id.target_id.make_global(
+                    self.engine().get_parent(callable_id).await.unwrap(),
+                );
                 let generic_parameters =
-                    self.engine().get_generic_parameters(callable_id).await?;
+                    self.engine().get_generic_parameters(enum_id).await?;
 
                 let register_id = self.create_register_assignment(
                     Assignment::Variant(Variant {
@@ -248,7 +260,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                         generic_arguments: instantiation
                             .convert_to_generic_arguments(
                                 &generic_parameters,
-                                callable_id,
+                                enum_id,
                             )
                             .expect(
                                 "should have correct generic arguments count",
