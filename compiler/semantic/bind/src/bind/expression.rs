@@ -150,8 +150,8 @@ impl Bind<&pernixc_syntax::expression::unit::Unit>
                 self.bind(panic, config, handler).await
             }
             pernixc_syntax::expression::unit::Unit::FunctionCall(
-                _function_call,
-            ) => todo!(),
+                function_call,
+            ) => self.bind(function_call, config, handler).await,
         }
     }
 }
