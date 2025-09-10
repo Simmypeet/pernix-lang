@@ -28,7 +28,7 @@ use crate::{
         },
         Bind, Config, Expression,
     },
-    binder::{type_check::Expected, Binder, BindingError, Error},
+    binder::{Binder, BindingError, Error},
 };
 
 pub mod diagnostic;
@@ -210,16 +210,6 @@ async fn collect_fields(
                 .into(),
             );
         }
-
-        // type check the field
-        let _ = binder
-            .type_check(
-                &binder.type_of_value(&value, handler).await?,
-                Expected::Known(field_ty),
-                field_expr.span(),
-                handler,
-            )
-            .await?;
 
         match initializers_by_field_id.entry(field_id) {
             Entry::Occupied(entry) => {

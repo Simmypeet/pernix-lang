@@ -76,6 +76,7 @@ impl<C: Constraint> Table<C> {
 
     /// Commits the checkpoint, making it impossible to restore to the state
     /// at the checkpoint.
+    #[allow(clippy::needless_pass_by_value)] // intentionally pass by value
     pub fn commit_checkpoint(&mut self, checkpoint: Checkpoint) {
         assert!(
             self.history.replay_log.is_some(),

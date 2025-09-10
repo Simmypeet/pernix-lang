@@ -12,10 +12,10 @@ error: mismatched types: expected `int32`, found `({number})`
    = ensure the expression type matches the expected type
 
 error: mismatched types: expected `(int32)`, found `{number}`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/parenthesized/single_element/main.pnx:14:28
+   ╭─ compiler/e2e/test/snapshot/ir/expression/parenthesized/single_element/main.pnx:14:30
    │
 14 │         singleTupleElement: (32),
-   │                            ^^^^^ expected `(int32)`, found `{number}`
+   │                              ^^ expected `(int32)`, found `{number}`
    │
    = ensure the expression type matches the expected type
 

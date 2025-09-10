@@ -10,7 +10,9 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     bind::{Bind, Config, Expression},
-    binder::{Binder, BindingError, Error, UnrecoverableError},
+    binder::{
+        type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
+    },
     diagnostic::Diagnostic,
     inference_context::constraint,
 };
@@ -19,6 +21,7 @@ pub mod array;
 pub mod block;
 pub mod boolean;
 pub mod character;
+pub mod function_call;
 pub mod numeric;
 pub mod panic;
 pub mod parenthesized;
@@ -215,7 +218,7 @@ impl Binder<'_> {
     pub async fn bind_value_or_error<T>(
         &mut self,
         syntax_tree: T,
-        type_hint: Option<&Type>,
+        type_check: Option<&Type>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Value, UnrecoverableError>
     where
@@ -224,12 +227,50 @@ impl Binder<'_> {
         match self
             .bind(
                 syntax_tree,
-                &Config::new(super::Target::RValue(type_hint)),
+                &Config::new(super::Target::RValue(type_check)),
                 handler,
             )
             .await
         {
-            Ok(value) => Ok(value.into_r_value().unwrap()),
+            Ok(value) => {
+                let Some(type_hint) = type_check else {
+                    return Ok(value.into_r_value().unwrap());
+                };
+
+                // performs type checking and possibly coercion if a type hint
+                // is provided
+                let checkpoint = self.start_inference_context_checkpoint();
+
+                let value = value.into_r_value().unwrap();
+
+                let span = self.span_of_value(&value);
+                let value_ty = self.type_of_value(&value, handler).await?;
+
+                let diagnostic = self
+                    .type_check_as_diagnostic(
+                        &value_ty,
+                        Expected::Known(type_hint.clone()),
+                        span,
+                        handler,
+                    )
+                    .await?;
+
+                // if there is no diagnostic, commit the inference changes
+                let Some(diagnostic) = diagnostic else {
+                    self.commit_inference_context_checkpoint(checkpoint);
+                    return Ok(value);
+                };
+
+                // TODO: performs rollback and coercion if possible
+                self.restore_inference_context_checkpoint(checkpoint);
+
+                handler.receive(diagnostic);
+
+                Ok(Value::Literal(Literal::Error(literal::Error {
+                    r#type: type_hint.clone(),
+                    span: Some(span),
+                })))
+            }
             Err(Error::Binding(semantic_error)) => {
                 let inference =
                     self.create_type_inference(constraint::Type::All(false));
