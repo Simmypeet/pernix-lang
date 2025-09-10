@@ -46,7 +46,7 @@ use pernixc_type_system::{
 use crate::{
     binder::{self, stack::Stack},
     diagnostic::Diagnostic,
-    inference_context::{constraint, InferenceContext},
+    inference_context::{self, constraint, InferenceContext},
     pattern::insert_name_binding,
 };
 
@@ -766,6 +766,31 @@ impl Binder<'_> {
         self.ir
             .control_flow_graph
             .insert_terminator(self.current_block_id, Terminator::Panic);
+    }
+
+    /// Creates a checkpoint of the current inference context. The caller can
+    /// restore the inference context's state to this checkpoint later.
+    pub fn start_inference_context_checkpoint(
+        &mut self,
+    ) -> inference_context::Checkpoint {
+        self.inference_context.start_checkpoint()
+    }
+
+    /// Commits the inference context's state at the given `checkpoint`, making
+    /// it impossible to restore to the state at the checkpoint.
+    pub fn commit_inference_context_checkpoint(
+        &mut self,
+        checkpoint: inference_context::Checkpoint,
+    ) {
+        self.inference_context.commit_checkpoint(checkpoint);
+    }
+
+    /// Restores the inference context's state to the given `checkpoint`.
+    pub fn restore_inference_context_checkpoint(
+        &mut self,
+        checkpoint: inference_context::Checkpoint,
+    ) {
+        self.inference_context.restore(checkpoint);
     }
 
     /*

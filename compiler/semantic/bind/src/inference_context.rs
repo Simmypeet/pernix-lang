@@ -342,6 +342,13 @@ impl InferenceContext {
         }
     }
 
+    /// Commits both type and constant inference table checkpoints, making it
+    /// impossible to restore to the state at the checkpoints.
+    pub fn commit_checkpoint(&mut self, checkpoint: Checkpoint) {
+        self.type_table.commit_checkpoint(checkpoint.type_checkpoint);
+        self.const_table.commit_checkpoint(checkpoint.const_checkpoint);
+    }
+
     /// Restores both type and constant inference tables to the state at the
     /// checkpoint.
     #[allow(clippy::needless_pass_by_value)] // intentionally pass by value

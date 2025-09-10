@@ -74,6 +74,33 @@ impl<C: Constraint> Table<C> {
         }
     }
 
+    /// Commits the checkpoint, making it impossible to restore to the state
+    /// at the checkpoint.
+    pub fn commit_checkpoint(&mut self, checkpoint: Checkpoint) {
+        assert!(
+            self.history.replay_log.is_some(),
+            "possibly incorrect use of checkpoint, the checkpoint hasn't been \
+             started or the checkpoint from another table is used"
+        );
+
+        if checkpoint.log_len == 0 {
+            self.history.replay_log = None;
+        } else {
+            assert!(
+                self.history.replay_log.as_ref().unwrap().len()
+                    >= checkpoint.log_len,
+                "replay log is shorter than checkpoint, possibly incorrect \
+                 use of checkpoint"
+            );
+
+            self.history
+                .replay_log
+                .as_mut()
+                .unwrap()
+                .truncate(checkpoint.log_len);
+        }
+    }
+
     /// Restores the inference table to the state at the checkpoint.
     #[allow(clippy::needless_pass_by_value)] // intentionally pass by value
     pub fn restore(&mut self, checkpoint: Checkpoint) {
@@ -96,6 +123,11 @@ impl<C: Constraint> Table<C> {
             let log = self.history.replay_log.as_mut().unwrap().pop().unwrap();
 
             self.undo_log(log);
+        }
+
+        // if the replay log is empty, remove it
+        if self.history.replay_log.as_ref().unwrap().is_empty() {
+            self.history.replay_log = None;
         }
     }
 
