@@ -1,0 +1,24 @@
+public struct MyStruct:
+    pass
+
+
+public enum MyEnum:
+    pass
+
+
+public module myModule:
+    pass
+
+
+public trait MyTrait[T]:
+    pass
+
+
+final implements[T] MyTrait[T]
+
+
+public function main():
+    MyStruct()
+    MyEnum()
+    myModule()
+    MyTrait[int32]()
