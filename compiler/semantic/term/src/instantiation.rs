@@ -110,6 +110,51 @@ impl Instantiation {
         }
     }
 
+    /// Converts the instantiation into a [`GenericArguments`] by extracting
+    /// the generic arguments in the order of the given generic parameters.
+    ///
+    /// Return `None` if any generic parameter does not have a corresponding
+    /// instantiation.
+    #[must_use]
+    pub fn convert_to_generic_arguments(
+        mut self,
+        generic_parameters: &GenericParameters,
+        global_id: Global<pernixc_symbol::ID>,
+    ) -> Option<GenericArguments> {
+        let mut generic_arguments = GenericArguments::default();
+
+        for lifetime_id in generic_parameters.lifetime_order() {
+            let lifetime_parameter = Lifetime::Parameter(
+                LifetimeParameterID::new(global_id, *lifetime_id),
+            );
+
+            let lifetime = self.lifetimes.remove(&lifetime_parameter)?;
+
+            generic_arguments.lifetimes.push(lifetime);
+        }
+
+        for type_id in generic_parameters.type_order() {
+            let type_parameter =
+                Type::Parameter(TypeParameterID::new(global_id, *type_id));
+
+            let r#type = self.types.remove(&type_parameter)?;
+
+            generic_arguments.types.push(r#type);
+        }
+
+        for constant_id in generic_parameters.constant_order() {
+            let constant_parameter = Constant::Parameter(
+                ConstantParameterID::new(global_id, *constant_id),
+            );
+
+            let constant = self.constants.remove(&constant_parameter)?;
+
+            generic_arguments.constants.push(constant);
+        }
+
+        Some(generic_arguments)
+    }
+
     /// Appends the given generic arguments as a substitution.
     ///
     /// If there's any collision, the prior value will be preserved and the new

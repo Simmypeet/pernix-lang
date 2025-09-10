@@ -51,3 +51,12 @@ pub struct Parameters {
     /// The order of the parameters.
     pub parameter_order: Vec<ID<Parameter>>,
 }
+
+impl Parameters {
+    /// Returns an iterator over the parameters in order it was declared.
+    pub fn parameters_as_order(
+        &self,
+    ) -> impl Iterator<Item = (ID<Parameter>, &Parameter)> {
+        self.parameter_order.iter().map(|id| (*id, &self.parameters[*id]))
+    }
+}

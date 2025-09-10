@@ -271,15 +271,23 @@ impl Binder<'_> {
                     span: Some(span),
                 })))
             }
-            Err(Error::Binding(semantic_error)) => {
-                let inference =
-                    self.create_type_inference(constraint::Type::All(false));
+            Err(Error::Binding(semantic_error)) => type_check.map_or_else(
+                || {
+                    let inference = self
+                        .create_type_inference(constraint::Type::All(false));
 
-                Ok(Value::Literal(Literal::Error(literal::Error {
-                    r#type: Type::Inference(inference),
-                    span: Some(semantic_error.0),
-                })))
-            }
+                    Ok(Value::Literal(Literal::Error(literal::Error {
+                        r#type: Type::Inference(inference),
+                        span: Some(semantic_error.0),
+                    })))
+                },
+                |type_hint| {
+                    Ok(Value::Literal(Literal::Error(literal::Error {
+                        r#type: type_hint.clone(),
+                        span: Some(semantic_error.0),
+                    })))
+                },
+            ),
             Err(Error::Unrecoverable(internal_error)) => Err(internal_error),
         }
     }

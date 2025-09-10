@@ -2,6 +2,7 @@
 
 use literal::Literal;
 use pernixc_arena::ID;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -75,5 +76,13 @@ impl TypeOf<&Value> for Values {
                 self.type_of(literal, current_site, environment).await
             }
         }
+    }
+}
+
+impl Value {
+    /// Creates a new error literal value with the given type and span.
+    #[must_use]
+    pub const fn error(r#type: Type, span: Option<RelativeSpan>) -> Self {
+        Self::Literal(Literal::Error(literal::Error { r#type, span }))
     }
 }

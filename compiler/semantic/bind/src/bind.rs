@@ -16,10 +16,16 @@ pub mod statement;
 pub enum Target<'a> {
     /// Binds the expression syntax tree for the r-value.
     ///
+    /// The associated value is a type-expectation hint. The binding
+    /// implementation can use this hint to guide the type inference process.
+    ///
     /// All the expressions can be bound as a r-value.
     RValue(Option<&'a Type>),
 
     /// Binds the syntax tree for the underlying address (l-value).
+    ///
+    /// The associated value is a type-expectation hint. The binding
+    /// implementation can use this hint to guide the type inference process.
     ///
     /// This is a *request* to bind the expression as an l-value not strictly
     /// required. If the expression cannot be bound as an l-value, the r-value

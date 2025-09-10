@@ -30,6 +30,7 @@ diagnostic_enum! {
         QualifiedIdentifier(
             expression::qualified_identifier::diagnostic::Diagnostic
         ),
+        FunctionCall(expression::function_call::diagnostic::Diagnostic),
         Parenthesized(expression::parenthesized::diagnostic::Diagnostic),
         Numeric(expression::numeric::diagnostic::Diagnostic),
         Struct(expression::r#struct::diagnostic::Diagnostic),
