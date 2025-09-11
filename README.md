@@ -3,6 +3,11 @@
 **Pernix** is a system-level programming language designed to provide memory
 safety and a robust type system, similar to Rust.
 
+> ⚠ Currently, the project is undergoing a huge refactor to incremental
+> compilation architecture. The current compiler state isn't capable of
+> producing executable binaries. To try out the language at the latest
+> functional state, check out the [v0.1.0-beta.2](https://github.com/Simmypeet/pernix-lang/tree/v0.1.0-beta.2) tag.
+
 ## Example
 
 ![example](./docs/example.png)
