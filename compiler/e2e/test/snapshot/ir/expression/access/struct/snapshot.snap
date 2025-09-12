@@ -1,0 +1,30 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: field not found in struct
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/struct/main.pnx:25:10
+   │
+25 │     test.nonExistingField 
+   │          ^^^^^^^^^^^^^^^^ field 'nonExistingField' not found in struct 'main::Test'
+
+error: field not found in struct
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/struct/main.pnx:26:12
+   │
+26 │     test.c.nonExistingField
+   │            ^^^^^^^^^^^^^^^^ field 'nonExistingField' not found in struct 'main::Inner'
+
+error: field is not accessible
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/struct/main.pnx:29:11
+   │
+29 │     inner.privateField
+   │           ^^^^^^^^^^^^ field 'privateField' of struct 'main::inner::Private' is not accessible from 'main::test'
+   │
+   = field 'privateField' is accessible in `main::inner`
+
+error: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

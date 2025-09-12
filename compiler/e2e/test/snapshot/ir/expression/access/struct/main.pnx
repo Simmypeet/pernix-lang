@@ -1,0 +1,29 @@
+public struct Inner:
+    public x: int32
+    public y: float32
+
+
+public struct Test:
+    public a: int32
+    public b: float32
+    public c: Inner
+
+
+public module inner:
+    public struct Private:
+        private privateField: int32
+
+
+public function test(test: Test, inner: inner::Private):
+    # basic, existing fields
+    test.a 
+    test.b 
+    test.c.x
+    test.c.y
+
+    # access, non-existing fields
+    test.nonExistingField 
+    test.c.nonExistingField
+
+    # access, private fields
+    inner.privateField
