@@ -4,30 +4,54 @@ expression: clean_run
 ---
 stderr:
 error: mismatched types: expected `bool`, found `{number}`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:29:18
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:37:18
    │
-29 │     expect[bool](Test::right(true, 32))
+37 │     expect[bool](Test::right(true, 32))
    │                  ^^^^^^^^^^^^^^^^^^^^^ expected `bool`, found `{number}`
    │
    = ensure the expression type matches the expected type
 
 error: mismatched types: expected `int32`, found `bool`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:30:19
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:38:19
    │
-30 │     expect[int32](Test::left(true, 32))
+38 │     expect[int32](Test::left(true, 32))
    │                   ^^^^^^^^^^^^^^^^^^^^ expected `int32`, found `bool`
    │
    = ensure the expression type matches the expected type
 
 error: mismatched types: expected `()`, found `(bool, {number})`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:31:16
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:39:16
    │
-31 │     expect[()](Test::both(true, 32))
+39 │     expect[()](Test::both(true, 32)) 
    │                ^^^^^^^^^^^^^^^^^^^^ expected `()`, found `(bool, {number})`
    │
    = ensure the expression type matches the expected type
 
-error: Compilation aborted due to 3 error(s)
+error: mismatched types: expected `bool`, found `{number}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:47:22
+   │
+47 │     expectSame(true, 32)
+   │                      ^^ expected `bool`, found `{number}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{number}`, found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:48:20
+   │
+48 │     expectSame(32, true)
+   │                    ^^^^ expected `{number}`, found `bool`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `({number})`, found `(bool)`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:49:32
+   │
+49 │     expectSameCongruence((32,), (true,))
+   │                                ^^^^^^^^ expected `({number})`, found `(bool)`
+   │
+   = ensure the expression type matches the expected type
+
+error: Compilation aborted due to 6 error(s)
 
 
 

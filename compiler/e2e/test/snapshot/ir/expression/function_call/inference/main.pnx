@@ -19,6 +19,14 @@ public function expect[T](..: T):
     pass
 
 
+public function expectSame[T](..: T, ..: T):
+    pass
+    
+
+public function expectSameCongruence[T](..: (T,), ..: (T,)):
+    pass
+
+
 public function main():
     # normal case, no type error
     expect[int32](Test::right(true, 32))
@@ -29,3 +37,13 @@ public function main():
     expect[bool](Test::right(true, 32))
     expect[int32](Test::left(true, 32))
     expect[()](Test::both(true, 32)) 
+
+    # same type
+    expectSame(true, false)
+    expectSame(32, 64f32)
+    expectSameCongruence((32,), (64f32,))
+
+    # not same type
+    expectSame(true, 32)
+    expectSame(32, true)
+    expectSameCongruence((32,), (true,))
