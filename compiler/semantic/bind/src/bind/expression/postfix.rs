@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
 
@@ -6,6 +7,16 @@ use crate::{
     binder::{BindingError, Error},
     diagnostic::Diagnostic,
 };
+
+pub mod access;
+pub mod diagnostic;
+
+#[derive(Debug, EnumAsInner)]
+#[allow(clippy::large_enum_variant)]
+enum BindState {
+    Initial(pernixc_syntax::expression::unit::Unit),
+    Bound(Expression),
+}
 
 impl Bind<&pernixc_syntax::expression::postfix::Postfix>
     for crate::binder::Binder<'_>
@@ -27,21 +38,35 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
             return self.bind(&unit, config, handler).await;
         }
 
+        let mut current_span = unit.span();
+        let mut bind_state = BindState::Initial(unit);
+
         // otherwise, bind as an rvalue first
         for operator in postfix_operators {
             match operator {
                 pernixc_syntax::expression::postfix::Operator::MethodCall(
                     _method_call,
                 ) => todo!(),
-                pernixc_syntax::expression::postfix::Operator::Cast(_cast) => {
-                    todo!()
-                }
+                pernixc_syntax::expression::postfix::Operator::Cast(_cast) => {}
                 pernixc_syntax::expression::postfix::Operator::Access(
-                    _access,
-                ) => todo!(),
+                    access,
+                ) => {
+                    let (next_expr, next_span) = access::bind_access(
+                        self,
+                        bind_state,
+                        current_span,
+                        &access,
+                        config,
+                        handler,
+                    )
+                    .await?;
+
+                    bind_state = BindState::Bound(next_expr);
+                    current_span = next_span;
+                }
             }
         }
 
-        todo!()
+        Ok(bind_state.into_bound().unwrap())
     }
 }

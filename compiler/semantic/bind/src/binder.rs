@@ -730,7 +730,7 @@ impl Binder<'_> {
     }
 
     /// Gets the type of the given `address`.
-    async fn type_of_address(
+    pub async fn type_of_address(
         &self,
         address: &Address,
         handler: &dyn Handler<Diagnostic>,

@@ -1,19 +1,25 @@
 #![allow(missing_docs)]
 
 use pernixc_handler::Handler;
-use pernixc_ir::value::{
-    literal::{self, Literal},
-    Value,
+use pernixc_ir::{
+    address::{Address, Memory},
+    instruction::{Instruction, Store},
+    value::{
+        literal::{self, Literal},
+        Value,
+    },
 };
+use pernixc_lexical::tree::RelativeLocation;
 use pernixc_source_file::SourceElement;
-use pernixc_term::r#type::Type;
+use pernixc_term::r#type::{Qualifier, Type};
 
+use super::Target;
 use crate::{
-    bind::{Bind, Config, Expression},
+    bind::{Bind, Config, Expression, LValue},
     binder::{
         type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
     },
-    diagnostic::Diagnostic,
+    diagnostic::{Diagnostic, ExpectedLValue},
     inference_context::constraint,
 };
 
@@ -227,7 +233,7 @@ impl Binder<'_> {
         match self
             .bind(
                 syntax_tree,
-                &Config::new(super::Target::RValue(type_check)),
+                &Config::new(Target::RValue(type_check)),
                 handler,
             )
             .await
@@ -289,6 +295,63 @@ impl Binder<'_> {
                 },
             ),
             Err(Error::Unrecoverable(internal_error)) => Err(internal_error),
+        }
+    }
+
+    /// Binds the given syntax tree as an address.
+    ///
+    /// If the expression cannot be bound as an address, a variable will be
+    /// created an the value is stored in the variable; the address of the
+    /// variable is returned.
+    async fn bind_as_lvalue<'a, T>(
+        &mut self,
+        syntax_tree: &'a T,
+        create_temporary: bool,
+        type_check: Option<&Type>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<LValue, Error>
+    where
+        T: SourceElement<Location = RelativeLocation>,
+        Self: Bind<&'a T>,
+    {
+        match self
+            .bind(
+                syntax_tree,
+                &Config::new(Target::LValue(type_check)),
+                handler,
+            )
+            .await?
+        {
+            Expression::RValue(value) => {
+                if create_temporary {
+                    let type_of_value =
+                        self.type_of_value(&value, handler).await?;
+
+                    let alloca_id =
+                        self.create_alloca(type_of_value, syntax_tree.span());
+
+                    // initialize
+                    self.push_instruction(Instruction::Store(Store {
+                        address: Address::Memory(Memory::Alloca(alloca_id)),
+                        span: Some(syntax_tree.span()),
+                        value,
+                    }));
+
+                    Ok(LValue {
+                        address: Address::Memory(Memory::Alloca(alloca_id)),
+                        span: syntax_tree.span(),
+                        qualifier: Qualifier::Mutable,
+                    })
+                } else {
+                    handler.receive(
+                        ExpectedLValue { expression_span: syntax_tree.span() }
+                            .into(),
+                    );
+
+                    Err(Error::Binding(BindingError(syntax_tree.span())))
+                }
+            }
+            Expression::LValue(lvalue) => Ok(lvalue),
         }
     }
 }
