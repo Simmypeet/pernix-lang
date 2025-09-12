@@ -6,7 +6,8 @@ use enum_as_inner::EnumAsInner;
 use pernixc_extend::extend;
 use pernixc_query::TrackedEngine;
 use pernixc_semantic_element::{
-    implements::get_implements, implements_arguments::get_implements_argument,
+    implemented::get_implemented, implements::get_implements,
+    implements_arguments::get_implements_argument,
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
@@ -389,6 +390,7 @@ pub(super) async fn resolve_root(
 }
 
 /// Resolves a [`QualifiedIdentifier`] to a [`Resolution`].
+#[allow(clippy::too_many_lines)]
 #[extend]
 pub async fn resolve_qualified_identifier(
     self: &TrackedEngine,
@@ -413,10 +415,43 @@ pub async fn resolve_qualified_identifier(
             continue;
         };
 
-        let Some(resolved_id) = self
-            .get_member_of(latest_resolution.global_id(), &identifier.kind)
-            .await
-        else {
+        let resolved_id = 'resolved: {
+            if let Some(resolved_id) = self
+                .get_member_of(latest_resolution.global_id(), &identifier.kind)
+                .await
+            {
+                break 'resolved Some(resolved_id);
+            }
+
+            // try to search in the implements if the latest resolution is an
+            // ADT
+
+            let kind = self.get_kind(latest_resolution.global_id()).await;
+
+            if !(kind.is_adt() && config.consider_adt_implements) {
+                break 'resolved None;
+            }
+
+            let implemented =
+                self.get_implemented(latest_resolution.global_id()).await?;
+
+            for impl_id in implemented.iter().copied() {
+                let impl_members = self.get_members(impl_id).await;
+
+                if let Some(resolved_id) =
+                    impl_members.member_ids_by_name.get(&identifier.kind.0)
+                {
+                    break 'resolved Some(Global::new(
+                        impl_id.target_id,
+                        *resolved_id,
+                    ));
+                }
+            }
+
+            None
+        };
+
+        let Some(resolved_id) = resolved_id else {
             handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
                 searched_item_id: Some(latest_resolution.global_id()),
                 resolution_span: identifier.span,
