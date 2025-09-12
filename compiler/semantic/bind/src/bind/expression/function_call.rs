@@ -126,7 +126,7 @@ async fn get_function_instantiation(
             let env = binder.create_environment();
 
             let mut instantiation = match env
-                .deduce(&member_generic.parent_generic_arguments, &impl_args)
+                .deduce(&impl_args, &member_generic.parent_generic_arguments)
                 .await
             {
                 Ok(deduction) => deduction.result.instantiation,
