@@ -115,7 +115,7 @@ pub(super) async fn bind_access(
         binder.type_of_address(&reduced_lvalue.address, handler).await?;
 
     assert!(
-        address_ty.is_reference(),
+        !address_ty.is_reference(),
         "should've reduced to non-reference type"
     );
 
