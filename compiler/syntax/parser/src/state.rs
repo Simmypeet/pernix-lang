@@ -3,6 +3,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
+#[cfg(debug_assertions)]
+use flexstr::SharedStr;
 use getset::CopyGetters;
 use pernixc_arena::ID;
 use pernixc_lexical::{kind::Kind, token::Token, tree::ROOT_BRANCH_ID};
@@ -452,6 +454,10 @@ impl<'a, 'cache> State<'a, 'cache> {
             // start the event
             self.events.push(Event::NewNode(AstInfo {
                 ast_type_id: A::STABLE_TYPE_ID,
+
+                #[cfg(debug_assertions)]
+                ast_name: SharedStr::from(std::any::type_name::<A>()),
+
                 step_into_fragment: Some((branch_id, self.tree.source_id())),
             }));
 
@@ -482,6 +488,10 @@ impl<'a, 'cache> State<'a, 'cache> {
             // no step into fragment, just start the event
             self.events.push(Event::NewNode(AstInfo {
                 ast_type_id: A::STABLE_TYPE_ID,
+
+                #[cfg(debug_assertions)]
+                ast_name: SharedStr::from(std::any::type_name::<A>()),
+
                 step_into_fragment: None,
             }));
 

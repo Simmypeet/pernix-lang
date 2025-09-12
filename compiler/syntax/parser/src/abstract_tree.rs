@@ -397,7 +397,7 @@ macro_rules! abstract_tree {
                     $crate::concrete_tree::Tree
                 >
             ) -> Option<Self> {
-                tree.ast_info.is_some_and(|x|
+                tree.ast_info.clone().is_some_and(|x|
                     <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
                         == x.ast_type_id
                 )
@@ -431,7 +431,7 @@ macro_rules! abstract_tree {
                     node: &$crate::concrete_tree::Node,
                 ) -> Option<Self> {
                     node.as_branch().and_then(|branch| {
-                        branch.ast_info.is_some_and(|x|
+                        branch.ast_info.clone().is_some_and(|x|
                             <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
                                 == x.ast_type_id
                         )
@@ -559,7 +559,7 @@ macro_rules! abstract_tree {
                     node: &$crate::concrete_tree::Node,
                 ) -> Option<Self> {
                     let branch = node.as_branch().and_then(|branch| {
-                        branch.ast_info.is_some_and(|x|
+                        branch.ast_info.clone().is_some_and(|x|
                             <Self as $crate::abstract_tree::__stable_type_id::Identifiable>::STABLE_TYPE_ID
                                 == x.ast_type_id
                         )
@@ -734,6 +734,7 @@ impl<T: AbstractTree, U: Identifiable> FromNode for Tag<T, U> {
         node.as_branch().and_then(|branch| {
             branch
                 .ast_info
+                .clone()
                 .is_some_and(|x| x.ast_type_id == Self::STABLE_TYPE_ID)
                 .then(|| {
                     branch.nodes.first().and_then(|node| {

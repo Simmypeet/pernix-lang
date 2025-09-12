@@ -4,6 +4,8 @@
 use std::sync::Arc;
 
 use enum_as_inner::EnumAsInner;
+#[cfg(debug_assertions)]
+use flexstr::SharedStr;
 use pernixc_arena::ID;
 use pernixc_lexical::{
     token,
@@ -72,7 +74,6 @@ impl Node {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -82,11 +83,16 @@ impl Node {
     Deserialize,
     StableHash,
 )]
+#[allow(missing_copy_implementations)]
 pub struct AstInfo {
     /// The [`TypeId`] that implements the AST trait for this node. This type
     /// ID is primarily used to cast the concrete [`Tree`] to the
     /// [`crate::abstract_tree::AbstractTree`].
     pub ast_type_id: StableTypeID,
+
+    /// The name of the AST that created this tree node.
+    #[cfg(debug_assertions)]
+    pub ast_name: SharedStr,
 
     /// The id of the branch that this node steps into before start parsing.
     pub step_into_fragment:
