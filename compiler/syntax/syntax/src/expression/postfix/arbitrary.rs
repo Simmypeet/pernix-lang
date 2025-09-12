@@ -3,7 +3,7 @@ use std::fmt::{Display, Write};
 use enum_as_inner::EnumAsInner;
 use pernixc_lexical::kind::{self, arbitrary::Numeric};
 use proptest::{
-    prelude::{Arbitrary, BoxedStrategy, Just, Strategy as _},
+    prelude::{Arbitrary, BoxedStrategy, Strategy as _},
     prop_oneof,
 };
 
@@ -74,10 +74,7 @@ impl Arbitrary for Postfix {
                         .first()
                         .and_then(|x| x.as_access())
                         .is_some_and(|x| {
-                            x.mode.is_dot()
-                                && x.kind
-                                    .as_tuple_index()
-                                    .is_some_and(|x| !x.minus)
+                            x.kind.as_tuple_index().is_some_and(|x| !x.minus)
                         });
 
                     // 123.456 this can be interpreted as a decimal number
@@ -120,28 +117,6 @@ impl Arbitrary for Cast {
             ty.unwrap_or_else(|| Type::arbitrary_with((expr, qi)));
 
         type_strategy.prop_map(|r#type| Self { r#type }).boxed()
-    }
-}
-
-reference! {
-    #[derive(Debug, Clone, Copy, derive_more::Display, EnumAsInner)]
-    pub enum AccessMode for super::AccessMode {
-        #[display(".")]
-        #{prop_assert(|x| true)}
-        Dot,
-
-        #[display("->")]
-        #{prop_assert(|x| true)}
-        Arrow
-    }
-}
-
-impl Arbitrary for AccessMode {
-    type Parameters = ();
-    type Strategy = BoxedStrategy<Self>;
-
-    fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-        prop_oneof![Just(Self::Dot), Just(Self::Arrow)].boxed()
     }
 }
 
@@ -243,7 +218,6 @@ impl Arbitrary for AccessKind {
 reference! {
     #[derive(Debug, Clone)]
     pub struct Access for super::Access {
-        pub mode (AccessMode),
         pub kind (AccessKind),
     }
 }
@@ -254,7 +228,7 @@ impl IndentDisplay for Access {
         f: &mut std::fmt::Formatter,
         indent: usize,
     ) -> std::fmt::Result {
-        self.mode.fmt(f)?;
+        f.write_char('.')?;
         self.kind.indent_fmt(f, indent)
     }
 }
@@ -264,8 +238,8 @@ impl Arbitrary for Access {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(expression: Self::Parameters) -> Self::Strategy {
-        (AccessMode::arbitrary(), AccessKind::arbitrary_with(expression))
-            .prop_map(|(mode, kind)| Self { mode, kind })
+        AccessKind::arbitrary_with(expression)
+            .prop_map(|kind| Self { kind })
             .boxed()
     }
 }
@@ -273,7 +247,6 @@ impl Arbitrary for Access {
 reference! {
     #[derive(Debug, Clone)]
     pub struct MethodCall for super::MethodCall {
-        pub access_mode (AccessMode),
         pub generic_identifier (GenericIdentifier),
         pub call (Call),
     }
@@ -285,7 +258,7 @@ impl IndentDisplay for MethodCall {
         f: &mut std::fmt::Formatter,
         indent: usize,
     ) -> std::fmt::Result {
-        self.access_mode.fmt(f)?;
+        f.write_char('.')?;
         self.generic_identifier.indent_fmt(f, indent)?;
         self.call.indent_fmt(f, indent)
     }
@@ -298,12 +271,10 @@ impl Arbitrary for MethodCall {
 
     fn arbitrary_with((expression, ty): Self::Parameters) -> Self::Strategy {
         (
-            AccessMode::arbitrary(),
             GenericIdentifier::arbitrary_with((ty, expression.clone())),
             Call::arbitrary_with(expression),
         )
-            .prop_map(|(access_mode, generic_identifier, call)| Self {
-                access_mode,
+            .prop_map(|(generic_identifier, call)| Self {
                 generic_identifier,
                 call,
             })

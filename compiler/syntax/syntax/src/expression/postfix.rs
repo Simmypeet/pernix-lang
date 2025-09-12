@@ -56,14 +56,6 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
-    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
-    pub enum AccessMode {
-        Dot(Dot = ast::<Dot>()),
-        Arrow(Arrow = ast::<Arrow>())
-    }
-}
-
-abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct TupleIndex {
         pub minus: Punctuation = '-'.optional(),
@@ -91,7 +83,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Access {
-        pub mode: AccessMode = ast::<AccessMode>(),
+        pub dot: Punctuation = '.',
         pub kind: AccessKind = ast::<AccessKind>(),
     }
 }
@@ -99,7 +91,7 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct MethodCall {
-        pub access_mode: AccessMode = ast::<AccessMode>(),
+        pub dot: Punctuation = '.',
         pub generic_identifier: GenericIdentifier = ast::<GenericIdentifier>(),
         pub call: Call = ast::<Call>(),
     }
