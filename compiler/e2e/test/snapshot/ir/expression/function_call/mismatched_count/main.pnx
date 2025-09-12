@@ -1,0 +1,10 @@
+public function takeTwo[T, U](first: T, second: U) -> (T, U):
+    return (first, second)
+
+
+public function main():
+    takeTwo()
+    takeTwo(32)
+    takeTwo(32, 64, 128)
+
+    takeTwo[int32, int32](32, 32)
