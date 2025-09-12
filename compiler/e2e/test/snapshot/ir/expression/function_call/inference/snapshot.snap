@@ -1,0 +1,34 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mismatched types: expected `bool`, found `{number}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:29:18
+   │
+29 │     expect[bool](Test::right(true, 32))
+   │                  ^^^^^^^^^^^^^^^^^^^^^ expected `bool`, found `{number}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:30:19
+   │
+30 │     expect[int32](Test::left(true, 32))
+   │                   ^^^^^^^^^^^^^^^^^^^^ expected `int32`, found `bool`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `()`, found `(bool, {number})`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/inference/main.pnx:31:16
+   │
+31 │     expect[()](Test::both(true, 32))
+   │                ^^^^^^^^^^^^^^^^^^^^ expected `()`, found `(bool, {number})`
+   │
+   = ensure the expression type matches the expected type
+
+error: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

@@ -1,0 +1,31 @@
+public struct Test[T]:
+    private value: T
+
+
+implements[L] Test[L]:
+    public function right[R](..: L, right: R) -> R:
+        return right
+
+    
+    public function left[R](left: L, ..: R) -> L:
+        return left
+
+    
+    public function both[R](left: L, right: R) -> (L, R):
+        return (left, right)
+
+
+public function expect[T](..: T):
+    pass
+
+
+public function main():
+    # normal case, no type error
+    expect[int32](Test::right(true, 32))
+    expect[bool](Test::left(true, 32))
+    expect[(bool, int32)](Test::both(true, 32))
+    
+    # type mismatches
+    expect[bool](Test::right(true, 32))
+    expect[int32](Test::left(true, 32))
+    expect[()](Test::both(true, 32)) 
