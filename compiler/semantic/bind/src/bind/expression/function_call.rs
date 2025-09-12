@@ -5,7 +5,8 @@ use pernixc_ir::value::{
 };
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
-    parameter::get_parameters, variant::get_variant_associated_type,
+    implements_arguments::get_implements_argument, parameter::get_parameters,
+    variant::get_variant_associated_type,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
@@ -20,11 +21,16 @@ use pernixc_term::{
         Instantiation,
     },
 };
+use pernixc_type_system::deduction;
 
-use crate::bind::expression::function_call::diagnostic::{
-    Diagnostic, ExtraneousArgumentsToAssociatedValue, MismatchedArgumentsCount,
-    SymbolIsNotCallable, VariantAssociatedValueExpected,
-    VariantDoesntHaveAssociatedValue,
+use crate::{
+    bind::expression::function_call::diagnostic::{
+        Diagnostic, ExtraneousArgumentsToAssociatedValue,
+        MismatchedArgumentsCount, MismatchedImplementationArguments,
+        SymbolIsNotCallable, VariantAssociatedValueExpected,
+        VariantDoesntHaveAssociatedValue,
+    },
+    binder::UnrecoverableError,
 };
 
 pub mod diagnostic;
@@ -34,6 +40,7 @@ use crate::{
     binder::{Binder, BindingError, Error},
 };
 
+#[allow(clippy::too_many_lines)]
 async fn get_function_instantiation(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::unit::FunctionCall,
@@ -88,18 +95,101 @@ async fn get_function_instantiation(
                 let kind = binder.engine().get_kind(member_generic.id).await;
                 kind.has_function_signature()
             } =>
-        {
-            (
-                member_generic.id,
-                binder
-                    .engine()
-                    .get_instantiation_for_associated_symbol(
-                        member_generic.id,
-                        member_generic.parent_generic_arguments,
-                        member_generic.member_generic_arguments,
-                    )
-                    .await?,
-            )
+        'result: {
+            let kind = binder.engine().get_kind(member_generic.id).await;
+
+            // no need to perform argument deduction for the implements
+            if kind != Kind::ImplementationFunction {
+                break 'result (
+                    member_generic.id,
+                    binder
+                        .engine()
+                        .get_instantiation_for_associated_symbol(
+                            member_generic.id,
+                            member_generic.parent_generic_arguments,
+                            member_generic.member_generic_arguments,
+                        )
+                        .await?,
+                );
+            }
+
+            let parent_impl_id = member_generic.id.target_id.make_global(
+                binder.engine().get_parent(member_generic.id).await.unwrap(),
+            );
+
+            let Some(impl_args) =
+                binder.engine().get_implements_argument(parent_impl_id).await?
+            else {
+                return Err(Error::Binding(BindingError(syntax_tree.span())));
+            };
+
+            let env = binder.create_environment();
+
+            let mut instantiation = match env
+                .deduce(&member_generic.parent_generic_arguments, &impl_args)
+                .await
+            {
+                Ok(deduction) => deduction.result.instantiation,
+
+                Err(deduction::Error::MismatchedGenericArgumentCount(_)) => {
+                    unreachable!()
+                }
+
+                Err(deduction::Error::UnificationFailure(_)) => {
+                    handler.receive(
+                        Diagnostic::MismatchedImplementationArguments(
+                            MismatchedImplementationArguments {
+                                implementation_id: parent_impl_id,
+                                found_generic_arguments: member_generic
+                                    .member_generic_arguments
+                                    .clone(),
+                                instantiation_span: syntax_tree.span(),
+                                type_inference_map: binder
+                                    .type_inference_rendering_map(),
+                                constant_inference_map: binder
+                                    .constant_inference_rendering_map(),
+                            },
+                        )
+                        .into(),
+                    );
+
+                    return Err(Error::Binding(BindingError(
+                        syntax_tree.span(),
+                    )));
+                }
+
+                Err(deduction::Error::CyclicDependency(cyclic)) => {
+                    return Err(Error::Unrecoverable(
+                        UnrecoverableError::CyclicDependency(cyclic),
+                    ))
+                }
+
+                Err(deduction::Error::Overflow(overflow)) => {
+                    overflow.report_as_type_calculating_overflow(
+                        syntax_tree.span(),
+                        &handler,
+                    );
+
+                    return Err(Error::Unrecoverable(
+                        UnrecoverableError::Reported,
+                    ));
+                }
+            };
+
+            // append the instantiation for the member generic arguments
+            instantiation
+                .append_from_generic_arguments(
+                    member_generic.member_generic_arguments,
+                    member_generic.id,
+                    binder
+                        .engine()
+                        .get_generic_parameters(member_generic.id)
+                        .await?
+                        .as_ref(),
+                )
+                .expect("should have correct generic arguments count");
+
+            (member_generic.id, Ok(instantiation))
         }
 
         resolution => {

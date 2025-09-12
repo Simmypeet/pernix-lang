@@ -1,13 +1,21 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
+    span::get_span,
 };
 use pernixc_target::Global;
+use pernixc_term::{
+    constant::Constant,
+    display::{Display, InferenceRenderingMap},
+    generic_arguments::GenericArguments,
+    r#type::Type,
+};
 
 use crate::diagnostic_enum;
 
@@ -15,12 +23,8 @@ diagnostic_enum! {
     #[derive(
         Debug,
         Clone,
-        Copy,
         PartialEq,
         Eq,
-        PartialOrd,
-        Ord,
-        Hash,
         StableHash,
         Serialize,
         Deserialize,
@@ -33,6 +37,9 @@ diagnostic_enum! {
         ),
         VariantAssociatedValueExpected(VariantAssociatedValueExpected),
         MismatchedArgumentsCount(MismatchedArgumentsCount),
+        MismatchedImplementationArguments(
+            MismatchedImplementationArguments
+        ),
     }
 }
 
@@ -301,6 +308,102 @@ impl Report<&TrackedEngine> for MismatchedArgumentsCount {
                     .build(),
             )
             .severity(Severity::Error)
+            .build()
+    }
+}
+
+/// The generic arguments are not compatible with the generic arguments defined
+/// in the implementation.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct MismatchedImplementationArguments {
+    /// The ID of the ADT implementation where the generic arguments are
+    /// mismatched.
+    pub implementation_id: Global<pernixc_symbol::ID>,
+
+    /// The generic arguments found in the implementation.
+    pub found_generic_arguments: GenericArguments,
+
+    /// The span of the instantiation that causes the mismatch.
+    pub instantiation_span: RelativeSpan,
+
+    /// The inference rendering map for constants.
+    pub constant_inference_map: InferenceRenderingMap<Constant>,
+
+    /// The inference rendering map for types.
+    pub type_inference_map: InferenceRenderingMap<Type>,
+}
+
+impl Report<&TrackedEngine> for MismatchedImplementationArguments {
+    type Location = ByteIndex;
+
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        let impl_span =
+            if let Some(span) = engine.get_span(self.implementation_id).await {
+                Some(engine.to_absolute_span(&span).await)
+            } else {
+                None
+            };
+
+        let impl_arguments = engine
+            .get_implements_argument(self.implementation_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        pernixc_diagnostic::Diagnostic::builder()
+            .message(
+                "the generic arguments are not compatible with the generic \
+                 arguments defined in the implementation",
+            )
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine.to_absolute_span(&self.instantiation_span).await,
+                    )
+                    .message({
+                        let mut string = String::new();
+
+                        string.push_str("the generic arguments supplied was `");
+
+                        self.found_generic_arguments
+                            .write_async_with_mapping(
+                                engine,
+                                &mut string,
+                                None,
+                                Some(&self.type_inference_map),
+                                Some(&self.constant_inference_map),
+                            )
+                            .await
+                            .unwrap();
+                        string.push_str("` aren't compatible with `");
+                        impl_arguments
+                            .write_async(engine, &mut string)
+                            .await
+                            .unwrap();
+                        string.push('`');
+
+                        string
+                    })
+                    .build(),
+            )
+            .related(
+                impl_span
+                    .as_ref()
+                    .map(|span| {
+                        Highlight::new(
+                            *span,
+                            Some(
+                                "the implementation is defined here"
+                                    .to_string(),
+                            ),
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            )
             .build()
     }
 }
