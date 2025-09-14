@@ -1242,7 +1242,7 @@ impl Engine {
                     .fingerprint
                     .is_none_or(|x| Some(x) != new_fingerprint)
                 {
-                    tracing::debug!(
+                    tracing::info!(
                         "Value fingerprint updated for `{}` `{key:?}` with a \
                          new fingerprint: {:?} -> {:?}",
                         key.type_name(),
