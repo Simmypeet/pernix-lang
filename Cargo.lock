@@ -1170,6 +1170,7 @@ version = "0.1.0-beta.2"
 dependencies = [
  "bon",
  "derive-new",
+ "pernixc_query",
  "pernixc_serialize",
  "pernixc_source_file",
  "pernixc_stable_hash",

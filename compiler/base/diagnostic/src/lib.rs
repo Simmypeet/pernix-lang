@@ -3,8 +3,9 @@
 use std::future::Future;
 
 use bon::Builder;
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::Span;
+use pernixc_source_file::{ByteIndex, Span};
 use pernixc_stable_hash::StableHash;
 
 /// Implement this trait for a type that can report a diagnostic.
@@ -18,15 +19,12 @@ use pernixc_stable_hash::StableHash;
 /// working with the incremental compilation, where the context outside may
 /// change between compilation runs, but the structs/enums that implement this
 /// trait will remain the same.
-pub trait Report<Param> {
-    /// The type of the span used to represent the location of the diagnostic.
-    type Location;
-
+pub trait Report {
     /// Creates a diagnostic.
-    fn report(
-        &self,
-        parameter: Param,
-    ) -> impl Future<Output = Diagnostic<Self::Location>> + Send + use<'_, Self, Param>;
+    fn report<'s, 'e>(
+        &'s self,
+        parameter: &'e TrackedEngine,
+    ) -> impl Future<Output = Diagnostic<ByteIndex>> + Send + use<'s, 'e, Self>;
 }
 
 /// Enumeration of the severity levels of a diagnostic.
