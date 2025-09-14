@@ -3,7 +3,7 @@
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -42,13 +42,12 @@ pub enum Diagnostic {
     ConflictingUsing(ConflictingUsing),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::Naming(err) => err.report(engine).await,
             Self::TargetRootInImportIsNotAllowedwithFrom(err) => {
@@ -79,14 +78,13 @@ pub struct TargetRootInImportIsNotAllowedwithFrom {
     pub target_root_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for TargetRootInImportIsNotAllowedwithFrom {
-    type Location = ByteIndex;
-
+impl Report for TargetRootInImportIsNotAllowedwithFrom {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.target_root_span).await,
                 Some(
@@ -100,7 +98,7 @@ impl Report<&TrackedEngine> for TargetRootInImportIsNotAllowedwithFrom {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -134,17 +132,16 @@ pub struct ConflictingUsing {
     pub conflicting_span: Option<RelativeSpan>,
 }
 
-impl Report<&TrackedEngine> for ConflictingUsing {
-    type Location = ByteIndex;
-
+impl Report for ConflictingUsing {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let module_qualified_name =
             engine.get_qualified_name(self.module_id).await;
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.using_span).await,
                 Some(format!(
@@ -170,7 +167,7 @@ impl Report<&TrackedEngine> for ConflictingUsing {
                 }
                 None => vec![],
             },
-        }
+        })
     }
 }
 

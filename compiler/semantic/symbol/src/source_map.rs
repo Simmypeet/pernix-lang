@@ -6,9 +6,9 @@ use std::{collections::HashMap, fmt::Display, path::Path, sync::Arc};
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::TrackedEngine;
-use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{ByteIndex, SourceFile, Span};
-use pernixc_stable_hash::StableHash;
+use pernixc_source_file::{
+    get_source_file_path, ByteIndex, FilePathKey, SourceFile, Span,
+};
 use pernixc_target::{Global, TargetID};
 
 pernixc_register::register!(FilePathKey, FilePathExecutor);

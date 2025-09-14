@@ -43,12 +43,13 @@ pub enum Diagnostic {
 }
 
 impl Report<&TrackedEngine<'_>> for Diagnostic {
-    type Location = ByteIndex;
-
     fn report(
         &self,
         engine: &TrackedEngine<'_>,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<
+        pernixc_diagnostic::Diagnostic<Self::Location>,
+        executor::CyclicError,
+    > {
         match self {
             Self::ItemRedefinition(diagnostic) => diagnostic.report(engine),
             Self::RecursiveFileRequest(diagnostic) => diagnostic.report(engine),
@@ -83,8 +84,6 @@ pub struct ItemRedefinition {
 }
 
 impl Report<&TrackedEngine<'_>> for ItemRedefinition {
-    type Location = ByteIndex;
-
     fn report(
         &self,
         engine: &TrackedEngine<'_>,
@@ -144,12 +143,13 @@ pub struct RecursiveFileRequest {
 }
 
 impl Report<&TrackedEngine<'_>> for RecursiveFileRequest {
-    type Location = ByteIndex;
-
     fn report(
         &self,
         engine: &TrackedEngine<'_>,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<
+        pernixc_diagnostic::Diagnostic<Self::Location>,
+        executor::CyclicError,
+    > {
         pernixc_diagnostic::Diagnostic {
             span: Some((
                 engine.to_absolute_span(&self.submodule_span),
@@ -199,12 +199,13 @@ pub struct SourceFileLoadFail {
 }
 
 impl Report<&TrackedEngine<'_>> for SourceFileLoadFail {
-    type Location = ByteIndex;
-
     fn report(
         &self,
         engine: &TrackedEngine<'_>,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<
+        pernixc_diagnostic::Diagnostic<Self::Location>,
+        executor::CyclicError,
+    > {
         let (span, context_message) = self.submodule_span.as_ref().map_or_else(
             || {
                 (

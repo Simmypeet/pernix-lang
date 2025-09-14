@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -40,13 +40,12 @@ pub enum Diagnostic {
     ExpectModule(ExpectModule),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::SymbolNotFound(err) => err.report(engine).await,
             Self::SymbolIsNotAccessible(err) => err.report(engine).await,
@@ -130,13 +129,12 @@ fn suggest<'a>(
     }
 }
 
-impl Report<&TrackedEngine> for SymbolNotFound {
-    type Location = ByteIndex;
-
+impl Report for SymbolNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let searched_item_id_qualified_name = match self.searched_item_id {
             Some(id) => Some(engine.get_qualified_name(id).await),
             None => None,
@@ -203,7 +201,7 @@ impl Report<&TrackedEngine> for SymbolNotFound {
             },
         );
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.resolution_span).await,
                 Some(span_message),
@@ -214,7 +212,7 @@ impl Report<&TrackedEngine> for SymbolNotFound {
                 .as_ref()
                 .map(|suggestion| format!("did you mean `{suggestion}`?")),
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -243,19 +241,18 @@ pub struct SymbolIsNotAccessible {
     pub referred_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for SymbolIsNotAccessible {
-    type Location = ByteIndex;
-
+impl Report for SymbolIsNotAccessible {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let referring_site_qualified_name =
             engine.get_qualified_name(self.referring_site).await;
         let referred_qualified_name =
             engine.get_qualified_name(self.referred).await;
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
@@ -267,7 +264,7 @@ impl Report<&TrackedEngine> for SymbolIsNotAccessible {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -293,19 +290,18 @@ pub struct ExpectModule {
     pub found_id: Global<ID>,
 }
 
-impl Report<&TrackedEngine> for ExpectModule {
-    type Location = ByteIndex;
-
+impl Report for ExpectModule {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let found_symbol_qualified_name =
             engine.get_qualified_name(self.found_id).await;
 
         let kind = engine.get_kind(self.found_id).await;
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.module_path).await,
                 None,
@@ -318,6 +314,6 @@ impl Report<&TrackedEngine> for ExpectModule {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }

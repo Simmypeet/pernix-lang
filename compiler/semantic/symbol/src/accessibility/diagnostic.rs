@@ -1,7 +1,7 @@
 //! Contains the diagnostics related to accessibility of symbols.
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -34,13 +34,12 @@ pub enum Diagnostic {
     SymbolIsMoreAccessibleThanParent(SymbolIsMoreAccessibleThanParent),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::SymbolIsMoreAccessibleThanParent(diagnostic) => {
                 diagnostic.report(engine).await
@@ -74,13 +73,12 @@ pub struct SymbolIsMoreAccessibleThanParent {
     pub target_id: TargetID,
 }
 
-impl Report<&TrackedEngine> for SymbolIsMoreAccessibleThanParent {
-    type Location = ByteIndex;
-
+impl Report for SymbolIsMoreAccessibleThanParent {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let symbol_id = self.target_id.make_global(self.symbol_id);
         let parent_id = self.target_id.make_global(self.parent_id);
 
@@ -114,7 +112,7 @@ impl Report<&TrackedEngine> for SymbolIsMoreAccessibleThanParent {
             )
             .await;
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: symbol_span.map(|span| {
                 Highlight::new(
                     span,
@@ -147,6 +145,6 @@ impl Report<&TrackedEngine> for SymbolIsMoreAccessibleThanParent {
                 })
                 .into_iter()
                 .collect(),
-        }
+        })
     }
 }
