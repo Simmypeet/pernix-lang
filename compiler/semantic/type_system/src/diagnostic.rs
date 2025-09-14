@@ -4,7 +4,7 @@ use bon::Builder;
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_handler::Handler;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -39,13 +39,12 @@ pub enum Diagnostic {
     ImplementationIsNotGeneralEnough(ImplementationIsNotGeneralEnough),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::TypeCalculatingOverflow(diagnostic) => {
                 diagnostic.report(parameter).await
@@ -91,14 +90,13 @@ pub struct TypeCalculatingOverflow {
     pub overflow_error: OverflowError,
 }
 
-impl Report<&TrackedEngine> for TypeCalculatingOverflow {
-    type Location = ByteIndex;
-
+impl Report for TypeCalculatingOverflow {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic::builder()
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.overflow_span).await)
@@ -112,7 +110,7 @@ impl Report<&TrackedEngine> for TypeCalculatingOverflow {
                 "this is due to the limitation of the compiler/language, try \
                  reduce the complexity of the expression/symbol",
             )
-            .build()
+            .build())
     }
 }
 
@@ -140,14 +138,13 @@ pub struct TypeCheckOverflow {
     pub overflow_error: OverflowError,
 }
 
-impl Report<&TrackedEngine> for TypeCheckOverflow {
-    type Location = ByteIndex;
-
+impl Report for TypeCheckOverflow {
     async fn report(
         &self,
         tracked_engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic::builder()
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -163,7 +160,7 @@ impl Report<&TrackedEngine> for TypeCheckOverflow {
                 "try reduce the complexity of the code; this error is the \
                  limitation of the type-system/compiler",
             )
-            .build()
+            .build())
     }
 }
 
@@ -197,14 +194,13 @@ pub struct PredicateSatisfiabilityOverflow {
     pub overflow_error: OverflowError,
 }
 
-impl Report<&TrackedEngine> for PredicateSatisfiabilityOverflow {
-    type Location = ByteIndex;
-
+impl Report for PredicateSatisfiabilityOverflow {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic::builder()
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -239,7 +235,7 @@ impl Report<&TrackedEngine> for PredicateSatisfiabilityOverflow {
                 }
                 None => Vec::new(),
             })
-            .build()
+            .build())
     }
 }
 
@@ -268,14 +264,13 @@ pub struct UnsatisfiedPredicate {
     pub predicate_declaration_span: Option<RelativeSpan>,
 }
 
-impl Report<&TrackedEngine> for UnsatisfiedPredicate {
-    type Location = ByteIndex;
-
+impl Report for UnsatisfiedPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic::builder()
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -305,7 +300,7 @@ impl Report<&TrackedEngine> for UnsatisfiedPredicate {
                 }
                 None => Vec::new(),
             })
-            .build()
+            .build())
     }
 }
 
@@ -338,13 +333,12 @@ pub struct ImplementationIsNotGeneralEnough {
     pub instantiation_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for ImplementationIsNotGeneralEnough {
-    type Location = ByteIndex;
-
+impl Report for ImplementationIsNotGeneralEnough {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let implementation_span = if let Some(span) =
             engine.get_span(self.resolvable_implementation_id).await
         {
@@ -353,7 +347,7 @@ impl Report<&TrackedEngine> for ImplementationIsNotGeneralEnough {
             None
         };
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -402,7 +396,7 @@ impl Report<&TrackedEngine> for ImplementationIsNotGeneralEnough {
 
                 related
             })
-            .build()
+            .build())
     }
 }
 
