@@ -3,7 +3,7 @@
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -45,13 +45,12 @@ pub enum Diagnostic {
     ExpectType(ExpectType),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::MoreThanOneUnpackedInTupleType(diagnostic) => {
                 diagnostic.report(engine).await
@@ -100,14 +99,13 @@ pub struct ThisNotFound {
     pub this_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for ThisNotFound {
-    type Location = ByteIndex;
-
+impl Report for ThisNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.this_span).await,
                 Some(
@@ -120,7 +118,7 @@ impl Report<&TrackedEngine> for ThisNotFound {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -148,17 +146,16 @@ pub struct LifetimeParameterNotFound {
     pub referring_site: Global<pernixc_symbol::ID>,
 }
 
-impl Report<&TrackedEngine> for LifetimeParameterNotFound {
-    type Location = ByteIndex;
-
+impl Report for LifetimeParameterNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let referring_site_qualified_name =
             engine.get_qualified_name(self.referring_site).await;
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
@@ -171,7 +168,7 @@ impl Report<&TrackedEngine> for LifetimeParameterNotFound {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -197,14 +194,13 @@ pub struct UnexpectedInference {
     pub generic_kind: GenericKind,
 }
 
-impl Report<&TrackedEngine> for UnexpectedInference {
-    type Location = ByteIndex;
-
+impl Report for UnexpectedInference {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.unexpected_span).await,
                 Some(format!(
@@ -226,7 +222,7 @@ impl Report<&TrackedEngine> for UnexpectedInference {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -252,18 +248,17 @@ pub struct ExpectType {
     pub resolved_global_id: Global<pernixc_symbol::ID>,
 }
 
-impl Report<&TrackedEngine> for ExpectType {
-    type Location = ByteIndex;
-
+impl Report for ExpectType {
     async fn report(
         &self,
         table: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let qualified_name =
             table.get_qualified_name(self.resolved_global_id).await;
         let kind = table.get_kind(self.resolved_global_id).await;
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 table.to_absolute_span(&self.non_type_symbol_span).await,
                 Some(format!(
@@ -275,7 +270,7 @@ impl Report<&TrackedEngine> for ExpectType {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -298,14 +293,13 @@ pub struct MoreThanOneUnpackedInTupleType {
     pub illegal_tuple_type_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for MoreThanOneUnpackedInTupleType {
-    type Location = ByteIndex;
-
+impl Report for MoreThanOneUnpackedInTupleType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.illegal_tuple_type_span).await,
                 None,
@@ -316,7 +310,7 @@ impl Report<&TrackedEngine> for MoreThanOneUnpackedInTupleType {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -342,14 +336,13 @@ pub struct MisorderedGenericArgument {
     pub generic_argument: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for MisorderedGenericArgument {
-    type Location = ByteIndex;
-
+impl Report for MisorderedGenericArgument {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument).await,
                 match self.generic_kind {
@@ -369,7 +362,7 @@ impl Report<&TrackedEngine> for MisorderedGenericArgument {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -401,14 +394,13 @@ pub struct MismatchedGenericArgumentCount {
     pub supplied_count: usize,
 }
 
-impl Report<&TrackedEngine> for MismatchedGenericArgumentCount {
-    type Location = ByteIndex;
-
+impl Report for MismatchedGenericArgumentCount {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_identifier_span).await,
                 Some(format!(
@@ -426,7 +418,7 @@ impl Report<&TrackedEngine> for MismatchedGenericArgumentCount {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -452,16 +444,15 @@ pub struct NoGenericArgumentsRequired {
     pub generic_argument_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for NoGenericArgumentsRequired {
-    type Location = ByteIndex;
-
+impl Report for NoGenericArgumentsRequired {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let qualified_name = engine.get_qualified_name(self.global_id).await;
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument_span).await,
                 Some(format!(
@@ -475,6 +466,6 @@ impl Report<&TrackedEngine> for NoGenericArgumentsRequired {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
