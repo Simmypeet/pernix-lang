@@ -1,7 +1,7 @@
 //! Contains the definition of [`Error`] struct
 
 use pernixc_arena::ID;
-use pernixc_diagnostic::{Diagnostic, Highlight, Report};
+use pernixc_diagnostic::{ByteIndex, Diagnostic, Highlight, Report};
 use pernixc_hash::HashSet;
 use pernixc_lexical::{
     kind,
@@ -10,8 +10,11 @@ use pernixc_lexical::{
         ROOT_BRANCH_ID,
     },
 };
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{AbsoluteSpan, ByteIndex, GlobalSourceID, Span};
+use pernixc_source_file::{
+    get_source_file_path, AbsoluteSpan, GlobalSourceID, Span,
+};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
@@ -124,11 +127,19 @@ fn expected_string(expected: &Expected) -> String {
     }
 }
 
-fn found_string(
-    token_tree: &pernixc_lexical::tree::Tree,
+async fn found_string(
+    engine: &TrackedEngine,
     source_id: GlobalSourceID,
     at: &Cursor,
 ) -> (String, AbsoluteSpan) {
+    let path = engine.get_source_file_path(source_id).await;
+
+    let (token_tree, _) = engine
+        .query(&pernixc_lexical::Key { path, target_id: source_id.target_id })
+        .await
+        .expect("should have no cyclic errors")
+        .expect("should have loaded the source file since the parser did");
+
     let branch = &token_tree[at.branch_id];
     let is_at_end = at.node_index == branch.nodes.len();
     let is_at_root = at.branch_id == ROOT_BRANCH_ID;
@@ -203,7 +214,9 @@ fn found_string(
 
                         if let Some(node) = node {
                             break found_node_string(
-                                node, token_tree, source_id,
+                                node,
+                                &token_tree,
+                                source_id,
                             );
                         }
 
@@ -216,19 +229,18 @@ fn found_string(
 
         (false, _) => found_node_string(
             &branch.nodes[at.node_index],
-            token_tree,
+            &token_tree,
             source_id,
         ),
     }
 }
 
-impl Report<&pernixc_lexical::tree::Tree> for Error {
-    type Location = ByteIndex;
-
+impl Report for Error {
     async fn report(
         &self,
-        token_tree: &pernixc_lexical::tree::Tree,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let expected_string = self
             .expecteds
             .iter()
@@ -237,17 +249,17 @@ impl Report<&pernixc_lexical::tree::Tree> for Error {
             .join(", ");
 
         let (found_string, found_span) =
-            found_string(token_tree, self.source_id, &self.at);
+            found_string(engine, self.source_id, &self.at).await;
 
         let message =
             format!("unexpected {found_string}, expected {expected_string}");
 
-        Diagnostic {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(found_span, None)),
             message,
             severity: pernixc_diagnostic::Severity::Error,
             help_message: None,
             related: Vec::default(),
-        }
+        })
     }
 }

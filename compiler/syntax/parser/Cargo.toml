@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pernixc_arena = { path = "../../base/arena" }
+pernixc_query = { path = "../../base/query" }
 pernixc_lexical = { path = "../lexical" }
 pernixc_source_file = { path = "../../base/source_file" }
 pernixc_target = { path = "../../base/target" }
