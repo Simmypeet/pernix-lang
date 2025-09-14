@@ -3,9 +3,11 @@
 use std::future::Future;
 
 use bon::Builder;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{ByteIndex, Span};
+// re-export
+pub use pernixc_source_file::ByteIndex;
+use pernixc_source_file::Span;
 use pernixc_stable_hash::StableHash;
 
 /// Implement this trait for a type that can report a diagnostic.
@@ -24,7 +26,9 @@ pub trait Report {
     fn report<'s, 'e>(
         &'s self,
         parameter: &'e TrackedEngine,
-    ) -> impl Future<Output = Diagnostic<ByteIndex>> + Send + use<'s, 'e, Self>;
+    ) -> impl Future<Output = Result<Diagnostic<ByteIndex>, executor::CyclicError>>
+           + Send
+           + use<'s, 'e, Self>;
 }
 
 /// Enumeration of the severity levels of a diagnostic.
