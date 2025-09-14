@@ -3,7 +3,7 @@
 use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::fields::{get_fields, Field};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
@@ -91,13 +91,12 @@ pub struct MismatchedPatternBindingType {
     pub type_inference_map: InferenceRenderingMap<Type>,
 }
 
-impl Report<&TrackedEngine> for MismatchedPatternBindingType {
-    type Location = ByteIndex;
-
+impl Report for MismatchedPatternBindingType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
 
         // Format the found type with inference rendering maps
@@ -113,7 +112,7 @@ impl Report<&TrackedEngine> for MismatchedPatternBindingType {
             )
             .await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message(format!(
                 "mismatched pattern binding type: expected {} but found `{}`",
@@ -128,7 +127,7 @@ impl Report<&TrackedEngine> for MismatchedPatternBindingType {
                     .span(span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -152,16 +151,15 @@ pub struct TooLargeNumericLiteral {
     pub span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for TooLargeNumericLiteral {
-    type Location = ByteIndex;
-
+impl Report for TooLargeNumericLiteral {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("numeric literal is too large for pattern")
             .primary_highlight(
@@ -173,7 +171,7 @@ impl Report<&TrackedEngine> for TooLargeNumericLiteral {
             .help_message(
                 "the pattern can only accept numeric literals up to u64",
             )
-            .build()
+            .build())
     }
 }
 
@@ -196,17 +194,16 @@ pub struct MoreThanOnePackedTuplePattern {
     pub illegal_tuple_pattern_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for MoreThanOnePackedTuplePattern {
-    type Location = ByteIndex;
-
+impl Report for MoreThanOnePackedTuplePattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span =
             engine.to_absolute_span(&self.illegal_tuple_pattern_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("more than one packed tuple pattern found")
             .primary_highlight(
@@ -215,7 +212,7 @@ impl Report<&TrackedEngine> for MoreThanOnePackedTuplePattern {
                     .span(span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -244,16 +241,15 @@ pub struct MismatchedTuplePatternLength {
     pub type_element_count: usize,
 }
 
-impl Report<&TrackedEngine> for MismatchedTuplePatternLength {
-    type Location = ByteIndex;
-
+impl Report for MismatchedTuplePatternLength {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.pattern_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("mismatched tuple pattern length")
             .primary_highlight(
@@ -266,7 +262,7 @@ impl Report<&TrackedEngine> for MismatchedTuplePatternLength {
                     .span(span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -289,16 +285,15 @@ pub struct ExpectedTuplePackPattern {
     pub illegal_tuple_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for ExpectedTuplePackPattern {
-    type Location = ByteIndex;
-
+impl Report for ExpectedTuplePackPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.illegal_tuple_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("expected a packed tuple pattern here")
             .primary_highlight(
@@ -310,7 +305,7 @@ impl Report<&TrackedEngine> for ExpectedTuplePackPattern {
                     .span(span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -344,13 +339,12 @@ pub struct AlreadyBoundFieldPattern {
     pub field_id: ID<Field>,
 }
 
-impl Report<&TrackedEngine> for AlreadyBoundFieldPattern {
-    type Location = ByteIndex;
-
+impl Report for AlreadyBoundFieldPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.rebound_span).await;
         let fields = engine.get_fields(self.struct_id).await.unwrap();
         let struct_qualified_name =
@@ -361,7 +355,7 @@ impl Report<&TrackedEngine> for AlreadyBoundFieldPattern {
         let first_bound_span =
             engine.to_absolute_span(&self.first_bound_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message(format!(
                 "the field `{field_name}` is already bound in the pattern",
@@ -381,7 +375,7 @@ impl Report<&TrackedEngine> for AlreadyBoundFieldPattern {
                 ))
                 .span(first_bound_span)
                 .build()])
-            .build()
+            .build())
     }
 }
 
@@ -411,13 +405,12 @@ pub struct UnboundFields {
     pub pattern_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for UnboundFields {
-    type Location = ByteIndex;
-
+impl Report for UnboundFields {
     async fn report(
         &self,
         table: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let fields = table.get_fields(self.struct_id).await.unwrap();
         let field_names = self
             .field_ids
@@ -425,7 +418,7 @@ impl Report<&TrackedEngine> for UnboundFields {
             .map(|&field_id| fields.fields.get(field_id).unwrap().name.clone())
             .collect::<Vec<_>>();
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message(format!(
                 "not all fields are bound in the pattern: {}",
@@ -444,7 +437,7 @@ impl Report<&TrackedEngine> for UnboundFields {
                 "try to handle all fields in the pattern or use the `..` \
                  syntax after the fields to ignore the rest",
             )
-            .build()
+            .build())
     }
 }
 
@@ -471,17 +464,16 @@ pub struct ExpectedAssociatedPattern {
     pub pattern_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for ExpectedAssociatedPattern {
-    type Location = ByteIndex;
-
+impl Report for ExpectedAssociatedPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let variant_name = engine.get_qualified_name(self.variant_id).await;
         let span = engine.to_absolute_span(&self.pattern_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message(format!(
                 "the variant `{variant_name}` expects an associated pattern",
@@ -499,7 +491,7 @@ impl Report<&TrackedEngine> for ExpectedAssociatedPattern {
                 "if you want to ignore the associated type, use the `case \
                  {variant_name}(..)` syntax instead"
             ))
-            .build()
+            .build())
     }
 }
 
@@ -526,17 +518,16 @@ pub struct UnexpectedAssociatedPattern {
     pub associated_pattern_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for UnexpectedAssociatedPattern {
-    type Location = ByteIndex;
-
+impl Report for UnexpectedAssociatedPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let variant_name = engine.get_qualified_name(self.variant_id).await;
         let span = engine.to_absolute_span(&self.associated_pattern_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message(format!(
                 "the variant `{variant_name}` does not have an associated \
@@ -551,6 +542,6 @@ impl Report<&TrackedEngine> for UnexpectedAssociatedPattern {
                     .span(span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }

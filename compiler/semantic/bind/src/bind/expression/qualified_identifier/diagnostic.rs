@@ -1,6 +1,6 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -53,18 +53,17 @@ pub struct ExpectedAssociatedValue {
     pub span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for ExpectedAssociatedValue {
-    type Location = ByteIndex;
-
+impl Report for ExpectedAssociatedValue {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let qualified_identifier =
             parameter.get_qualified_name(self.variant_id).await;
         let abs_span = parameter.to_absolute_span(&self.span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "expected associated value for variant \
                  `{qualified_identifier}`"
@@ -81,7 +80,7 @@ impl Report<&TrackedEngine> for ExpectedAssociatedValue {
                  after the variant name"
                     .to_string(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -107,18 +106,17 @@ pub struct SymbolCannotBeUsedAsAnExpression {
     pub symbol: Global<pernixc_symbol::ID>,
 }
 
-impl Report<&TrackedEngine> for SymbolCannotBeUsedAsAnExpression {
-    type Location = ByteIndex;
-
+impl Report for SymbolCannotBeUsedAsAnExpression {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let qualified_name = parameter.get_qualified_name(self.symbol).await;
         let abs_span = parameter.to_absolute_span(&self.span).await;
         let kind = parameter.get_kind(self.symbol).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "the symbol `{} {qualified_name}` cannot be used as an \
                  expression",
@@ -136,6 +134,6 @@ impl Report<&TrackedEngine> for SymbolCannotBeUsedAsAnExpression {
                  variables can be used as expressions"
                     .to_string(),
             )
-            .build()
+            .build())
     }
 }

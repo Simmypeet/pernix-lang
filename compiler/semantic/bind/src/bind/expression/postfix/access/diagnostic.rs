@@ -1,6 +1,6 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -31,13 +31,12 @@ pub struct ExpectedStruct {
     pub type_inference_map: InferenceRenderingMap<Type>,
 }
 
-impl Report<&TrackedEngine> for ExpectedStruct {
-    type Location = ByteIndex;
-
+impl Report for ExpectedStruct {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
 
         // Format the found type with inference rendering maps
@@ -53,7 +52,7 @@ impl Report<&TrackedEngine> for ExpectedStruct {
             .await
             .unwrap();
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("expected a struct type")
             .primary_highlight(
@@ -65,6 +64,6 @@ impl Report<&TrackedEngine> for ExpectedStruct {
             .help_message(
                 "a struct type is required to access its field members",
             )
-            .build()
+            .build())
     }
 }

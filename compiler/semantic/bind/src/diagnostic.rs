@@ -2,7 +2,7 @@
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -63,13 +63,14 @@ macro_rules! diagnostic_enum {
             )*
         }
 
-        impl pernixc_diagnostic::Report<&pernixc_query::TrackedEngine> for Diagnostic {
-            type Location = pernixc_source_file::ByteIndex;
-
+        impl pernixc_diagnostic::Report for Diagnostic {
             async fn report(
                 &self,
                 engine: &pernixc_query::TrackedEngine,
-            ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+            ) -> Result<
+                pernixc_diagnostic::Diagnostic<pernixc_diagnostic::ByteIndex>,
+                pernixc_query::runtime::executor::CyclicError
+            > {
                 match self {
                     $(
                         Diagnostic::$variant(inner) => inner.report(engine).await,
@@ -103,14 +104,13 @@ pub struct ExpectedLValue {
     pub expression_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for ExpectedLValue {
-    type Location = ByteIndex;
-
+impl Report for ExpectedLValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic::builder()
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.expression_span).await)
@@ -121,8 +121,8 @@ impl Report<&TrackedEngine> for ExpectedLValue {
             .help_message(
                 "an l-value refers to an expression that designates a storage \
                  location,
-                for example, a variable or a dereferenced pointer",
+                        for example, a variable or a dereferenced pointer",
             )
-            .build()
+            .build())
     }
 }

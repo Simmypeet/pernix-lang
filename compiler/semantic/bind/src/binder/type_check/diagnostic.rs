@@ -2,7 +2,7 @@
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -50,13 +50,12 @@ pub struct CyclicInference {
     pub type_inference_map: InferenceRenderingMap<Type>,
 }
 
-impl Report<&TrackedEngine> for CyclicInference {
-    type Location = ByteIndex;
-
+impl Report for CyclicInference {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
 
         // Format types with inference rendering maps
@@ -85,7 +84,7 @@ impl Report<&TrackedEngine> for CyclicInference {
             )
             .await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("cyclic inference detected in type checking")
             .primary_highlight(
@@ -100,7 +99,7 @@ impl Report<&TrackedEngine> for CyclicInference {
             .help_message(
                 "try adding explicit type annotations to break the cycle",
             )
-            .build()
+            .build())
     }
 }
 
@@ -123,13 +122,12 @@ pub struct MismatchedType {
     pub type_inference_map: InferenceRenderingMap<Type>,
 }
 
-impl Report<&TrackedEngine> for MismatchedType {
-    type Location = ByteIndex;
-
+impl Report for MismatchedType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
 
         // Format expected type with inference rendering maps
@@ -167,7 +165,7 @@ impl Report<&TrackedEngine> for MismatchedType {
             )
             .await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message(format!(
                 "mismatched types: expected `{expected_str}`, found \
@@ -184,6 +182,6 @@ impl Report<&TrackedEngine> for MismatchedType {
             .help_message(
                 "ensure the expression type matches the expected type",
             )
-            .build()
+            .build())
     }
 }

@@ -1,6 +1,6 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -49,16 +49,15 @@ pub struct InvalidNumericSuffix {
     pub suffix_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for InvalidNumericSuffix {
-    type Location = ByteIndex;
-
+impl Report for InvalidNumericSuffix {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.suffix_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message("invalid numeric suffix")
             .primary_highlight(
                 Highlight::builder()
@@ -71,7 +70,7 @@ impl Report<&TrackedEngine> for InvalidNumericSuffix {
                 "valid suffixes are: i8, i16, i32, i64, u8, u16, u32, u64, \
                  f32, f64, us, is",
             )
-            .build()
+            .build())
     }
 }
 
@@ -95,16 +94,15 @@ pub struct FloatingPointLiteralHasIntegralSuffix {
     pub numeric_literal_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for FloatingPointLiteralHasIntegralSuffix {
-    type Location = ByteIndex;
-
+impl Report for FloatingPointLiteralHasIntegralSuffix {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.numeric_literal_span).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message("floating point literal has integral suffix")
             .primary_highlight(
                 Highlight::builder()
@@ -120,6 +118,6 @@ impl Report<&TrackedEngine> for FloatingPointLiteralHasIntegralSuffix {
                 "remove the decimal point or change the suffix to a floating \
                  point type (such as f32 or f64)",
             )
-            .build()
+            .build())
     }
 }

@@ -3,7 +3,7 @@
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -33,14 +33,13 @@ pub struct AlreadyBoundName {
     pub name: SharedStr,
 }
 
-impl Report<&TrackedEngine> for AlreadyBoundName {
-    type Location = ByteIndex;
-
+impl Report for AlreadyBoundName {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic::builder()
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "the name `{}` has already been bound in the scope",
                 self.name
@@ -58,6 +57,6 @@ impl Report<&TrackedEngine> for AlreadyBoundName {
                 )
                 .message("the name is already bound here")
                 .build()])
-            .build()
+            .build())
     }
 }

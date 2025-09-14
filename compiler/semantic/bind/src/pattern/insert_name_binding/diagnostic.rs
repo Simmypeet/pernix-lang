@@ -2,7 +2,7 @@
 
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -62,13 +62,12 @@ pub struct MismatchedQualifierForReferenceOf {
     pub is_behind_reference: bool,
 }
 
-impl Report<&TrackedEngine> for MismatchedQualifierForReferenceOf {
-    type Location = ByteIndex;
-
+impl Report for MismatchedQualifierForReferenceOf {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let message = if self.is_behind_reference {
             format!(
                 "the l-value is behind a reference with qualifier `{}` but \
@@ -83,7 +82,7 @@ impl Report<&TrackedEngine> for MismatchedQualifierForReferenceOf {
             )
         };
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -93,7 +92,7 @@ impl Report<&TrackedEngine> for MismatchedQualifierForReferenceOf {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .build()
+            .build())
     }
 }
 
@@ -127,14 +126,13 @@ pub struct FoundPackTuplePatternInReferenceBoundTupleType {
     pub pattern_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for FoundPackTuplePatternInReferenceBoundTupleType {
-    type Location = ByteIndex;
-
+impl Report for FoundPackTuplePatternInReferenceBoundTupleType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic::builder()
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(
                 "can't bind a tuple pattern to a reference bound tuple type \
                  with pack element",
@@ -145,6 +143,6 @@ impl Report<&TrackedEngine> for FoundPackTuplePatternInReferenceBoundTupleType {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .build()
+            .build())
     }
 }

@@ -3,7 +3,7 @@ use pernixc_arena::ID;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::fields::{get_fields, Field};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
@@ -57,18 +57,17 @@ pub struct ExpectedStructSymbol {
     pub id: Global<pernixc_symbol::ID>,
 }
 
-impl Report<&TrackedEngine> for ExpectedStructSymbol {
-    type Location = ByteIndex;
-
+impl Report for ExpectedStructSymbol {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.id).await;
         let kind = engine.get_kind(self.id).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("expected struct symbol for struct expression")
             .primary_highlight(
@@ -80,7 +79,7 @@ impl Report<&TrackedEngine> for ExpectedStructSymbol {
                     .span(span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -108,18 +107,17 @@ pub struct FieldNotFound {
     pub field_name: SharedStr,
 }
 
-impl Report<&TrackedEngine> for FieldNotFound {
-    type Location = ByteIndex;
-
+impl Report for FieldNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let identifier_span =
             engine.to_absolute_span(&self.identifier_span).await;
         let struct_name = engine.get_qualified_name(self.struct_id).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("field not found in struct")
             .primary_highlight(
@@ -132,7 +130,7 @@ impl Report<&TrackedEngine> for FieldNotFound {
                     .span(identifier_span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -164,13 +162,12 @@ pub struct FieldIsNotAccessible {
     pub referring_identifier_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for FieldIsNotAccessible {
-    type Location = ByteIndex;
-
+impl Report for FieldIsNotAccessible {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let identifier_span =
             engine.to_absolute_span(&self.referring_identifier_span).await;
         let struct_name = engine.get_qualified_name(self.struct_id).await;
@@ -188,7 +185,7 @@ impl Report<&TrackedEngine> for FieldIsNotAccessible {
             )
             .await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("field is not accessible")
             .primary_highlight(
@@ -204,7 +201,7 @@ impl Report<&TrackedEngine> for FieldIsNotAccessible {
                 "field '{}' is {}",
                 field.name, field_accessibility_description
             ))
-            .build()
+            .build())
     }
 }
 
@@ -236,13 +233,12 @@ pub struct DuplicatedFieldInitialization {
     pub duplicate_initialization_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for DuplicatedFieldInitialization {
-    type Location = ByteIndex;
-
+impl Report for DuplicatedFieldInitialization {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let duplicate_span =
             engine.to_absolute_span(&self.duplicate_initialization_span).await;
         let prior_span =
@@ -253,7 +249,7 @@ impl Report<&TrackedEngine> for DuplicatedFieldInitialization {
         let fields = engine.get_fields(self.struct_id).await.unwrap();
         let field = &fields.fields[self.field_id];
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("field is initialized multiple times")
             .primary_highlight(
@@ -269,7 +265,7 @@ impl Report<&TrackedEngine> for DuplicatedFieldInitialization {
                 .message("field was first initialized here".to_string())
                 .span(prior_span)
                 .build()])
-            .build()
+            .build())
     }
 }
 
@@ -286,13 +282,12 @@ pub struct UninitializedFields {
     pub struct_expression_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for UninitializedFields {
-    type Location = ByteIndex;
-
+impl Report for UninitializedFields {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let struct_span =
             engine.to_absolute_span(&self.struct_expression_span).await;
         let struct_name = engine.get_qualified_name(self.struct_id).await;
@@ -327,7 +322,7 @@ impl Report<&TrackedEngine> for UninitializedFields {
         let verb =
             if uninitialized_field_names.len() == 1 { "is" } else { "are" };
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .severity(Severity::Error)
             .message("struct has uninitialized fields")
             .primary_highlight(
@@ -339,6 +334,6 @@ impl Report<&TrackedEngine> for UninitializedFields {
                     .span(struct_span)
                     .build(),
             )
-            .build()
+            .build())
     }
 }

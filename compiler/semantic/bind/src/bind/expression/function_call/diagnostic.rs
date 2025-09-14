@@ -1,6 +1,6 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
@@ -65,18 +65,17 @@ pub struct SymbolIsNotCallable {
     pub span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for SymbolIsNotCallable {
-    type Location = ByteIndex;
-
+impl Report for SymbolIsNotCallable {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
         let kind = engine.get_kind(self.symbol_id).await;
         let qualified_name = engine.get_qualified_name(self.symbol_id).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "the symbol `{} {qualified_name}` cannot be called",
                 kind.kind_str()
@@ -88,7 +87,7 @@ impl Report<&TrackedEngine> for SymbolIsNotCallable {
             .help_message(
                 "only functions or enum with associated value can be called",
             )
-            .build()
+            .build())
     }
 }
 
@@ -118,17 +117,16 @@ pub struct VariantDoesntHaveAssociatedValue {
     pub supplied_count: usize,
 }
 
-impl Report<&TrackedEngine> for VariantDoesntHaveAssociatedValue {
-    type Location = ByteIndex;
-
+impl Report for VariantDoesntHaveAssociatedValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.variant_id).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "the variant `{qualified_name}` doesn't have an associated \
                  value",
@@ -146,7 +144,7 @@ impl Report<&TrackedEngine> for VariantDoesntHaveAssociatedValue {
                 "remove the arguments and the parentheses to use the variant \
                  as a value"
             })
-            .build()
+            .build())
     }
 }
 
@@ -173,17 +171,16 @@ pub struct VariantAssociatedValueExpected {
     pub span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for VariantAssociatedValueExpected {
-    type Location = ByteIndex;
-
+impl Report for VariantAssociatedValueExpected {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.variant_id).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "the variant `{qualified_name}` expects an associated value",
             ))
@@ -198,7 +195,7 @@ impl Report<&TrackedEngine> for VariantAssociatedValueExpected {
                 "supply the associated value using the syntax \
                  `{qualified_name}(value)`"
             ))
-            .build()
+            .build())
     }
 }
 
@@ -227,17 +224,16 @@ pub struct ExtraneousArgumentsToAssociatedValue {
     pub supplied_count: usize,
 }
 
-impl Report<&TrackedEngine> for ExtraneousArgumentsToAssociatedValue {
-    type Location = ByteIndex;
-
+impl Report for ExtraneousArgumentsToAssociatedValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.variant_id).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "the variant `{qualified_name}` was supplied with too many \
                  arguments",
@@ -252,7 +248,7 @@ impl Report<&TrackedEngine> for ExtraneousArgumentsToAssociatedValue {
             .help_message(
                 "only one argument is allowed for the associated value",
             )
-            .build()
+            .build())
     }
 }
 
@@ -286,17 +282,16 @@ pub struct MismatchedArgumentsCount {
     pub span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for MismatchedArgumentsCount {
-    type Location = ByteIndex;
-
+impl Report for MismatchedArgumentsCount {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.span).await;
         let qualified_name = engine.get_qualified_name(self.function_id).await;
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(format!(
                 "the function `{qualified_name}` was called with the wrong \
                  number of arguments",
@@ -308,7 +303,7 @@ impl Report<&TrackedEngine> for MismatchedArgumentsCount {
                     .build(),
             )
             .severity(Severity::Error)
-            .build()
+            .build())
     }
 }
 
@@ -333,13 +328,12 @@ pub struct MismatchedImplementationArguments {
     pub type_inference_map: InferenceRenderingMap<Type>,
 }
 
-impl Report<&TrackedEngine> for MismatchedImplementationArguments {
-    type Location = ByteIndex;
-
+impl Report for MismatchedImplementationArguments {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let impl_span =
             if let Some(span) = engine.get_span(self.implementation_id).await {
                 Some(engine.to_absolute_span(&span).await)
@@ -353,7 +347,7 @@ impl Report<&TrackedEngine> for MismatchedImplementationArguments {
             .unwrap()
             .unwrap();
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(
                 "the generic arguments are not compatible with the generic \
                  arguments defined in the implementation",
@@ -404,6 +398,6 @@ impl Report<&TrackedEngine> for MismatchedImplementationArguments {
                     .into_iter()
                     .collect(),
             )
-            .build()
+            .build())
     }
 }
