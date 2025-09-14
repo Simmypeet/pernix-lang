@@ -3,9 +3,10 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_diagnostic::{Diagnostic, Highlight, Report, Severity};
+use pernixc_diagnostic::{ByteIndex, Diagnostic, Highlight, Report, Severity};
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{AbsoluteSpan, ByteIndex};
+use pernixc_source_file::AbsoluteSpan;
 use pernixc_stable_hash::StableHash;
 
 use crate::tree::DelimiterKind;
@@ -32,11 +33,12 @@ pub struct UndelimitedDelimiter {
     pub delimiter: DelimiterKind,
 }
 
-impl<T: Send> Report<T> for UndelimitedDelimiter {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
-        Diagnostic {
+impl Report for UndelimitedDelimiter {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(
                 self.opening_span,
                 Some(format!("need to be cloesd with `{}` pair", match self
@@ -55,7 +57,7 @@ impl<T: Send> Report<T> for UndelimitedDelimiter {
                     .to_string(),
             ),
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -78,11 +80,12 @@ pub struct UnterminatedStringLiteral {
     pub span: AbsoluteSpan,
 }
 
-impl<T: Send> Report<T> for UnterminatedStringLiteral {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
-        Diagnostic {
+impl Report for UnterminatedStringLiteral {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some("need to be closed with a double quote".to_string()),
@@ -91,7 +94,7 @@ impl<T: Send> Report<T> for UnterminatedStringLiteral {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -114,17 +117,18 @@ pub struct InvalidEscapeSequence {
     pub span: AbsoluteSpan,
 }
 
-impl<T: Send> Report<T> for InvalidEscapeSequence {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
-        Diagnostic {
+impl Report for InvalidEscapeSequence {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(self.span, None)),
             message: "found an invalid escape sequence".to_string(),
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -174,11 +178,12 @@ pub struct InvalidIndentation {
     pub available_indentations: Vec<AvailableIndentation>,
 }
 
-impl<T: Send> Report<T> for InvalidIndentation {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
-        Diagnostic {
+impl Report for InvalidIndentation {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!("found {} space(s)", self.found_indentation)),
@@ -199,7 +204,7 @@ impl<T: Send> Report<T> for InvalidIndentation {
                     )
                 })
                 .collect(),
-        }
+        })
     }
 }
 
@@ -225,11 +230,12 @@ pub struct ExpectIndentation {
     pub indentation_start: AbsoluteSpan,
 }
 
-impl<T: Send> Report<T> for ExpectIndentation {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
-        Diagnostic {
+impl Report for ExpectIndentation {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some("this is not indented".to_string()),
@@ -241,7 +247,7 @@ impl<T: Send> Report<T> for ExpectIndentation {
                 self.indentation_start,
                 Some("this colon starts the indentation level".to_string()),
             )],
-        }
+        })
     }
 }
 
@@ -273,11 +279,12 @@ pub struct InvalidNewIndentationLevel {
     pub found_indentation: usize,
 }
 
-impl<T: Send> Report<T> for InvalidNewIndentationLevel {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
-        Diagnostic {
+impl Report for InvalidNewIndentationLevel {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -299,7 +306,7 @@ impl<T: Send> Report<T> for InvalidNewIndentationLevel {
                     self.latest_indentation
                 )),
             )],
-        }
+        })
     }
 }
 
@@ -326,11 +333,12 @@ pub struct UnexpectedClosingDelimiter {
     pub closing_delimiter: DelimiterKind,
 }
 
-impl<T: Send> Report<T> for UnexpectedClosingDelimiter {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
-        Diagnostic {
+impl Report for UnexpectedClosingDelimiter {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -343,7 +351,7 @@ impl<T: Send> Report<T> for UnexpectedClosingDelimiter {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -375,13 +383,14 @@ pub struct MismatchedClosingDelimiter {
     pub opening_delimiter: DelimiterKind,
 }
 
-impl<T: Send> Report<T> for MismatchedClosingDelimiter {
-    type Location = ByteIndex;
-
-    async fn report(&self, _: T) -> Diagnostic<Self::Location> {
+impl Report for MismatchedClosingDelimiter {
+    async fn report(
+        &self,
+        _: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
         let opening_delimiter_p = self.opening_delimiter.opening_character();
         let closing_delimiter_p = self.closing_delimiter.closing_character();
-        Diagnostic {
+        Ok(Diagnostic {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -401,7 +410,7 @@ impl<T: Send> Report<T> for MismatchedClosingDelimiter {
                     "has an opening delimiter `{opening_delimiter_p}`",
                 )),
             )],
-        }
+        })
     }
 }
 
@@ -450,19 +459,20 @@ impl Error {
     }
 }
 
-impl<T: Send> Report<T> for Error {
-    type Location = ByteIndex;
-
-    async fn report(&self, param: T) -> Diagnostic<Self::Location> {
+impl Report for Error {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
         match self {
-            Self::UndelimitedDelimiter(err) => err.report(param).await,
-            Self::UnterminatedStringLiteral(err) => err.report(param).await,
-            Self::InvalidEscapeSequence(err) => err.report(param).await,
-            Self::InvalidIndentation(err) => err.report(param).await,
-            Self::InvalidNewIndentationLevel(err) => err.report(param).await,
-            Self::UnexpectedClosingDelimiter(err) => err.report(param).await,
-            Self::MismatchedClosingDelimiter(err) => err.report(param).await,
-            Self::ExpectIndentation(err) => err.report(param).await,
+            Self::UndelimitedDelimiter(err) => err.report(engine).await,
+            Self::UnterminatedStringLiteral(err) => err.report(engine).await,
+            Self::InvalidEscapeSequence(err) => err.report(engine).await,
+            Self::InvalidIndentation(err) => err.report(engine).await,
+            Self::InvalidNewIndentationLevel(err) => err.report(engine).await,
+            Self::UnexpectedClosingDelimiter(err) => err.report(engine).await,
+            Self::MismatchedClosingDelimiter(err) => err.report(engine).await,
+            Self::ExpectIndentation(err) => err.report(engine).await,
         }
     }
 }
