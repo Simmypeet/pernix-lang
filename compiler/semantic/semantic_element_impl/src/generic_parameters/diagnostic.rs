@@ -1,6 +1,6 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -42,13 +42,12 @@ pub enum Diagnostic {
     ),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
             Self::MisorderedGenericParameter(diagnostic) => {
@@ -91,14 +90,13 @@ pub struct MisorderedGenericParameter {
     pub generic_parameter_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for MisorderedGenericParameter {
-    type Location = ByteIndex;
-
+impl Report for MisorderedGenericParameter {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_parameter_span).await,
                 match self.generic_kind {
@@ -118,7 +116,7 @@ impl Report<&TrackedEngine> for MisorderedGenericParameter {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -140,14 +138,13 @@ pub struct DefaultGenericParameterMustBeTrailing {
     pub invalid_generic_default_parameter_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for DefaultGenericParameterMustBeTrailing {
-    type Location = ByteIndex;
-
+impl Report for DefaultGenericParameterMustBeTrailing {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine
                     .to_absolute_span(
@@ -161,7 +158,7 @@ impl Report<&TrackedEngine> for DefaultGenericParameterMustBeTrailing {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -186,15 +183,12 @@ pub struct GenericParameterRedefinition<T> {
     pub duplicating_generic_parameter_span: RelativeSpan,
 }
 
-impl<T: GenericParameter> Report<&TrackedEngine>
-    for GenericParameterRedefinition<T>
-{
-    type Location = ByteIndex;
-
+impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let qualified_name = engine
             .get_qualified_name(self.existing_generic_parameter_id.parent_id)
             .await;
@@ -210,7 +204,7 @@ impl<T: GenericParameter> Report<&TrackedEngine>
                 .get(self.existing_generic_parameter_id.id)
                 .unwrap();
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine
                     .to_absolute_span(&self.duplicating_generic_parameter_span)
@@ -232,6 +226,6 @@ impl<T: GenericParameter> Report<&TrackedEngine>
             } else {
                 Vec::new()
             },
-        }
+        })
     }
 }

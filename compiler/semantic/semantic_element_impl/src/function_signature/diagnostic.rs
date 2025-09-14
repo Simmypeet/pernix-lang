@@ -1,5 +1,5 @@
 use pernixc_diagnostic::Report;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -24,13 +24,12 @@ pub enum Diagnostic {
     TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::Resolution(diag) => diag.report(parameter).await,
             Self::TypeSystem(diag) => diag.report(parameter).await,

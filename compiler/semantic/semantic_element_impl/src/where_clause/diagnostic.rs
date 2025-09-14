@@ -2,16 +2,14 @@
 
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::diagnostic as resolution_diagnostic;
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::ByteIndex;
+use pernixc_source_file::{get_source_file_path, ByteIndex};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
-    kind::get_kind,
-    name::get_qualified_name,
-    source_map::{get_source_file_path, to_absolute_span},
+    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
 };
 use pernixc_target::Global;
 use pernixc_term::{lifetime, r#type::Type};
@@ -42,13 +40,12 @@ pub enum Diagnostic {
     ),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::Resolution(d) => d.report(engine).await,
             Self::HigherRankedLifetimeRedefinition(d) => d.report(engine).await,
@@ -80,14 +77,13 @@ pub struct HigherRankedLifetimeRedefinition {
     pub redefinition_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for HigherRankedLifetimeRedefinition {
-    type Location = ByteIndex;
-
+impl Report for HigherRankedLifetimeRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some(
@@ -100,7 +96,7 @@ impl Report<&TrackedEngine> for HigherRankedLifetimeRedefinition {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -148,13 +144,12 @@ pub struct UnexpectedSymbolInPredicate {
     pub qualified_identifier_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for UnexpectedSymbolInPredicate {
-    type Location = ByteIndex;
-
+impl Report for UnexpectedSymbolInPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let found_symbol_qualified_name =
             engine.get_qualified_name(self.found_id).await;
         let symbol_kind = engine.get_kind(self.found_id).await;
@@ -164,7 +159,7 @@ impl Report<&TrackedEngine> for UnexpectedSymbolInPredicate {
             PredicateKind::Marker => "marker",
         };
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.qualified_identifier_span).await,
                 Some(format!(
@@ -183,7 +178,7 @@ impl Report<&TrackedEngine> for UnexpectedSymbolInPredicate {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -208,14 +203,13 @@ pub struct UnexpectedTypeEqualityPredicate {
     pub found_type: Type,
 }
 
-impl Report<&TrackedEngine> for UnexpectedTypeEqualityPredicate {
-    type Location = ByteIndex;
-
+impl Report for UnexpectedTypeEqualityPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
-        pernixc_diagnostic::Diagnostic {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.invalid_lhs_type_span).await,
                 None,
@@ -226,7 +220,7 @@ impl Report<&TrackedEngine> for UnexpectedTypeEqualityPredicate {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 
@@ -251,13 +245,12 @@ pub struct ForallLifetimeIsNotAllowedInOutlivesPredicate {
     pub forall_lifetimes: Vec<lifetime::Forall>,
 }
 
-impl Report<&TrackedEngine> for ForallLifetimeIsNotAllowedInOutlivesPredicate {
-    type Location = ByteIndex;
-
+impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let mut forall_lifetimes = Vec::new();
         for forall in &self.forall_lifetimes {
             match forall {
@@ -283,7 +276,7 @@ impl Report<&TrackedEngine> for ForallLifetimeIsNotAllowedInOutlivesPredicate {
         }
         let forall_lifetimes = forall_lifetimes.join(", ");
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.forall_lifetime_span).await,
                 Some(format!(
@@ -297,7 +290,7 @@ impl Report<&TrackedEngine> for ForallLifetimeIsNotAllowedInOutlivesPredicate {
             severity: Severity::Error,
             help_message: None,
             related: Vec::new(),
-        }
+        })
     }
 }
 

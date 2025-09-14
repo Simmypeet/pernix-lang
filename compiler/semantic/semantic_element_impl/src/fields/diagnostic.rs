@@ -1,6 +1,6 @@
 use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
@@ -29,13 +29,12 @@ pub enum Diagnostic {
     FieldMoreAccessibleThanStruct(FieldMoreAccessibleThanStruct),
 }
 
-impl pernixc_diagnostic::Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl pernixc_diagnostic::Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(parameter).await,
             Self::TypeSystem(diagnostic) => diagnostic.report(parameter).await,
@@ -76,13 +75,12 @@ pub struct FieldRedefinition {
     pub struct_id: pernixc_target::Global<pernixc_symbol::ID>,
 }
 
-impl pernixc_diagnostic::Report<&TrackedEngine> for FieldRedefinition {
-    type Location = ByteIndex;
-
+impl pernixc_diagnostic::Report for FieldRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<ByteIndex> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         use pernixc_diagnostic::{Highlight, Severity};
         use pernixc_symbol::{
             name::get_qualified_name, source_map::to_absolute_span,
@@ -104,7 +102,7 @@ impl pernixc_diagnostic::Report<&TrackedEngine> for FieldRedefinition {
             Vec::new()
         };
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight,
             message: format!(
                 "field `{}` is already defined in struct `{}`",
@@ -115,7 +113,7 @@ impl pernixc_diagnostic::Report<&TrackedEngine> for FieldRedefinition {
                 "consider using a different field name".to_string(),
             ),
             related,
-        }
+        })
     }
 }
 
@@ -149,15 +147,12 @@ pub struct FieldMoreAccessibleThanStruct {
     pub struct_id: pernixc_target::Global<pernixc_symbol::ID>,
 }
 
-impl pernixc_diagnostic::Report<&TrackedEngine>
-    for FieldMoreAccessibleThanStruct
-{
-    type Location = ByteIndex;
-
+impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<ByteIndex> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         use pernixc_diagnostic::{Highlight, Severity};
         use pernixc_symbol::{
             accessibility::accessibility_description, name::get_qualified_name,
@@ -190,7 +185,7 @@ impl pernixc_diagnostic::Report<&TrackedEngine>
             ))
         };
 
-        pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Diagnostic {
             primary_highlight,
             message: format!(
                 "field `{}` is more accessible than struct `{}`",
@@ -202,6 +197,6 @@ impl pernixc_diagnostic::Report<&TrackedEngine>
                  or making the struct {field_accessibility_description}"
             )),
             related: Vec::new(),
-        }
+        })
     }
 }

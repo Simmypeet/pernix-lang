@@ -46,7 +46,7 @@ pub async fn single_rendered_executor(
             .await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
@@ -55,7 +55,7 @@ pub async fn single_rendered_executor(
             engine.query(&BuildDiagnosticKey::new(WhereClauseKey(id))).await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
@@ -64,7 +64,7 @@ pub async fn single_rendered_executor(
             engine.query(&BuildDiagnosticKey::new(TypeAliasKey(id))).await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
@@ -73,7 +73,7 @@ pub async fn single_rendered_executor(
             engine.query(&BuildDiagnosticKey::new(FieldsKey(id))).await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
@@ -82,7 +82,7 @@ pub async fn single_rendered_executor(
             engine.query(&BuildDiagnosticKey::new(VariantKey(id))).await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
@@ -94,7 +94,7 @@ pub async fn single_rendered_executor(
             .await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
@@ -104,7 +104,7 @@ pub async fn single_rendered_executor(
             .await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
@@ -112,14 +112,14 @@ pub async fn single_rendered_executor(
         let diags = engine.query(&BuildDiagnosticKey::new(IRKey(id))).await?;
 
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 
     {
         let diags = engine.query(&wf_check::Key(id)).await?;
         for diag in diags.iter() {
-            final_diagnostics.push(diag.report(engine).await);
+            final_diagnostics.push(diag.report(engine).await?);
         }
     }
 

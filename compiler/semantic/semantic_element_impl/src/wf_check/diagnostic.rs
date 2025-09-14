@@ -1,6 +1,6 @@
 use pernixc_diagnostic::{Highlight, Report};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::implements_arguments::get_implements_argument;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
@@ -31,13 +31,12 @@ pub enum Diagnostic {
     AdtImplementationIsNotGeneralEnough(AdtImplementationIsNotGeneralEnough),
 }
 
-impl Report<&TrackedEngine> for Diagnostic {
-    type Location = ByteIndex;
-
+impl Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         match self {
             Self::TypeSystem(diag) => diag.report(parameter).await,
             Self::MismatchedImplementationArguments(diag) => {
@@ -76,13 +75,12 @@ pub struct MismatchedImplementationArguments {
     pub instantiation_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for MismatchedImplementationArguments {
-    type Location = ByteIndex;
-
+impl Report for MismatchedImplementationArguments {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let impl_span = if let Some(span) =
             engine.get_span(self.adt_implementation_id).await
         {
@@ -97,7 +95,7 @@ impl Report<&TrackedEngine> for MismatchedImplementationArguments {
             .unwrap()
             .unwrap();
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(
                 "the generic arguments are not compatible with the generic \
                  arguments defined in the implementation",
@@ -141,7 +139,7 @@ impl Report<&TrackedEngine> for MismatchedImplementationArguments {
                     .into_iter()
                     .collect(),
             )
-            .build()
+            .build())
     }
 }
 
@@ -171,13 +169,12 @@ pub struct AdtImplementationIsNotGeneralEnough {
     pub instantiation_span: RelativeSpan,
 }
 
-impl Report<&TrackedEngine> for AdtImplementationIsNotGeneralEnough {
-    type Location = ByteIndex;
-
+impl Report for AdtImplementationIsNotGeneralEnough {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> pernixc_diagnostic::Diagnostic<Self::Location> {
+    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    {
         let span = engine.to_absolute_span(&self.instantiation_span).await;
         let impl_span = if let Some(span) =
             engine.get_span(self.adt_implementation_id).await
@@ -187,7 +184,7 @@ impl Report<&TrackedEngine> for AdtImplementationIsNotGeneralEnough {
             None
         };
 
-        pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Diagnostic::builder()
             .message(
                 "the struct/enum implementation is not general enough to \
                  satisfy the required forall lifetimes in the generic \
@@ -222,7 +219,7 @@ impl Report<&TrackedEngine> for AdtImplementationIsNotGeneralEnough {
                     .into_iter()
                     .collect(),
             )
-            .build()
+            .build())
     }
 }
 
