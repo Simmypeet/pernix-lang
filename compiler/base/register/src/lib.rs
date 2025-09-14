@@ -109,6 +109,10 @@ impl Registration {
     /// Registers all the key type to be skipped for persistence.
     pub fn register_skip_persistence(persistence: &mut Persistence) {
         for registration in inventory::iter::<Self> {
+            if !registration.skip_persistence_toggle {
+                continue;
+            }
+
             (registration.skip_persistence)(persistence);
         }
     }
