@@ -1458,6 +1458,127 @@ async fn persistence_input_invalidation() {
     assert!(engine.version() > first_version);
 }
 
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn persistence_set_same_input_no_recompute() {
+    let mut engine = Arc::new(Engine::default());
+
+    // Create and register the GetValueExecutor
+    let get_value_executor =
+        Arc::new(GetValueExecutor { call_count: AtomicUsize::new(0) });
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .runtime
+        .executor
+        .register(get_value_executor.clone());
+
+    let mut serde_extension = SelfRegistry::default();
+    serde_extension.register::<VariableMap>();
+    serde_extension.register::<GetValue>();
+
+    let tempdir = tempfile::tempdir().unwrap();
+
+    let mut persistence = Persistence::new(
+        tempdir.path().to_path_buf(),
+        Arc::new(serde_extension),
+    )
+    .unwrap();
+
+    // Don't save variable map to persistence
+    persistence.skip_cache_value::<VariableMap>();
+
+    Arc::get_mut(&mut engine).unwrap().runtime.persistence = Some(persistence);
+
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(
+                VariableMap,
+                Arc::new(
+                    [
+                        ("a".to_string(), 1),
+                        ("b".to_string(), 2),
+                        ("c".to_string(), 3),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .await;
+        })
+        .await;
+
+    let a = engine.tracked().query(&GetValue("a".to_string())).await.unwrap();
+    let b = engine.tracked().query(&GetValue("b".to_string())).await.unwrap();
+    let c = engine.tracked().query(&GetValue("c".to_string())).await.unwrap();
+
+    assert_eq!(a, Some(1));
+    assert_eq!(b, Some(2));
+    assert_eq!(c, Some(3));
+
+    assert_eq!(
+        get_value_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        3
+    ); // Called for a, b, c
+
+    let first_version = engine.version();
+
+    // save to persistence
+    Arc::get_mut(&mut engine).unwrap().save_database().unwrap();
+
+    // load the persistence
+    let database = Arc::get_mut(&mut engine)
+        .unwrap()
+        .runtime
+        .persistence
+        .as_ref()
+        .unwrap()
+        .load_database()
+        .unwrap();
+    Arc::get_mut(&mut engine).unwrap().database = database;
+
+    // set the same input again
+    Arc::get_mut(&mut engine)
+        .unwrap()
+        .input_session(async |x| {
+            x.set_input(
+                VariableMap,
+                Arc::new(
+                    [
+                        ("a".to_string(), 1),
+                        ("b".to_string(), 2),
+                        ("c".to_string(), 3),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .await;
+        })
+        .await;
+
+    // reset the call counts
+    get_value_executor.call_count.store(0, std::sync::atomic::Ordering::SeqCst);
+
+    let a = engine.tracked().query(&GetValue("a".to_string())).await.unwrap();
+    let b = engine.tracked().query(&GetValue("b".to_string())).await.unwrap();
+    let c = engine.tracked().query(&GetValue("c".to_string())).await.unwrap();
+
+    assert_eq!(a, Some(1));
+    assert_eq!(b, Some(2));
+    assert_eq!(c, Some(3));
+
+    // The GetValueExecutor should NOT have been called again since the
+    // VariableMap hasn't changed
+    assert_eq!(
+        get_value_executor.call_count.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+
+    // version should be the same as before saving
+    assert_eq!(engine.version(), first_version);
+}
+
 #[derive(
     Debug,
     Clone,
