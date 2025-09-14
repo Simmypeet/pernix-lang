@@ -11,25 +11,6 @@ use pernixc_source_file::{ByteIndex, SourceFile, Span};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::{Global, TargetID};
 
-/// A query for retrieving the a path of the given sourcce file ID.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Key,
-)]
-#[value(Arc<Path>)]
-#[extend(method(get_source_file_path), no_cyclic)]
-pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
-
 pernixc_register::register!(FilePathKey, FilePathExecutor);
 
 #[pernixc_query::executor(key(FilePathKey), name(FilePathExecutor))]

@@ -867,5 +867,26 @@ pub async fn calculate_path_id(
     )
 }
 
+/// A query for retrieving the a path of the given sourcce file ID.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<Path>)]
+#[extend(method(get_source_file_path), no_cyclic)]
+// we be implemented in the downstream crates
+pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
+
+
 #[cfg(test)]
 mod test;
