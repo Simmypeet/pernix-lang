@@ -37,9 +37,9 @@ impl Report for AlreadyBoundName {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the name `{}` has already been bound in the scope",
                 self.name

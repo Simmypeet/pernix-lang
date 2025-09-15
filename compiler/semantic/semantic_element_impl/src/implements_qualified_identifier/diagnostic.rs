@@ -48,7 +48,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::Resolution(diag) => diag.report(parameter).await,
@@ -114,7 +114,7 @@ impl Report for InvalidSymbolForImplements {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let qualified_name = engine.get_qualified_name(self.symbol_id).await;
         let kind = engine.get_kind(self.symbol_id).await;
@@ -122,7 +122,7 @@ impl Report for InvalidSymbolForImplements {
         let span =
             engine.to_absolute_span(&self.qualified_identifier_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("the symbol cannot be implemented")
             .primary_highlight(
@@ -169,12 +169,12 @@ impl Report for InvalidTypeForImplements {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span =
             engine.to_absolute_span(&self.qualified_identifier_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("the type cannot be implemented")
             .primary_highlight(
@@ -222,12 +222,12 @@ impl Report for MarkerImplementsNotFinal {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span =
             engine.to_absolute_span(&self.qualified_identifier_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("the marker implements is not final")
             .primary_highlight(Highlight::builder().span(span).build())
@@ -261,7 +261,7 @@ impl Report for MemberInMarkerImplementationIsNotAllowed {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let qualified_name =
             engine.get_qualified_name(self.implements_member_id).await;
@@ -279,7 +279,7 @@ impl Report for MemberInMarkerImplementationIsNotAllowed {
             None => None,
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("member in marker implementation is not allowed")
             .maybe_primary_highlight(span.map(|x| {
@@ -336,7 +336,7 @@ impl Report for TraitMemberNotImplemented {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let implementation_span =
             match engine.get_span(self.implementation_id).await {
@@ -381,7 +381,7 @@ impl Report for TraitMemberNotImplemented {
             format!("missing implementations for: {}", member_names.join(", "))
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(message)
             .maybe_primary_highlight(implementation_span.map(|x| {
@@ -418,7 +418,7 @@ impl Report for TraitMemberKindMismatch {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let member_name = engine.get_qualified_name(self.trait_member_id).await;
         let trait_kind = engine.get_kind(self.trait_member_id).await;
@@ -435,7 +435,7 @@ impl Report for TraitMemberKindMismatch {
             None => None,
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("trait member kind mismatch")
             .maybe_primary_highlight(impl_span.map(|x| {
@@ -490,7 +490,7 @@ impl Report for ExtraneousImplementationMember {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let member_name =
             engine.get_qualified_name(self.implementation_member_id).await;
@@ -501,7 +501,7 @@ impl Report for ExtraneousImplementationMember {
             None => None,
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("extraneous implementation member")
             .maybe_primary_highlight(span.map(|x| {
@@ -548,7 +548,7 @@ impl Report for InaccessibleTraitMember {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let member_name = engine.get_qualified_name(self.trait_member_id).await;
         let member_kind = engine.get_kind(self.trait_member_id).await;
@@ -565,7 +565,7 @@ impl Report for InaccessibleTraitMember {
                 None => None,
             };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("trait member is not accessible")
             .maybe_primary_highlight(impl_member_span.map(|x| {
@@ -623,14 +623,14 @@ impl Report for AdtImplementationCannotBeNegative {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = match engine.get_span(self.implementation_id).await {
             Some(span) => Some(engine.to_absolute_span(&span).await),
             None => None,
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("cannot `delete` an `implements` on `struct` or `enum`")
             .maybe_primary_highlight(span.map(|x| {
@@ -671,14 +671,14 @@ impl Report for AdtImplementationCannotBeFinal {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = match engine.get_span(self.implementation_id).await {
             Some(span) => Some(engine.to_absolute_span(&span).await),
             None => None,
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("`implements` on `struct` or `enum` cannot be final")
             .maybe_primary_highlight(span.map(|x| {
@@ -721,7 +721,7 @@ impl Report for TraitMemberCannotHaveAccessModifier {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let member_name =
             engine.get_qualified_name(self.implementation_member_id).await;
@@ -749,7 +749,7 @@ impl Report for TraitMemberCannotHaveAccessModifier {
             }
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(
                 "trait implementation members cannot have access modifiers",
@@ -793,7 +793,7 @@ impl Report for AdtMemberMissingAccessModifier {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let member_name =
             engine.get_qualified_name(self.implementation_member_id).await;
@@ -804,7 +804,7 @@ impl Report for AdtMemberMissingAccessModifier {
             None => None,
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(
                 "struct or enum implementation members must have access \

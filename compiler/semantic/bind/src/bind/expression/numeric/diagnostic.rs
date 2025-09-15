@@ -53,11 +53,11 @@ impl Report for InvalidNumericSuffix {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.suffix_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .message("invalid numeric suffix")
             .primary_highlight(
                 Highlight::builder()
@@ -98,11 +98,11 @@ impl Report for FloatingPointLiteralHasIntegralSuffix {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.numeric_literal_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .message("floating point literal has integral suffix")
             .primary_highlight(
                 Highlight::builder()

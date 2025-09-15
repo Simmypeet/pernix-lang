@@ -66,7 +66,7 @@ impl Report for MismatchedQualifierForReferenceOf {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let message = if self.is_behind_reference {
             format!(
@@ -82,7 +82,7 @@ impl Report for MismatchedQualifierForReferenceOf {
             )
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
@@ -130,9 +130,9 @@ impl Report for FoundPackTuplePatternInReferenceBoundTupleType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .message(
                 "can't bind a tuple pattern to a reference bound tuple type \
                  with pack element",

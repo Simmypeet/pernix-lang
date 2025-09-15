@@ -46,7 +46,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(engine).await,
@@ -94,9 +94,9 @@ impl Report for MisorderedGenericParameter {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_parameter_span).await,
                 match self.generic_kind {
@@ -142,9 +142,9 @@ impl Report for DefaultGenericParameterMustBeTrailing {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine
                     .to_absolute_span(
@@ -187,7 +187,7 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let qualified_name = engine
             .get_qualified_name(self.existing_generic_parameter_id.parent_id)
@@ -204,7 +204,7 @@ impl<T: GenericParameter> Report for GenericParameterRedefinition<T> {
                 .get(self.existing_generic_parameter_id.id)
                 .unwrap();
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine
                     .to_absolute_span(&self.duplicating_generic_parameter_span)

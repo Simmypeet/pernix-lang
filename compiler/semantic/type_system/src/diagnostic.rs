@@ -43,7 +43,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::TypeCalculatingOverflow(diagnostic) => {
@@ -94,9 +94,9 @@ impl Report for TypeCalculatingOverflow {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.overflow_span).await)
@@ -142,9 +142,9 @@ impl Report for TypeCheckOverflow {
     async fn report(
         &self,
         tracked_engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -198,9 +198,9 @@ impl Report for PredicateSatisfiabilityOverflow {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -268,9 +268,9 @@ impl Report for UnsatisfiedPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(
@@ -337,7 +337,7 @@ impl Report for ImplementationIsNotGeneralEnough {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let implementation_span = if let Some(span) =
             engine.get_span(self.resolvable_implementation_id).await
@@ -347,7 +347,7 @@ impl Report for ImplementationIsNotGeneralEnough {
             None
         };
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(

@@ -3,7 +3,7 @@
 
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use pernixc_diagnostic::{ByteIndex, Diagnostic, Highlight, Report, Severity};
+use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::AbsoluteSpan;
@@ -37,8 +37,8 @@ impl Report for UndelimitedDelimiter {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
-        Ok(Diagnostic {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(
                 self.opening_span,
                 Some(format!("need to be cloesd with `{}` pair", match self
@@ -84,8 +84,8 @@ impl Report for UnterminatedStringLiteral {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
-        Ok(Diagnostic {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some("need to be closed with a double quote".to_string()),
@@ -121,8 +121,8 @@ impl Report for InvalidEscapeSequence {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
-        Ok(Diagnostic {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(self.span, None)),
             message: "found an invalid escape sequence".to_string(),
             severity: Severity::Error,
@@ -182,8 +182,8 @@ impl Report for InvalidIndentation {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
-        Ok(Diagnostic {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!("found {} space(s)", self.found_indentation)),
@@ -234,8 +234,8 @@ impl Report for ExpectIndentation {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
-        Ok(Diagnostic {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some("this is not indented".to_string()),
@@ -283,8 +283,8 @@ impl Report for InvalidNewIndentationLevel {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
-        Ok(Diagnostic {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -337,8 +337,8 @@ impl Report for UnexpectedClosingDelimiter {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
-        Ok(Diagnostic {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -387,10 +387,10 @@ impl Report for MismatchedClosingDelimiter {
     async fn report(
         &self,
         _: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
         let opening_delimiter_p = self.opening_delimiter.opening_character();
         let closing_delimiter_p = self.closing_delimiter.closing_character();
-        Ok(Diagnostic {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(
                 self.span,
                 Some(format!(
@@ -463,7 +463,7 @@ impl Report for Error {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<Diagnostic<ByteIndex>, executor::CyclicError> {
+    ) -> Result<Rendered<ByteIndex>, executor::CyclicError> {
         match self {
             Self::UndelimitedDelimiter(err) => err.report(engine).await,
             Self::UnterminatedStringLiteral(err) => err.report(engine).await,

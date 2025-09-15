@@ -49,7 +49,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::MoreThanOneUnpackedInTupleType(diagnostic) => {
@@ -103,9 +103,9 @@ impl Report for ThisNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.this_span).await,
                 Some(
@@ -150,12 +150,12 @@ impl Report for LifetimeParameterNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let referring_site_qualified_name =
             engine.get_qualified_name(self.referring_site).await;
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
@@ -198,9 +198,9 @@ impl Report for UnexpectedInference {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.unexpected_span).await,
                 Some(format!(
@@ -252,13 +252,13 @@ impl Report for ExpectType {
     async fn report(
         &self,
         table: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let qualified_name =
             table.get_qualified_name(self.resolved_global_id).await;
         let kind = table.get_kind(self.resolved_global_id).await;
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 table.to_absolute_span(&self.non_type_symbol_span).await,
                 Some(format!(
@@ -297,9 +297,9 @@ impl Report for MoreThanOneUnpackedInTupleType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.illegal_tuple_type_span).await,
                 None,
@@ -340,9 +340,9 @@ impl Report for MisorderedGenericArgument {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument).await,
                 match self.generic_kind {
@@ -398,9 +398,9 @@ impl Report for MismatchedGenericArgumentCount {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_identifier_span).await,
                 Some(format!(
@@ -448,11 +448,11 @@ impl Report for NoGenericArgumentsRequired {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let qualified_name = engine.get_qualified_name(self.global_id).await;
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.generic_argument_span).await,
                 Some(format!(

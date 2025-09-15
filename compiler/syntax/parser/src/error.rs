@@ -1,7 +1,7 @@
 //! Contains the definition of [`Error`] struct
 
 use pernixc_arena::ID;
-use pernixc_diagnostic::{ByteIndex, Diagnostic, Highlight, Report};
+use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report};
 use pernixc_hash::HashSet;
 use pernixc_lexical::{
     kind,
@@ -239,7 +239,7 @@ impl Report for Error {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let expected_string = self
             .expecteds
@@ -254,7 +254,7 @@ impl Report for Error {
         let message =
             format!("unexpected {found_string}, expected {expected_string}");
 
-        Ok(Diagnostic {
+        Ok(Rendered {
             primary_highlight: Some(Highlight::new(found_span, None)),
             message,
             severity: pernixc_diagnostic::Severity::Error,

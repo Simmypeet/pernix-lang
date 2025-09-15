@@ -38,7 +38,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::SymbolIsMoreAccessibleThanParent(diagnostic) => {
@@ -77,7 +77,7 @@ impl Report for SymbolIsMoreAccessibleThanParent {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let symbol_id = self.target_id.make_global(self.symbol_id);
         let parent_id = self.target_id.make_global(self.parent_id);
@@ -112,7 +112,7 @@ impl Report for SymbolIsMoreAccessibleThanParent {
             )
             .await;
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: symbol_span.map(|span| {
                 Highlight::new(
                     span,

@@ -57,13 +57,13 @@ impl Report for ExpectedAssociatedValue {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let qualified_identifier =
             parameter.get_qualified_name(self.variant_id).await;
         let abs_span = parameter.to_absolute_span(&self.span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "expected associated value for variant \
                  `{qualified_identifier}`"
@@ -110,13 +110,13 @@ impl Report for SymbolCannotBeUsedAsAnExpression {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let qualified_name = parameter.get_qualified_name(self.symbol).await;
         let abs_span = parameter.to_absolute_span(&self.span).await;
         let kind = parameter.get_kind(self.symbol).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the symbol `{} {qualified_name}` cannot be used as an \
                  expression",

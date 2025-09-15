@@ -95,7 +95,7 @@ impl Report for MismatchedPatternBindingType {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.span).await;
 
@@ -112,7 +112,7 @@ impl Report for MismatchedPatternBindingType {
             )
             .await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(format!(
                 "mismatched pattern binding type: expected {} but found `{}`",
@@ -155,11 +155,11 @@ impl Report for TooLargeNumericLiteral {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("numeric literal is too large for pattern")
             .primary_highlight(
@@ -198,12 +198,12 @@ impl Report for MoreThanOnePackedTuplePattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span =
             engine.to_absolute_span(&self.illegal_tuple_pattern_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("more than one packed tuple pattern found")
             .primary_highlight(
@@ -245,11 +245,11 @@ impl Report for MismatchedTuplePatternLength {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.pattern_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("mismatched tuple pattern length")
             .primary_highlight(
@@ -289,11 +289,11 @@ impl Report for ExpectedTuplePackPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.illegal_tuple_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("expected a packed tuple pattern here")
             .primary_highlight(
@@ -343,7 +343,7 @@ impl Report for AlreadyBoundFieldPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.rebound_span).await;
         let fields = engine.get_fields(self.struct_id).await.unwrap();
@@ -355,7 +355,7 @@ impl Report for AlreadyBoundFieldPattern {
         let first_bound_span =
             engine.to_absolute_span(&self.first_bound_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(format!(
                 "the field `{field_name}` is already bound in the pattern",
@@ -409,7 +409,7 @@ impl Report for UnboundFields {
     async fn report(
         &self,
         table: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let fields = table.get_fields(self.struct_id).await.unwrap();
         let field_names = self
@@ -418,7 +418,7 @@ impl Report for UnboundFields {
             .map(|&field_id| fields.fields.get(field_id).unwrap().name.clone())
             .collect::<Vec<_>>();
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(format!(
                 "not all fields are bound in the pattern: {}",
@@ -468,12 +468,12 @@ impl Report for ExpectedAssociatedPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let variant_name = engine.get_qualified_name(self.variant_id).await;
         let span = engine.to_absolute_span(&self.pattern_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(format!(
                 "the variant `{variant_name}` expects an associated pattern",
@@ -522,12 +522,12 @@ impl Report for UnexpectedAssociatedPattern {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let variant_name = engine.get_qualified_name(self.variant_id).await;
         let span = engine.to_absolute_span(&self.associated_pattern_span).await;
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message(format!(
                 "the variant `{variant_name}` does not have an associated \

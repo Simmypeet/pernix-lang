@@ -35,7 +35,7 @@ impl Report for ExpectedStruct {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let span = engine.to_absolute_span(&self.span).await;
 
@@ -52,7 +52,7 @@ impl Report for ExpectedStruct {
             .await
             .unwrap();
 
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .severity(Severity::Error)
             .message("expected a struct type")
             .primary_highlight(

@@ -887,6 +887,5 @@ pub async fn calculate_path_id(
 // we be implemented in the downstream crates
 pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
 
-
 #[cfg(test)]
 mod test;

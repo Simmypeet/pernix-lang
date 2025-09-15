@@ -33,7 +33,7 @@ impl pernixc_diagnostic::Report for Diagnostic {
     async fn report(
         &self,
         parameter: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::Resolution(diagnostic) => diagnostic.report(parameter).await,
@@ -79,7 +79,7 @@ impl pernixc_diagnostic::Report for FieldRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         use pernixc_diagnostic::{Highlight, Severity};
         use pernixc_symbol::{
@@ -102,7 +102,7 @@ impl pernixc_diagnostic::Report for FieldRedefinition {
             Vec::new()
         };
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight,
             message: format!(
                 "field `{}` is already defined in struct `{}`",
@@ -151,7 +151,7 @@ impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         use pernixc_diagnostic::{Highlight, Severity};
         use pernixc_symbol::{
@@ -185,7 +185,7 @@ impl pernixc_diagnostic::Report for FieldMoreAccessibleThanStruct {
             ))
         };
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight,
             message: format!(
                 "field `{}` is more accessible than struct `{}`",

@@ -68,7 +68,7 @@ macro_rules! diagnostic_enum {
                 &self,
                 engine: &pernixc_query::TrackedEngine,
             ) -> Result<
-                pernixc_diagnostic::Diagnostic<pernixc_diagnostic::ByteIndex>,
+                pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex>,
                 pernixc_query::runtime::executor::CyclicError
             > {
                 match self {
@@ -108,9 +108,9 @@ impl Report for ExpectedLValue {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic::builder()
+        Ok(pernixc_diagnostic::Rendered::builder()
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.expression_span).await)

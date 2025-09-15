@@ -26,17 +26,15 @@ use crate::{
 #[pernixc_query::query(
     key(SingleRenderedKey),
     executor(SingleRenderedExecutor),
-    value(Arc<[pernixc_diagnostic::Diagnostic<ByteIndex>]>),
+    value(Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>),
     id(Global<pernixc_symbol::ID>)
 )]
 #[allow(clippy::cognitive_complexity)]
 pub async fn single_rendered_executor(
     id: Global<pernixc_symbol::ID>,
     engine: &TrackedEngine,
-) -> Result<
-    Arc<[pernixc_diagnostic::Diagnostic<ByteIndex>]>,
-    executor::CyclicError,
-> {
+) -> Result<Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>, executor::CyclicError>
+{
     let mut final_diagnostics = Vec::new();
     let kind = engine.get_kind(id).await;
 
@@ -131,14 +129,14 @@ pernixc_register::register!(SingleRenderedKey, SingleRenderedExecutor);
 #[pernixc_query::query(
     key(AllRenderedKey),
     executor(AllRenderedExecutor),
-    value(Arc<[Arc<[pernixc_diagnostic::Diagnostic<ByteIndex>]>]>),
+    value(Arc<[Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>]>),
     id(TargetID)
 )]
 pub async fn all_rendered_executor(
     id: TargetID,
     engine: &TrackedEngine,
 ) -> Result<
-    Arc<[Arc<[pernixc_diagnostic::Diagnostic<ByteIndex>]>]>,
+    Arc<[Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>]>,
     executor::CyclicError,
 > {
     scoped!(|handles| async move {

@@ -44,7 +44,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::Resolution(d) => d.report(engine).await,
@@ -81,9 +81,9 @@ impl Report for HigherRankedLifetimeRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some(
@@ -148,7 +148,7 @@ impl Report for UnexpectedSymbolInPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let found_symbol_qualified_name =
             engine.get_qualified_name(self.found_id).await;
@@ -159,7 +159,7 @@ impl Report for UnexpectedSymbolInPredicate {
             PredicateKind::Marker => "marker",
         };
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.qualified_identifier_span).await,
                 Some(format!(
@@ -207,9 +207,9 @@ impl Report for UnexpectedTypeEqualityPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.invalid_lhs_type_span).await,
                 None,
@@ -249,7 +249,7 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let mut forall_lifetimes = Vec::new();
         for forall in &self.forall_lifetimes {
@@ -276,7 +276,7 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
         }
         let forall_lifetimes = forall_lifetimes.join(", ");
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.forall_lifetime_span).await,
                 Some(format!(

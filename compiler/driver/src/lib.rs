@@ -37,7 +37,7 @@ impl ReportTerm<'_> {
 }
 
 fn pernix_diagnostic_to_codespan_diagnostic(
-    diagnostic: &pernixc_diagnostic::Diagnostic<ByteIndex>,
+    diagnostic: &pernixc_diagnostic::Rendered<ByteIndex>,
 ) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
     let mut result = match diagnostic.severity {
         pernixc_diagnostic::Severity::Error => {

@@ -44,7 +44,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::SymbolNotFound(err) => err.report(engine).await,
@@ -133,7 +133,7 @@ impl Report for SymbolNotFound {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let searched_item_id_qualified_name = match self.searched_item_id {
             Some(id) => Some(engine.get_qualified_name(id).await),
@@ -201,7 +201,7 @@ impl Report for SymbolNotFound {
             },
         );
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.resolution_span).await,
                 Some(span_message),
@@ -245,14 +245,14 @@ impl Report for SymbolIsNotAccessible {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let referring_site_qualified_name =
             engine.get_qualified_name(self.referring_site).await;
         let referred_qualified_name =
             engine.get_qualified_name(self.referred).await;
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.referred_span).await,
                 Some(format!(
@@ -294,14 +294,14 @@ impl Report for ExpectModule {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let found_symbol_qualified_name =
             engine.get_qualified_name(self.found_id).await;
 
         let kind = engine.get_kind(self.found_id).await;
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.module_path).await,
                 None,

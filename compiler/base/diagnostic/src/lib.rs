@@ -26,7 +26,7 @@ pub trait Report {
     fn report<'s, 'e>(
         &'s self,
         parameter: &'e TrackedEngine,
-    ) -> impl Future<Output = Result<Diagnostic<ByteIndex>, executor::CyclicError>>
+    ) -> impl Future<Output = Result<Rendered<ByteIndex>, executor::CyclicError>>
            + Send
            + use<'s, 'e, Self>;
 }
@@ -83,8 +83,8 @@ pub struct Highlight<L> {
     pub message: Option<String>,
 }
 
-/// A struct containing all the information required to display the diagnostic
-/// to the user.
+/// A strucut representing a diagnostic message ready to be displayed to the
+/// user.
 #[derive(
     Debug,
     Clone,
@@ -98,7 +98,7 @@ pub struct Highlight<L> {
     StableHash,
     Builder,
 )]
-pub struct Diagnostic<L> {
+pub struct Rendered<L> {
     /// The span location where the diagnostic occurred.
     pub primary_highlight: Option<Highlight<L>>,
 

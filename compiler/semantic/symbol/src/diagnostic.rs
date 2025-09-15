@@ -52,7 +52,7 @@ impl Report for Diagnostic {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         match self {
             Self::ItemRedefinition(diagnostic) => {
@@ -97,13 +97,13 @@ impl Report for ItemRedefinition {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let existing_symbol_span = engine.get_span(self.existing_id).await;
         let existing_symbol_name = engine.get_name(self.existing_id).await;
         let in_name = engine.get_qualified_name(self.in_id).await;
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.redefinition_span).await,
                 Some("redefinition here".to_string()),
@@ -156,9 +156,9 @@ impl Report for RecursiveFileRequest {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: Some(Highlight::new(
                 engine.to_absolute_span(&self.submodule_span).await,
                 Some(
@@ -210,7 +210,7 @@ impl Report for SourceFileLoadFail {
     async fn report(
         &self,
         engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Diagnostic<ByteIndex>, executor::CyclicError>
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
     {
         let (highlight, context_message) = match self.submodule_span.as_ref() {
             Some(submodule_span) => (
@@ -229,7 +229,7 @@ impl Report for SourceFileLoadFail {
             ),
         };
 
-        Ok(pernixc_diagnostic::Diagnostic {
+        Ok(pernixc_diagnostic::Rendered {
             primary_highlight: highlight,
             message: format!("{}: {}", context_message, self.error_message),
             severity: pernixc_diagnostic::Severity::Error,
@@ -256,7 +256,7 @@ impl Report for SourceFileLoadFail {
     StableHash,
     pernixc_query::Key,
 )]
-#[value(Arc<[pernixc_diagnostic::Diagnostic<pernixc_source_file::ByteIndex>]>)]
+#[value(Arc<[pernixc_diagnostic::Rendered<pernixc_source_file::ByteIndex>]>)]
 pub struct RenderedKey(pub TargetID);
 
 pernixc_register::register!(RenderedKey, RenderedExecutor);
@@ -378,7 +378,7 @@ pub async fn rendered_executor(
     &RenderedKey(target_id): &RenderedKey,
     engine: &TrackedEngine,
 ) -> Result<
-    Arc<[pernixc_diagnostic::Diagnostic<ByteIndex>]>,
+    Arc<[pernixc_diagnostic::Rendered<ByteIndex>]>,
     pernixc_query::runtime::executor::CyclicError,
 > {
     scoped!(|file_diagnostics,
