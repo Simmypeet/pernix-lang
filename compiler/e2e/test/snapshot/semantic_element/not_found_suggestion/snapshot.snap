@@ -4,7 +4,7 @@ expression: clean_run
 ---
 stderr:
 error: the symbol could not be found
-  ╭─ compiler/e2e/test/snapshot/symbol/not_found_suggestion/main.pnx:1:23
+  ╭─ compiler/e2e/test/snapshot/semantic_element/not_found_suggestion/main.pnx:1:23
   │
 1 │ import target::inner::Firsts # extra character
   │                       ^^^^^^ the symbol named `Firsts` does not exist in `main::inner`
@@ -12,7 +12,7 @@ error: the symbol could not be found
   = did you mean `First`?
 
 error: the symbol could not be found
-  ╭─ compiler/e2e/test/snapshot/symbol/not_found_suggestion/main.pnx:2:23
+  ╭─ compiler/e2e/test/snapshot/semantic_element/not_found_suggestion/main.pnx:2:23
   │
 2 │ import target::inner::Secand # incorrect spelling
   │                       ^^^^^^ the symbol named `Secand` does not exist in `main::inner`
@@ -20,7 +20,7 @@ error: the symbol could not be found
   = did you mean `Second`?
 
 error: the symbol could not be found
-  ╭─ compiler/e2e/test/snapshot/symbol/not_found_suggestion/main.pnx:3:23
+  ╭─ compiler/e2e/test/snapshot/semantic_element/not_found_suggestion/main.pnx:3:23
   │
 3 │ import target::inner::Thir   # incomplete name
   │                       ^^^^ the symbol named `Thir` does not exist in `main::inner`
