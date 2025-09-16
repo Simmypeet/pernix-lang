@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mismatched types: expected `float32`, found `int32`
+  ╭─ compiler/e2e/test/snapshot/ir/variable/with_type_annotation/main.pnx:3:36
+  │
+3 │     let myVarMismatched: float32 = myVar
+  │                                    ^^^^^ expected `float32`, found `int32`
+  │
+  = ensure the expression type matches the expected type
+
+error: mismatched types: expected `(int32, float32)`, found `(bool, int32)`
+  ╭─ compiler/e2e/test/snapshot/ir/variable/with_type_annotation/main.pnx:5:37
+  │
+5 │     let another: (int32, float32) = myVarWithInference
+  │                                     ^^^^^^^^^^^^^^^^^^ expected `(int32, float32)`, found `(bool, int32)`
+  │
+  = ensure the expression type matches the expected type
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
