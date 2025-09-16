@@ -1,0 +1,41 @@
+public function test(myTuple: (int32, (float32, int32), float32)):
+    # basic, existing fields
+    myTuple.0 
+    myTuple.1.0 
+    myTuple.1.1 
+    myTuple.2 
+
+    # access, non-existing fields
+    myTuple.nonExistingField 
+    myTuple.1.nonExistingField
+
+    # access, out-of-bounds indices
+    myTuple.3 
+    myTuple.1.2 
+    myTuple.-2 
+    myTuple.1.-2
+
+    # very large index
+    myTuple.12345678901234567890123456789012345678901234567890
+
+public function testUnpacked[T](myTuple: (int32, bool, ...T, float32, float64)):
+    where:
+        T: tuple
+
+    # accessing past tuple unpacking
+    myTuple.3
+    myTuple.4
+
+    # accessing past tuple unpacking, negative index
+    myTuple.-3
+    myTuple.-4
+
+    # accessing the tuple index 
+    myTuple.2
+
+    # accessing before the tuple index
+    myTuple.1
+    myTuple.0
+    myTuple.-0
+    myTuple.-1
+

@@ -105,7 +105,7 @@ impl Offset {
     pub const fn flip(&self, total_len: usize) -> Self {
         match self {
             Self::FromStart(id) => Self::FromEnd(total_len - *id - 1),
-            Self::FromEnd(id) => Self::FromStart(*id + total_len - 1),
+            Self::FromEnd(id) => Self::FromStart(total_len - *id - 1),
             Self::Unpacked => Self::Unpacked,
         }
     }

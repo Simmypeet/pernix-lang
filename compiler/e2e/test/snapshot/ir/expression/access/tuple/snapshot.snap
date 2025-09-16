@@ -1,0 +1,90 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: expected a struct type to access its field members
+  ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:9:5
+  │
+9 │     myTuple.nonExistingField 
+  │     ^^^^^^^ found type '(int32, (float32, int32), float32)'
+
+error: expected a struct type to access its field members
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:10:5
+   │
+10 │     myTuple.1.nonExistingField
+   │     ^^^^^^^^^ found type '(float32, int32)'
+
+error: the tuple index is out of bounds
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:13:12
+   │
+13 │     myTuple.3 
+   │            ^^
+   │
+   = the tuple has 3 element(s) but the accessed index is 3
+
+error: the tuple index is out of bounds
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:14:14
+   │
+14 │     myTuple.1.2 
+   │              ^^
+   │
+   = the tuple has 2 element(s) but the accessed index is 2
+
+error: the tuple index is out of bounds
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:16:14
+   │
+16 │     myTuple.1.-2
+   │              ^^^
+   │
+   = the tuple has 2 element(s) but the accessed index is 2
+
+error: the tuple index is too large
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:19:12
+   │
+19 │     myTuple.12345678901234567890123456789012345678901234567890
+   │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: cannot index past unpacked tuple element
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:26:13
+   │
+26 │     myTuple.3
+   │             ^ the tuple type is '(int32, bool, ...T, float32, float64)'
+   │
+   = if you try to access `float32`, try using `-1` instead
+
+error: cannot index past unpacked tuple element
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:27:13
+   │
+27 │     myTuple.4
+   │             ^ the tuple type is '(int32, bool, ...T, float32, float64)'
+   │
+   = if you try to access `float64`, try using `-0` instead
+
+error: cannot index past unpacked tuple element
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:30:13
+   │
+30 │     myTuple.-3
+   │             ^^ the tuple type is '(int32, bool, ...T, float32, float64)'
+   │
+   = if you try to access `bool`, try using `1` instead
+
+error: cannot index past unpacked tuple element
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:31:13
+   │
+31 │     myTuple.-4
+   │             ^^ the tuple type is '(int32, bool, ...T, float32, float64)'
+   │
+   = if you try to access `int32`, try using `0` instead
+
+error: cannot index into unpacked tuple
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:34:13
+   │
+34 │     myTuple.2
+   │             ^ the tuple type is '(int32, bool, ...T, float32, float64)'
+
+error: Compilation aborted due to 11 error(s)
+
+
+
+stdout:
