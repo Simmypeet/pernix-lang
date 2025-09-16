@@ -3,7 +3,8 @@ use pernixc_stable_hash::StableHash;
 
 use crate::{
     bind::expression::postfix::access::diagnostic::{
-        ExpectedStruct, FieldNotFound,
+        CannotIndexPastUnpackedTuple, FieldNotFound, TooLargeTupleIndex,
+        TupleIndexOutOfBounds, UnexpectedTypeForAccess,
     },
     diagnostic_enum,
     pattern::bind::diagnostic::FieldIsNotAccessible,
@@ -21,7 +22,10 @@ diagnostic_enum! {
     )]
     pub enum Diagnostic {
         FieldNotFound(FieldNotFound),
-        ExpectedStruct(ExpectedStruct),
+        UnexpectedTypeForAccess(UnexpectedTypeForAccess),
         FieldIsNotAccessible(FieldIsNotAccessible),
+        TooLargeTupleIndex(TooLargeTupleIndex),
+        CannotIndexPastUnpackedTuple(CannotIndexPastUnpackedTuple),
+        TupleIndexOutOfBounds(TupleIndexOutOfBounds),
     }
 }

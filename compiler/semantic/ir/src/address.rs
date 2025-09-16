@@ -98,6 +98,37 @@ pub enum Offset {
     Unpacked,
 }
 
+impl Offset {
+    /// Flips the offset between `FromStart` and `FromEnd` given the total
+    /// length of the tuple.
+    #[must_use]
+    pub const fn flip(&self, total_len: usize) -> Self {
+        match self {
+            Self::FromStart(id) => Self::FromEnd(total_len - *id - 1),
+            Self::FromEnd(id) => Self::FromStart(*id + total_len - 1),
+            Self::Unpacked => Self::Unpacked,
+        }
+    }
+
+    /// Gets the tuple element at the given offset.
+    #[must_use]
+    pub fn index<'s, T>(
+        &self,
+        tuple: &'s pernixc_term::tuple::Tuple<T>,
+    ) -> Option<&'s pernixc_term::tuple::Element<T>> {
+        match self {
+            Self::FromStart(id) => tuple.elements.get(*id),
+            Self::FromEnd(id) => tuple
+                .elements
+                .len()
+                .checked_sub(1)
+                .and_then(|x| x.checked_sub(*id))
+                .and_then(|id| tuple.elements.get(id)),
+            Self::Unpacked => tuple.elements.iter().find(|x| x.is_unpacked),
+        }
+    }
+}
+
 /// Interprets the enum addresss as an associated value of a particular variant.
 #[derive(
     Debug,

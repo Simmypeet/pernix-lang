@@ -22,7 +22,11 @@ use pernixc_term::{
 use crate::{
     bind::{
         expression::postfix::{
-            access::diagnostic::{ExpectedStruct, FieldNotFound},
+            access::diagnostic::{
+                CannotIndexPastUnpackedTuple, FieldNotFound,
+                TooLargeTupleIndex, TupleIndexOutOfBounds,
+                UnexpectedTypeForAccess,
+            },
             diagnostic::Diagnostic,
             BindState,
         },
@@ -74,10 +78,10 @@ pub(super) async fn bind_access(
     config: &Config<'_>,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<(Expression, RelativeSpan), Error> {
+    let new_span = current_span.join(&access.span());
+
     let Some(kind) = access.kind() else {
-        return Err(Error::Binding(BindingError(
-            current_span.join(&access.span()),
-        )));
+        return Err(Error::Binding(BindingError(new_span)));
     };
 
     let lvalue = match current_state {
@@ -135,20 +139,21 @@ pub(super) async fn bind_access(
 
                 _ => {
                     handler.receive(
-                        Diagnostic::ExpectedStruct(ExpectedStruct {
-                            span: current_span,
-                            found_type: address_ty,
-                            type_inference_map: binder
-                                .type_inference_rendering_map(),
-                            constant_inference_map: binder
-                                .constant_inference_rendering_map(),
-                        })
+                        Diagnostic::UnexpectedTypeForAccess(
+                            UnexpectedTypeForAccess {
+                                expected_type: diagnostic::ExpectedType::Struct,
+                                span: current_span,
+                                found_type: address_ty,
+                                type_inference_map: binder
+                                    .type_inference_rendering_map(),
+                                constant_inference_map: binder
+                                    .constant_inference_rendering_map(),
+                            },
+                        )
                         .into(),
                     );
 
-                    return Err(Error::Binding(BindingError(
-                        current_span.join(&access.span()),
-                    )));
+                    return Err(Error::Binding(BindingError(new_span)));
                 }
             };
 
@@ -166,9 +171,7 @@ pub(super) async fn bind_access(
                     .into(),
                 );
 
-                return Err(Error::Binding(BindingError(
-                    current_span.join(&access.span()),
-                )));
+                return Err(Error::Binding(BindingError(new_span)));
             };
 
             let field_accessibility = fields.fields[field_id].accessibility;
@@ -199,19 +202,140 @@ pub(super) async fn bind_access(
             })
         }
 
-        AccessKind::TupleIndex(_tuple_index) => todo!(),
+        AccessKind::TupleIndex(tuple_index) => {
+            let tuple_ty = match address_ty {
+                Type::Tuple(tuple_ty) => tuple_ty,
+                found_type => {
+                    handler.receive(
+                        Diagnostic::UnexpectedTypeForAccess(
+                            UnexpectedTypeForAccess {
+                                expected_type: diagnostic::ExpectedType::Tuple,
+                                span: current_span,
+                                found_type,
+                                type_inference_map: binder
+                                    .type_inference_rendering_map(),
+                                constant_inference_map: binder
+                                    .constant_inference_rendering_map(),
+                            },
+                        )
+                        .into(),
+                    );
+
+                    return Err(Error::Binding(BindingError(new_span)));
+                }
+            };
+
+            // sanity check
+            if tuple_ty.elements.iter().filter(|x| x.is_unpacked).count() > 1 {
+                return Err(Error::Binding(BindingError(new_span)));
+            }
+
+            // used to chec if the index is past the unpacked index
+            let unpacked_index =
+                tuple_ty.elements.iter().position(|x| x.is_unpacked);
+
+            let Some(index_str) = tuple_index.index() else {
+                return Err(Error::Binding(BindingError(new_span)));
+            };
+
+            let index = match index_str.kind.0.parse::<usize>() {
+                Ok(number) => number,
+                Err(err) => match err.kind() {
+                    std::num::IntErrorKind::NegOverflow
+                    | std::num::IntErrorKind::PosOverflow => {
+                        handler.receive(
+                            Diagnostic::TooLargeTupleIndex(
+                                TooLargeTupleIndex {
+                                    access_span: access.span(),
+                                },
+                            )
+                            .into(),
+                        );
+
+                        return Err(Error::Binding(BindingError(current_span)));
+                    }
+
+                    _ => {
+                        unreachable!()
+                    }
+                },
+            };
+
+            if index >= tuple_ty.elements.len() {
+                handler.receive(
+                    Diagnostic::TupleIndexOutOfBounds(TupleIndexOutOfBounds {
+                        access_span: access.span(),
+                        element_count: tuple_ty.elements.len(),
+                        accessed_index: index,
+                    })
+                    .into(),
+                );
+
+                return Err(Error::Binding(BindingError(current_span)));
+            }
+
+            if let Some(unpacked_index) = unpacked_index {
+                // can't access past the unpacked index
+                let pass_unpacked = if tuple_index.minus().is_some() {
+                    index.cmp(&(tuple_ty.elements.len() - unpacked_index - 1))
+                } else {
+                    index.cmp(&unpacked_index)
+                };
+
+                // report error
+                if pass_unpacked.is_ge() {
+                    handler.receive(
+                        Diagnostic::CannotIndexPastUnpackedTuple(
+                            CannotIndexPastUnpackedTuple {
+                                index_span: tuple_index.span(),
+                                tuple_type: tuple_ty,
+                                unpacked_position: unpacked_index,
+                                offset: match (
+                                    pass_unpacked.is_eq(),
+                                    tuple_index.minus(),
+                                ) {
+                                    (true, _) => address::Offset::Unpacked,
+                                    (_, Some(_)) => {
+                                        address::Offset::FromEnd(index)
+                                    }
+                                    (_, None) => {
+                                        address::Offset::FromStart(index)
+                                    }
+                                },
+                                type_inference_map: binder
+                                    .type_inference_rendering_map(),
+                                constant_inference_map: binder
+                                    .constant_inference_rendering_map(),
+                            },
+                        )
+                        .into(),
+                    );
+
+                    return Err(Error::Binding(BindingError(current_span)));
+                }
+            }
+
+            Address::Tuple(address::Tuple {
+                tuple_address: Box::new(reduced_lvalue.address),
+                offset: if tuple_index.minus().is_some() {
+                    address::Offset::FromEnd(index)
+                } else {
+                    address::Offset::FromStart(index)
+                },
+            })
+        }
 
         AccessKind::ArrayIndex(_array_index) => todo!(),
     };
 
-    let joined_span = current_span.join(&access.span());
+    let joined_span = new_span;
 
     match config.target {
         Target::RValue(_) => {
             // will be optimized to move later
             let register_id = binder.create_register_assignment(
                 Assignment::Load(Load { address }),
-                current_span.join(&access.span()),
+                new_span,
             );
 
             Ok((Expression::RValue(Value::Register(register_id)), joined_span))
