@@ -69,7 +69,6 @@ pub(super) async fn reduce_address_reference(
     }
 }
 
-#[allow(clippy::too_many_lines)]
 pub(super) async fn bind_access(
     binder: &mut crate::binder::Binder<'_>,
     current_state: BindState,
@@ -149,8 +148,17 @@ pub(super) async fn bind_access(
             handler,
         )?,
 
-        AccessKind::ArrayIndex(_array_index) => {
-            todo!()
+        AccessKind::ArrayIndex(array_index) => {
+            access_index(
+                binder,
+                reduced_lvalue,
+                &array_index,
+                current_span,
+                new_span,
+                address_ty,
+                handler,
+            )
+            .await?
         }
     };
 
@@ -379,5 +387,44 @@ fn access_tuple(
         } else {
             address::Offset::FromStart(index)
         },
+    }))
+}
+
+async fn access_index(
+    binder: &mut crate::binder::Binder<'_>,
+    reduced_lvalue: LValue,
+    array_index: &pernixc_syntax::expression::postfix::ArrayIndex,
+    current_span: RelativeSpan,
+    new_span: RelativeSpan,
+    address_ty: Type,
+    handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
+) -> Result<Address, Error> {
+    let Some(index_value) = array_index.expression() else {
+        return Err(Error::Binding(BindingError(new_span)));
+    };
+
+    let value = Box::pin(binder
+            .bind_value_or_error(&index_value, Some(&address_ty), handler))
+        .await?;
+
+    if !matches!(address_ty, Type::Array(_)) {
+        handler.receive(
+            Diagnostic::UnexpectedTypeForAccess(UnexpectedTypeForAccess {
+                expected_type: diagnostic::ExpectedType::Array,
+                span: current_span,
+                found_type: address_ty,
+                constant_inference_map: binder
+                    .constant_inference_rendering_map(),
+                type_inference_map: binder.type_inference_rendering_map(),
+            })
+            .into(),
+        );
+
+        return Err(Error::Binding(BindingError(new_span)));
+    }
+
+    Ok(Address::Index(address::Index {
+        array_address: Box::new(reduced_lvalue.address),
+        indexing_value: value,
     }))
 }
