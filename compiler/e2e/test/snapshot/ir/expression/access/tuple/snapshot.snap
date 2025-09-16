@@ -16,34 +16,34 @@ error: expected a struct type to access its field members
    │     ^^^^^^^^^ found type '(float32, int32)'
 
 error: the tuple index is out of bounds
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:13:12
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:13:13
    │
 13 │     myTuple.3 
-   │            ^^
+   │             ^
    │
    = the tuple has 3 element(s) but the accessed index is 3
 
 error: the tuple index is out of bounds
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:14:14
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:14:15
    │
 14 │     myTuple.1.2 
-   │              ^^
+   │               ^
    │
    = the tuple has 2 element(s) but the accessed index is 2
 
 error: the tuple index is out of bounds
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:16:14
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:16:16
    │
 16 │     myTuple.1.-2
-   │              ^^^
+   │                ^
    │
    = the tuple has 2 element(s) but the accessed index is 2
 
 error: the tuple index is too large
-   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:19:12
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:19:13
    │
 19 │     myTuple.12345678901234567890123456789012345678901234567890
-   │            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   │             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot index past unpacked tuple element
    ╭─ compiler/e2e/test/snapshot/ir/expression/access/tuple/main.pnx:26:13
