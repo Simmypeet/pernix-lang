@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mismatched types: expected `usize`, found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/array/main.pnx:15:11
+   │
+15 │     test.[1.0]
+   │           ^^^ expected `usize`, found `{floating}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/access/array/main.pnx:18:14
+   │
+18 │     useInt32(test.[0])
+   │              ^^^^^^^^ expected `int32`, found `bool`
+   │
+   = ensure the expression type matches the expected type
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

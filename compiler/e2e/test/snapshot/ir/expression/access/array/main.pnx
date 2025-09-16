@@ -1,0 +1,18 @@
+public function useBoolean(..: bool):
+    pass
+
+
+public function useInt32(..: int32):
+    pass
+
+
+public function main():
+    let test = [true, false, true]
+    test.[0]
+    test.[1]
+    
+    # floating point
+    test.[1.0]
+
+    useBoolean(test.[0])
+    useInt32(test.[0])

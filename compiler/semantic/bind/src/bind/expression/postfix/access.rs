@@ -16,7 +16,7 @@ use pernixc_symbol::{
 use pernixc_syntax::expression::postfix::AccessKind;
 use pernixc_term::{
     generic_arguments::Symbol,
-    r#type::{Qualifier, Type},
+    r#type::{Primitive, Qualifier, Type},
 };
 
 use crate::{
@@ -403,9 +403,12 @@ async fn access_index(
         return Err(Error::Binding(BindingError(new_span)));
     };
 
-    let value = Box::pin(binder
-            .bind_value_or_error(&index_value, Some(&address_ty), handler))
-        .await?;
+    let value = Box::pin(binder.bind_value_or_error(
+        &index_value,
+        Some(&Type::Primitive(Primitive::Usize)),
+        handler,
+    ))
+    .await?;
 
     if !matches!(address_ty, Type::Array(_)) {
         handler.receive(
