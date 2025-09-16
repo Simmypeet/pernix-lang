@@ -27,6 +27,7 @@ flexstr = { workspace = true }
 bon = { workspace = true }
 enum-as-inner = { workspace = true }
 derive_more = { workspace = true }
+strsim = { workspace = true }
 
 [lints]
 workspace = true

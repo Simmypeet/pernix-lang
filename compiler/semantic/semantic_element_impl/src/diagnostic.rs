@@ -7,11 +7,15 @@ use pernixc_diagnostic::Report;
 use pernixc_ir::Key as IRKey;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
-    fields::Key as FieldsKey, type_alias::Key as TypeAliasKey,
-    variant::Key as VariantKey, where_clause::Key as WhereClauseKey,
+    fields::Key as FieldsKey, import::Key as ImportKey,
+    type_alias::Key as TypeAliasKey, variant::Key as VariantKey,
+    where_clause::Key as WhereClauseKey,
 };
 use pernixc_source_file::ByteIndex;
-use pernixc_symbol::{all_symbol_ids, kind::get_kind};
+use pernixc_symbol::{
+    all_symbol_ids,
+    kind::{get_kind, Kind},
+};
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;
 use pernixc_tokio::scoped;
@@ -37,6 +41,15 @@ pub async fn single_rendered_executor(
 {
     let mut final_diagnostics = Vec::new();
     let kind = engine.get_kind(id).await;
+
+    if kind == Kind::Module {
+        let diags =
+            engine.query(&BuildDiagnosticKey::new(ImportKey(id))).await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await?);
+        }
+    }
 
     if kind.has_generic_parameters() {
         let diags = engine

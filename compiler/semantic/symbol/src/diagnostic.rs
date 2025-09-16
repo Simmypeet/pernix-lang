@@ -314,34 +314,6 @@ fn populate_file_errors(
     }
 }
 
-#[allow(clippy::type_complexity)]
-async fn populate_module_import_diagnostics(
-    engine: &TrackedEngine,
-    target_id: TargetID,
-    module_import_diagnostics: &mut JoinList<
-        Result<(ID, Arc<[crate::import::diagnostic::Diagnostic]>), CyclicError>,
-    >,
-) -> Result<(), CyclicError> {
-    let all_modules =
-        engine.get_all_symbols_of_kind(target_id, Kind::Module).await;
-
-    for module_id in all_modules.iter().copied() {
-        let engine = engine.clone();
-
-        module_import_diagnostics.spawn(async move {
-            let diagnostic = engine
-                .query(&crate::import::DiagnosticKey(
-                    target_id.make_global(module_id),
-                ))
-                .await?;
-
-            Ok::<_, CyclicError>((module_id, diagnostic))
-        });
-    }
-
-    Ok(())
-}
-
 async fn populate_member_is_more_accessible_diagnostics(
     engine: &TrackedEngine,
     target_id: TargetID,
@@ -382,20 +354,12 @@ pub async fn rendered_executor(
     pernixc_query::runtime::executor::CyclicError,
 > {
     scoped!(|file_diagnostics,
-             module_diagnostics,
              member_is_moere_accessible_diagnostics,
              diagnostic_handles| async move {
         // Get the map for this target to discover all table keys
         let map = engine.query(&crate::MapKey(target_id)).await?;
 
         populate_file_errors(engine, target_id, file_diagnostics, &map);
-
-        populate_module_import_diagnostics(
-            engine,
-            target_id,
-            module_diagnostics,
-        )
-        .await?;
 
         populate_member_is_more_accessible_diagnostics(
             engine,
@@ -427,18 +391,6 @@ pub async fn rendered_executor(
             for diagnostic in lexicals.iter().flat_map(|x| x.iter()) {
                 let diagnostic = diagnostic.clone();
                 let engine = engine.clone();
-
-                diagnostic_handles
-                    .spawn(async move { Ok(diagnostic.report(&engine).await) });
-            }
-        }
-
-        while let Some(module_diagnostic) = module_diagnostics.next().await {
-            let (_, diagnostic) = module_diagnostic?;
-
-            for diagnostic in diagnostic.iter() {
-                let engine = engine.clone();
-                let diagnostic = diagnostic.clone();
 
                 diagnostic_handles
                     .spawn(async move { Ok(diagnostic.report(&engine).await) });

@@ -7,7 +7,7 @@ use pernixc_extend::extend;
 use pernixc_query::TrackedEngine;
 use pernixc_semantic_element::{
     implemented::get_implemented, implements::get_implements,
-    implements_arguments::get_implements_argument,
+    implements_arguments::get_implements_argument, import::get_import_map,
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::SourceElement;
@@ -15,24 +15,25 @@ use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::symbol_accessible,
     get_target_root_module_id,
-    import::get_imports,
     kind::{get_kind, Kind},
     member::get_members,
-    name::{
-        diagnostic::{SymbolIsNotAccessible, SymbolNotFound},
-        get_member_of,
-    },
     parent::{get_closest_module_id, scope_walker},
 };
-use pernixc_syntax::{QualifiedIdentifier, QualifiedIdentifierRoot};
-use pernixc_target::Global;
+use pernixc_syntax::{
+    Identifier, QualifiedIdentifier, QualifiedIdentifierRoot, SimplePath,
+    SimplePathRoot,
+};
+use pernixc_target::{get_linked_targets, get_target_map, Global};
 use pernixc_term::{
     generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
 };
 
 use crate::{
-    diagnostic::{NoGenericArgumentsRequired, ThisNotFound},
+    diagnostic::{
+        NoGenericArgumentsRequired, SymbolIsNotAccessible, SymbolNotFound,
+        ThisNotFound,
+    },
     term::resolve_generic_arguments_for,
     Config, Diagnostic, Error, Handler,
 };
@@ -319,7 +320,7 @@ pub(super) async fn resolve_root(
             {
                 Some(id) => Some(id),
                 None => tracked_engine
-                    .get_imports(current_module_id)
+                    .get_import_map(current_module_id)
                     .await
                     .get(&identifier.kind.0)
                     .copied()
@@ -523,4 +524,172 @@ pub async fn resolve_qualified_identifier(
     }
 
     Ok(latest_resolution)
+}
+
+/// Resolves a [`SimplePath`] as a [`GlobalID`].
+#[extend]
+pub async fn resolve_simple_path(
+    self: &TrackedEngine,
+    simple_path: &SimplePath,
+    referring_site: Global<pernixc_symbol::ID>,
+    start_from_root: bool,
+    handler: &dyn Handler<Diagnostic>,
+) -> Option<Global<pernixc_symbol::ID>> {
+    // simple path should always have root tough
+    let root: Global<pernixc_symbol::ID> = match simple_path.root()? {
+        SimplePathRoot::Target(_) => Global::new(
+            referring_site.target_id,
+            self.get_target_root_module_id(referring_site.target_id).await,
+        ),
+
+        SimplePathRoot::Identifier(ident) => {
+            if start_from_root {
+                let target_map = self.get_target_map().await;
+                let target =
+                    self.get_linked_targets(referring_site.target_id).await;
+
+                let Some(target_id) = target_map
+                    .get(ident.kind.0.as_str())
+                    .copied()
+                    .filter(|x| {
+                        x == &referring_site.target_id || { target.contains(x) }
+                    })
+                else {
+                    handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: None,
+                            resolution_span: ident.span,
+                            name: ident.kind.0,
+                        },
+                    ));
+
+                    return None;
+                };
+
+                Global::new(
+                    target_id,
+                    self.get_target_root_module_id(target_id).await,
+                )
+            } else {
+                let closet_module_id =
+                    self.get_closest_module_id(referring_site).await;
+
+                let global_closest_module_id =
+                    Global::new(referring_site.target_id, closet_module_id);
+
+                let id = match self
+                    .get_members(global_closest_module_id)
+                    .await
+                    .member_ids_by_name
+                    .get(ident.kind.0.as_str())
+                    .map(|x| Global::new(referring_site.target_id, *x))
+                {
+                    Some(id) => Some(id),
+                    None => self
+                        .get_import_map(global_closest_module_id)
+                        .await
+                        .get(ident.kind.0.as_str())
+                        .map(|x| x.id),
+                };
+
+                let Some(id) = id else {
+                    handler.receive(Diagnostic::SymbolNotFound(
+                        SymbolNotFound {
+                            searched_item_id: Some(global_closest_module_id),
+                            resolution_span: ident.span,
+                            name: ident.kind.0,
+                        },
+                    ));
+
+                    return None;
+                };
+
+                id
+            }
+        }
+    };
+
+    self.resolve_sequence(
+        simple_path.subsequences().flat_map(|x| x.identifier().into_iter()),
+        referring_site,
+        root,
+        handler,
+    )
+    .await
+}
+
+/// Resolves a sequence of identifier starting of from the given `root`.
+#[extend]
+pub async fn resolve_sequence<'a>(
+    self: &TrackedEngine,
+    simple_path: impl Iterator<Item = Identifier>,
+    referring_site: Global<pernixc_symbol::ID>,
+    root: Global<pernixc_symbol::ID>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Option<Global<pernixc_symbol::ID>> {
+    let mut lastest_resolution = root;
+
+    for identifier in simple_path {
+        let Some(new_id) = self
+            .get_member_of(lastest_resolution, identifier.kind.0.as_str())
+            .await
+        else {
+            handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
+                searched_item_id: Some(lastest_resolution),
+                resolution_span: identifier.span,
+                name: identifier.kind.0,
+            }));
+
+            return None;
+        };
+
+        // non-fatal error, no need to return early
+        if !self.symbol_accessible(referring_site, new_id).await {
+            handler.receive(Diagnostic::SymbolIsNotAccessible(
+                SymbolIsNotAccessible {
+                    referring_site,
+                    referred: new_id,
+                    referred_span: identifier.span,
+                },
+            ));
+        }
+
+        lastest_resolution = new_id;
+    }
+
+    Some(lastest_resolution)
+}
+
+/// Searches for a member in the given symbol scope and returns its ID if it
+/// exists.
+#[extend]
+pub async fn get_member_of(
+    self: &TrackedEngine,
+    id: Global<pernixc_symbol::ID>,
+    member_name: &str,
+) -> Option<Global<pernixc_symbol::ID>> {
+    let symbol_kind = self.get_kind(id).await;
+
+    let result = if symbol_kind.has_member() {
+        self.get_members(id).await.member_ids_by_name.get(member_name).copied()
+    } else {
+        None
+    };
+
+    if let Some(test) = result {
+        return Some(Global::new(id.target_id, test));
+    }
+
+    // TODO: search the member in the adt implementations
+    let this_kind = self.get_kind(id).await;
+
+    match this_kind {
+        Kind::Module => {
+            let imports = self.get_import_map(id).await;
+
+            imports.get(member_name).map(|x| x.id)
+        }
+
+        _ => None,
+    }
 }

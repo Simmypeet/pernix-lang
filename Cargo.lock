@@ -1413,6 +1413,7 @@ dependencies = [
  "pernixc_syntax",
  "pernixc_target",
  "pernixc_term",
+ "strsim 0.10.0",
 ]
 
 [[package]]
@@ -1426,6 +1427,7 @@ dependencies = [
  "pernixc_lexical",
  "pernixc_query",
  "pernixc_serialize",
+ "pernixc_source_file",
  "pernixc_stable_hash",
  "pernixc_stable_type_id",
  "pernixc_symbol",

@@ -12,6 +12,7 @@ pub mod implemented;
 pub mod implements;
 pub mod implements_arguments;
 pub mod implied_predicate;
+pub mod import;
 pub mod late_bound_lifetime;
 pub mod parameter;
 pub mod return_type;

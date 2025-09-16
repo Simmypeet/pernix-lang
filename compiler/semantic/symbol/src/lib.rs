@@ -45,7 +45,6 @@ use crate::{
 pub mod accessibility;
 pub mod diagnostic;
 pub mod final_implements;
-pub mod import;
 pub mod kind;
 pub mod member;
 pub mod name;
