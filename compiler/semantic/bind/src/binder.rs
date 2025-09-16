@@ -25,6 +25,7 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{resolve_qualified_identifier, Resolution},
+    term::resolve_type,
     Config, ElidedTermProvider, ExtraNamespace,
 };
 use pernixc_semantic_element::parameter::get_parameters;
@@ -793,6 +794,73 @@ impl Binder<'_> {
         self.inference_context.restore(checkpoint);
     }
 
+    /// Adds the given `name_binding_point` to the current scope.
+    pub fn add_named_binding_point(
+        &mut self,
+        name_binding_point: NameBindingPoint,
+    ) {
+        self.stack
+            .current_scope_mut()
+            .add_named_binding_point(name_binding_point);
+    }
+
+    /// Resolves the given `syntax_tree` to a type where inference is allowed.
+    pub async fn resolve_type_with_inference(
+        &mut self,
+        syntax_tree: &pernixc_syntax::r#type::Type,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Type, UnrecoverableError> {
+        let mut type_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.type_inference_counter,
+        };
+        let mut constant_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.const_inference_counter,
+        };
+
+        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+
+        let ty = self
+            .engine
+            .resolve_type(
+                syntax_tree,
+                pernixc_resolution::Config::builder()
+                    .extra_namespace(&self.extra_namespace)
+                    .elided_lifetime_provider(&mut lifetime_inference_providers)
+                    .elided_type_provider(&mut type_inferences)
+                    .elided_constant_provider(&mut constant_inferences)
+                    .referring_site(self.current_site)
+                    .build(),
+                &handler,
+            )
+            .await;
+
+        self.type_inference_counter = type_inferences.counter;
+        self.const_inference_counter = constant_inferences.counter;
+
+        let resolution = match ty {
+            Ok(result) => result,
+            Err(err) => {
+                return Err(UnrecoverableError::CyclicDependency(err));
+            }
+        };
+
+        for inference in type_inferences.created_inferences {
+            assert!(self
+                .inference_context
+                .register(inference, constraint::Type::All(false)));
+        }
+
+        for inference in constant_inferences.created_inferences {
+            assert!(self
+                .inference_context
+                .register(inference, constraint::Constant));
+        }
+
+        Ok(resolution)
+    }
+
     /*
 
     #[allow(clippy::type_complexity)]
@@ -911,47 +979,6 @@ impl Binder<'_> {
 
         Ok(resolution)
     }
-
-    /// Resolves the given `syntax_tree` to a type where inference is allowed.
-    fn resolve_type_with_inference(
-        &mut self,
-        syntax_tree: &syntax_tree::r#type::Type,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Type<infer::Model> {
-        let mut type_inferences = InferenceProvider::default();
-        let mut constant_inferences = InferenceProvider::default();
-
-        let ty = self.engine.resolve_type(
-            syntax_tree,
-            self.current_site,
-            pernixc_resolution::Config {
-                elided_lifetime_provider: Some(&mut InferenceProvider::<
-                    NewTypeErased,
-                >::default(
-                )),
-                elided_type_provider: Some(&mut type_inferences),
-                elided_constant_provider: Some(&mut constant_inferences),
-                observer: None,
-                extra_namespace: Some(&self.extra_namespace),
-            },
-            handler,
-        );
-
-        for inference in type_inferences.created_inferences {
-            assert!(self
-                .inference_context
-                .register::<Type<_>>(inference, Constraint::All(false)));
-        }
-
-        for inference in constant_inferences.created_inferences {
-            assert!(self
-                .inference_context
-                .register::<Constant<_>>(inference, NoConstraint));
-        }
-
-        ty
-    }
-
 
     */
 }
