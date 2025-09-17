@@ -1,0 +1,54 @@
+public trait RealClone[T]:
+    public function realClone(self: &T) -> T
+
+
+final implements['x, T] RealClone[&'x T]:
+    where:
+        T: 'x
+
+    function realClone(self: &&'x T) -> &'x T:
+        return *self
+
+
+public function expect[T](value: T):
+    pass
+
+
+public function testRealClone[T](value: &T):
+    where:
+        trait RealClone[T]
+    
+    expect[T](value.realClone())  # should resolve to RealClone[T]::Clone
+    expect[&T](value.realClone()) # will error
+
+
+public function testRealCloneWithMut[T](value: &mut T):
+    where:
+        trait RealClone[T]
+    
+    expect[T](value.realClone())  # should resolve to RealClone[T]::Clone
+    expect[&mut T](value.realClone()) # will error
+
+
+public trait FakeClone[T]:
+    public function fakeClone(self: T) -> T
+
+
+final implements[T] FakeClone[T]:
+    function fakeClone(self: T) -> T:
+        return self
+
+
+public function testFakeClone[T](value: &T):
+    where:
+        trait FakeClone[T]
+    
+    expect[&T](value.fakeClone())  # should resolve to FakeClone[&T]::Clone
+    expect[T](value.fakeClone())   # will error
+
+
+public function testFakeCloneWithMut[T](value: &mut T):
+    where:
+        trait FakeClone[T]
+    
+    expect[T](value.fakeClone())  # should resolve to FakeClone[&mut T]::Clone
