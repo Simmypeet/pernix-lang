@@ -11,7 +11,7 @@ use pernixc_semantic_element::{
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
-    member::get_members,
+    member::{get_members, try_get_members},
     parent::get_parent,
 };
 use pernixc_target::Global;
@@ -167,6 +167,7 @@ fn extend_inference_instantiation(
     );
 }
 
+#[allow(clippy::too_many_lines)]
 async fn attemp_adt_method_call(
     binder: &mut crate::binder::Binder<'_>,
     lvalue: LValue,
@@ -302,7 +303,11 @@ async fn find_method_in_implemented(
     UnrecoverableError,
 > {
     for impl_id in implemented.iter().copied() {
-        let members = binder.engine().get_members(impl_id).await;
+        let Some(members) = binder.engine().try_get_members(impl_id).await
+        else {
+            continue;
+        };
+
         let Some(member) = members.member_ids_by_name.get(method_name).copied()
         else {
             continue;
