@@ -4,7 +4,7 @@ expression: clean_run
 ---
 stderr:
 error: mismatched types: expected `&main::Option[int32]`, found `&main::Option[phantom int32]`
-   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/infer/main.pnx:28:23
+   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/infer/main.pnx:28:23
    │
 28 │     expectOptionInt32(&a)
    │                       ^^ expected `&main::Option[int32]`, found `&main::Option[phantom int32]`
