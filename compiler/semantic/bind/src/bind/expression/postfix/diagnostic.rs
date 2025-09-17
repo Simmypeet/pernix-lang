@@ -7,7 +7,7 @@ use crate::{
             CannotIndexPastUnpackedTuple, FieldNotFound, TooLargeTupleIndex,
             TupleIndexOutOfBounds, UnexpectedTypeForAccess,
         },
-        method_call::diagnostic::MethodCallNotFound,
+        method_call::diagnostic::{AmbiguousMethodCall, MethodCallNotFound},
     },
     diagnostic_enum,
     pattern::bind::diagnostic::FieldIsNotAccessible,
@@ -30,6 +30,7 @@ diagnostic_enum! {
         TooLargeTupleIndex(TooLargeTupleIndex),
         CannotIndexPastUnpackedTuple(CannotIndexPastUnpackedTuple),
         TupleIndexOutOfBounds(TupleIndexOutOfBounds),
-        MethodCallNotFound(MethodCallNotFound)
+        MethodCallNotFound(MethodCallNotFound),
+        AmbiguousMethodCall(AmbiguousMethodCall)
     }
 }

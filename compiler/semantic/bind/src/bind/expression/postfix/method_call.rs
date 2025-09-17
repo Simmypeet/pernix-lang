@@ -1,6 +1,6 @@
 use pernixc_hash::HashSet;
 use pernixc_ir::{
-    address::{Address, Memory},
+    address::{self, Address, Memory},
     value::Value,
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -38,7 +38,9 @@ use crate::{
             function_call::{MethodReceiver, MethodReceiverKind},
             postfix::{
                 diagnostic::Diagnostic,
-                method_call::diagnostic::MethodCallNotFound,
+                method_call::diagnostic::{
+                    AmbiguousMethodCall, MethodCallNotFound,
+                },
                 reduce_address_reference, BindState,
             },
         },
@@ -56,15 +58,15 @@ pub(super) async fn bind_method_call(
     binder: &mut crate::binder::Binder<'_>,
     current_state: BindState,
     current_span: RelativeSpan,
-    access: &pernixc_syntax::expression::postfix::MethodCall,
+    method_call: &pernixc_syntax::expression::postfix::MethodCall,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<(Expression, RelativeSpan), Error> {
     let (Some(identifier), Some(call)) = (
-        access.generic_identifier().and_then(|x| x.identifier()),
-        access.call(),
+        method_call.generic_identifier().and_then(|x| x.identifier()),
+        method_call.call(),
     ) else {
         return Err(Error::Binding(BindingError(
-            current_span.join(&access.span()),
+            current_span.join(&method_call.span()),
         )));
     };
 
@@ -97,11 +99,11 @@ pub(super) async fn bind_method_call(
     };
 
     let ty = binder.type_of_address(&lvalue.address, handler).await?;
-    let _lvalue = match attemp_adt_method_call(
+    let lvalue = match attempt_adt_method_call(
         binder,
         lvalue,
         &ty,
-        access,
+        method_call,
         &identifier,
         &call,
         handler,
@@ -111,11 +113,27 @@ pub(super) async fn bind_method_call(
         Ok(value) => {
             return Ok((
                 Expression::RValue(value),
-                current_span.join(&access.span()),
+                current_span.join(&method_call.span()),
             ))
         }
         Err(lvalue) => lvalue,
     };
+
+    if let Some(value) = attempt_trait_method_call(
+        binder,
+        lvalue,
+        method_call,
+        &identifier,
+        &call,
+        handler,
+    )
+    .await?
+    {
+        return Ok((
+            Expression::RValue(value),
+            current_span.join(&method_call.span()),
+        ));
+    }
 
     handler.receive(
         Diagnostic::MethodCallNotFound(MethodCallNotFound {
@@ -129,7 +147,7 @@ pub(super) async fn bind_method_call(
         .into(),
     );
 
-    Err(Error::Binding(BindingError(current_span.join(&access.span()))))
+    Err(Error::Binding(BindingError(current_span.join(&method_call.span()))))
 }
 
 fn extend_inference_instantiation(
@@ -341,12 +359,12 @@ async fn trait_method_candidates(
 
 async fn attempt_match_trait_method_candidate(
     binder: &mut crate::binder::Binder<'_>,
-    lvalue: LValue,
+    lvalue: &LValue,
     lvalue_ty: &Type,
     lvalue_receiver_kind: MethodReceiverKind,
     current_candidate: &TraitMethodCandidate,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
-) -> Result<bool, UnrecoverableError> {
+) -> Result<Option<Type>, UnrecoverableError> {
     let parent_trait_id = current_candidate.method_id.target_id.make_global(
         binder.engine().get_parent(current_candidate.method_id).await.unwrap(),
     );
@@ -365,7 +383,7 @@ async fn attempt_match_trait_method_candidate(
         // `T` cannot match `&(mut)? U`, `T` needs to be autoref in the next
         // round
         (MethodReceiverKind::Value, MethodReceiverKind::Reference(_)) => {
-            return Ok(false)
+            return Ok(None)
         }
 
         // `&(mut)? T` match `U` as `U = &T`
@@ -386,7 +404,7 @@ async fn attempt_match_trait_method_candidate(
             if l_qualifier == method_qualifier {
                 lvalue_ty.clone()
             } else {
-                return Ok(false);
+                return Ok(None);
             }
         }
     };
@@ -398,7 +416,7 @@ async fn attempt_match_trait_method_candidate(
             .iter()
             .map(|_| Lifetime::Erased)
             .collect(),
-        types: std::iter::once(ty)
+        types: std::iter::once(ty.clone())
             .chain(trait_generic_parameters.types().iter().skip(1).map(|_| {
                 Type::Inference(
                     binder.create_type_inference(constraint::Type::All(false)),
@@ -425,8 +443,8 @@ async fn attempt_match_trait_method_candidate(
     );
 
     match environment.query(&trait_predicate).await {
-        Ok(Some(_)) => Ok(true),
-        Ok(None) => Ok(false),
+        Ok(Some(_)) => Ok(Some(ty)),
+        Ok(None) => Ok(None),
         Err(err) => match err {
             pernixc_type_system::Error::Overflow(overflow_error) => {
                 overflow_error.report_as_undecidable_predicate(
@@ -446,7 +464,241 @@ async fn attempt_match_trait_method_candidate(
 }
 
 #[allow(clippy::too_many_lines)]
-async fn attemp_adt_method_call(
+async fn attempt_trait_method_call(
+    binder: &mut crate::binder::Binder<'_>,
+    mut lvalue: LValue,
+    method_call: &pernixc_syntax::expression::postfix::MethodCall,
+    identifier: &pernixc_syntax::Identifier,
+    call: &pernixc_syntax::expression::Call,
+    handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
+) -> Result<Option<Value>, Error> {
+    let visible_traits = visible_traits(binder).await?;
+    let candidates =
+        trait_method_candidates(binder, &identifier.kind.0, &visible_traits)
+            .await?;
+
+    let candidate = loop {
+        let address_ty =
+            binder.type_of_address(&lvalue.address, handler).await?;
+
+        let mut matched_candidates = Vec::new();
+
+        for lvalue_receiver_kind in [
+            MethodReceiverKind::Value,
+            MethodReceiverKind::Reference(Qualifier::Immutable),
+            MethodReceiverKind::Reference(Qualifier::Mutable),
+        ] {
+            for current_candidate in &candidates {
+                if let Some(receiver_ty) = attempt_match_trait_method_candidate(
+                    binder,
+                    &lvalue,
+                    &address_ty,
+                    lvalue_receiver_kind,
+                    current_candidate,
+                    handler,
+                )
+                .await?
+                {
+                    matched_candidates.push((
+                        current_candidate,
+                        receiver_ty,
+                        lvalue_receiver_kind,
+                    ));
+                }
+            }
+        }
+
+        // exactly one candidate matched
+        match candidates.len() {
+            0 => {
+                let Type::Reference(inner) = address_ty else {
+                    // can no longer deref
+                    break None;
+                };
+
+                let new_qualifier = inner.qualifier.min(
+                    if lvalue.address.is_behind_reference() {
+                        lvalue.qualifier
+                    } else {
+                        Qualifier::Mutable
+                    },
+                );
+
+                lvalue = LValue {
+                    address: Address::Reference(address::Reference {
+                        qualifier: inner.qualifier,
+                        reference_address: Box::new(lvalue.address),
+                    }),
+                    span: lvalue.span,
+                    qualifier: new_qualifier,
+                };
+            }
+            1 => break Some(matched_candidates.pop().unwrap()),
+            2.. => {
+                handler.receive(
+                    Diagnostic::AmbiguousMethodCall(AmbiguousMethodCall {
+                        method_name: identifier.kind.0.clone(),
+                        receiver_type: address_ty.clone(),
+                        method_span: identifier.span,
+                        receiver_span: lvalue.span,
+                        candidates: matched_candidates
+                            .iter()
+                            .map(|x| x.0.method_id)
+                            .collect(),
+                        type_inference_map: binder
+                            .type_inference_rendering_map(),
+                        constant_inference_map: binder
+                            .constant_inference_rendering_map(),
+                    })
+                    .into(),
+                );
+            }
+        }
+    };
+
+    let Some((candidate, receiver_ty, lvalue_receiver_kind)) = candidate else {
+        // no matched candidates
+        return Ok(None);
+    };
+
+    let mut inst = if let Some(generic_arguments) =
+        method_call.generic_identifier().and_then(|x| x.generic_arguments())
+    {
+        let mut generic_arguments = binder
+            .resolve_generic_arguments_with_inference(
+                &generic_arguments,
+                handler,
+            )
+            .await?;
+        generic_arguments = binder
+            .verify_generic_arguments_for_with_inference(
+                generic_arguments,
+                candidate.method_id,
+                method_call.generic_identifier().unwrap().span(),
+                handler,
+            )
+            .await?;
+
+        Instantiation::from_generic_arguments(
+            generic_arguments,
+            candidate.method_id,
+            &*binder
+                .engine()
+                .get_generic_parameters(candidate.method_id)
+                .await?,
+        )
+        .expect("generic arguments have been verified")
+    } else {
+        let mut inst = Instantiation::default();
+        extend_inference_instantiation(
+            binder,
+            &mut inst,
+            &*binder
+                .engine()
+                .get_generic_parameters(candidate.method_id)
+                .await?,
+            candidate.method_id,
+        );
+
+        inst
+    };
+
+    let parent_trait_id = candidate.method_id.target_id.make_global(
+        binder.engine().get_parent(candidate.method_id).await.unwrap(),
+    );
+    let parent_trait_generic_parameters =
+        binder.engine().get_generic_parameters(parent_trait_id).await?;
+
+    inst.lifetimes.extend(
+        parent_trait_generic_parameters.lifetime_parameters_as_order().map(
+            |(id, _)| {
+                (
+                    Lifetime::Parameter(LifetimeParameterID {
+                        parent_id: parent_trait_id,
+                        id,
+                    }),
+                    Lifetime::Erased,
+                )
+            },
+        ),
+    );
+
+    inst.types.extend(
+        parent_trait_generic_parameters
+            .type_parameters_as_order()
+            .enumerate()
+            .map(|(index, (id, _))| {
+                (
+                    Type::Parameter(TypeParameterID {
+                        parent_id: parent_trait_id,
+                        id,
+                    }),
+                    if index == 0 {
+                        receiver_ty.clone()
+                    } else {
+                        Type::Inference(binder.create_type_inference(
+                            constraint::Type::All(false),
+                        ))
+                    },
+                )
+            }),
+    );
+
+    inst.constants.extend(
+        parent_trait_generic_parameters.constant_parameters_as_order().map(
+            |(id, _)| {
+                (
+                    pernixc_term::constant::Constant::Parameter(
+                        ConstantParameterID { parent_id: parent_trait_id, id },
+                    ),
+                    pernixc_term::constant::Constant::Inference(
+                        binder.create_constant_inference(),
+                    ),
+                )
+            },
+        ),
+    );
+
+    // collect the arguments
+    let arguments = call.expressions().collect::<Vec<_>>();
+
+    // check if the adt method call is accessible
+    if !binder
+        .engine()
+        .symbol_accessible(binder.current_site(), candidate.method_id)
+        .await
+    {
+        handler.receive(
+            ResolutionDiagnostic::SymbolIsNotAccessible(
+                SymbolIsNotAccessible {
+                    referring_site: binder.current_site(),
+                    referred: candidate.method_id,
+                    referred_span: identifier.span,
+                },
+            )
+            .into(),
+        );
+
+        // soft error, continue
+    }
+
+    Ok(Some(Value::Register(
+        binder
+            .bind_method_call(
+                candidate.method_id,
+                inst,
+                MethodReceiver { kind: lvalue_receiver_kind, lvalue },
+                &arguments,
+                call.span(),
+                method_call.span(),
+                handler,
+            )
+            .await?,
+    )))
+}
+
+#[allow(clippy::too_many_lines)]
+async fn attempt_adt_method_call(
     binder: &mut crate::binder::Binder<'_>,
     lvalue: LValue,
     ty: &Type,
@@ -666,5 +918,3 @@ async fn find_method_in_implemented(
 
     Ok(None)
 }
-
-fn test<T: Clone>(x: &mut T) { let y = x.clone(); }
