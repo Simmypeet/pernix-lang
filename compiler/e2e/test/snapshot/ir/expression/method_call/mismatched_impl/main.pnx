@@ -1,0 +1,25 @@
+public struct Pair[T, U]:
+    public first: T
+    public second: U
+
+
+implements[T] Pair[T, T]:
+    public function swap(self: this) -> this:
+        return this {
+            first: self.second,
+            second: self.first,
+        }
+
+
+public function main():
+    let a = Pair { first: true, second: 32 }
+    let b = a.swap()
+    
+    let c = Pair { first: 32, second: true }
+    let d = c.swap()
+
+    let e = Pair { first: 32, second: 64 }
+    let f = e.swap()
+
+    let g = Pair { first: true, second: false }
+    let h = g.swap()
