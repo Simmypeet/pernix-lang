@@ -46,7 +46,7 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
         for operator in postfix_operators {
             match operator {
                 pernixc_syntax::expression::postfix::Operator::MethodCall(
-                    method_call,
+                    _method_call,
                 ) => {}
                 pernixc_syntax::expression::postfix::Operator::Cast(_cast) => {}
                 pernixc_syntax::expression::postfix::Operator::Access(

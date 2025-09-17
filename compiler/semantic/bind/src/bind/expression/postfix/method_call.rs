@@ -8,8 +8,8 @@ use crate::{
 pub(super) async fn bind_method_call(
     binder: &mut crate::binder::Binder<'_>,
     current_state: BindState,
-    current_span: RelativeSpan,
-    access: &pernixc_syntax::expression::postfix::MethodCall,
+    _current_span: RelativeSpan,
+    _access: &pernixc_syntax::expression::postfix::MethodCall,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<(Expression, RelativeSpan), Error> {
     let expression = match current_state {

@@ -30,12 +30,14 @@ pub mod array;
 pub mod block;
 pub mod boolean;
 pub mod character;
+pub mod dereference;
 pub mod function_call;
 pub mod numeric;
 pub mod panic;
 pub mod parenthesized;
 pub mod phantom;
 pub mod postfix;
+pub mod prefix;
 pub mod qualified_identifier;
 pub mod string;
 pub mod r#struct;
@@ -111,8 +113,8 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefixable>
             pernixc_syntax::expression::prefix::Prefixable::Postfix(
                 postfix,
             ) => self.bind(postfix, config, handler).await,
-            pernixc_syntax::expression::prefix::Prefixable::Prefix(_prefix) => {
-                todo!()
+            pernixc_syntax::expression::prefix::Prefixable::Prefix(prefix) => {
+                self.bind(prefix, config, handler).await
             }
         }
     }
