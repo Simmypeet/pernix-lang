@@ -1,0 +1,31 @@
+public enum Option[T]:
+    Some(T)
+    None
+
+
+implements Option[phantom int32]:
+    public function doSomething(self: this):
+        pass
+
+
+public function expectOptionInt32(x: &Option[int32]):
+    pass
+
+
+public function expectOptionPhantomInt32(x: &Option[phantom int32]):
+    pass
+
+
+public function main():
+    # currently, `a` has a type of `Option[?T]`
+    let a = Option::None
+
+    # now we call a method that exists on `Option[phantom int32]`, so we
+    # should infer `?T` to be `phantom int32`
+    a.doSomething() 
+
+    # now the type should mismatch if we try to use `a` as an `Option[int32]`
+    expectOptionInt32(&a)
+    
+    expectOptionPhantomInt32(&a)
+
