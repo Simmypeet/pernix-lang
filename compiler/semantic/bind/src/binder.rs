@@ -5,7 +5,7 @@ use std::{borrow::Cow, num::NonZeroUsize, sync::Arc};
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_extend::extend;
-use pernixc_handler::{Handler, Storage};
+use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
     alloca::Alloca,
@@ -25,7 +25,7 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{resolve_qualified_identifier, Resolution},
-    term::resolve_type,
+    term::{resolve_generic_arguments, resolve_type},
     Config, ElidedTermProvider, ExtraNamespace,
 };
 use pernixc_semantic_element::parameter::get_parameters;
@@ -35,6 +35,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     display::InferenceRenderingMap,
+    generic_arguments::GenericArguments,
     inference,
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
@@ -303,6 +304,17 @@ impl Binder<'_> {
         inference_variable
     }
 
+    /// Creates a new constant inference variable that's unique in this binder
+    /// context.
+    pub const fn next_constant_inference_variable(
+        &mut self,
+    ) -> inference::Variable<Constant> {
+        let inference_variable =
+            inference::Variable::new(self.const_inference_counter);
+        self.const_inference_counter += 1;
+        inference_variable
+    }
+
     /// Creates a new error literal with an inferred type.
     pub fn create_error(&mut self, span: RelativeSpan) -> Literal {
         Literal::Error(pernixc_ir::value::literal::Error {
@@ -465,6 +477,19 @@ impl Binder<'_> {
     ) -> inference::Variable<Type> {
         let infer_var = self.next_type_inference_variable();
         assert!(self.inference_context.register(infer_var, constraint));
+
+        infer_var
+    }
+
+    /// Creates a new constant inference variable and assigns it to the
+    /// inference context.
+    pub fn create_constant_inference(
+        &mut self,
+    ) -> inference::Variable<Constant> {
+        let infer_var = self.next_constant_inference_variable();
+        assert!(self
+            .inference_context
+            .register(infer_var, constraint::Constant));
 
         infer_var
     }
@@ -861,6 +886,64 @@ impl Binder<'_> {
         Ok(resolution)
     }
 
+    /// Resolves the given `generic_arguments` to a `GenericArguments` term
+    /// where inference is allowed.
+    pub async fn resolve_generic_arguments_with_inference(
+        &mut self,
+        generic_arguments: &pernixc_syntax::GenericArguments,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<GenericArguments, UnrecoverableError> {
+        let mut type_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.type_inference_counter,
+        };
+        let mut constant_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.const_inference_counter,
+        };
+
+        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+
+        let ty = self
+            .engine
+            .resolve_generic_arguments(
+                generic_arguments,
+                pernixc_resolution::Config::builder()
+                    .extra_namespace(&self.extra_namespace)
+                    .elided_lifetime_provider(&mut lifetime_inference_providers)
+                    .elided_type_provider(&mut type_inferences)
+                    .elided_constant_provider(&mut constant_inferences)
+                    .referring_site(self.current_site)
+                    .build(),
+                &handler,
+            )
+            .await;
+
+        self.type_inference_counter = type_inferences.counter;
+        self.const_inference_counter = constant_inferences.counter;
+
+        let resolution = match ty {
+            Ok(result) => result,
+            Err(err) => {
+                return Err(UnrecoverableError::CyclicDependency(err));
+            }
+        };
+
+        for inference in type_inferences.created_inferences {
+            assert!(self
+                .inference_context
+                .register(inference, constraint::Type::All(false)));
+        }
+
+        for inference in constant_inferences.created_inferences {
+            assert!(self
+                .inference_context
+                .register(inference, constraint::Constant));
+        }
+
+        Ok(resolution)
+    }
+
     /*
 
     #[allow(clippy::type_complexity)]
@@ -905,41 +988,6 @@ impl Binder<'_> {
         Ok((generic_arguments, diagnostics))
     }
 
-    fn resolve_generic_arguments_with_inference(
-        &mut self,
-        generic_arguments: &syntax_tree::GenericArguments,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> GenericArguments<infer::Model> {
-        let mut type_inferences = InferenceProvider::default();
-        let mut constant_inferences = InferenceProvider::default();
-
-        let resolved_generic_arguments = self.engine.resolve_generic_arguments(
-            generic_arguments,
-            self.current_site,
-            pernixc_resolution::Config {
-                elided_lifetime_provider: Some(&mut LifetimeInferenceProvider),
-                elided_type_provider: Some(&mut type_inferences),
-                elided_constant_provider: Some(&mut constant_inferences),
-                observer: None,
-                extra_namespace: Some(&self.extra_namespace),
-            },
-            handler,
-        );
-
-        for inference in type_inferences.created_inferences {
-            assert!(self
-                .inference_context
-                .register::<Type<_>>(inference, Constraint::All(false)));
-        }
-
-        for inference in constant_inferences.created_inferences {
-            assert!(self
-                .inference_context
-                .register::<Constant<_>>(inference, NoConstraint));
-        }
-
-        resolved_generic_arguments
-    }
 
     fn resolve_qualified_identifier_with_inference(
         &mut self,
