@@ -174,6 +174,11 @@ fn extend_inference_instantiation(
     );
 }
 
+struct TraitMethodCandidate {
+    method_id: Global<pernixc_symbol::ID>,
+    receiver_kind: MethodReceiverKind,
+}
+
 async fn visible_traits(
     binder: &Binder<'_>,
 ) -> Result<HashSet<Global<pernixc_symbol::ID>>, UnrecoverableError> {
@@ -249,6 +254,88 @@ async fn visible_traits(
 
     // all of the visible traits should have been accessible-checked before
     Ok(visible_traits)
+}
+
+async fn trait_method_candidates(
+    binder: &mut crate::binder::Binder<'_>,
+    method_ident: &str,
+    visibile_traits: &HashSet<Global<pernixc_symbol::ID>>,
+) -> Result<Vec<TraitMethodCandidate>, UnrecoverableError> {
+    let mut candidates = Vec::new();
+
+    for trait_id in visibile_traits.iter().copied() {
+        // check if the trait has atleast one type generic parameter
+        let generic_parameters =
+            binder.engine().get_generic_parameters(trait_id).await?;
+
+        // skip traits without type parameters
+        let Some(first_type_parameter) =
+            generic_parameters.type_order().first().copied()
+        else {
+            continue;
+        };
+
+        // try to find the method in the trait with matching name
+        let members = binder.engine().get_members(trait_id).await;
+        let Some(method_id) = members
+            .member_ids_by_name
+            .get(method_ident)
+            .copied()
+            .map(|x| trait_id.target_id.make_global(x))
+        else {
+            continue;
+        };
+
+        // must be a method
+        if binder.engine().get_kind(method_id).await != Kind::TraitFunction {
+            continue;
+        }
+
+        let parameters = binder.engine().get_parameters(method_id).await?;
+
+        // the first parameter must be either `T`, `&T` or `&mut T` where `T` is
+        // the first type parameter of the trait
+        let Some(first_parameter_ty) = parameters
+            .parameter_order
+            .first()
+            .copied()
+            .map(|i| &parameters.parameters[i].r#type)
+        else {
+            continue;
+        };
+
+        let expected_ty = Type::Parameter(TypeParameterID {
+            parent_id: trait_id,
+            id: first_type_parameter,
+        });
+
+        match first_parameter_ty {
+            Type::Reference(reference) => {
+                if *reference.pointee != expected_ty {
+                    continue;
+                }
+
+                candidates.push(TraitMethodCandidate {
+                    method_id,
+                    receiver_kind: MethodReceiverKind::Reference(
+                        reference.qualifier,
+                    ),
+                });
+            }
+            rest => {
+                if *rest != expected_ty {
+                    continue;
+                }
+
+                candidates.push(TraitMethodCandidate {
+                    method_id,
+                    receiver_kind: MethodReceiverKind::Value,
+                });
+            }
+        }
+    }
+
+    Ok(candidates)
 }
 
 #[allow(clippy::too_many_lines)]
