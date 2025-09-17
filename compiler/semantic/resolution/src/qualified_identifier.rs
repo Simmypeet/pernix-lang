@@ -282,7 +282,7 @@ pub(super) async fn resolve_root(
                     };
 
                     let Some(implemented_generic_arguments) = tracked_engine
-                        .get_implements_argument(implemented_id)
+                        .get_implements_argument(this_symbol)
                         .await?
                     else {
                         return Err(Error::Abort);
