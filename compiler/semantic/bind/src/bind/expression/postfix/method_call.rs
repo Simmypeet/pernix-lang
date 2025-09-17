@@ -21,13 +21,14 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::Symbol,
+    generic_arguments::{GenericArguments, Symbol},
     generic_parameters::{
         get_generic_parameters, ConstantParameterID, GenericParameters,
         LifetimeParameterID, TypeParameterID,
     },
     instantiation::Instantiation,
     lifetime::Lifetime,
+    predicate::Predicate,
     r#type::{Qualifier, Type},
 };
 
@@ -338,6 +339,112 @@ async fn trait_method_candidates(
     Ok(candidates)
 }
 
+async fn attempt_match_trait_method_candidate(
+    binder: &mut crate::binder::Binder<'_>,
+    lvalue: LValue,
+    lvalue_ty: &Type,
+    lvalue_receiver_kind: MethodReceiverKind,
+    current_candidate: &TraitMethodCandidate,
+    handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
+) -> Result<bool, UnrecoverableError> {
+    let parent_trait_id = current_candidate.method_id.target_id.make_global(
+        binder.engine().get_parent(current_candidate.method_id).await.unwrap(),
+    );
+
+    let trait_generic_parameters =
+        binder.engine().get_generic_parameters(parent_trait_id).await?;
+
+    // assume `T` is the type of `LValue` and `U` is the type in the method
+    // receiver.
+    let ty = match (lvalue_receiver_kind, current_candidate.receiver_kind) {
+        // `T` match `U`
+        (MethodReceiverKind::Value, MethodReceiverKind::Value) => {
+            lvalue_ty.clone()
+        }
+
+        // `T` cannot match `&(mut)? U`, `T` needs to be autoref in the next
+        // round
+        (MethodReceiverKind::Value, MethodReceiverKind::Reference(_)) => {
+            return Ok(false)
+        }
+
+        // `&(mut)? T` match `U` as `U = &T`
+        (
+            MethodReceiverKind::Reference(qualifier),
+            MethodReceiverKind::Value,
+        ) => Type::Reference(pernixc_term::r#type::Reference {
+            qualifier,
+            pointee: Box::new(lvalue_ty.clone()),
+            lifetime: Lifetime::Erased,
+        }),
+
+        // `&(mut)? T` match `&(mut)? U` as `T = U` if the qualifier matches
+        (
+            MethodReceiverKind::Reference(l_qualifier),
+            MethodReceiverKind::Reference(method_qualifier),
+        ) => {
+            if l_qualifier == method_qualifier {
+                lvalue_ty.clone()
+            } else {
+                return Ok(false);
+            }
+        }
+    };
+
+    // check if the trait is satisfied for the current candidates
+    let trait_generic_arguments = GenericArguments {
+        lifetimes: trait_generic_parameters
+            .lifetimes()
+            .iter()
+            .map(|_| Lifetime::Erased)
+            .collect(),
+        types: std::iter::once(ty)
+            .chain(trait_generic_parameters.types().iter().skip(1).map(|_| {
+                Type::Inference(
+                    binder.create_type_inference(constraint::Type::All(false)),
+                )
+            }))
+            .collect(),
+        constants: trait_generic_parameters
+            .constants()
+            .iter()
+            .map(|_| {
+                pernixc_term::constant::Constant::Inference(
+                    binder.create_constant_inference(),
+                )
+            })
+            .collect(),
+    };
+
+    let environment = binder.create_environment();
+
+    let trait_predicate = pernixc_term::predicate::PositiveTrait::new(
+        parent_trait_id,
+        false,
+        trait_generic_arguments,
+    );
+
+    match environment.query(&trait_predicate).await {
+        Ok(Some(_)) => Ok(true),
+        Ok(None) => Ok(false),
+        Err(err) => match err {
+            pernixc_type_system::Error::Overflow(overflow_error) => {
+                overflow_error.report_as_undecidable_predicate(
+                    Predicate::PositiveTrait(trait_predicate),
+                    None,
+                    lvalue.span,
+                    &handler,
+                );
+
+                Err(UnrecoverableError::Reported)
+            }
+            pernixc_type_system::Error::CyclicDependency(cyclic_error) => {
+                Err(UnrecoverableError::CyclicDependency(cyclic_error))
+            }
+        },
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 async fn attemp_adt_method_call(
     binder: &mut crate::binder::Binder<'_>,
@@ -559,3 +666,5 @@ async fn find_method_in_implemented(
 
     Ok(None)
 }
+
+fn test<T: Clone>(x: &mut T) { let y = x.clone(); }
