@@ -1,0 +1,59 @@
+public struct Pair:
+    public first: int32
+    public second: int32
+
+
+implements Pair:
+    public function getFirstMut(self: &mut this) -> &mut int32:
+        return &mut self.first
+
+    
+    public function getSecondMut(self: &mut this) -> &mut int32:
+        return &mut self.second
+
+
+public function getPair() -> Pair:
+    return Pair { first: 32, second: 64 }
+
+
+public function main():
+    let p = getPair()
+    let first = p.getFirstMut()   # expect mut
+    let second = p.getSecondMut() # expect mut
+
+
+public struct Ref['a, T]:
+    where:
+        T: 'a
+
+    public reference: &'a T
+
+
+public struct RefMut['a, T]:
+    where:
+        T: 'a
+
+    public reference: &'a mut T
+
+
+public function test(
+    mutPair: &mut Pair, 
+    refPair: &Pair, 
+    mutRefPair: &mut Ref[Pair],
+    mutRefMutPair: &mut RefMut[Pair],
+    fakeMutPair: &&mut Pair
+):
+    let first = mutPair.getFirstMut()   
+    let second = mutPair.getSecondMut() 
+
+    let first = refPair.getFirstMut()   # expect error
+    let second = refPair.getSecondMut() # expect error
+
+    let first = mutRefPair.reference.getFirstMut()   # `.reference` is immutable
+    let second = mutRefPair.reference.getSecondMut() # `.reference` is immutable
+
+    let first = mutRefMutPair.reference.getFirstMut()
+    let second = mutRefMutPair.reference.getSecondMut()
+
+    let first = fakeMutPair.getFirstMut()   # expect error
+    let second = fakeMutPair.getSecondMut() # expect error
