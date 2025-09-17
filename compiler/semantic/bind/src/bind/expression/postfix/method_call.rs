@@ -4,15 +4,17 @@ use pernixc_ir::{
     value::Value,
 };
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_resolution::qualified_identifier::get_member_of;
 use pernixc_semantic_element::{
-    implemented::get_implemented,
-    implements_arguments::get_implements_argument, parameter::get_parameters,
+    implemented::get_implemented, implements::get_implements,
+    implements_arguments::get_implements_argument, import::get_import_map,
+    parameter::get_parameters,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
-    member::try_get_members,
-    parent::get_parent,
+    member::{get_members, try_get_members},
+    parent::{get_closest_module_id, get_parent, scope_walker},
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -38,7 +40,9 @@ use crate::{
         },
         Bind, Expression, Guidance, LValue,
     },
-    binder::{type_check::Expected, BindingError, Error, UnrecoverableError},
+    binder::{
+        type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
+    },
     inference_context::constraint,
 };
 
@@ -165,6 +169,83 @@ fn extend_inference_instantiation(
             )
         }),
     );
+}
+
+async fn visible_traits(
+    binder: &Binder<'_>,
+) -> Result<HashSet<Global<pernixc_symbol::ID>>, UnrecoverableError> {
+    let mut visible_traits = HashSet::default();
+    let nearest_module_id = Global::new(
+        binder.current_site().target_id,
+        binder.engine().get_closest_module_id(binder.current_site()).await,
+    );
+
+    // visible traits refer to:
+    // 1. All traits defined in the current module
+    // 2. All traits imported into the current module
+    // 3. Trait appearing in the current `implements` block
+    // 4. Traits appear in the where clause of the current environment.
+
+    // 1 & 2
+    {
+        let members = binder.engine().get_members(nearest_module_id).await;
+        let imports = binder.engine().get_import_map(nearest_module_id).await;
+
+        for member_id in members
+            .member_ids_by_name
+            .values()
+            .copied()
+            .chain(members.unnameds.iter().copied())
+            .map(|x| nearest_module_id.target_id.make_global(x))
+            .chain(imports.values().map(|x| x.id))
+        {
+            let kind = binder.engine().get_kind(member_id).await;
+
+            if kind == Kind::Trait {
+                visible_traits.insert(member_id);
+            }
+        }
+    }
+
+    // 3
+    {
+        let mut scope_walker =
+            binder.engine().scope_walker(binder.current_site());
+
+        while let Some(current_id) = scope_walker.next().await {
+            let current_id =
+                Global::new(binder.current_site().target_id, current_id);
+
+            let kind = binder.engine().get_kind(current_id).await;
+
+            if kind != Kind::PositiveImplementation {
+                continue;
+            }
+
+            let Some(implemented) =
+                binder.engine().get_implements(current_id).await?
+            else {
+                continue;
+            };
+
+            if binder.engine().get_kind(implemented).await == Kind::Trait {
+                visible_traits.insert(implemented);
+                break;
+            }
+        }
+    }
+
+    // 4
+    visible_traits.extend(
+        binder
+            .premise()
+            .predicates
+            .iter()
+            .filter_map(|x| x.as_positive_trait().map(|x| x.trait_id)),
+    );
+
+    // all of the visible traits should have been accessible-checked before
+    Ok(visible_traits)
 }
 
 #[allow(clippy::too_many_lines)]

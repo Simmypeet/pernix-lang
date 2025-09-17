@@ -68,7 +68,10 @@ pub struct Binder<'t> {
     #[get_copy = "pub"]
     current_site: Global<pernixc_symbol::ID>,
 
+    /// Gets the active premise at the `current_site`.
+    #[get = "pub"]
     premise: Arc<Premise>,
+
     extra_namespace: Arc<ExtraNamespace>,
 
     /// The intermediate representation that is being built.
