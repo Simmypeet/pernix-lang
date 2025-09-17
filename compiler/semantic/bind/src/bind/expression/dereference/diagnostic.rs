@@ -23,8 +23,7 @@ diagnostic_enum! {
         Deserialize,
     )]
     pub enum Diagnostic {
-        CannotDereference(CannotDereference
-        )
+        CannotDereference(CannotDereference)
     }
 }
 
@@ -54,13 +53,17 @@ impl Report for CannotDereference {
     > {
         let mut message = "cannot dereference expression of type `".to_string();
 
-        self.found_type.write_async_with_mapping(
-            parameter,
-            &mut message,
-            None,
-            Some(&self.type_inference_map),
-            Some(&self.constant_inference_map),
-        );
+        self.found_type
+            .write_async_with_mapping(
+                parameter,
+                &mut message,
+                None,
+                Some(&self.type_inference_map),
+                Some(&self.constant_inference_map),
+            )
+            .await
+            .unwrap();
+
         message.push('`');
 
         Ok(Rendered::builder()
