@@ -1,0 +1,3 @@
+public function test():
+    let a = 64
+    let b = a.nonExistingMethod()

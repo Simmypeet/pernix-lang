@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: method `nonExistingMethod` not found for type `{number}`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/not_found/main.pnx:3:15
+  │
+3 │     let b = a.nonExistingMethod()
+  │             - ^^^^^^^^^^^^^^^^^ method `nonExistingMethod` not found
+  │             │  
+  │             this expression has type `{number}`
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
