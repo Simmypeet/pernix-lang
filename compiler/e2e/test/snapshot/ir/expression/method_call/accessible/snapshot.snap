@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the symbol is not accessible
+   ╭─ compiler/e2e/test/snapshot/ir/expression/method_call/accessible/main.pnx:27:7
+   │
+27 │     t.innerMethod() # is not fine
+   │       ^^^^^^^^^^^ the symbol `main::inner::[implements Test]::innerMethod` is not accessible from `main::outerMain`
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

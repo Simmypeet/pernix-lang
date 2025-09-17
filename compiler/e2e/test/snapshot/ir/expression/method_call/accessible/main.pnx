@@ -1,0 +1,28 @@
+public struct Test:
+    pass
+
+
+implements Test:
+    private function outerMethod(self: this):
+        pass
+
+
+public module inner:
+    import target::Test
+
+
+    implements Test:
+        private function innerMethod(self: this):
+            pass
+
+
+    private function innerMain():
+        let t = Test{}
+        t.innerMethod() # is fine
+        t.outerMethod() # is fine
+
+
+private function outerMain():
+    let t = Test{}
+    t.innerMethod() # is not fine
+    t.outerMethod() # is fine
