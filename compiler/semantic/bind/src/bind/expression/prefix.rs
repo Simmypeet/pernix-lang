@@ -97,7 +97,7 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefix>
                 Ok(Expression::RValue(Value::Register(self.borrow_lvalue(
                     lvalue,
                     qualifier,
-                    reference_of.span(),
+                    syntax_tree.span(),
                     handler,
                 ))))
             }
