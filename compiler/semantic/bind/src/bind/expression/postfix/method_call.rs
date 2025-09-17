@@ -4,7 +4,9 @@ use pernixc_ir::{
     value::Value,
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_resolution::qualified_identifier::get_member_of;
+use pernixc_resolution::diagnostic::{
+    Diagnostic as ResolutionDiagnostic, SymbolIsNotAccessible,
+};
 use pernixc_semantic_element::{
     implemented::get_implemented, implements::get_implements,
     implements_arguments::get_implements_argument, import::get_import_map,
@@ -12,6 +14,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
+    accessibility::symbol_accessible,
     kind::{get_kind, Kind},
     member::{get_members, try_get_members},
     parent::{get_closest_module_id, get_parent, scope_walker},
@@ -358,6 +361,26 @@ async fn attemp_adt_method_call(
 
     // collect the arguments
     let arguments = call.expressions().collect::<Vec<_>>();
+
+    // check if the adt method call is accessible
+    if !binder
+        .engine()
+        .symbol_accessible(binder.current_site(), method_id)
+        .await
+    {
+        handler.receive(
+            ResolutionDiagnostic::SymbolIsNotAccessible(
+                SymbolIsNotAccessible {
+                    referring_site: binder.current_site(),
+                    referred: method_id,
+                    referred_span: identifier.span,
+                },
+            )
+            .into(),
+        );
+
+        // soft error, continue
+    }
 
     Ok(Ok(Value::Register(
         binder
