@@ -1,0 +1,58 @@
+public struct FromFirst:
+    pass
+
+
+public struct FromSecond:
+    pass
+
+
+public struct FromThird:
+    pass
+
+
+public trait First[T]:
+    public function coolMethod(self: T) -> FromFirst
+
+
+final implements[T] First[T]:
+    function coolMethod(self: T) -> FromFirst:
+        return FromFirst{}
+
+
+public trait Second[T]:
+    public function coolMethod(self: &T) -> FromSecond
+
+
+final implements[T] Second[T]:
+    function coolMethod(self: &T) -> FromSecond:
+        return FromSecond{}
+
+
+public trait Third[T]:
+    public function coolMethod(self: &mut T) -> FromThird
+
+
+final implements[T] Third[T]:
+    function coolMethod(self: &mut T) -> FromThird:
+        return FromThird{}
+
+
+private function expectFirst(value: FromFirst):
+    pass
+
+
+private function expectSecond(value: FromSecond):
+    pass
+
+
+private function expectThird(value: FromThird):
+    pass
+
+
+public function test[T](value: T):  
+    expectFirst(value.coolMethod())  
+
+
+public function testAnother[T](value: T):
+    expectSecond(value.coolMethod())      
+    
