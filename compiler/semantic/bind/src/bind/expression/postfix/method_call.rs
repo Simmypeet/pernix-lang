@@ -11,7 +11,7 @@ use pernixc_semantic_element::{
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
-    member::{get_members, try_get_members},
+    member::try_get_members,
     parent::get_parent,
 };
 use pernixc_target::Global;
