@@ -417,7 +417,7 @@ impl Binder<'_> {
         scope_id: ID<scope::Scope>,
         address_span: Option<RelativeSpan>,
         store_span: RelativeSpan,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<ID<Alloca>, UnrecoverableError> {
         let ty = self.type_of_value(&value, handler).await?;
         let span = address_span.unwrap_or_else(|| match &value {

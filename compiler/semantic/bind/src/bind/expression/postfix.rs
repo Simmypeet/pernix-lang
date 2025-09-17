@@ -46,8 +46,20 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
         for operator in postfix_operators {
             match operator {
                 pernixc_syntax::expression::postfix::Operator::MethodCall(
-                    _method_call,
-                ) => {}
+                    method_call,
+                ) => {
+                    let (next_expr, next_span) = method_call::bind_method_call(
+                        self,
+                        bind_state,
+                        current_span,
+                        &method_call,
+                        handler,
+                    )
+                    .await?;
+
+                    bind_state = BindState::Bound(next_expr);
+                    current_span = next_span;
+                }
                 pernixc_syntax::expression::postfix::Operator::Cast(_cast) => {}
                 pernixc_syntax::expression::postfix::Operator::Access(
                     access,

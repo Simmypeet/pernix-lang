@@ -2,9 +2,12 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use crate::{
-    bind::expression::postfix::access::diagnostic::{
-        CannotIndexPastUnpackedTuple, FieldNotFound, TooLargeTupleIndex,
-        TupleIndexOutOfBounds, UnexpectedTypeForAccess,
+    bind::expression::postfix::{
+        access::diagnostic::{
+            CannotIndexPastUnpackedTuple, FieldNotFound, TooLargeTupleIndex,
+            TupleIndexOutOfBounds, UnexpectedTypeForAccess,
+        },
+        method_call::diagnostic::MethodCallNotFound,
     },
     diagnostic_enum,
     pattern::bind::diagnostic::FieldIsNotAccessible,
@@ -27,5 +30,6 @@ diagnostic_enum! {
         TooLargeTupleIndex(TooLargeTupleIndex),
         CannotIndexPastUnpackedTuple(CannotIndexPastUnpackedTuple),
         TupleIndexOutOfBounds(TupleIndexOutOfBounds),
+        MethodCallNotFound(MethodCallNotFound)
     }
 }
