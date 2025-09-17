@@ -511,6 +511,18 @@ impl Binder<'_> {
         // successfully unified, commit the changes
         self.commit_inference_context_checkpoint(checkpoint);
 
-        todo!()
+        let register_id = self.create_register_assignment(
+            Assignment::Borrow(Borrow {
+                address: Address::Reference(Reference {
+                    qualifier: Qualifier::Mutable,
+                    reference_address: Box::new(value.address),
+                }),
+                qualifier: Qualifier::Immutable,
+                lifetime: Lifetime::Erased,
+            }),
+            value.span,
+        );
+
+        Ok(Some(Value::Register(register_id)))
     }
 }
