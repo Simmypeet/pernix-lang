@@ -705,6 +705,7 @@ async fn attempt_trait_method_call(
         // soft error, continue
     }
 
+    let lvalue_span = lvalue.span;
     Ok(Ok(Value::Register(
         binder
             .bind_method_call(
@@ -713,7 +714,7 @@ async fn attempt_trait_method_call(
                 MethodReceiver { kind: lvalue_receiver_kind, lvalue },
                 &arguments,
                 call.span(),
-                method_call.span(),
+                lvalue_span.join(&method_call.span()),
                 handler,
             )
             .await?,
