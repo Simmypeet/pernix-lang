@@ -1,27 +1,17 @@
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
-    register::{Assignment, Borrow, Prefix, PrefixOperator},
+    register::{Assignment, Prefix, PrefixOperator},
     Value,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_syntax::expression::prefix::Operator as PrefixOperatorSyntax;
-use pernixc_term::{
-    lifetime::Lifetime,
-    r#type::{Primitive, Qualifier, Type},
-};
+use pernixc_term::r#type::{Primitive, Qualifier, Type};
 
 use crate::{
-    bind::{
-        expression::prefix::diagnostic::{
-            Diagnostic, MismatchedQualifierForReferenceOf,
-        },
-        Bind, Expression, Guidance,
-    },
+    bind::{Bind, Expression, Guidance},
     binder::{type_check::Expected, BindingError, Error},
     inference_context::constraint,
 };
-
-pub mod diagnostic;
 
 impl Bind<&pernixc_syntax::expression::prefix::Prefix>
     for crate::binder::Binder<'_>
@@ -104,32 +94,12 @@ impl Bind<&pernixc_syntax::expression::prefix::Prefix>
                 ))
                 .await?;
 
-                if lvalue.qualifier < qualifier {
-                    handler.receive(
-                        Diagnostic::MismatchedQualifierForReferenceOf(
-                            MismatchedQualifierForReferenceOf {
-                                reference_of_span: syntax_tree.span(),
-                                found_qualifier: lvalue.qualifier,
-                                expected_qualifier: qualifier,
-                                is_behind_reference: lvalue
-                                    .address
-                                    .is_behind_reference(),
-                            },
-                        )
-                        .into(),
-                    );
-                }
-
-                let register_id = self.create_register_assignment(
-                    Assignment::Borrow(Borrow {
-                        address: lvalue.address,
-                        qualifier,
-                        lifetime: Lifetime::Erased,
-                    }),
-                    syntax_tree.span(),
-                );
-
-                Ok(Expression::RValue(Value::Register(register_id)))
+                Ok(Expression::RValue(Value::Register(self.borrow_lvalue(
+                    lvalue,
+                    qualifier,
+                    reference_of.span(),
+                    handler,
+                ))))
             }
         }
     }

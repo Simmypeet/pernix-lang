@@ -41,7 +41,7 @@ diagnostic_enum! {
         Numeric(expression::numeric::diagnostic::Diagnostic),
         Struct(expression::r#struct::diagnostic::Diagnostic),
         Postfix(expression::postfix::diagnostic::Diagnostic),
-        Prefix(expression::prefix::diagnostic::Diagnostic),
+        Borrow(expression::borrow::diagnostic::Diagnostic),
         Dereference(expression::dereference::diagnostic::Diagnostic),
     }
 }

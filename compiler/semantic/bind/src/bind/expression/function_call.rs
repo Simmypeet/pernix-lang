@@ -1,8 +1,9 @@
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
-    register::{Assignment, FunctionCall, Variant},
+    register::{Assignment, FunctionCall, Load, Register, Variant},
     Value,
 };
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
     implements_arguments::get_implements_argument, parameter::get_parameters,
@@ -20,15 +21,19 @@ use pernixc_term::{
         get_instantiation, get_instantiation_for_associated_symbol,
         Instantiation,
     },
+    r#type::Qualifier,
 };
 use pernixc_type_system::deduction;
 
 use crate::{
-    bind::expression::function_call::diagnostic::{
-        Diagnostic, ExtraneousArgumentsToAssociatedValue,
-        MismatchedArgumentsCount, MismatchedImplementationArguments,
-        SymbolIsNotCallable, VariantAssociatedValueExpected,
-        VariantDoesntHaveAssociatedValue,
+    bind::{
+        expression::function_call::diagnostic::{
+            Diagnostic, ExtraneousArgumentsToAssociatedValue,
+            MismatchedArgumentsCount, MismatchedImplementationArguments,
+            SymbolIsNotCallable, VariantAssociatedValueExpected,
+            VariantDoesntHaveAssociatedValue,
+        },
+        LValue,
     },
     binder::UnrecoverableError,
 };
@@ -36,7 +41,7 @@ use crate::{
 pub mod diagnostic;
 
 use crate::{
-    bind::{Bind, Guidance, Expression},
+    bind::{Bind, Expression, Guidance},
     binder::{Binder, BindingError, Error},
 };
 
@@ -362,66 +367,156 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
                 Ok(Expression::RValue(Value::Register(register_id)))
             }
 
-            _ => {
-                if expected_types.len() != arguments.len() {
-                    handler.receive(
-                        Diagnostic::MismatchedArgumentsCount(
-                            MismatchedArgumentsCount {
-                                function_id: callable_id,
-                                expected: expected_types.len(),
-                                supplied: arguments.len(),
-                                span: syntax_tree.call().map_or_else(
-                                    || syntax_tree.span(),
-                                    |c| c.span(),
-                                ),
-                            },
-                        )
-                        .into(),
-                    );
-                }
-
-                // bind the argument and type-check
-                let mut argument_values = Vec::with_capacity(arguments.len());
-                for (expr, ty) in arguments.iter().zip(expected_types.iter()) {
-                    argument_values.push(
-                        Box::pin(self.bind_value_or_error(
-                            expr,
-                            Some(ty),
-                            handler,
-                        ))
-                        .await?,
-                    );
-                }
-
-                // truncuate or fill the arguments to match the expected types
-                match arguments.len().cmp(&expected_types.len()) {
-                    std::cmp::Ordering::Less => {
-                        for ty in
-                            expected_types.iter().skip(argument_values.len())
-                        {
-                            argument_values.push(Value::error(
-                                ty.clone(),
-                                Some(syntax_tree.span()),
-                            ));
-                        }
-                    }
-                    std::cmp::Ordering::Greater => {
-                        argument_values.truncate(expected_types.len());
-                    }
-                    std::cmp::Ordering::Equal => {}
-                }
-
-                Ok(Expression::RValue(Value::Register(
-                    self.create_register_assignment(
-                        Assignment::FunctionCall(FunctionCall {
-                            callable_id,
-                            arguments: argument_values,
-                            instantiation,
-                        }),
-                        syntax_tree.span(),
-                    ),
-                )))
-            }
+            _ => self
+                .bind_function_call_internal(
+                    &expected_types,
+                    &arguments,
+                    syntax_tree
+                        .call()
+                        .map_or_else(|| syntax_tree.span(), |c| c.span()),
+                    syntax_tree.span(),
+                    callable_id,
+                    instantiation,
+                    None,
+                    handler,
+                )
+                .await
+                .map(|x| Expression::RValue(Value::Register(x))),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) enum MethodReceiverKind {
+    Value,
+    Reference(Qualifier),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct MethodReceiver {
+    pub kind: MethodReceiverKind,
+    pub lvalue: LValue,
+}
+
+impl Binder<'_> {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) async fn bind_method_call(
+        &mut self,
+        method_id: Global<pernixc_symbol::ID>,
+        instantiation: Instantiation,
+        receiver: MethodReceiver,
+        arguments: &[pernixc_syntax::expression::Expression],
+        call_span: RelativeSpan,
+        whole_span: RelativeSpan,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<pernixc_arena::ID<Register>, Error> {
+        let expected_types =
+            get_callable_expected_types(self, method_id, &instantiation)
+                .await?;
+
+        self.bind_function_call_internal(
+            &expected_types,
+            arguments,
+            call_span,
+            whole_span,
+            method_id,
+            instantiation,
+            Some(receiver),
+            handler,
+        )
+        .await
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn bind_function_call_internal(
+        &mut self,
+        expected_types: &[pernixc_term::r#type::Type],
+        arguments: &[pernixc_syntax::expression::Expression],
+        call_span: RelativeSpan,
+        whole_span: RelativeSpan,
+        callable_id: pernixc_target::Global<pernixc_symbol::ID>,
+        instantiation: Instantiation,
+        method_receiver: Option<MethodReceiver>,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<pernixc_arena::ID<Register>, Error> {
+        if expected_types.len()
+            != arguments.len() + usize::from(method_receiver.is_some())
+        {
+            handler.receive(
+                Diagnostic::MismatchedArgumentsCount(
+                    MismatchedArgumentsCount {
+                        function_id: callable_id,
+                        expected: expected_types.len()
+                            - usize::from(method_receiver.is_some()),
+                        supplied: arguments.len(),
+                        span: call_span,
+                    },
+                )
+                .into(),
+            );
+        }
+
+        // bind the argument and type-check
+        let mut argument_values = Vec::with_capacity(
+            arguments.len() + usize::from(method_receiver.is_some()),
+        );
+        for (expr, ty) in arguments.iter().zip(
+            // skip the first expected type for the method receiver
+            expected_types.iter().skip(usize::from(method_receiver.is_some())),
+        ) {
+            argument_values.push(
+                Box::pin(self.bind_value_or_error(expr, Some(ty), handler))
+                    .await?,
+            );
+        }
+
+        // insert the method receiver at the fron (if any), it's intended to
+        // bind the method receiver last without type-checking
+        if let Some(method_receiver) = method_receiver {
+            let value = match method_receiver.kind {
+                // load the lvalue
+                MethodReceiverKind::Value => self.create_register_assignment(
+                    Assignment::Load(Load {
+                        address: method_receiver.lvalue.address,
+                    }),
+                    method_receiver.lvalue.span,
+                ),
+                // borrow the lvalue
+                MethodReceiverKind::Reference(qualifier) => {
+                    let borrow_span = method_receiver.lvalue.span;
+                    self.borrow_lvalue(
+                        method_receiver.lvalue,
+                        qualifier,
+                        borrow_span,
+                        handler,
+                    )
+                }
+            };
+
+            argument_values.insert(0, Value::Register(value));
+        }
+
+        // truncuate or fill the arguments to match the expected types
+        // `usize::from(...)` is for the method receiver
+        match argument_values.len().cmp(&expected_types.len()) {
+            std::cmp::Ordering::Less => {
+                for ty in expected_types.iter().skip(argument_values.len()) {
+                    argument_values
+                        .push(Value::error(ty.clone(), Some(call_span)));
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                argument_values.truncate(expected_types.len());
+            }
+            std::cmp::Ordering::Equal => {}
+        }
+
+        Ok(self.create_register_assignment(
+            Assignment::FunctionCall(FunctionCall {
+                callable_id,
+                arguments: argument_values,
+                instantiation,
+            }),
+            whole_span,
+        ))
     }
 }

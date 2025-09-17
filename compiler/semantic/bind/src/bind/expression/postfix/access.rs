@@ -25,46 +25,15 @@ use crate::{
                 UnexpectedTypeForAccess,
             },
             diagnostic::Diagnostic,
-            BindState,
+            reduce_address_reference, BindState,
         },
         Expression, LValue,
     },
-    binder::{BindingError, Error, UnrecoverableError},
+    binder::{BindingError, Error},
     pattern::bind::diagnostic::FieldIsNotAccessible,
 };
 
 pub mod diagnostic;
-
-pub(super) async fn reduce_address_reference(
-    binder: &mut crate::binder::Binder<'_>,
-    mut lvalue: LValue,
-    address_span: RelativeSpan,
-    handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
-) -> Result<LValue, UnrecoverableError> {
-    loop {
-        let ty = binder.type_of_address(&lvalue.address, handler).await?;
-
-        let Type::Reference(inner) = ty else {
-            return Ok(lvalue);
-        };
-
-        let new_qualifier =
-            inner.qualifier.min(if lvalue.address.is_behind_reference() {
-                lvalue.qualifier
-            } else {
-                Qualifier::Mutable
-            });
-
-        lvalue = LValue {
-            address: Address::Reference(address::Reference {
-                qualifier: inner.qualifier,
-                reference_address: Box::new(lvalue.address),
-            }),
-            span: address_span,
-            qualifier: new_qualifier,
-        };
-    }
-}
 
 pub(super) async fn bind_access(
     binder: &mut crate::binder::Binder<'_>,

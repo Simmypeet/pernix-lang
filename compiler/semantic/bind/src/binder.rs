@@ -25,7 +25,9 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{resolve_qualified_identifier, Resolution},
-    term::{resolve_generic_arguments, resolve_type},
+    term::{
+        resolve_generic_arguments, resolve_type, verify_generic_arguments_for,
+    },
     Config, ElidedTermProvider, ExtraNamespace,
 };
 use pernixc_semantic_element::parameter::get_parameters;
@@ -944,49 +946,67 @@ impl Binder<'_> {
         Ok(resolution)
     }
 
-    /*
-
-    #[allow(clippy::type_complexity)]
-    fn verify_generic_arguments_for_with_inference(
+    /// Verifies that the given `generic_arguments` are valid for the
+    /// given `resolved_id`.
+    pub async fn verify_generic_arguments_for_with_inference(
         &mut self,
-        generic_arguments: GenericArguments<infer::Model>,
-        resolved_id: GlobalID,
-        generic_identifier_span: Span,
-    ) -> Result<(GenericArguments<infer::Model>, Vec<Box<dyn Diagnostic>>), Abort>
-    {
-        let mut type_inferences = InferenceProvider::default();
-        let mut constant_inferences = InferenceProvider::default();
+        generic_arguments: GenericArguments,
+        resolved_id: Global<pernixc_symbol::ID>,
+        generic_identifier_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<GenericArguments, UnrecoverableError> {
+        let mut type_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.type_inference_counter,
+        };
+        let mut constant_inferences = InferenceProvider {
+            created_inferences: Vec::new(),
+            counter: self.const_inference_counter,
+        };
 
-        let (generic_arguments, diagnostics) =
-            self.engine.verify_generic_arguments_for(
+        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+
+        let (arg, diags) = self
+            .engine
+            .verify_generic_arguments_for(
                 generic_arguments,
                 resolved_id,
-                generic_identifier_spa,
-                pernixc_resolution::Config {
-                    elided_lifetime_provider: Some(
-                        &mut LifetimeInferenceProvider,
-                    ),
-                    elided_type_provider: Some(&mut type_inferences),
-                    elided_constant_provider: Some(&mut constant_inferences),
-                    observer: None,
-                    extra_namespace: Some(&self.extra_namespace),
-                },
-            )?;
+                generic_identifier_span,
+                pernixc_resolution::Config::builder()
+                    .extra_namespace(&self.extra_namespace)
+                    .elided_lifetime_provider(&mut lifetime_inference_providers)
+                    .elided_type_provider(&mut type_inferences)
+                    .elided_constant_provider(&mut constant_inferences)
+                    .referring_site(self.current_site)
+                    .build(),
+            )
+            .await?;
+
+        for diag in diags {
+            (&handler).receive(diag);
+        }
+
+        self.type_inference_counter = type_inferences.counter;
+        self.const_inference_counter = constant_inferences.counter;
 
         for inference in type_inferences.created_inferences {
             assert!(self
                 .inference_context
-                .register::<Type<_>>(inference, Constraint::All(false)));
+                .register(inference, constraint::Type::All(false)));
         }
 
         for inference in constant_inferences.created_inferences {
             assert!(self
                 .inference_context
-                .register::<Constant<_>>(inference, NoConstraint));
+                .register(inference, constraint::Constant));
         }
 
-        Ok((generic_arguments, diagnostics))
+        Ok(arg)
     }
+
+    /*
+
+    #[allow(clippy::type_complexity)]
 
 
     fn resolve_qualified_identifier_with_inference(

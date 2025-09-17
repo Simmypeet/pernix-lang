@@ -29,6 +29,7 @@ use crate::{
 pub mod array;
 pub mod block;
 pub mod boolean;
+pub mod borrow;
 pub mod character;
 pub mod dereference;
 pub mod function_call;
