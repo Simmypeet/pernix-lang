@@ -1,0 +1,6 @@
+public function main():
+    let mut a = 64
+    let b = &mut a
+    let c: int32 = *b
+
+    let d: int32 = *a

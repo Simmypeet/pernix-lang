@@ -1,0 +1,18 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: cannot dereference expression of type `int32`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/dereference/main.pnx:6:20
+  │
+6 │     let d: int32 = *a
+  │                    ^^
+  │
+  = only references can be dereferenced
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
