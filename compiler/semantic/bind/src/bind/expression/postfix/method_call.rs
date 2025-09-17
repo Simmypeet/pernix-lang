@@ -202,6 +202,7 @@ fn extend_inference_instantiation(
     );
 }
 
+#[derive(Debug)]
 struct TraitMethodCandidate {
     method_id: Global<pernixc_symbol::ID>,
     receiver_kind: MethodReceiverKind,
@@ -391,8 +392,19 @@ async fn attempt_match_trait_method_candidate(
 
         // `T` cannot match `&(mut)? U`, `T` needs to be autoref in the next
         // round
-        (MethodReceiverKind::Value, MethodReceiverKind::Reference(_)) => {
-            return Ok(None)
+        (
+            MethodReceiverKind::Value,
+            MethodReceiverKind::Reference(qualifier),
+        ) => {
+            let Type::Reference(inner) = lvalue_ty else {
+                return Ok(None);
+            };
+
+            if inner.qualifier == qualifier {
+                inner.pointee.as_ref().clone()
+            } else {
+                return Ok(None);
+            }
         }
 
         // `&(mut)? T` match `U` as `U = &T`
