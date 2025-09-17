@@ -1,0 +1,26 @@
+public struct Pair:
+    public first: int32
+    public second: int32
+
+
+public function getPair() -> Pair:
+    return Pair { first: 32, second: 64 }
+
+
+implements Pair:
+    public function takeRValue(self: this):
+        pass
+
+    
+    public function takeLValue(self: &this):
+        pass
+
+
+    public function takeMutableLValue(self: &mut this):
+        pass
+
+
+public function main(): 
+    getPair().takeRValue()
+    getPair().takeLValue()
+    getPair().takeMutableLValue()
