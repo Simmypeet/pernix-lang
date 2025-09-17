@@ -1,0 +1,17 @@
+public function mutableCopy(x: &int32) -> int32:
+    return *x
+
+
+public function main():
+    let mut a = 64
+    let b = &mut a
+
+    let copy = mutableCopy(b)
+    let copy = mutableCopy(b)
+    let copy = mutableCopy(b)
+    let copy = mutableCopy(b)
+
+    let mut c = 64.0
+    let d = &mut c
+
+    let copy = mutableCopy(d)
