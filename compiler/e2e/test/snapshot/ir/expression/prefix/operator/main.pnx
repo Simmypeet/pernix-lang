@@ -1,0 +1,13 @@
+public function takeUint32(x: uint32):
+    pass
+
+
+public function prefixOperatorTest():
+    not 43
+    takeUint32(-53)
+    -64u32
+    ~32.0
+
+    not true
+    -64i64
+    ~32i32

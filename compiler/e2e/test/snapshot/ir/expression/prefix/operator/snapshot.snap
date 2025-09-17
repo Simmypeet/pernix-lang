@@ -1,0 +1,42 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mismatched types: expected `bool`, found `{number}`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/operator/main.pnx:6:9
+  │
+6 │     not 43
+  │         ^^ expected `bool`, found `{number}`
+  │
+  = ensure the expression type matches the expected type
+
+error: mismatched types: expected `uint32`, found `{signed}`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/operator/main.pnx:7:16
+  │
+7 │     takeUint32(-53)
+  │                ^^^ expected `uint32`, found `{signed}`
+  │
+  = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{signed}`, found `uint32`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/operator/main.pnx:8:6
+  │
+8 │     -64u32
+  │      ^^^^^ expected `{signed}`, found `uint32`
+  │
+  = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{integer}`, found `{floating}`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/prefix/operator/main.pnx:9:6
+  │
+9 │     ~32.0
+  │      ^^^^ expected `{integer}`, found `{floating}`
+  │
+  = ensure the expression type matches the expected type
+
+error: Compilation aborted due to 4 error(s)
+
+
+
+stdout:
