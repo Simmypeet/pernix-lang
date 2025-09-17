@@ -294,12 +294,18 @@ impl Report for MismatchedArgumentsCount {
         Ok(pernixc_diagnostic::Rendered::builder()
             .message(format!(
                 "the function `{qualified_name}` was called with the wrong \
-                 number of arguments",
+                 number of arguments (expected {}, found {})",
+                self.expected, self.supplied
             ))
             .primary_highlight(
                 Highlight::builder()
                     .span(span)
-                    .message("wrong number of arguments")
+                    .message(format!(
+                        "expected {} argument{}, found {}",
+                        self.expected,
+                        if self.expected == 1 { "" } else { "s" },
+                        self.supplied
+                    ))
                     .build(),
             )
             .severity(Severity::Error)
