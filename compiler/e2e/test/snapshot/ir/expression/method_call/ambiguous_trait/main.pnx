@@ -1,0 +1,20 @@
+public trait First[T]:
+    public function coolMethod(self: T)
+
+
+final implements[T] First[T]:
+    function coolMethod(self: T):
+        pass
+
+
+public trait Second[T]:
+    public function coolMethod(self: T)
+
+
+final implements[T] Second[T]:
+    function coolMethod(self: T):
+        pass
+
+
+public function test[T](value: T):
+    value.coolMethod()  # ambiguous trait method call
