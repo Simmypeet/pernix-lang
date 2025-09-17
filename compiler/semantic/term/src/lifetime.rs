@@ -209,7 +209,13 @@ impl Lifetime {
     /// [`crate::display::Display`].
     #[must_use]
     pub const fn will_be_displayed(&self) -> bool {
-        !matches!(self, Self::Inference(_) | Self::Erased | Self::Error(_))
+        !matches!(
+            self,
+            Self::Elided(_)
+                | Self::Inference(_)
+                | Self::Erased
+                | Self::Error(_)
+        )
     }
 }
 
