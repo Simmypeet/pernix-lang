@@ -502,6 +502,7 @@ async fn attempt_trait_method_call(
             MethodReceiverKind::Reference(Qualifier::Immutable),
             MethodReceiverKind::Reference(Qualifier::Mutable),
         ] {
+            let mut found_matches = false;
             for current_candidate in &candidates {
                 if let Some(receiver_ty) = attempt_match_trait_method_candidate(
                     binder,
@@ -518,7 +519,13 @@ async fn attempt_trait_method_call(
                         receiver_ty,
                         lvalue_receiver_kind,
                     ));
+
+                    found_matches = true;
                 }
+            }
+
+            if found_matches {
+                break;
             }
         }
 
