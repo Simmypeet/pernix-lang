@@ -7,7 +7,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::{self, Type};
 
 use crate::{
-    bind::{Bind, Config, Expression},
+    bind::{Bind, Guidance, Expression},
     binder::Error,
     inference_context::constraint,
 };
@@ -18,7 +18,7 @@ impl Bind<&pernixc_syntax::expression::unit::Phantom>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Phantom,
-        _: &Config<'_>,
+        _: &Guidance<'_>,
         _: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         Ok(Expression::RValue(Value::Literal(Literal::Phantom(Phantom {

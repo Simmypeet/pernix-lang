@@ -13,7 +13,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::{Qualifier, Type};
 
 use crate::{
-    bind::{Bind, Config, Expression, Target},
+    bind::{Bind, Guidance, Expression},
     binder::{type_check::Expected, Binder, Error, UnrecoverableError},
     diagnostic::Diagnostic,
     inference_context::constraint,
@@ -39,7 +39,7 @@ impl Binder<'_> {
                 let scope_id = self.push_scope(false);
 
                 let result = self
-                    .bind(expression, &Config::new(Target::Statement), handler)
+                    .bind(expression, &Guidance::builder().build(), handler)
                     .await;
 
                 let result = match result {
@@ -102,9 +102,9 @@ impl Binder<'_> {
             Some(expression) => {
                 self.bind(
                     &expression,
-                    &Config {
-                        target: Target::LValue(type_annotation.as_ref()),
-                    },
+                    &Guidance::builder()
+                        .maybe_type_hint(type_annotation.as_ref())
+                        .build(),
                     handler,
                 )
                 .await

@@ -36,7 +36,7 @@ use crate::{
 pub mod diagnostic;
 
 use crate::{
-    bind::{Bind, Config, Expression},
+    bind::{Bind, Guidance, Expression},
     binder::{Binder, BindingError, Error},
 };
 
@@ -253,7 +253,7 @@ impl Bind<&pernixc_syntax::expression::unit::FunctionCall> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::FunctionCall,
-        _config: &Config<'_>,
+        _config: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let (callable_id, instantiation) =

@@ -1,10 +1,7 @@
 use pernixc_ir::{
+    self,
     address::{self, Address, Memory},
     instruction::{Instruction, Store},
-    value::{
-        register::{Assignment, Load},
-        Value,
-    },
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::fields::get_fields;
@@ -30,7 +27,7 @@ use crate::{
             diagnostic::Diagnostic,
             BindState,
         },
-        Config, Expression, LValue, Target,
+        Expression, LValue,
     },
     binder::{BindingError, Error, UnrecoverableError},
     pattern::bind::diagnostic::FieldIsNotAccessible,
@@ -74,7 +71,6 @@ pub(super) async fn bind_access(
     current_state: BindState,
     current_span: RelativeSpan,
     access: &pernixc_syntax::expression::postfix::Access,
-    config: &Config<'_>,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<(Expression, RelativeSpan), Error> {
     let new_span = current_span.join(&access.span());
@@ -164,27 +160,11 @@ pub(super) async fn bind_access(
 
     let joined_span = new_span;
 
-    match config.target {
-        Target::RValue(_) => {
-            // will be optimized to move later
-            let register_id = binder.create_register_assignment(
-                Assignment::Load(Load { address }),
-                new_span,
-            );
-
-            Ok((Expression::RValue(Value::Register(register_id)), joined_span))
-        }
-
-        // qualifier should've been checked earlier
-        Target::Statement | Target::LValue { .. } => Ok((
-            Expression::LValue(LValue {
-                address,
-                span: joined_span,
-                qualifier,
-            }),
-            joined_span,
-        )),
-    }
+    // qualifier should've been checked earlier
+    Ok((
+        Expression::LValue(LValue { address, span: joined_span, qualifier }),
+        joined_span,
+    ))
 }
 
 async fn access_struct(

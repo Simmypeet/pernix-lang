@@ -3,7 +3,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::Type;
 
 use crate::{
-    bind::{Bind, Config, Expression},
+    bind::{Bind, Guidance, Expression},
     binder::{Binder, Error},
     inference_context::constraint,
 };
@@ -12,7 +12,7 @@ impl Bind<&pernixc_syntax::expression::unit::Array> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Array,
-        _: &Config<'_>,
+        _: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let mut values = Vec::new();

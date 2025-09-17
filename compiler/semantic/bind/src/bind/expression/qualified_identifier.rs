@@ -3,7 +3,7 @@ use std::ops::Deref;
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
     literal::{self, Literal},
-    register::{Assignment, Load, Variant},
+    register::{Assignment, Variant},
     Value,
 };
 use pernixc_resolution::qualified_identifier::Resolution;
@@ -26,7 +26,7 @@ use crate::{
             Diagnostic, ExpectedAssociatedValue,
             SymbolCannotBeUsedAsAnExpression,
         },
-        Bind, Config, Expression, LValue,
+        Bind, Guidance, Expression, LValue,
     },
     binder::{Binder, BindingError, Error},
 };
@@ -37,7 +37,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::QualifiedIdentifier,
-        config: &Config<'_>,
+        config: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, crate::binder::Error> {
         // search for the variable/parameter in the stack
@@ -163,7 +163,7 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
 async fn bind_simple_identifier(
     binder: &mut Binder<'_>,
     syn: &pernixc_syntax::QualifiedIdentifier,
-    config: &Config<'_>,
+    _: &Guidance<'_>,
     handler: &dyn Handler<crate::diagnostic::Diagnostic>,
 ) -> Result<Option<Expression>, crate::binder::Error> {
     let Some(QualifiedIdentifierRoot::GenericIdentifier(ident)) = syn.root()
@@ -189,32 +189,17 @@ async fn bind_simple_identifier(
         return Ok(None);
     };
 
-    match config.target {
-        // load the value
-        crate::bind::Target::RValue(_) => Ok(Some(Expression::RValue(
-            Value::Register(binder.create_register_assignment(
-                Assignment::Load(Load { address: name.load_address.clone() }),
-                syn.span(),
-            )),
-        ))),
+    let name_qualifier =
+        if name.mutable { Qualifier::Mutable } else { Qualifier::Immutable };
 
-        crate::bind::Target::LValue(_) | crate::bind::Target::Statement => {
-            let name_qualifier = if name.mutable {
-                Qualifier::Mutable
-            } else {
-                Qualifier::Immutable
-            };
+    let final_qualifier = binder
+        .get_behind_reference_qualifier(&name.load_address, handler)
+        .await?
+        .map_or(name_qualifier, |x| x.min(name_qualifier));
 
-            let final_qualifier = binder
-                .get_behind_reference_qualifier(&name.load_address, handler)
-                .await?
-                .map_or(name_qualifier, |x| x.min(name_qualifier));
-
-            Ok(Some(Expression::LValue(LValue {
-                address: name.load_address.clone(),
-                span: syn.span(),
-                qualifier: final_qualifier,
-            })))
-        }
-    }
+    Ok(Some(Expression::LValue(LValue {
+        address: name.load_address.clone(),
+        span: syn.span(),
+        qualifier: final_qualifier,
+    })))
 }

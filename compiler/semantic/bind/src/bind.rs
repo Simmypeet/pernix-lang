@@ -1,5 +1,6 @@
 //! Contains the code that binds the syntax tree into IR using binder.
 
+use bon::Builder;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, value::Value};
@@ -11,39 +12,25 @@ use crate::{binder::Error, diagnostic::Diagnostic};
 pub mod expression;
 pub mod statement;
 
-/// An enumeration describes the intended purpose of binding the expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Target<'a> {
-    /// Binds the expression syntax tree for the r-value.
-    ///
-    /// The associated value is a type-expectation hint. The binding
-    /// implementation can use this hint to guide the type inference process.
-    ///
-    /// All the expressions can be bound as a r-value.
-    RValue(Option<&'a Type>),
-
-    /// Binds the syntax tree for the underlying address (l-value).
-    ///
-    /// The associated value is a type-expectation hint. The binding
-    /// implementation can use this hint to guide the type inference process.
-    ///
-    /// This is a *request* to bind the expression as an l-value not strictly
-    /// required. If the expression cannot be bound as an l-value, the r-value
-    /// is returned instead.
-    LValue(Option<&'a Type>),
-
-    /// The expression is being bound for a statement, therefore the produced
-    /// value will be discarded right away.
-    Statement,
-}
-
-/// The configuration object for binding the expression syntax tree.
+/// The optional guidance for binding the expression.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_new::new,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    derive_new::new,
+    Builder,
 )]
-pub struct Config<'a> {
-    /// The intended purpose of binding the expression.
-    pub target: Target<'a>,
+pub struct Guidance<'a> {
+    /// The type hint for the expression.
+    ///
+    /// This is simply a guidance for the implementation of [`Bind`] and
+    /// does not have to be strictly followed or type-checked.
+    pub type_hint: Option<&'a Type>,
 }
 
 /// The result of binding the expression as an l-value. (The value has an
@@ -67,12 +54,21 @@ pub enum Expression {
     RValue(Value),
 
     /// The expression is bound as an l-value.
+    ///
+    /// If the expression can be bound as l-value, it will always be bound as
+    /// l-value. However, it's always possible to convert an l-value to an
+    /// r-value by simply loading the value from the address.
     LValue(LValue),
 }
 
 /// The trait for binding the expression syntax tree.
 pub trait Bind<T> {
     /// Binds the given syntax tree to the [`Expression`].
+    ///
+    /// # Returns an [`Expression`]
+    ///
+    /// If the expression can be bound as an l-value, the implementation must
+    /// always bind it as an l-value.
     ///
     /// # Errors
     ///
@@ -81,7 +77,7 @@ pub trait Bind<T> {
     fn bind<'s, 'c, 't, 'h>(
         &'s mut self,
         syntax_tree: T,
-        config: &'c Config<'t>,
+        guidance: &'c Guidance<'t>,
         handler: &'h dyn Handler<Diagnostic>,
     ) -> impl std::future::Future<Output = Result<Expression, Error>>
            + use<'s, 'c, 't, 'h, T, Self>;

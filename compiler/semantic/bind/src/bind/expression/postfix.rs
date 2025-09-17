@@ -3,13 +3,14 @@ use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
 
 use crate::{
-    bind::{Bind, Config, Expression},
+    bind::{Bind, Expression, Guidance},
     binder::{BindingError, Error},
     diagnostic::Diagnostic,
 };
 
 pub mod access;
 pub mod diagnostic;
+pub mod method_call;
 
 #[derive(Debug, EnumAsInner)]
 #[allow(clippy::large_enum_variant)]
@@ -24,7 +25,7 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::postfix::Postfix,
-        config: &Config<'_>,
+        config: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(unit) = syntax_tree.unit() else {
@@ -45,8 +46,8 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
         for operator in postfix_operators {
             match operator {
                 pernixc_syntax::expression::postfix::Operator::MethodCall(
-                    _method_call,
-                ) => todo!(),
+                    method_call,
+                ) => {}
                 pernixc_syntax::expression::postfix::Operator::Cast(_cast) => {}
                 pernixc_syntax::expression::postfix::Operator::Access(
                     access,
@@ -56,7 +57,6 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
                         bind_state,
                         current_span,
                         &access,
-                        config,
                         handler,
                     )
                     .await?;

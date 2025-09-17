@@ -26,7 +26,7 @@ use crate::{
             Diagnostic, DuplicatedFieldInitialization, ExpectedStructSymbol,
             FieldIsNotAccessible, FieldNotFound, UninitializedFields,
         },
-        Bind, Config, Expression,
+        Bind, Guidance, Expression,
     },
     binder::{Binder, BindingError, Error},
 };
@@ -39,7 +39,7 @@ impl Bind<&pernixc_syntax::expression::unit::Struct>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Struct,
-        _: &Config<'_>,
+        _: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(qualified_identifier) = syntax_tree.qualified_identifier()

@@ -6,7 +6,7 @@ use pernixc_ir::value::{
 use pernixc_source_file::SourceElement;
 
 use crate::{
-    bind::{Bind, Config, Expression},
+    bind::{Bind, Guidance, Expression},
     binder::{Binder, Error},
 };
 
@@ -14,7 +14,7 @@ impl Bind<&pernixc_syntax::expression::unit::String> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::String,
-        _: &Config<'_>,
+        _: &Guidance<'_>,
         _: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let Some(string) = syntax_tree.string() else {

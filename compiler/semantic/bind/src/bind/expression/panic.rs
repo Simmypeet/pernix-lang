@@ -7,7 +7,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::Type;
 
 use crate::{
-    bind::{Bind, Config, Expression},
+    bind::{Bind, Guidance, Expression},
     binder::Error,
     diagnostic::Diagnostic,
     inference_context::constraint,
@@ -19,7 +19,7 @@ impl Bind<&pernixc_syntax::expression::unit::Panic>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Panic,
-        _: &Config<'_>,
+        _: &Guidance<'_>,
         _: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         self.insert_panic_terminator();

@@ -12,7 +12,7 @@ use crate::{
         expression::parenthesized::diagnostic::{
             Diagnostic, MoreThanOneUnpackedInTupleExpression,
         },
-        Bind, Config, Expression,
+        Bind, Guidance, Expression,
     },
     binder::{BindingError, Error},
 };
@@ -25,7 +25,7 @@ impl Bind<&pernixc_syntax::expression::unit::Parenthesized>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Parenthesized,
-        config: &Config<'_>,
+        config: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<crate::bind::Expression, Error> {
         let element = syntax_tree.unpackables().collect::<Vec<_>>();

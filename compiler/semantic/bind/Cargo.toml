@@ -32,6 +32,7 @@ thiserror = { workspace = true }
 derive_more = { workspace = true }
 derive-new = { workspace = true }
 flexstr = { workspace = true }
+bon = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

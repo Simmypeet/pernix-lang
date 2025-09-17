@@ -12,7 +12,7 @@ use crate::{
             Diagnostic, FloatingPointLiteralHasIntegralSuffix,
             InvalidNumericSuffix,
         },
-        Bind, Config, Expression,
+        Bind, Guidance, Expression,
     },
     binder::{Binder, BindingError, Error},
     inference_context::constraint,
@@ -24,7 +24,7 @@ impl Bind<&pernixc_syntax::expression::unit::Numeric> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::unit::Numeric,
-        _: &Config<'_>,
+        _: &Guidance<'_>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<Expression, Error> {
         let numeric_ty = if let Some(suffix) = syntax_tree.identifier() {
