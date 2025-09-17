@@ -3,23 +3,23 @@ source: compiler/e2e/test/snapshot/mod.rs
 expression: clean_run
 ---
 stderr:
-error: the function `main::takeTwo` was called with the wrong number of arguments
+error: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 0)
   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:6:12
   │
 6 │     takeTwo()
-  │            ^^ wrong number of arguments
+  │            ^^ expected 2 arguments, found 0
 
-error: the function `main::takeTwo` was called with the wrong number of arguments
+error: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 1)
   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:7:12
   │
 7 │     takeTwo(32)
-  │            ^^^^ wrong number of arguments
+  │            ^^^^ expected 2 arguments, found 1
 
-error: the function `main::takeTwo` was called with the wrong number of arguments
+error: the function `main::takeTwo` was called with the wrong number of arguments (expected 2, found 3)
   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/mismatched_count/main.pnx:8:12
   │
 8 │     takeTwo(32, 64, 128)
-  │            ^^^^^^^^^^^^^ wrong number of arguments
+  │            ^^^^^^^^^^^^^ expected 2 arguments, found 3
 
 error: Compilation aborted due to 3 error(s)
 
