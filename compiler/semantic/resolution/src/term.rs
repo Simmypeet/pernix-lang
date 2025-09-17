@@ -493,9 +493,8 @@ pub async fn resolve_qualified_identifier_type(
             });
 
     // try to resolve the simple identifier in the extra namespace
-    if let (true, Some(extra_type)) = (
-        is_simple_identifier,
-        config.extra_namespace.and_then(|x| {
+    if is_simple_identifier {
+        if let Some(extra_type) = config.extra_namespace.and_then(|x| {
             x.types
                 .get(
                     syntax_tree
@@ -509,9 +508,9 @@ pub async fn resolve_qualified_identifier_type(
                         .as_str(),
                 )
                 .cloned()
-        }),
-    ) {
-        return Ok(extra_type);
+        }) {
+            return Ok(extra_type);
+        }
     }
 
     let resolution = match self
