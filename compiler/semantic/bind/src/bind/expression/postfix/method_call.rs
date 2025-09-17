@@ -119,7 +119,7 @@ pub(super) async fn bind_method_call(
         Err(lvalue) => lvalue,
     };
 
-    if let Some(value) = attempt_trait_method_call(
+    match attempt_trait_method_call(
         binder,
         lvalue,
         method_call,
@@ -129,25 +129,34 @@ pub(super) async fn bind_method_call(
     )
     .await?
     {
-        return Ok((
+        Ok(value) => Ok((
             Expression::RValue(value),
             current_span.join(&method_call.span()),
-        ));
+        )),
+
+        Err(TraitMethodError::Ambiguous) => Err(Error::Binding(BindingError(
+            current_span.join(&method_call.span()),
+        ))),
+
+        Err(TraitMethodError::NotFound) => {
+            handler.receive(
+                Diagnostic::MethodCallNotFound(MethodCallNotFound {
+                    method_name: identifier.kind.0,
+                    receiver_type: ty.clone(),
+                    method_span: identifier.span,
+                    receiver_span: current_span,
+                    type_inference_map: binder.type_inference_rendering_map(),
+                    constant_inference_map: binder
+                        .constant_inference_rendering_map(),
+                })
+                .into(),
+            );
+
+            Err(Error::Binding(BindingError(
+                current_span.join(&method_call.span()),
+            )))
+        }
     }
-
-    handler.receive(
-        Diagnostic::MethodCallNotFound(MethodCallNotFound {
-            method_name: identifier.kind.0,
-            receiver_type: ty.clone(),
-            method_span: identifier.span,
-            receiver_span: current_span,
-            type_inference_map: binder.type_inference_rendering_map(),
-            constant_inference_map: binder.constant_inference_rendering_map(),
-        })
-        .into(),
-    );
-
-    Err(Error::Binding(BindingError(current_span.join(&method_call.span()))))
 }
 
 fn extend_inference_instantiation(
@@ -463,6 +472,11 @@ async fn attempt_match_trait_method_candidate(
     }
 }
 
+enum TraitMethodError {
+    NotFound,
+    Ambiguous,
+}
+
 #[allow(clippy::too_many_lines)]
 async fn attempt_trait_method_call(
     binder: &mut crate::binder::Binder<'_>,
@@ -471,7 +485,7 @@ async fn attempt_trait_method_call(
     identifier: &pernixc_syntax::Identifier,
     call: &pernixc_syntax::expression::Call,
     handler: &dyn pernixc_handler::Handler<crate::diagnostic::Diagnostic>,
-) -> Result<Option<Value>, Error> {
+) -> Result<Result<Value, TraitMethodError>, Error> {
     let visible_traits = visible_traits(binder).await?;
     let candidates =
         trait_method_candidates(binder, &identifier.kind.0, &visible_traits)
@@ -509,11 +523,11 @@ async fn attempt_trait_method_call(
         }
 
         // exactly one candidate matched
-        match candidates.len() {
+        match matched_candidates.len() {
             0 => {
                 let Type::Reference(inner) = address_ty else {
                     // can no longer deref
-                    break None;
+                    break Err(TraitMethodError::NotFound);
                 };
 
                 let new_qualifier = inner.qualifier.min(
@@ -533,7 +547,7 @@ async fn attempt_trait_method_call(
                     qualifier: new_qualifier,
                 };
             }
-            1 => break Some(matched_candidates.pop().unwrap()),
+            1 => break Ok(matched_candidates.pop().unwrap()),
             2.. => {
                 handler.receive(
                     Diagnostic::AmbiguousMethodCall(AmbiguousMethodCall {
@@ -552,13 +566,15 @@ async fn attempt_trait_method_call(
                     })
                     .into(),
                 );
+
+                break Err(TraitMethodError::Ambiguous);
             }
         }
     };
 
-    let Some((candidate, receiver_ty, lvalue_receiver_kind)) = candidate else {
-        // no matched candidates
-        return Ok(None);
+    let (candidate, receiver_ty, lvalue_receiver_kind) = match candidate {
+        Ok(a) => a,
+        Err(err) => return Ok(Err(err)),
     };
 
     let mut inst = if let Some(generic_arguments) =
@@ -682,7 +698,7 @@ async fn attempt_trait_method_call(
         // soft error, continue
     }
 
-    Ok(Some(Value::Register(
+    Ok(Ok(Value::Register(
         binder
             .bind_method_call(
                 candidate.method_id,

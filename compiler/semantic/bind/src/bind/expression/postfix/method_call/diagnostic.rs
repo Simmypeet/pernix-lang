@@ -1,5 +1,6 @@
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
+use pernixc_hash::HashSet;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
@@ -105,7 +106,7 @@ pub struct AmbiguousMethodCall {
     pub receiver_span: RelativeSpan,
 
     /// The candidates that were found.
-    pub candidates: Vec<Global<pernixc_symbol::ID>>,
+    pub candidates: HashSet<Global<pernixc_symbol::ID>>,
 
     /// The type inference map to use when rendering types.
     pub type_inference_map: InferenceRenderingMap<Type>,
