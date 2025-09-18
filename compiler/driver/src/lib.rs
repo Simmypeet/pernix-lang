@@ -338,6 +338,7 @@ pub async fn run(
         .await
     };
 
+    drop(tracked_engine);
     let mut engine =
         Arc::try_unwrap(engine).expect("Engine should be unique at this point");
 
