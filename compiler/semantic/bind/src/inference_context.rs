@@ -9,7 +9,10 @@ use getset::Getters;
 use pernixc_arena::ID;
 use pernixc_query::TrackedEngine;
 use pernixc_term::{
-    constant::Constant, inference, lifetime::Lifetime, r#type::Type,
+    constant::Constant,
+    inference,
+    lifetime::Lifetime,
+    r#type::{Primitive, Type},
     visitor::RecursiveIterator,
 };
 use pernixc_type_system::{
@@ -573,6 +576,55 @@ impl InferenceContext {
             Ok(()) => Ok(()),
 
             Err(error) => Err(T::from_constraint_error(error)),
+        }
+    }
+
+    /// Scans through every the inference variables and fills the default
+    /// type for them if possible (e.g., {number} -> int32)
+    pub fn fill_default_inferences(&mut self) {
+        let inference_variables = self
+            .type_table
+            .inference_by_ids()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+
+        for inference_variable in inference_variables {
+            let Inference::Inferring(inference) =
+                self.type_table.get_inference(inference_variable).unwrap()
+            else {
+                continue;
+            };
+
+            let default_type =
+                match *self.type_table.get_constraint(*inference).unwrap() {
+                    constraint::Type::All(can_default) => {
+                        if !can_default {
+                            continue;
+                        }
+
+                        Type::Tuple(pernixc_term::tuple::Tuple {
+                            elements: Vec::new(),
+                        })
+                    }
+
+                    constraint::Type::Signed
+                    | constraint::Type::Integer
+                    | constraint::Type::SignedInteger
+                    | constraint::Type::Number => {
+                        Type::Primitive(Primitive::Int32)
+                    }
+
+                    constraint::Type::UnsignedInteger => {
+                        Type::Primitive(Primitive::Uint32)
+                    }
+
+                    constraint::Type::Floating => {
+                        Type::Primitive(Primitive::Float32)
+                    }
+                };
+
+            self.type_table.assign_known(*inference, default_type).unwrap();
         }
     }
 }

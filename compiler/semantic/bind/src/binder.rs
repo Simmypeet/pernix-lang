@@ -55,6 +55,7 @@ use crate::{
     pattern::insert_name_binding,
 };
 
+pub mod finalize;
 pub mod stack;
 pub mod type_check;
 
@@ -638,10 +639,6 @@ impl Binder<'_> {
             .current_block_mut()
             .add_instruction(Instruction::ScopePush(ScopePush(scope_id)));
     }
-
-    /// Finishes the building process and returns the built IR.
-    #[must_use]
-    pub fn finish(self) -> IR { self.ir }
 
     /// Resolves a qualified identifier with possible type and constant
     /// inferences.

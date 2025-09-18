@@ -8,6 +8,7 @@ use std::{
 };
 
 use enum_as_inner::EnumAsInner;
+use getset::Getters;
 use pernixc_arena::{Arena, ID};
 use pernixc_term::inference;
 
@@ -31,8 +32,10 @@ pub enum Inference<C: Constraint> {
 
 /// The table that stores the inference variable and its state. Offering basic
 /// operations to manage and query the inference variables.
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct Table<C: Constraint> {
+    /// The mapping of inference variable to its current state.
+    #[get = "pub"]
     inference_by_ids: HashMap<inference::Variable<C::Term>, Inference<C>>,
     constraints: Arena<C>,
     history: History<C>,

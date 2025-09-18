@@ -6,7 +6,10 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
-use pernixc_symbol::source_map::to_absolute_span;
+use pernixc_symbol::{
+    name::get_qualified_name, source_map::to_absolute_span, span::get_span,
+};
+use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     display::{Display, InferenceRenderingMap},
@@ -51,6 +54,7 @@ diagnostic_enum! {
         UnsafeRequired(expression::diagnostic::UnsafeRequired),
         AssignToNonMutable(AssignToNonMutable),
         InvalidTypeInBinaryOperator(InvalidTypeInBinaryOperator),
+        NotAllFlowPathsReturnAValue(NotAllFlowPathsReturnAValue),
     }
 }
 
@@ -276,6 +280,41 @@ impl Report for InvalidTypeInBinaryOperator {
                     "only an integer type can be used with bitwise operators"
                 }
             })
+            .build())
+    }
+}
+
+/// Not all control flow paths in a function return a value.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct NotAllFlowPathsReturnAValue {
+    /// The ID of the callable that does not return a value on all paths.
+    pub callable_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report for NotAllFlowPathsReturnAValue {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let span = engine
+            .to_absolute_span(&engine.get_span(self.callable_id).await.unwrap())
+            .await;
+
+        let qualified_name = engine.get_qualified_name(self.callable_id).await;
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(Highlight::builder().span(span).build())
+            .severity(Severity::Error)
+            .message(format!(
+                "not all control flow paths in function `{qualified_name}` \
+                 return a value"
+            ))
+            .help_message(
+                "consider adding a return statement to all control flow paths",
+            )
             .build())
     }
 }
