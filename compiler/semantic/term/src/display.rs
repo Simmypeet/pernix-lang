@@ -127,4 +127,18 @@ pub trait Display: Send + Sync {
             self.fmt(engine, &mut formatter).await
         }
     }
+
+    /// Writes the value into a string
+    fn write_to_string(
+        &self,
+        engine: &TrackedEngine,
+    ) -> impl std::future::Future<Output = Result<String, std::fmt::Error>>
+    {
+        async move {
+            let mut string = String::new();
+            self.write_async(engine, &mut string).await?;
+
+            Result::<_, std::fmt::Error>::Ok(string)
+        }
+    }
 }
