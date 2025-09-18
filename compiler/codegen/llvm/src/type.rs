@@ -12,28 +12,27 @@ use inkwell::{
     AddressSpace,
 };
 use pernixc_arena::ID;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            fields::{Field, Fields},
-            generic_parameters::GenericParameters,
-            ir::model::Erased,
-            variant::Variant,
-        },
-        input::{Member, Name, SymbolKind, VariantDeclarationOrder},
-    },
-    table::{DisplayObject, GlobalID},
-    term::{
-        self,
-        constant::Constant,
-        generic_arguments::GenericArguments,
-        instantiation::{self, Instantiation},
-        lifetime::Lifetime,
-        r#type::{Primitive, Tuple, Type},
-        sub_term::TermLocation,
-        visitor::MutableRecursive,
-        Model as _, Symbol,
-    },
+use pernixc_semantic_element::{
+    fields::{get_fields, Field},
+    variant::get_variant_associated_type,
+};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::get_name,
+    variant_declaration_order::get_variant_declaration_order,
+};
+use pernixc_target::Global;
+use pernixc_term::{
+    constant::Constant,
+    display::Display,
+    generic_arguments::{GenericArguments, Symbol},
+    generic_parameters::get_generic_parameters,
+    instantiation::Instantiation,
+    lifetime::Lifetime,
+    r#type::{Primitive, Tuple, Type},
+    sub_term::TermLocation,
+    visitor::MutableRecursive,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -41,7 +40,7 @@ use pernixc_type_system::{
     term::Term,
 };
 
-use crate::{context::Context, zst::Zst, Model};
+use crate::{context::Context, zst::Zst};
 
 /// An extension trait for [`BasicTypeEnum`] to check whether the type is an
 /// aggregate type.
@@ -129,7 +128,8 @@ pub struct TaggedUnion<'ctx> {
     /// The representation looks like this:
     /// `type { tag_ty, payload } or type { tag_ty }` depending on whether the
     /// variant's associated type is ZST or not.
-    pub llvm_variant_types: HashMap<GlobalID, StructType<'ctx>>,
+    pub llvm_variant_types:
+        HashMap<Global<pernixc_symbol::ID>, StructType<'ctx>>,
 
     /// The layout of the tagged union of the most aligned variant.
     pub most_alignment_type: StructType<'ctx>,
@@ -170,49 +170,47 @@ pub struct Map<'ctx> {
     /// The mapping between the ADT instantiation and the LLVM type.
     ///
     /// If the value is `None`, it means that the struct is `Zero-sized type`.
-    struct_sigantures:
-        HashMap<Symbol<Model>, Option<Rc<LlvmStructSignature<'ctx>>>>,
+    struct_sigantures: HashMap<Symbol, Option<Rc<LlvmStructSignature<'ctx>>>>,
 
     /// The mapping between the tuple and the LLVM type.
     ///
     /// If the value is `None`, it means that the tuple is `Zero-sized type`.
-    tuple_signatures:
-        HashMap<Tuple<Model>, Option<Rc<LlvmTupleSignature<'ctx>>>>,
+    tuple_signatures: HashMap<Tuple, Option<Rc<LlvmTupleSignature<'ctx>>>>,
 
     /// The mapping between the enum and the LLVM type.
-    enum_signatures: HashMap<Symbol<Model>, Rc<LlvmEnumSignature<'ctx>>>,
+    enum_signatures: HashMap<Symbol, Rc<LlvmEnumSignature<'ctx>>>,
 }
 
 /// A mutable visitor that erases all the lifetimes in the term.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct EraseLifetime;
 
-impl MutableRecursive<Lifetime<Model>> for EraseLifetime {
+impl MutableRecursive<Lifetime> for EraseLifetime {
     fn visit(
         &mut self,
-        term: &mut Lifetime<Model>,
+        term: &mut Lifetime,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        *term = Lifetime::Inference(Erased);
+        *term = Lifetime::Erased;
 
         true
     }
 }
 
-impl MutableRecursive<Type<Model>> for EraseLifetime {
+impl MutableRecursive<Type> for EraseLifetime {
     fn visit(
         &mut self,
-        _: &mut Type<Model>,
+        _: &mut Type,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
     }
 }
 
-impl MutableRecursive<Constant<Model>> for EraseLifetime {
+impl MutableRecursive<Constant> for EraseLifetime {
     fn visit(
         &mut self,
-        _: &mut Constant<Model>,
+        _: &mut Constant,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
         true
@@ -222,90 +220,113 @@ impl MutableRecursive<Constant<Model>> for EraseLifetime {
 impl<'ctx> Context<'_, 'ctx> {
     /// Performs [`Self::normalize_term`] on all the terms in the generic
     /// arguments.
-    pub fn normalize_instantiation(
+    pub async fn normalize_instantiation(
         &self,
-        instantiation: &mut Instantiation<Model>,
+        instantiation: &mut Instantiation,
     ) {
         let mut erase_lifetime = EraseLifetime;
 
         for lifetime in instantiation.lifetimes.values_mut() {
-            term::visitor::accept_recursive_mut(lifetime, &mut erase_lifetime);
+            pernixc_term::visitor::accept_recursive_mut(
+                lifetime,
+                &mut erase_lifetime,
+            );
         }
 
         for ty in &mut instantiation.types.values_mut() {
-            term::visitor::accept_recursive_mut(ty, &mut erase_lifetime);
-            take_mut::take(ty, |ty| self.normalize_term(ty));
+            pernixc_term::visitor::accept_recursive_mut(
+                ty,
+                &mut erase_lifetime,
+            );
+
+            *ty = self.normalize_term(std::mem::take(ty)).await;
         }
 
         for constant in &mut instantiation.constants.values_mut() {
-            term::visitor::accept_recursive_mut(constant, &mut erase_lifetime);
-            take_mut::take(constant, |constant| self.normalize_term(constant));
+            pernixc_term::visitor::accept_recursive_mut(
+                constant,
+                &mut erase_lifetime,
+            );
+
+            *constant = self.normalize_term(std::mem::take(constant)).await;
         }
     }
 
     /// Performs [`Self::normalize_term`] on all the terms in the generic
     /// arguments.
-    pub fn normalize_generic_arguments(
+    pub async fn normalize_generic_arguments(
         &self,
-        generic_arguments: &mut GenericArguments<Model>,
+        generic_arguments: &mut GenericArguments,
     ) {
         let mut erase_lifetime = EraseLifetime;
 
         for lifetime in &mut generic_arguments.lifetimes {
-            term::visitor::accept_recursive_mut(lifetime, &mut erase_lifetime);
+            pernixc_term::visitor::accept_recursive_mut(
+                lifetime,
+                &mut erase_lifetime,
+            );
         }
 
         for ty in &mut generic_arguments.types {
-            term::visitor::accept_recursive_mut(ty, &mut erase_lifetime);
-            take_mut::take(ty, |ty| self.normalize_term(ty));
+            pernixc_term::visitor::accept_recursive_mut(
+                ty,
+                &mut erase_lifetime,
+            );
+            *ty = self.normalize_term(std::mem::take(ty)).await;
         }
 
         for constant in &mut generic_arguments.constants {
-            term::visitor::accept_recursive_mut(constant, &mut erase_lifetime);
-            take_mut::take(constant, |constant| self.normalize_term(constant));
+            pernixc_term::visitor::accept_recursive_mut(
+                constant,
+                &mut erase_lifetime,
+            );
+            *constant = self.normalize_term(std::mem::take(constant)).await;
         }
     }
 
     /// Normalizes the term by removing all the trait member types and packed
     /// tuple elements.
-    pub fn normalize_term<T: Term<Model = Model>>(&self, mut term: T) -> T {
+    pub async fn normalize_term<T: Term>(&self, mut term: T) -> T {
         let env = Environment::new(
-            Cow::Owned(Premise::<Model> {
+            Cow::Owned(Premise {
                 predicates: BTreeSet::default(),
                 // NOTE: query site should not influence the simplification
                 // process
                 query_site: None,
             }),
-            self.table(),
+            Cow::Borrowed(self.engine()),
             normalizer::NO_OP,
         );
 
         let mut erase_lifetime = EraseLifetime;
-        term::visitor::accept_recursive_mut(&mut term, &mut erase_lifetime);
+        pernixc_term::visitor::accept_recursive_mut(
+            &mut term,
+            &mut erase_lifetime,
+        );
 
-        env.simplify(term).unwrap().result.clone()
+        env.simplify(term).await.unwrap().result.clone()
     }
 
     /// Mono-morphizes the term by instantiating the term, normalizing it, and
     /// erase all the lifetimes.
-    pub fn monomorphize_term<T: Term<Model = Model>>(
+    pub async fn monomorphize_term<T: Term>(
         &self,
         mut term: T,
-        instantiation: &Instantiation<Model>,
+        instantiation: &Instantiation,
     ) -> T {
-        instantiation::instantiate(&mut term, instantiation);
+        instantiation.instantiate(&mut term);
 
-        self.normalize_term(term)
+        self.normalize_term(term).await
     }
 
     /// Gets the [`LlvmStructSignature`] from the Pernix tuple type.
     #[allow(clippy::missing_errors_doc)]
-    pub fn get_struct_type(
+    pub async fn get_struct_type(
         &mut self,
-        symbol: Symbol<Model>,
+        symbol: Symbol,
     ) -> Result<Rc<LlvmStructSignature<'ctx>>, Zst> {
         let generic_params =
-            self.table().query::<GenericParameters>(symbol.id).unwrap();
+            self.engine().get_generic_parameters(symbol.id).await.unwrap();
 
         let instantiation = Instantiation::from_generic_arguments(
             symbol.generic_arguments.clone(),
@@ -321,7 +342,7 @@ impl<'ctx> Context<'_, 'ctx> {
             return value.ok_or(Zst);
         }
 
-        let fields = self.table().query::<Fields>(symbol.id).unwrap();
+        let fields = self.engine().get_fields(symbol.id).await.unwrap();
 
         let mut llvm_field_types = Vec::new();
         let mut llvm_field_indices_by_field_id = HashMap::new();
@@ -329,10 +350,16 @@ impl<'ctx> Context<'_, 'ctx> {
 
         for field_id in fields.field_declaration_order.iter().copied() {
             let field = &fields.fields[field_id];
-            let llvm_field_ty = self.get_type(self.monomorphize_term(
-                Model::from_default_type(field.r#type.clone()),
-                &instantiation,
-            ));
+            let llvm_field_ty = Box::pin(
+                self.get_type(
+                    self.monomorphize_term(
+                        field.r#type.clone(),
+                        &instantiation,
+                    )
+                    .await,
+                ),
+            )
+            .await;
 
             if let Ok(ty) = llvm_field_ty {
                 llvm_field_types.push(ty);
@@ -344,9 +371,11 @@ impl<'ctx> Context<'_, 'ctx> {
         let ty = if llvm_field_types.is_empty() {
             None
         } else {
-            let qualified_name =
-                DisplayObject { display: &symbol, table: self.table() }
-                    .to_string();
+            let mut qualified_name = String::new();
+            symbol
+                .write_async(self.engine(), &mut qualified_name)
+                .await
+                .unwrap();
 
             let llvm_struct_type =
                 self.context().opaque_struct_type(&qualified_name);
@@ -367,9 +396,9 @@ impl<'ctx> Context<'_, 'ctx> {
 
     /// Gets the [`LlvmTupleSignature`] from the Pernix tuple type.
     #[allow(clippy::missing_errors_doc)]
-    pub fn get_tuple_type(
+    pub async fn get_tuple_type(
         &mut self,
-        tuple: Tuple<Model>,
+        tuple: Tuple,
     ) -> Result<Rc<LlvmTupleSignature<'ctx>>, Zst> {
         if let Some(value) =
             self.type_map_mut().tuple_signatures.get(&tuple).cloned()
@@ -386,7 +415,9 @@ impl<'ctx> Context<'_, 'ctx> {
                 "unpacked tuple element found {element:?}"
             );
 
-            if let Ok(llvm_ty) = self.get_type(element.term.clone()) {
+            if let Ok(llvm_ty) =
+                Box::pin(self.get_type(element.term.clone())).await
+            {
                 llvm_indices_by_tuple_index.insert(index, elements.len());
                 elements.push(llvm_ty);
             }
@@ -395,9 +426,11 @@ impl<'ctx> Context<'_, 'ctx> {
         let ty = if elements.is_empty() {
             None
         } else {
-            let qualified_name =
-                DisplayObject { display: &tuple, table: self.table() }
-                    .to_string();
+            let mut qualified_name = String::new();
+            tuple
+                .write_async(self.engine(), &mut qualified_name)
+                .await
+                .unwrap();
 
             let llvm_tuple_type =
                 self.context().opaque_struct_type(&qualified_name);
@@ -424,9 +457,9 @@ impl<'ctx> Context<'_, 'ctx> {
         clippy::cast_precision_loss,
         clippy::too_many_lines
     )]
-    pub fn get_enum_type(
+    pub async fn get_enum_type(
         &mut self,
-        symbol: Symbol<Model>,
+        symbol: Symbol,
     ) -> Rc<LlvmEnumSignature<'ctx>> {
         fn get_bit_count(length: usize) -> usize {
             // calculates the number of bits required to represent the enum
@@ -453,7 +486,7 @@ impl<'ctx> Context<'_, 'ctx> {
         }
 
         let generic_params =
-            self.table().query::<GenericParameters>(symbol.id).unwrap();
+            self.engine().get_generic_parameters(symbol.id).await.unwrap();
 
         let instantiation = Instantiation::from_generic_arguments(
             symbol.generic_arguments.clone(),
@@ -462,31 +495,45 @@ impl<'ctx> Context<'_, 'ctx> {
         )
         .unwrap();
 
-        let mut variants = self
-            .table()
-            .get::<Member>(symbol.id)
-            .0
+        let mut variants = Vec::new();
+
+        for variant in self
+            .engine()
+            .get_members(symbol.id)
+            .await
+            .member_ids_by_name
             .values()
             .copied()
-            .map(|x| GlobalID::new(symbol.id.target_id, x))
-            .collect::<Vec<_>>();
+            .map(|x| symbol.id.target_id.make_global(x))
+        {
+            variants.push((
+                variant,
+                self.engine().get_variant_declaration_order(variant).await,
+            ));
+        }
 
-        variants.sort_by_cached_key(|x| {
-            **self.table().get::<VariantDeclarationOrder>(*x)
-        });
+        variants.sort_by_key(|x| x.1);
 
         let mut llvm_variant_types = Vec::new();
 
         // gets the of each enum variants
-        for variant_id in variants.iter().copied() {
-            let variant = self.table().query::<Variant>(variant_id).unwrap();
+        for (variant_id, _) in variants.iter().copied() {
+            let variant = self
+                .engine()
+                .get_variant_associated_type(variant_id)
+                .await
+                .unwrap();
 
-            if let Some(associated_ty) = &variant.associated_type {
-                let mut ty = Model::from_default_type(associated_ty.clone());
-                ty = self.monomorphize_term(ty, &instantiation);
+            if let Some(associated_ty) = &variant {
+                let mut ty = (**associated_ty).clone();
+                ty = self.monomorphize_term(ty, &instantiation).await;
 
-                llvm_variant_types
-                    .push(self.get_type(ty.clone()).ok().map(|x| (x, ty)));
+                llvm_variant_types.push(
+                    Box::pin(self.get_type(ty.clone()))
+                        .await
+                        .ok()
+                        .map(|x| (x, ty)),
+                );
             } else {
                 llvm_variant_types.push(None);
             }
@@ -549,9 +596,11 @@ impl<'ctx> Context<'_, 'ctx> {
         }
         // normal tagged union
         else {
-            let enum_qualified_name =
-                DisplayObject { display: &symbol, table: self.table() }
-                    .to_string();
+            let mut enum_qualified_name = String::new();
+            symbol
+                .write_async(self.engine(), &mut enum_qualified_name)
+                .await
+                .unwrap();
 
             let tag_bit_count = get_bit_count(llvm_variant_types.len());
             let tag_ty = self
@@ -559,13 +608,13 @@ impl<'ctx> Context<'_, 'ctx> {
                 .custom_width_int_type(tag_bit_count.try_into().unwrap());
 
             let mut llvm_variant_with_tag_types = HashMap::new();
-            for (variant_id, variant) in
+            for ((variant_id, _), variant) in
                 variants.iter().copied().zip(llvm_variant_types)
             {
                 let variant_qualified_name = format!(
                     "{}::{}",
                     enum_qualified_name,
-                    self.table().get::<Name>(variant_id).0
+                    self.engine().get_name(variant_id).await
                 );
 
                 let ty =
@@ -712,9 +761,9 @@ impl<'ctx> Context<'_, 'ctx> {
     /// fully monomorphized, meaning that there shouldn't be generic parameters,
     /// trait members, or non-erased lifetimes.
     #[allow(clippy::too_many_lines, clippy::missing_errors_doc)]
-    pub fn get_type(
+    pub async fn get_type(
         &mut self,
-        ty: Type<Model>,
+        ty: Type,
     ) -> Result<BasicTypeEnum<'ctx>, Zst> {
         match ty {
             Type::Primitive(primitive) => {
@@ -732,7 +781,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 Ok(self.context().ptr_type(AddressSpace::default()).into())
             }
 
-            Type::Inference(infer) => match infer {},
+            Type::Inference(infer) => panic!("inference type found {infer:?}"),
 
             Type::Array(array_ty) => {
                 if *array_ty.length.as_primitive().unwrap().as_usize().unwrap()
@@ -740,7 +789,8 @@ impl<'ctx> Context<'_, 'ctx> {
                 {
                     return Err(Zst);
                 }
-                let element_ty = self.get_type(*array_ty.r#type)?;
+                let element_ty =
+                    Box::pin(self.get_type(*array_ty.r#type)).await?;
 
                 Ok(element_ty
                     .array_type(
@@ -757,18 +807,20 @@ impl<'ctx> Context<'_, 'ctx> {
             }
 
             Type::Symbol(symbol) => {
-                let symbol_kind = *self.table().get::<SymbolKind>(symbol.id);
+                let symbol_kind = self.engine().get_kind(symbol.id).await;
 
                 match symbol_kind {
-                    SymbolKind::Struct => {
-                        let struct_signature =
-                            self.get_struct_type(symbol).map_err(|_| Zst)?;
+                    Kind::Struct => {
+                        let struct_signature = self
+                            .get_struct_type(symbol)
+                            .await
+                            .map_err(|_| Zst)?;
 
                         Ok(struct_signature.llvm_struct_type.into())
                     }
 
-                    SymbolKind::Enum => {
-                        let enum_signature = self.get_enum_type(symbol);
+                    Kind::Enum => {
+                        let enum_signature = self.get_enum_type(symbol).await;
 
                         match &*enum_signature {
                             LlvmEnumSignature::Zst => Err(Zst),
@@ -793,7 +845,7 @@ impl<'ctx> Context<'_, 'ctx> {
 
             Type::Tuple(tuple) => {
                 let tuple_signature =
-                    self.get_tuple_type(tuple).map_err(|_| Zst)?;
+                    self.get_tuple_type(tuple).await.map_err(|_| Zst)?;
 
                 Ok(tuple_signature.llvm_tuple_type.into())
             }

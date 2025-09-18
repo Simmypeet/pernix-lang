@@ -31,10 +31,13 @@ members = [
     "compiler/semantic/term",
     "compiler/semantic/type_system",
     "compiler/semantic/resolution",
+    "compiler/semantic/corelib",
     "compiler/semantic/semantic_element",
     "compiler/semantic/semantic_element_impl",
     "compiler/semantic/bind",
     "compiler/semantic/ir",
+
+    "compiler/codegen/llvm",
 
     "compiler/driver",
     "compiler/main",

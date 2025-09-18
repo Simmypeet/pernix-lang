@@ -267,6 +267,10 @@ pub enum Type {
     Error(Error),
 }
 
+impl Default for Type {
+    fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+}
+
 impl Type {
     /// Keeps removing the reference until it reaches a non-reference type.
     ///

@@ -1,0 +1,28 @@
+[package]
+name = "pernixc_llvm"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_handler = { path = "../../base/handler" }
+pernixc_target = { path = "../../base/target" }
+pernixc_query = { path = "../../base/query" }
+pernixc_type_system = { path = "../../semantic/type_system" }
+pernixc_term = { path = "../../semantic/term" }
+pernixc_semantic_element = { path = "../../semantic/semantic_element" }
+pernixc_symbol = { path = "../../semantic/symbol" }
+pernixc_ir = { path = "../../semantic/ir" }
+pernixc_arena = { path = "../../base/arena" }
+pernixc_diagnostic = { path = "../../base/diagnostic" }
+inkwell = { workspace = true }
+derive-new = { workspace = true }
+getset = { workspace = true }
+take_mut = { workspace = true }
+enum-as-inner = { workspace = true }
+derive_more = { workspace = true }
+
+[lints]
+workspace = true

@@ -6,20 +6,11 @@ use diagnostic::{
 };
 use function::Call;
 use inkwell::targets::TargetData;
-use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            function_signature::FunctionSignature,
-            generic_parameters::GenericParameters, where_clause::WhereClause,
-        },
-        input::{Name, SymbolKind},
-    },
-    diagnostic::Diagnostic,
-    table::{self, GlobalID, Table},
-    term::{instantiation::Instantiation, r#type::Type, Tuple},
-};
+use pernixc_query::TrackedEngine;
+use pernixc_target::Global;
+
+use crate::diagnostic::Diagnostic;
 
 pub mod constant;
 pub mod context;
@@ -27,9 +18,6 @@ pub mod diagnostic;
 pub mod function;
 pub mod r#type;
 pub mod zst;
-
-/// The model used for the code generation process.
-pub type Model = pernixc_semantic::component::derived::ir::model::Model;
 
 /// The input of the code generation process.
 pub struct Input<'i, 'ctx> {
@@ -40,20 +28,20 @@ pub struct Input<'i, 'ctx> {
     pub target_data: TargetData,
 
     /// The table that contains all the information about the program.
-    pub table: &'i Table,
+    pub engine: &'i TrackedEngine,
 
     /// The target ID that will be compiled as a binary.
-    pub main_function_id: GlobalID,
+    pub main_function_id: Global<pernixc_symbol::ID>,
 
     /// The handler used to generate the code.
-    pub handler: &'i dyn Handler<Box<dyn Diagnostic>>,
+    pub handler: &'i dyn Handler<Diagnostic>,
 }
 
 impl std::fmt::Debug for Input<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Input")
             .field("inkwell_context", self.inkwell_context)
-            .field("table", &self.table)
+            .field("table", &self.engine)
             .field("main_function_id", &self.main_function_id)
             .finish_non_exhaustive()
     }
@@ -61,7 +49,7 @@ impl std::fmt::Debug for Input<'_, '_> {
 
 fn check_function_main(input: &Input<'_, '_>) -> bool {
     let main_function_id = input.main_function_id;
-    let symbol_kind = *input.table.get::<SymbolKind>(main_function_id);
+    let symbol_kind = *input.engine.get::<SymbolKind>(main_function_id);
 
     // must be function type
     let mut has_error = if symbol_kind == SymbolKind::Function {
@@ -74,7 +62,7 @@ fn check_function_main(input: &Input<'_, '_>) -> bool {
     };
 
     let func_sig =
-        input.table.query::<FunctionSignature>(main_function_id).unwrap();
+        input.engine.query::<FunctionSignature>(main_function_id).unwrap();
 
     if !func_sig.parameters.is_empty()
         || func_sig.return_type != Type::Tuple(Tuple { elements: Vec::new() })
@@ -86,7 +74,7 @@ fn check_function_main(input: &Input<'_, '_>) -> bool {
     }
 
     let generic_params =
-        input.table.query::<GenericParameters>(main_function_id).unwrap();
+        input.engine.query::<GenericParameters>(main_function_id).unwrap();
 
     // must not have any generic parameters
     if !generic_params.lifetimes().is_empty()
@@ -100,7 +88,7 @@ fn check_function_main(input: &Input<'_, '_>) -> bool {
     }
 
     let where_clause =
-        input.table.query::<WhereClause>(main_function_id).unwrap();
+        input.engine.query::<WhereClause>(main_function_id).unwrap();
 
     // must not have any where clause predicates
     if !where_clause.predicates.is_empty() {
@@ -128,7 +116,7 @@ pub fn codegen<'ctx>(
 
     let module = input.inkwell_context.create_module(
         input
-            .table
+            .engine
             .get::<Name>(GlobalID::new(
                 input.main_function_id.target_id,
                 table::ID::ROOT_MODULE,
@@ -139,7 +127,7 @@ pub fn codegen<'ctx>(
     let mut context = context::Context::new(
         input.inkwell_context,
         input.target_data,
-        input.table,
+        input.engine,
         input.handler,
         module,
         input.main_function_id,

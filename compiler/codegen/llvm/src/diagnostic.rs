@@ -7,6 +7,18 @@ use pernixc_semantic::{
     table::{GlobalID, Table},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Diagnostic {
+    MainIsNotAFunction(MainIsNotAFunction),
+    InvalidMainFunctionSignature(InvalidMainFunctionSignature),
+    GenericParametersAreNotAllowedInMainFunction(
+        GenericParametersAreNotAllowedInMainFunction,
+    ),
+    WhereClausePredicatesAreNotAllowedInMainFunction(
+        WhereClausePredicatesAreNotAllowedInMainFunction,
+    ),
+}
+
 /// The `main` symbol is reserved from the main function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MainIsNotAFunction {

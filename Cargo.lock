@@ -1166,6 +1166,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_corelib"
+version = "0.1.0-beta.2"
+
+[[package]]
 name = "pernixc_diagnostic"
 version = "0.1.0-beta.2"
 dependencies = [
@@ -1315,6 +1319,28 @@ dependencies = [
  "strum",
  "strum_macros",
  "thiserror 2.0.15",
+]
+
+[[package]]
+name = "pernixc_llvm"
+version = "0.1.0-beta.2"
+dependencies = [
+ "derive-new",
+ "derive_more",
+ "enum-as-inner",
+ "getset",
+ "inkwell",
+ "pernixc_arena",
+ "pernixc_diagnostic",
+ "pernixc_handler",
+ "pernixc_ir",
+ "pernixc_query",
+ "pernixc_semantic_element",
+ "pernixc_symbol",
+ "pernixc_target",
+ "pernixc_term",
+ "pernixc_type_system",
+ "take_mut",
 ]
 
 [[package]]
@@ -2339,6 +2365,12 @@ dependencies = [
  "quote 1.0.40",
  "unicode-ident",
 ]
+
+[[package]]
+name = "take_mut"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f764005d11ee5f36500a149ace24e00e3da98b0158b3e2d53a7495660d3f4d60"
 
 [[package]]
 name = "tempfile"

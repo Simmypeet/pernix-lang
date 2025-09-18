@@ -166,6 +166,10 @@ pub enum Constant {
     Error(Error),
 }
 
+impl Default for Constant {
+    fn default() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+}
+
 impl From<Never> for Constant {
     fn from(never: Never) -> Self { match never {} }
 }

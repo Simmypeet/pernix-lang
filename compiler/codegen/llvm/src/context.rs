@@ -6,12 +6,10 @@ use inkwell::{
     intrinsics::Intrinsic, targets::TargetData, values::FunctionValue,
 };
 use pernixc_handler::Handler;
-use pernixc_semantic::{
-    diagnostic::Diagnostic,
-    table::{GlobalID, Table},
-};
+use pernixc_query::TrackedEngine;
+use pernixc_target::Global;
 
-use crate::{constant, function, r#type};
+use crate::{constant, diagnostic::Diagnostic, function, r#type};
 
 /// The main state used for the code generation process.
 #[derive(MutGetters, Getters, CopyGetters)]
@@ -26,12 +24,12 @@ pub struct Context<'i, 'ctx> {
 
     /// The table from the Pernix frontend.
     #[get_copy = "pub"]
-    table: &'i Table,
+    engine: &'i TrackedEngine,
 
     /// The handler used to report diagnostics during the code generation
     /// process.
     #[get_copy = "pub"]
-    handler: &'i dyn Handler<Box<dyn Diagnostic>>,
+    handler: &'i dyn Handler<Diagnostic>,
 
     /// The main module that contains all the code.
     #[get = "pub"]
@@ -54,7 +52,7 @@ pub struct Context<'i, 'ctx> {
 
     /// The ID of the main function.
     #[get_copy = "pub"]
-    main_function_id: GlobalID,
+    main_function_id: Global<pernixc_symbol::ID>,
 
     /// The function that is called when a panic occurs.
     #[get_copy = "pub"]
@@ -66,7 +64,7 @@ impl std::fmt::Debug for Context<'_, '_> {
         f.debug_struct("Context")
             .field("context", self.context)
             .field("target_data", &self.target_data)
-            .field("table", &self.table)
+            .field("engine", &self.engine)
             .field("module", &self.module)
             .field("function_map", &self.function_map)
             .field("type_map", &self.type_map)
@@ -81,10 +79,10 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
     pub fn new(
         context: &'ctx inkwell::context::Context,
         target_data: TargetData,
-        table: &'i Table,
-        handler: &'i dyn Handler<Box<dyn Diagnostic>>,
+        engine: &'i TrackedEngine,
+        handler: &'i dyn Handler<Diagnostic>,
         module: inkwell::module::Module<'ctx>,
-        main_function_id: GlobalID,
+        main_function_id: Global<pernixc_symbol::ID>,
     ) -> Self {
         let function_map = function::Map::default();
         let type_map = r#type::Map::default();
@@ -96,7 +94,7 @@ impl<'i, 'ctx> Context<'i, 'ctx> {
         Self {
             context,
             target_data,
-            table,
+            engine,
             handler,
             module,
             function_map,
