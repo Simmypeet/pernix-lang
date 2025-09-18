@@ -705,7 +705,8 @@ impl<'ctx> Context<'_, 'ctx> {
             },
         );
 
-        let drop_function = Box::pin(self.get_drop(array_tup_ty.0).await)
+        let drop_function = Box::pin(self.get_drop(array_tup_ty.0))
+            .await
             .expect("has drop already");
 
         builder
