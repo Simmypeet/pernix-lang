@@ -52,6 +52,7 @@ pub mod parent;
 pub mod source_map;
 pub mod span;
 pub mod syntax;
+pub mod variant_declaration_order;
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
@@ -310,6 +311,9 @@ pub struct Table {
     pub variant_associated_type_syntaxes:
         Arc<ReadOnlyView<ID, Option<pernixc_syntax::r#type::Type>>>,
 
+    /// Maps the enum variant ID to the order of its declaration in the enum.
+    pub variant_declaration_orders: Arc<ReadOnlyView<ID, usize>>,
+
     /// Maps the module symbol ID to the list of import syntaxes that
     /// are defined in the module.
     pub import_syntaxes:
@@ -462,6 +466,7 @@ struct TableContext {
     >,
     variant_associated_type_syntaxes:
         DashMap<ID, Option<pernixc_syntax::r#type::Type>>,
+    variant_declaration_orders: DashMap<ID, usize>,
     import_syntaxes: DashMap<ID, Arc<[pernixc_syntax::item::module::Import]>>,
     implements_qualified_identifier_syntaxes:
         DashMap<ID, pernixc_syntax::QualifiedIdentifier>,
@@ -626,6 +631,7 @@ pub async fn table_executor(
         function_signature_syntaxes: DashMap::default(),
         fields_syntaxes: DashMap::default(),
         variant_associated_type_syntaxes: DashMap::default(),
+        variant_declaration_orders: DashMap::default(),
         import_syntaxes: DashMap::default(),
         implements_qualified_identifier_syntaxes: DashMap::default(),
         final_keywords: DashMap::default(),
@@ -677,6 +683,9 @@ pub async fn table_executor(
         fields_syntaxes: Arc::new(context.fields_syntaxes.into_read_only()),
         variant_associated_type_syntaxes: Arc::new(
             context.variant_associated_type_syntaxes.into_read_only(),
+        ),
+        variant_declaration_orders: Arc::new(
+            context.variant_declaration_orders.into_read_only(),
         ),
         import_syntaxes: Arc::new(context.import_syntaxes.into_read_only()),
         implements_qualified_identifier_syntaxes: Arc::new(
@@ -752,6 +761,8 @@ struct Entry {
 
     pub variant_associated_type_syntax:
         Option<Option<pernixc_syntax::r#type::Type>>,
+
+    pub variant_declaration_order: Option<usize>,
 
     pub function_body_syntax: Option<
         Option<
@@ -929,6 +940,15 @@ impl TableContext {
                 &self.function_body_syntaxes,
                 id,
                 function_body_syntax,
+            );
+        }
+
+        if let Some(variant_declaration_order) = entry.variant_declaration_order
+        {
+            Self::insert_to_table(
+                &self.variant_declaration_orders,
+                id,
+                variant_declaration_order,
             );
         }
     }
@@ -1655,11 +1675,12 @@ impl TableContext {
             );
 
             // add each of the member to the trait member
-            for variant in members
+            for (order, variant) in members
                 .as_ref()
                 .iter()
                 .flat_map(|x| x.members())
                 .filter_map(|x| x.into_line().ok())
+                .enumerate()
             {
                 let Some(identifier) = variant.identifier() else {
                     continue;
@@ -1675,6 +1696,7 @@ impl TableContext {
                     .variant_associated_type_syntax(
                         variant.association().and_then(|x| x.r#type()),
                     )
+                    .variant_declaration_order(order)
                     .build();
 
                 context.add_symbol_entry(variant_id, enum_id, entry).await;
