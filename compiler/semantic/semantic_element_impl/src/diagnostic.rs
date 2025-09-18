@@ -15,6 +15,7 @@ use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
     all_symbol_ids,
     kind::{get_kind, Kind},
+    linkage::{get_linkage, Linkage},
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;
@@ -119,7 +120,10 @@ pub async fn single_rendered_executor(
         }
     }
 
-    if kind.has_function_body() {
+    if (kind == Kind::Function && {
+        engine.get_linkage(id).await == Linkage::Pernix
+    }) || kind == Kind::ImplementationFunction
+    {
         let diags = engine.query(&BuildDiagnosticKey::new(IRKey(id))).await?;
 
         for diag in diags.iter() {
