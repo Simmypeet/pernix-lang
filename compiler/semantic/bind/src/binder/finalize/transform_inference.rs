@@ -179,6 +179,8 @@ impl Binder<'_> {
             register.transform(&mut transformer, self.engine).await?;
         }
 
+        self.ir.control_flow_graph.transform(&mut transformer).await?;
+
         for (_, alloca) in &mut self.ir.values.allocas {
             match transformer
                 .environment
