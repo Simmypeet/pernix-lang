@@ -25,7 +25,7 @@ async fn build_ir_for_function(
         binder.bind_statement(&statement, storage).await.unwrap();
     }
 
-    Ok(Arc::new(binder.finalize(storage)))
+    Ok(Arc::new(binder.finalize(storage).await?))
 }
 
 impl Build for pernixc_ir::Key {

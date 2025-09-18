@@ -42,6 +42,7 @@ pub mod phantom;
 pub mod postfix;
 pub mod prefix;
 pub mod qualified_identifier;
+pub mod r#return;
 pub mod string;
 pub mod r#struct;
 
@@ -181,14 +182,12 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::terminator::Terminator,
-        _config: &Guidance<'_>,
-        _handler: &dyn Handler<Diagnostic>,
+        config: &Guidance<'_>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::terminator::Terminator::Return(ret) => {
-                Ok(Expression::RValue(pernixc_ir::value::Value::Literal(
-                    self.create_unreachable(ret.span()),
-                )))
+                self.bind(ret, config, handler).await
             }
             pernixc_syntax::expression::terminator::Terminator::Continue(_) => {
                 todo!()

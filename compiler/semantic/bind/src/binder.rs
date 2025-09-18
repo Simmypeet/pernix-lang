@@ -478,6 +478,13 @@ impl Binder<'_> {
         let _ = self.current_block_mut().add_instruction(instruction);
     }
 
+    /// Inserts a terminator to the current block.
+    pub fn insert_terminator(&mut self, terminator: Terminator) {
+        self.ir
+            .control_flow_graph
+            .insert_terminator(self.current_block_id, terminator);
+    }
+
     /// Creates a new type inference variable and assigns it to the inference
     /// context with the given constraint.
     pub fn create_type_inference(

@@ -55,6 +55,7 @@ diagnostic_enum! {
         AssignToNonMutable(AssignToNonMutable),
         InvalidTypeInBinaryOperator(InvalidTypeInBinaryOperator),
         NotAllFlowPathsReturnAValue(NotAllFlowPathsReturnAValue),
+        ReturnIsNotAllowed(ReturnIsNotAllowed),
     }
 }
 
@@ -315,6 +316,34 @@ impl Report for NotAllFlowPathsReturnAValue {
             .help_message(
                 "consider adding a return statement to all control flow paths",
             )
+            .build())
+    }
+}
+
+/// Return expression is used outside the function.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct ReturnIsNotAllowed {
+    /// The span of the return expression.
+    pub return_span: RelativeSpan,
+}
+
+impl Report for ReturnIsNotAllowed {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.return_span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message("`return` is only allowed inside a function")
+            .help_message("consider removing the `return` statement")
             .build())
     }
 }
