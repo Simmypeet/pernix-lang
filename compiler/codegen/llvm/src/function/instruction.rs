@@ -7,41 +7,40 @@ use inkwell::{
     AddressSpace, FloatPredicate, IntPredicate,
 };
 use pernixc_arena::ID;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-            fields::Fields,
-            generic_parameters::{
-                ConstantParameterID, GenericParameters, LifetimeParameterID,
-                TypeParameterID,
-            },
-            ir::{
-                control_flow_graph::Block,
-                instruction::{
-                    Instruction, Jump, RegisterAssignment, SwitchValue,
-                    Terminator, TuplePack,
-                },
-                model::Erased,
-                value::{
-                    register::{
-                        self, Assignment, BinaryOperator, Register,
-                        RelationalOperator,
-                    },
-                    Value,
-                },
-            },
-        },
-        input::{Member, Name, Parent, SymbolKind, VariantDeclarationOrder},
+use pernixc_ir::{
+    control_flow_graph::Block,
+    instruction::{
+        self, Instruction, Jump, RegisterAssignment, SwitchValue, Terminator,
+        TuplePack,
     },
-    table::GlobalID,
-    term::{
-        constant::Constant,
-        instantiation,
-        lifetime::Lifetime,
-        r#type::{Primitive, Type},
+    value::{
+        register::{
+            self, Assignment, BinaryOperator, Register, RelationalOperator,
+        },
+        Value,
     },
 };
+use pernixc_semantic_element::{
+    elided_lifetime::get_elided_lifetimes, fields::get_fields,
+};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::get_name,
+    parent::get_parent,
+    variant_declaration_order::get_variant_declaration_order,
+};
+use pernixc_target::Global;
+use pernixc_term::{
+    constant::Constant,
+    generic_parameters::{
+        get_generic_parameters, ConstantParameterID, LifetimeParameterID,
+        TypeParameterID,
+    },
+    lifetime::{ElidedLifetimeID, Lifetime},
+    r#type::{Primitive, Type},
+};
+use pernixc_type_system::resolution;
 
 use super::{
     Builder, Call, Error, LlvmAddress, LlvmFunctionSignature, LlvmValue,
@@ -49,7 +48,6 @@ use super::{
 use crate::{
     function::ReturnType,
     r#type::{IsAggregateTypeExt, LlvmEnumSignature},
-    Model,
 };
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
@@ -78,14 +76,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .unwrap();
     }
 
-    fn build_store(
+    async fn build_store(
         &mut self,
-        store: &pernixc_semantic::component::derived::ir::instruction::Store<
-            Model,
-        >,
+        store: &instruction::Store,
     ) -> Result<(), Error> {
         let dest_value = self.get_value(&store.value)?;
-        let store_address = self.get_address(&store.address)?;
+        let store_address = self.get_address(&store.address).await?;
 
         let (Some(dest_value), Some(store_address)) =
             (dest_value, store_address)
@@ -111,12 +107,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         Ok(())
     }
 
-    fn handle_load(
+    async fn handle_load(
         &mut self,
-        load: &register::Load<Model>,
-        reg_id: ID<Register<Model>>,
+        load: &register::Load,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let Some(ptr) = self.get_address(&load.address)? else {
+        let Some(ptr) = self.get_address(&load.address).await? else {
             return Ok(None);
         };
 
@@ -142,13 +138,18 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
-    fn handle_struct_lit(
+    async fn handle_struct_lit(
         &mut self,
-        struct_lit: &register::Struct<Model>,
-        reg_id: ID<Register<Model>>,
+        struct_lit: &register::Struct,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let fields =
-            self.context.table().query::<Fields>(struct_lit.struct_id).unwrap();
+        let fields = self
+            .context
+            .engine()
+            .get_fields(struct_lit.struct_id)
+            .await
+            .unwrap();
+
         let values = fields
             .field_declaration_order
             .iter()
@@ -157,7 +158,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .map(|(id, val)| Ok((id, self.get_value(val)?)))
             .collect::<Result<Vec<_>, Error>>()?;
 
-        let Ok(struct_ty) = self.type_of_register(reg_id) else {
+        let Ok(struct_ty) = self.type_of_register(reg_id).await else {
             return Ok(None);
         };
 
@@ -199,11 +200,11 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn create_function_call(
+    async fn create_function_call(
         &mut self,
         llvm_function_signature: &LlvmFunctionSignature<'ctx>,
-        arguments: &[Value<Model>],
-        reg_id: ID<Register<Model>>,
+        arguments: &[Value],
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut args = Vec::with_capacity(arguments.len());
         for arg in arguments {
@@ -282,126 +283,142 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn handle_function_call(
+    async fn handle_function_call(
         &mut self,
-        function_call: &register::FunctionCall<Model>,
-        reg_id: ID<Register<Model>>,
+        function_call: &register::FunctionCall,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let symbol_kind =
-            *self.context.table().get::<SymbolKind>(function_call.callable_id);
+            self.context.engine().get_kind(function_call.callable_id).await;
 
         match symbol_kind {
-            SymbolKind::ExternFunction => {
-                let llvm_function =
-                    self.context.get_extern_function(function_call.callable_id);
+            Kind::ExternFunction => {
+                let llvm_function = self
+                    .context
+                    .get_extern_function(function_call.callable_id)
+                    .await;
 
                 self.create_function_call(
                     &llvm_function,
                     &function_call.arguments,
                     reg_id,
                 )
+                .await
             }
-            SymbolKind::Function
-            | SymbolKind::AdtImplementationFunction
-            | SymbolKind::TraitImplementationFunction => {
+            Kind::Function | Kind::ImplementationFunction => {
                 let mut calling_inst = function_call.instantiation.clone();
 
                 calling_inst.lifetimes.values_mut().for_each(|term| {
-                    instantiation::instantiate(term, self.instantiation);
+                    self.instantiation.instantiate(term);
                 });
                 calling_inst.types.values_mut().for_each(|term| {
-                    instantiation::instantiate(term, self.instantiation);
+                    self.instantiation.instantiate(term);
                 });
                 calling_inst.constants.values_mut().for_each(|term| {
-                    instantiation::instantiate(term, self.instantiation);
+                    self.instantiation.instantiate(term);
                 });
 
                 self.context.normalize_instantiation(&mut calling_inst);
 
-                let llvm_function = self.context.get_function(&Call {
-                    callable_id: function_call.callable_id,
-                    instantiation: calling_inst,
-                });
+                let llvm_function = self
+                    .context
+                    .get_function(&Call {
+                        callable_id: function_call.callable_id,
+                        instantiation: calling_inst,
+                    })
+                    .await;
 
                 self.create_function_call(
                     &llvm_function,
                     &function_call.arguments,
                     reg_id,
                 )
+                .await
             }
 
-            SymbolKind::TraitFunction => {
+            Kind::TraitFunction => {
                 let mut calling_inst = function_call.instantiation.clone();
 
                 calling_inst.lifetimes.values_mut().for_each(|term| {
-                    instantiation::instantiate(term, self.instantiation);
+                    self.instantiation.instantiate(term);
                 });
                 calling_inst.types.values_mut().for_each(|term| {
-                    instantiation::instantiate(term, self.instantiation);
+                    self.instantiation.instantiate(term);
                 });
                 calling_inst.constants.values_mut().for_each(|term| {
-                    instantiation::instantiate(term, self.instantiation);
+                    self.instantiation.instantiate(term);
                 });
 
                 self.context.normalize_instantiation(&mut calling_inst);
 
                 // get the parent trait to search for the implc
-                let parent_trait_id = GlobalID::new(
+                let parent_trait_id = Global::new(
                     function_call.callable_id.target_id,
                     self.context
-                        .table()
-                        .get::<Parent>(function_call.callable_id)
+                        .engine()
+                        .get_parent(function_call.callable_id)
+                        .await
                         .unwrap(),
                 );
 
                 let trait_generic_params = self
                     .context
-                    .table()
-                    .query::<GenericParameters>(parent_trait_id)
+                    .engine()
+                    .get_generic_parameters(parent_trait_id)
+                    .await
                     .unwrap();
                 let trait_func_generic_params = self
                     .context
-                    .table()
-                    .query::<GenericParameters>(function_call.callable_id)
+                    .engine()
+                    .get_generic_parameters(function_call.callable_id)
+                    .await
                     .unwrap();
 
-                let trait_generic_args = calling_inst
-                    .create_generic_arguments(
-                        parent_trait_id,
-                        &trait_generic_params,
-                    )
-                    .unwrap();
+                let trait_generic_args = calling_inst.create_generic_arguments(
+                    parent_trait_id,
+                    &trait_generic_params,
+                );
 
                 // resolve for the trait impl
                 let resolution = self
                     .environment
-                    .resolve_implementation(
+                    .query(&resolution::Resolve::new(
                         parent_trait_id,
-                        &trait_generic_args,
-                    )
+                        trait_generic_args,
+                    ))
+                    .await
+                    .unwrap()
                     .unwrap();
 
                 let trait_impl_id = resolution.result.id;
-                let mut new_inst = resolution.result.instantiation;
+                let mut new_inst = resolution.result.instantiation.clone();
 
-                let trait_function_name =
-                    self.context.table().get::<Name>(function_call.callable_id);
+                let trait_function_name = self
+                    .context
+                    .engine()
+                    .get_name(function_call.callable_id)
+                    .await;
 
-                let trait_impl_fun_id = GlobalID::new(
+                let trait_impl_fun_id = Global::new(
                     trait_impl_id.target_id,
-                    self.context.table().get::<Member>(trait_impl_id)
-                        [&trait_function_name.0],
+                    self.context
+                        .engine()
+                        .get_members(trait_impl_id)
+                        .await
+                        .member_ids_by_name[&trait_function_name],
                 );
 
                 let trait_impl_fun_generic_params = self
                     .context
-                    .table()
-                    .query::<GenericParameters>(trait_impl_fun_id)
+                    .engine()
+                    .get_generic_parameters(trait_impl_fun_id)
+                    .await
                     .unwrap();
                 let trait_impl_fun_elided_lts = self
                     .context
-                    .table()
-                    .query::<ElidedLifetimes>(trait_impl_fun_id)
+                    .engine()
+                    .get_elided_lifetimes(trait_impl_fun_id)
+                    .await
                     .unwrap();
 
                 // populate the new_inst will the generic arguments of the trait
@@ -411,22 +428,19 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     .iter()
                     .copied()
                     .map(|x| {
-                        Lifetime::<Model>::Parameter(LifetimeParameterID::new(
+                        Lifetime::Parameter(LifetimeParameterID::new(
                             trait_impl_fun_id,
                             x,
                         ))
                     })
-                    .chain(
-                        trait_impl_fun_elided_lts.elided_lifetimes.ids().map(
-                            |x| {
-                                Lifetime::<Model>::Elided(
-                                    ElidedLifetimeID::new(trait_impl_fun_id, x),
-                                )
-                            },
-                        ),
-                    )
+                    .chain(trait_impl_fun_elided_lts.ids().map(|x| {
+                        Lifetime::Elided(ElidedLifetimeID::new(
+                            trait_impl_fun_id,
+                            x,
+                        ))
+                    }))
                 {
-                    new_inst.lifetimes.insert(lt, Lifetime::Inference(Erased));
+                    new_inst.lifetimes.insert(lt, Lifetime::Erased);
                 }
 
                 for (trait_fun_ty, trait_impl_fun_ty) in
@@ -483,26 +497,30 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                 self.context.normalize_instantiation(&mut new_inst);
 
-                let llvm_function = self.context.get_function(&Call {
-                    callable_id: trait_impl_fun_id,
-                    instantiation: new_inst,
-                });
+                let llvm_function = self
+                    .context
+                    .get_function(&Call {
+                        callable_id: trait_impl_fun_id,
+                        instantiation: new_inst,
+                    })
+                    .await;
 
                 self.create_function_call(
                     &llvm_function,
                     &function_call.arguments,
                     reg_id,
                 )
+                .await
             }
 
             kind => panic!("unexpected symbol kind: {kind:?}"),
         }
     }
 
-    fn handle_array(
+    async fn handle_array(
         &mut self,
-        array: &register::Array<Model>,
-        reg_id: ID<Register<Model>>,
+        array: &register::Array,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut values = Vec::new();
         for element in &array.elements {
@@ -513,7 +531,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             values.push(value);
         }
 
-        let Ok(array_ty) = self.type_of_register(reg_id) else {
+        let Ok(array_ty) = self.type_of_register(reg_id).await else {
             return Ok(None);
         };
 
@@ -557,10 +575,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn handle_binary(
+    async fn handle_binary(
         &mut self,
-        binary: &register::Binary<Model>,
-        reg_id: ID<Register<Model>>,
+        binary: &register::Binary,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut lhs =
             self.get_value(&binary.lhs)?.unwrap().into_scalar().unwrap();
@@ -576,7 +594,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Pointer,
                 }
 
-                let pernix_lhs_ty = self.type_of_value_pnx(&binary.lhs);
+                let pernix_lhs_ty = self.type_of_value_pnx(&binary.lhs).await;
 
                 let kind = match &pernix_lhs_ty {
                     Type::Primitive(
@@ -744,14 +762,17 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         register::ArithmeticOperator::Add
                         | register::ArithmeticOperator::Subtract,
                     ) => unsafe {
-                        let pointee_type = self.context.get_type(
-                            pernix_lhs_ty
-                                .as_pointer()
-                                .unwrap()
-                                .pointee
-                                .deref()
-                                .clone(),
-                        );
+                        let pointee_type = self
+                            .context
+                            .get_type(
+                                pernix_lhs_ty
+                                    .as_pointer()
+                                    .unwrap()
+                                    .pointee
+                                    .deref()
+                                    .clone(),
+                            )
+                            .await;
 
                         let Ok(pointee_type) = pointee_type else {
                             // pointer arithmetic on zst type is no-op
@@ -796,7 +817,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     Bool,
                 }
 
-                let pernix_lhs_ty = self.type_of_value_pnx(&binary.lhs);
+                let pernix_lhs_ty = self.type_of_value_pnx(&binary.lhs).await;
 
                 let kind = match &pernix_lhs_ty {
                     Type::Primitive(
@@ -946,6 +967,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             BinaryOperator::Bitwise(bitwise_operator) => {
                 let pernix_lhs_ty = self
                     .type_of_value_pnx(&binary.lhs)
+                    .await
                     .into_primitive()
                     .unwrap();
 
@@ -1063,10 +1085,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
-    fn handle_phi(
+    async fn handle_phi(
         &mut self,
-        phi: &register::Phi<Model>,
-        reg_id: ID<Register<Model>>,
+        phi: &register::Phi,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut incoming_values = Vec::new();
         for (block_id, value) in &phi.incoming_values {
@@ -1080,7 +1102,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             incoming_values.push((value, block));
         }
 
-        let Ok(ty) = self.type_of_register(reg_id) else {
+        let Ok(ty) = self.type_of_register(reg_id).await else {
             return Ok(None);
         };
 
@@ -1119,10 +1141,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
-    fn handle_tuple(
+    async fn handle_tuple(
         &mut self,
-        tuple: &register::Tuple<Model>,
-        reg_id: ID<Register<Model>>,
+        tuple: &register::Tuple,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let mut values = Vec::new();
         for element in &tuple.elements {
@@ -1172,7 +1194,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
         }
 
-        let Ok(ty) = self.type_of_register(reg_id) else {
+        let Ok(ty) = self.type_of_register(reg_id).await else {
             return Ok(None);
         };
 
@@ -1209,10 +1231,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn handle_variant(
+    async fn handle_variant(
         &mut self,
-        variant: &register::Variant<Model>,
-        reg_id: ID<Register<Model>>,
+        variant: &register::Variant,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let value = variant
             .associated_value
@@ -1220,8 +1242,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .map(|variant| self.get_value(variant))
             .transpose()?;
 
-        let ty = self.type_of_register_pnx(reg_id).into_symbol().unwrap();
-        let llvm_enum_sig = self.context.get_enum_type(ty);
+        let ty = self.type_of_register_pnx(reg_id).await.into_symbol().unwrap();
+        let llvm_enum_sig = self.context.get_enum_type(ty).await;
 
         match &*llvm_enum_sig {
             LlvmEnumSignature::Zst => Ok(None),
@@ -1229,9 +1251,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 if nullable_pointer.null_variant_index as usize
                     == self
                         .context
-                        .table()
-                        .get::<VariantDeclarationOrder>(variant.variant_id)
-                        .0
+                        .engine()
+                        .get_variant_declaration_order(variant.variant_id)
+                        .await
                 {
                     Ok(Some(LlvmValue::Scalar(
                         self.context
@@ -1256,11 +1278,11 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     int_type
                         .const_int(
                             self.context
-                                .table()
-                                .get::<VariantDeclarationOrder>(
+                                .engine()
+                                .get_variant_declaration_order(
                                     variant.variant_id,
                                 )
-                                .0
+                                .await
                                 .try_into()
                                 .unwrap(),
                             false,
@@ -1280,9 +1302,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                 let variant_index = self
                     .context
-                    .table()
-                    .get::<VariantDeclarationOrder>(variant.variant_id)
-                    .0;
+                    .engine()
+                    .get_variant_declaration_order(variant.variant_id)
+                    .await;
 
                 let tag_pointer = self
                     .inkwell_builder
@@ -1350,8 +1372,8 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     #[allow(clippy::too_many_lines)]
     fn handle_prefix(
         &mut self,
-        prefix: &register::Prefix<Model>,
-        reg_id: ID<Register<Model>>,
+        prefix: &register::Prefix,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         let operand = self
             .get_value(&prefix.operand)?
@@ -1405,18 +1427,19 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         Ok(Some(LlvmValue::Scalar(value)))
     }
 
-    fn handle_variant_number(
+    async fn handle_variant_number(
         &mut self,
-        variant_number: &register::VariantNumber<Model>,
-        reg_id: ID<Register<Model>>,
+        variant_number: &register::VariantNumber,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
-        let address = self.get_address(&variant_number.address)?;
+        let address = self.get_address(&variant_number.address).await?;
         let enum_type = self
             .type_of_address_pnx(&variant_number.address)
+            .await
             .into_symbol()
             .unwrap();
 
-        let llvm_enum_sig = self.context.get_enum_type(enum_type);
+        let llvm_enum_sig = self.context.get_enum_type(enum_type).await;
 
         match &*llvm_enum_sig {
             LlvmEnumSignature::Transparent(_) | LlvmEnumSignature::Zst => {
@@ -1513,10 +1536,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn handle_cast(
+    async fn handle_cast(
         &mut self,
-        cast: &register::Cast<Model>,
-        reg_id: ID<Register<Model>>,
+        cast: &register::Cast,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         // NOTE: in the future, the pointer casting will be here.
         #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -1533,10 +1556,10 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .into_scalar()
             .expect("cast only available on scalar values");
 
-        let operand_pnx_type = self.type_of_value_pnx(&cast.value);
+        let operand_pnx_type = self.type_of_value_pnx(&cast.value).await;
         let cast_to_pnx_type = &cast.r#type;
 
-        let get_kind = |ty: &Type<Model>| match ty {
+        let get_kind = |ty: &Type| match ty {
             Type::Primitive(
                 Primitive::Isize
                 | Primitive::Int8
@@ -1571,10 +1594,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let operand_type = self
             .context
             .get_type(operand_pnx_type.clone())
+            .await
             .expect("should be no zst");
         let cast_type = self
             .context
             .get_type(cast_to_pnx_type.clone())
+            .await
             .expect("should be no zst");
 
         let float_bit_width = |ty| match ty {
@@ -1777,57 +1802,63 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         }
     }
 
-    fn get_register_assignment_value(
+    async fn get_register_assignment_value(
         &mut self,
-        register_assignment: &Assignment<Model>,
-        reg_id: ID<Register<Model>>,
+        register_assignment: &Assignment,
+        reg_id: ID<Register>,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         match register_assignment {
-            Assignment::Tuple(tuple) => self.handle_tuple(tuple, reg_id),
-            Assignment::Load(load) => self.handle_load(load, reg_id),
-            Assignment::Borrow(borrow) => (self
-                .get_address(&borrow.address)?)
-            .map_or_else(
-                || {
-                    Ok(Some(LlvmValue::Scalar(
-                        self.build_non_null_dangling().into(),
-                    )))
-                },
-                |basic_value_enum| {
-                    Ok(Some(LlvmValue::Scalar(basic_value_enum.address.into())))
-                },
-            ),
+            Assignment::Tuple(tuple) => self.handle_tuple(tuple, reg_id).await,
+            Assignment::Load(load) => self.handle_load(load, reg_id).await,
+            Assignment::Borrow(borrow) => {
+                self.get_address(&borrow.address).await?.map_or_else(
+                    || {
+                        Ok(Some(LlvmValue::Scalar(
+                            self.build_non_null_dangling().into(),
+                        )))
+                    },
+                    |basic_value_enum| {
+                        Ok(Some(LlvmValue::Scalar(
+                            basic_value_enum.address.into(),
+                        )))
+                    },
+                )
+            }
             Assignment::Prefix(prefix) => self.handle_prefix(prefix, reg_id),
             Assignment::Struct(struct_lit) => {
-                self.handle_struct_lit(struct_lit, reg_id)
+                self.handle_struct_lit(struct_lit, reg_id).await
             }
             Assignment::Variant(variant) => {
-                self.handle_variant(variant, reg_id)
+                self.handle_variant(variant, reg_id).await
             }
             Assignment::FunctionCall(function_call) => {
-                self.handle_function_call(function_call, reg_id)
+                self.handle_function_call(function_call, reg_id).await
             }
-            Assignment::Binary(binary) => self.handle_binary(binary, reg_id),
-            Assignment::Array(array) => self.handle_array(array, reg_id),
-            Assignment::Phi(phi) => self.handle_phi(phi, reg_id),
-            Assignment::Cast(cast) => self.handle_cast(cast, reg_id),
+            Assignment::Binary(binary) => {
+                self.handle_binary(binary, reg_id).await
+            }
+            Assignment::Array(array) => self.handle_array(array, reg_id).await,
+            Assignment::Phi(phi) => self.handle_phi(phi, reg_id).await,
+            Assignment::Cast(cast) => self.handle_cast(cast, reg_id).await,
             Assignment::VariantNumber(variant_number) => {
-                self.handle_variant_number(variant_number, reg_id)
+                self.handle_variant_number(variant_number, reg_id).await
             }
         }
     }
 
     #[allow(clippy::too_many_lines)]
-    fn build_register_assignment(
+    async fn build_register_assignment(
         &mut self,
-        register_assignment: RegisterAssignment<Model>,
+        register_assignment: RegisterAssignment,
     ) -> Result<(), Error> {
         let reg = &self.function_ir.values.registers[register_assignment.id];
 
-        let value = self.get_register_assignment_value(
-            &reg.assignment,
-            register_assignment.id,
-        )?;
+        let value = self
+            .get_register_assignment_value(
+                &reg.assignment,
+                register_assignment.id,
+            )
+            .await?;
 
         assert!(self
             .register_map
@@ -1837,16 +1868,18 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         Ok(())
     }
 
-    fn build_tuple_pack(
+    async fn build_tuple_pack(
         &mut self,
-        tuple_pack: &TuplePack<Model>,
+        tuple_pack: &TuplePack,
     ) -> Result<(), Error> {
         let source_address_type = self
             .type_of_address_pnx(&tuple_pack.tuple_address)
+            .await
             .into_tuple()
             .unwrap();
         let store_address_type = self
             .type_of_address_pnx(&tuple_pack.store_address)
+            .await
             .into_tuple()
             .unwrap();
 
@@ -1857,15 +1890,15 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             - tuple_pack.before_packed_element_count;
 
         let (Some(source_address), Some(store_address)) = (
-            self.get_address(&tuple_pack.tuple_address)?,
-            self.get_address(&tuple_pack.store_address)?,
+            self.get_address(&tuple_pack.tuple_address).await?,
+            self.get_address(&tuple_pack.store_address).await?,
         ) else {
             return Ok(());
         };
 
         let (Ok(source_tuple_sig), Ok(store_tuple_sig)) = (
-            self.context.get_tuple_type(source_address_type),
-            self.context.get_tuple_type(store_address_type),
+            self.context.get_tuple_type(source_address_type).await,
+            self.context.get_tuple_type(store_address_type).await,
         ) else {
             return Ok(());
         };
@@ -1939,7 +1972,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
     /// Translates the Pernix's basic block to LLVM's basic block if haven't
     #[allow(clippy::too_many_lines)]
-    pub fn build_basic_block(&mut self, block_id: ID<Block<Model>>) {
+    pub async fn build_basic_block(&mut self, block_id: ID<Block>) {
         // already built, or being built currently.
         if !self.built.insert(block_id) {
             return;
@@ -1963,17 +1996,18 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
         for instruction in block.instructions() {
             let result = match instruction {
-                Instruction::Store(store) => self.build_store(store),
+                Instruction::Store(store) => self.build_store(store).await,
                 Instruction::RegisterAssignment(register_assignment) => {
-                    self.build_register_assignment(*register_assignment)
+                    self.build_register_assignment(*register_assignment).await
                 }
                 Instruction::TuplePack(tuple_pack) => {
-                    self.build_tuple_pack(tuple_pack)
+                    self.build_tuple_pack(tuple_pack).await
                 }
 
                 Instruction::DropUnpackTuple(drop_unpack_tuple) => 'ext: {
                     let tuple_ty_pnx = self
                         .type_of_address_pnx(&drop_unpack_tuple.tuple_address)
+                        .await
                         .into_tuple()
                         .unwrap();
 
@@ -1981,10 +2015,14 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         - drop_unpack_tuple.before_unpacked_element_count
                         - drop_unpack_tuple.after_unpacked_element_count;
 
-                    let tuple_ty =
-                        self.context.get_tuple_type(tuple_ty_pnx.clone()).ok();
+                    let tuple_ty = self
+                        .context
+                        .get_tuple_type(tuple_ty_pnx.clone())
+                        .await
+                        .ok();
                     let tuple_address = match self
                         .get_address(&drop_unpack_tuple.tuple_address)
+                        .await
                     {
                         Ok(address) => address,
                         Err(error) => {
@@ -2037,12 +2075,12 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                 }
 
                 Instruction::Drop(drop) => 'ext: {
-                    let address = match self.get_address(&drop.address) {
+                    let address = match self.get_address(&drop.address).await {
                         Ok(address) => address,
                         Err(error) => break 'ext Err(error),
                     };
                     let adress_pnx_type =
-                        self.type_of_address_pnx(&drop.address);
+                        self.type_of_address_pnx(&drop.address).await;
 
                     let pointer = address.map_or_else(
                         || self.build_non_null_dangling(),
@@ -2063,7 +2101,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                         Some(LlvmValue::TmpAggegate(_)) | None => {
                             let pnx_type =
-                                self.type_of_register_pnx(reg_dis.id);
+                                self.type_of_register_pnx(reg_dis.id).await;
 
                             let ptr_value = value.map_or_else(
                                 || self.build_non_null_dangling(),
