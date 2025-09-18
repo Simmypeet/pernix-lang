@@ -6,9 +6,10 @@ use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_term::r#type::Qualifier;
+use pernixc_term::r#type::{Qualifier, Type};
 
 use super::{
     address::{self, Address},
@@ -20,6 +21,7 @@ use super::{
     },
     Values,
 };
+use crate::transform::Transformer;
 
 /// Represents a jump to another block unconditionally.
 #[derive(
@@ -64,6 +66,19 @@ pub struct ConditionalJump {
     pub false_target: ID<Block>,
 }
 
+impl ConditionalJump {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        if let Value::Literal(literal) = &mut self.condition {
+            literal.transform(transformer).await?;
+        }
+
+        Ok(())
+    }
+}
+
 /// Switch value for the switch jump.
 #[derive(
     Debug,
@@ -100,6 +115,19 @@ pub struct SwitchJump {
     pub otherwise: Option<ID<Block>>,
 }
 
+impl SwitchJump {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        if let Value::Literal(literal) = &mut self.integer {
+            literal.transform(transformer).await?;
+        }
+
+        Ok(())
+    }
+}
+
 /// An enumeration containing all kinds of jump instructions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
 #[allow(missing_docs)]
@@ -110,6 +138,19 @@ pub enum Jump {
 }
 
 impl Jump {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        match self {
+            Self::Unconditional(_) => Ok(()),
+            Self::Conditional(conditional) => {
+                conditional.transform(transformer).await
+            }
+            Self::Switch(switch) => switch.transform(transformer).await,
+        }
+    }
+
     /// Returns the block IDs that this jump goes to.
     #[must_use]
     pub fn jump_targets(&self) -> Vec<ID<Block>> {
@@ -149,6 +190,20 @@ pub struct Return {
 
     /// The span where the return instruction is generated.
     pub span: Option<RelativeSpan>,
+}
+
+impl Return {
+    /// Transforms the return value using the given transformer.
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        if let Value::Literal(literal) = &mut self.value {
+            literal.transform(transformer).await?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Represents an assignment of a register.
@@ -195,6 +250,21 @@ pub struct Store {
 
     /// The span where the store instruction is generated.
     pub span: Option<RelativeSpan>,
+}
+
+impl Store {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        if let Value::Literal(literal) = &mut self.value {
+            literal.transform(transformer).await?;
+        }
+
+        self.address.transform(transformer).await?;
+
+        Ok(())
+    }
 }
 
 /// An instructions that packs the unpacked elements of a tuple into a packed
@@ -272,6 +342,18 @@ pub struct TuplePack {
     pub packed_tuple_span: Option<RelativeSpan>,
 }
 
+impl TuplePack {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        self.store_address.transform(transformer).await?;
+        self.tuple_address.transform(transformer).await?;
+
+        Ok(())
+    }
+}
+
 /// An instruction that pushes a new scope onto the scope stack.
 #[derive(
     Debug,
@@ -322,6 +404,17 @@ pub struct Drop {
     pub address: Address,
 }
 
+impl Drop {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        self.address.transform(transformer).await?;
+
+        Ok(())
+    }
+}
+
 /// An instruction that drops the unpacked elements of a tuple.
 #[derive(
     Debug,
@@ -344,6 +437,17 @@ pub struct DropUnpackTuple {
 
     /// The number of elements in the tuple after the unpacked elements.
     pub after_unpacked_element_count: usize,
+}
+
+impl DropUnpackTuple {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        self.tuple_address.transform(transformer).await?;
+
+        Ok(())
+    }
 }
 
 /// An instruction that invokes `Drop::drop` on a value in the register.
@@ -397,6 +501,28 @@ pub enum Instruction {
     Drop(Drop),
 }
 
+impl Instruction {
+    /// Applies the given transformer to the instruction.
+    pub async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        match self {
+            Self::Store(store) => store.transform(transformer).await,
+            Self::TuplePack(tuple_pack) => {
+                tuple_pack.transform(transformer).await
+            }
+            Self::DropUnpackTuple(drop) => drop.transform(transformer).await,
+            Self::Drop(drop) => drop.transform(transformer).await,
+
+            Self::RegisterAssignment(_)
+            | Self::RegisterDiscard(_)
+            | Self::ScopePush(_)
+            | Self::ScopePop(_) => Ok(()),
+        }
+    }
+}
+
 /// An enumeration containing all the possible terminators.
 ///
 /// Terminators are instructions that change the control flow of the program.
@@ -411,6 +537,20 @@ pub enum Terminator {
 
     /// Aborts the program.
     Panic,
+}
+
+impl Terminator {
+    /// Applies the given transformer to the terminator.
+    pub async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        match self {
+            Self::Jump(jump) => jump.transform(transformer).await,
+            Self::Return(ret) => ret.transform(transformer).await,
+            Self::Panic => Ok(()),
+        }
+    }
 }
 
 /// Represents a read access to a value. The instruction that reads the value
