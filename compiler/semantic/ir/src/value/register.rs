@@ -9,15 +9,16 @@ use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::TrackedEngine;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_semantic_element::{fields::Field, return_type::get_return_type};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_symbol::{member::get_members, parent::get_parent};
+use pernixc_symbol::{member::get_members, parent::get_parent, MemberID};
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     generic_arguments::{GenericArguments, Symbol},
+    generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Type},
@@ -29,7 +30,13 @@ use pernixc_type_system::{
 
 use super::Value;
 use crate::{
-    address::Address, control_flow_graph::Block, value::TypeOf, Values,
+    address::Address,
+    control_flow_graph::Block,
+    transform::{
+        ConstantTermSource, LifetimeTermSource, Transformer, TypeTermSource,
+    },
+    value::TypeOf,
+    Values,
 };
 
 /// Represents an element of a [`Tuple`].
@@ -79,6 +86,19 @@ impl Tuple {
             .iter()
             .filter_map(|x| x.value.as_register().copied())
             .collect()
+    }
+
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        for element in
+            self.elements.iter_mut().filter_map(|x| x.value.as_literal_mut())
+        {
+            element.transform(transformer).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -133,6 +153,15 @@ pub struct Load {
     pub address: Address,
 }
 
+impl Load {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        self.address.transform(transformer).await
+    }
+}
+
 async fn type_of_load_assignment(
     values: &Values,
     load: &Load,
@@ -164,6 +193,24 @@ pub struct Borrow {
 
     /// The lifetime introduces by the reference of operation.
     pub lifetime: Lifetime,
+}
+
+impl Borrow {
+    async fn transform<T: Transformer<Type> + Transformer<Lifetime>>(
+        &mut self,
+        transformer: &mut T,
+        borrow_span: Option<RelativeSpan>,
+    ) -> Result<(), CyclicError> {
+        self.address.transform(transformer).await?;
+
+        transformer
+            .transform(
+                &mut self.lifetime,
+                LifetimeTermSource::Borrow,
+                borrow_span,
+            )
+            .await
+    }
 }
 
 async fn type_of_reference_of_assignment(
@@ -232,6 +279,17 @@ pub struct Prefix {
 }
 
 impl Prefix {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        if let Some(operand) = self.operand.as_literal_mut() {
+            operand.transform(transformer).await?;
+        }
+
+        Ok(())
+    }
+
     /// Returns the register that is used in the prefix.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -269,7 +327,96 @@ pub struct Struct {
     pub generic_arguments: GenericArguments,
 }
 
+async fn transform_generic_arguments<
+    T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+>(
+    transformer: &mut T,
+    symbol_id: Global<pernixc_symbol::ID>,
+    span: Option<RelativeSpan>,
+    engine: &TrackedEngine,
+    generic_arg: &mut GenericArguments,
+) -> Result<(), CyclicError> {
+    let generic_params = engine.get_generic_parameters(symbol_id).await?;
+
+    for (lt_id, lt) in generic_params
+        .lifetime_order()
+        .iter()
+        .copied()
+        .zip(generic_arg.lifetimes.iter_mut())
+    {
+        transformer
+            .transform(
+                lt,
+                LifetimeTermSource::GenericParameter(MemberID::new(
+                    symbol_id, lt_id,
+                )),
+                span,
+            )
+            .await?;
+    }
+
+    for (ty_id, ty) in generic_params
+        .type_order()
+        .iter()
+        .copied()
+        .zip(generic_arg.types.iter_mut())
+    {
+        transformer
+            .transform(
+                ty,
+                TypeTermSource::GenericParameter(MemberID::new(
+                    symbol_id, ty_id,
+                )),
+                span,
+            )
+            .await?;
+    }
+
+    for (ct_id, ct) in generic_params
+        .constant_order()
+        .iter()
+        .copied()
+        .zip(generic_arg.constants.iter_mut())
+    {
+        transformer
+            .transform(
+                ct,
+                ConstantTermSource::GenericParameter(MemberID::new(
+                    symbol_id, ct_id,
+                )),
+                span,
+            )
+            .await?;
+    }
+
+    Ok(())
+}
+
 impl Struct {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        struct_lit_span: Option<RelativeSpan>,
+        engine: &TrackedEngine,
+    ) -> Result<(), CyclicError> {
+        for value in self.initializers_by_field_id.values_mut() {
+            if let Some(literal) = value.as_literal_mut() {
+                literal.transform(transformer).await?;
+            }
+        }
+
+        transform_generic_arguments(
+            transformer,
+            self.struct_id,
+            struct_lit_span,
+            engine,
+            &mut self.generic_arguments,
+        )
+        .await
+    }
+
     /// Returns the list of registers that are used in the struct.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -312,6 +459,32 @@ pub struct Variant {
 }
 
 impl Variant {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        variant_span: Option<RelativeSpan>,
+        engine: &TrackedEngine,
+    ) -> Result<(), CyclicError> {
+        if let Some(value) = self.associated_value.as_mut() {
+            if let Some(literal) = value.as_literal_mut() {
+                literal.transform(transformer).await?;
+            }
+        }
+
+        transform_generic_arguments(
+            transformer,
+            self.variant_id
+                .target_id
+                .make_global(engine.get_parent(self.variant_id).await.unwrap()),
+            variant_span,
+            engine,
+            &mut self.generic_arguments,
+        )
+        .await
+    }
+
     /// Returns the list of registers that are used in the variant.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -361,6 +534,65 @@ pub struct FunctionCall {
 }
 
 impl FunctionCall {
+    async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        call_span: Option<RelativeSpan>,
+    ) -> Result<(), CyclicError> {
+        for argument in &mut self.arguments {
+            if let Some(literal) = argument.as_literal_mut() {
+                literal.transform(transformer).await?;
+            }
+        }
+
+        for (lt_id, lt) in &mut self.instantiation.lifetimes {
+            transformer
+                .transform(
+                    lt,
+                    LifetimeTermSource::GenericParameter(
+                        lt_id
+                            .into_parameter()
+                            .expect("should've been a lifetime ID"),
+                    ),
+                    call_span,
+                )
+                .await?;
+        }
+
+        for (ty_id, ty) in &mut self.instantiation.types {
+            transformer
+                .transform(
+                    ty,
+                    TypeTermSource::GenericParameter(
+                        ty_id
+                            .clone()
+                            .into_parameter()
+                            .expect("should've been a type ID"),
+                    ),
+                    call_span,
+                )
+                .await?;
+        }
+
+        for (ct_id, ct) in &mut self.instantiation.constants {
+            transformer
+                .transform(
+                    ct,
+                    ConstantTermSource::GenericParameter(
+                        ct_id
+                            .clone()
+                            .into_parameter()
+                            .expect("should've been a constant ID"),
+                    ),
+                    call_span,
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
     /// Returns the list of registers that are used in the function call.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -539,6 +771,21 @@ pub struct Binary {
 }
 
 impl Binary {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        if let Some(literal) = self.lhs.as_literal_mut() {
+            literal.transform(transformer).await?;
+        }
+
+        if let Some(literal) = self.rhs.as_literal_mut() {
+            literal.transform(transformer).await?;
+        }
+
+        Ok(())
+    }
+
     /// Returns the list of registers that are used in the binary.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -586,6 +833,20 @@ pub struct Phi {
 }
 
 impl Phi {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+        span: Option<RelativeSpan>,
+    ) -> Result<(), CyclicError> {
+        for value in self.incoming_values.values_mut() {
+            if let Some(literal) = value.as_literal_mut() {
+                literal.transform(transformer).await?;
+            }
+        }
+
+        transformer.transform(&mut self.r#type, TypeTermSource::Phi, span).await
+    }
+
     /// Returns the list of registers that are used in the phi node.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -622,6 +883,22 @@ pub struct Array {
 }
 
 impl Array {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+        span: Option<RelativeSpan>,
+    ) -> Result<(), CyclicError> {
+        for value in &mut self.elements {
+            if let Some(literal) = value.as_literal_mut() {
+                literal.transform(transformer).await?;
+            }
+        }
+
+        transformer
+            .transform(&mut self.element_type, TypeTermSource::Array, span)
+            .await
+    }
+
     /// Returns the list of registers that are used in the array.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -651,6 +928,20 @@ pub struct Cast {
 }
 
 impl Cast {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+        cast_span: Option<RelativeSpan>,
+    ) -> Result<(), CyclicError> {
+        if let Some(literal) = self.value.as_literal_mut() {
+            literal.transform(transformer).await?;
+        }
+
+        transformer
+            .transform(&mut self.r#type, TypeTermSource::Cast, cast_span)
+            .await
+    }
+
     /// Returns the register that is used in the cast.
     #[must_use]
     pub fn get_used_registers(&self) -> Vec<ID<Register>> {
@@ -683,6 +974,15 @@ pub struct VariantNumber {
 
     /// The enum ID of the enum.
     pub enum_id: Global<pernixc_symbol::ID>,
+}
+
+impl VariantNumber {
+    async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        self.address.transform(transformer).await
+    }
 }
 
 async fn type_of_variant_number(
@@ -858,5 +1158,46 @@ impl TypeOf<ID<Register>> for Values {
         }?;
 
         Ok(environment.simplify(ty).await?.deref().clone())
+    }
+}
+
+impl Register {
+    /// Transforms the types, lifetimes, and constants in the register using
+    /// the given transformer.
+    pub async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        transformer: &mut T,
+        engine: &TrackedEngine,
+    ) -> Result<(), CyclicError> {
+        match &mut self.assignment {
+            Assignment::Tuple(tuple) => tuple.transform(transformer).await,
+            Assignment::Load(load) => load.transform(transformer).await,
+            Assignment::Borrow(borrow) => {
+                borrow.transform(transformer, self.span).await
+            }
+            Assignment::Prefix(prefix) => prefix.transform(transformer).await,
+            Assignment::Struct(st) => {
+                st.transform(transformer, self.span, engine).await
+            }
+            Assignment::Variant(variant) => {
+                variant.transform(transformer, self.span, engine).await
+            }
+            Assignment::FunctionCall(function_call) => {
+                function_call.transform(transformer, self.span).await
+            }
+            Assignment::Binary(binary) => binary.transform(transformer).await,
+            Assignment::Array(array) => {
+                array.transform(transformer, self.span).await
+            }
+            Assignment::Phi(phi) => phi.transform(transformer, self.span).await,
+            Assignment::Cast(cast) => {
+                cast.transform(transformer, self.span).await
+            }
+            Assignment::VariantNumber(variant_number) => {
+                variant_number.transform(transformer).await
+            }
+        }
     }
 }

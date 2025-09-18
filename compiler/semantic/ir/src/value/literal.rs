@@ -1,6 +1,5 @@
 //! Contains the definition of [`Literal`].
 
-use core::num;
 use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;

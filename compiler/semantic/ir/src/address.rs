@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::{
     fields::{self, get_fields},
     parameter::{get_parameters, Parameter},
@@ -25,6 +26,7 @@ use pernixc_type_system::{
 
 use crate::{
     alloca::Alloca,
+    transform::Transformer,
     value::{TypeOf, Value},
     Values,
 };
@@ -566,5 +568,23 @@ impl TypeOf<&Address> for Values {
             .await?
             .map(|x| *x.into_reference().unwrap().pointee)),
         }
+    }
+}
+
+impl Address {
+    /// Transforms the types in the address using the provided transformer.
+    pub async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        let Self::Index(index) = self else {
+            return Ok(());
+        };
+
+        let Value::Literal(literal) = &mut index.indexing_value else {
+            return Ok(());
+        };
+
+        literal.transform(transformer).await
     }
 }

@@ -4,7 +4,14 @@
 
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
-use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
+use pernixc_term::{
+    constant::Constant,
+    generic_parameters::{
+        ConstantParameterID, LifetimeParameterID, TypeParameterID,
+    },
+    lifetime::Lifetime,
+    r#type::Type,
+};
 
 /// A trait implemented by terms that can be transformed by a [`Transformer`]
 /// (lifetimes, types, and constants).
@@ -14,7 +21,15 @@ pub trait Transformable {
     type Source;
 }
 
-pub enum LifetimeTermSource {}
+/// An enumeration of sources for lifetime terms used in the expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LifetimeTermSource {
+    /// From the borrow expression like `&'? x`.
+    Borrow,
+
+    /// As a generic argument supplied to a generic symbol.
+    GenericParameter(LifetimeParameterID),
+}
 
 impl Transformable for Lifetime {
     type Source = LifetimeTermSource;
@@ -37,16 +52,33 @@ pub enum TypeTermSource {
 
     /// From the unreachable expression like `break`, `continue`, or `return`
     Unreachable,
+
+    /// From inferring the concrete type of a phi instruction.
+    Phi,
+
+    /// From inferring the array type like `[expr; N]`.
+    Array,
+
+    /// As a generic argument supplied to a generic symbol.
+    GenericParameter(TypeParameterID),
+
+    /// From the type in a cast expression like `expr as T`.
+    Cast,
 }
 
 impl Transformable for Type {
     type Source = TypeTermSource;
 }
 
-pub enum ConstantTyermSource {}
+/// An enumeration of sources for constant terms used in the expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConstantTermSource {
+    /// As a generic argument supplied to a generic symbol.
+    GenericParameter(ConstantParameterID),
+}
 
 impl Transformable for Constant {
-    type Source = ConstantTyermSource;
+    type Source = ConstantTermSource;
 }
 
 /// A trait for transforming terms of type `T`.
