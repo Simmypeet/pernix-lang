@@ -1,0 +1,10 @@
+public struct Adt:
+    pass
+
+
+public function main():
+    let a = 2
+    let b = a as Adt
+    
+    let c = Adt{}
+    let d = c as int32
