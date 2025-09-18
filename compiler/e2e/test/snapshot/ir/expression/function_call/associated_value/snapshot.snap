@@ -6,16 +6,16 @@ stderr:
 error: the variant `main::Option::Some` expects an associated value
   ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:7:5
   │
-7 │     Option::Some()              # expected 1 value
-  │     ^^^^^^^^^^^^^^ associated value expected
+7 │     Option[int32]::Some()              # expected 1 value
+  │     ^^^^^^^^^^^^^^^^^^^^^ associated value expected
   │
   = supply the associated value using the syntax `main::Option::Some(value)`
 
 error: the variant `main::Option::Some` was supplied with too many arguments
-  ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:8:17
+  ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/associated_value/main.pnx:8:24
   │
-8 │     Option::Some(53, 42)        # expected 1 value
-  │                 ^^^^^^^^ too many arguments
+8 │     Option[int32]::Some(53, 42)        # expected 1 value
+  │                        ^^^^^^^^ too many arguments
   │
   = only one argument is allowed for the associated value
 
