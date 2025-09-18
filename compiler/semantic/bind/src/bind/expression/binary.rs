@@ -366,7 +366,7 @@ impl Binder<'_> {
                     )
                 {
                     Box::pin(self.bind_value_or_error(
-                        syntax_tree,
+                        &syntax_tree.right,
                         Some(&Type::Primitive(Primitive::Isize)),
                         handler,
                     ))
@@ -414,20 +414,51 @@ impl Binder<'_> {
                 ))
                 .await?;
 
-                if self
-                    .type_check_as_diagnostic(
-                        &lhs_register_ty,
-                        Expected::Constraint(constraint::Type::Number),
+                let valid = match self
+                    .simplify_type(
+                        lhs_register_ty.clone(),
                         syntax_tree.left.span(),
                         handler,
                     )
                     .await?
-                    .is_some()
+                    .result
                 {
+                    Type::Pointer(_) | Type::Primitive(_) => true,
+
+                    Type::Inference(inference) => {
+                        let constraint_id = *self
+                            .inference_context()
+                            .type_table()
+                            .get_inference(inference)
+                            .unwrap()
+                            .as_inferring()
+                            .unwrap();
+
+                        let constraint = *self
+                            .inference_context()
+                            .type_table()
+                            .get_constraint(constraint_id)
+                            .unwrap();
+
+                        match constraint {
+                            constraint::Type::Number
+                            | constraint::Type::Integer
+                            | constraint::Type::SignedInteger
+                            | constraint::Type::Signed
+                            | constraint::Type::UnsignedInteger
+                            | constraint::Type::Floating => true,
+
+                            constraint::Type::All(_) => false,
+                        }
+                    }
+                    _ => false,
+                };
+
+                if !valid {
                     handler.receive(
                         InvalidTypeInBinaryOperator {
                             lhs_span: syntax_tree.left.span(),
-                            operator_kind: BinaryOperatorKind::Bitwise,
+                            operator_kind: BinaryOperatorKind::Relational,
                             lhs_type: lhs_register_ty.clone(),
                             type_inference_map: self
                                 .type_inference_rendering_map(),
@@ -451,47 +482,16 @@ impl Binder<'_> {
                     ))
                     .await?;
 
-                    let valid = match self
-                        .simplify_type(
-                            lhs_register_ty.clone(),
+                    if self
+                        .type_check_as_diagnostic(
+                            &lhs_register_ty,
+                            Expected::Constraint(constraint::Type::Integer),
                             syntax_tree.left.span(),
                             handler,
                         )
                         .await?
-                        .result
+                        .is_some()
                     {
-                        Type::Pointer(_) | Type::Primitive(_) => true,
-
-                        Type::Inference(inference) => {
-                            let constraint_id = *self
-                                .inference_context()
-                                .type_table()
-                                .get_inference(inference)
-                                .unwrap()
-                                .as_inferring()
-                                .unwrap();
-
-                            let constraint = *self
-                                .inference_context()
-                                .type_table()
-                                .get_constraint(constraint_id)
-                                .unwrap();
-
-                            match constraint {
-                                constraint::Type::Number
-                                | constraint::Type::Integer
-                                | constraint::Type::SignedInteger
-                                | constraint::Type::Signed
-                                | constraint::Type::UnsignedInteger
-                                | constraint::Type::Floating => true,
-
-                                constraint::Type::All(_) => false,
-                            }
-                        }
-                        _ => false,
-                    };
-
-                    if !valid {
                         handler.receive(
                             InvalidTypeInBinaryOperator {
                                 lhs_span: syntax_tree.left.span(),
