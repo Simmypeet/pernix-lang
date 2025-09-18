@@ -1328,6 +1328,7 @@ dependencies = [
  "derive-new",
  "derive_more",
  "enum-as-inner",
+ "flexstr",
  "getset",
  "inkwell",
  "pernixc_arena",

@@ -1,10 +1,7 @@
-use pernixc_semantic::{
-    component::derived::ir::value::literal::{Literal, Numeric},
-    term::r#type::Primitive,
-};
+use pernixc_ir::value::literal::{Literal, Numeric};
+use pernixc_term::r#type::Primitive;
 
-use super::{Builder, Error, LlvmValue};
-use crate::Model;
+use crate::function::{Builder, Error, LlvmValue};
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// Gets the LLVM integer value of the given type.
@@ -40,7 +37,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// Translates numeric literal to LLVM value.
     pub fn get_numeric_value(
         &self,
-        numeric_value: &Numeric<Model>,
+        numeric_value: &Numeric,
     ) -> inkwell::values::BasicValueEnum<'ctx> {
         let primitive_type = numeric_value.r#type.as_primitive().unwrap();
 
@@ -60,7 +57,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             ),
 
             Primitive::Float32 | Primitive::Float64 => {
-                let value = numeric_value.decimal_stirng.as_ref().map_or_else(
+                let value = numeric_value.decimal_string.as_ref().map_or_else(
                     || numeric_value.integer_string.parse::<f64>().unwrap(),
                     |decimal_string| {
                         format!(
@@ -97,20 +94,19 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// in the `.data` section or similar in the final binary.
     pub fn get_string(
         &mut self,
-        string: &SharedStr,
+        string: &str,
     ) -> inkwell::values::BasicValueEnum<'ctx> {
-        self.context
-            .get_global_const_string(string.value.as_ref())
-            .as_pointer_value()
-            .into()
+        self.context.get_global_const_string(string).as_pointer_value().into()
     }
 
     pub fn get_literal_value(
         &mut self,
-        literal: &Literal<Model>,
+        literal: &Literal,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         match literal {
-            Literal::String(string) => Ok(Some(self.get_string(string).into())),
+            Literal::String(string) => {
+                Ok(Some(self.get_string(&string.value).into()))
+            }
             Literal::Character(character) => Ok(Some(
                 self.get_integer_value(
                     character.character as u64,
