@@ -12,6 +12,7 @@ use pernixc_semantic_element::{
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
+    linkage::{get_linkage, Linkage, C},
     parent::get_parent,
 };
 use pernixc_target::Global;
@@ -438,16 +439,29 @@ impl Binder<'_> {
         method_receiver: Option<MethodReceiver>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<pernixc_arena::ID<Register>, Error> {
-        if expected_types.len()
-            != arguments.len() + usize::from(method_receiver.is_some())
-        {
+        // deduct the by one if it's method, receiver is not counted as an
+        // argument
+        let expected =
+            expected_types.len() - usize::from(method_receiver.is_some());
+        let supplied = arguments.len();
+
+        let callable_kind = self.engine().get_kind(callable_id).await;
+        let is_vargs = callable_kind == Kind::ExternFunction
+            && matches!(
+                self.engine().get_linkage(callable_id).await,
+                Linkage::C(C { variadic: true })
+            );
+
+        let count_error =
+            if is_vargs { supplied < expected } else { supplied != expected };
+
+        if count_error {
             handler.receive(
                 Diagnostic::MismatchedArgumentsCount(
                     MismatchedArgumentsCount {
                         function_id: callable_id,
-                        expected: expected_types.len()
-                            - usize::from(method_receiver.is_some()),
-                        supplied: arguments.len(),
+                        expected,
+                        supplied,
                         span: call_span,
                     },
                 )
