@@ -61,11 +61,13 @@ mod literal;
 
 /// Contains both Pernix's function parameters and return type
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(missing_docs)]
 pub struct FunctionSignature {
     pub parameters: Arc<Parameters>,
     pub return_type: Arc<Type>,
 }
 
+/// Obtains the function signature of the given function ID.
 #[pernixc_extend::extend]
 pub async fn get_function_signature(
     self: &TrackedEngine,
@@ -195,7 +197,7 @@ impl<'ctx> Context<'_, 'ctx> {
                 let mut generic_arguments = instantiation
                     .create_generic_arguments(callable_id, &generic_params);
 
-                self.normalize_generic_arguments(&mut generic_arguments);
+                self.normalize_generic_arguments(&mut generic_arguments).await;
 
                 generic_arguments
                     .write_async(self.engine(), &mut qualified_name)
@@ -225,7 +227,8 @@ impl<'ctx> Context<'_, 'ctx> {
                     .unwrap())
                 .clone();
                 implemented_generic_args.instantiate(instantiation);
-                self.normalize_generic_arguments(&mut implemented_generic_args);
+                self.normalize_generic_arguments(&mut implemented_generic_args)
+                    .await;
 
                 let function_generic_params = self
                     .engine()
@@ -238,7 +241,8 @@ impl<'ctx> Context<'_, 'ctx> {
                         callable_id,
                         &function_generic_params,
                     );
-                self.normalize_generic_arguments(&mut function_generic_args);
+                self.normalize_generic_arguments(&mut function_generic_args)
+                    .await;
 
                 let mut qualified_name =
                     self.engine().get_qualified_name(implemented_id).await;
@@ -252,7 +256,8 @@ impl<'ctx> Context<'_, 'ctx> {
                     qualified_name,
                     "::{}",
                     self.engine().get_name(callable_id).await
-                );
+                )
+                .unwrap();
 
                 function_generic_args
                     .write_async(self.engine(), &mut qualified_name)
@@ -551,7 +556,7 @@ impl<'ctx> Context<'_, 'ctx> {
 
         // build intrinsic function
         if key.callable_id.target_id == TargetID::CORE {
-            self.create_intrinsic_function(&llvm_function_signatue, key);
+            self.create_intrinsic_function(&llvm_function_signatue, key).await;
         } else {
             let pernix_ir =
                 self.engine().get_ir(key.callable_id).await.unwrap();
@@ -567,7 +572,7 @@ impl<'ctx> Context<'_, 'ctx> {
             .await;
 
             for block_id in pernix_ir.control_flow_graph.blocks().ids() {
-                builder.build_basic_block(block_id);
+                builder.build_basic_block(block_id).await;
             }
 
             // connect alloca entry block to the first block
@@ -663,7 +668,7 @@ impl<'ctx> Context<'_, 'ctx> {
 }
 
 impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     async fn new(
         context: &'rctx mut Context<'i, 'ctx>,
         callable_id: Global<pernixc_symbol::ID>,

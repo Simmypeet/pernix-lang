@@ -26,7 +26,7 @@ impl<'ctx> Context<'_, 'ctx> {
             self.constant_map().global_values_by_string().get(value).copied()
         {
             return value;
-        };
+        }
 
         let string_array_type = self
             .context()

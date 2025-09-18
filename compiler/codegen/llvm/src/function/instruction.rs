@@ -102,7 +102,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     dest_address.r#type,
                 );
             }
-        };
+        }
 
         Ok(())
     }
@@ -200,7 +200,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn create_function_call(
+    fn create_function_call(
         &mut self,
         llvm_function_signature: &LlvmFunctionSignature<'ctx>,
         arguments: &[Value],
@@ -303,7 +303,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     &function_call.arguments,
                     reg_id,
                 )
-                .await
             }
             Kind::Function | Kind::ImplementationFunction => {
                 let mut calling_inst = function_call.instantiation.clone();
@@ -318,14 +317,13 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.instantiation.instantiate(term);
                 });
 
-                self.context.normalize_instantiation(&mut calling_inst);
+                self.context.normalize_instantiation(&mut calling_inst).await;
 
-                let llvm_function = self
-                    .context
-                    .get_function(&Call {
+                let llvm_function =
+                    Box::pin(self.context.get_function(&Call {
                         callable_id: function_call.callable_id,
                         instantiation: calling_inst,
-                    })
+                    }))
                     .await;
 
                 self.create_function_call(
@@ -333,7 +331,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     &function_call.arguments,
                     reg_id,
                 )
-                .await
             }
 
             Kind::TraitFunction => {
@@ -349,7 +346,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     self.instantiation.instantiate(term);
                 });
 
-                self.context.normalize_instantiation(&mut calling_inst);
+                self.context.normalize_instantiation(&mut calling_inst).await;
 
                 // get the parent trait to search for the implc
                 let parent_trait_id = Global::new(
@@ -495,14 +492,13 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     );
                 }
 
-                self.context.normalize_instantiation(&mut new_inst);
+                self.context.normalize_instantiation(&mut new_inst).await;
 
-                let llvm_function = self
-                    .context
-                    .get_function(&Call {
+                let llvm_function =
+                    Box::pin(self.context.get_function(&Call {
                         callable_id: trait_impl_fun_id,
                         instantiation: new_inst,
-                    })
+                    }))
                     .await;
 
                 self.create_function_call(
@@ -510,7 +506,6 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                     &function_call.arguments,
                     reg_id,
                 )
-                .await
             }
 
             kind => panic!("unexpected symbol kind: {kind:?}"),
@@ -1971,7 +1966,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     /// Translates the Pernix's basic block to LLVM's basic block if haven't
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     pub async fn build_basic_block(&mut self, block_id: ID<Block>) {
         // already built, or being built currently.
         if !self.built.insert(block_id) {
@@ -1987,7 +1982,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             .iter()
             .copied()
         {
-            self.build_basic_block(predecessor);
+            Box::pin(self.build_basic_block(predecessor)).await;
         }
 
         self.inkwell_builder.position_at_end(current_block);
@@ -2068,7 +2063,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                                 },
                             );
 
-                        self.build_drop(ptr, eleme.term.clone());
+                        self.build_drop(ptr, eleme.term.clone()).await;
                     }
 
                     Ok(())
@@ -2087,7 +2082,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                         |x| x.address,
                     );
 
-                    self.build_drop(pointer, adress_pnx_type);
+                    self.build_drop(pointer, adress_pnx_type).await;
 
                     Ok(())
                 }
@@ -2112,7 +2107,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
                                 },
                             );
 
-                            self.build_drop(ptr_value, pnx_type);
+                            self.build_drop(ptr_value, pnx_type).await;
                         }
                     }
 

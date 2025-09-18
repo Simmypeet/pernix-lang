@@ -13,6 +13,7 @@ use crate::{constant, diagnostic::Diagnostic, function, r#type};
 
 /// The main state used for the code generation process.
 #[derive(MutGetters, Getters, CopyGetters)]
+#[allow(clippy::struct_field_names)]
 pub struct Context<'i, 'ctx> {
     /// The LLVM context.
     #[get_copy = "pub"]

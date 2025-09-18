@@ -502,13 +502,12 @@ impl<'ctx> Context<'_, 'ctx> {
                     .unwrap();
 
                 let main_drop_function_value = self.create_drop_function_value(
-                    &format!("drop({})", symbol_ty_string),
+                    &format!("drop({symbol_ty_string})"),
                 );
 
                 let member_drop_function_value = self
                     .create_drop_function_value(&format!(
-                        "memberDrop({})",
-                        symbol_ty_string
+                        "memberDrop({symbol_ty_string})"
                     ));
 
                 assert!(self
@@ -535,12 +534,11 @@ impl<'ctx> Context<'_, 'ctx> {
                 )
                 .await;
 
-                let impl_func = self
-                    .get_function(&super::Call {
-                        callable_id: impl_func_id,
-                        instantiation: inst,
-                    })
-                    .await;
+                let impl_func = Box::pin(self.get_function(&super::Call {
+                    callable_id: impl_func_id,
+                    instantiation: inst,
+                }))
+                .await;
 
                 let entry_block = self
                     .context()
@@ -617,7 +615,7 @@ impl<'ctx> Context<'_, 'ctx> {
         .unwrap();
 
         let function_value = self.module().add_function(
-            &format!("drop({})", array_string),
+            &format!("drop({array_string})"),
             drop_func_sig,
             Some(Linkage::Private),
         );

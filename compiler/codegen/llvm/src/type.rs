@@ -455,7 +455,8 @@ impl<'ctx> Context<'_, 'ctx> {
         clippy::cast_sign_loss,
         clippy::cast_possible_truncation,
         clippy::cast_precision_loss,
-        clippy::too_many_lines
+        clippy::too_many_lines,
+        clippy::cognitive_complexity // omg, refactor this pleaese
     )]
     pub async fn get_enum_type(
         &mut self,
@@ -624,7 +625,7 @@ impl<'ctx> Context<'_, 'ctx> {
                     assert!(ty.set_body(&[tag_ty.into(), llvm_ty], false));
                 } else {
                     assert!(ty.set_body(&[tag_ty.into()], false));
-                };
+                }
 
                 llvm_variant_with_tag_types.insert(variant_id, ty);
             }
@@ -691,7 +692,7 @@ impl<'ctx> Context<'_, 'ctx> {
                     ],
                     false,
                 ));
-            };
+            }
 
             // make sure it can accommodate the largest variant. the size might
             // not exactly matches the size of the largest variant since the
