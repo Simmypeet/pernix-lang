@@ -10,11 +10,11 @@ extern "C":
 
 
 public function main():
-    let a: int32 = 0
-    let b: int32 = 0
-    let c: int32 = 0
-    let d: int32 = 0
-    let e: int32 = 0
+    let mut a: int32 = 0
+    let mut b: int32 = 0
+    let mut c: int32 = 0
+    let mut d: int32 = 0
+    let mut e: int32 = 0
 
     scanf(&"%d %d %d %d %d\0".[0], &mut a, &mut b, &mut c, &mut d, &mut e)
 
