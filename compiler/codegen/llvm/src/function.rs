@@ -493,9 +493,6 @@ impl<'ctx> Context<'_, 'ctx> {
                 &function_signature,
                 &Instantiation::default(),
                 match ext {
-                    pernixc_symbol::linkage::Linkage::Pernix => unreachable!(
-                        "Pernix linkage is not allowed for extern function"
-                    ),
                     pernixc_symbol::linkage::Linkage::C(c) => c.variadic,
                     pernixc_symbol::linkage::Linkage::Unknown => unreachable!(
                         "Unknown linkage is not allowed for extern function"
