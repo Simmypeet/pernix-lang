@@ -5,6 +5,7 @@ use std::ops::Deref;
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -15,7 +16,11 @@ use pernixc_term::{
 };
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
-use crate::{value::TypeOf, Values};
+use crate::{
+    transform::{Transformer, TypeTermSource},
+    value::TypeOf,
+    Values,
+};
 
 /// Represents a numeric literal value.
 #[derive(
@@ -287,5 +292,47 @@ impl TypeOf<&Literal> for Values {
     ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
     {
         environment.simplify(literal.r#type()).await.map(|x| x.deref().clone())
+    }
+}
+
+impl Literal {
+    /// Transforms the types in the literal using the provided transformer.
+    pub async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        match self {
+            Self::Numeric(numeric) => {
+                transformer
+                    .transform(&mut numeric.r#type, TypeTermSource::Numeric)
+                    .await
+            }
+
+            Self::Error(error) => {
+                transformer
+                    .transform(&mut error.r#type, TypeTermSource::Error)
+                    .await
+            }
+
+            Self::Character(character) => {
+                transformer
+                    .transform(&mut character.r#type, TypeTermSource::Character)
+                    .await
+            }
+
+            Self::Unreachable(unreachable) => {
+                transformer
+                    .transform(&mut unreachable.r#type, TypeTermSource::Error)
+                    .await
+            }
+
+            Self::Phantom(phantom) => {
+                transformer
+                    .transform(&mut phantom.r#type, TypeTermSource::Phantom)
+                    .await
+            }
+
+            Self::String(_) | Self::Unit(_) | Self::Boolean(_) => Ok(()),
+        }
     }
 }

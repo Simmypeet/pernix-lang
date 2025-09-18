@@ -18,6 +18,7 @@ pub mod control_flow_graph;
 pub mod instruction;
 pub mod pattern;
 pub mod scope;
+pub mod transform;
 pub mod value;
 
 /// Contains all the registers and allocas used in the program.
