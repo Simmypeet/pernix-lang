@@ -43,6 +43,7 @@ diagnostic_enum! {
         Postfix(expression::postfix::diagnostic::Diagnostic),
         Borrow(expression::borrow::diagnostic::Diagnostic),
         Dereference(expression::dereference::diagnostic::Diagnostic),
+        UnsafeRequired(expression::diagnostic::UnsafeRequired),
     }
 }
 

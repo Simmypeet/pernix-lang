@@ -12,6 +12,7 @@ use crate::{
 };
 
 pub mod access;
+pub mod cast;
 pub mod diagnostic;
 pub mod method_call;
 
@@ -78,39 +79,45 @@ impl Bind<&pernixc_syntax::expression::postfix::Postfix>
 
         // otherwise, bind as an rvalue first
         for operator in postfix_operators {
-            match operator {
+            let (next_expr, next_span) = match operator {
                 pernixc_syntax::expression::postfix::Operator::MethodCall(
                     method_call,
                 ) => {
-                    let (next_expr, next_span) = method_call::bind_method_call(
+                    method_call::bind_method_call(
                         self,
                         bind_state,
                         current_span,
                         &method_call,
                         handler,
                     )
-                    .await?;
-
-                    bind_state = BindState::Bound(next_expr);
-                    current_span = next_span;
+                    .await?
                 }
-                pernixc_syntax::expression::postfix::Operator::Cast(_cast) => {}
+                pernixc_syntax::expression::postfix::Operator::Cast(cast) => {
+                    cast::bind_cast(
+                        self,
+                        bind_state,
+                        current_span,
+                        &cast,
+                        handler,
+                    )
+                    .await?
+                }
                 pernixc_syntax::expression::postfix::Operator::Access(
                     access,
                 ) => {
-                    let (next_expr, next_span) = access::bind_access(
+                    access::bind_access(
                         self,
                         bind_state,
                         current_span,
                         &access,
                         handler,
                     )
-                    .await?;
-
-                    bind_state = BindState::Bound(next_expr);
-                    current_span = next_span;
+                    .await?
                 }
-            }
+            };
+
+            bind_state = BindState::Bound(next_expr);
+            current_span = next_span;
         }
 
         Ok(bind_state.into_bound().unwrap())

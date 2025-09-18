@@ -7,6 +7,7 @@ use crate::{
             CannotIndexPastUnpackedTuple, FieldNotFound, TooLargeTupleIndex,
             TupleIndexOutOfBounds, UnexpectedTypeForAccess,
         },
+        cast::diagnostic::{InvalidCastType, InvalidPointerTypeCasting},
         method_call::diagnostic::{AmbiguousMethodCall, MethodCallNotFound},
     },
     diagnostic_enum,
@@ -31,6 +32,8 @@ diagnostic_enum! {
         CannotIndexPastUnpackedTuple(CannotIndexPastUnpackedTuple),
         TupleIndexOutOfBounds(TupleIndexOutOfBounds),
         MethodCallNotFound(MethodCallNotFound),
-        AmbiguousMethodCall(AmbiguousMethodCall)
+        AmbiguousMethodCall(AmbiguousMethodCall),
+        InvalidPointerTypeCasting(InvalidPointerTypeCasting),
+        InvalidCastType(InvalidCastType),
     }
 }

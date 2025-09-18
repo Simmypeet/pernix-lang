@@ -333,6 +333,12 @@ impl<C: Constraint> Table<C> {
             })
             .collect()
     }
+
+    /// Retrieves the constraint associated with the given ID.
+    #[must_use]
+    pub fn get_constraint(&self, id: ID<C>) -> Option<&C> {
+        self.constraints.get(id)
+    }
 }
 
 #[cfg(test)]

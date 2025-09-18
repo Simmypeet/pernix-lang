@@ -15,7 +15,7 @@ use pernixc_ir::{
     scope,
     value::{
         literal::{Literal, Unreachable},
-        register::{Assignment, Register},
+        register::{Assignment, Load, Register},
         TypeOf, Value,
     },
     IR,
@@ -48,6 +48,7 @@ use pernixc_type_system::{
 };
 
 use crate::{
+    bind::LValue,
     binder::{self, stack::Stack},
     diagnostic::Diagnostic,
     inference_context::{self, constraint, InferenceContext},
@@ -83,6 +84,8 @@ pub struct Binder<'t> {
     #[get = "pub"]
     stack: stack::Stack,
 
+    /// The inference context used for managing type and constant inferences.
+    #[get = "pub"]
     inference_context: InferenceContext,
     type_inference_counter: u64,
     const_inference_counter: u64,
@@ -546,6 +549,15 @@ impl Binder<'_> {
         );
 
         register_id
+    }
+
+    /// Creates a load instruction that loads the value from the given `lvalue`
+    /// and returns the register ID that holds the loaded value.
+    pub fn load_lvalue(&mut self, lvalue: LValue) -> ID<Register> {
+        self.create_register_assignment(
+            Assignment::Load(Load { address: lvalue.address }),
+            lvalue.span,
+        )
     }
 
     /// Gets the type of the given `register_id`.
