@@ -37,6 +37,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_symbol::{
     kind::{get_kind, Kind},
+    linkage::get_linkage,
     name::{get_name, get_qualified_name},
     parent::get_parent,
 };
@@ -484,20 +485,27 @@ impl<'ctx> Context<'_, 'ctx> {
         let function_signature =
             self.engine().get_function_signature(callable_id).await;
 
-        let ext = *self.engine().get::<Extern>(callable_id);
-        let name = self.engine().get::<Name>(callable_id).0.clone();
+        let ext = self.engine().get_linkage(callable_id).await;
+        let name = self.engine().get_name(callable_id).await;
 
-        let llvm_function_sign = Rc::new(self.create_function_value(
-            &function_signature,
-            &Instantiation::default(),
-            match ext {
-                Extern::C(extern_c) => extern_c.var_args,
-
-                Extern::Unknown => unreachable!("unknown extern function"),
-            },
-            &name,
-            Some(Linkage::External),
-        ));
+        let llvm_function_sign = Rc::new(
+            self.create_function_value(
+                &function_signature,
+                &Instantiation::default(),
+                match ext {
+                    pernixc_symbol::linkage::Linkage::Pernix => unreachable!(
+                        "Pernix linkage is not allowed for extern function"
+                    ),
+                    pernixc_symbol::linkage::Linkage::C(c) => c.variadic,
+                    pernixc_symbol::linkage::Linkage::Unknown => unreachable!(
+                        "Unknown linkage is not allowed for extern function"
+                    ),
+                },
+                &name,
+                Some(Linkage::External),
+            )
+            .await,
+        );
 
         self.function_map_mut()
             .extern_functions_by_global_id
