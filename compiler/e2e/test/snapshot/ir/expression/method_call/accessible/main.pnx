@@ -11,6 +11,13 @@ public module inner:
     import target::Test
 
 
+    public trait MyTrait[T]:
+        public function publicMethod(self: T)
+        
+
+        private function privateMethod(self: T)
+
+
     implements Test:
         private function innerMethod(self: this):
             pass
@@ -26,3 +33,13 @@ private function outerMain():
     let t = Test{}
     t.innerMethod() # is not fine
     t.outerMethod() # is fine
+
+
+public function testTraitMethod[T](obj: T):
+    where:
+        trait inner::MyTrait[T]
+    
+
+    obj.publicMethod() # is fine
+    obj.privateMethod() # is not fine
+    
