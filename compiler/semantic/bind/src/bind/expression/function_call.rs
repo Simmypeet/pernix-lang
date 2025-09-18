@@ -473,12 +473,13 @@ impl Binder<'_> {
         let mut argument_values = Vec::with_capacity(
             arguments.len() + usize::from(method_receiver.is_some()),
         );
-        for (expr, ty) in arguments.iter().zip(
-            // skip the first expected type for the method receiver
-            expected_types.iter().skip(usize::from(method_receiver.is_some())),
-        ) {
+
+        for (i, arg) in arguments.iter().enumerate() {
+            let expected_ty =
+                expected_types.get(i + usize::from(method_receiver.is_some()));
+
             argument_values.push(
-                Box::pin(self.bind_value_or_error(expr, Some(ty), handler))
+                Box::pin(self.bind_value_or_error(arg, expected_ty, handler))
                     .await?,
             );
         }
@@ -519,7 +520,10 @@ impl Binder<'_> {
                 }
             }
             std::cmp::Ordering::Greater => {
-                argument_values.truncate(expected_types.len());
+                // don't truncate if it's extra variadic arguments
+                if !is_vargs {
+                    argument_values.truncate(expected_types.len());
+                }
             }
             std::cmp::Ordering::Equal => {}
         }
