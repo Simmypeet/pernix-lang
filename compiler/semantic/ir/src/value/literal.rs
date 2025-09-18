@@ -1,5 +1,6 @@
 //! Contains the definition of [`Literal`].
 
+use core::num;
 use std::ops::Deref;
 
 use enum_as_inner::EnumAsInner;
@@ -304,31 +305,51 @@ impl Literal {
         match self {
             Self::Numeric(numeric) => {
                 transformer
-                    .transform(&mut numeric.r#type, TypeTermSource::Numeric)
+                    .transform(
+                        &mut numeric.r#type,
+                        TypeTermSource::Numeric,
+                        numeric.span,
+                    )
                     .await
             }
 
             Self::Error(error) => {
                 transformer
-                    .transform(&mut error.r#type, TypeTermSource::Error)
+                    .transform(
+                        &mut error.r#type,
+                        TypeTermSource::Error,
+                        error.span,
+                    )
                     .await
             }
 
             Self::Character(character) => {
                 transformer
-                    .transform(&mut character.r#type, TypeTermSource::Character)
+                    .transform(
+                        &mut character.r#type,
+                        TypeTermSource::Character,
+                        character.span,
+                    )
                     .await
             }
 
             Self::Unreachable(unreachable) => {
                 transformer
-                    .transform(&mut unreachable.r#type, TypeTermSource::Error)
+                    .transform(
+                        &mut unreachable.r#type,
+                        TypeTermSource::Error,
+                        unreachable.span,
+                    )
                     .await
             }
 
             Self::Phantom(phantom) => {
                 transformer
-                    .transform(&mut phantom.r#type, TypeTermSource::Phantom)
+                    .transform(
+                        &mut phantom.r#type,
+                        TypeTermSource::Phantom,
+                        phantom.span,
+                    )
                     .await
             }
 

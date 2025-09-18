@@ -2,6 +2,7 @@
 //! transforming the inference variables in the IR to concrete types after
 //! type inference has been completed.
 
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
@@ -57,5 +58,6 @@ pub trait Transformer<T: Transformable> {
         &mut self,
         term: &mut T,
         source: T::Source,
+        span: Option<RelativeSpan>,
     ) -> Result<(), CyclicError>;
 }
