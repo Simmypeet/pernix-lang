@@ -67,7 +67,8 @@ impl Build for pernixc_ir::Key {
         let ir = match kind {
             pernixc_symbol::kind::Kind::Function
             | pernixc_symbol::kind::Kind::ImplementationFunction => {
-                build_ir_for_function(engine, key, binder, &storage).await?
+                Box::pin(build_ir_for_function(engine, key, binder, &storage))
+                    .await?
             }
 
             _ => unreachable!(),
