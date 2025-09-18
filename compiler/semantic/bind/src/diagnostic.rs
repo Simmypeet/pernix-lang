@@ -7,6 +7,11 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::source_map::to_absolute_span;
+use pernixc_term::{
+    constant::Constant,
+    display::{Display, InferenceRenderingMap},
+    r#type::Type,
+};
 
 use crate::{binder, pattern};
 
@@ -44,6 +49,8 @@ diagnostic_enum! {
         Borrow(expression::borrow::diagnostic::Diagnostic),
         Dereference(expression::dereference::diagnostic::Diagnostic),
         UnsafeRequired(expression::diagnostic::UnsafeRequired),
+        AssignToNonMutable(AssignToNonMutable),
+        InvalidTypeInBinaryOperator(InvalidTypeInBinaryOperator),
     }
 }
 
@@ -126,6 +133,149 @@ impl Report for ExpectedLValue {
                  location,
                         for example, a variable or a dereferenced pointer",
             )
+            .build())
+    }
+}
+
+/// Attempts to assign to a non-mutable l-value.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct AssignToNonMutable {
+    /// The span of the assignment.
+    pub span: RelativeSpan,
+}
+
+impl Report for AssignToNonMutable {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message("cannot assign to non-mutable l-value")
+            .help_message(
+                "only mutable l-values can be assigned to; consider declaring \
+                 the variable as `mut`",
+            )
+            .build())
+    }
+}
+
+/// A kind of binary operator.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+#[allow(missing_docs)]
+pub enum BinaryOperatorKind {
+    Arithmetic,
+    Relational,
+    Bitwise,
+}
+
+/// The type of the left-hand side of a binary operator is invalid.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct InvalidTypeInBinaryOperator {
+    /// The span of the left-hand side expression.
+    pub lhs_span: RelativeSpan,
+
+    /// The kind of the operator.
+    pub operator_kind: BinaryOperatorKind,
+
+    /// The type of the left-hand side expression.
+    pub lhs_type: Type,
+
+    /// Mapping for rendering type inferences
+    pub type_inference_map: InferenceRenderingMap<Type>,
+
+    /// Mapping for rendering constant inferences
+    pub constant_inference_map: InferenceRenderingMap<Constant>,
+}
+
+impl Report for InvalidTypeInBinaryOperator {
+    async fn report(
+        &self,
+        parameter: &pernixc_query::TrackedEngine,
+    ) -> Result<
+        pernixc_diagnostic::Rendered<pernixc_diagnostic::ByteIndex>,
+        pernixc_query::runtime::executor::CyclicError,
+    > {
+        let mut message = match self.operator_kind {
+            BinaryOperatorKind::Arithmetic => {
+                "the left-hand side of an arithmetic operator must be a number \
+                 or pointer (via pointer arithmetic), but found `"
+                    .to_string()
+            }
+            BinaryOperatorKind::Relational => "the left-hand side of a \
+                                               relational operator must be a \
+                                               number or a `bool`, but found `"
+                .to_string(),
+            BinaryOperatorKind::Bitwise => "the left-hand side of a bitwise \
+                                            operator must be an integer, but \
+                                            found `"
+                .to_string(),
+        };
+
+        self.lhs_type
+            .write_async_with_mapping(
+                parameter,
+                &mut message,
+                None,
+                Some(&self.type_inference_map),
+                Some(&self.constant_inference_map),
+            )
+            .await
+            .unwrap();
+
+        message.push('`');
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(parameter.to_absolute_span(&self.lhs_span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message(match self.operator_kind {
+                BinaryOperatorKind::Arithmetic => {
+                    "language only supports numeric arithmetic and pointer \
+                     arithmetic"
+                }
+                BinaryOperatorKind::Relational => {
+                    "only a number or `bool` type can be used with relational \
+                     operators"
+                }
+                BinaryOperatorKind::Bitwise => {
+                    "only an integer type can be used with bitwise operators"
+                }
+            })
             .build())
     }
 }

@@ -27,11 +27,13 @@ use crate::{
 };
 
 pub mod array;
+pub mod binary;
 pub mod block;
 pub mod boolean;
 pub mod borrow;
 pub mod character;
 pub mod dereference;
+pub mod diagnostic;
 pub mod function_call;
 pub mod numeric;
 pub mod panic;
@@ -42,7 +44,6 @@ pub mod prefix;
 pub mod qualified_identifier;
 pub mod string;
 pub mod r#struct;
-pub mod diagnostic;
 
 impl Bind<&pernixc_syntax::expression::Expression>
     for crate::binder::Binder<'_>
@@ -61,24 +62,6 @@ impl Bind<&pernixc_syntax::expression::Expression>
                 self.bind(terminator, config, handler).await
             }
         }
-    }
-}
-
-impl Bind<&pernixc_syntax::expression::binary::Binary>
-    for crate::binder::Binder<'_>
-{
-    async fn bind(
-        &mut self,
-        syntax_tree: &pernixc_syntax::expression::binary::Binary,
-        config: &Guidance<'_>,
-        handler: &dyn Handler<Diagnostic>,
-    ) -> Result<Expression, Error> {
-        // TODO: implements proper binary expression binding
-        let Some(first) = syntax_tree.first() else {
-            return Err(Error::Binding(BindingError(syntax_tree.span())));
-        };
-
-        self.bind(&first, config, handler).await
     }
 }
 

@@ -8,7 +8,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
 use super::block::Block;
-use crate::expression::prefix::Prefixable;
+use crate::{expect::Keyword, expression::prefix::Prefixable};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
@@ -249,6 +249,20 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct And {
+        pub and_keyword = Keyword::And
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Or {
+        pub or_keyword = Keyword::Or
+    }
+}
+
+abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
     pub enum Node {
         Prefixable(Prefixable = ast::<Prefixable>()),
@@ -339,6 +353,12 @@ abstract_tree::abstract_tree! {
         ),
         Assign(
             Assign = ast::<Assign>()
+        ),
+        LogicalAnd(
+            And = ast::<And>()
+        ),
+        LogicalOr(
+            Or = ast::<Or>()
         ),
     }
 }
