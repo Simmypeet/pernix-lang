@@ -12,7 +12,7 @@ use crate::{
         expression::parenthesized::diagnostic::{
             Diagnostic, MoreThanOneUnpackedInTupleExpression,
         },
-        Bind, Guidance, Expression,
+        Bind, Expression, Guidance,
     },
     binder::{BindingError, Error},
 };

@@ -7,7 +7,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::{self, Type};
 
 use crate::{
-    bind::{Bind, Guidance, Expression},
+    bind::{Bind, Expression, Guidance},
     binder::Error,
     inference_context::constraint,
 };

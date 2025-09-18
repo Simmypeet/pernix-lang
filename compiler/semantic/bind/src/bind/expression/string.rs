@@ -6,7 +6,7 @@ use pernixc_ir::value::{
 use pernixc_source_file::SourceElement;
 
 use crate::{
-    bind::{Bind, Guidance, Expression},
+    bind::{Bind, Expression, Guidance},
     binder::{Binder, Error},
 };
 

@@ -26,7 +26,7 @@ use crate::{
             Diagnostic, ExpectedAssociatedValue,
             SymbolCannotBeUsedAsAnExpression,
         },
-        Bind, Guidance, Expression, LValue,
+        Bind, Expression, Guidance, LValue,
     },
     binder::{Binder, BindingError, Error},
 };

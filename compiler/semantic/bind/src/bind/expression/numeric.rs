@@ -12,7 +12,7 @@ use crate::{
             Diagnostic, FloatingPointLiteralHasIntegralSuffix,
             InvalidNumericSuffix,
         },
-        Bind, Guidance, Expression,
+        Bind, Expression, Guidance,
     },
     binder::{Binder, BindingError, Error},
     inference_context::constraint,

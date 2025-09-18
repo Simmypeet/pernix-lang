@@ -26,7 +26,7 @@ use crate::{
             Diagnostic, DuplicatedFieldInitialization, ExpectedStructSymbol,
             FieldIsNotAccessible, FieldNotFound, UninitializedFields,
         },
-        Bind, Guidance, Expression,
+        Bind, Expression, Guidance,
     },
     binder::{Binder, BindingError, Error},
 };

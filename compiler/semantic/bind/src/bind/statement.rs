@@ -13,7 +13,7 @@ use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::{Qualifier, Type};
 
 use crate::{
-    bind::{Bind, Guidance, Expression},
+    bind::{Bind, Expression, Guidance},
     binder::{type_check::Expected, Binder, Error, UnrecoverableError},
     diagnostic::Diagnostic,
     inference_context::constraint,
