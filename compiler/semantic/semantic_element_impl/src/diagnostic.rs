@@ -15,7 +15,6 @@ use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
     all_symbol_ids,
     kind::{get_kind, Kind},
-    linkage::{get_linkage, Linkage},
 };
 use pernixc_target::{Global, TargetID};
 use pernixc_term::generic_parameters::Key as GenericParametersKey;
