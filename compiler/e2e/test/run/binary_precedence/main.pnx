@@ -10,16 +10,15 @@ extern "C":
 
 
 public function main():
-    unsafe scope:
-        let a: int32 = 0
-        let b: int32 = 0
-        let c: int32 = 0
-        let d: int32 = 0
-        let e: int32 = 0
+    let a: int32 = 0
+    let b: int32 = 0
+    let c: int32 = 0
+    let d: int32 = 0
+    let e: int32 = 0
 
-        scanf(&"%d %d %d %d %d\0".[0], &mut a, &mut b, &mut c, &mut d, &mut e)
+    scanf(&"%d %d %d %d %d\0".[0], &mut a, &mut b, &mut c, &mut d, &mut e)
 
-        let result = a + b * c - d / e
+    let result = a + b * c - d / e
 
-        printf(&"%d\n\0".[0], result)
+    printf(&"%d\n\0".[0], result)
 
