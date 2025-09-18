@@ -1,0 +1,162 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mismatched types: expected `isize`, found `{floating}`
+  ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:7:21
+  │
+7 │     expect[*..](a + 1.2) # error, expect isize
+  │                     ^^^ expected `isize`, found `{floating}`
+  │
+  = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:12:23
+   │
+12 │     expect[int32](a + 1.2) # error, expect int32
+   │                       ^^^ expected `int32`, found `{floating}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:13:23
+   │
+13 │     expect[int32](a + true) # error, expect int32
+   │                       ^^^^ expected `int32`, found `bool`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `int64`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:14:23
+   │
+14 │     expect[int32](a + 1i64) # error, expect int32
+   │                       ^^^^ expected `int32`, found `int64`
+   │
+   = ensure the expression type matches the expected type
+
+error: the left-hand side of an arithmetic operator must be a number or pointer (via pointer arithmetic), but found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:16:18
+   │
+16 │     expect[bool](b - false) # error, bool is not numeric
+   │                  ^
+   │
+   = language only supports numeric arithmetic and pointer arithmetic
+
+error: mismatched types: expected `int32`, found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:25:22
+   │
+25 │     expect[bool](a < 1.2) # error, expect int32
+   │                      ^^^ expected `int32`, found `{floating}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:26:22
+   │
+26 │     expect[bool](a < true) # error, expect int32
+   │                      ^^^^ expected `int32`, found `bool`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `int64`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:27:22
+   │
+27 │     expect[bool](a < 1i64) # error, expect int32
+   │                      ^^^^ expected `int32`, found `int64`
+   │
+   = ensure the expression type matches the expected type
+
+error: the left-hand side of a relational operator must be a number or a `bool`, but found `main::Adt`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:31:18
+   │
+31 │     expect[bool](Adt{} == Adt{}) # error, adt is not comparable
+   │                  ^^^^^
+   │
+   = only a number or `bool` type can be used with relational operators
+
+error: the left-hand side of a relational operator must be a number or a `bool`, but found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:36:19
+   │
+36 │     expect[int32](1 & 2.0) # error, expect int32
+   │                   ^
+   │
+   = only a number or `bool` type can be used with relational operators
+
+error: mismatched types: expected `int32`, found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:36:19
+   │
+36 │     expect[int32](1 & 2.0) # error, expect int32
+   │                   ^^^^^^^ expected `int32`, found `{floating}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{number}`, found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:37:23
+   │
+37 │     expect[int32](1 & true) # error, expect int32
+   │                       ^^^^ expected `{number}`, found `bool`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `int32`, found `int64`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:38:19
+   │
+38 │     expect[int32](1 & 2i64) # error, expect int32
+   │                   ^^^^^^^^ expected `int32`, found `int64`
+   │
+   = ensure the expression type matches the expected type
+
+error: the left-hand side of a relational operator must be a number or a `bool`, but found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:40:21
+   │
+40 │     expect[float32](1.0 | 2.0) # error, float can't be used
+   │                     ^^^
+   │
+   = only a number or `bool` type can be used with relational operators
+
+error: mismatched types: expected `{unsignedInteger}`, found `{signed}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:45:24
+   │
+45 │     expect[int32](1 << -2) # error, negative shift
+   │                        ^^ expected `{unsignedInteger}`, found `{signed}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{unsignedInteger}`, found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:46:27
+   │
+46 │     expect[int32](1i32 << 2.0) # error
+   │                           ^^^ expected `{unsignedInteger}`, found `{floating}`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{unsignedInteger}`, found `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:47:24
+   │
+47 │     expect[int32](1 << true) # error 
+   │                        ^^^^ expected `{unsignedInteger}`, found `bool`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{unsignedInteger}`, found `int64`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:48:24
+   │
+48 │     expect[int32](1 << 2i64) # error, expect unsigned
+   │                        ^^^^ expected `{unsignedInteger}`, found `int64`
+   │
+   = ensure the expression type matches the expected type
+
+error: mismatched types: expected `{integer}`, found `{floating}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/binary/error/main.pnx:50:21
+   │
+50 │     expect[float32](1.0 >> 2) # error, non-integer lhs
+   │                     ^^^ expected `{integer}`, found `{floating}`
+   │
+   = ensure the expression type matches the expected type
+
+error: Compilation aborted due to 19 error(s)
+
+
+
+stdout:
