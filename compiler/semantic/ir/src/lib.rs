@@ -46,6 +46,7 @@ pub struct Values {
 )]
 #[id(Global<pernixc_symbol::ID>)]
 #[value(Arc<IR>)]
+#[extend(method(get_ir))]
 pub struct IR {
     /// Contains the registers and allocas used in the program.
     pub values: Values,
