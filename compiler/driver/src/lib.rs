@@ -1,86 +1,41 @@
 //! Contains the main `run()` function for the compiler.
 
-use std::{process::ExitCode, sync::Arc};
+use std::{path::PathBuf, process::ExitCode, sync::Arc};
 
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle},
     term::termcolor::WriteColor,
 };
-use pernixc_diagnostic::Highlight;
-use pernixc_query::{runtime::persistence::Persistence, Engine};
-use pernixc_source_file::{ByteIndex, GlobalSourceID};
+use pernixc_query::{runtime::persistence::Persistence, Engine, TrackedEngine};
+use pernixc_source_file::GlobalSourceID;
 use pernixc_symbol::source_map::{create_source_map, SourceMap};
-use pernixc_target::{Arguments, TargetID};
+use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
 use tracing::instrument;
+
+use crate::{
+    diagnostic::pernix_diagnostic_to_codespan_diagnostic, llvm::MachineCodeKind,
+};
 
 pub mod term;
 
-struct ReportTerm<'a> {
+mod diagnostic;
+mod llvm;
+
+struct ReportTerm<'a, 's> {
     config: codespan_reporting::term::Config,
     err_writer: &'a mut dyn WriteColor,
+    source_map: &'s SourceMap,
 }
 
-impl ReportTerm<'_> {
+impl ReportTerm<'_, '_> {
     #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn report(
-        &mut self,
-        source_map: &SourceMap,
-        diagnostic: &Diagnostic<GlobalSourceID>,
-    ) {
+    fn report(&mut self, diagnostic: &Diagnostic<GlobalSourceID>) {
         let _ = codespan_reporting::term::emit(
             self.err_writer,
             &self.config,
-            source_map,
+            self.source_map,
             diagnostic,
         );
-    }
-}
-
-fn pernix_diagnostic_to_codespan_diagnostic(
-    diagnostic: &pernixc_diagnostic::Rendered<ByteIndex>,
-) -> codespan_reporting::diagnostic::Diagnostic<GlobalSourceID> {
-    let mut result = match diagnostic.severity {
-        pernixc_diagnostic::Severity::Error => {
-            codespan_reporting::diagnostic::Diagnostic::error()
-        }
-        pernixc_diagnostic::Severity::Warning => {
-            codespan_reporting::diagnostic::Diagnostic::warning()
-        }
-        pernixc_diagnostic::Severity::Info => {
-            codespan_reporting::diagnostic::Diagnostic::note()
-        }
-    }
-    .with_message(diagnostic.message.to_string());
-
-    if let Some(Highlight { span, message }) = &diagnostic.primary_highlight {
-        result = result.with_labels(
-            std::iter::once({
-                let mut primary = Label::primary(span.source_id, span.range());
-
-                if let Some(label_message) = message {
-                    primary = primary.with_message(label_message);
-                }
-
-                primary
-            })
-            .chain(diagnostic.related.iter().map(|x| {
-                let mut label =
-                    Label::secondary(x.span.source_id, x.span.range());
-
-                if let Some(message) = x.message.as_ref() {
-                    label = label.with_message(message.clone());
-                }
-
-                label
-            }))
-            .collect(),
-        );
-    }
-
-    if let Some(msg) = &diagnostic.help_message {
-        result.with_notes(vec![msg.to_string()])
-    } else {
-        result
     }
 }
 
@@ -148,6 +103,35 @@ impl Ord for SortableDiagnostic {
                     .cmp(other.0.labels.iter().map(ComparableLabel))
             })
             .then_with(|| self.0.message.cmp(&other.0.message))
+    }
+}
+
+fn get_output_path(
+    argument_output: Option<PathBuf>,
+    target_kind: TargetKind,
+    report_term: &mut ReportTerm<'_, '_>,
+    target_name: &str,
+) -> Option<PathBuf> {
+    if let Some(output) = argument_output {
+        Some(output)
+    } else {
+        let mut output = match std::env::current_dir() {
+            Ok(dir) => dir,
+            Err(error) => {
+                report_term.report(&Diagnostic::error().with_message(format!(
+                    "failed to get current directory: {error}"
+                )));
+                return None;
+            }
+        };
+
+        output.push(target_name);
+
+        if target_kind == TargetKind::Library {
+            output.set_extension("plib");
+        }
+
+        Some(output)
     }
 }
 
@@ -234,6 +218,7 @@ pub async fn run(
     // set the initial input, the invocation arguments
     let local_target_id =
         TargetID::from_target_name(&argument.command.input().target_name());
+    let target_name = argument.command.input().target_name();
 
     engine
         .input_session(async |x| {
@@ -273,7 +258,7 @@ pub async fn run(
 
             x.set_input(
                 pernixc_target::Key(local_target_id),
-                Arc::new(argument),
+                Arc::new(argument.clone()),
             )
             .await;
         })
@@ -287,9 +272,17 @@ pub async fn run(
     // now the query can start ...
 
     let engine = Arc::new(engine);
+    let tracked_engine = engine.tracked();
+
+    let source_map = tracked_engine.create_source_map(local_target_id).await;
+
+    let mut report_term = ReportTerm {
+        config: report_config.clone(),
+        source_map: &source_map,
+        err_writer,
+    };
 
     let diagnostic_count = {
-        let tracked_engine = engine.tracked();
         let mut diagnostics = Vec::new();
 
         let symbol_errors = tracked_engine
@@ -318,33 +311,32 @@ pub async fn run(
 
         diagnostics.sort();
 
-        let source_map =
-            tracked_engine.create_source_map(local_target_id).await;
-
         for diagnostic in &diagnostics {
-            let mut report_term =
-                ReportTerm { config: report_config.clone(), err_writer };
-
-            report_term.report(&source_map, &diagnostic.0);
+            report_term.report(&diagnostic.0);
         }
 
         diagnostics.len()
     };
 
-    if diagnostic_count != 0 {
+    let result = if diagnostic_count != 0 {
         let diag = codespan_reporting::diagnostic::Diagnostic::error()
             .with_message(format!(
                 "Compilation aborted due to {diagnostic_count} error(s)"
             ));
 
-        codespan_reporting::term::emit(
-            err_writer,
-            &report_config,
-            &simple_file,
-            &diag,
+        report_term.report(&diag);
+
+        ExitCode::SUCCESS
+    } else {
+        build(
+            &argument,
+            &target_name,
+            local_target_id,
+            &tracked_engine,
+            &mut report_term,
         )
-        .unwrap();
-    }
+        .await
+    };
 
     let mut engine =
         Arc::try_unwrap(engine).expect("Engine should be unique at this point");
@@ -363,9 +355,135 @@ pub async fn run(
         return ExitCode::FAILURE;
     }
 
-    if diagnostic_count == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
+    result
+}
+
+#[allow(clippy::too_many_lines)]
+async fn build(
+    argument: &Arguments,
+    target_name: &str,
+    current_target_id: TargetID,
+    tracked_engine: &TrackedEngine,
+    report_term: &mut ReportTerm<'_, '_>,
+) -> ExitCode {
+    // retrieve the output path
+    let output_path = match &argument.command {
+        Command::Build(Build { output, .. })
+        | Command::Run(Run { output, .. }) => Some(get_output_path(
+            output.output.clone(),
+            argument
+                .command
+                .as_build()
+                .map_or(TargetKind::Executable, |x| x.kind),
+            report_term,
+            target_name,
+        )),
+
+        Command::Check(_) => None,
+    };
+
+    let output_path = match output_path {
+        Some(Some(path)) => Some(path),
+        None => None,
+
+        Some(None) => {
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match &argument.command {
+        Command::Build(Build {
+            opt_level,
+            kind:
+                TargetKind::Executable | TargetKind::LLvmIR | TargetKind::Object,
+            ..
+        })
+        | Command::Run(Run { opt_level, .. }) => {
+            let kind = match &argument.command {
+                Command::Build(Build { kind, .. }) => match kind {
+                    TargetKind::Executable => MachineCodeKind::Binary(false),
+                    TargetKind::Object => MachineCodeKind::Object,
+                    TargetKind::LLvmIR => MachineCodeKind::LlvmIR,
+
+                    TargetKind::Library | TargetKind::Ron => unreachable!(),
+                },
+
+                Command::Run(_) => MachineCodeKind::Binary(true),
+                Command::Check(_) => unreachable!(),
+            };
+
+            // emit the executable
+            if !llvm::emit_as_machine_code(
+                tracked_engine,
+                current_target_id,
+                output_path.as_ref().unwrap(),
+                *opt_level,
+                kind,
+                report_term,
+            )
+            .await
+            {
+                return ExitCode::FAILURE;
+            }
+
+            let run_executable = matches!(kind, MachineCodeKind::Binary(true));
+
+            if !run_executable {
+                return ExitCode::SUCCESS;
+            }
+
+            let mut command =
+                std::process::Command::new(output_path.as_ref().unwrap());
+
+            command.stdin(std::process::Stdio::inherit());
+            command.stdout(std::process::Stdio::inherit());
+            command.stderr(std::process::Stdio::inherit());
+
+            let mut child = match command.spawn() {
+                Ok(child) => child,
+                Err(error) => {
+                    report_term.report(&Diagnostic::error().with_message(
+                        format!("failed to spawn executable: {error}"),
+                    ));
+
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let status = match child.wait() {
+                Ok(status) => status,
+                Err(error) => {
+                    report_term.report(&Diagnostic::error().with_message(
+                        format!("failed to wait for executable: {error}"),
+                    ));
+
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            if let Some(code) = status.code() {
+                if code != 0 {
+                    report_term.report(&Diagnostic::error().with_message(
+                        format!("executable terminated with exit code {code}"),
+                    ));
+
+                    return ExitCode::FAILURE;
+                }
+            } else {
+                report_term.report(&Diagnostic::error().with_message(
+                    "executable terminated by signal".to_string(),
+                ));
+
+                return ExitCode::FAILURE;
+            }
+
+            ExitCode::SUCCESS
+        }
+
+        Command::Build(Build {
+            kind: TargetKind::Library | TargetKind::Ron,
+            ..
+        })
+        | Command::Check(_) => ExitCode::SUCCESS,
     }
 }

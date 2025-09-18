@@ -24,6 +24,7 @@ pernixc_type_system = { path = "../semantic/type_system" }
 pernixc_resolution = { path = "../semantic/resolution" }
 pernixc_semantic_element_impl = { path = "../semantic/semantic_element_impl" }
 pernixc_register = { path = "../base/register" }
+pernixc_llvm = { path = "../codegen/llvm" }
 clap = { workspace = true }
 codespan-reporting = { workspace = true }
 derive_more = { workspace = true }
