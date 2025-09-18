@@ -6,28 +6,28 @@ use inkwell::{
     values::{FunctionValue, PointerValue},
     AddressSpace,
 };
-use pernixc_semantic::{
-    component::{
-        derived::{
-            elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-            fields::Fields,
-            generic_parameters::{GenericParameters, LifetimeParameterID},
-            implementation::Implementation,
-            ir::model::Erased,
-            variant::Variant,
-        },
-        input::{Implemented, Member, SymbolKind, VariantDeclarationOrder},
-    },
-    table::{DisplayObject, GlobalID, TargetID},
-    term::{
-        self,
-        constant::Constant,
-        generic_arguments::GenericArguments,
-        instantiation::Instantiation,
-        lifetime::Lifetime,
-        r#type::{Array, Type},
-        Model as _, Symbol, Tuple,
-    },
+use pernixc_semantic_element::{
+    elided_lifetime::get_elided_lifetimes, fields::get_fields,
+    implemented::get_implemented,
+    implements_arguments::get_implements_argument,
+    variant::get_variant_associated_type,
+};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::get_by_qualified_name,
+    variant_declaration_order::get_variant_declaration_order,
+};
+use pernixc_target::{Global, TargetID};
+use pernixc_term::{
+    constant::Constant,
+    display::Display,
+    generic_arguments::Symbol,
+    generic_parameters::{get_generic_parameters, LifetimeParameterID},
+    instantiation::Instantiation,
+    lifetime::{ElidedLifetimeID, Lifetime},
+    r#type::{Array, Type},
+    tuple::Tuple,
 };
 use pernixc_type_system::{
     environment::{Environment, Premise},
@@ -36,26 +36,27 @@ use pernixc_type_system::{
 
 use crate::{
     context::Context, function::Builder, r#type::LlvmEnumSignature, zst::Zst,
-    Model,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum AdtDropKind {
-    MembersHaveDrop(Instantiation<Model>),
-    DropImplementation(GlobalID),
+    MembersHaveDrop(Instantiation),
+    DropImplementation(Global<pernixc_symbol::ID>),
 }
 
 impl<'ctx> Context<'_, 'ctx> {
     /// Gets the drop function for the given type.
-    pub fn get_drop(&mut self, ty: Type<Model>) -> Option<FunctionValue<'ctx>> {
+    pub async fn get_drop(&mut self, ty: Type) -> Option<FunctionValue<'ctx>> {
         match ty {
-            Type::Symbol(symbol) => self.get_adt_drop(symbol),
+            Type::Symbol(symbol) => self.get_adt_drop(symbol).await,
 
-            Type::Array(array) => self.get_array_drop(array),
+            Type::Array(array) => self.get_array_drop(array).await,
 
-            Type::Tuple(tuple) => self.get_tuple_drop(tuple),
+            Type::Tuple(tuple) => self.get_tuple_drop(tuple).await,
 
-            Type::Inference(inference) => match inference {},
+            Type::Inference(inference) => {
+                unreachable!("should not be here {inference:?}")
+            }
 
             Type::Pointer(_)
             | Type::Reference(_)
@@ -90,13 +91,13 @@ impl<'ctx> Context<'_, 'ctx> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn build_member_drop_adt(
+    async fn build_member_drop_adt(
         &mut self,
-        inst: &Instantiation<Model>,
-        symbol_ty: Symbol<Model>,
+        inst: &Instantiation,
+        symbol_ty: Symbol,
         function_value: FunctionValue<'ctx>,
     ) -> FunctionValue<'ctx> {
-        let symbol_kind = *self.table().get::<SymbolKind>(symbol_ty.id);
+        let symbol_kind = self.engine().get_kind(symbol_ty.id).await;
 
         let entry_block =
             self.context().append_basic_block(function_value, "entry");
@@ -107,20 +108,22 @@ impl<'ctx> Context<'_, 'ctx> {
             function_value.get_first_param().unwrap().into_pointer_value();
 
         match symbol_kind {
-            SymbolKind::Struct => {
+            Kind::Struct => {
                 let fields =
-                    self.table().query::<Fields>(symbol_ty.id).unwrap();
-                let llvm_struct_signature = self.get_struct_type(symbol_ty);
+                    self.engine().get_fields(symbol_ty.id).await.unwrap();
+                let llvm_struct_signature =
+                    self.get_struct_type(symbol_ty).await;
 
                 for field_id in fields.field_declaration_order.iter().copied() {
-                    let field_type = self.monomorphize_term(
-                        Model::from_default_type(
+                    let field_type = self
+                        .monomorphize_term(
                             fields.fields[field_id].r#type.clone(),
-                        ),
-                        inst,
-                    );
+                            inst,
+                        )
+                        .await;
 
-                    let Some(drop_function) = self.get_drop(field_type) else {
+                    let Some(drop_function) = self.get_drop(field_type).await
+                    else {
                         // has no drop function
                         continue;
                     };
@@ -176,39 +179,42 @@ impl<'ctx> Context<'_, 'ctx> {
                 builder.build_return(None).unwrap();
             }
 
-            SymbolKind::Enum => {
-                let variants = self.table().get::<Member>(symbol_ty.id);
-                let llvm_enum_signature = self.get_enum_type(symbol_ty.clone());
+            Kind::Enum => {
+                let variants = self.engine().get_members(symbol_ty.id).await;
+                let llvm_enum_signature =
+                    self.get_enum_type(symbol_ty.clone()).await;
                 let mut blocks_by_variant_order = Vec::new();
 
                 for variant_id in variants
+                    .member_ids_by_name
                     .values()
                     .copied()
-                    .map(|x| GlobalID::new(symbol_ty.id.target_id, x))
+                    .map(|x| Global::new(symbol_ty.id.target_id, x))
                 {
                     let declaration_order = self
-                        .table()
-                        .get::<VariantDeclarationOrder>(variant_id)
-                        .0;
+                        .engine()
+                        .get_variant_declaration_order(variant_id)
+                        .await;
 
-                    let variant =
-                        self.table().query::<Variant>(variant_id).unwrap();
+                    let variant = self
+                        .engine()
+                        .get_variant_associated_type(variant_id)
+                        .await
+                        .unwrap();
 
-                    let Some(ty) = &variant.associated_type else {
+                    let Some(ty) = variant else {
                         continue;
                     };
 
-                    let ty = self.monomorphize_term(
-                        Model::from_default_type(ty.clone()),
-                        inst,
-                    );
+                    let ty = self.monomorphize_term((*ty).clone(), inst).await;
 
-                    let Some(drop_function) = self.get_drop(ty.clone()) else {
+                    let Some(drop_function) = self.get_drop(ty.clone()).await
+                    else {
                         // has no drop function
                         continue;
                     };
 
-                    let llvm_ty = self.get_type(ty);
+                    let llvm_ty = self.get_type(ty).await;
                     let block = self.context().append_basic_block(
                         function_value,
                         &format!("variant_{variant_id:?}"),
@@ -378,9 +384,9 @@ impl<'ctx> Context<'_, 'ctx> {
 
     /// Gets the drop function for the given ADT symbol.
     #[allow(clippy::too_many_lines)]
-    pub fn get_adt_drop(
+    pub async fn get_adt_drop(
         &mut self,
-        symbol_ty: Symbol<Model>,
+        symbol_ty: Symbol,
     ) -> Option<FunctionValue<'ctx>> {
         if let Some(drop_func_sig) =
             self.function_map_mut().adt_drop.get(&symbol_ty).copied()
@@ -388,7 +394,9 @@ impl<'ctx> Context<'_, 'ctx> {
             return drop_func_sig;
         }
 
-        let Some(drop_kind) = self.get_adt_drop_kind(&symbol_ty) else {
+        let Some(drop_kind) =
+            Box::pin(self.get_adt_drop_kind(&symbol_ty)).await
+        else {
             self.function_map_mut().adt_drop.insert(symbol_ty, None);
             return None;
         };
@@ -397,58 +405,71 @@ impl<'ctx> Context<'_, 'ctx> {
             AdtDropKind::MembersHaveDrop(inst) => {
                 let function_value = self.create_drop_function_value(&format!(
                     "memberDrop({})",
-                    DisplayObject { table: self.table(), display: &symbol_ty }
+                    symbol_ty.write_to_string(self.engine()).await.unwrap()
                 ));
+
                 assert!(self
                     .function_map_mut()
                     .adt_drop
                     .insert(symbol_ty.clone(), Some(function_value))
                     .is_none());
 
-                Some(self.build_member_drop_adt(
-                    &inst,
-                    symbol_ty,
-                    function_value,
-                ))
+                Some(
+                    Box::pin(self.build_member_drop_adt(
+                        &inst,
+                        symbol_ty,
+                        function_value,
+                    ))
+                    .await,
+                )
             }
 
             AdtDropKind::DropImplementation(impl_id) => {
-                let implementation = GenericArguments::from_default_model(
-                    self.table()
-                        .query::<Implementation>(impl_id)
-                        .unwrap()
-                        .generic_arguments
-                        .types[0]
-                        .as_symbol()
-                        .unwrap()
-                        .generic_arguments
-                        .clone(),
-                );
+                let implementation = self
+                    .engine()
+                    .get_implements_argument(impl_id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .types[0]
+                    .as_symbol()
+                    .unwrap()
+                    .generic_arguments
+                    .clone();
 
-                let impl_func_id = GlobalID::new(
+                let impl_func_id = Global::new(
                     impl_id.target_id,
-                    *self.table().get::<Member>(impl_id).get("drop").unwrap(),
+                    self.engine()
+                        .get_members(impl_id)
+                        .await
+                        .member_ids_by_name
+                        .get("drop")
+                        .copied()
+                        .unwrap(),
                 );
                 let impl_func_generic_params = self
-                    .table()
-                    .query::<GenericParameters>(impl_func_id)
+                    .engine()
+                    .get_generic_parameters(impl_func_id)
+                    .await
                     .unwrap();
                 let impl_funcs_elided_params = self
-                    .table()
-                    .query::<ElidedLifetimes>(impl_func_id)
+                    .engine()
+                    .get_elided_lifetimes(impl_func_id)
+                    .await
                     .unwrap();
 
                 let env = Environment::new(
-                    std::borrow::Cow::Owned(Premise::<Model> {
+                    std::borrow::Cow::Owned(Premise {
                         predicates: BTreeSet::new(),
                         query_site: None,
                     }),
-                    self.table(),
+                    std::borrow::Cow::Borrowed(self.engine()),
                     normalizer::NO_OP,
                 );
 
                 let mut inst = env
                     .deduce(&implementation, &symbol_ty.generic_arguments)
+                    .await
                     .unwrap()
                     .result
                     .instantiation;
@@ -462,36 +483,32 @@ impl<'ctx> Context<'_, 'ctx> {
                                 x.0,
                             ))
                         })
-                        .chain(
-                            impl_funcs_elided_params
-                                .elided_lifetimes
-                                .ids()
-                                .map(|x| {
-                                    Lifetime::Elided(ElidedLifetimeID::new(
-                                        impl_func_id,
-                                        x,
-                                    ))
-                                }),
-                        )
-                        .map(|x| (x, Lifetime::Inference(Erased))),
+                        .chain(impl_funcs_elided_params.ids().map(|x| {
+                            Lifetime::Elided(ElidedLifetimeID::new(
+                                impl_func_id,
+                                x,
+                            ))
+                        }))
+                        .map(|x| (x, Lifetime::Erased)),
                 );
 
                 // the drop function that includes both custom implements drop
                 // and automatically generated adt member drop
+                let mut symbol_ty_string = String::new();
+
+                symbol_ty
+                    .write_async(self.engine(), &mut symbol_ty_string)
+                    .await
+                    .unwrap();
+
                 let main_drop_function_value = self.create_drop_function_value(
-                    &format!("drop({})", DisplayObject {
-                        table: self.table(),
-                        display: &symbol_ty
-                    }),
+                    &format!("drop({})", symbol_ty_string),
                 );
 
                 let member_drop_function_value = self
                     .create_drop_function_value(&format!(
                         "memberDrop({})",
-                        DisplayObject {
-                            table: self.table(),
-                            display: &symbol_ty
-                        }
+                        symbol_ty_string
                     ));
 
                 assert!(self
@@ -500,24 +517,30 @@ impl<'ctx> Context<'_, 'ctx> {
                     .insert(symbol_ty.clone(), Some(main_drop_function_value))
                     .is_none());
 
-                let member_drop = self.build_member_drop_adt(
-                    &Instantiation::from_generic_arguments(
-                        symbol_ty.generic_arguments.clone(),
-                        symbol_ty.id,
-                        &self
-                            .table()
-                            .query::<GenericParameters>(symbol_ty.id)
-                            .unwrap(),
-                    )
-                    .unwrap(),
-                    symbol_ty,
-                    member_drop_function_value,
-                );
+                let member_drop = Box::pin(
+                    self.build_member_drop_adt(
+                        &Instantiation::from_generic_arguments(
+                            symbol_ty.generic_arguments.clone(),
+                            symbol_ty.id,
+                            &self
+                                .engine()
+                                .get_generic_parameters(symbol_ty.id)
+                                .await
+                                .unwrap(),
+                        )
+                        .unwrap(),
+                        symbol_ty,
+                        member_drop_function_value,
+                    ),
+                )
+                .await;
 
-                let impl_func = self.get_function(&super::Call {
-                    callable_id: impl_func_id,
-                    instantiation: inst,
-                });
+                let impl_func = self
+                    .get_function(&super::Call {
+                        callable_id: impl_func_id,
+                        instantiation: inst,
+                    })
+                    .await;
 
                 let entry_block = self
                     .context()
@@ -555,9 +578,9 @@ impl<'ctx> Context<'_, 'ctx> {
 
     /// Gets the drop function for the given array value.
     #[allow(clippy::too_many_lines)]
-    pub fn get_array_drop(
+    pub async fn get_array_drop(
         &mut self,
-        array_ty: Array<Model>,
+        array_ty: Array,
     ) -> Option<FunctionValue<'ctx>> {
         let array_tup_ty = (
             *array_ty.r#type,
@@ -570,7 +593,7 @@ impl<'ctx> Context<'_, 'ctx> {
             return drop_func_sig;
         }
 
-        let has_drop = self.has_drop(&array_tup_ty.0);
+        let has_drop = Box::pin(self.has_drop(&array_tup_ty.0)).await;
 
         if !has_drop {
             self.function_map_mut().array_drop.insert(array_tup_ty, None);
@@ -582,16 +605,19 @@ impl<'ctx> Context<'_, 'ctx> {
             false,
         );
 
+        let mut array_string = String::new();
+        Type::Array(Array {
+            length: Constant::Primitive(
+                pernixc_term::constant::Primitive::Usize(array_tup_ty.1),
+            ),
+            r#type: Box::new(array_tup_ty.0.clone()),
+        })
+        .write_async(self.engine(), &mut array_string)
+        .await
+        .unwrap();
+
         let function_value = self.module().add_function(
-            &format!("drop({})", DisplayObject {
-                table: self.table(),
-                display: &Array {
-                    length: Constant::Primitive(
-                        term::constant::Primitive::Usize(array_tup_ty.1)
-                    ),
-                    r#type: Box::new(array_tup_ty.0.clone())
-                }
-            }),
+            &format!("drop({})", array_string),
             drop_func_sig,
             Some(Linkage::Private),
         );
@@ -602,7 +628,7 @@ impl<'ctx> Context<'_, 'ctx> {
             .insert(array_tup_ty.clone(), Some(function_value))
             .is_none());
 
-        let element_llvm_ty = self.get_type(array_tup_ty.0.clone());
+        let element_llvm_ty = self.get_type(array_tup_ty.0.clone()).await;
         let array_llvm_ty = element_llvm_ty
             .map(|x| x.array_type(array_tup_ty.1.try_into().unwrap()));
 
@@ -679,8 +705,8 @@ impl<'ctx> Context<'_, 'ctx> {
             },
         );
 
-        let drop_function =
-            self.get_drop(array_tup_ty.0).expect("has drop already");
+        let drop_function = Box::pin(self.get_drop(array_tup_ty.0).await)
+            .expect("has drop already");
 
         builder
             .build_call(drop_function, &[element_ptr.into()], "call_drop")
@@ -706,9 +732,9 @@ impl<'ctx> Context<'_, 'ctx> {
     }
 
     /// Gets the drop function for the tuple type.
-    pub fn get_tuple_drop(
+    pub async fn get_tuple_drop(
         &mut self,
-        tuple_ty: Tuple<Type<Model>>,
+        tuple_ty: Tuple<Type>,
     ) -> Option<FunctionValue<'ctx>> {
         if let Some(drop_func_sig) =
             self.function_map_mut().tuple_drop.get(&tuple_ty).copied()
@@ -716,10 +742,17 @@ impl<'ctx> Context<'_, 'ctx> {
             return drop_func_sig;
         }
 
-        let has_drop = tuple_ty
-            .elements
-            .iter()
-            .any(|element| self.has_drop(&element.term));
+        let has_drop = 'result: {
+            for element in &tuple_ty.elements {
+                assert!(!element.is_unpacked, "found unpacked tuple");
+
+                if Box::pin(self.has_drop(&element.term)).await {
+                    break 'result true;
+                }
+            }
+
+            false
+        };
 
         if !has_drop {
             self.function_map_mut().tuple_drop.insert(tuple_ty, None);
@@ -732,10 +765,10 @@ impl<'ctx> Context<'_, 'ctx> {
         );
 
         let function_value = self.module().add_function(
-            &format!("drop({})", DisplayObject {
-                table: self.table(),
-                display: &tuple_ty
-            }),
+            &format!(
+                "drop({})",
+                tuple_ty.write_to_string(self.engine()).await.unwrap()
+            ),
             drop_func_sig,
             Some(Linkage::Private),
         );
@@ -749,12 +782,13 @@ impl<'ctx> Context<'_, 'ctx> {
         let builder = self.context().create_builder();
         builder.position_at_end(entry_block);
 
-        let llvm_tuple_ty = self.get_tuple_type(tuple_ty.clone());
+        let llvm_tuple_ty = self.get_tuple_type(tuple_ty.clone()).await;
         let ptr_address =
             function_value.get_first_param().unwrap().into_pointer_value();
 
         for (index, elem) in tuple_ty.elements.into_iter().enumerate() {
-            let Some(drop_function) = self.get_drop(elem.term) else {
+            let Some(drop_function) = Box::pin(self.get_drop(elem.term)).await
+            else {
                 // has no drop function
                 continue;
             };
@@ -808,14 +842,11 @@ impl<'ctx> Context<'_, 'ctx> {
         Some(function_value)
     }
 
-    fn get_adt_drop_kind(&self, symbol: &Symbol<Model>) -> Option<AdtDropKind> {
+    async fn get_adt_drop_kind(&self, symbol: &Symbol) -> Option<AdtDropKind> {
         // check if the symbol is a NoDrop struct
         if symbol.id.target_id == TargetID::CORE
-            && symbol.id
-                == self
-                    .table()
-                    .get_by_qualified_name(["core", "NoDrop"])
-                    .unwrap()
+            && Some(symbol.id)
+                == self.engine().get_by_qualified_name(["core", "NoDrop"]).await
         {
             return None;
         }
@@ -823,21 +854,36 @@ impl<'ctx> Context<'_, 'ctx> {
         let current_symbol_id = symbol.id;
 
         // check for the explict drop implementation
-        let drop_trait_id =
-            self.table().get_by_qualified_name(["core", "Drop"]).unwrap();
+        let drop_trait_id = self
+            .engine()
+            .get_by_qualified_name(["core", "Drop"])
+            .await
+            .unwrap();
 
-        let implemented = self.table().get::<Implemented>(drop_trait_id);
+        let implemented =
+            self.engine().get_implemented(drop_trait_id).await.unwrap();
 
-        let implementation_id = implemented.iter().copied().find(|x| {
-            let implementation =
-                self.table().query::<Implementation>(*x).unwrap();
+        let implementation_id = 'result: {
+            for impl_id in implemented.iter().copied() {
+                let Some(implementation) = self
+                    .engine()
+                    .get_implements_argument(impl_id)
+                    .await
+                    .unwrap()
+                else {
+                    continue;
+                };
 
-            // drop only allows struct/enum to be implemented.
-            let symbol =
-                implementation.generic_arguments.types[0].as_symbol().unwrap();
+                // drop only allows struct/enum to be implemented.
+                let symbol = implementation.types[0].as_symbol().unwrap();
 
-            symbol.id == current_symbol_id
-        });
+                if symbol.id == current_symbol_id {
+                    break 'result Some(impl_id);
+                }
+            }
+
+            None
+        };
 
         if let Some(impl_id) = implementation_id {
             return Some(AdtDropKind::DropImplementation(impl_id));
@@ -847,30 +893,30 @@ impl<'ctx> Context<'_, 'ctx> {
             symbol.generic_arguments.clone(),
             current_symbol_id,
             &self
-                .table()
-                .query::<GenericParameters>(current_symbol_id)
+                .engine()
+                .get_generic_parameters(current_symbol_id)
+                .await
                 .unwrap(),
         )
         .unwrap();
 
-        let symbol_kind = *self.table().get::<SymbolKind>(current_symbol_id);
+        let symbol_kind = self.engine().get_kind(current_symbol_id).await;
 
         match symbol_kind {
-            SymbolKind::Struct => {
-                for term in self
-                    .table()
-                    .query::<Fields>(current_symbol_id)
+            Kind::Struct => {
+                for field in self
+                    .engine()
+                    .get_fields(current_symbol_id)
+                    .await
                     .unwrap()
                     .fields
                     .items()
-                    .map(|x| {
-                        self.monomorphize_term(
-                            Model::from_default_type(x.r#type.clone()),
-                            &inst,
-                        )
-                    })
                 {
-                    if self.has_drop(&term) {
+                    let ty = self
+                        .monomorphize_term(field.r#type.clone(), &inst)
+                        .await;
+
+                    if Box::pin(self.has_drop(&ty)).await {
                         return Some(AdtDropKind::MembersHaveDrop(inst));
                     }
                 }
@@ -878,27 +924,29 @@ impl<'ctx> Context<'_, 'ctx> {
                 None
             }
 
-            SymbolKind::Enum => {
+            Kind::Enum => {
                 for variant in self
-                    .table()
-                    .get::<Member>(current_symbol_id)
+                    .engine()
+                    .get_members(current_symbol_id)
+                    .await
+                    .member_ids_by_name
                     .values()
                     .copied()
-                    .map(|x| GlobalID::new(current_symbol_id.target_id, x))
-                    .filter_map(|x| {
-                        let variant = self.table().query::<Variant>(x).unwrap();
-
-                        let Some(ty) = &variant.associated_type else {
-                            return None;
-                        };
-
-                        Some(self.monomorphize_term(
-                            Model::from_default_type(ty.clone()),
-                            &inst,
-                        ))
-                    })
+                    .map(|x| Global::new(current_symbol_id.target_id, x))
                 {
-                    if self.has_drop(&variant) {
+                    let variant = self
+                        .engine()
+                        .get_variant_associated_type(variant)
+                        .await
+                        .unwrap();
+
+                    let Some(ty) = variant else {
+                        continue;
+                    };
+
+                    let ty = self.monomorphize_term((*ty).clone(), &inst).await;
+
+                    if Box::pin(self.has_drop(&ty)).await {
                         return Some(AdtDropKind::MembersHaveDrop(inst));
                     }
                 }
@@ -911,17 +959,19 @@ impl<'ctx> Context<'_, 'ctx> {
 
     /// Checks if the type has a drop implementation.
     #[allow(clippy::too_many_lines)]
-    pub fn has_drop(&self, ty: &Type<Model>) -> bool {
+    pub async fn has_drop(&self, ty: &Type) -> bool {
         match ty {
-            Type::Symbol(symbol) => self.get_adt_drop_kind(symbol).is_some(),
+            Type::Symbol(symbol) => {
+                self.get_adt_drop_kind(symbol).await.is_some()
+            }
 
-            Type::Array(array) => self.has_drop(&array.r#type),
+            Type::Array(array) => Box::pin(self.has_drop(&array.r#type)).await,
 
             Type::Tuple(tuple) => {
                 for element in &tuple.elements {
                     assert!(!element.is_unpacked, "found unpacked tuple");
 
-                    if self.has_drop(&element.term) {
+                    if Box::pin(self.has_drop(&element.term)).await {
                         return true;
                     }
                 }
@@ -929,7 +979,9 @@ impl<'ctx> Context<'_, 'ctx> {
                 false
             }
 
-            Type::Inference(inference) => match *inference {},
+            Type::Inference(inference) => {
+                unreachable!("should not be here: {inference:?}")
+            }
 
             Type::Pointer(_)
             | Type::Reference(_)
@@ -956,8 +1008,8 @@ impl<'ctx> Context<'_, 'ctx> {
 }
 
 impl<'ctx> Builder<'_, 'ctx, '_, '_> {
-    pub fn build_drop(&mut self, address: PointerValue<'ctx>, ty: Type<Model>) {
-        let Some(drop) = self.context.get_drop(ty) else {
+    pub async fn build_drop(&mut self, address: PointerValue<'ctx>, ty: Type) {
+        let Some(drop) = self.context.get_drop(ty).await else {
             return;
         };
 

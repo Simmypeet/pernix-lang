@@ -5,7 +5,9 @@ use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap, HashSet},
     convert::Into,
+    fmt::Write,
     rc::Rc,
+    sync::Arc,
 };
 
 use derive_new::new;
@@ -19,39 +21,60 @@ use inkwell::{
     AddressSpace,
 };
 use pernixc_arena::ID;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            function_signature::{FunctionSignature, Parameter},
-            generic_parameters::GenericParameters,
-            implementation::Implementation,
-            ir::{
-                address::{Address, Memory},
-                control_flow_graph::Block,
-                value::{register::Register, Value},
-                IR,
-            },
-        },
-        input::{Extern, Implements, Name, Parent, SymbolKind},
-    },
-    table::{DisplayObject, GlobalID, TargetID},
-    term::{
-        generic_arguments::GenericArguments, instantiation::Instantiation,
-        r#type::Type, Model as _, Symbol, Tuple,
-    },
+use pernixc_ir::{
+    address::{Address, Memory},
+    control_flow_graph::Block,
+    get_ir,
+    value::{register::Register, TypeOf, Value},
+    IR,
 };
-use pernixc_type_of::TypeOf;
+use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::{
+    implements::get_implements,
+    implements_arguments::get_implements_argument,
+    parameter::{get_parameters, Parameter, Parameters},
+    return_type::get_return_type,
+};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    name::{get_name, get_qualified_name},
+    parent::get_parent,
+};
+use pernixc_target::{Global, TargetID};
+use pernixc_term::{
+    display::Display, generic_arguments::Symbol,
+    generic_parameters::get_generic_parameters, instantiation::Instantiation,
+    r#type::Type, tuple::Tuple,
+};
 use pernixc_type_system::{
     environment::{Environment, Premise},
     normalizer,
 };
 
-use crate::{context::Context, r#type::IsAggregateTypeExt, zst::Zst, Model};
+use crate::{context::Context, r#type::IsAggregateTypeExt, zst::Zst};
 
 mod address;
 mod drop;
 mod instruction;
 mod literal;
+
+/// Contains both Pernix's function parameters and return type
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionSignature {
+    pub parameters: Arc<Parameters>,
+    pub return_type: Arc<Type>,
+}
+
+#[pernixc_extend::extend]
+pub async fn get_function_signature(
+    self: &TrackedEngine,
+    id: Global<pernixc_symbol::ID>,
+) -> FunctionSignature {
+    FunctionSignature {
+        parameters: self.get_parameters(id).await.unwrap(),
+        return_type: self.get_return_type(id).await.unwrap(),
+    }
+}
 
 /// Represents the return type of the function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,13 +149,12 @@ impl<'ctx> LlvmFunctionSignature<'ctx> {
 pub struct Call {
     /// Available kinds are:
     ///
-    /// - [`SymbolKind::Function`]
-    /// - [`SymbolKind::AdtImplementationFunction`]
-    /// - [`SymbolKind::TraitImplementationFunction`]
-    pub callable_id: GlobalID,
+    /// - [`Kind::Function`]
+    /// - [`Kind::ImplementationFunction`]
+    pub callable_id: Global<pernixc_symbol::ID>,
 
     /// The instantiation of the function.
-    pub instantiation: Instantiation<Model>,
+    pub instantiation: Instantiation,
 }
 
 /// Mpas between the function from Pernix to the LLVM function.
@@ -140,99 +162,110 @@ pub struct Call {
 pub struct Map<'ctx> {
     llvm_functions_by_key: HashMap<Call, Rc<LlvmFunctionSignature<'ctx>>>,
     extern_functions_by_global_id:
-        HashMap<GlobalID, Rc<LlvmFunctionSignature<'ctx>>>,
+        HashMap<Global<pernixc_symbol::ID>, Rc<LlvmFunctionSignature<'ctx>>>,
 
-    tuple_drop: HashMap<Tuple<Type<Model>>, Option<FunctionValue<'ctx>>>,
-    adt_drop: HashMap<Symbol<Model>, Option<FunctionValue<'ctx>>>,
-    array_drop: HashMap<(Type<Model>, u64), Option<FunctionValue<'ctx>>>,
+    tuple_drop: HashMap<Tuple<Type>, Option<FunctionValue<'ctx>>>,
+    adt_drop: HashMap<Symbol, Option<FunctionValue<'ctx>>>,
+    array_drop: HashMap<(Type, u64), Option<FunctionValue<'ctx>>>,
 }
 
 impl<'ctx> Context<'_, 'ctx> {
-    fn get_function_qualified_name(
+    async fn get_function_qualified_name(
         &self,
-        symbol_kind: SymbolKind,
-        callable_id: GlobalID,
-        instantiation: &Instantiation<Model>,
+        symbol_kind: Kind,
+        callable_id: Global<pernixc_symbol::ID>,
+        instantiation: &Instantiation,
     ) -> String {
         match symbol_kind {
-            SymbolKind::Function => {
+            Kind::Function => {
                 if callable_id == self.main_function_id() {
                     return "core::main".to_string();
                 }
 
-                let qualified_name =
-                    self.table().get_qualified_name(callable_id);
+                let mut qualified_name =
+                    self.engine().get_qualified_name(callable_id).await;
 
                 let generic_params = self
-                    .table()
-                    .query::<GenericParameters>(callable_id)
+                    .engine()
+                    .get_generic_parameters(callable_id)
+                    .await
                     .unwrap();
 
                 let mut generic_arguments = instantiation
-                    .create_generic_arguments(callable_id, &generic_params)
-                    .unwrap();
+                    .create_generic_arguments(callable_id, &generic_params);
 
                 self.normalize_generic_arguments(&mut generic_arguments);
 
-                format!("{}{}", qualified_name, DisplayObject {
-                    table: self.table(),
-                    display: &generic_arguments
-                })
+                generic_arguments
+                    .write_async(self.engine(), &mut qualified_name)
+                    .await
+                    .unwrap();
+
+                qualified_name
             }
 
-            SymbolKind::TraitImplementationFunction
-            | SymbolKind::AdtImplementationFunction => {
-                let parent_implementation_id = GlobalID::new(
+            Kind::ImplementationFunction => {
+                let parent_implementation_id = Global::new(
                     callable_id.target_id,
-                    self.table().get::<Parent>(callable_id).unwrap(),
+                    self.engine().get_parent(callable_id).await.unwrap(),
                 );
-                let implemented_id =
-                    self.table().get::<Implements>(parent_implementation_id).0;
+                let implemented_id = self
+                    .engine()
+                    .get_implements(parent_implementation_id)
+                    .await
+                    .unwrap()
+                    .unwrap();
 
-                let mut implemented_generic_args =
-                    GenericArguments::from_default_model(
-                        self.table()
-                            .query::<Implementation>(parent_implementation_id)
-                            .unwrap()
-                            .generic_arguments
-                            .clone(),
-                    );
+                let mut implemented_generic_args = (*self
+                    .engine()
+                    .get_implements_argument(parent_implementation_id)
+                    .await
+                    .unwrap()
+                    .unwrap())
+                .clone();
                 implemented_generic_args.instantiate(instantiation);
                 self.normalize_generic_arguments(&mut implemented_generic_args);
 
                 let function_generic_params = self
-                    .table()
-                    .query::<GenericParameters>(callable_id)
+                    .engine()
+                    .get_generic_parameters(callable_id)
+                    .await
                     .unwrap();
 
                 let mut function_generic_args = instantiation
                     .create_generic_arguments(
                         callable_id,
                         &function_generic_params,
-                    )
-                    .unwrap();
+                    );
                 self.normalize_generic_arguments(&mut function_generic_args);
 
-                format!(
-                    "{}{}::{}{}",
-                    self.table().get_qualified_name(implemented_id),
-                    DisplayObject {
-                        table: self.table(),
-                        display: &implemented_generic_args
-                    },
-                    self.table().get::<Name>(callable_id).0,
-                    DisplayObject {
-                        table: self.table(),
-                        display: &function_generic_args
-                    }
-                )
+                let mut qualified_name =
+                    self.engine().get_qualified_name(implemented_id).await;
+
+                implemented_generic_args
+                    .write_async(self.engine(), &mut qualified_name)
+                    .await
+                    .unwrap();
+
+                write!(
+                    qualified_name,
+                    "::{}",
+                    self.engine().get_name(callable_id).await
+                );
+
+                function_generic_args
+                    .write_async(self.engine(), &mut qualified_name)
+                    .await
+                    .unwrap();
+
+                qualified_name
             }
 
             kind => panic!("unexpected symbol kind: {kind:?}"),
         }
     }
 
-    fn create_intrinsic_function(
+    async fn create_intrinsic_function(
         &mut self,
         llvm_function_signature: &Rc<LlvmFunctionSignature<'ctx>>,
         key: &Call,
@@ -244,10 +277,10 @@ impl<'ctx> Context<'_, 'ctx> {
         let builder = self.context().create_builder();
         builder.position_at_end(entry_block);
 
-        match self.table().get::<Name>(key.callable_id).0.as_str() {
+        match self.engine().get_name(key.callable_id).await.as_str() {
             "sizeof" => {
                 let ty = key.instantiation.types.values().next().unwrap();
-                let llvm_ty = self.get_type(ty.clone());
+                let llvm_ty = self.get_type(ty.clone()).await;
 
                 let size = llvm_ty.map_or(0, |llvm_ty| {
                     self.target_data().get_abi_size(&llvm_ty)
@@ -263,7 +296,7 @@ impl<'ctx> Context<'_, 'ctx> {
 
             "alignof" => {
                 let ty = key.instantiation.types.values().next().unwrap();
-                let llvm_ty = self.get_type(ty.clone());
+                let llvm_ty = self.get_type(ty.clone()).await;
 
                 let align = llvm_ty.map_or(0, |llvm_ty| {
                     u64::from(self.target_data().get_abi_alignment(&llvm_ty))
@@ -280,7 +313,7 @@ impl<'ctx> Context<'_, 'ctx> {
             "dropAt" => {
                 let ty = key.instantiation.types.values().next().unwrap();
 
-                let drop = self.get_drop(ty.clone());
+                let drop = self.get_drop(ty.clone()).await;
 
                 if let Some(drop) = drop {
                     let param_value = llvm_function_signature
@@ -301,10 +334,10 @@ impl<'ctx> Context<'_, 'ctx> {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn create_function_value(
+    async fn create_function_value(
         &mut self,
         function_signature: &FunctionSignature,
-        instantiation: &Instantiation<Model>,
+        instantiation: &Instantiation,
         var_args: bool,
         name: &str,
         linkage: Option<Linkage>,
@@ -313,16 +346,20 @@ impl<'ctx> Context<'_, 'ctx> {
         // might not have the same number of parameters as the original pernix's
         // function  signature
         let mut llvm_parameter_indices_by_index = HashMap::default();
-        let mut llvm_parameter_types =
-            Vec::with_capacity(function_signature.parameter_order.len());
+        let mut llvm_parameter_types = Vec::with_capacity(
+            function_signature.parameters.parameter_order.len(),
+        );
 
         let return_ty = {
-            let ty = self.get_type(self.monomorphize_term(
-                Model::from_default_type(
-                    function_signature.return_type.clone(),
-                ),
-                instantiation,
-            ));
+            let ty = self
+                .get_type(
+                    self.monomorphize_term(
+                        (*function_signature.return_type).clone(),
+                        instantiation,
+                    )
+                    .await,
+                )
+                .await;
 
             match ty {
                 Ok(ty) => {
@@ -336,12 +373,16 @@ impl<'ctx> Context<'_, 'ctx> {
             }
         };
 
-        for param_id in function_signature.parameter_order.iter().copied() {
-            let param = &function_signature.parameters[param_id];
-            let ty = self.get_type(self.monomorphize_term(
-                Model::from_default_type(param.r#type.clone()),
-                instantiation,
-            ));
+        for param_id in
+            function_signature.parameters.parameter_order.iter().copied()
+        {
+            let param = &function_signature.parameters.parameters[param_id];
+            let ty = self
+                .get_type(
+                    self.monomorphize_term(param.r#type.clone(), instantiation)
+                        .await,
+                )
+                .await;
 
             if let Ok(basic_type_enum) = ty {
                 llvm_parameter_indices_by_index.insert(
@@ -427,9 +468,9 @@ impl<'ctx> Context<'_, 'ctx> {
     }
 
     /// Creates an extern function.
-    pub fn get_extern_function(
+    pub async fn get_extern_function(
         &mut self,
-        callable_id: GlobalID,
+        callable_id: Global<pernixc_symbol::ID>,
     ) -> Rc<LlvmFunctionSignature<'ctx>> {
         if let Some(llvm_function) = self
             .function_map()
@@ -441,10 +482,10 @@ impl<'ctx> Context<'_, 'ctx> {
         }
 
         let function_signature =
-            self.table().query::<FunctionSignature>(callable_id).unwrap();
+            self.engine().get_function_signature(callable_id).await;
 
-        let ext = *self.table().get::<Extern>(callable_id);
-        let name = self.table().get::<Name>(callable_id).0.clone();
+        let ext = *self.engine().get::<Extern>(callable_id);
+        let name = self.engine().get::<Name>(callable_id).0.clone();
 
         let llvm_function_sign = Rc::new(self.create_function_value(
             &function_signature,
@@ -466,7 +507,7 @@ impl<'ctx> Context<'_, 'ctx> {
     }
 
     /// Gets the function from the map or creates it.
-    pub fn get_function(
+    pub async fn get_function(
         &mut self,
         key: &Call,
     ) -> Rc<LlvmFunctionSignature<'ctx>> {
@@ -476,23 +517,28 @@ impl<'ctx> Context<'_, 'ctx> {
             return llvm_function;
         }
 
-        let symbol_kind = *self.table().get::<SymbolKind>(key.callable_id);
-        let qualified_name = self.get_function_qualified_name(
-            symbol_kind,
-            key.callable_id,
-            &key.instantiation,
-        );
+        let symbol_kind = self.engine().get_kind(key.callable_id).await;
+        let qualified_name = self
+            .get_function_qualified_name(
+                symbol_kind,
+                key.callable_id,
+                &key.instantiation,
+            )
+            .await;
 
         let function_signature =
-            self.table().query::<FunctionSignature>(key.callable_id).unwrap();
+            self.engine().get_function_signature(key.callable_id).await;
 
-        let llvm_function_signatue = Rc::new(self.create_function_value(
-            &function_signature,
-            &key.instantiation,
-            false,
-            &qualified_name,
-            Some(Linkage::Private),
-        ));
+        let llvm_function_signatue = Rc::new(
+            self.create_function_value(
+                &function_signature,
+                &key.instantiation,
+                false,
+                &qualified_name,
+                Some(Linkage::Private),
+            )
+            .await,
+        );
 
         self.function_map_mut()
             .llvm_functions_by_key
@@ -502,7 +548,8 @@ impl<'ctx> Context<'_, 'ctx> {
         if key.callable_id.target_id == TargetID::CORE {
             self.create_intrinsic_function(&llvm_function_signatue, key);
         } else {
-            let pernix_ir = self.table().query::<IR>(key.callable_id).unwrap();
+            let pernix_ir =
+                self.engine().get_ir(key.callable_id).await.unwrap();
 
             let mut builder = Builder::new(
                 self,
@@ -511,7 +558,8 @@ impl<'ctx> Context<'_, 'ctx> {
                 &function_signature,
                 &pernix_ir,
                 llvm_function_signatue.clone(),
-            );
+            )
+            .await;
 
             for block_id in pernix_ir.control_flow_graph.blocks().ids() {
                 builder.build_basic_block(block_id);
@@ -534,8 +582,8 @@ impl<'ctx> Context<'_, 'ctx> {
 
 struct Builder<'rctx, 'ctx, 'i, 'k> {
     context: &'rctx mut Context<'i, 'ctx>,
-    callable_id: GlobalID,
-    instantiation: &'k Instantiation<Model>,
+    callable_id: Global<pernixc_symbol::ID>,
+    instantiation: &'k Instantiation,
 
     /// The entry block of the function.
     ///
@@ -557,15 +605,14 @@ struct Builder<'rctx, 'ctx, 'i, 'k> {
     #[allow(clippy::struct_field_names)]
     inkwell_builder: inkwell::builder::Builder<'ctx>,
 
-    basic_block_map:
-        HashMap<ID<Block<Model>>, inkwell::basic_block::BasicBlock<'ctx>>,
+    basic_block_map: HashMap<ID<Block>, inkwell::basic_block::BasicBlock<'ctx>>,
 
-    address_map: HashMap<Memory<Model>, LlvmAddress<'ctx>>,
+    address_map: HashMap<Memory, LlvmAddress<'ctx>>,
 
-    environment: Environment<'i, Model, normalizer::NoOp>,
-    built: HashSet<ID<Block<Model>>>,
+    environment: Environment<'i, normalizer::NoOp>,
+    built: HashSet<ID<Block>>,
 
-    register_map: HashMap<ID<Register<Model>>, Option<LlvmValue<'ctx>>>,
+    register_map: HashMap<ID<Register>, Option<LlvmValue<'ctx>>>,
 }
 
 /// Represents the LLVM's memory address with the underlying type.
@@ -612,10 +659,10 @@ impl<'ctx> Context<'_, 'ctx> {
 
 impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    async fn new(
         context: &'rctx mut Context<'i, 'ctx>,
-        callable_id: GlobalID,
-        instantiation: &'k Instantiation<Model>,
+        callable_id: Global<pernixc_symbol::ID>,
+        instantiation: &'k Instantiation,
         function_signature: &'k FunctionSignature,
         function_ir: &'k IR,
         llvm_function_signature: Rc<LlvmFunctionSignature<'ctx>>,
@@ -642,7 +689,9 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
         builder.position_at_end(entry_block);
 
         // move the parameters to the alloca
-        for param_id in function_signature.parameter_order.iter().copied() {
+        for param_id in
+            function_signature.parameters.parameter_order.iter().copied()
+        {
             let Some((parameter, index)) =
                 llvm_function_signature.get_llvm_parameter_type(param_id)
             else {
@@ -690,10 +739,17 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
         for (pernixc_alloca_id, pernix_alloca) in
             function_ir.values.allocas.iter()
         {
-            let Ok(ty) = context.get_type(context.monomorphize_term(
-                pernix_alloca.r#type.clone(),
-                instantiation,
-            )) else {
+            let Ok(ty) = context
+                .get_type(
+                    context
+                        .monomorphize_term(
+                            pernix_alloca.r#type.clone(),
+                            instantiation,
+                        )
+                        .await,
+                )
+                .await
+            else {
                 continue;
             };
 
@@ -707,7 +763,7 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
             );
         }
 
-        let table = context.table();
+        let engine = context.engine();
 
         Self {
             llvm_entry_block: entry_block,
@@ -721,11 +777,11 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
             basic_block_map,
             address_map,
             environment: Environment::new(
-                Cow::Owned(Premise::<Model> {
+                Cow::Owned(Premise {
                     predicates: BTreeSet::default(),
                     query_site: Some(callable_id),
                 }),
-                table,
+                Cow::Borrowed(engine),
                 normalizer::NO_OP,
             ),
             built: HashSet::default(),
@@ -738,7 +794,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// Translates the value to LLVM value.
     fn get_value(
         &mut self,
-        value: &Value<Model>,
+        value: &Value,
     ) -> Result<Option<LlvmValue<'ctx>>, Error> {
         match value {
             Value::Register(id) => Ok(self.register_map[id]),
@@ -747,75 +803,87 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     }
 
     #[allow(unused)]
-    fn type_of_address_pnx(&mut self, address: &Address<Model>) -> Type<Model> {
-        let ty = self.function_ir.values.type_of(
-            address,
-            self.callable_id,
-            &self.environment,
-        );
+    async fn type_of_address_pnx(&mut self, address: &Address) -> Type {
+        let ty = self
+            .function_ir
+            .values
+            .type_of(address, self.callable_id, &self.environment)
+            .await;
 
-        self.context.monomorphize_term(ty.unwrap().result, self.instantiation)
+        self.context
+            .monomorphize_term(ty.unwrap().result, self.instantiation)
+            .await
     }
 
-    fn type_of_address(
+    async fn type_of_address(
         &mut self,
-        address: &Address<Model>,
+        address: &Address,
     ) -> Result<BasicTypeEnum<'ctx>, Zst> {
-        let ty = self.function_ir.values.type_of(
-            address,
-            self.callable_id,
-            &self.environment,
-        );
+        let ty = self
+            .function_ir
+            .values
+            .type_of(address, self.callable_id, &self.environment)
+            .await;
 
-        self.context.get_type(
-            self.context
-                .monomorphize_term(ty.unwrap().result, self.instantiation),
-        )
+        self.context
+            .get_type(
+                self.context
+                    .monomorphize_term(ty.unwrap().result, self.instantiation)
+                    .await,
+            )
+            .await
     }
 
-    fn type_of_register(
+    async fn type_of_register(
         &mut self,
-        register_id: ID<Register<Model>>,
+        register_id: ID<Register>,
     ) -> Result<BasicTypeEnum<'ctx>, Zst> {
-        let ty = self.function_ir.values.type_of(
-            register_id,
-            self.callable_id,
-            &self.environment,
-        );
+        let ty = self
+            .function_ir
+            .values
+            .type_of(register_id, self.callable_id, &self.environment)
+            .await;
 
-        self.context.get_type(
-            self.context
-                .monomorphize_term(ty.unwrap().result, self.instantiation),
-        )
+        self.context
+            .get_type(
+                self.context
+                    .monomorphize_term(ty.unwrap().result, self.instantiation)
+                    .await,
+            )
+            .await
     }
 
-    fn type_of_register_pnx(
+    async fn type_of_register_pnx(
         &mut self,
-        register_id: ID<Register<Model>>,
-    ) -> Type<Model> {
-        let ty = self.function_ir.values.type_of(
-            register_id,
-            self.callable_id,
-            &self.environment,
-        );
+        register_id: ID<Register>,
+    ) -> Type {
+        let ty = self
+            .function_ir
+            .values
+            .type_of(register_id, self.callable_id, &self.environment)
+            .await;
 
-        self.context.monomorphize_term(ty.unwrap().result, self.instantiation)
+        self.context
+            .monomorphize_term(ty.unwrap().result, self.instantiation)
+            .await
     }
 
-    fn type_of_value_pnx(&mut self, value: &Value<Model>) -> Type<Model> {
-        let ty = self.function_ir.values.type_of(
-            value,
-            self.callable_id,
-            &self.environment,
-        );
+    async fn type_of_value_pnx(&mut self, value: &Value) -> Type {
+        let ty = self
+            .function_ir
+            .values
+            .type_of(value, self.callable_id, &self.environment)
+            .await;
 
-        self.context.monomorphize_term(ty.unwrap().result, self.instantiation)
+        self.context
+            .monomorphize_term(ty.unwrap().result, self.instantiation)
+            .await
     }
 
     fn create_aggregate_temporary(
         &mut self,
         ty: BasicTypeEnum<'ctx>,
-        register_id: ID<Register<Model>>,
+        register_id: ID<Register>,
     ) -> LlvmAddress<'ctx> {
         let current_block = self.inkwell_builder.get_insert_block().unwrap();
         self.inkwell_builder.position_at_end(self.llvm_entry_block);

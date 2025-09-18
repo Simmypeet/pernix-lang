@@ -8,9 +8,25 @@ use function::Call;
 use inkwell::targets::TargetData;
 use pernixc_handler::Handler;
 use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::{
+    parameter::get_parameters, return_type::get_return_type,
+    where_clause::get_where_clause,
+};
+use pernixc_symbol::{
+    get_target_root_module_id,
+    kind::{get_kind, Kind},
+    name::get_name,
+};
 use pernixc_target::Global;
+use pernixc_term::{
+    generic_parameters::get_generic_parameters,
+    instantiation::Instantiation,
+    r#type::{Tuple, Type},
+};
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{
+    Diagnostic, WhereClausePredicatesAreNotAllowedInMainFunction,
+};
 
 pub mod constant;
 pub mod context;
@@ -47,56 +63,65 @@ impl std::fmt::Debug for Input<'_, '_> {
     }
 }
 
-fn check_function_main(input: &Input<'_, '_>) -> bool {
+async fn check_function_main(input: &Input<'_, '_>) -> bool {
     let main_function_id = input.main_function_id;
-    let symbol_kind = *input.engine.get::<SymbolKind>(main_function_id);
+    let symbol_kind = input.engine.get_kind(main_function_id).await;
 
     // must be function type
-    let mut has_error = if symbol_kind == SymbolKind::Function {
+    let mut has_error = if symbol_kind == Kind::Function {
         false
     } else {
-        input
-            .handler
-            .receive(Box::new(MainIsNotAFunction { main_function_id }));
+        input.handler.receive(Diagnostic::MainIsNotAFunction(
+            MainIsNotAFunction { main_function_id },
+        ));
         true
     };
 
-    let func_sig =
-        input.engine.query::<FunctionSignature>(main_function_id).unwrap();
+    let func_parameters =
+        input.engine.get_parameters(main_function_id).await.unwrap();
 
-    if !func_sig.parameters.is_empty()
-        || func_sig.return_type != Type::Tuple(Tuple { elements: Vec::new() })
+    let return_type =
+        input.engine.get_return_type(main_function_id).await.unwrap();
+
+    if !func_parameters.parameters.is_empty()
+        || *return_type != Type::Tuple(Tuple { elements: Vec::new() })
     {
-        input.handler.receive(Box::new(InvalidMainFunctionSignature {
-            main_function_id,
-        }));
+        input.handler.receive(Diagnostic::InvalidMainFunctionSignature(
+            InvalidMainFunctionSignature { main_function_id },
+        ));
         has_error = true;
     }
 
     let generic_params =
-        input.engine.query::<GenericParameters>(main_function_id).unwrap();
+        input.engine.get_generic_parameters(main_function_id).await.unwrap();
 
     // must not have any generic parameters
     if !generic_params.lifetimes().is_empty()
         || !generic_params.types().is_empty()
         || !generic_params.constants().is_empty()
     {
-        input.handler.receive(Box::new(
-            GenericParametersAreNotAllowedInMainFunction { main_function_id },
-        ));
+        input.handler.receive(
+            Diagnostic::GenericParametersAreNotAllowedInMainFunction(
+                GenericParametersAreNotAllowedInMainFunction {
+                    main_function_id,
+                },
+            ),
+        );
         has_error = true;
     }
 
     let where_clause =
-        input.engine.query::<WhereClause>(main_function_id).unwrap();
+        input.engine.get_where_clause(main_function_id).await.unwrap();
 
     // must not have any where clause predicates
-    if !where_clause.predicates.is_empty() {
-        input.handler.receive(Box::new(
-            diagnostic::WhereClausePredicatesAreNotAllowedInMainFunction {
-                main_function_id,
-            },
-        ));
+    if !where_clause.is_empty() {
+        input.handler.receive(
+            Diagnostic::WhereClausePredicatesAreNotAllowedInMainFunction(
+                WhereClausePredicatesAreNotAllowedInMainFunction {
+                    main_function_id,
+                },
+            ),
+        );
         has_error = true;
     }
 
@@ -107,20 +132,24 @@ fn check_function_main(input: &Input<'_, '_>) -> bool {
 ///
 /// This assumes that the table is validated and has no errors.
 #[allow(clippy::missing_errors_doc)]
-pub fn codegen<'ctx>(
+pub async fn codegen<'ctx>(
     input: Input<'_, 'ctx>,
-) -> Result<inkwell::module::Module<'ctx>, Abort> {
-    if !check_function_main(&input) {
-        return Err(Abort);
+) -> Option<inkwell::module::Module<'ctx>> {
+    if !check_function_main(&input).await {
+        return None;
     }
 
     let module = input.inkwell_context.create_module(
         input
             .engine
-            .get::<Name>(GlobalID::new(
+            .get_name(Global::new(
                 input.main_function_id.target_id,
-                table::ID::ROOT_MODULE,
+                input
+                    .engine
+                    .get_target_root_module_id(input.main_function_id.target_id)
+                    .await,
             ))
+            .await
             .as_str(),
     );
 
@@ -133,10 +162,12 @@ pub fn codegen<'ctx>(
         input.main_function_id,
     );
 
-    let main = context.get_function(&Call {
-        callable_id: input.main_function_id,
-        instantiation: Instantiation::default(),
-    });
+    let main = context
+        .get_function(&Call {
+            callable_id: input.main_function_id,
+            instantiation: Instantiation::default(),
+        })
+        .await;
 
     // create a real function main that call `core::main`
     let c_int_type = context.context().i32_type();
@@ -157,7 +188,7 @@ pub fn codegen<'ctx>(
     builder.build_call(main.llvm_function_value, &[], "call_main").unwrap();
     builder.build_return(Some(&c_int_type.const_zero())).unwrap();
 
-    Ok(context.into_module())
+    Some(context.into_module())
 }
 
 #[cfg(test)]

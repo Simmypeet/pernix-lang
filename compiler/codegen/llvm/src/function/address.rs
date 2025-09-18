@@ -1,6 +1,4 @@
 use inkwell::values::{AsValueRef, PointerValue};
-use pernixc_semantic::component::derived::ir::address::Address;
-use pernixc_type_of::TypeOf;
 
 use super::{Builder, Error, LlvmAddress, LlvmValue};
 use crate::{r#type::LlvmEnumSignature, Model};
