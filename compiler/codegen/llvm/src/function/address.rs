@@ -1,7 +1,11 @@
 use inkwell::values::{AsValueRef, PointerValue};
+use pernixc_ir::{
+    address::{self, Address},
+    value::TypeOf,
+};
 
 use super::{Builder, Error, LlvmAddress, LlvmValue};
-use crate::{r#type::LlvmEnumSignature, Model};
+use crate::r#type::LlvmEnumSignature;
 
 /// Shortcircuits the function if the value is a `Zero-Sized type`.
 macro_rules! into_regular_address {
@@ -21,9 +25,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
     /// `Ok(None)` meanings that the address is pointer to `ZST` (Zero Sized
     /// Type) and further instructions shall be reduced to no-op.
     #[allow(clippy::too_many_lines)]
-    pub fn get_address(
+    pub async fn get_address(
         &mut self,
-        address: &Address<Model>,
+        address: &Address,
     ) -> Result<Option<LlvmAddress<'ctx>>, Error> {
         match address {
             Address::Memory(memory) => {
@@ -33,15 +37,17 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Address::Field(field) => {
                 let struct_ty = self
                     .type_of_address_pnx(&field.struct_address)
+                    .await
                     .into_symbol()
                     .unwrap();
 
                 let base_address = into_regular_address!(
-                    self.get_address(&field.struct_address)?
+                    Box::pin(self.get_address(&field.struct_address)).await?
                 );
 
                 let struct_id = struct_ty.id;
-                let Ok(llvm_struct) = self.context.get_struct_type(struct_ty)
+                let Ok(llvm_struct) =
+                    self.context.get_struct_type(struct_ty).await
                 else {
                     return Ok(None);
                 };
@@ -74,25 +80,25 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             Address::Tuple(index) => {
                 let tuple_ty = self
                     .type_of_address_pnx(&index.tuple_address)
+                    .await
                     .into_tuple()
                     .unwrap();
 
                 let base_address = into_regular_address!(
-                    self.get_address(&index.tuple_address)?
+                    Box::pin(self.get_address(&index.tuple_address)).await?
                 );
 
                 let elements_len = tuple_ty.elements.len();
-                let Ok(llvm_tuple) = self.context.get_tuple_type(tuple_ty)
+                let Ok(llvm_tuple) =
+                    self.context.get_tuple_type(tuple_ty).await
                 else {
                     return Ok(None);
                 };
 
                 let tuple_index = match index.offset {
-                    pernixc_semantic::component::derived::ir::address::Offset::FromStart(a) => a,
-                    pernixc_semantic::component::derived::ir::address::Offset::FromEnd(b) => {
-                        elements_len - 1 - b
-                    }
-                    pernixc_semantic::component::derived::ir::address::Offset::Unpacked => unreachable!(),
+                    address::Offset::FromStart(a) => a,
+                    address::Offset::FromEnd(b) => elements_len - 1 - b,
+                    address::Offset::Unpacked => unreachable!(),
                 };
 
                 let Some(llvm_field_index) = llvm_tuple
@@ -124,7 +130,9 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
             Address::Index(index) => {
                 // left to right, avoiding inconsistencies
-                let base_address = self.get_address(&index.array_address)?;
+                let base_address =
+                    Box::pin(self.get_address(&index.array_address)).await?;
+
                 let index_value = match self.get_value(&index.indexing_value)? {
                     Some(LlvmValue::Scalar(index)) => index,
                     Some(LlvmValue::TmpAggegate(_)) => {
@@ -133,22 +141,30 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
 
                     None => return Ok(None),
                 };
+
                 let base_address = into_regular_address!(base_address);
 
-                let Ok(pointee_type) = self.context.get_type(
-                    self.context.monomorphize_term(
-                        self.function_ir
-                            .values
-                            .type_of(
-                                &*index.array_address,
-                                self.callable_id,
-                                &self.environment,
+                let Ok(pointee_type) = self
+                    .context
+                    .get_type(
+                        self.context
+                            .monomorphize_term(
+                                self.function_ir
+                                    .values
+                                    .type_of(
+                                        &*index.array_address,
+                                        self.callable_id,
+                                        &self.environment,
+                                    )
+                                    .await
+                                    .unwrap()
+                                    .result,
+                                self.instantiation,
                             )
-                            .unwrap()
-                            .result,
-                        self.instantiation,
-                    ),
-                ) else {
+                            .await,
+                    )
+                    .await
+                else {
                     return Ok(None);
                 };
 
@@ -175,13 +191,16 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
             Address::Variant(variant_address) => {
                 let address =
-                    self.get_address(&variant_address.enum_address)?;
+                    Box::pin(self.get_address(&variant_address.enum_address))
+                        .await?;
+
                 let symbol = self
                     .type_of_address_pnx(&variant_address.enum_address)
+                    .await
                     .into_symbol()
                     .unwrap();
 
-                let enum_signature = self.context.get_enum_type(symbol);
+                let enum_signature = self.context.get_enum_type(symbol).await;
 
                 match &*enum_signature {
                     LlvmEnumSignature::Zst => Ok(None),
@@ -222,16 +241,18 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
             }
             Address::Reference(reference) => {
                 let pointee_address = into_regular_address!(
-                    self.get_address(&reference.reference_address)?
+                    Box::pin(self.get_address(&reference.reference_address))
+                        .await?
                 );
 
                 let Ok(pointee_type) =
-                    self.type_of_address(&reference.reference_address)
+                    self.type_of_address(&reference.reference_address).await
                 else {
                     return Ok(None);
                 };
 
-                let Ok(loaded_type) = self.type_of_address(address) else {
+                let Ok(loaded_type) = self.type_of_address(address).await
+                else {
                     return Ok(None);
                 };
 
