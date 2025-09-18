@@ -39,6 +39,7 @@ use crate::{
         Diagnostic, ItemRedefinition, RecursiveFileRequest, SourceFileLoadFail,
     },
     kind::Kind,
+    linkage::C,
     member::Member,
 };
 
@@ -46,6 +47,7 @@ pub mod accessibility;
 pub mod diagnostic;
 pub mod final_implements;
 pub mod kind;
+pub mod linkage;
 pub mod member;
 pub mod name;
 pub mod parent;
@@ -339,6 +341,9 @@ pub struct Table {
         >,
     >,
 
+    /// Maps the function ID to its linkage.
+    pub function_linkages: Arc<ReadOnlyView<ID, linkage::Linkage>>,
+
     /// Maps the module ID to the external submodules where its content is
     /// defined in. This added to the table via `public module subModule`
     /// declaration syntax.
@@ -458,6 +463,7 @@ struct TableContext {
             Option<pernixc_syntax::item::function::ReturnType>,
         ),
     >,
+    function_linkages: DashMap<ID, linkage::Linkage>,
     fields_syntaxes: DashMap<
         ID,
         Option<
@@ -634,6 +640,7 @@ pub async fn table_executor(
         variant_declaration_orders: DashMap::default(),
         import_syntaxes: DashMap::default(),
         implements_qualified_identifier_syntaxes: DashMap::default(),
+        function_linkages: DashMap::default(),
         final_keywords: DashMap::default(),
         function_body_syntaxes: DashMap::default(),
         token_tree: token_tree_result.ok().map(|x| x.0),
@@ -695,6 +702,7 @@ pub async fn table_executor(
         function_body_syntaxes: Arc::new(
             context.function_body_syntaxes.into_read_only(),
         ),
+        function_linkages: Arc::new(context.function_linkages.into_read_only()),
 
         external_submodules: Arc::new(
             context.external_submodules.into_read_only(),
@@ -771,6 +779,8 @@ struct Entry {
     >,
 
     pub final_keyword: Option<Option<pernixc_syntax::Keyword>>,
+
+    pub function_linkage: Option<linkage::Linkage>,
 }
 
 impl TableContext {
@@ -949,6 +959,14 @@ impl TableContext {
                 &self.variant_declaration_orders,
                 id,
                 variant_declaration_order,
+            );
+        }
+
+        if let Some(function_linkage) = entry.function_linkage {
+            Self::insert_to_table(
+                &self.function_linkages,
+                id,
+                function_linkage,
             );
         }
     }
@@ -1730,6 +1748,82 @@ impl TableContext {
         }))
     }
 
+    async fn handle_extern(
+        self: &Arc<Self>,
+        extern_syn: &pernixc_syntax::item::r#extern::Extern,
+        module_member_builder: &mut MemberBuilder,
+    ) {
+        let Some(body) = extern_syn.body() else {
+            return;
+        };
+
+        let Some(convention) = extern_syn.convention() else {
+            return;
+        };
+
+        let linkage = match convention.kind.as_str() {
+            "C" | "c" => linkage::Linkage::C(C { variadic: false }),
+            _ => linkage::Linkage::Unknown,
+        };
+
+        for function_syntax in
+            body.functions().filter_map(|x| x.into_line().ok())
+        {
+            let Some(identifier) =
+                function_syntax.signature().and_then(|x| x.identifier())
+            else {
+                continue;
+            };
+
+            let linkage = match linkage {
+                linkage::Linkage::C(mut c) => {
+                    c.variadic = function_syntax
+                        .signature()
+                        .and_then(|x| x.parameters())
+                        .is_some_and(|x| {
+                            x.parameters().any(|x| x.is_variadic())
+                        });
+
+                    linkage::Linkage::C(c)
+                }
+                linkage => linkage,
+            };
+
+            let entry = Entry::builder()
+                .kind(Kind::Function)
+                .naming(Naming::Identifier(identifier.clone()))
+                .accessibility(function_syntax.access_modifier())
+                .generic_parameters_syntax(
+                    function_syntax
+                        .signature()
+                        .and_then(|x| x.generic_parameters()),
+                )
+                .where_clause_syntax(
+                    function_syntax
+                        .trailing_where_clause()
+                        .and_then(|x| x.where_clause())
+                        .and_then(|x| x.predicates()),
+                )
+                .function_signature_syntax((
+                    function_syntax.signature().and_then(|x| x.parameters()),
+                    function_syntax.signature().and_then(|x| x.return_type()),
+                ))
+                .function_linkage(linkage)
+                .build();
+
+            let member_id = module_member_builder
+                .add_member(identifier, &self.engine)
+                .await;
+
+            self.add_symbol_entry(
+                member_id,
+                module_member_builder.symbol_id,
+                entry,
+            )
+            .await;
+        }
+    }
+
     #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
     async fn handle_module_content(
         self: &Arc<Self>,
@@ -1809,6 +1903,7 @@ impl TableContext {
                                     .body()
                                     .and_then(|x| x.members()),
                             )
+                            .function_linkage(linkage::Linkage::Pernix)
                             .build()
                     }
 
@@ -1960,7 +2055,13 @@ impl TableContext {
 
                         continue;
                     }
-                    ModuleMemberSyn::Extern(_) => continue,
+
+                    ModuleMemberSyn::Extern(ext) => {
+                        // custom handling for the extern member
+                        self.handle_extern(&ext, module_member_builder).await;
+
+                        continue;
+                    }
                 };
 
                 let member_id = module_member_builder
