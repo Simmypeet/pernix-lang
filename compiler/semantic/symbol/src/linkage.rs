@@ -23,7 +23,6 @@ use crate::{get_table_of_symbol, ID};
 )]
 #[allow(missing_docs)]
 pub enum Linkage {
-    Pernix,
     C(C),
     Unknown,
 }

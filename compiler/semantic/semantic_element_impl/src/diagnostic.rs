@@ -120,10 +120,7 @@ pub async fn single_rendered_executor(
         }
     }
 
-    if (kind == Kind::Function && {
-        engine.get_linkage(id).await == Linkage::Pernix
-    }) || kind == Kind::ImplementationFunction
-    {
+    if kind.has_function_body() {
         let diags = engine.query(&BuildDiagnosticKey::new(IRKey(id))).await?;
 
         for diag in diags.iter() {

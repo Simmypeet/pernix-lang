@@ -1786,11 +1786,12 @@ impl TableContext {
 
                     linkage::Linkage::C(c)
                 }
-                linkage => linkage,
+
+                linkage::Linkage::Unknown => linkage::Linkage::Unknown,
             };
 
             let entry = Entry::builder()
-                .kind(Kind::Function)
+                .kind(Kind::ExternFunction)
                 .naming(Naming::Identifier(identifier.clone()))
                 .accessibility(function_syntax.access_modifier())
                 .generic_parameters_syntax(
@@ -1903,7 +1904,6 @@ impl TableContext {
                                     .body()
                                     .and_then(|x| x.members()),
                             )
-                            .function_linkage(linkage::Linkage::Pernix)
                             .build()
                     }
 
