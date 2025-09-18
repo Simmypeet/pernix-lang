@@ -1,5 +1,3 @@
-//! Finalization of the binding process.
-
 use pernixc_handler::Handler;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
@@ -15,6 +13,8 @@ use crate::{
     diagnostic::{Diagnostic, NotAllFlowPathsReturnAValue},
 };
 
+mod transform_inference;
+
 impl Binder<'_> {
     /// Finalizes the binding process, performing necessary checks and
     /// transformations on the IR.
@@ -26,7 +26,6 @@ impl Binder<'_> {
         let _ = self
             .current_block_mut()
             .add_instruction(Instruction::ScopePop(ScopePop(root_scope_id)));
-        self.inference_context.fill_default_inferences();
 
         // we're in the function, check if all paths return the value
         'out: {
@@ -61,12 +60,8 @@ impl Binder<'_> {
             }
         }
 
-        // let transformed_ir = transform_inference::transform_inference(
-        //     self.intermediate_representation,
-        //     &self.inference_context,
-        //     self.table,
-        //     handler,
-        // )?;
+        // transform inference types
+        self.transform_inference(handler).await?;
 
         // let environment = Environment::new(
         //     Cow::Owned(self.table.get_active_premise(self.current_site)),

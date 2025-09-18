@@ -55,7 +55,7 @@ use crate::{
     pattern::insert_name_binding,
 };
 
-pub mod finalize;
+mod finalize;
 pub mod stack;
 pub mod type_check;
 

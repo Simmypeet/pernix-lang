@@ -13,6 +13,9 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     display::{Display, InferenceRenderingMap},
+    generic_parameters::{
+        get_generic_parameters, ConstantParameterID, TypeParameterID,
+    },
     r#type::Type,
 };
 
@@ -56,6 +59,8 @@ diagnostic_enum! {
         InvalidTypeInBinaryOperator(InvalidTypeInBinaryOperator),
         NotAllFlowPathsReturnAValue(NotAllFlowPathsReturnAValue),
         ReturnIsNotAllowed(ReturnIsNotAllowed),
+        TypeAnnotationRequired(TypeAnnotationRequired),
+        ConstantAnnotationRequired(ConstantAnnotationRequired),
     }
 }
 
@@ -344,6 +349,105 @@ impl Report for ReturnIsNotAllowed {
             .severity(Severity::Error)
             .message("`return` is only allowed inside a function")
             .help_message("consider removing the `return` statement")
+            .build())
+    }
+}
+
+/// A type annotation is required for a generic type parameter.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct TypeAnnotationRequired {
+    /// The span where the type annotation is required.
+    pub span: RelativeSpan,
+
+    /// The generic parameter that requires a type annotation.
+    pub generic_parameter: TypeParameterID,
+}
+
+impl Report for TypeAnnotationRequired {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let qualified_name =
+            engine.get_qualified_name(self.generic_parameter.parent_id).await;
+
+        let generic_parameters = engine
+            .get_generic_parameters(self.generic_parameter.parent_id)
+            .await?;
+
+        let ty_parameter =
+            &generic_parameters.types()[self.generic_parameter.id];
+
+        let message = format!(
+            "type annotation is required for generic parameter `{}` of `{}`",
+            ty_parameter.name, qualified_name
+        );
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message(format!(
+                "consider adding a type annotation using syntax such as \
+                 `{qualified_name}[Type]`"
+            ))
+            .build())
+    }
+}
+
+/// A constant argument annotation is required for a generic constant parameter.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct ConstantAnnotationRequired {
+    /// The span where the type annotation is required.
+    pub span: RelativeSpan,
+
+    /// The generic parameter that requires a type annotation.
+    pub generic_parameter: ConstantParameterID,
+}
+
+impl Report for ConstantAnnotationRequired {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let qualified_name =
+            engine.get_qualified_name(self.generic_parameter.parent_id).await;
+
+        let generic_parameters = engine
+            .get_generic_parameters(self.generic_parameter.parent_id)
+            .await?;
+
+        let const_parameter =
+            &generic_parameters.constants()[self.generic_parameter.id];
+
+        let message = format!(
+            "constant annotation is required for generic parameter `{}` of \
+             `{}`",
+            const_parameter.name, qualified_name
+        );
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message(format!(
+                "consider adding a constant annotation using syntax such as \
+                 `{qualified_name}[ {{ EXPR }} ]`"
+            ))
             .build())
     }
 }
