@@ -5,11 +5,14 @@ use std::ops::{Not, RangeBounds};
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
 use pernixc_hash::{HashMap, HashSet};
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_term::r#type::Type;
 use pernixc_transitive_closure::TransitiveClosure;
 
 use super::instruction::{Instruction, Jump, Terminator};
+use crate::transform::Transformer;
 
 /// A data structure used for computing whether a particular block in the
 /// control flow graph is reachable to another.
@@ -128,6 +131,23 @@ impl Block {
             self.instructions.push(instruction);
             true
         }
+    }
+
+    /// Applies the given transformer to every instruction and the terminator
+    /// in the block.
+    pub async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        for inst in &mut self.instructions {
+            inst.transform(transformer).await?;
+        }
+
+        if let Some(terminator) = &mut self.terminator {
+            terminator.transform(transformer).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -616,6 +636,19 @@ impl ControlFlowGraph {
         }
 
         true
+    }
+
+    /// Applies the given transformer to every instruction and the terminator
+    /// in every block in the control flow graph.
+    pub async fn transform<T: Transformer<Type>>(
+        &mut self,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        for block in self.blocks.iter_mut().map(|(_, x)| x) {
+            block.transform(transformer).await?;
+        }
+
+        Ok(())
     }
 }
 
