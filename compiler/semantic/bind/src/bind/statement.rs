@@ -1,5 +1,5 @@
 #![allow(missing_docs)]
-use pernixc_handler::Storage;
+use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
     instruction::{Instruction, RegisterDiscard},
@@ -25,7 +25,7 @@ impl Binder<'_> {
     pub async fn bind_statement(
         &mut self,
         syntax_tree: &pernixc_syntax::statement::Statement,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
         match syntax_tree {
             pernixc_syntax::statement::Statement::VariableDeclaration(
@@ -77,7 +77,7 @@ impl Binder<'_> {
     pub async fn bind_variable_declaration(
         &mut self,
         syntax_tree: &pernixc_syntax::statement::VariableDeclaration,
-        handler: &Storage<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<(Address, bool), UnrecoverableError> {
         // capture the current scope id first, since we will be working in
         // a new temporary scope from now on

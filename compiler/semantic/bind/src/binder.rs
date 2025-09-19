@@ -55,6 +55,7 @@ use crate::{
     pattern::insert_name_binding,
 };
 
+pub mod block;
 mod finalize;
 pub mod stack;
 pub mod type_check;
@@ -90,6 +91,8 @@ pub struct Binder<'t> {
     inference_context: InferenceContext,
     type_inference_counter: u64,
     const_inference_counter: u64,
+
+    block_context: block::Context,
 }
 
 impl<'t> Binder<'t> {
@@ -121,6 +124,8 @@ impl<'t> Binder<'t> {
 
             type_inference_counter: 0,
             const_inference_counter: 0,
+
+            block_context: block::Context::default(),
         };
 
         let root_scope_id = binder.ir.scope_tree.root_scope_id();

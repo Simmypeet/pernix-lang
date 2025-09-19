@@ -61,6 +61,7 @@ diagnostic_enum! {
         ReturnIsNotAllowed(ReturnIsNotAllowed),
         TypeAnnotationRequired(TypeAnnotationRequired),
         ConstantAnnotationRequired(ConstantAnnotationRequired),
+        NotAllFlowPathsExpressValue(NotAllFlowPathsExpressValue),
     }
 }
 
@@ -448,6 +449,49 @@ impl Report for ConstantAnnotationRequired {
                 "consider adding a constant annotation using syntax such as \
                  `{qualified_name}[ {{ EXPR }} ]`"
             ))
+            .build())
+    }
+}
+
+/// Not all flow paths in this scope expression express a value.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct NotAllFlowPathsExpressValue {
+    /// The span of the scope expression.
+    pub span: RelativeSpan,
+}
+
+impl Report for NotAllFlowPathsExpressValue {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message(
+                "not all flow paths in this scope expression express a value",
+            )
+            .help_message(
+                "consider adding an `express` expression to all control flow \
+                 paths",
+            )
             .build())
     }
 }
