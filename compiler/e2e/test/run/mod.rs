@@ -73,6 +73,11 @@ fn parse_test_spec(file_path: &Path) -> Vec<Case> {
         test_cases.push(Case { stdin: stdins });
     }
 
+    // if no test case is defined, add an empty test case
+    if test_cases.is_empty() {
+        test_cases.push(Case { stdin: Vec::new() });
+    }
+
     test_cases
 }
 

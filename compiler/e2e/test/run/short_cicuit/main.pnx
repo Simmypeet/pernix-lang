@@ -1,0 +1,27 @@
+extern "C":
+    public function printf(fmt: &uint8, ...) -> int32
+    public function scanf(fmt: &uint8, ...) -> int32
+
+
+public function evalutesTrue() -> bool:
+    printf(&"evalutesTrue called\n\0".[0])
+    return true
+
+
+public function evaluatesFalse() -> bool:
+    printf(&"evaluatesFalse called\n\0".[0])
+    return false
+
+
+public function main():
+    let firstResult = evalutesTrue() or evaluatesFalse()
+    printf(&"firstResult: %d\n\0".[0], if firstResult: 1 else: 0)
+
+    let secondResult = evaluatesFalse() and evalutesTrue()
+    printf(&"secondResult: %d\n\0".[0], if secondResult: 1 else: 0)
+
+    let thirdResult = evaluatesFalse() or evaluatesFalse()
+    printf(&"thirdResult: %d\n\0".[0], if thirdResult: 1 else: 0)
+
+    let fourthResult = evalutesTrue() and evalutesTrue()
+    printf(&"fourthResult: %d\n\0".[0], if fourthResult: 1 else: 0)

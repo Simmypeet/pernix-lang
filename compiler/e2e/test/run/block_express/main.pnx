@@ -1,5 +1,3 @@
-## Case
-
 extern "C":
     public function printf(fmt: &uint8, ...) -> int32
     public function scanf(fmt: &uint8, ...) -> int32

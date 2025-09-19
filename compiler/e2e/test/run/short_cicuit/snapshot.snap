@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = ""
+stdout = """
+evalutesTrue called
+firstResult: 1
+evaluatesFalse called
+secondResult: 0
+evaluatesFalse called
+evaluatesFalse called
+thirdResult: 0
+evalutesTrue called
+evalutesTrue called
+fourthResult: 1"""
+stderr = ""
