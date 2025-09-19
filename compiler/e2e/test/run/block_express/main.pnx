@@ -1,0 +1,16 @@
+## Case
+## Expect
+## outside scope got 420
+
+
+extern "C":
+    public function printf(fmt: &uint8, ...) -> int32
+    public function scanf(fmt: &uint8, ...) -> int32
+
+
+public function main():
+    let a = scope:
+        express 420
+        printf(&"should not be printed here\0\n".[0])
+    
+    printf(&"outside scope got %d\n\0".[0], a)
