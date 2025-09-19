@@ -1,0 +1,20 @@
+public function main():
+    scope:  
+        express 1
+        express -1
+        express 1.0
+        express true # error
+        express # error unit
+
+
+public function anotherMain():
+    scope:
+        express ()
+        express      # fine, the same as unit
+        express true # errorr, () != bool
+
+
+public function anotherAnotherMain():
+    scope:
+        express
+        express true # error, unit != bool
