@@ -13,7 +13,8 @@ use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{type_check::Expected, Binder, BindingError, Error},
     diagnostic::{
-        Diagnostic, ExpressOutsideScope, ScopeWithGivenLableNameNotFound,
+        Diagnostic, ExpressExpectedAValue, ExpressOutsideScope,
+        ScopeWithGivenLableNameNotFound,
     },
     inference_context::constraint,
 };
@@ -66,8 +67,8 @@ impl Bind<&pernixc_syntax::expression::terminator::Express> for Binder<'_> {
                     .await?
                     .is_some()
                 {
-                    handler.receive(Diagnostic::ExpressOutsideScope(
-                        ExpressOutsideScope { span: syntax_tree.span() },
+                    handler.receive(Diagnostic::ExpressExpectedAValue(
+                        ExpressExpectedAValue { span: syntax_tree.span() },
                     ));
 
                     Value::error(ty.clone(), Some(syntax_tree.span()))
