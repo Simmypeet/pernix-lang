@@ -214,6 +214,7 @@ impl Binder<'_> {
     ///
     /// Returns [`UnrecoverableError`] that is returned by the [`Bind::bind()`]
     /// function.
+    #[allow(clippy::too_many_lines)]
     pub async fn bind_value_or_error<T>(
         &mut self,
         syntax_tree: T,
@@ -223,124 +224,136 @@ impl Binder<'_> {
     where
         Self: Bind<T>,
     {
-        match self
-            .bind(syntax_tree, &Guidance::Expression(type_check), handler)
-            .await
-        {
-            Ok(Expression::LValue(value)) => {
-                let Some(type_hint) = type_check else {
-                    return Ok(Value::Register(
-                        self.create_register_assignment(
-                            Assignment::Load(Load { address: value.address }),
+        // due to how large the future can be in the debug build, we need to
+        // box it to avoid stack overflow
+        Box::pin(async move {
+            match self
+                .bind(syntax_tree, &Guidance::Expression(type_check), handler)
+                .await
+            {
+                Ok(Expression::LValue(value)) => {
+                    let Some(type_hint) = type_check else {
+                        return Ok(Value::Register(
+                            self.create_register_assignment(
+                                Assignment::Load(Load {
+                                    address: value.address,
+                                }),
+                                value.span,
+                            ),
+                        ));
+                    };
+
+                    let checkpoint = self.start_inference_context_checkpoint();
+
+                    let value_ty =
+                        self.type_of_address(&value.address, handler).await?;
+
+                    let diagnostic = self
+                        .type_check_as_diagnostic(
+                            &value_ty,
+                            Expected::Known(type_hint.clone()),
                             value.span,
-                        ),
-                    ));
-                };
-
-                let checkpoint = self.start_inference_context_checkpoint();
-
-                let value_ty =
-                    self.type_of_address(&value.address, handler).await?;
-
-                let diagnostic = self
-                    .type_check_as_diagnostic(
-                        &value_ty,
-                        Expected::Known(type_hint.clone()),
-                        value.span,
-                        handler,
-                    )
-                    .await?;
-
-                // if there is no diagnostic, commit the inference changes
-                let Some(diagnostic) = diagnostic else {
-                    self.commit_inference_context_checkpoint(checkpoint);
-
-                    return self
-                        .try_reborrow_mutable_reference(
-                            value, value_ty, handler,
+                            handler,
                         )
-                        .await;
-                };
+                        .await?;
 
-                // TODO: performs rollback and coercion if possible
-                self.restore_inference_context_checkpoint(checkpoint);
+                    // if there is no diagnostic, commit the inference changes
+                    let Some(diagnostic) = diagnostic else {
+                        self.commit_inference_context_checkpoint(checkpoint);
 
-                let value_span = value.span;
+                        return self
+                            .try_reborrow_mutable_reference(
+                                value, value_ty, handler,
+                            )
+                            .await;
+                    };
 
-                self.try_coerce_mutable_reference(value, type_hint, handler)
-                    .await?
-                    .map_or_else(
-                        || {
-                            // failed to coerce, report the diagnostic
-                            handler.receive(diagnostic);
+                    // TODO: performs rollback and coercion if possible
+                    self.restore_inference_context_checkpoint(checkpoint);
 
-                            Ok(Value::Literal(Literal::Error(literal::Error {
-                                r#type: type_hint.clone(),
-                                span: Some(value_span),
-                            })))
-                        },
-                        Ok,
-                    )
-            }
+                    let value_span = value.span;
 
-            Ok(Expression::RValue(value)) => {
-                let Some(type_hint) = type_check else {
-                    return Ok(value);
-                };
+                    self.try_coerce_mutable_reference(value, type_hint, handler)
+                        .await?
+                        .map_or_else(
+                            || {
+                                // failed to coerce, report the diagnostic
+                                handler.receive(diagnostic);
 
-                // performs type checking and possibly coercion if a type hint
-                // is provided
-                let checkpoint = self.start_inference_context_checkpoint();
+                                Ok(Value::Literal(Literal::Error(
+                                    literal::Error {
+                                        r#type: type_hint.clone(),
+                                        span: Some(value_span),
+                                    },
+                                )))
+                            },
+                            Ok,
+                        )
+                }
 
-                let span = self.span_of_value(&value);
-                let value_ty = self.type_of_value(&value, handler).await?;
+                Ok(Expression::RValue(value)) => {
+                    let Some(type_hint) = type_check else {
+                        return Ok(value);
+                    };
 
-                let diagnostic = self
-                    .type_check_as_diagnostic(
-                        &value_ty,
-                        Expected::Known(type_hint.clone()),
-                        span,
-                        handler,
-                    )
-                    .await?;
+                    // performs type checking and possibly coercion if a type
+                    // hint is provided
+                    let checkpoint = self.start_inference_context_checkpoint();
 
-                // if there is no diagnostic, commit the inference changes
-                let Some(diagnostic) = diagnostic else {
-                    self.commit_inference_context_checkpoint(checkpoint);
-                    return Ok(value);
-                };
+                    let span = self.span_of_value(&value);
+                    let value_ty = self.type_of_value(&value, handler).await?;
 
-                // TODO: performs rollback and coercion if possible
-                self.restore_inference_context_checkpoint(checkpoint);
+                    let diagnostic = self
+                        .type_check_as_diagnostic(
+                            &value_ty,
+                            Expected::Known(type_hint.clone()),
+                            span,
+                            handler,
+                        )
+                        .await?;
 
-                handler.receive(diagnostic);
+                    // if there is no diagnostic, commit the inference changes
+                    let Some(diagnostic) = diagnostic else {
+                        self.commit_inference_context_checkpoint(checkpoint);
+                        return Ok(value);
+                    };
 
-                Ok(Value::Literal(Literal::Error(literal::Error {
-                    r#type: type_hint.clone(),
-                    span: Some(span),
-                })))
-            }
+                    // TODO: performs rollback and coercion if possible
+                    self.restore_inference_context_checkpoint(checkpoint);
 
-            Err(Error::Binding(semantic_error)) => type_check.map_or_else(
-                || {
-                    let inference = self
-                        .create_type_inference(constraint::Type::All(false));
+                    handler.receive(diagnostic);
 
-                    Ok(Value::Literal(Literal::Error(literal::Error {
-                        r#type: Type::Inference(inference),
-                        span: Some(semantic_error.0),
-                    })))
-                },
-                |type_hint| {
                     Ok(Value::Literal(Literal::Error(literal::Error {
                         r#type: type_hint.clone(),
-                        span: Some(semantic_error.0),
+                        span: Some(span),
                     })))
-                },
-            ),
+                }
 
-            Err(Error::Unrecoverable(internal_error)) => Err(internal_error),
-        }
+                Err(Error::Binding(semantic_error)) => type_check.map_or_else(
+                    || {
+                        let inference = self.create_type_inference(
+                            constraint::Type::All(false),
+                        );
+
+                        Ok(Value::Literal(Literal::Error(literal::Error {
+                            r#type: Type::Inference(inference),
+                            span: Some(semantic_error.0),
+                        })))
+                    },
+                    |type_hint| {
+                        Ok(Value::Literal(Literal::Error(literal::Error {
+                            r#type: type_hint.clone(),
+                            span: Some(semantic_error.0),
+                        })))
+                    },
+                ),
+
+                Err(Error::Unrecoverable(internal_error)) => {
+                    Err(internal_error)
+                }
+            }
+        })
+        .await
     }
 
     /// Binds the given syntax tree as an address.
