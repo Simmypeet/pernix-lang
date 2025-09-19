@@ -36,6 +36,7 @@ pub mod diagnostic;
 pub mod express;
 pub mod function_call;
 pub mod if_else;
+pub mod r#loop;
 pub mod numeric;
 pub mod panic;
 pub mod parenthesized;

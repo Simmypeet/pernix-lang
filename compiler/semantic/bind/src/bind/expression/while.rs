@@ -1,15 +1,8 @@
 use std::num::NonZeroUsize;
 
 use pernixc_handler::Handler;
-use pernixc_ir::{
-    instruction::{
-        ConditionalJump, Instruction, Jump, ScopePop, Terminator,
-        UnconditionalJump,
-    },
-    value::{
-        literal::{self, Literal, Unreachable},
-        Value,
-    },
+use pernixc_ir::instruction::{
+    ConditionalJump, Instruction, Jump, ScopePop, Terminator, UnconditionalJump,
 };
 use pernixc_source_file::SourceElement;
 use pernixc_term::r#type::Type;
@@ -18,7 +11,6 @@ use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{r#loop::LoopKind, Binder, BindingError, Error},
     diagnostic::Diagnostic,
-    inference_context::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::block::While> for Binder<'_> {
@@ -26,10 +18,12 @@ impl Bind<&pernixc_syntax::expression::block::While> for Binder<'_> {
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::block::While,
-        _: &Guidance<'_>,
+        guidance: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
-        let Some(binary) = syntax_tree.binary() else {
+        let (Some(binary), Some(while_kw)) =
+            (syntax_tree.binary(), syntax_tree.while_keyword())
+        else {
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
@@ -63,11 +57,11 @@ impl Bind<&pernixc_syntax::expression::block::While> for Binder<'_> {
             scope pop $while_scope_id
             jump loop_block
 
-        condition_fail_block: <- break would jump here
+        condition_fail_block:
             scope pop $while_scope_id
             jump exit_block
 
-        exit:
+        exit: <- break would jump here
             ...
         */
 
@@ -88,6 +82,8 @@ impl Bind<&pernixc_syntax::expression::block::While> for Binder<'_> {
             loop_block_id,
             exit_block_id,
             LoopKind::While,
+            syntax_tree.span(),
+            while_kw.span(),
         );
 
         // bind the conditional value
@@ -144,21 +140,19 @@ impl Bind<&pernixc_syntax::expression::block::While> for Binder<'_> {
         // set the current block to the exit block
         self.set_current_block_id(exit_block_id);
 
-        self.pop_loop_state(while_scope_id);
+        let loop_state = self.pop_loop_state(while_scope_id);
+        let unit = Type::unit();
 
-        let value = if self.current_block().predecessors().is_empty() {
-            Value::Literal(Literal::Unreachable(Unreachable {
-                r#type: Type::Inference(
-                    self.create_type_inference(constraint::Type::All(true)),
-                ),
-                span: Some(syntax_tree.span()),
-            }))
-        } else {
-            Value::Literal(Literal::Unit(literal::Unit {
-                span: Some(syntax_tree.span()),
-            }))
-        };
-
-        Ok(Expression::RValue(value))
+        Ok(Expression::RValue(
+            self.bind_value_or_error(
+                loop_state,
+                match guidance {
+                    Guidance::Expression(_) => None,
+                    Guidance::Statement => Some(&unit),
+                },
+                handler,
+            )
+            .await?,
+        ))
     }
 }
