@@ -115,7 +115,9 @@ async fn test(file_path: &Path) {
 
         if exit_code != std::process::ExitCode::SUCCESS {
             let stderr = String::from_utf8(err_writer.into_inner()).unwrap();
-            panic!("Failed to compile: {stderr}");
+            let stdout = String::from_utf8(out_writer.into_inner()).unwrap();
+
+            panic!("Failed to compile\nstderr:\n{stderr}\nstdout:\n{stdout}",);
         }
     }
 
