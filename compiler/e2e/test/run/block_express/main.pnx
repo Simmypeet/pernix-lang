@@ -1,7 +1,4 @@
 ## Case
-## Expect
-## outside scope got 420
-
 
 extern "C":
     public function printf(fmt: &uint8, ...) -> int32

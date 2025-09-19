@@ -1,0 +1,15 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "1"
+stdout = "odd"
+stderr = ""
+
+## Case 1
+exit_code = 0
+stdin = "2"
+stdout = "even"
+stderr = ""

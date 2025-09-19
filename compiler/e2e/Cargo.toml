@@ -21,6 +21,8 @@ termcolor = { workspace = true }
 tokio = { workspace = true }
 test-generator = { workspace = true }
 pretty_assertions = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
 
 [[test]]
 name = "snapshot_e2e"

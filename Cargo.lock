@@ -1222,10 +1222,12 @@ dependencies = [
  "pernixc_driver",
  "pernixc_target",
  "pretty_assertions",
+ "serde",
  "tempfile",
  "termcolor",
  "test-generator",
  "tokio",
+ "toml",
 ]
 
 [[package]]

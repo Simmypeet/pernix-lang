@@ -1,11 +1,13 @@
 #![allow(missing_docs)]
 
 use std::{
-    io::{BufRead, Write},
+    fmt::Write,
+    io::{BufRead, Write as _},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
+use insta::assert_snapshot;
 use pernixc_target::{
     Arguments, Build, Command as CompilerCommand, Input, OptimizationLevel,
     TargetKind,
@@ -27,57 +29,59 @@ fn main(resource: &str) {
 #[derive(Debug)]
 struct Case {
     pub stdin: Vec<String>,
-    pub stdout: Vec<String>,
 }
 
 /// Parse test case and expected output from a source file
 fn parse_test_spec(file_path: &Path) -> Vec<Case> {
+    const DOUBLE_COMMENT_PREFIX: &str = "## ";
+    const CASE_PREFIX: &str = "## Case";
+
     let file = std::fs::File::open(file_path).unwrap();
     let buf_reader = std::io::BufReader::new(file);
 
     let mut test_cases = Vec::new();
-    let mut lines = buf_reader.lines();
-    let mut next_case = false;
+    let mut lines = buf_reader.lines().peekable();
 
     loop {
-        if !next_case {
-            if let Some(Ok(line)) = lines.next() {
-                if !line.trim().starts_with("## Case") {
-                    break;
-                }
-            } else {
-                break;
-            }
+        // expect "## Case: "
+        let Some(Ok(case_prefix_line)) = lines.next() else {
+            break;
+        };
+
+        if !case_prefix_line.trim().starts_with(CASE_PREFIX) {
+            break;
         }
 
-        let mut stdin = Vec::new();
-        while let Some(Ok(line)) = lines.next() {
-            if !line.starts_with("## ") || line.starts_with("## Expect") {
-                break;
-            }
+        let mut stdins = Vec::new();
 
-            // strip the leading "## "
-            let line = line.trim_start_matches("## ").to_string();
-            stdin.push(line);
+        while let Some(stdin) = lines.next_if(|item| {
+            item.as_ref().ok().is_some_and(|x| {
+                x.trim().starts_with(DOUBLE_COMMENT_PREFIX)
+                    && !x.trim().starts_with(CASE_PREFIX)
+            })
+        }) {
+            stdins.push(
+                stdin
+                    .unwrap()
+                    .trim()
+                    .strip_prefix(DOUBLE_COMMENT_PREFIX)
+                    .unwrap()
+                    .to_string(),
+            );
         }
 
-        // expect "## Expect "
-        let mut stdout = Vec::new();
-        while let Some(Ok(line)) = lines.next() {
-            if !line.starts_with("## ") || line.starts_with("## Case") {
-                next_case = line.starts_with("## Case");
-                break;
-            }
-
-            // strip the leading "## "
-            let line = line.trim_start_matches("## ").to_string();
-            stdout.push(line);
-        }
-
-        test_cases.push(Case { stdin, stdout });
+        test_cases.push(Case { stdin: stdins });
     }
 
     test_cases
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct RunResult {
+    pub exit_code: Option<i32>,
+    pub stdin: String,
+    pub stdout: String,
+    pub stderr: String,
 }
 
 async fn test(file_path: &Path) {
@@ -123,9 +127,9 @@ async fn test(file_path: &Path) {
 
     // Run test cases
     let test_cases = parse_test_spec(file_path);
-    for case in test_cases {
-        println!("Running test case: {case:?}");
+    let mut run_results = Vec::new();
 
+    for case in test_cases {
         let mut child = Command::new(&output_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -147,21 +151,36 @@ async fn test(file_path: &Path) {
         // Get output
         let output = child.wait_with_output().unwrap();
 
-        let mut stdout = String::from_utf8(output.stdout).unwrap();
-        stdout = stdout.replace("\r\n", "\n");
+        let stdout = String::from_utf8(output.stdout).unwrap();
 
-        let mut expected = String::new();
-        for stdout_line in &case.stdout {
-            expected.push_str(stdout_line);
-            expected.push('\n');
-        }
-
-        assert_eq!(
-            expected,
-            stdout,
-            "Test case failed in file: {}\ncase input: \n{}",
-            file_path.display(),
-            stdin_content
-        );
+        run_results.push(RunResult {
+            exit_code: output.status.code(),
+            stdin: stdin_content.trim().to_string(),
+            stdout: stdout.trim().to_string(),
+            stderr: String::from_utf8(output.stderr)
+                .unwrap()
+                .trim()
+                .to_string(),
+        });
     }
+
+    let mut final_string = String::new();
+    for (i, result) in run_results.iter().enumerate() {
+        let toml_string = toml::to_string_pretty(&result).unwrap();
+        writeln!(&mut final_string, "## Case {i}").unwrap();
+        writeln!(&mut final_string, "{toml_string}").unwrap();
+    }
+
+    let mut settings = insta::Settings::clone_current();
+
+    // Convert crlf to lf.
+    settings.add_filter(r"\r\n", "\n");
+
+    let full_path = std::fs::canonicalize(file_path).unwrap();
+    settings.set_snapshot_path(full_path.parent().unwrap());
+    settings.set_prepend_module_to_snapshot(false);
+    settings.remove_snapshot_suffix();
+    let _guard = settings.bind_to_scope();
+
+    assert_snapshot!("snapshot", final_string);
 }

@@ -1,0 +1,18 @@
+## Case
+## 1
+## Case
+## 2
+
+
+extern "C":
+    public function printf(fmt: &uint8, ...) -> int32
+    public function scanf(fmt: &uint8, ...) -> int32
+
+
+public function main():
+    let mut a = 0
+    scanf(&"%d\0".[0], &mut a)
+
+    let message = if a % 2 == 0: &"even\n\0".[0] else: &"odd\n\0".[0]
+
+    printf(message)
