@@ -515,6 +515,28 @@ impl Binder<'_> {
         infer_var
     }
 
+    /// Creates a new child branch of scopes at the given `parent_scope_id`.
+    pub fn new_child_branch_at(
+        &mut self,
+        parent_scope_id: ID<scope::Scope>,
+        count: NonZeroUsize,
+    ) -> Vec<ID<scope::Scope>> {
+        self.ir.scope_tree.new_child_branch(parent_scope_id, count).unwrap()
+    }
+
+    /// Creates a new child branch of scopes at the current scope.
+    pub fn new_child_branch(
+        &mut self,
+        count: NonZeroUsize,
+    ) -> Vec<ID<scope::Scope>> {
+        self.new_child_branch_at(self.stack.current_scope().scope_id(), count)
+    }
+
+    /// Creates a new block in the control flow graph.
+    pub fn new_block(&mut self) -> ID<Block> {
+        self.ir.control_flow_graph.new_block()
+    }
+
     /// Creates an environment object that includes the `active_premise`,
     ///
     /// `table`, and `inference_context` normalizer.

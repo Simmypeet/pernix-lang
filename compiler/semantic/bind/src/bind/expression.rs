@@ -28,7 +28,7 @@ use crate::{
 
 pub mod array;
 pub mod binary;
-pub mod block;
+pub mod scope;
 pub mod boolean;
 pub mod borrow;
 pub mod character;
