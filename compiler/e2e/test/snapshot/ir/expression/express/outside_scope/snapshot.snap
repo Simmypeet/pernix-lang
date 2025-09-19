@@ -9,7 +9,13 @@ error: `express` can only be used inside a scope expression
 2 │     express
   │     ^^^^^^^
 
-error: Compilation aborted due to 1 error(s)
+error: scope with the given label name was not found
+  ╭─ compiler/e2e/test/snapshot/ir/expression/express/outside_scope/main.pnx:7:18
+  │
+7 │         express 'notFound
+  │                  ^^^^^^^^
+
+error: Compilation aborted due to 2 error(s)
 
 
 

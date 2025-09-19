@@ -1,2 +1,7 @@
 public function main():
     express
+
+
+public function anotherMain():
+    scope:
+        express 'notFound
