@@ -1,0 +1,36 @@
+public function main(cond: bool):
+    let a = scope 'result:
+        if cond:
+            express 'result 420
+
+        # error scope 'result does not express on all flow paths
+
+
+public function anotherMain(cond: bool):
+    let a = scope 'result:
+        if cond:
+            express 'result 420
+
+        return 
+        
+        # fine, return exits the function, no need to express on this path 
+        
+
+public function yetAnotherMain(cond: bool):
+    let a = scope 'result:
+        if cond:
+            express 'result 420
+        else:
+            express 'result 64
+
+        # fine, all flow paths express
+
+
+public function lastMain(cond: bool):
+    let a = scope 'result:
+        if cond:
+            express 'result 420
+        else:
+            return
+        
+        # fine, return exits the function, no need to express on this path

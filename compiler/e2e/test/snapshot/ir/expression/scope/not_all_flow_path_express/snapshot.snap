@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: not all flow paths in this scope expression express a value
+  ╭─ compiler/e2e/test/snapshot/ir/expression/scope/not_all_flow_path_express/main.pnx:2:13
+  │  
+2 │       let a = scope 'result:
+  │ ╭─────────────^
+3 │ │         if cond:
+4 │ │             express 'result 420
+  │ ╰───────────────────────────────^
+  │  
+  = consider adding an `express` expression to all control flow paths
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
