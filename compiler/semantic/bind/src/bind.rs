@@ -25,6 +25,17 @@ pub enum Guidance<'a> {
     Statement,
 }
 
+impl<'a> Guidance<'a> {
+    /// Returns the type hint for the expression if any.
+    #[must_use]
+    pub const fn type_hint(&self) -> Option<&'a Type> {
+        match self {
+            Guidance::Expression(ty) => *ty,
+            Guidance::Statement => None,
+        }
+    }
+}
+
 /// The result of binding the expression as an l-value. (The value has an
 /// address where it is stored.)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -65,6 +65,7 @@ diagnostic_enum! {
         ScopeWithGivenLableNameNotFound(ScopeWithGivenLableNameNotFound),
         ExpressOutsideScope(ExpressOutsideScope),
         ExpressExpectedAValue(ExpressExpectedAValue),
+        IfMissingElseBranch(IfMissingElseBranch),
     }
 }
 
@@ -602,6 +603,41 @@ impl Report for ExpressExpectedAValue {
                 "earlier `express` expressions in the same scope have a value \
                  with a type other than unit (`()`). Consider adding a value \
                  to this `express` expression.",
+            )
+            .build())
+    }
+}
+
+/// The `if` expression `express` a value having type other than unit, but
+/// doesn't have an `else` branch.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct IfMissingElseBranch {
+    /// The span of the `if` expression.
+    pub if_span: RelativeSpan,
+}
+
+impl Report for IfMissingElseBranch {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.if_span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message(
+                "this `if` expression is expected to have an `else` branch",
+            )
+            .help_message(
+                "the `if` expression `express` a value having type other than \
+                 unit, so an `else` branch expressing a value of the same \
+                 type is required",
             )
             .build())
     }

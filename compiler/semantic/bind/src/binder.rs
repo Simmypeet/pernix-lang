@@ -80,6 +80,9 @@ pub struct Binder<'t> {
     /// The intermediate representation that is being built.
     #[get = "pub"]
     ir: IR,
+
+    /// The current block ID where the binder is operating on.
+    #[get_copy = "pub"]
     current_block_id: ID<Block>,
 
     /// The stack used for managing scopes and named bindings.
@@ -667,7 +670,18 @@ impl Binder<'_> {
             .add_instruction(Instruction::ScopePop(ScopePop(scope_id)));
     }
 
-    fn push_scope_with(&mut self, scope_id: ID<scope::Scope>, is_unsafe: bool) {
+    /// Sets the current block ID to the given `block_id`.
+    pub const fn set_current_block_id(&mut self, block_id: ID<Block>) {
+        self.current_block_id = block_id;
+    }
+
+    /// Inserts a scope push instruction to the current block and pushes the
+    /// scope to the stack.
+    pub fn push_scope_with(
+        &mut self,
+        scope_id: ID<scope::Scope>,
+        is_unsafe: bool,
+    ) {
         self.stack.push_scope(scope_id, is_unsafe);
         let _ = self
             .current_block_mut()

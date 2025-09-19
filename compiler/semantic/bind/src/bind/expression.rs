@@ -35,6 +35,7 @@ pub mod dereference;
 pub mod diagnostic;
 pub mod express;
 pub mod function_call;
+pub mod if_else;
 pub mod numeric;
 pub mod panic;
 pub mod parenthesized;
@@ -168,9 +169,7 @@ impl Bind<&pernixc_syntax::expression::block::Block>
                 self.bind(scope, guidance, handler).await
             }
             pernixc_syntax::expression::block::Block::IfElse(if_else) => {
-                Ok(Expression::RValue(pernixc_ir::value::Value::Literal(
-                    self.create_unreachable(if_else.span()),
-                )))
+                Box::pin(self.bind(if_else, guidance, handler)).await
             }
             pernixc_syntax::expression::block::Block::Loop(_) => todo!(),
             pernixc_syntax::expression::block::Block::Match(_) => todo!(),
