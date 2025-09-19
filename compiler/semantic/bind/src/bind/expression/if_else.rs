@@ -108,7 +108,23 @@ impl Binder<'_> {
                             .bind(&expr, &Guidance::Statement, handler)
                             .await
                         {
-                            Ok(_) | Err(Error::Binding(_)) => {}
+                            Ok(Expression::RValue(value)) => {
+                                let value_ty =
+                                    self.type_of_value(&value, handler).await?;
+
+                                // must be type unit
+                                self.type_check(
+                                    &value_ty,
+                                    Expected::Known(Type::unit()),
+                                    expr.span(),
+                                    handler,
+                                )
+                                .await?;
+                            }
+
+                            // no need to type check lvalue
+                            Ok(Expression::LValue(_))
+                            | Err(Error::Binding(_)) => {}
 
                             Err(Error::Unrecoverable(abort)) => {
                                 return Err(abort)

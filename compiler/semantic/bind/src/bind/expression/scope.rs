@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 
 use pernixc_handler::Handler;
 use pernixc_source_file::SourceElement;
+use pernixc_term::r#type::Type;
 
 use crate::{
     bind::{Bind, Expression, Guidance},
@@ -40,6 +41,20 @@ impl Bind<&pernixc_syntax::expression::block::Scope> for Binder<'_> {
         .await?;
 
         // bind the block state as value
-        self.bind(block_state, guidance, handler).await
+        let unit = Type::unit();
+        Ok(Expression::RValue(
+            self.bind_value_or_error(
+                block_state,
+                match guidance {
+                    Guidance::Expression(ty) => *ty,
+
+                    // if scope is defined at statement position, it should
+                    // return unit type
+                    Guidance::Statement => Some(&unit),
+                },
+                handler,
+            )
+            .await?,
+        ))
     }
 }
