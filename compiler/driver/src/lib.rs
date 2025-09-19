@@ -326,7 +326,7 @@ pub async fn run(
 
         report_term.report(&diag);
 
-        ExitCode::SUCCESS
+        ExitCode::FAILURE
     } else {
         build(
             &argument,
