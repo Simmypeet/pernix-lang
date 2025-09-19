@@ -43,17 +43,17 @@ impl Bind<&pernixc_syntax::expression::block::Scope> for Binder<'_> {
         // bind the block state as value
         let unit = Type::unit();
         Ok(Expression::RValue(
-            self.bind_value_or_error(
+            Box::pin(self.bind_value_or_error(
                 block_state,
                 match guidance {
-                    Guidance::Expression(ty) => *ty,
+                    Guidance::Expression(_) => None,
 
                     // if scope is defined at statement position, it should
                     // return unit type
                     Guidance::Statement => Some(&unit),
                 },
                 handler,
-            )
+            ))
             .await?,
         ))
     }
