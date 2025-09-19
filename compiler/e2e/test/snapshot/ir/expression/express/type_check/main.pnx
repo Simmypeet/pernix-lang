@@ -1,5 +1,5 @@
 public function main():
-    scope:  
+    let a = scope:  
         express 1
         express -1
         express 1.0
