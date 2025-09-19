@@ -174,7 +174,9 @@ impl Bind<&pernixc_syntax::expression::block::Block>
             }
             pernixc_syntax::expression::block::Block::Loop(_) => todo!(),
             pernixc_syntax::expression::block::Block::Match(_) => todo!(),
-            pernixc_syntax::expression::block::Block::While(_) => todo!(),
+            pernixc_syntax::expression::block::Block::While(wh) => {
+                Box::pin(self.bind(wh, guidance, handler)).await
+            }
         }
     }
 }
