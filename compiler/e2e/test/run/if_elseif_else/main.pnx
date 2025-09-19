@@ -1,3 +1,10 @@
+## Case 
+## 15
+## Case
+## 60
+## Case
+## 160
+
 
 extern "C":
     public function printf(fmt: &uint8, ...) -> int32
@@ -5,4 +12,15 @@ extern "C":
 
 
 public function main():
-    
+    let minLimit = 40
+    let maxLimit = 100
+
+    let mut a = 0
+    scanf(&"%d\0".[0], &mut a)
+
+    if a > maxLimit:
+        printf(&"above max limit by %d\n\0".[0], a - maxLimit)
+    else if a < minLimit:
+        printf(&"below min limit by %d\n\0".[0], minLimit - a)
+    else:
+        printf(&"within range by\n\0".[0])

@@ -2,4 +2,20 @@
 source: compiler/e2e/test/run/mod.rs
 expression: final_string
 ---
+## Case 0
+exit_code = 0
+stdin = "15"
+stdout = "below min limit by 25"
+stderr = ""
 
+## Case 1
+exit_code = 0
+stdin = "60"
+stdout = "within range by"
+stderr = ""
+
+## Case 2
+exit_code = 0
+stdin = "160"
+stdout = "above max limit by 60"
+stderr = ""
