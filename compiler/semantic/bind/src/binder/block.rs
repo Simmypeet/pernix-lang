@@ -36,6 +36,12 @@ pub(super) struct Context {
     block_states_by_scope_id: HashMap<ID<Scope>, BlockState>,
 }
 
+impl Context {
+    pub(crate) fn assert_empty(&self) {
+        assert!(self.block_states_by_scope_id.is_empty());
+    }
+}
+
 /// Represents the block value after binding a block. It may holds the value
 /// of the `express` expression if it exists.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]

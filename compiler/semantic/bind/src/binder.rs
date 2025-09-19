@@ -55,8 +55,10 @@ use crate::{
     pattern::insert_name_binding,
 };
 
-pub mod block;
 mod finalize;
+
+pub mod block;
+pub mod r#loop;
 pub mod stack;
 pub mod type_check;
 
@@ -96,6 +98,7 @@ pub struct Binder<'t> {
     const_inference_counter: u64,
 
     block_context: block::Context,
+    loop_context: r#loop::Context,
 }
 
 impl<'t> Binder<'t> {
@@ -129,6 +132,7 @@ impl<'t> Binder<'t> {
             const_inference_counter: 0,
 
             block_context: block::Context::default(),
+            loop_context: r#loop::Context::default(),
         };
 
         let root_scope_id = binder.ir.scope_tree.root_scope_id();
@@ -659,7 +663,17 @@ impl Binder<'_> {
         scope_id
     }
 
-    /// Pops the current scope from the stack.
+    /// Pops the current scope from the stack without adding a scope pop
+    /// instruction.
+    pub fn pop_scope_context(&mut self, scope_id: ID<scope::Scope>) {
+        assert_eq!(
+            self.stack.pop_scope().map(|x| x.scope_id()),
+            Some(scope_id)
+        );
+    }
+
+    /// Pops the current scope from the stack and adds a scope pop instruction
+    /// to the current block.
     pub fn pop_scope(&mut self, scope_id: ID<scope::Scope>) {
         assert_eq!(
             self.stack.pop_scope().map(|x| x.scope_id()),

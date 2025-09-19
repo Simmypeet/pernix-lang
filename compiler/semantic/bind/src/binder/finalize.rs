@@ -22,6 +22,13 @@ impl Binder<'_> {
         mut self,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, CyclicError> {
+        self.block_context.assert_empty();
+        self.loop_context.assert_empty();
+
+        // TODO: we might need to implements some debug verification logic here
+        // to ensure the IR is valid. For example, all scope push should have
+        // corresponding scope pop.
+
         let root_scope_id = self.ir.scope_tree.root_scope_id();
         let _ = self
             .current_block_mut()
