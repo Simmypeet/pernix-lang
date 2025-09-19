@@ -32,9 +32,9 @@ impl Report for Diagnostic {
             Self::GenericParametersAreNotAllowedInMainFunction(diag) => {
                 diag.report(engine).await
             }
-            Self::WhereClausePredicatesAreNotAllowedInMainFunction(
-                diag,
-            ) => diag.report(engine).await,
+            Self::WhereClausePredicatesAreNotAllowedInMainFunction(diag) => {
+                diag.report(engine).await
+            }
         }
     }
 }

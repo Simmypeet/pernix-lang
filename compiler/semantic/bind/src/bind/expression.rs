@@ -28,12 +28,12 @@ use crate::{
 
 pub mod array;
 pub mod binary;
-pub mod scope;
 pub mod boolean;
 pub mod borrow;
 pub mod character;
 pub mod dereference;
 pub mod diagnostic;
+pub mod express;
 pub mod function_call;
 pub mod numeric;
 pub mod panic;
@@ -43,6 +43,7 @@ pub mod postfix;
 pub mod prefix;
 pub mod qualified_identifier;
 pub mod r#return;
+pub mod scope;
 pub mod string;
 pub mod r#struct;
 

@@ -1050,6 +1050,29 @@ impl Binder<'_> {
         Ok(arg)
     }
 
+    /// Traverses the scope stack from the top and pushes `ScopePop`
+    /// instructions until the scope with `scope_id` is popped.
+    pub fn pop_all_scope_to(&mut self, scope_id: ID<scope::Scope>) {
+        for popping_scope in self
+            .stack
+            .scopes()
+            .iter()
+            .rev()
+            .map(stack::Scope::scope_id)
+            .take_while(|x| *x != scope_id)
+            .chain(std::iter::once(scope_id))
+        {
+            let _ = self
+                .ir
+                .control_flow_graph
+                .get_block_mut(self.current_block_id)
+                .unwrap()
+                .add_instruction(Instruction::ScopePop(ScopePop(
+                    popping_scope,
+                )));
+        }
+    }
+
     /*
 
     #[allow(clippy::type_complexity)]

@@ -62,6 +62,9 @@ diagnostic_enum! {
         TypeAnnotationRequired(TypeAnnotationRequired),
         ConstantAnnotationRequired(ConstantAnnotationRequired),
         NotAllFlowPathsExpressValue(NotAllFlowPathsExpressValue),
+        ScopeWithGivenLableNameNotFound(ScopeWithGivenLableNameNotFound),
+        ExpressOutsideScope(ExpressOutsideScope),
+        ExpressExpectedAValue(ExpressExpectedAValue),
     }
 }
 
@@ -491,6 +494,114 @@ impl Report for NotAllFlowPathsExpressValue {
             .help_message(
                 "consider adding an `express` expression to all control flow \
                  paths",
+            )
+            .build())
+    }
+}
+
+/// The scope with the given label name was not found.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct ScopeWithGivenLableNameNotFound {
+    /// The span of the label identifier.
+    pub span: RelativeSpan,
+}
+
+impl Report for ScopeWithGivenLableNameNotFound {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message("scope with the given label name was not found")
+            .build())
+    }
+}
+
+/// The `express` expression can't be used outside of a scope expression.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct ExpressOutsideScope {
+    /// The span of the expression.
+    pub span: RelativeSpan,
+}
+
+impl Report for ExpressOutsideScope {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message("`express` can only be used inside a scope expression")
+            .build())
+    }
+}
+
+/// The `express` expression is expected to have a value since the earlier
+/// `express` expression in the same scope has a value with a type other than
+/// unit.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct ExpressExpectedAValue {
+    /// The span of the `express` expression with no value.
+    pub span: RelativeSpan,
+}
+
+impl Report for ExpressExpectedAValue {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message("this `express` expression is expected to have a value")
+            .help_message(
+                "earlier `express` expressions in the same scope have a value \
+                 with a type other than unit (`()`). Consider adding a value \
+                 to this `express` expression.",
             )
             .build())
     }

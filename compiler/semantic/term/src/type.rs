@@ -272,6 +272,10 @@ impl Default for Type {
 }
 
 impl Type {
+    /// Creates a unit type, which is represented as an empty tuple.
+    #[must_use]
+    pub const fn unit() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
+
     /// Keeps removing the reference until it reaches a non-reference type.
     ///
     /// This is useful for pattern matching.

@@ -1,7 +1,10 @@
 //! Binding logic for block expressions.
 
+use std::collections::hash_map::Entry;
+
 use bon::bon;
 use flexstr::SharedStr;
+use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
@@ -35,12 +38,21 @@ pub(super) struct Context {
 
 /// Represents the block value after binding a block. It may holds the value
 /// of the `express` expression if it exists.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
 pub struct BlockState {
     label: Option<SharedStr>,
     incoming_values: HashMap<ID<Block>, Value>,
+
+    /// The block ID to jump to after the block is finished executing.
+    #[get_copy = "pub"]
     successor_block_id: ID<Block>,
+
+    /// The type of the `express` expression.
+    ///
+    /// If `None`, the block hasn't expressed a value.
+    #[get = "pub"]
     express_type: Option<Type>,
+
     span: RelativeSpan,
 }
 
@@ -124,6 +136,76 @@ impl Binder<'_> {
             .block_states_by_scope_id
             .remove(&scope_id)
             .expect("block state should exist"))
+    }
+}
+
+impl Binder<'_> {
+    /// Searches for a [`BlockState`] in the current scope stack that matches
+    /// the given optional label. If a label is provided, it will only return
+    /// a block state that matches the label. If no label is provided, it will
+    /// return the nearest block state in the scope stack.
+    #[must_use]
+    pub fn search_block_scope_id(
+        &self,
+        label_str: Option<&str>,
+    ) -> Option<ID<Scope>> {
+        for scope_id in
+            self.stack.scopes().iter().rev().map(super::stack::Scope::scope_id)
+        {
+            let Some(block_state) =
+                self.block_context.block_states_by_scope_id.get(&scope_id)
+            else {
+                continue;
+            };
+
+            if let Some(label_str) = label_str {
+                if block_state.label.as_deref() != Some(label_str) {
+                    continue;
+                }
+            }
+
+            return Some(scope_id);
+        }
+
+        None
+    }
+
+    /// Gets the block state associated with the given scope ID, if it exists.
+    #[must_use]
+    pub fn get_block_state_from_scope_id(
+        &self,
+        scope_id: ID<Scope>,
+    ) -> Option<&BlockState> {
+        self.block_context.block_states_by_scope_id.get(&scope_id)
+    }
+
+    /// Expresses a value to a block associated with the given scope ID.
+    pub async fn express_value(
+        &mut self,
+        scope_id: ID<Scope>,
+        value: Value,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        let ty = self.type_of_value(&value, handler).await?;
+        let block_state = self
+            .block_context
+            .block_states_by_scope_id
+            .get_mut(&scope_id)
+            .unwrap();
+
+        // we'll assume the type of the value is the same
+        if block_state.express_type.is_none() {
+            block_state.express_type = Some(ty);
+        }
+
+        // insert the incoming value from the current block
+        if let Entry::Vacant(entry) =
+            block_state.incoming_values.entry(self.current_block_id)
+        {
+            entry.insert(value);
+        }
+
+        Ok(())
     }
 }
 
