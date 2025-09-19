@@ -1,0 +1,9 @@
+public function expect[T](..: T):
+    pass
+
+
+public function main():
+    expect[int32](
+        loop:
+            pass
+    )
