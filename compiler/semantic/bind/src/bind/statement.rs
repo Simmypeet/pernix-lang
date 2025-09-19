@@ -38,9 +38,8 @@ impl Binder<'_> {
             pernixc_syntax::statement::Statement::Expression(expression) => {
                 let scope_id = self.push_scope(false);
 
-                let result = self
-                    .bind(expression, &Guidance::builder().build(), handler)
-                    .await;
+                let result =
+                    self.bind(expression, &Guidance::Statement, handler).await;
 
                 let result = match result {
                     Ok(Expression::RValue(Value::Register(register_id))) => {
@@ -102,9 +101,7 @@ impl Binder<'_> {
             Some(expression) => {
                 self.bind(
                     &expression,
-                    &Guidance::builder()
-                        .maybe_type_hint(type_annotation.as_ref())
-                        .build(),
+                    &Guidance::Expression(type_annotation.as_ref()),
                     handler,
                 )
                 .await

@@ -72,7 +72,7 @@ pub(super) async fn bind_method_call(
 
     let expression = match current_state {
         BindState::Initial(unit) => {
-            binder.bind(&unit, &Guidance::builder().build(), handler).await?
+            binder.bind(&unit, &Guidance::Expression(None), handler).await?
         }
         BindState::Bound(expression) => expression,
     };

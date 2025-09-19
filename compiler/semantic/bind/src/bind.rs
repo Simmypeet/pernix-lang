@@ -1,6 +1,5 @@
 //! Contains the code that binds the syntax tree into IR using binder.
 
-use bon::Builder;
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_ir::{address::Address, value::Value};
@@ -13,24 +12,17 @@ pub mod expression;
 pub mod statement;
 
 /// The optional guidance for binding the expression.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    derive_new::new,
-    Builder,
-)]
-pub struct Guidance<'a> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Guidance<'a> {
     /// The type hint for the expression.
     ///
     /// This is simply a guidance for the implementation of [`Bind`] and
     /// does not have to be strictly followed or type-checked.
-    pub type_hint: Option<&'a Type>,
+    Expression(Option<&'a Type>),
+
+    /// The expression will be bound at the statement level where its value
+    /// will be definitely discarded.
+    Statement,
 }
 
 /// The result of binding the expression as an l-value. (The value has an

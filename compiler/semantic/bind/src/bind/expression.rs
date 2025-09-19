@@ -225,11 +225,7 @@ impl Binder<'_> {
         Self: Bind<T>,
     {
         match self
-            .bind(
-                syntax_tree,
-                &Guidance::builder().maybe_type_hint(type_check).build(),
-                handler,
-            )
+            .bind(syntax_tree, &Guidance::Expression(type_check), handler)
             .await
         {
             Ok(Expression::LValue(value)) => {
@@ -365,11 +361,7 @@ impl Binder<'_> {
         Self: Bind<&'a T>,
     {
         match self
-            .bind(
-                syntax_tree,
-                &Guidance::builder().maybe_type_hint(type_check).build(),
-                handler,
-            )
+            .bind(syntax_tree, &Guidance::Expression(type_check), handler)
             .await?
         {
             Expression::RValue(value) => {
