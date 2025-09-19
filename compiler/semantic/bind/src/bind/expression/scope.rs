@@ -26,17 +26,18 @@ impl Bind<&pernixc_syntax::expression::block::Scope> for Binder<'_> {
             );
         }
 
-        let block_state = self
-            .bind_block()
-            .maybe_label(syntax_tree.label().as_ref())
-            .statements(statement_syns.iter())
-            .span(syntax_tree.span())
-            .scope_id(scope_id)
-            .successor_block_id(successor_block_id)
-            .is_unsafe(syntax_tree.unsafe_keyword().is_some())
-            .handler(handler)
-            .call()
-            .await?;
+        let block_state = Box::pin(
+            self.bind_block()
+                .maybe_label(syntax_tree.label().as_ref())
+                .statements(statement_syns.iter())
+                .span(syntax_tree.span())
+                .scope_id(scope_id)
+                .successor_block_id(successor_block_id)
+                .is_unsafe(syntax_tree.unsafe_keyword().is_some())
+                .handler(handler)
+                .call(),
+        )
+        .await?;
 
         // bind the block state as value
         self.bind(block_state, guidance, handler).await

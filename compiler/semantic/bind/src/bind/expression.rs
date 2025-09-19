@@ -160,11 +160,13 @@ impl Bind<&pernixc_syntax::expression::block::Block>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::block::Block,
-        _config: &Guidance<'_>,
-        _handler: &dyn Handler<Diagnostic>,
+        guidance: &Guidance<'_>,
+        handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
-            pernixc_syntax::expression::block::Block::Scope(_scope) => todo!(),
+            pernixc_syntax::expression::block::Block::Scope(scope) => {
+                self.bind(scope, guidance, handler).await
+            }
             pernixc_syntax::expression::block::Block::IfElse(if_else) => {
                 Ok(Expression::RValue(pernixc_ir::value::Value::Literal(
                     self.create_unreachable(if_else.span()),
