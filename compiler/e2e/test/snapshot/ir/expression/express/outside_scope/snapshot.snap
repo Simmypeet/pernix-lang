@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: `express` can only be used inside a scope expression
+  ╭─ compiler/e2e/test/snapshot/ir/expression/express/outside_scope/main.pnx:2:5
+  │
+2 │     express
+  │     ^^^^^^^
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
