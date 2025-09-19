@@ -58,10 +58,14 @@ impl Binder<'_> {
                     .call()
                     .await?;
 
+                let unit = Type::unit();
                 let value = self
                     .bind_value_or_error(
                         block_state,
-                        guidance.type_hint(),
+                        match guidance {
+                            Guidance::Expression(type_hint) => *type_hint,
+                            Guidance::Statement => Some(&unit),
+                        },
                         handler,
                     )
                     .await?;

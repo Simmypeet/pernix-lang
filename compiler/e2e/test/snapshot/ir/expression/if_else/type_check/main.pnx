@@ -1,0 +1,23 @@
+public function main(cond: bool):
+    let test = if cond: 420.0 else: 0
+    
+    let typeMismatched = if cond: -420 else: 64u32 # error {signed} != int32
+    let missingElse = if cond: 10 # error missing else branch
+    
+    let unitIfMissingElse = if cond: () # fine, unit type
+
+    if cond:
+        express 53   # must be unit
+    else:
+        express true # must be unit
+
+    let variable = 32
+    
+    if cond: variable # should be fine, variable is lvalue
+    if cond: 32       # not fine, 32 is rvalue and is not unit
+
+    let a = if cond:
+        express true
+    else if cond:
+        express false
+    # missing last else branch, error
