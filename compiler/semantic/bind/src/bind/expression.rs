@@ -183,19 +183,19 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
     async fn bind(
         &mut self,
         syntax_tree: &pernixc_syntax::expression::terminator::Terminator,
-        config: &Guidance<'_>,
+        guidance: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
         match syntax_tree {
             pernixc_syntax::expression::terminator::Terminator::Return(ret) => {
-                self.bind(ret, config, handler).await
+                self.bind(ret, guidance, handler).await
             }
             pernixc_syntax::expression::terminator::Terminator::Continue(_) => {
                 todo!()
             }
             pernixc_syntax::expression::terminator::Terminator::Express(
-                _express,
-            ) => todo!(),
+                express,
+            ) => self.bind(express, guidance, handler).await,
             pernixc_syntax::expression::terminator::Terminator::Break(_) => {
                 todo!()
             }
