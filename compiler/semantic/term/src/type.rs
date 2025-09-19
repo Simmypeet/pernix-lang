@@ -276,6 +276,10 @@ impl Type {
     #[must_use]
     pub const fn unit() -> Self { Self::Tuple(Tuple { elements: Vec::new() }) }
 
+    /// Creates a boolean type.
+    #[must_use]
+    pub const fn bool() -> Self { Self::Primitive(Primitive::Bool) }
+
     /// Keeps removing the reference until it reaches a non-reference type.
     ///
     /// This is useful for pattern matching.

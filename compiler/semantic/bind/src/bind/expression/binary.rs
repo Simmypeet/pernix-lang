@@ -1,11 +1,15 @@
+use std::num::NonZeroUsize;
+
 use pernixc_handler::Handler;
 use pernixc_ir::{
-    instruction::{Instruction, Store},
+    instruction::{
+        self, ConditionalJump, Instruction, Jump, Store, Terminator,
+    },
     value::{
-        literal::{self, Literal},
+        literal::{self, Boolean, Literal},
         register::{
             ArithmeticOperator, Assignment, Binary, BinaryOperator,
-            BitwiseOperator, Load,
+            BitwiseOperator, Load, Phi,
         },
         Value,
     },
@@ -584,245 +588,169 @@ impl Bind<&BinaryTree> for Binder<'_> {
 
             BinaryOperatorSyn::LogicalAnd(_)
             | BinaryOperatorSyn::LogicalOr(_) => {
-                todo!()
-                /*
-                let successor_block_id = self
-                    .intermediate_representation
-                    .control_flow_graph
-                    .new_block();
-
-                let lhs =
-                    self.bind_value_or_error(&syntax_tree.left, handler)?;
-
-                // must be a boolean
-                let lhs_ty = self.type_of_value(&lhs, handler)?;
-                let _ = self.type_check(
-                    &lhs_ty,
-                    Expected::Known(Type::Primitive(Primitive::Bool)),
-                    syntax_tree.left.span(),
-                    handler,
-                )?;
-
-                let true_block_id = self
-                    .intermediate_representation
-                    .control_flow_graph
-                    .new_block();
-                let false_block_id = self
-                    .intermediate_representation
-                    .control_flow_graph
-                    .new_block();
-
-                let _ = self
-                    .intermediate_representation
-                    .control_flow_graph
-                    .insert_terminator(
-                        self.current_block_id,
-                        Terminator::Jump(Jump::Conditional(ConditionalJump {
-                            condition: lhs,
-                            true_target: true_block_id,
-                            false_target: false_block_id,
-                        })),
-                    );
-
-                let (true_branch, false_branch) = {
-                    let result = self
-                        .intermediate_representation
-                        .scope_tree
-                        .new_child_branch(
-                            self.stack.current_scope().scope_id(),
-                            NonZeroUsize::new(2).unwrap(),
-                        )
-                        .unwrap();
-
-                    (result[0], result[1])
-                };
-
-                // true branch
-                let (true_branch_value, true_branch_last_block_id) = {
-                    self.current_block_id = true_block_id;
-
-                    // push the scope
-                    self.stack.push_scope(true_branch, false);
-                    let _ = self.current_block_mut().add_instruction(
-                        Instruction::ScopePush(ScopePush(true_branch)),
-                    );
-
-                    let value = if matches!(
-                        syntax_tree.operator,
-                        syntax_tree::expression::binary::BinaryOperator::LogicalOr(_)
-                    ) {
-                        Value::Literal(Literal::Boolean(Boolean {
-                            value: true,
-                            span: Some(syntax_tree.left.span()),
-                        }))
-                    } else {
-                        let rhs = self
-                            .bind_value_or_error(&syntax_tree.right, handler)?;
-
-                        let rhs_ty = self.type_of_value(&rhs, handler)?;
-                        let _ = self.type_check(
-                            &rhs_ty,
-                            Expected::Known(Type::Primitive(Primitive::Bool)),
-                            syntax_tree.right.span(),
-                            handler,
-                        )?;
-
-                        rhs
-                    };
-
-                    // pop the scope
-                    assert_eq!(
-                        self.stack.pop_scope().map(|x| x.scope_id()),
-                        Some(true_branch)
-                    );
-                    let _ = self.current_block_mut().add_instruction(
-                        Instruction::ScopePop(ScopePop(true_branch)),
-                    );
-
-                    // jump to the successor block
-                    let _ = self
-                        .intermediate_representation
-                        .control_flow_graph
-                        .insert_terminator(
-                            self.current_block_id,
-                            Terminator::Jump(Jump::Unconditional(
-                                instruction::UnconditionalJump {
-                                    target: successor_block_id,
-                                },
-                            )),
-                        );
-
-                    (value, self.current_block_id)
-                };
-
-                // false block
-                let (false_branch_value, false_branch_last_block_id) = {
-                    self.current_block_id = false_block_id;
-
-                    // push the scope
-                    self.stack.push_scope(false_branch, false);
-                    let _ = self.current_block_mut().add_instruction(
-                        Instruction::ScopePush(ScopePush(false_branch)),
-                    );
-
-                    let value = if matches!(
-                        syntax_tree.operator,
-                        syntax_tree::expression::binary::BinaryOperator::LogicalAnd(_)
-                    ) {
-                        Value::Literal(Literal::Boolean(Boolean {
-                            value: false,
-                            span: Some(syntax_tree.left.span()),
-                        }))
-                    } else {
-                        let rhs = self
-                            .bind_value_or_error(&syntax_tree.right, handler)?;
-
-                        let rhs_ty = self.type_of_value(&rhs, handler)?;
-                        let _ = self.type_check(
-                            &rhs_ty,
-                            Expected::Known(Type::Primitive(Primitive::Bool)),
-                            syntax_tree.right.span(),
-                            handler,
-                        )?;
-
-                        rhs
-                    };
-
-                    // pop the scope
-                    assert_eq!(
-                        self.stack.pop_scope().map(|x| x.scope_id()),
-                        Some(false_branch)
-                    );
-                    let _ = self.current_block_mut().add_instruction(
-                        Instruction::ScopePop(ScopePop(false_branch)),
-                    );
-
-                    // jump to the successor block
-                    let _ = self
-                        .intermediate_representation
-                        .control_flow_graph
-                        .insert_terminator(
-                            self.current_block_id,
-                            Terminator::Jump(Jump::Unconditional(
-                                instruction::UnconditionalJump {
-                                    target: successor_block_id,
-                                },
-                            )),
-                        );
-
-                    (value, self.current_block_id)
-                };
-
-                // set the current block to the successor block
-                self.current_block_id = successor_block_id;
-
-                // shouldn't have more than 2 predecessors
-                assert!(self.current_block().predecessors().len() <= 2);
-
-                let value = match self.current_block().predecessors().len() {
-                    0 => {
-                        // unreachable
-                        Value::Literal(Literal::Unreachable(
-                            literal::Unreachable {
-                                r#type: Type::Primitive(Primitive::Bool),
-                                span: Some(syntax_tree.span()),
-                            },
-                        ))
-                    }
-
-                    1 => {
-                        // only one predecessor
-                        if self
-                            .current_block()
-                            .predecessors()
-                            .contains(&true_branch_last_block_id)
-                        {
-                            true_branch_value
-                        } else {
-                            assert!(self
-                                .current_block()
-                                .predecessors()
-                                .contains(&false_branch_last_block_id));
-
-                            false_branch_value
-                        }
-                    }
-
-                    2 => {
-                        // both predecessors
-
-                        let register_id = self.create_register_assignmnet(
-                            Assignment::Phi(Phi {
-                                r#type: Type::Primitive(Primitive::Bool),
-                                incoming_values: [
-                                    (
-                                        true_branch_last_block_id,
-                                        true_branch_value,
-                                    ),
-                                    (
-                                        false_branch_last_block_id,
-                                        false_branch_value,
-                                    ),
-                                ]
-                                .into_iter()
-                                .collect(),
-                            }),
-                            syntax_tree.span(),
-                        );
-
-                        Value::Register(register_id)
-                    }
-
-                    _ => unreachable!(),
-                };
-
-                Ok(Expression::RValue(value))
-                */
+                bind_short_circuit_binary(self, syntax_tree, handler).await
             }
 
             _ => self.bind_normal_binary(syntax_tree, handler).await,
         }
     }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn bind_short_circuit_binary(
+    binder: &mut Binder<'_>,
+    syntax_tree: &BinaryTree,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Expression, Error> {
+    let successor_block_id = binder.new_block();
+
+    let lhs = binder
+        .bind_value_or_error(&syntax_tree.left, Some(&Type::bool()), handler)
+        .await?;
+
+    let true_block_id = binder.new_block();
+    let false_block_id = binder.new_block();
+
+    binder.insert_terminator(Terminator::Jump(Jump::Conditional(
+        ConditionalJump {
+            condition: lhs,
+            true_target: true_block_id,
+            false_target: false_block_id,
+        },
+    )));
+
+    let (true_branch, false_branch) = {
+        let result = binder.new_child_branch(NonZeroUsize::new(2).unwrap());
+
+        (result[0], result[1])
+    };
+
+    // true branch
+    let (true_branch_value, true_branch_last_block_id) = {
+        binder.set_current_block_id(true_block_id);
+
+        // push the scope
+        binder.push_scope_with(true_branch, false);
+
+        let value = if matches!(
+            syntax_tree.operator,
+            pernixc_syntax::expression::binary::Operator::LogicalOr(_)
+        ) {
+            Value::Literal(Literal::Boolean(Boolean {
+                value: true,
+                span: Some(syntax_tree.left.span()),
+            }))
+        } else {
+            binder
+                .bind_value_or_error(
+                    &syntax_tree.right,
+                    Some(&Type::bool()),
+                    handler,
+                )
+                .await?
+        };
+
+        binder.pop_scope(true_branch);
+
+        // jump to the successor block
+        binder.insert_terminator(Terminator::Jump(Jump::Unconditional(
+            instruction::UnconditionalJump { target: successor_block_id },
+        )));
+
+        (value, binder.current_block_id())
+    };
+
+    // false block
+    let (false_branch_value, false_branch_last_block_id) = {
+        binder.set_current_block_id(false_block_id);
+
+        // push the scope
+        binder.push_scope_with(false_branch, false);
+
+        let value = if matches!(
+            syntax_tree.operator,
+            pernixc_syntax::expression::binary::Operator::LogicalAnd(_)
+        ) {
+            Value::Literal(Literal::Boolean(Boolean {
+                value: false,
+                span: Some(syntax_tree.left.span()),
+            }))
+        } else {
+            binder
+                .bind_value_or_error(
+                    &syntax_tree.right,
+                    Some(&Type::bool()),
+                    handler,
+                )
+                .await?
+        };
+
+        binder.pop_scope(false_branch);
+
+        // jump to the successor block
+        binder.insert_terminator(Terminator::Jump(Jump::Unconditional(
+            instruction::UnconditionalJump { target: successor_block_id },
+        )));
+
+        (value, binder.current_block_id())
+    };
+
+    // set the current block to the successor block
+    binder.set_current_block_id(successor_block_id);
+
+    // shouldn't have more than 2 predecessors
+    assert!(binder.current_block().predecessors().len() <= 2);
+
+    let value = match binder.current_block().predecessors().len() {
+        0 => {
+            // unreachable
+            Value::Literal(Literal::Unreachable(literal::Unreachable {
+                r#type: Type::Primitive(Primitive::Bool),
+                span: Some(syntax_tree.span()),
+            }))
+        }
+
+        1 => {
+            // only one predecessor
+            if binder
+                .current_block()
+                .predecessors()
+                .contains(&true_branch_last_block_id)
+            {
+                true_branch_value
+            } else {
+                assert!(binder
+                    .current_block()
+                    .predecessors()
+                    .contains(&false_branch_last_block_id));
+
+                false_branch_value
+            }
+        }
+
+        2 => {
+            // both predecessors
+
+            let register_id = binder.create_register_assignment(
+                Assignment::Phi(Phi {
+                    r#type: Type::Primitive(Primitive::Bool),
+                    incoming_values: [
+                        (true_branch_last_block_id, true_branch_value),
+                        (false_branch_last_block_id, false_branch_value),
+                    ]
+                    .into_iter()
+                    .collect(),
+                }),
+                syntax_tree.span(),
+            );
+
+            Value::Register(register_id)
+        }
+
+        _ => unreachable!(),
+    };
+
+    Ok(Expression::RValue(value))
 }
 
 impl Bind<&BinaryNode> for Binder<'_> {
