@@ -27,5 +27,10 @@ name = "snapshot_e2e"
 path = "test/snapshot/mod.rs"
 
 
+[[test]]
+name = "run_e2e"
+path = "test/run/mod.rs"
+
+
 [lints]
 workspace = true
