@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mismatched types: expected `bool`, found `{number}`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/infer/main.pnx:19:14
+   │
+19 │     vec.push(53)  # error
+   │              ^^ expected `bool`, found `{number}`
+   │
+   = ensure the expression type matches the expected type
+
+error: type annotation is required for generic parameter `T` of `main::[implements Vector[T]]`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/infer/main.pnx:21:22
+   │
+21 │     let mut newVec = Vector::new()
+   │                      ^^^^^^^^^^^^^
+   │
+   = consider adding a type annotation using syntax such as `main::[implements Vector[T]][Type]`
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

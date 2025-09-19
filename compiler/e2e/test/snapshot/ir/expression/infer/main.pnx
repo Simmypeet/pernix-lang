@@ -1,0 +1,23 @@
+# fake vector
+public struct Vector[T]:
+    private _marker: phantom T
+
+
+implements[T] Vector[T]:
+    public function new() -> this:
+        return this { _marker: phantom }
+
+    
+    public function push(self: &mut this, value: T):
+        pass
+    
+
+public function main():
+    let mut vec = Vector::new()
+    vec.push(true)
+    vec.push(false)
+    vec.push(53)  # error
+
+    let mut newVec = Vector::new()
+
+    # newVec type is not inferred
