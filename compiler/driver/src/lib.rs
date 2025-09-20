@@ -230,23 +230,29 @@ pub async fn run(
 
             x.set_input(
                 pernixc_target::LinkKey(local_target_id),
-                Arc::new(std::iter::empty().collect()),
+                Arc::new(std::iter::once(TargetID::CORE).collect()),
             )
             .await;
 
             x.set_input(
                 pernixc_target::AllTargetIDsKey,
-                Arc::new(std::iter::once(local_target_id).collect()),
+                Arc::new(
+                    [local_target_id, TargetID::CORE].into_iter().collect(),
+                ),
             )
             .await;
 
             x.set_input(
                 pernixc_target::MapKey,
                 Arc::new(
-                    std::iter::once((
-                        argument.command.input().target_name(),
-                        local_target_id,
-                    ))
+                    [
+                        (
+                            argument.command.input().target_name(),
+                            local_target_id,
+                        ),
+                        ("core".into(), TargetID::CORE),
+                    ]
+                    .into_iter()
                     .collect(),
                 ),
             )
