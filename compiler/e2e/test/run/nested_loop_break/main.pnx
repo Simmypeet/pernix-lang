@@ -1,0 +1,35 @@
+## Case
+## 3 
+## 2
+## 2 
+## 2
+
+
+extern "C":
+    public function printf(fmt: &uint8, ...) -> int32
+    public function scanf(fmt: &uint8, ...) -> int32
+
+
+public function main():
+    let mut a = 0
+    scanf(&"%d\0".[0], &mut a)
+
+    loop:
+        printf(&"Counting down: %d\n\0".[0], a)
+        a -= 1
+
+        let mut b = 0
+        scanf(&"%d\0".[0], &mut b)
+        
+        loop:
+            printf(&"  Inner counting down: %d\n\0".[0], b)
+            b -= 1
+
+            if b == 0:
+                printf(&"  Inner Liftoff!\n\0".[0])
+                break
+            
+
+        if a == 0:
+            printf(&"Liftoff!\n\0".[0])
+            break

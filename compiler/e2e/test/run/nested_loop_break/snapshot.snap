@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = """
+3
+2
+2
+2"""
+stdout = """
+Counting down: 3
+  Inner counting down: 2
+  Inner counting down: 1
+  Inner Liftoff!
+Counting down: 2
+  Inner counting down: 2
+  Inner counting down: 1
+  Inner Liftoff!
+Counting down: 1
+  Inner counting down: 2
+  Inner counting down: 1
+  Inner Liftoff!
+Liftoff!"""
+stderr = ""
