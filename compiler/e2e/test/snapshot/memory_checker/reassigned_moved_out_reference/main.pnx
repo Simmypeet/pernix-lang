@@ -1,0 +1,9 @@
+public function consume[T](x: T):
+    pass
+
+
+public function test[T](mut x: T, mut y: T):
+    scope: 
+        let mut z = &mut x
+        consume(*z)
+        z = &mut y

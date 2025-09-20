@@ -1,0 +1,17 @@
+public function consume[T](x: T):
+    pass
+
+
+public function test[T](mut x: T, mut y: T, cond: bool):
+    let mut ref = &mut x
+    consume(*ref)
+
+    match (cond, cond):
+        (true, false): 
+            *ref = y
+
+        (false, false):
+            *ref = y
+        
+        (.., true):
+            *ref = y

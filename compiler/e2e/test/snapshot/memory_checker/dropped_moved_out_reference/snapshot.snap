@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the value behind the mutable reference has been moved out and needs to be restored
+  ╭─ compiler/e2e/test/snapshot/memory_checker/dropped_moved_out_reference/main.pnx:8:17
+  │
+8 │         consume(*y)
+  │                 ^^
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

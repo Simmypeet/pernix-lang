@@ -1,0 +1,8 @@
+public function consume[T](x: T):
+    pass
+
+
+public function movedOutOfReference[T](mut x: T):
+    scope:
+        let y = &mut x
+        consume(*y)
