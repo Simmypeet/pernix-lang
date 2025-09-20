@@ -27,6 +27,7 @@ pub mod subtype;
 pub mod term;
 pub mod unification;
 pub mod variance;
+pub mod wf_check;
 
 /// An error that occurs when the number of queries exceeds the limit.
 #[derive(
