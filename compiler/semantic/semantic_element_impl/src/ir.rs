@@ -7,11 +7,13 @@ use pernixc_symbol::{kind::get_kind, syntax::get_function_body_syntax};
 
 use crate::build::{self, Build, Output};
 
+pub mod diagnostic;
+
 async fn build_ir_for_function(
     engine: &pernixc_query::TrackedEngine,
     key: &pernixc_ir::Key,
     mut binder: Binder<'_>,
-    storage: &Storage<pernixc_bind::diagnostic::Diagnostic>,
+    storage: &Storage<diagnostic::Diagnostic>,
 ) -> Result<Arc<pernixc_ir::IR>, executor::CyclicError> {
     let function_body_syntax = engine.get_function_body_syntax(key.0).await;
 
@@ -25,17 +27,31 @@ async fn build_ir_for_function(
         binder.bind_statement(&statement, storage).await.unwrap();
     }
 
-    Ok(Arc::new(match binder.finalize(storage).await {
+    // finalize the binder to an ir
+    let mut ir = match binder.finalize(storage).await {
         Ok(ir) => ir,
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
         Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
-    }))
+    };
+
+    // do memory checking analysis
+    match pernixc_memory_checker::memory_check(engine, &mut ir, key.0, storage)
+        .await
+    {
+        Ok(()) => {}
+        Err(UnrecoverableError::CyclicDependency(error)) => {
+            return Err(error);
+        }
+        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+    }
+
+    Ok(Arc::new(ir))
 }
 
 impl Build for pernixc_ir::Key {
-    type Diagnostic = pernixc_bind::diagnostic::Diagnostic;
+    type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(
         engine: &pernixc_query::TrackedEngine,

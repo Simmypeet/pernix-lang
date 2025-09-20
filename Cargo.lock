@@ -1540,6 +1540,7 @@ dependencies = [
  "pernixc_hash",
  "pernixc_ir",
  "pernixc_lexical",
+ "pernixc_memory_checker",
  "pernixc_query",
  "pernixc_register",
  "pernixc_resolution",
