@@ -1209,6 +1209,7 @@ dependencies = [
  "indicatif",
  "inkwell",
  "parking_lot 0.12.4",
+ "pernixc_corelib",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_hash",

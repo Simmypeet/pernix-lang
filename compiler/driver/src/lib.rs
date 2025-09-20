@@ -220,7 +220,11 @@ pub async fn run(
         TargetID::from_target_name(&argument.command.input().target_name());
     let target_name = argument.command.input().target_name();
 
-    engine
+    let mut engine = Arc::new(engine);
+    pernixc_corelib::initialize_corelib(&mut engine).await;
+
+    Arc::get_mut(&mut engine)
+        .unwrap()
         .input_session(async |x| {
             x.always_reverify();
 
@@ -271,7 +275,6 @@ pub async fn run(
 
     // now the query can start ...
 
-    let engine = Arc::new(engine);
     let tracked_engine = engine.tracked();
 
     let source_map = tracked_engine.create_source_map(local_target_id).await;
