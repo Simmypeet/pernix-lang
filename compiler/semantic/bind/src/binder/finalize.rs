@@ -34,6 +34,9 @@ impl Binder<'_> {
             .current_block_mut()
             .add_instruction(Instruction::ScopePop(ScopePop(root_scope_id)));
 
+        // remove all unreachable blocks
+        self.ir.control_flow_graph.remove_unreachable_blocks();
+
         // we're in the function, check if all paths return the value
         'out: {
             let symbol_kind = self.engine.get_kind(self.current_site).await;

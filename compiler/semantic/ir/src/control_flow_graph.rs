@@ -261,7 +261,7 @@ impl ControlFlowGraph {
 
     /// Removes all the blocks in the control flow graphs that are unreachable
     /// from the entry block.
-    pub fn remove_unerachable_blocks(&mut self) -> RemoveUnreachableBlocks<'_> {
+    pub fn remove_unreachable_blocks(&mut self) -> RemoveUnreachableBlocks<'_> {
         RemoveUnreachableBlocks {
             unreachable_blocks: self
                 .blocks()
