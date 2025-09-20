@@ -2223,16 +2223,27 @@ pub async fn get_target_root_module_id(
     self: &TrackedEngine,
     target_id: TargetID,
 ) -> ID {
-    let invocation_arguments = self.get_invocation_arguments(target_id).await;
-    let target_name = invocation_arguments.command.input().target_name();
+    if target_id == TargetID::CORE {
+        self.calculate_qualified_name_id(
+            std::iter::once("core"),
+            target_id,
+            None,
+            0,
+        )
+        .await
+    } else {
+        let invocation_arguments =
+            self.get_invocation_arguments(target_id).await;
+        let target_name = invocation_arguments.command.input().target_name();
 
-    self.calculate_qualified_name_id(
-        std::iter::once(target_name.as_str()),
-        target_id,
-        None,
-        0,
-    )
-    .await
+        self.calculate_qualified_name_id(
+            std::iter::once(target_name.as_str()),
+            target_id,
+            None,
+            0,
+        )
+        .await
+    }
 }
 
 /// Used to identify in which table node the symbol is defined.

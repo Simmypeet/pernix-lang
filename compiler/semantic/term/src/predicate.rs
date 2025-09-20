@@ -67,6 +67,12 @@ impl Predicate {
         }
     }
 
+    /// Creates a new [`Predicate::TypeOutlives`] predicate.
+    #[must_use]
+    pub const fn type_outlives(operand: Type, bound: Lifetime) -> Self {
+        Self::TypeOutlives(outlives::Outlives { operand, bound })
+    }
+
     /// Applies the instantiate to the predicate.
     pub fn instantiate(&mut self, substitution: &Instantiation) {
         match self {
