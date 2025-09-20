@@ -1,0 +1,27 @@
+public function first():
+    let .. = match true:
+        true:  1
+        true:  2  # unreachable
+        false: 3 
+
+
+public enum Order:
+    First
+    Second
+    Third
+
+
+public function second(order: Order):
+    let .. = match order:
+        case First:  1
+        case Second: 2
+        case First:  3  # unreachable
+        case Third:  4
+
+
+public function third(order: Order):
+    let .. = match order:
+        case First:  1
+        name:        3 
+        case Third:  4 # unreachable
+
