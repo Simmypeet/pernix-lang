@@ -12,10 +12,10 @@ public module inner:
 
 
     public trait MyTrait[T]:
-        public function publicMethod(self: T)
+        public function publicMethod(self: &T)
         
 
-        private function privateMethod(self: T)
+        private function privateMethod(self: &T)
 
 
     implements Test:
