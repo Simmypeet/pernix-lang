@@ -180,6 +180,7 @@ async fn test(file_path: &Path) {
 
     // Convert crlf to lf.
     settings.add_filter(r"\r\n", "\n");
+    settings.add_filter(r"\r", "\n");
 
     let full_path = std::fs::canonicalize(file_path).unwrap();
     settings.set_snapshot_path(full_path.parent().unwrap());
