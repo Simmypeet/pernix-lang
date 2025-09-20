@@ -36,6 +36,7 @@ members = [
     "compiler/semantic/semantic_element_impl",
     "compiler/semantic/bind",
     "compiler/semantic/ir",
+    "compiler/semantic/memory_checker",
 
     "compiler/codegen/llvm",
 

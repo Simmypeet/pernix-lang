@@ -6,48 +6,20 @@ use diagnostic::{
     MoveInLoop, MovedOutValueFromMutableReference, UseAfterMove,
     UseBeforeInitialization,
 };
-use pernixc_abort::Abort;
 use pernixc_arena::{Arena, ID};
 use pernixc_handler::Handler;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            function_signature::FunctionSignature,
-            ir::{
-                address::{self, Address, Memory},
-                alloca::Alloca,
-                control_flow_graph::Block,
-                instruction::{
-                    Instruction, Jump, Terminator, UnconditionalJump,
-                },
-                model,
-                value::register::{Assignment, Borrow, Load},
-                Representation, Values,
-            },
-        },
-        input::SymbolKind,
-    },
-    diagnostic::Diagnostic,
-    table::{GlobalID, Table},
-    term::{
-        generic_arguments::GenericArguments,
-        predicate::{PositiveMarker, Predicate},
-        r#type::Qualifier,
-        Model,
-    },
-};
 use pernixc_source_file::Span;
-use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
-    environment::{Environment as TyEnvironment, GetActivePremiseExt},
+    environment::Environment as TyEnvironment,
     normalizer::{self, Normalizer},
-    well_formedness,
 };
 use state::{SetStateSucceeded, Stack, Summary};
 
 pub mod diagnostic;
-pub(crate) mod simplify_drop;
+// pub(crate) mod simplify_drop;
 pub(crate) mod state;
+
+/*
 
 fn handle_store(
     store_address: &Address<model::Model>,
@@ -848,3 +820,5 @@ pub fn memory_check(
 
     Ok(())
 }
+
+*/

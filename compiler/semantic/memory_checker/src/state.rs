@@ -1,35 +1,36 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    ops::Deref,
+};
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
-use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            fields,
-            generic_parameters::GenericParameters,
-            ir::{
-                address::{self, Address, Offset},
-                instruction::{Drop, DropUnpackTuple, Instruction},
-                model, scope,
-            },
-            variant,
-        },
-        input::SymbolKind,
-    },
-    diagnostic::Diagnostic,
-    table::{GlobalID, Table},
-    term::{
-        self,
-        instantiation::{self, Instantiation},
-        r#type::{self, Qualifier, Type},
-        Model, Symbol,
-    },
+use pernixc_ir::{
+    address::{self, Address, Offset},
+    instruction::{Drop, DropUnpackTuple, Instruction},
+    scope,
 };
-use pernixc_source_file::Span;
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_semantic_element::{
+    fields::{self, get_fields},
+    variant::get_variant_associated_type,
+};
+use pernixc_symbol::kind::{get_kind, Kind};
+use pernixc_target::Global;
+use pernixc_term::{
+    generic_arguments::Symbol,
+    instantiation::get_instantiation,
+    r#type::{self, Qualifier, Type},
+    tuple,
+};
+use pernixc_type_system::{
+    environment::Environment, normalizer::Normalizer, UnrecoverableError,
+};
+
+use crate::diagnostic::Diagnostic;
 
 /// Contains the state of each field in the struct.
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -39,7 +40,7 @@ pub struct Struct {
     states_by_field_id: HashMap<ID<fields::Field>, State>,
 
     #[get_copy = "pub"]
-    struct_id: GlobalID,
+    struct_id: Global<pernixc_symbol::ID>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -67,7 +68,7 @@ pub struct Enum {
     state: Box<State>,
 
     #[get_copy = "pub"]
-    variant_id: GlobalID,
+    variant_id: Global<pernixc_symbol::ID>,
 }
 
 /// The state of value behind a mutable reference.
@@ -92,7 +93,7 @@ pub enum Projection {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Uninitialized {
     /// The span that last moved the value.
-    latest_accessor: Option<Span>,
+    latest_accessor: Option<RelativeSpan>,
 
     /// Used to determine the order of moves. The higher the version, the
     /// later/newer the move.
@@ -101,7 +102,7 @@ pub struct Uninitialized {
 
 impl Uninitialized {
     /// Returns the latest accessor that moved the value.
-    pub const fn latest_accessor(&self) -> Option<&Span> {
+    pub const fn latest_accessor(&self) -> Option<&RelativeSpan> {
         self.latest_accessor.as_ref()
     }
 }
@@ -127,7 +128,7 @@ pub enum State {
 
 fn try_simplify_to_uninitialized<'a>(
     iterator: impl IntoIterator<Item = &'a State>,
-) -> Option<(&'a Span, usize)> {
+) -> Option<(&'a RelativeSpan, usize)> {
     let mut iterator = iterator.into_iter();
 
     let mut current = iterator
@@ -159,7 +160,7 @@ fn try_simplify_to_uninitialized<'a>(
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner)]
 enum LatestLoad<'a> {
     Uninitialized,
-    Moved(&'a Span, usize),
+    Moved(&'a RelativeSpan, usize),
 }
 
 /// Summary of the state.
@@ -172,7 +173,7 @@ pub enum Summary {
     Uninitialized,
 
     /// The value has been moved out by some instructions
-    Moved(Span),
+    Moved(RelativeSpan),
 }
 
 /// Two memory contains the projection that aren't copmatible.
@@ -234,7 +235,7 @@ impl Memory {
                 *version += 1;
 
                 *self_state = State::Total(Initialized::False(Uninitialized {
-                    latest_accessor: falsed.latest_accessor.clone(),
+                    latest_accessor: falsed.latest_accessor,
                     version: new_version,
                 }));
 
@@ -433,22 +434,24 @@ impl State {
 
     /// Returns a list of drop instructions that would make the `alternate`
     /// state the same as the current state.
-    pub fn get_alternate_drop_instructions(
+    #[allow(clippy::too_many_lines)]
+    pub async fn get_alternate_drop_instructions(
         &self,
         alternate: &Self,
-        address: &Address<model::Model>,
-        table: &Table,
-    ) -> Result<Vec<Instruction<model::Model>>, Abort> {
+        address: &Address,
+        engine: &TrackedEngine,
+    ) -> Result<Vec<Instruction>, CyclicError> {
         match (self, alternate) {
             (Self::Total(Initialized::False(_)), other) => {
-                other.get_drop_instructions(address, table)
+                other.get_drop_instructions(address, engine).await
             }
 
             (Self::Projection(_), Self::Total(Initialized::False(_)))
             | (Self::Total(Initialized::True), _) => Ok(Vec::new()),
 
             (this, Self::Total(Initialized::True)) => {
-                this.get_drop_instructions_interanl(address, table, true, true)
+                this.get_drop_instructions_internal(address, engine, true, true)
+                    .await
             }
 
             (
@@ -463,7 +466,7 @@ impl State {
                     other.states_by_field_id.len()
                 );
 
-                let fields = table.query::<fields::Fields>(this.struct_id)?;
+                let fields = engine.get_fields(this.struct_id).await?;
 
                 assert_eq!(this.states_by_field_id.len(), fields.fields.len());
 
@@ -473,14 +476,17 @@ impl State {
                         &other.states_by_field_id[&field_id];
 
                     instructions.extend(
-                        this_field_state.get_alternate_drop_instructions(
-                            other_field_state,
-                            &Address::Field(address::Field {
-                                struct_address: Box::new(address.clone()),
-                                id: field_id,
-                            }),
-                            table,
-                        )?,
+                        Box::pin(
+                            this_field_state.get_alternate_drop_instructions(
+                                other_field_state,
+                                &Address::Field(address::Field {
+                                    struct_address: Box::new(address.clone()),
+                                    id: field_id,
+                                }),
+                                engine,
+                            ),
+                        )
+                        .await?,
                     );
                 }
 
@@ -504,14 +510,17 @@ impl State {
                     );
 
                     instructions.extend(
-                        this_element.state.get_alternate_drop_instructions(
-                            &other_element.state,
-                            &Address::Tuple(address::Tuple {
-                                tuple_address: Box::new(address.clone()),
-                                offset: Offset::FromStart(index),
-                            }),
-                            table,
-                        )?,
+                        Box::pin(
+                            this_element.state.get_alternate_drop_instructions(
+                                &other_element.state,
+                                &Address::Tuple(address::Tuple {
+                                    tuple_address: Box::new(address.clone()),
+                                    offset: Offset::FromStart(index),
+                                }),
+                                engine,
+                            ),
+                        )
+                        .await?,
                     );
                 }
 
@@ -524,27 +533,31 @@ impl State {
             ) => {
                 assert_eq!(this.variant_id, other.variant_id);
 
-                this.state.get_alternate_drop_instructions(
+                Box::pin(this.state.get_alternate_drop_instructions(
                     &other.state,
                     &Address::Variant(address::Variant {
                         enum_address: Box::new(address.clone()),
                         id: this.variant_id,
                     }),
-                    table,
-                )
+                    engine,
+                ))
+                .await
             }
 
             (
                 Self::Projection(Projection::MutableReference(this)),
                 Self::Projection(Projection::MutableReference(other)),
-            ) => this.state.get_alternate_drop_instructions(
-                &other.state,
-                &Address::Reference(address::Reference {
-                    reference_address: Box::new(address.clone()),
-                    qualifier: Qualifier::Mutable,
-                }),
-                table,
-            ),
+            ) => {
+                Box::pin(this.state.get_alternate_drop_instructions(
+                    &other.state,
+                    &Address::Reference(address::Reference {
+                        reference_address: Box::new(address.clone()),
+                        qualifier: Qualifier::Mutable,
+                    }),
+                    engine,
+                ))
+                .await
+            }
 
             (Self::Projection(_), Self::Projection(_)) => {
                 panic!("invalid projection state")
@@ -553,13 +566,13 @@ impl State {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn get_drop_instructions_interanl(
+    async fn get_drop_instructions_internal(
         &self,
-        address: &Address<model::Model>,
-        table: &Table,
+        address: &Address,
+        engine: &TrackedEngine,
         negative: bool,
         should_drop_mutable_reference: bool,
-    ) -> Result<Vec<Instruction<model::Model>>, Abort> {
+    ) -> Result<Vec<Instruction>, CyclicError> {
         match self {
             Self::Total(Initialized::True) => Ok(if negative {
                 Vec::new()
@@ -575,21 +588,22 @@ impl State {
 
             Self::Projection(Projection::Struct(st)) => {
                 let mut instructions = Vec::new();
-                let fields = table.query::<fields::Fields>(st.struct_id)?;
+                let fields = engine.get_fields(st.struct_id).await?;
 
                 for field_id in fields.field_declaration_order.iter().copied() {
                     let field_state = &st.states_by_field_id[&field_id];
 
                     instructions.extend(
-                        field_state.get_drop_instructions_interanl(
+                        Box::pin(field_state.get_drop_instructions_internal(
                             &Address::Field(address::Field {
                                 struct_address: Box::new(address.clone()),
                                 id: field_id,
                             }),
-                            table,
+                            engine,
                             negative,
                             should_drop_mutable_reference,
-                        )?,
+                        ))
+                        .await?,
                     );
                 }
 
@@ -633,28 +647,33 @@ impl State {
                         }));
                     } else {
                         instructions.extend(
-                            element.state.get_drop_instructions_interanl(
-                                &Address::Tuple(address::Tuple {
-                                    tuple_address: Box::new(address.clone()),
-                                    offset: unpacked_position.map_or(
-                                        Offset::FromStart(index),
-                                        |x| {
-                                            if index < x {
-                                                Offset::FromStart(index)
-                                            } else {
-                                                Offset::FromEnd(
-                                                    tuple.elements.len()
-                                                        - index
-                                                        - 1,
-                                                )
-                                            }
-                                        },
-                                    ),
-                                }),
-                                table,
-                                negative,
-                                should_drop_mutable_reference,
-                            )?,
+                            Box::pin(
+                                element.state.get_drop_instructions_internal(
+                                    &Address::Tuple(address::Tuple {
+                                        tuple_address: Box::new(
+                                            address.clone(),
+                                        ),
+                                        offset: unpacked_position.map_or(
+                                            Offset::FromStart(index),
+                                            |x| {
+                                                if index < x {
+                                                    Offset::FromStart(index)
+                                                } else {
+                                                    Offset::FromEnd(
+                                                        tuple.elements.len()
+                                                            - index
+                                                            - 1,
+                                                    )
+                                                }
+                                            },
+                                        ),
+                                    }),
+                                    engine,
+                                    negative,
+                                    should_drop_mutable_reference,
+                                ),
+                            )
+                            .await?,
                         );
                     }
                 }
@@ -663,28 +682,30 @@ impl State {
             }
 
             Self::Projection(Projection::Enum(en)) => {
-                en.state.get_drop_instructions_interanl(
+                Box::pin(en.state.get_drop_instructions_internal(
                     &Address::Variant(address::Variant {
                         enum_address: Box::new(address.clone()),
                         id: en.variant_id,
                     }),
-                    table,
+                    engine,
                     negative,
                     should_drop_mutable_reference,
-                )
+                ))
+                .await
             }
 
             Self::Projection(Projection::MutableReference(state)) => {
                 if should_drop_mutable_reference {
-                    state.state.get_drop_instructions_interanl(
+                    Box::pin(state.state.get_drop_instructions_internal(
                         &Address::Reference(address::Reference {
                             reference_address: Box::new(address.clone()),
                             qualifier: Qualifier::Mutable,
                         }),
-                        table,
+                        engine,
                         negative,
                         should_drop_mutable_reference,
-                    )
+                    ))
+                    .await
                 } else {
                     Ok(Vec::new())
                 }
@@ -694,23 +715,23 @@ impl State {
 
     /// Gets a list of drop instructions that will drop all the initialized
     /// values in the memory.
-    pub fn get_drop_instructions(
+    pub async fn get_drop_instructions(
         &self,
-        address: &Address<model::Model>,
-        table: &Table,
-    ) -> Result<Vec<Instruction<model::Model>>, Abort> {
-        self.get_drop_instructions_interanl(address, table, false, false)
+        address: &Address,
+        table: &TrackedEngine,
+    ) -> Result<Vec<Instruction>, CyclicError> {
+        self.get_drop_instructions_internal(address, table, false, false).await
     }
 
     /// Returns `Some` with the register that move, if there's a moved out value
     /// in a mutable reference.
-    pub fn get_moved_out_mutable_reference(&self) -> Option<&Span> {
+    pub fn get_moved_out_mutable_reference(&self) -> Option<&RelativeSpan> {
         self.get_moved_out_mutable_reference_internal().map(|x| x.0)
     }
 
     fn get_moved_out_mutable_reference_internal(
         &self,
-    ) -> Option<(&Span, usize)> {
+    ) -> Option<(&RelativeSpan, usize)> {
         match self {
             Self::Total(_) => None,
 
@@ -750,7 +771,7 @@ impl State {
         self.get_latest_accessor_internal().map_or(Summary::Initialized, |x| {
             match x {
                 LatestLoad::Uninitialized => Summary::Uninitialized,
-                LatestLoad::Moved(id, _) => Summary::Moved(id.clone()),
+                LatestLoad::Moved(id, _) => Summary::Moved(*id),
             }
         })
     }
@@ -841,7 +862,7 @@ impl State {
                     try_simplify_to_uninitialized(states_by_field_id.values())
                 {
                     *self = Self::Total(Initialized::False(Uninitialized {
-                        latest_accessor: Some(latest_accessor.clone()),
+                        latest_accessor: Some(*latest_accessor),
                         version,
                     }));
                 }
@@ -865,7 +886,7 @@ impl State {
                     )
                 {
                     *self = Self::Total(Initialized::False(Uninitialized {
-                        latest_accessor: Some(latest_accessor.clone()),
+                        latest_accessor: Some(*latest_accessor),
                         version,
                     }));
                 }
@@ -898,7 +919,7 @@ pub struct Scope {
     scope_id: ID<scope::Scope>,
 
     #[get = "pub"]
-    memories_by_address: HashMap<address::Memory<model::Model>, Memory>,
+    memories_by_address: HashMap<address::Memory, Memory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Getters, CopyGetters)]
@@ -906,7 +927,7 @@ pub struct Memory {
     #[get = "pub"]
     state: State,
     #[get = "pub"]
-    r#type: Type<model::Model>,
+    r#type: Type,
 
     version: usize,
 }
@@ -915,28 +936,26 @@ impl Default for Memory {
     fn default() -> Self {
         Self {
             state: State::Total(Initialized::True),
-            r#type: Type::Tuple(term::Tuple { elements: Vec::new() }),
+            r#type: Type::Tuple(tuple::Tuple { elements: Vec::new() }),
             version: 0,
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 enum SetStateResultInternal<'a> {
-    Unchanged(Initialized, Address<model::Model>),
+    Unchanged(Initialized, Address),
     Done(State),
-    Continue {
-        state: &'a mut State,
-        ty: Type<model::Model>,
-        version: &'a mut usize,
-    },
+    Continue { state: &'a mut State, ty: Type, version: &'a mut usize },
 }
 
 /// Represents the result of setting the state.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum SetStateSucceeded {
     /// The state was not changed. The state was already satisfied.
-    Unchanged(Initialized, Address<model::Model>),
+    Unchanged(Initialized, Address),
 
     /// The state was changed. The variant holds the state that was replaced.
     Updated(State),
@@ -961,7 +980,7 @@ pub enum ScopeMergeError {
     DifferentMemoryCount,
 
     /// The memory address of one scope is not found in the other scope.
-    MemoryNotFound(address::Memory<model::Model>),
+    MemoryNotFound(address::Memory),
 
     /// The memory state is not compatible.
     #[error(transparent)]
@@ -1013,9 +1032,9 @@ impl Scope {
     #[must_use]
     pub fn new_state(
         &mut self,
-        memory: address::Memory<model::Model>,
+        memory: address::Memory,
         initialized: bool,
-        ty: Type<model::Model>,
+        ty: Type,
     ) -> bool {
         match self.memories_by_address.entry(memory) {
             Entry::Occupied(_) => false,
@@ -1039,18 +1058,18 @@ impl Scope {
     }
 
     /// Checks if the memory state is contained in this scope.
-    pub fn contains(&self, memory: &address::Memory<model::Model>) -> bool {
+    pub fn contains(&self, memory: &address::Memory) -> bool {
         self.memories_by_address.contains_key(memory)
     }
 
     /// Sets the state of the value in memory as uninitialized (moved out).
-    pub fn set_uninitialized(
+    pub async fn set_uninitialized<N: Normalizer>(
         &mut self,
-        address: &Address<model::Model>,
-        load_span: Span,
-        environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<SetStateSucceeded, Abort> {
+        address: &Address,
+        load_span: RelativeSpan,
+        environment: &Environment<'_, N>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<SetStateSucceeded, UnrecoverableError> {
         let result = self
             .set_state_internal(
                 address,
@@ -1060,6 +1079,7 @@ impl Scope {
                 environment,
                 handler,
             )
+            .await
             .map(|x| match x {
                 SetStateResultInternal::Unchanged(a, b) => {
                     SetStateSucceeded::Unchanged(a, b)
@@ -1085,13 +1105,13 @@ impl Scope {
     }
 
     /// Sets the state of the value in memory as initialized.
-    pub fn set_initialized(
+    pub async fn set_initialized<N: Normalizer>(
         &mut self,
-        address: &Address<model::Model>,
-        set_span: Span,
-        environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<SetStateSucceeded, Abort> {
+        address: &Address,
+        set_span: RelativeSpan,
+        environment: &Environment<'_, N>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<SetStateSucceeded, UnrecoverableError> {
         let result = self
             .set_state_internal(
                 address,
@@ -1101,6 +1121,7 @@ impl Scope {
                 environment,
                 handler,
             )
+            .await
             .map(|x| match x {
                 SetStateResultInternal::Unchanged(a, b) => {
                     SetStateSucceeded::Unchanged(a, b)
@@ -1126,7 +1147,7 @@ impl Scope {
     }
 
     /// Gets the state of the value in memory with the given address.
-    pub fn get_state(&self, address: &Address<model::Model>) -> Option<&State> {
+    pub fn get_state(&self, address: &Address) -> Option<&State> {
         match address {
             Address::Memory(memory) => {
                 self.memories_by_address.get(memory).map(|x| &x.state)
@@ -1184,16 +1205,16 @@ impl Scope {
     }
 
     // returns `Ok(None)` if the state is already satisfied
-    #[allow(clippy::too_many_lines)]
-    fn set_state_internal(
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    async fn set_state_internal<N: Normalizer>(
         &mut self,
-        address: &Address<model::Model>,
-        set_span: Span,
+        address: &Address,
+        set_span: RelativeSpan,
         set_initialized: bool,
         root: bool,
-        environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<SetStateResultInternal, Abort> {
+        environment: &Environment<'_, N>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<SetStateResultInternal<'_>, UnrecoverableError> {
         let (target_state, ty, version) = match address {
             Address::Memory(memory) => self
                 .memories_by_address
@@ -1208,14 +1229,18 @@ impl Scope {
                 .unwrap(),
 
             Address::Field(field) => {
-                let (state, ty, version) = match self.set_state_internal(
-                    &field.struct_address,
-                    set_span.clone(),
-                    set_initialized,
-                    false,
-                    environment,
-                    handler,
-                )? {
+                let (state, ty, version) = match Box::pin(
+                    self.set_state_internal(
+                        &field.struct_address,
+                        set_span,
+                        set_initialized,
+                        false,
+                        environment,
+                        handler,
+                    ),
+                )
+                .await?
+                {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
                     }
@@ -1229,23 +1254,18 @@ impl Scope {
                 };
 
                 assert_eq!(
-                    *environment.table().get::<SymbolKind>(struct_id),
-                    SymbolKind::Struct
+                    environment.tracked_engine().get_kind(struct_id).await,
+                    Kind::Struct
                 );
 
                 let fields =
-                    environment.table().query::<fields::Fields>(struct_id)?;
-                let struct_generic_params =
-                    environment
-                        .table()
-                        .query::<GenericParameters>(struct_id)?;
+                    environment.tracked_engine().get_fields(struct_id).await?;
 
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments,
-                    struct_id,
-                    &struct_generic_params,
-                )
-                .unwrap();
+                let instantiation = environment
+                    .tracked_engine()
+                    .get_instantiation(struct_id, generic_arguments)
+                    .await?
+                    .unwrap();
 
                 if let State::Total(current) = state {
                     // already satisfied
@@ -1277,21 +1297,17 @@ impl Scope {
                         .get_mut(&field.id)
                         .unwrap(),
                     {
-                        let mut ty = model::Model::from_default_type(
-                            fields.fields[field.id].r#type.clone(),
-                        );
+                        let mut ty = fields.fields[field.id].r#type.clone();
 
-                        instantiation::instantiate(&mut ty, &instantiation);
+                        instantiation.instantiate(&mut ty);
 
                         environment
                             .simplify(ty)
+                            .await
                             .map_err(|x| {
-                                x.report_overflow(|x| {
-                                    x.report_as_type_calculating_overflow(
-                                        set_span.clone(),
-                                        handler,
-                                    )
-                                })
+                                x.report_as_type_calculating_overflow(
+                                    set_span, &handler,
+                                )
                             })?
                             .result
                             .clone()
@@ -1301,21 +1317,25 @@ impl Scope {
             }
 
             Address::Tuple(tuple) => {
-                let (state, ty, version) = match self.set_state_internal(
-                    &tuple.tuple_address,
-                    set_span.clone(),
-                    set_initialized,
-                    false,
-                    environment,
-                    handler,
-                )? {
+                let (state, ty, version) = match Box::pin(
+                    self.set_state_internal(
+                        &tuple.tuple_address,
+                        set_span,
+                        set_initialized,
+                        false,
+                        environment,
+                        handler,
+                    ),
+                )
+                .await?
+                {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
                     }
                     rest => return Ok(rest),
                 };
 
-                let Type::Tuple(term::Tuple { elements }) = ty else {
+                let Type::Tuple(tuple::Tuple { elements }) = ty else {
                     panic!("expected tuple type");
                 };
 
@@ -1387,14 +1407,18 @@ impl Scope {
             }
 
             Address::Variant(variant) => {
-                let (state, ty, version) = match self.set_state_internal(
-                    &variant.enum_address,
-                    set_span.clone(),
-                    set_initialized,
-                    false,
-                    environment,
-                    handler,
-                )? {
+                let (state, ty, version) = match Box::pin(
+                    self.set_state_internal(
+                        &variant.enum_address,
+                        set_span,
+                        set_initialized,
+                        false,
+                        environment,
+                        handler,
+                    ),
+                )
+                .await?
+                {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
                     }
@@ -1408,30 +1432,27 @@ impl Scope {
                 };
 
                 assert_eq!(
-                    *environment.table().get::<SymbolKind>(enum_id),
-                    SymbolKind::Enum
+                    environment.tracked_engine().get_kind(enum_id).await,
+                    Kind::Enum
                 );
                 assert_eq!(
-                    *environment.table().get::<SymbolKind>(variant.id),
-                    SymbolKind::Variant
+                    environment.tracked_engine().get_kind(variant.id).await,
+                    Kind::Variant
                 );
 
                 let assocated_type = environment
-                    .table()
-                    .query::<variant::Variant>(variant.id)?
-                    .associated_type
-                    .clone()
+                    .tracked_engine()
+                    .get_variant_associated_type(variant.id)
+                    .await?
+                    .unwrap()
+                    .deref()
+                    .clone();
+
+                let instantiation = environment
+                    .tracked_engine()
+                    .get_instantiation(enum_id, generic_arguments)
+                    .await?
                     .unwrap();
-
-                let enum_generic_params =
-                    environment.table().query::<GenericParameters>(enum_id)?;
-
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments,
-                    enum_id,
-                    &enum_generic_params,
-                )
-                .unwrap();
 
                 if let State::Total(current) = state {
                     // already satisfied
@@ -1457,20 +1478,15 @@ impl Scope {
                         .state
                         .as_mut(),
                     {
-                        let mut ty =
-                            model::Model::from_default_type(assocated_type);
-
-                        instantiation::instantiate(&mut ty, &instantiation);
+                        instantiation.instantiate(&mut assocated_type.clone());
 
                         environment
-                            .simplify(ty)
+                            .simplify(assocated_type)
+                            .await
                             .map_err(|x| {
-                                x.report_overflow(|x| {
-                                    x.report_as_type_calculating_overflow(
-                                        set_span.clone(),
-                                        handler,
-                                    )
-                                })
+                                x.report_as_type_calculating_overflow(
+                                    set_span, &handler,
+                                )
                             })?
                             .result
                             .clone()
@@ -1481,14 +1497,18 @@ impl Scope {
 
             Address::Reference(reference) => {
                 // must be a mutable reference
-                let (state, ty, version) = match self.set_state_internal(
-                    &reference.reference_address,
-                    set_span.clone(),
-                    set_initialized,
-                    false,
-                    environment,
-                    handler,
-                )? {
+                let (state, ty, version) = match Box::pin(
+                    self.set_state_internal(
+                        &reference.reference_address,
+                        set_span,
+                        set_initialized,
+                        false,
+                        environment,
+                        handler,
+                    ),
+                )
+                .await?
+                {
                     SetStateResultInternal::Continue { state, ty, version } => {
                         (state, ty, version)
                     }
@@ -1587,22 +1607,19 @@ impl Stack {
 
     pub fn pop_scope(&mut self) -> Option<Scope> { self.scopes.pop() }
 
-    pub fn set_initialized(
+    pub async fn set_initialized<N: Normalizer>(
         &mut self,
-        address: &Address<model::Model>,
-        span: Span,
-        environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<SetStateSucceeded, Abort> {
+        address: &Address,
+        span: RelativeSpan,
+        environment: &Environment<'_, N>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<SetStateSucceeded, UnrecoverableError> {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
-                return scope.set_initialized(
-                    address,
-                    span,
-                    environment,
-                    handler,
-                );
+                return scope
+                    .set_initialized(address, span, environment, handler)
+                    .await;
             }
         }
 
@@ -1610,7 +1627,7 @@ impl Stack {
         panic!("Invalid address");
     }
 
-    pub fn get_state(&self, address: &Address<model::Model>) -> Option<&State> {
+    pub fn get_state(&self, address: &Address) -> Option<&State> {
         let root = address.get_root_memory();
 
         for scope in self.scopes.iter().rev() {
@@ -1623,22 +1640,19 @@ impl Stack {
         None
     }
 
-    pub fn set_uninitialized(
+    pub async fn set_uninitialized<N: Normalizer>(
         &mut self,
-        address: &Address<model::Model>,
-        move_span: Span,
-        environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<SetStateSucceeded, Abort> {
+        address: &Address,
+        move_span: RelativeSpan,
+        environment: &Environment<'_, N>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<SetStateSucceeded, UnrecoverableError> {
         let root = address.get_root_memory();
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains(root) {
-                return scope.set_uninitialized(
-                    address,
-                    move_span,
-                    environment,
-                    handler,
-                );
+                return scope
+                    .set_uninitialized(address, move_span, environment, handler)
+                    .await;
             }
         }
 
