@@ -512,7 +512,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 let position = context
                     .call_stack
                     .iter()
-                    .position(|x| (x.query.downcast_ref::<Q>() == Some(query)))
+                    .position(|x| x.query.downcast_ref::<Q>() == Some(query))
                     .expect("should exist");
 
                 // circular dependency
