@@ -1,5 +1,7 @@
 //! Manages the state of loops during binding.
 
+use std::collections::hash_map::Entry;
+
 use enum_as_inner::EnumAsInner;
 use flexstr::SharedStr;
 use getset::CopyGetters;
@@ -21,8 +23,11 @@ use pernixc_term::r#type::Type;
 use super::Error;
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::Binder,
-    diagnostic::Diagnostic,
+    binder::{Binder, BindingError, UnrecoverableError},
+    diagnostic::{
+        Diagnostic, LoopControlFlow, LoopControlFlowOutsideLoop,
+        LoopWithGivenLabelNameNotFound,
+    },
     inference_context::constraint,
 };
 
@@ -54,6 +59,20 @@ pub struct LoopState {
     kind_state: LoopKindState,
     whole_span: RelativeSpan,
     keyword_span: RelativeSpan,
+}
+
+impl LoopState {
+    /// Gets the expected type of the loop expression based on its kind.
+    /// For `while` loops, this is always the unit type. For `loop`
+    /// loops, this is the type of the values passed to `break` statements,
+    /// or `None` if no `break` statements have been encountered.
+    #[must_use]
+    pub fn get_expected_type(&self) -> Option<Type> {
+        match &self.kind_state {
+            LoopKindState::While => Some(Type::unit()),
+            LoopKindState::Loop { break_type, .. } => break_type.clone(),
+        }
+    }
 }
 
 /// Manages the context of loops during binding. This remembers the state
@@ -117,6 +136,103 @@ impl Binder<'_> {
     /// Pops the loop state for the given scope ID from the loop context.
     pub fn pop_loop_state(&mut self, scope_id: ID<Scope>) -> LoopState {
         self.loop_context.loop_states_by_scope_id.remove(&scope_id).unwrap()
+    }
+
+    /// Finds a [`ID<Scope>`] to operate a control flow on based on the
+    /// location and label.
+    pub fn find_loop_scope_id(
+        &self,
+        control_flow: LoopControlFlow,
+        label: Option<pernixc_syntax::Identifier>,
+        syntax_tree_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<ID<Scope>, Error> {
+        let mut loop_scope_id = None;
+
+        // find the loop state
+        for scope in self.stack.scopes().iter().rev() {
+            let Some(get_loop_state) = self
+                .loop_context
+                .loop_states_by_scope_id
+                .get(&scope.scope_id())
+            else {
+                continue;
+            };
+
+            if let Some(label) = label.as_ref() {
+                if get_loop_state.label.as_deref() != Some(&label.kind) {
+                    continue;
+                }
+            }
+
+            loop_scope_id = Some(scope.scope_id());
+            break;
+        }
+
+        // loop state not found report the error
+        let Some(loop_scope_id) = loop_scope_id else {
+            if let Some(label) = label {
+                handler.receive(Diagnostic::LoopWithGivenLabelNameNotFound(
+                    LoopWithGivenLabelNameNotFound { span: label.span },
+                ));
+            } else {
+                handler.receive(Diagnostic::LoopControlFlowOutsideLoop(
+                    LoopControlFlowOutsideLoop {
+                        span: syntax_tree_span,
+                        control_flow,
+                    },
+                ));
+            }
+
+            return Err(Error::Binding(BindingError(syntax_tree_span)));
+        };
+
+        Ok(loop_scope_id)
+    }
+
+    /// Gets the loop state for the given scope ID
+    #[must_use]
+    pub fn get_loop_state(&self, scope_id: ID<Scope>) -> &LoopState {
+        self.loop_context.loop_states_by_scope_id.get(&scope_id).unwrap()
+    }
+
+    /// Records a `break` value for the loop identified by `loop_scope_id`.
+    /// If the loop does not yet have a break type, it is set to the type
+    /// of the provided value. If it already has a break type, the type of
+    /// the provided value must unify with the existing break type.
+    pub async fn break_value(
+        &mut self,
+        loop_scope_id: ID<Scope>,
+        value: Value,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        let ty = self.type_of_value(&value, handler).await?;
+        let loop_state = self
+            .loop_context
+            .loop_states_by_scope_id
+            .get_mut(&loop_scope_id)
+            .unwrap();
+
+        match &mut loop_state.kind_state {
+            LoopKindState::While => {
+                // do nothing, can only be unit type
+                // assuming the type has been checked already
+            }
+
+            LoopKindState::Loop { incoming_values, break_type } => {
+                if break_type.is_none() {
+                    *break_type = Some(ty);
+                }
+
+                if let Entry::Vacant(entry) =
+                    incoming_values.entry(self.current_block_id)
+                {
+                    entry.insert(value);
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

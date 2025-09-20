@@ -66,6 +66,8 @@ diagnostic_enum! {
         ExpressOutsideScope(ExpressOutsideScope),
         ExpressExpectedAValue(ExpressExpectedAValue),
         IfMissingElseBranch(IfMissingElseBranch),
+        LoopWithGivenLabelNameNotFound(LoopWithGivenLabelNameNotFound),
+        LoopControlFlowOutsideLoop(LoopControlFlowOutsideLoop),
     }
 }
 
@@ -639,6 +641,112 @@ impl Report for IfMissingElseBranch {
                  unit, so an `else` branch expressing a value of the same \
                  type is required",
             )
+            .build())
+    }
+}
+
+/// An enumeration of either a `break` or `continue` control flow.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    derive_more::Display,
+)]
+#[allow(missing_docs)]
+pub enum LoopControlFlow {
+    #[display("break")]
+    Break,
+
+    #[display("continue")]
+    Continue,
+}
+
+/// The loop with the given label name was not found.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct LoopWithGivenLabelNameNotFound {
+    /// The span of the label identifier.
+    pub span: RelativeSpan,
+}
+
+impl Report for LoopWithGivenLabelNameNotFound {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message(
+                "`loop` or `while` with the given label name was not found",
+            )
+            .build())
+    }
+}
+
+/// The loop control flow expression can't be used outside of a loop.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct LoopControlFlowOutsideLoop {
+    /// The span of the break expression.
+    pub span: RelativeSpan,
+
+    /// The kind of control flow.
+    pub control_flow: LoopControlFlow,
+}
+
+impl Report for LoopControlFlowOutsideLoop {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message(format!(
+                "`{}` can only be used inside a `loop` or `while`",
+                self.control_flow
+            ))
             .build())
     }
 }

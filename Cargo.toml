@@ -175,3 +175,6 @@ iter_on_single_items = "deny"
 
 [workspace.metadata.cargo-machete]
 ignored = ["strum"]
+
+[profile.dev]
+opt-level = 1
