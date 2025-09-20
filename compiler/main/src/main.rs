@@ -45,8 +45,21 @@ async fn main_async() -> ExitCode {
 
 fn main() -> ExitCode {
     tokio::runtime::Builder::new_multi_thread()
-        .max_blocking_threads(6)
         .enable_all()
+        .thread_stack_size(
+            // in the debug build, the stack size of the future is not
+            // optimized well, so we need a larger stack size
+            {
+                #[cfg(debug_assertions)]
+                {
+                    8 * 1024 * 1024 // 8MB stack for debug build
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    2 * 1024 * 1024 // 2MB stack default
+                }
+            },
+        )
         .build()
         .unwrap()
         .block_on(main_async())

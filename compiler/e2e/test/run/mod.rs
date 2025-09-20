@@ -21,6 +21,20 @@ fn main(resource: &str) {
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        .thread_stack_size(
+            // in the debug build, the stack size of the future is not
+            // optimized well, so we need a larger stack size
+            {
+                #[cfg(debug_assertions)]
+                {
+                    8 * 1024 * 1024 // 8MB stack for debug build
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    2 * 1024 * 1024 // 2MB stack default
+                }
+            },
+        )
         .build()
         .expect("Failed to create Tokio runtime")
         .block_on(test(&file_path));
