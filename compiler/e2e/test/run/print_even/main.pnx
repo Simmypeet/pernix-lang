@@ -1,0 +1,28 @@
+## Case
+## 20
+
+
+extern "C":
+    public function printf(fmt: &uint8, ...) -> int32
+    public function scanf(fmt: &uint8, ...) -> int32
+
+
+public function main():
+    let mut a = 0
+    scanf(&"%d\0".[0], &mut a)
+
+    let mut i = 0
+    loop:
+        i += 1
+
+        if i % 2 != 0:
+            continue
+
+        if i > a:
+            break
+        
+        printf(&"even number %d\n\0".[0], i)
+    
+    printf(&"done\n\0".[0])
+
+        

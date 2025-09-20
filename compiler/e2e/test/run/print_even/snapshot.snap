@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "20"
+stdout = """
+even number 2
+even number 4
+even number 6
+even number 8
+even number 10
+even number 12
+even number 14
+even number 16
+even number 18
+even number 20
+done"""
+stderr = ""
