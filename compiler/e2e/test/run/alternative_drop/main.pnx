@@ -1,0 +1,48 @@
+## Case
+## 1 10
+## Case
+## 0 20
+
+
+from core import Drop, Copy
+
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
+
+
+public struct LoudDrop['a]:
+    private value: &'a mut int32
+
+
+final implements['x] Drop[LoudDrop['x]]:
+    function drop(self: &mut LoudDrop['x]):
+        unsafe scope:
+            printf(&"Dropping %d\n\0".[0], *self.value)
+
+
+public function drop[T](..: T):
+    pass
+
+
+public function main():
+    unsafe scope:
+        let mut flag = 0
+        let mut value = 0
+        scanf(&"%d %d\0".[0], &mut flag, &mut value)
+
+        let flag = flag != 0
+
+        let loudDrop = LoudDrop { value: &mut value }
+
+        if flag:
+            drop(loudDrop)
+            printf(&"loudDrop dropped early\n\0".[0])
+        else:
+            printf(&"loudDrop will be dropped in else\n\0".[0])
+            # loudDrop will be dropped at the end of this scope
+        
+        printf(&"End of main\n\0".[0])
+
+        
