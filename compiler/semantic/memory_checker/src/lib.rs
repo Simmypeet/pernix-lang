@@ -7,33 +7,51 @@ use diagnostic::{
     UseBeforeInitialization,
 };
 use pernixc_arena::{Arena, ID};
-use pernixc_handler::Handler;
-use pernixc_source_file::Span;
+use pernixc_handler::{Handler, Storage};
+use pernixc_ir::{
+    address::{self, Address, Memory},
+    alloca::Alloca,
+    control_flow_graph::Block,
+    instruction::{Instruction, Jump, Terminator, UnconditionalJump},
+    value::{
+        register::{Assignment, Borrow, Load},
+        TypeOf,
+    },
+    Values, IR,
+};
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::parameter::get_parameters;
+use pernixc_symbol::{kind::get_kind, name::get_by_qualified_name};
+use pernixc_target::Global;
+use pernixc_term::{
+    generic_arguments::GenericArguments,
+    predicate::{PositiveMarker, Predicate},
+    r#type::Qualifier,
+};
 use pernixc_type_system::{
-    environment::Environment as TyEnvironment,
+    environment::{get_active_premise, Environment as TyEnvironment},
     normalizer::{self, Normalizer},
+    UnrecoverableError,
 };
 use state::{SetStateSucceeded, Stack, Summary};
 
+use crate::diagnostic::Diagnostic;
+
 pub mod diagnostic;
-// pub(crate) mod simplify_drop;
+pub(crate) mod simplify_drop;
 pub(crate) mod state;
 
-/*
-
-fn handle_store(
-    store_address: &Address<model::Model>,
-    store_span: Span,
+async fn handle_store<N: Normalizer>(
+    store_address: &Address,
+    store_span: RelativeSpan,
     stack: &mut Stack,
-    ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Vec<Instruction<model::Model>>, Abort> {
-    let state = stack.set_initialized(
-        store_address,
-        store_span.clone(),
-        ty_environment,
-        handler,
-    )?;
+    ty_environment: &TyEnvironment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Vec<Instruction>, UnrecoverableError> {
+    let state = stack
+        .set_initialized(store_address, store_span, ty_environment, handler)
+        .await?;
 
     let (state, target_address) = match state {
         SetStateSucceeded::Unchanged(initialized, address) => {
@@ -44,22 +62,26 @@ fn handle_store(
 
     // check if there's left-over mutable reference
     if let Some(span) = state.get_moved_out_mutable_reference() {
-        handler.receive(Box::new(MovedOutValueFromMutableReference {
-            moved_out_value_span: span.clone(),
-            reassignment_span: Some(store_span),
-        }));
+        handler.receive(
+            MovedOutValueFromMutableReference {
+                moved_out_value_span: *span,
+                reassignment_span: Some(store_span),
+            }
+            .into(),
+        );
     }
 
     Ok(state
-        .get_drop_instructions(&target_address, ty_environment.table())
+        .get_drop_instructions(&target_address, ty_environment.tracked_engine())
+        .await
         .unwrap())
 }
 
 fn handle_borrow(
-    borrow: &Borrow<model::Model>,
-    register_span: Span,
+    borrow: &Borrow,
+    register_span: RelativeSpan,
     stack: &mut Stack,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
+    handler: &dyn Handler<Diagnostic>,
 ) {
     let state = stack.get_state(&borrow.address).unwrap();
 
@@ -67,31 +89,35 @@ fn handle_borrow(
         Summary::Initialized => {}
 
         Summary::Uninitialized => {
-            handler.receive(Box::new(UseBeforeInitialization {
-                use_span: register_span,
-            }));
+            handler.receive(
+                UseBeforeInitialization { use_span: register_span }.into(),
+            );
         }
 
         Summary::Moved(span) => {
-            handler.receive(Box::new(UseAfterMove {
-                use_span: register_span,
-                move_span: span,
-            }));
+            handler.receive(
+                UseAfterMove { use_span: register_span, move_span: span }
+                    .into(),
+            );
         }
     }
 }
 
-fn handle_load(
-    values: &Values<model::Model>,
-    load: &Load<model::Model>,
-    register_span: Span,
+async fn handle_load<N: Normalizer>(
+    values: &Values,
+    load: &Load,
+    register_span: RelativeSpan,
     stack: &mut Stack,
-    current_site: GlobalID,
-    ty_environment: &TyEnvironment<model::Model, impl Normalizer<model::Model>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<(), Abort> {
-    let ty =
-        values.type_of(&load.address, current_site, ty_environment).unwrap();
+    current_site: Global<pernixc_symbol::ID>,
+    ty_environment: &TyEnvironment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
+    let ty = values
+        .type_of(&load.address, current_site, ty_environment)
+        .await
+        .map_err(|x| {
+            x.report_as_type_calculating_overflow(register_span, &handler)
+        })?;
 
     // has been checked previously
     let memory_state = 'memory_state: {
@@ -104,47 +130,52 @@ fn handle_load(
                 .get_state_summary()
         } else {
             let copy_marker = ty_environment
-                .table()
-                .get_by_qualified_name(["core", "Copy"])
+                .tracked_engine()
+                .get_by_qualified_name(pernixc_corelib::copy::MARKER_SEQUENCE)
+                .await
                 .unwrap();
 
             // no need to move
-            if well_formedness::predicate_satisfied(
-                Predicate::PositiveMarker(PositiveMarker::new(
-                    copy_marker,
-                    GenericArguments {
-                        lifetimes: Vec::new(),
-                        types: vec![ty.result],
-                        constants: Vec::new(),
-                    },
-                )),
-                None,
-                false,
-                ty_environment,
-            )?
-            .1
-            .is_empty()
-            {
+            let storage =
+                Storage::<pernixc_type_system::diagnostic::Diagnostic>::new();
+            ty_environment
+                .predicate_satisfied(
+                    Predicate::PositiveMarker(PositiveMarker::new(
+                        copy_marker,
+                        GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![ty.result],
+                            constants: Vec::new(),
+                        },
+                    )),
+                    register_span,
+                    None,
+                    false,
+                    &handler,
+                )
+                .await?;
+
+            if storage.as_vec().is_empty() {
                 break 'memory_state stack
                     .get_state(&load.address)
                     .expect("should found")
                     .get_state_summary();
             }
 
-            let state = stack.set_uninitialized(
-                &load.address,
-                register_span.clone(),
-                ty_environment,
-                handler,
-            )?;
+            let state = stack
+                .set_uninitialized(
+                    &load.address,
+                    register_span,
+                    ty_environment,
+                    handler,
+                )
+                .await?;
 
             match state {
                 SetStateSucceeded::Unchanged(initialized, _) => initialized
                     .as_false()
                     .and_then(|x| x.latest_accessor())
-                    .map_or(Summary::Initialized, |x| {
-                        Summary::Moved(x.clone())
-                    }),
+                    .map_or(Summary::Initialized, |x| Summary::Moved(*x)),
 
                 SetStateSucceeded::Updated(state) => state.get_state_summary(),
             }
@@ -153,31 +184,31 @@ fn handle_load(
 
     match memory_state {
         Summary::Uninitialized => {
-            handler.receive(Box::new(UseBeforeInitialization {
-                use_span: register_span,
-            }));
+            handler.receive(
+                UseBeforeInitialization { use_span: register_span }.into(),
+            );
         }
 
         Summary::Moved(span) => {
-            handler.receive(Box::new(UseAfterMove {
-                use_span: register_span,
-                move_span: span,
-            }));
+            handler.receive(
+                UseAfterMove { use_span: register_span, move_span: span }
+                    .into(),
+            );
         }
 
         Summary::Initialized => {}
-    };
+    }
 
     Ok(())
 }
 
-fn sort_drop_addresses(
-    addresses: &mut [Memory<model::Model>],
-    allocas: &Arena<Alloca<model::Model>>,
-    current_site: GlobalID,
-    table: &Table,
-) -> Result<(), Abort> {
-    let function_signature = table.query::<FunctionSignature>(current_site)?;
+async fn sort_drop_addresses(
+    addresses: &mut [Memory],
+    allocas: &Arena<Alloca>,
+    current_site: Global<pernixc_symbol::ID>,
+    engine: &TrackedEngine,
+) -> Result<(), UnrecoverableError> {
+    let function_signature = engine.get_parameters(current_site).await?;
 
     addresses.sort_by(|x, y| match (x, y) {
         (Memory::Parameter(x_id), Memory::Parameter(y_id)) => {
@@ -213,37 +244,36 @@ fn sort_drop_addresses(
 struct WalkResult {
     /// The stack state after the walking
     stack: Stack,
-    looped_blocks: Vec<ID<Block<model::Model>>>,
+    looped_blocks: Vec<ID<Block>>,
 }
 
 #[derive(Debug)]
-struct Checker<'r, 'a, N: Normalizer<model::Model>> {
-    representation: &'r mut Representation<model::Model>,
+struct Checker<'r, 'a, N: Normalizer> {
+    representation: &'r mut IR,
 
     /// The key represents the block ID that needs to be checked/explored.
     ///
     /// - `None` value means the block is being processed.
     /// - `Some` value means the block has been processed
     /// - No value means the block has not been explored
-    walk_results_by_block_id:
-        HashMap<ID<Block<model::Model>>, Option<WalkResult>>,
+    walk_results_by_block_id: HashMap<ID<Block>, Option<WalkResult>>,
 
     /// If the block id appears in this map, it means the block is a looped
     /// block and the value is the starting environment of the looped block.
-    target_stakcs_by_block_id: HashMap<ID<Block<model::Model>>, Stack>,
+    target_stakcs_by_block_id: HashMap<ID<Block>, Stack>,
 
-    current_site: GlobalID,
-    ty_environment: &'a TyEnvironment<'a, model::Model, N>,
+    current_site: Global<pernixc_symbol::ID>,
+    ty_environment: &'a TyEnvironment<'a, N>,
 }
 
-impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
-    #[allow(clippy::too_many_lines)]
-    fn walk_instructions(
+impl<N: Normalizer> Checker<'_, '_, N> {
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    async fn walk_instructions(
         &mut self,
-        block_id: ID<Block<model::Model>>,
+        block_id: ID<Block>,
         stack: &mut Stack,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<(), Abort> {
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
         let mut current_index = 0;
         let block = self
             .representation
@@ -256,11 +286,12 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                 Instruction::Store(store) => {
                     let instructions = handle_store(
                         &store.address,
-                        store.span.clone().unwrap(),
+                        store.span.unwrap(),
                         stack,
                         self.ty_environment,
                         handler,
-                    )?;
+                    )
+                    .await?;
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
@@ -268,7 +299,8 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         self.current_site,
                         self.ty_environment,
                         handler,
-                    )?;
+                    )
+                    .await?;
                     let instructions_len = instructions.len();
 
                     block.insert_instructions(current_index, instructions);
@@ -289,12 +321,13 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                             handle_load(
                                 &self.representation.values,
                                 load,
-                                register.span.clone().unwrap(),
+                                register.span.unwrap(),
                                 stack,
                                 self.current_site,
                                 self.ty_environment,
                                 handler,
-                            )?;
+                            )
+                            .await?;
 
                             1
                         }
@@ -302,7 +335,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         Assignment::Borrow(borrow) => {
                             handle_borrow(
                                 borrow,
-                                register.span.clone().unwrap(),
+                                register.span.unwrap(),
                                 stack,
                                 handler,
                             );
@@ -324,17 +357,19 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                 }
 
                 Instruction::TuplePack(tuple_pack) => {
-                    let state = stack.set_uninitialized(
-                        &Address::Tuple(address::Tuple {
-                            tuple_address: Box::new(
-                                tuple_pack.tuple_address.clone(),
-                            ),
-                            offset: address::Offset::Unpacked,
-                        }),
-                        tuple_pack.packed_tuple_span.clone().unwrap(),
-                        self.ty_environment,
-                        handler,
-                    )?;
+                    let state = stack
+                        .set_uninitialized(
+                            &Address::Tuple(address::Tuple {
+                                tuple_address: Box::new(
+                                    tuple_pack.tuple_address.clone(),
+                                ),
+                                offset: address::Offset::Unpacked,
+                            }),
+                            tuple_pack.packed_tuple_span.unwrap(),
+                            self.ty_environment,
+                            handler,
+                        )
+                        .await?;
 
                     let sumamry = match state {
                         SetStateSucceeded::Unchanged(initialized, _) => {
@@ -342,7 +377,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                                 .as_false()
                                 .and_then(|x| x.latest_accessor())
                                 .map_or(Summary::Initialized, |x| {
-                                    Summary::Moved(x.clone())
+                                    Summary::Moved(*x)
                                 })
                         }
 
@@ -353,24 +388,26 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
 
                     match sumamry {
                         Summary::Uninitialized => {
-                            handler.receive(Box::new(
+                            handler.receive(
                                 UseBeforeInitialization {
                                     use_span: tuple_pack
                                         .packed_tuple_span
-                                        .clone()
                                         .unwrap(),
-                                },
-                            ));
+                                }
+                                .into(),
+                            );
                         }
 
                         Summary::Moved(span) => {
-                            handler.receive(Box::new(UseAfterMove {
-                                use_span: tuple_pack
-                                    .packed_tuple_span
-                                    .clone()
-                                    .unwrap(),
-                                move_span: span,
-                            }));
+                            handler.receive(
+                                UseAfterMove {
+                                    use_span: tuple_pack
+                                        .packed_tuple_span
+                                        .unwrap(),
+                                    move_span: span,
+                                }
+                                .into(),
+                            );
                         }
 
                         Summary::Initialized => {}
@@ -378,11 +415,12 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
 
                     let instructions = handle_store(
                         &tuple_pack.store_address,
-                        tuple_pack.packed_tuple_span.clone().unwrap(),
+                        tuple_pack.packed_tuple_span.unwrap(),
                         stack,
                         self.ty_environment,
                         handler,
-                    )?;
+                    )
+                    .await?;
 
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
@@ -390,7 +428,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         self.current_site,
                         self.ty_environment,
                         handler,
-                    )?;
+                    )
+                    .await?;
+
                     let instructions_len = instructions.len();
 
                     block.insert_instructions(current_index, instructions);
@@ -413,8 +453,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         {
                             if !self
                                 .ty_environment
-                                .table()
-                                .get::<SymbolKind>(self.current_site)
+                                .tracked_engine()
+                                .get_kind(self.current_site)
+                                .await
                                 .has_function_signature()
                             {
                                 break 'out;
@@ -422,9 +463,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
 
                             let function_signature = self
                                 .ty_environment
-                                .table()
-                                .query::<FunctionSignature>(self.current_site)
-                                .unwrap();
+                                .tracked_engine()
+                                .get_parameters(self.current_site)
+                                .await?;
 
                             for (parameter_id, parameter) in function_signature
                                 .parameter_order
@@ -435,9 +476,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                                 assert!(stack.current_mut().new_state(
                                     Memory::Parameter(parameter_id),
                                     true,
-                                    model::Model::from_default_type(
-                                        parameter.r#type.clone(),
-                                    ),
+                                    parameter.r#type.clone(),
                                 ));
                             }
                         }
@@ -486,8 +525,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         &mut memories,
                         &self.representation.values.allocas,
                         self.current_site,
-                        self.ty_environment.table(),
-                    )?;
+                        self.ty_environment.tracked_engine(),
+                    )
+                    .await?;
 
                     let mut drop_instructions = Vec::new();
 
@@ -499,21 +539,22 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         if let Some(moved_out) =
                             state.get_moved_out_mutable_reference()
                         {
-                            handler.receive(Box::new(
+                            handler.receive(
                                 MovedOutValueFromMutableReference {
-                                    moved_out_value_span: moved_out.clone(),
+                                    moved_out_value_span: *moved_out,
                                     reassignment_span: None,
-                                },
-                            ));
+                                }
+                                .into(),
+                            );
                         }
 
                         drop_instructions.extend(
                             state
                                 .get_drop_instructions(
                                     &Address::Memory(memory),
-                                    self.ty_environment.table(),
+                                    self.ty_environment.tracked_engine(),
                                 )
-                                .unwrap(),
+                                .await?,
                         );
                     }
 
@@ -523,7 +564,8 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         self.current_site,
                         self.ty_environment,
                         handler,
-                    )?;
+                    )
+                    .await?;
                     let len = drop_instructions.len();
 
                     block.insert_instructions(current_index, drop_instructions);
@@ -538,12 +580,12 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
         Ok(())
     }
 
-    #[allow(clippy::too_many_lines)]
-    fn walk_block(
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    async fn walk_block(
         &mut self,
-        block_id: ID<Block<model::Model>>,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<WalkResult>, Abort> {
+        block_id: ID<Block>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Option<WalkResult>, UnrecoverableError> {
         // skip if already processed
         if let Some(walk_result) = self.walk_results_by_block_id.get(&block_id)
         {
@@ -569,7 +611,7 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
 
             for predecessor_id in predecessors.iter().copied() {
                 if let Some(result) =
-                    self.walk_block(predecessor_id, handler)?
+                    Box::pin(self.walk_block(predecessor_id, handler)).await?
                 {
                     merging_contexts.push((predecessor_id, result.stack));
                 } else {
@@ -654,8 +696,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         &mut memories,
                         &self.representation.values.allocas,
                         self.current_site,
-                        self.ty_environment.table(),
-                    )?;
+                        self.ty_environment.tracked_engine(),
+                    )
+                    .await?;
 
                     for memory_to_drop in memories {
                         let this_state = this
@@ -670,8 +713,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                                 .get_alternate_drop_instructions(
                                     alternate_state,
                                     &Address::Memory(memory_to_drop),
-                                    self.ty_environment.table(),
+                                    self.ty_environment.tracked_engine(),
                                 )
+                                .await
                                 .unwrap(),
                         );
                     }
@@ -691,14 +735,15 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         self.current_site,
                         self.ty_environment,
                         handler,
-                    )?,
+                    )
+                    .await?,
                 );
             }
 
             (stack, looped_block_ids)
         };
 
-        self.walk_instructions(block_id, &mut stack, handler)?;
+        self.walk_instructions(block_id, &mut stack, handler).await?;
 
         // handle loop
         if let Some(target_stack) =
@@ -721,8 +766,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                     &mut memories,
                     &self.representation.values.allocas,
                     self.current_site,
-                    self.ty_environment.table(),
-                )?;
+                    self.ty_environment.tracked_engine(),
+                )
+                .await?;
 
                 for memory in memories {
                     let this_state =
@@ -737,8 +783,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         .get_alternate_drop_instructions(
                             this_state,
                             &Address::Memory(memory),
-                            self.ty_environment.table(),
+                            self.ty_environment.tracked_engine(),
                         )
+                        .await
                         .unwrap();
 
                     let block = self
@@ -754,7 +801,8 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                             self.current_site,
                             self.ty_environment,
                             handler,
-                        )?,
+                        )
+                        .await?,
                     );
 
                     for move_span in target_state
@@ -763,9 +811,9 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
                         .into_iter()
                         .map(|x| x.get_state_summary().into_moved().unwrap())
                     {
-                        handler.receive(Box::new(MoveInLoop {
-                            moved_value_span: move_span,
-                        }));
+                        handler.receive(
+                            MoveInLoop { moved_value_span: move_span }.into(),
+                        );
                     }
                 }
             }
@@ -789,15 +837,17 @@ impl<N: Normalizer<model::Model>> Checker<'_, '_, N> {
 /// Performs the use-after-move and use-before-initialization check. Moreover,
 /// inserts the drop instructions to the IR.
 #[allow(clippy::missing_errors_doc)]
-pub fn memory_check(
-    table: &Table,
-    representation: &mut Representation<model::Model>,
-    current_site: GlobalID,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<(), Abort> {
+pub async fn memory_check(
+    engine: &TrackedEngine,
+    representation: &mut IR,
+    current_site: Global<pernixc_symbol::ID>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
+    let premise = engine.get_active_premise(current_site).await?;
+
     let ty_environment = TyEnvironment::new(
-        std::borrow::Cow::Owned(table.get_active_premise(current_site)),
-        table,
+        std::borrow::Cow::Borrowed(&premise),
+        std::borrow::Cow::Borrowed(engine),
         normalizer::NO_OP,
     );
 
@@ -813,12 +863,10 @@ pub fn memory_check(
     };
 
     for block_id in all_block_ids {
-        checker.walk_block(block_id, handler)?;
+        checker.walk_block(block_id, handler).await?;
     }
 
     assert!(checker.walk_results_by_block_id.values().all(Option::is_some));
 
     Ok(())
 }
-
-*/

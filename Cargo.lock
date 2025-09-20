@@ -1387,6 +1387,7 @@ dependencies = [
  "enum-as-inner",
  "getset",
  "pernixc_arena",
+ "pernixc_corelib",
  "pernixc_diagnostic",
  "pernixc_handler",
  "pernixc_hash",

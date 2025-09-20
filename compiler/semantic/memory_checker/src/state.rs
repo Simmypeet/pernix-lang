@@ -1,12 +1,10 @@
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    ops::Deref,
-};
+use std::{collections::hash_map::Entry, ops::Deref};
 
 use enum_as_inner::EnumAsInner;
 use getset::{CopyGetters, Getters};
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_ir::{
     address::{self, Address, Offset},
     instruction::{Drop, DropUnpackTuple, Instruction},
@@ -776,7 +774,7 @@ impl State {
         })
     }
 
-    fn get_latest_accessor_internal(&self) -> Option<LatestLoad> {
+    fn get_latest_accessor_internal(&self) -> Option<LatestLoad<'_>> {
         match self {
             Self::Total(Initialized::False(Uninitialized {
                 latest_accessor,
@@ -989,7 +987,7 @@ pub enum ScopeMergeError {
 
 impl Scope {
     pub fn new(scope_id: ID<scope::Scope>) -> Self {
-        Self { scope_id, memories_by_address: HashMap::new() }
+        Self { scope_id, memories_by_address: HashMap::default() }
     }
 
     /// Merges the state of the memory with the other memory.

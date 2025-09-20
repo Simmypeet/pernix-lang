@@ -16,6 +16,7 @@ pernixc_hash = { path = "../../base/hash" }
 pernixc_serialize = { path = "../../base/serialize" }
 pernixc_query = { path = "../../base/query" }
 pernixc_target = { path = "../../base/target" }
+pernixc_corelib = { path = "../corelib" }
 pernixc_lexical = { path = "../../syntax/lexical" }
 pernixc_semantic_element = { path = "../semantic_element" }
 pernixc_ir = { path = "../ir" }

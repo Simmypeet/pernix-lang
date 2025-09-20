@@ -6,59 +6,63 @@
 //! on the product types into the drop instructions on the individual fields if
 //! the product type itself does not implement the `Drop` trait.
 
-use std::{collections::HashSet, sync::Arc};
-
-use pernixc_abort::Abort;
 use pernixc_handler::Handler;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            fields,
-            function_signature::FunctionSignature,
-            ir::{
-                address::{self, Address, Field, Index, Memory, Variant},
-                instruction::{Drop, DropUnpackTuple, Instruction},
-                model,
-                value::{
-                    literal::{Literal, Unreachable},
-                    Value,
-                },
-                Values,
-            },
-            variant,
-        },
-        input::{Member, SymbolKind},
+use pernixc_hash::HashSet;
+use pernixc_ir::{
+    address::{self, Address, Field, Index, Memory, Variant},
+    instruction::{Drop, DropUnpackTuple, Instruction},
+    value::{
+        literal::{Literal, Unreachable},
+        TypeOf, Value,
     },
-    diagnostic::Diagnostic,
-    table::{GlobalID, TargetID},
-    term::{
-        generic_arguments::GenericArguments,
-        predicate::{PositiveTrait, Predicate},
-        r#type::{Primitive, Type},
-    },
+    Values,
 };
-use pernixc_type_of::TypeOf;
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+use pernixc_semantic_element::{
+    fields::get_fields, parameter::get_parameters,
+    variant::get_variant_associated_type,
+};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    member::get_members,
+    name::get_by_qualified_name,
+};
+use pernixc_target::{Global, TargetID};
+use pernixc_term::{
+    generic_arguments::GenericArguments,
+    predicate::{PositiveTrait, Predicate},
+    r#type::{Primitive, Type},
+};
+use pernixc_type_system::{
+    environment::Environment, normalizer::Normalizer, UnrecoverableError,
+};
 
-pub(super) fn simplify_drops(
-    drop_instructions: impl IntoIterator<Item = Instruction<model::Model>>,
-    values: &Values<model::Model>,
-    current_site: GlobalID,
-    environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Vec<Instruction<model::Model>>, Abort> {
+use crate::diagnostic::Diagnostic;
+
+pub(super) async fn simplify_drops<
+    T: IntoIterator<Item = Instruction>,
+    N: Normalizer,
+>(
+    drop_instructions: T,
+    values: &Values,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Vec<Instruction>, UnrecoverableError> {
     let mut results = Vec::new();
 
     for instruction in drop_instructions {
         if let Instruction::Drop(drop) = instruction {
-            results.extend(simplify_drop(
-                &drop,
-                values,
-                &mut HashSet::new(),
-                current_site,
-                environment,
-                handler,
-            )?);
+            results.extend(
+                simplify_drop(
+                    &drop,
+                    values,
+                    &mut HashSet::default(),
+                    current_site,
+                    environment,
+                    handler,
+                )
+                .await?,
+            );
         } else {
             results.push(instruction);
         }
@@ -67,58 +71,68 @@ pub(super) fn simplify_drops(
     Ok(results)
 }
 
-#[allow(clippy::uninhabited_references, clippy::too_many_lines)]
-pub(super) fn simplify_drop(
-    drop: &Drop<model::Model>,
-    values: &Values<model::Model>,
-    visited_types: &mut HashSet<Type<model::Model>>,
-    current_site: GlobalID,
-    environment: &Environment<model::Model, impl Normalizer<model::Model>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Vec<Instruction<model::Model>>, Abort> {
+#[allow(
+    clippy::uninhabited_references,
+    clippy::too_many_lines,
+    clippy::cognitive_complexity
+)]
+pub(super) async fn simplify_drop<N: Normalizer>(
+    drop: &Drop,
+    values: &Values,
+    visited_types: &mut HashSet<Type>,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Vec<Instruction>, UnrecoverableError> {
     let span_of = match drop.address.get_root_memory() {
         Memory::Parameter(id) => {
-            let function_signature: Arc<FunctionSignature> =
-                environment.table().query::<FunctionSignature>(current_site)?;
+            let parameters = environment
+                .tracked_engine()
+                .get_parameters(current_site)
+                .await?;
 
-            function_signature.parameters[*id].span.clone().unwrap()
+            parameters.parameters[*id].span.unwrap()
         }
 
-        Memory::Alloca(id) => values.allocas[*id].span.clone().unwrap(),
+        Memory::Alloca(id) => values.allocas[*id].span.unwrap(),
     };
 
     let ty = values
         .type_of(&drop.address, current_site, environment)
-        .map_err(|x| {
-            x.report_overflow(|x| {
-                x.report_as_type_calculating_overflow(span_of.clone(), handler)
-            })
-        })?
+        .await
+        .map_err(|x| x.report_as_type_calculating_overflow(span_of, &handler))?
         .result;
 
     if !visited_types.insert(ty.clone()) {
         return Ok(Vec::new());
     }
 
-    let drop_trait_id =
-        environment.table().get_by_qualified_name(["core", "Drop"]).unwrap();
+    let drop_trait_id = environment
+        .tracked_engine()
+        .get_by_qualified_name(pernixc_corelib::drop::DROP_TRAIT_SEQUENCE)
+        .await
+        .unwrap();
 
     match &ty {
         Type::Symbol(symbol) => {
-            let symbol_kind = *environment.table().get::<SymbolKind>(symbol.id);
+            let symbol_kind =
+                environment.tracked_engine().get_kind(symbol.id).await;
 
             match symbol_kind {
-                SymbolKind::Struct => {
+                Kind::Struct => {
+                    // the `core::NoDrop` intrinsic type never requires drop
                     if symbol.id.target_id == TargetID::CORE
                         && symbol.id
                             == environment
-                                .table()
+                                .tracked_engine()
                                 .get_by_qualified_name(["core", "NoDrop"])
+                                .await
                                 .unwrap()
                     {
                         visited_types.remove(&ty);
                         return Ok(Vec::new());
                     }
+
                     let predicate = PositiveTrait::new(
                         drop_trait_id,
                         false, /* TODO: use correct boolean value */
@@ -131,15 +145,14 @@ pub(super) fn simplify_drop(
 
                     if environment
                         .query(&predicate)
+                        .await
                         .map_err(|x| {
-                            x.report_overflow(|x| {
-                                x.report_as_undecidable_predicate(
-                                    Predicate::PositiveTrait(predicate.clone()),
-                                    None,
-                                    span_of,
-                                    handler,
-                                )
-                            })
+                            x.report_as_undecidable_predicate(
+                                Predicate::PositiveTrait(predicate.clone()),
+                                None,
+                                span_of,
+                                &handler,
+                            )
                         })?
                         .is_some()
                     {
@@ -148,35 +161,40 @@ pub(super) fn simplify_drop(
                     }
 
                     let fields = environment
-                        .table()
-                        .query::<fields::Fields>(symbol.id)?;
+                        .tracked_engine()
+                        .get_fields(symbol.id)
+                        .await?;
+
                     let mut instructions = Vec::new();
 
                     for field in fields.field_declaration_order.iter().copied()
                     {
                         // recursively simplify the drop instructions
-                        instructions.extend(simplify_drop(
-                            &Drop {
-                                address: Address::Field(Field {
-                                    struct_address: Box::new(
-                                        drop.address.clone(),
-                                    ),
-                                    id: field,
-                                }),
-                            },
-                            values,
-                            visited_types,
-                            current_site,
-                            environment,
-                            handler,
-                        )?);
+                        instructions.extend(
+                            Box::pin(simplify_drop(
+                                &Drop {
+                                    address: Address::Field(Field {
+                                        struct_address: Box::new(
+                                            drop.address.clone(),
+                                        ),
+                                        id: field,
+                                    }),
+                                },
+                                values,
+                                visited_types,
+                                current_site,
+                                environment,
+                                handler,
+                            ))
+                            .await?,
+                        );
                     }
 
                     visited_types.remove(&ty);
 
                     Ok(instructions)
                 }
-                SymbolKind::Enum => {
+                Kind::Enum => {
                     // if any of the variant requires drop, then we should drop
                     // the entire enum
 
@@ -192,15 +210,14 @@ pub(super) fn simplify_drop(
 
                     if environment
                         .query(&predicate)
+                        .await
                         .map_err(|x| {
-                            x.report_overflow(|x| {
-                                x.report_as_undecidable_predicate(
-                                    Predicate::PositiveTrait(predicate.clone()),
-                                    None,
-                                    span_of,
-                                    handler,
-                                )
-                            })
+                            x.report_as_undecidable_predicate(
+                                Predicate::PositiveTrait(predicate.clone()),
+                                None,
+                                span_of,
+                                &handler,
+                            )
                         })?
                         .is_none()
                     {
@@ -211,24 +228,28 @@ pub(super) fn simplify_drop(
                     }
 
                     let mut should_drop = false;
-                    let member = environment.table().get::<Member>(symbol.id);
+                    let member = environment
+                        .tracked_engine()
+                        .get_members(symbol.id)
+                        .await;
 
                     for variant_id in member
+                        .member_ids_by_name
                         .values()
                         .copied()
-                        .map(|x| GlobalID::new(symbol.id.target_id, x))
+                        .map(|x| Global::new(symbol.id.target_id, x))
                     {
                         // recursively simplify the drop instructions
-                        let variant_sym =
-                            environment
-                                .table()
-                                .query::<variant::Variant>(variant_id)?;
+                        let variant_sym = environment
+                            .tracked_engine()
+                            .get_variant_associated_type(variant_id)
+                            .await?;
 
-                        if variant_sym.associated_type.is_none() {
+                        if variant_sym.is_none() {
                             continue;
                         }
 
-                        if !simplify_drop(
+                        if !Box::pin(simplify_drop(
                             &Drop {
                                 address: Address::Variant(Variant {
                                     enum_address: Box::new(
@@ -242,7 +263,8 @@ pub(super) fn simplify_drop(
                             current_site,
                             environment,
                             handler,
-                        )?
+                        ))
+                        .await?
                         .is_empty()
                         {
                             should_drop = true;
@@ -272,21 +294,24 @@ pub(super) fn simplify_drop(
             match unpacked_position {
                 Some(packed_position) => {
                     for i in 0..packed_position {
-                        instructions.extend(simplify_drop(
-                            &Drop {
-                                address: Address::Tuple(address::Tuple {
-                                    tuple_address: Box::new(
-                                        drop.address.clone(),
-                                    ),
-                                    offset: address::Offset::FromStart(i),
-                                }),
-                            },
-                            values,
-                            visited_types,
-                            current_site,
-                            environment,
-                            handler,
-                        )?);
+                        instructions.extend(
+                            Box::pin(simplify_drop(
+                                &Drop {
+                                    address: Address::Tuple(address::Tuple {
+                                        tuple_address: Box::new(
+                                            drop.address.clone(),
+                                        ),
+                                        offset: address::Offset::FromStart(i),
+                                    }),
+                                },
+                                values,
+                                visited_types,
+                                current_site,
+                                environment,
+                                handler,
+                            ))
+                            .await?,
+                        );
                     }
 
                     instructions.push(Instruction::DropUnpackTuple(
@@ -300,43 +325,51 @@ pub(super) fn simplify_drop(
                     ));
 
                     for i in packed_position + 1..tuple.elements.len() {
-                        instructions.extend(simplify_drop(
-                            &Drop {
-                                address: Address::Tuple(address::Tuple {
-                                    tuple_address: Box::new(
-                                        drop.address.clone(),
-                                    ),
-                                    offset: address::Offset::FromEnd(
-                                        tuple.elements.len() - i - 1,
-                                    ),
-                                }),
-                            },
-                            values,
-                            visited_types,
-                            current_site,
-                            environment,
-                            handler,
-                        )?);
+                        instructions.extend(
+                            Box::pin(simplify_drop(
+                                &Drop {
+                                    address: Address::Tuple(address::Tuple {
+                                        tuple_address: Box::new(
+                                            drop.address.clone(),
+                                        ),
+                                        offset: address::Offset::FromEnd(
+                                            tuple.elements.len() - i - 1,
+                                        ),
+                                    }),
+                                },
+                                values,
+                                visited_types,
+                                current_site,
+                                environment,
+                                handler,
+                            ))
+                            .await?,
+                        );
                     }
                 }
 
                 None => {
                     for (index, _) in tuple.elements.iter().enumerate() {
-                        instructions.extend(simplify_drop(
-                            &Drop {
-                                address: Address::Tuple(address::Tuple {
-                                    tuple_address: Box::new(
-                                        drop.address.clone(),
-                                    ),
-                                    offset: address::Offset::FromStart(index),
-                                }),
-                            },
-                            values,
-                            visited_types,
-                            current_site,
-                            environment,
-                            handler,
-                        )?);
+                        instructions.extend(
+                            Box::pin(simplify_drop(
+                                &Drop {
+                                    address: Address::Tuple(address::Tuple {
+                                        tuple_address: Box::new(
+                                            drop.address.clone(),
+                                        ),
+                                        offset: address::Offset::FromStart(
+                                            index,
+                                        ),
+                                    }),
+                                },
+                                values,
+                                visited_types,
+                                current_site,
+                                environment,
+                                handler,
+                            ))
+                            .await?,
+                        );
                     }
                 }
             }
@@ -357,7 +390,7 @@ pub(super) fn simplify_drop(
         }
 
         Type::Array(_) => {
-            if simplify_drop(
+            if Box::pin(simplify_drop(
                 &Drop {
                     address: Address::Index(Index {
                         array_address: Box::new(drop.address.clone()),
@@ -374,7 +407,8 @@ pub(super) fn simplify_drop(
                 current_site,
                 environment,
                 handler,
-            )?
+            ))
+            .await?
             .is_empty()
             {
                 visited_types.remove(&ty);
@@ -390,6 +424,8 @@ pub(super) fn simplify_drop(
             Ok(vec![Instruction::Drop(drop.clone())])
         }
 
-        Type::Inference(never) => match *never {},
+        Type::Inference(infer) => {
+            unreachable!("inference type should have been resolved: {infer:?}")
+        }
     }
 }

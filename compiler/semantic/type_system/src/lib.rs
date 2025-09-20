@@ -231,6 +231,33 @@ impl Error {
             }
         }
     }
+
+    /// In case of the Overflow error from type system, reports it as an
+    /// undecidable predicate error.
+    pub fn report_as_undecidable_predicate(
+        self,
+        predicate: pernixc_term::predicate::Predicate,
+        predicate_declaration_span: Option<RelativeSpan>,
+        predicate_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> UnrecoverableError {
+        match self {
+            Self::Overflow(overflow) => {
+                overflow.report_as_undecidable_predicate(
+                    predicate,
+                    predicate_declaration_span,
+                    predicate_span,
+                    handler,
+                );
+
+                UnrecoverableError::Reported
+            }
+
+            Self::CyclicDependency(cyclic) => {
+                UnrecoverableError::CyclicDependency(cyclic)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
