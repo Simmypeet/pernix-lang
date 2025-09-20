@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "10"
+stdout = """
+Counting down: 10
+Counting down: 9
+Counting down: 8
+Counting down: 7
+Counting down: 6
+Counting down: 5
+Counting down: 4
+Counting down: 3
+Counting down: 2
+Counting down: 1
+Liftoff!"""
+stderr = ""
