@@ -1,0 +1,31 @@
+## Case 
+## 0 0
+## Case 
+## 1 1
+## Case 
+## 0 1
+## Case 
+## 1 0 
+
+
+extern "C":
+    public function printf(fmt: &uint8, ...) -> int32
+    public function scanf(fmt: &uint8, ...) -> int32
+
+
+public function main():
+    let mut first = 0
+    let mut second = 0
+
+    scanf(&"%d %d\0".[0], &mut first, &mut second)
+
+    let first = first != 0
+    let second = second != 0
+
+    let caseNumber = match (first, second):
+        (false, false): 1
+        (false, true):  2
+        (true, false):  3
+        (true, true):   4
+    
+    printf(&"Case %d\n\0".[0], caseNumber)

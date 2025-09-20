@@ -1,0 +1,27 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "0 0"
+stdout = "Case 1"
+stderr = ""
+
+## Case 1
+exit_code = 0
+stdin = "1 1"
+stdout = "Case 4"
+stderr = ""
+
+## Case 2
+exit_code = 0
+stdin = "0 1"
+stdout = "Case 2"
+stderr = ""
+
+## Case 3
+exit_code = 0
+stdin = "1 0"
+stdout = "Case 3"
+stderr = ""
