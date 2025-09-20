@@ -12,6 +12,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::TargetID;
 
+pub mod copy;
 pub mod drop;
 
 /// Initializes all the core library intrinsics.
