@@ -26,6 +26,7 @@ pub async fn initialize_corelib(engine: &mut Arc<Engine>) {
     };
 
     let drop_trait_id = drop::initialize_drop_trait(engine).await;
+    let copy_marker_id = copy::initialize_copy_marker(engine).await;
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
@@ -47,10 +48,11 @@ pub async fn initialize_corelib(engine: &mut Arc<Engine>) {
         .set_input(
             member::Key(root_core_module_id),
             Arc::new(Member {
-                member_ids_by_name: std::iter::once((
-                    "drop".into(),
-                    drop_trait_id,
-                ))
+                member_ids_by_name: [
+                    ("drop".into(), drop_trait_id),
+                    ("Copy".into(), copy_marker_id),
+                ]
+                .into_iter()
                 .collect(),
                 unnameds: HashSet::default(),
             }),

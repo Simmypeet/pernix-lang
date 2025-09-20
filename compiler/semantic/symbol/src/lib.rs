@@ -2217,6 +2217,25 @@ pub async fn calculate_implements_id(
     ID(hasher.finish())
 }
 
+/// Calculates a symbol [`ID`] for the implements with the given unique name.
+#[extend]
+pub async fn calculate_implements_id_by_unique_name(
+    self: &TrackedEngine,
+    unique_name: &str,
+    target_id: TargetID,
+) -> ID {
+    let mut hasher = siphasher::sip::SipHasher24::default();
+    let target_seed = self.get_target_seed(target_id).await;
+
+    target_seed.hash(&mut hasher);
+
+    // signify that we're generating ID for the qualified name
+    false.hash(&mut hasher);
+    unique_name.hash(&mut hasher);
+
+    ID(hasher.finish())
+}
+
 /// Returns the root module ID for the given target ID.
 #[extend]
 pub async fn get_target_root_module_id(
