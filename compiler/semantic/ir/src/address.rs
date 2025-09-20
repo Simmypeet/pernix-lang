@@ -574,17 +574,33 @@ impl TypeOf<&Address> for Values {
 impl Address {
     /// Transforms the types in the address using the provided transformer.
     pub async fn transform<T: Transformer<Type>>(
-        &mut self,
+        mut self: &mut Self,
         transformer: &mut T,
     ) -> Result<(), CyclicError> {
-        let Self::Index(index) = self else {
-            return Ok(());
-        };
+        loop {
+            match self {
+                Self::Memory(_) => return Ok(()),
 
-        let Value::Literal(literal) = &mut index.indexing_value else {
-            return Ok(());
-        };
+                Self::Field(field) => {
+                    self = field.struct_address.as_mut();
+                }
+                Self::Tuple(tuple) => {
+                    self = tuple.tuple_address.as_mut();
+                }
+                Self::Index(index) => {
+                    if let Value::Literal(literal) = &mut index.indexing_value {
+                        literal.transform(transformer).await?;
+                    }
 
-        literal.transform(transformer).await
+                    self = index.array_address.as_mut();
+                }
+                Self::Variant(variant) => {
+                    self = variant.enum_address.as_mut();
+                }
+                Self::Reference(reference) => {
+                    self = reference.reference_address.as_mut();
+                }
+            }
+        }
     }
 }
