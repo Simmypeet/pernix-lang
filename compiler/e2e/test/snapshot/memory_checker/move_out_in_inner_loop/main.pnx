@@ -1,0 +1,14 @@
+public function create[T]() -> T:
+    panic
+
+
+public function consume[T](x: T):
+    pass
+
+
+public function test[T](cond: bool):
+    while cond:
+        let value = create[T]()
+
+        while cond:
+            consume(value)
