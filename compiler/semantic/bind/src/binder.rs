@@ -42,6 +42,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Qualifier, Type},
 };
+pub use pernixc_type_system::UnrecoverableError;
 use pernixc_type_system::{
     environment::{get_active_premise, Environment, Premise},
     Succeeded,
@@ -205,21 +206,6 @@ impl<'t> Binder<'t> {
 )]
 #[allow(missing_docs)]
 pub struct BindingError(pub RelativeSpan);
-
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
-)]
-#[allow(missing_docs)]
-pub enum UnrecoverableError {
-    #[error(transparent)]
-    CyclicDependency(#[from] executor::CyclicError),
-
-    #[error(
-        "encountered an unrecoverable error that possible left the binder \
-         state corrupted, the diagnostic has been reported"
-    )]
-    Reported,
-}
 
 impl From<executor::CyclicError> for Error {
     fn from(value: executor::CyclicError) -> Self {
@@ -569,7 +555,7 @@ impl Binder<'_> {
         self.create_environment()
             .simplify(ty)
             .await
-            .map_err(|x| x.report_as_type_calculating_overflow(span, handler))
+            .map_err(|x| x.report_as_type_calculating_overflow(span, &handler))
     }
 
     /// Creates a new register and assigns the given `assignment` to it.
@@ -616,7 +602,7 @@ impl Binder<'_> {
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
                     self.ir.values.registers[register_id].span.unwrap(),
-                    handler,
+                    &handler,
                 )
             })
     }
@@ -638,7 +624,7 @@ impl Binder<'_> {
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(
                         literal.span().copied().unwrap(),
-                        handler,
+                        &handler,
                     )
                 })?
                 .result
@@ -858,7 +844,7 @@ impl Binder<'_> {
                         self.ir.values.allocas[*id].span.unwrap()
                     }
                 },
-                handler,
+                &handler,
             )),
         }
     }

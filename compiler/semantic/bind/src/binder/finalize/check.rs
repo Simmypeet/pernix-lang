@@ -22,10 +22,7 @@ use pernixc_term::{
 };
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
-use crate::{
-    binder::{report_as_type_calculating_overflow, UnrecoverableError},
-    diagnostic::Diagnostic,
-};
+use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 
 #[allow(clippy::too_many_lines)]
 async fn check_register_assignment<N: Normalizer>(
@@ -209,7 +206,7 @@ async fn check_register_assignment<N: Normalizer>(
                             *ir.values
                                 .span_of_value(&Value::Register(register_id))
                                 .unwrap(),
-                            handler,
+                            &handler,
                         )
                     })?;
 
@@ -254,7 +251,7 @@ async fn check_register_assignment<N: Normalizer>(
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
                             *ir.values.span_of_value(&element.value).unwrap(),
-                            handler,
+                            &handler,
                         )
                     })?;
 

@@ -3,11 +3,13 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use enum_as_inner::EnumAsInner;
+use pernixc_handler::Handler;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
-use crate::lifetime_constraint::LifetimeConstraint;
+use crate::{diagnostic::Diagnostic, lifetime_constraint::LifetimeConstraint};
 
 pub mod adt_fields;
 pub mod deduction;
@@ -170,6 +172,65 @@ pub enum Satisfiability {
     /// If all the sub-term of the predicate are satisfiable, then the
     /// predicate is satisfiable.
     Congruent,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, thiserror::Error,
+)]
+#[allow(missing_docs)]
+pub enum UnrecoverableError {
+    #[error(transparent)]
+    CyclicDependency(#[from] CyclicError),
+
+    #[error(
+        "encountered an unrecoverable error that possible left the binder \
+         state corrupted, the diagnostic has been reported"
+    )]
+    Reported,
+}
+
+impl Error {
+    /// In case of the Overflow error from type system, reports it as a type
+    /// calculating overflow
+    pub fn report_as_type_calculating_overflow(
+        self,
+        overflow_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> UnrecoverableError {
+        match self {
+            Self::Overflow(overflow) => {
+                overflow.report_as_type_calculating_overflow(
+                    overflow_span,
+                    handler,
+                );
+
+                UnrecoverableError::Reported
+            }
+            Self::CyclicDependency(cyclic) => {
+                UnrecoverableError::CyclicDependency(cyclic)
+            }
+        }
+    }
+
+    /// In case of the Overflow error from type system, reports it as a type
+    /// checking overflow
+    pub fn report_as_type_check_overflow(
+        self,
+        overflow_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> UnrecoverableError {
+        match self {
+            Self::Overflow(overflow) => {
+                overflow.report_as_type_check_overflow(overflow_span, handler);
+
+                UnrecoverableError::Reported
+            }
+
+            Self::CyclicDependency(cyclic) => {
+                UnrecoverableError::CyclicDependency(cyclic)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

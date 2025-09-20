@@ -8,7 +8,6 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     binder::{
-        report_as_type_calculating_overflow, report_as_type_check_overflow,
         type_check::diagnostic::{CyclicInference, MismatchedType},
         Binder, UnrecoverableError,
     },
@@ -58,7 +57,7 @@ impl Binder<'_> {
         // simplify the types
         let simplified_ty =
             environment.simplify(ty.clone()).await.map_err(|x| {
-                x.report_as_type_calculating_overflow(type_check_span, handler)
+                x.report_as_type_calculating_overflow(type_check_span, &handler)
             })?;
 
         match expected_ty {
@@ -67,7 +66,7 @@ impl Binder<'_> {
                     environment.simplify(expected_ty).await.map_err(|x| {
                         x.report_as_type_calculating_overflow(
                             type_check_span,
-                            handler,
+                            &handler,
                         )
                     })?;
 
@@ -109,7 +108,7 @@ impl Binder<'_> {
                         return Err(type_system_error
                             .report_as_type_check_overflow(
                                 type_check_span,
-                                handler,
+                                &handler,
                             ));
                     }
 
