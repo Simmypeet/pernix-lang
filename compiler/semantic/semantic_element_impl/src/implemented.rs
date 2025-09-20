@@ -144,7 +144,8 @@ pub async fn implemented_executor(
         scoped!(|scoped| async move {
             let mut results = HashSet::default();
 
-            for target_id in target_ids.iter() {
+            for target_id in target_ids.iter().filter(|x| **x != TargetID::CORE)
+            {
                 let engine = engine.clone();
                 let key = InTargetKey {
                     implementable_id: key.0,
