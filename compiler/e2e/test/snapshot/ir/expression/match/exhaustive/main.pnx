@@ -1,0 +1,57 @@
+public function first():
+    let .. = match true: 
+        true:  1
+        name: 2
+
+
+public function second(a: bool, b: bool):
+    let .. = match (a, b): 
+        (true, true):   1
+        (true, false):  2
+        (false, true):  3
+        (false, false): 4
+
+
+public function third(a: uint8):
+    let .. = match a: 
+        0: 1
+        1: 2
+        2: 3
+        name: 4
+
+
+public enum Direction:
+    North
+    East
+    South
+    West
+
+
+public function fourth(a: bool, direction: Direction):
+    let .. = match (a, direction): # missing (false, West) arm
+        (true, case North): 1
+        (true, case East):  2
+        (true, case South): 3
+        (true, case West):  4
+
+        (false, case North): 5
+        (false, case East):  6
+        (false, name):       7
+
+
+public enum FakeBool:
+    True
+    False
+
+
+public function fifth(a: FakeBool, direction: Direction):
+    let .. = match (a, direction):
+        (case True,  case North): 1
+        (case True,  case East):  2
+        (case True,  case South): 3
+        (case True,  case West):  4
+
+        (case False, case North): 5
+        (case False, case East):  6
+        (case False, case South): 7
+        (case False, case West):  8
