@@ -1,0 +1,10 @@
+public function consume[T](x: T):
+    pass
+
+
+public function partialMove[T](x: (T, T), cond: bool):
+    if cond:
+        consume(x.0)
+
+    
+    consume(x)
