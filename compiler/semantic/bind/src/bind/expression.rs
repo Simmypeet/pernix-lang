@@ -204,8 +204,8 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
             pernixc_syntax::expression::terminator::Terminator::Express(
                 express,
             ) => self.bind(express, guidance, handler).await,
-            pernixc_syntax::expression::terminator::Terminator::Break(_) => {
-                todo!()
+            pernixc_syntax::expression::terminator::Terminator::Break(br) => {
+                self.bind(br, guidance, handler).await
             }
         }
     }
