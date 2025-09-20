@@ -2,14 +2,14 @@ use std::fmt::Write;
 
 use enum_as_inner::EnumAsInner;
 use proptest::{
-    prelude::{Arbitrary, BoxedStrategy, Strategy},
+    prelude::{Arbitrary, BoxedStrategy, Just, Strategy},
     prop_oneof,
 };
 
 use crate::{
     arbitrary::{
         write_indent_line, write_indent_line_for_indent_display, IndentDisplay,
-        Label, QualifiedIdentifier,
+        Label, Passable, QualifiedIdentifier,
     },
     expression::{
         arbitrary::Expression, binary::arbitrary::Binary,
@@ -609,7 +609,7 @@ impl IndentDisplay for MatchArm {
 reference! {
     #[derive(Debug, Clone)]
     pub struct MatchBody for super::MatchBody {
-        pub arms (Vec<MatchArm>),
+        pub arms (Vec<Passable<MatchArm>>),
     }
 }
 
@@ -623,9 +623,15 @@ impl Arbitrary for MatchBody {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with(args: Self::Parameters) -> Self::Strategy {
-        proptest::collection::vec(MatchArm::arbitrary_with(args), 1..5)
-            .prop_map(|arms| Self { arms })
-            .boxed()
+        proptest::collection::vec(
+            prop_oneof![
+                8 => MatchArm::arbitrary_with(args).prop_map(Passable::Line),
+                1 => Just(Passable::Pass)
+            ],
+            1..5,
+        )
+        .prop_map(|arms| Self { arms })
+        .boxed()
     }
 }
 

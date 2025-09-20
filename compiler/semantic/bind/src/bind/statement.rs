@@ -213,7 +213,7 @@ impl Binder<'_> {
         };
 
         let mut name_binding_point = NameBindingPoint::default();
-        self.insert_irrefutable_named_binding_point(
+        self.insert_name_binding_point(
             &mut name_binding_point,
             &pattern,
             &type_of_address,

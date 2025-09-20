@@ -37,8 +37,10 @@ pub mod dereference;
 pub mod diagnostic;
 pub mod express;
 pub mod function_call;
+pub mod group;
 pub mod if_else;
 pub mod r#loop;
+pub mod r#match;
 pub mod numeric;
 pub mod panic;
 pub mod parenthesized;
@@ -178,7 +180,9 @@ impl Bind<&pernixc_syntax::expression::block::Block>
             pernixc_syntax::expression::block::Block::Loop(lo) => {
                 Box::pin(self.bind(lo, guidance, handler)).await
             }
-            pernixc_syntax::expression::block::Block::Match(_) => todo!(),
+            pernixc_syntax::expression::block::Block::Match(ma) => {
+                Box::pin(self.bind(ma, guidance, handler)).await
+            }
             pernixc_syntax::expression::block::Block::While(wh) => {
                 Box::pin(self.bind(wh, guidance, handler)).await
             }

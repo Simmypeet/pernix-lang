@@ -822,12 +822,10 @@ impl Binder<'_> {
     ///
     /// Any violation of the assumptions will result in a panic.
     #[allow(clippy::too_many_arguments)]
-    pub async fn insert_irrefutable_named_binding_point<
-        T: InsertNameBinding,
-    >(
+    pub async fn insert_name_binding_point<T: InsertNameBinding>(
         &mut self,
         name_binding_point: &mut NameBindingPoint,
-        irreftuable: &T,
+        pattern: &T,
         simplified_type: &Type,
         address: Address,
         qualifier: Qualifier,
@@ -837,7 +835,7 @@ impl Binder<'_> {
         T::insert_name_binding(
             self,
             name_binding_point,
-            irreftuable,
+            pattern,
             Binding {
                 kind: BindingKind::Value,
                 r#type: simplified_type,

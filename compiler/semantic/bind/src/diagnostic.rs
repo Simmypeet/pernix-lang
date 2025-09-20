@@ -68,6 +68,11 @@ diagnostic_enum! {
         IfMissingElseBranch(IfMissingElseBranch),
         LoopWithGivenLabelNameNotFound(LoopWithGivenLabelNameNotFound),
         LoopControlFlowOutsideLoop(LoopControlFlowOutsideLoop),
+        UnreachableMatchArm(UnreachableMatchArm),
+        NonExhaustiveMatch(NonExhaustiveMatch),
+        FoundPackTuplePatternInMatchArmPattern(
+            FoundPackTuplePatternInMatchArmPattern
+        ),
     }
 }
 
@@ -747,6 +752,133 @@ impl Report for LoopControlFlowOutsideLoop {
                 "`{}` can only be used inside a `loop` or `while`",
                 self.control_flow
             ))
+            .build())
+    }
+}
+
+/// The match arm is unreachable.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct UnreachableMatchArm {
+    /// The span of the match arm.
+    pub match_arm_span: RelativeSpan,
+}
+
+impl Report for UnreachableMatchArm {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.match_arm_span).await)
+                    .build(),
+            )
+            .severity(Severity::Warning)
+            .message("unreachable match arm")
+            .help_message(
+                "this match arm is unreachable due to prior arms covering all \
+                 possible cases",
+            )
+            .build())
+    }
+}
+
+/// The match expression is non-exhaustive.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct NonExhaustiveMatch {
+    /// The span of the match expression.
+    pub match_expression_span: RelativeSpan,
+}
+
+impl Report for NonExhaustiveMatch {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(
+                        engine
+                            .to_absolute_span(&self.match_expression_span)
+                            .await,
+                    )
+                    .build(),
+            )
+            .severity(Severity::Warning)
+            .message("non-exhaustive match expression")
+            .help_message(
+                "this match expression does not cover all possible cases; \
+                 consider adding a wildcard (`_`) arm",
+            )
+            .build())
+    }
+}
+
+/// A pack tuple pattern (e.g. `(A, ...B, C)`) was found in a match arm
+/// pattern.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+)]
+pub struct FoundPackTuplePatternInMatchArmPattern {
+    /// The span of the pack tuple pattern.
+    pub pattern_span: RelativeSpan,
+}
+
+impl Report for FoundPackTuplePatternInMatchArmPattern {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.pattern_span).await)
+                    .build(),
+            )
+            .severity(Severity::Error)
+            .message(
+                "pack tuple patterns (e.g. `(A, ...B, C)`) are not allowed in \
+                 match arm patterns",
+            )
             .build())
     }
 }

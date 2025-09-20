@@ -169,7 +169,7 @@ impl<'t> Binder<'t> {
                     });
 
                 binder
-                    .insert_irrefutable_named_binding_point(
+                    .insert_name_binding_point(
                         &mut name_binding_point,
                         &pattern,
                         &parameter_sym.r#type,

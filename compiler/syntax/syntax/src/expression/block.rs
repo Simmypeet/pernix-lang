@@ -5,10 +5,7 @@ use pernixc_parser::{
 };
 
 use crate::{
-    expression::{binary::Binary, Expression},
-    pattern::Refutable,
-    statement::Statements,
-    Keyword, Label, Punctuation,
+    expression::{binary::Binary, Expression}, pattern::Refutable, statement::Statements, Keyword, Label, Passable, Punctuation
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -99,7 +96,9 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     #{fragment = expect::Fragment::Indentation}
     pub struct MatchBody {
-        pub arms: #[multi] MatchArm = ast::<MatchArm>().line().repeat_all(),
+        pub arms: #[multi] Passable<MatchArm> = ast::<Passable<MatchArm>>()
+            .line()
+            .repeat_all(),
     }
 }
 

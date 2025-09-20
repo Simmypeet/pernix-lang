@@ -1,6 +1,6 @@
 //! Represents a path to a sub-pattern/binding within a pattern.
 
-use std::ops::Deref;
+use std::{collections::VecDeque, ops::Deref};
 
 use pernixc_arena::ID;
 use pernixc_ir::{
@@ -63,6 +63,7 @@ pub struct Variant {
 /// This is similar to [`Address`] for memory locations, but is used to
 /// represent paths within patterns.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[allow(missing_docs)]
 pub enum Path {
     Base,
     Field(Field),
@@ -73,14 +74,15 @@ pub enum Path {
 impl Path {
     //// Retrieves the sub-pattern at the end of this path within the given
     /// refutable pattern.
+    #[must_use]
     pub fn get_sub_refutable_from_path<'a>(
         &self,
         refutable: &'a Refutable,
     ) -> Option<&'a Refutable> {
         match self {
-            Path::Base => Some(refutable),
+            Self::Base => Some(refutable),
 
-            Path::Field(field_path) => {
+            Self::Field(field_path) => {
                 let structural_pat = field_path
                     .struct_path
                     .get_sub_refutable_from_path(refutable)?
@@ -89,7 +91,7 @@ impl Path {
                 structural_pat.patterns_by_field_id.get(&field_path.field_id)
             }
 
-            Path::TupleElement(tuple_element_path) => {
+            Self::TupleElement(tuple_element_path) => {
                 let tuple_pat = tuple_element_path
                     .tuple_path
                     .get_sub_refutable_from_path(refutable)?
@@ -101,7 +103,7 @@ impl Path {
                     .map(|x| &x.pattern)
             }
 
-            Path::Variant(variant_path) => {
+            Self::Variant(variant_path) => {
                 let enum_pat = variant_path
                     .enum_path
                     .get_sub_refutable_from_path(refutable)?
@@ -110,6 +112,75 @@ impl Path {
                 enum_pat.pattern.as_deref()
             }
         }
+    }
+
+    pub(super) fn get_refutable_paths_internal(
+        reftuable: &Refutable,
+        prev: Self,
+        paths: &mut VecDeque<Self>,
+    ) {
+        match reftuable {
+            Refutable::Boolean(_) | Refutable::Integer(_) => {
+                paths.push_back(prev);
+            }
+
+            Refutable::Wildcard(_) | Refutable::Named(_) => {}
+
+            Refutable::Enum(en) => {
+                paths.push_back(prev.clone());
+
+                if let Some(inner_pat) = &en.pattern {
+                    Self::get_refutable_paths_internal(
+                        inner_pat,
+                        Self::Variant(Variant { enum_path: Box::new(prev) }),
+                        paths,
+                    );
+                }
+            }
+
+            Refutable::Tuple(tuple) => {
+                for (index, pat) in tuple.elements.iter().enumerate() {
+                    if pat.is_packed {
+                        continue;
+                    }
+
+                    Self::get_refutable_paths_internal(
+                        &pat.pattern,
+                        Self::TupleElement(TupleElement {
+                            index,
+                            tuple_path: Box::new(prev.clone()),
+                        }),
+                        paths,
+                    );
+                }
+            }
+
+            Refutable::Structural(structural) => {
+                let mut fields =
+                    structural.patterns_by_field_id.iter().collect::<Vec<_>>();
+                fields.sort_by_key(|(id, _)| *id);
+
+                for (field_id, pat) in fields {
+                    Self::get_refutable_paths_internal(
+                        pat,
+                        Self::Field(Field {
+                            field_id: *field_id,
+                            struct_path: Box::new(prev.clone()),
+                        }),
+                        paths,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Returns the paths to all the reftutable patterns appeared. The order
+    /// of [`Path`] appears in the returned vector matters.
+    #[must_use]
+    pub fn get_refutable_paths(reftuable: &Refutable) -> VecDeque<Self> {
+        let mut paths = VecDeque::new();
+        Self::get_refutable_paths_internal(reftuable, Self::Base, &mut paths);
+        paths
     }
 }
 
@@ -155,6 +226,7 @@ impl Binder<'_> {
     /// - `address`: The address that the `refutable_pattern` is bound to.
     /// - `ty`: The type of the `address`.
     /// - `path`: The path to navigate through the pattern.
+    #[allow(clippy::too_many_lines)]
     pub async fn access_path_in_pattern<'r>(
         &mut self,
         refutable_pattern: &'r Refutable,
