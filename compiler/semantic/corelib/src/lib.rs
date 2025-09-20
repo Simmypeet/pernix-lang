@@ -49,7 +49,7 @@ pub async fn initialize_corelib(engine: &mut Arc<Engine>) {
             member::Key(root_core_module_id),
             Arc::new(Member {
                 member_ids_by_name: [
-                    ("drop".into(), drop_trait_id),
+                    ("Drop".into(), drop_trait_id),
                     ("Copy".into(), copy_marker_id),
                 ]
                 .into_iter()
