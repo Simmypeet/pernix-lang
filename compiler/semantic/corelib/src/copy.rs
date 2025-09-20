@@ -138,6 +138,51 @@ pub async fn initialize_copy_marker(
         implemented.insert(impl_id);
     }
 
+    // immutable reference of any type can be copied
+    {
+        let impl_id = get_impl_id(engine, "&T").await;
+        let mut generic_parameters = GenericParameters::default();
+        let a_lt = Lifetime::Parameter(LifetimeParameterID::new(
+            impl_id,
+            generic_parameters
+                .add_lifetime_parameter(LifetimeParameter {
+                    name: "a".into(),
+                    span: None,
+                })
+                .unwrap(),
+        ));
+        let t_ty = Type::Parameter(TypeParameterID::new(
+            impl_id,
+            generic_parameters
+                .add_type_parameter(TypeParameter {
+                    name: "T".into(),
+                    span: None,
+                })
+                .unwrap(),
+        ));
+        let where_clause = Arc::new([Predicate {
+            predicate: predicate::Predicate::type_outlives(t_ty.clone(), a_lt),
+            span: None,
+        }]);
+
+        implements_copy_marker(
+            engine,
+            kind::Kind::PositiveImplementation,
+            Type::Reference(pernixc_term::r#type::Reference {
+                qualifier: pernixc_term::r#type::Qualifier::Immutable,
+                lifetime: a_lt,
+                pointee: Box::new(t_ty),
+            }),
+            impl_id,
+            copy_marker_id,
+            Arc::new(generic_parameters),
+            where_clause,
+        )
+        .await;
+
+        implemented.insert(impl_id);
+    }
+
     // mutable reference can't be copied
     {
         let impl_id = get_impl_id(engine, "&mut T").await;
