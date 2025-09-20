@@ -1151,6 +1151,7 @@ dependencies = [
  "flexstr",
  "getset",
  "pernixc_arena",
+ "pernixc_corelib",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",

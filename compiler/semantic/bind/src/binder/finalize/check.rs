@@ -3,19 +3,21 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     value::{
         register::{self, Register},
-        TypeOf,
+        TypeOf, Value,
     },
     IR,
 };
 use pernixc_symbol::{
     kind::{get_kind, Kind},
+    name::get_by_qualified_name,
     parent::get_parent,
 };
 use pernixc_target::Global;
 use pernixc_term::{
+    generic_arguments::GenericArguments,
     generic_parameters::get_generic_parameters,
     instantiation::get_instantiation,
-    predicate::{PositiveTrait, Predicate},
+    predicate::{PositiveMarker, PositiveTrait, Predicate},
     r#type::Qualifier,
 };
 use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
@@ -198,43 +200,45 @@ async fn check_register_assignment<N: Normalizer>(
                 == Some(Qualifier::Immutable)
                 || load.address.is_behind_index()
             {
-                /*
-                    let ty = ir
-                        .values
-                        .type_of(&load.address, current_site, environment)
-                        .unwrap()
-                        .result;
+                let ty = ir
+                    .values
+                    .type_of(&load.address, current_site, environment)
+                    .await
+                    .map_err(|x| {
+                        x.report_as_type_calculating_overflow(
+                            *ir.values
+                                .span_of_value(&Value::Register(register_id))
+                                .unwrap(),
+                            handler,
+                        )
+                    })?;
 
-                    let copy_marker = environment
-                        .table()
-                        .get_by_qualified_name(["core", "Copy"])
-                        .unwrap();
+                let copy_marker = environment
+                    .tracked_engine()
+                    .get_by_qualified_name(
+                        pernixc_corelib::copy::MARKER_SEQUENCE,
+                    )
+                    .await
+                    .unwrap();
 
-                    let predicate = Predicate::PositiveMarker(PositiveMarker::new(
-                        copy_marker,
-                        GenericArguments {
-                            lifetimes: Vec::new(),
-                            types: vec![ty],
-                            constants: Vec::new(),
-                        },
-                    ));
+                let predicate = Predicate::PositiveMarker(PositiveMarker::new(
+                    copy_marker,
+                    GenericArguments {
+                        lifetimes: Vec::new(),
+                        types: vec![ty.result.clone()],
+                        constants: Vec::new(),
+                    },
+                ));
 
-                    let errors = well_formedness::predicate_satisfied(
+                environment
+                    .predicate_satisfied(
                         predicate,
+                        register.span.unwrap(),
                         None,
                         false,
-                        environment,
-                    )?
-                    .1;
-
-                    for error in errors {
-                        report_error(
-                            error,
-                            register.span.clone().unwrap(),
-                            handler,
-                        );
-                    }
-                */
+                        &handler,
+                    )
+                    .await?;
             }
 
             Ok(())
