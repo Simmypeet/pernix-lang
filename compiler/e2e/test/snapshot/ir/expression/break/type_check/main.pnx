@@ -1,0 +1,14 @@
+public function main():
+    let .. = loop 'outer:
+        break 'outer 32
+        
+        let .. = loop 'inner:
+            break 'inner true
+            break 'outer 64
+            break false
+
+            break 64 # error, must be bool
+            break 'outer true # error, must be int
+        
+        break 128
+        
