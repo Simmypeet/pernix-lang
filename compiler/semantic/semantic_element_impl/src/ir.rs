@@ -25,7 +25,13 @@ async fn build_ir_for_function(
         binder.bind_statement(&statement, storage).await.unwrap();
     }
 
-    Ok(Arc::new(binder.finalize(storage).await?))
+    Ok(Arc::new(match binder.finalize(storage).await {
+        Ok(ir) => ir,
+        Err(UnrecoverableError::CyclicDependency(error)) => {
+            return Err(error);
+        }
+        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+    }))
 }
 
 impl Build for pernixc_ir::Key {

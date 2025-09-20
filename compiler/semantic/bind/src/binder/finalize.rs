@@ -3,16 +3,16 @@ use pernixc_ir::{
     instruction::{Instruction, ScopePop},
     IR,
 };
-use pernixc_query::runtime::executor::CyclicError;
 use pernixc_semantic_element::return_type::get_return_type;
 use pernixc_symbol::kind::get_kind;
 use pernixc_term::r#type::Type;
 
 use crate::{
-    binder::Binder,
+    binder::{Binder, UnrecoverableError},
     diagnostic::{Diagnostic, NotAllFlowPathsReturnAValue},
 };
 
+mod check;
 mod transform_inference;
 
 impl Binder<'_> {
@@ -21,7 +21,7 @@ impl Binder<'_> {
     pub async fn finalize(
         mut self,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<IR, CyclicError> {
+    ) -> Result<IR, UnrecoverableError> {
         self.block_context.assert_empty();
         self.loop_context.assert_empty();
 
@@ -69,19 +69,9 @@ impl Binder<'_> {
 
         // transform inference types
         self.transform_inference(handler).await?;
+        let env = self.create_environment();
 
-        // let environment = Environment::new(
-        //     Cow::Owned(self.table.get_active_premise(self.current_site)),
-        //     self.table,
-        //     normalizer::NO_OP,
-        // );
-
-        // check::check(
-        //     &transformed_ir,
-        //     self.current_site,
-        //     &environment,
-        //     handler,
-        // )?;
+        check::check(&self.ir, self.current_site, &env, handler).await?;
 
         Ok(self.ir)
     }

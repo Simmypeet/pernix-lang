@@ -6,6 +6,7 @@ use std::sync::Arc;
 use alloca::Alloca;
 use control_flow_graph::ControlFlowGraph;
 use pernixc_arena::Arena;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -31,6 +32,22 @@ pub struct Values {
 
     /// Contains all the allocas used in the program.
     pub allocas: Arena<Alloca>,
+}
+
+impl Values {
+    /// Gets the span of the given value, if it has one.
+    #[must_use]
+    pub fn span_of_value<'s>(
+        &'s self,
+        value: &'s value::Value,
+    ) -> Option<&'s RelativeSpan> {
+        match value {
+            value::Value::Register(id) => {
+                self.registers.get(*id).unwrap().span.as_ref()
+            }
+            value::Value::Literal(lit) => lit.span(),
+        }
+    }
 }
 
 /// An intermediate representation of the program.
