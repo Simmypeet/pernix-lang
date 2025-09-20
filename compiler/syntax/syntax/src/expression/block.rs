@@ -5,7 +5,10 @@ use pernixc_parser::{
 };
 
 use crate::{
-    expression::{binary::Binary, Expression}, pattern::Refutable, statement::Statements, Keyword, Label, Passable, Punctuation
+    expression::{binary::Binary, Expression},
+    pattern::Refutable,
+    statement::Statements,
+    Keyword, Label, Passable, Punctuation,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
