@@ -588,7 +588,8 @@ impl Bind<&BinaryTree> for Binder<'_> {
 
             BinaryOperatorSyn::LogicalAnd(_)
             | BinaryOperatorSyn::LogicalOr(_) => {
-                bind_short_circuit_binary(self, syntax_tree, handler).await
+                Box::pin(bind_short_circuit_binary(self, syntax_tree, handler))
+                    .await
             }
 
             _ => self.bind_normal_binary(syntax_tree, handler).await,
