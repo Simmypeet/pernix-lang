@@ -437,7 +437,7 @@ impl Binder<'_> {
 
         let mut variant_ty = self
             .engine()
-            .get_variant_associated_type(*enum_id)
+            .get_variant_associated_type(enum_pat.variant_id)
             .await?
             .as_deref()
             .cloned()
