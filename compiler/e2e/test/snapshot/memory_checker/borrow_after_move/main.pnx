@@ -1,0 +1,7 @@
+public function consume[T](..: T):
+    pass
+
+
+public function test[T](x: T):
+    consume(x)
+    let ref = &x

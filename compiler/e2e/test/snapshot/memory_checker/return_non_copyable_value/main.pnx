@@ -1,0 +1,7 @@
+public function create[T]() -> T:
+    panic
+
+
+public function test[T]() -> T:
+    let value = create[T]()
+    return value

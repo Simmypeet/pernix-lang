@@ -1,0 +1,7 @@
+public function create[T]() -> T:
+    panic
+
+
+public function test[T](param: T) -> T:
+    let movedTo = param
+    return param

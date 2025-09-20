@@ -1,0 +1,11 @@
+public function consume[T](..: T):
+    pass
+
+
+public function test():
+    let mut x = 0
+    let ref = &mut x
+
+    let movedToRef = ref
+
+    consume(*ref)
