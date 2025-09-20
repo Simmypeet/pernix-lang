@@ -1,0 +1,22 @@
+public trait ImpossibleTrait[T]:
+    pass
+
+
+public struct MyStruct[T]:
+    where:
+        trait ImpossibleTrait[T]
+
+    public field: T
+
+
+public enum MyEnum[T]:
+    where:
+        trait ImpossibleTrait[T]
+
+    Variant(T)
+
+
+public function main[T](a: T):
+    let x = MyStruct { field: 5 }
+    let y = MyEnum::Variant(10)
+    let b = (true, ...a, false)
