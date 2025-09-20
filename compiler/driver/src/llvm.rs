@@ -85,7 +85,15 @@ pub(super) async fn emit_as_machine_code(
     // otherwise the borrow checker will complain about the lifetime of
     // `inkwell_context`, which is probably a bug in the rust compiler.
     let result = if let (Some(module), false) = (result, has_error) {
-        module.verify().unwrap();
+        if let Err(error) = module.verify() {
+            let ir = module.print_to_string().to_string();
+            panic!(
+                "generated LLVM IR is invalid: {}\n\nLLVM IR:\n{}",
+                error.to_string(),
+                ir
+            );
+        }
+
         module
             .run_passes(
                 match opt_level {
