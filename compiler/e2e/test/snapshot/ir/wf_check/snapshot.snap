@@ -27,7 +27,13 @@ error: unsatisfied predicate
 22 │     let b = (true, ...a, false)
    │                       ^ the predicate `T: tuple` is not satisfied
 
-error: Compilation aborted due to 3 error(s)
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/ir/wf_check/main.pnx:38:13
+   │
+38 │     let b = *y # not fine, mutable ref cannot be copied
+   │             ^^ the predicate `marker core::Copy[main::StructMutableRef]` is not satisfied
+
+error: Compilation aborted due to 4 error(s)
 
 
 

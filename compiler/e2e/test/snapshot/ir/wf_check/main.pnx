@@ -20,3 +20,19 @@ public function main[T](a: T):
     let x = MyStruct { field: 5 }
     let y = MyEnum::Variant(10)
     let b = (true, ...a, false)
+
+
+public struct StructImmutableRef['a]:
+    public field: &'a int32
+
+
+public struct StructMutableRef['a]:
+    public field: &'a mut int32
+
+
+public function copyBehindRef(
+    x: &StructImmutableRef,
+    y: &StructMutableRef,
+):
+    let a = *x # fine
+    let b = *y # not fine, mutable ref cannot be copied
