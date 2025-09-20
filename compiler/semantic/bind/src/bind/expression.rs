@@ -30,7 +30,9 @@ pub mod array;
 pub mod binary;
 pub mod boolean;
 pub mod borrow;
+pub mod r#break;
 pub mod character;
+pub mod r#continue;
 pub mod dereference;
 pub mod diagnostic;
 pub mod express;
@@ -49,7 +51,6 @@ pub mod scope;
 pub mod string;
 pub mod r#struct;
 pub mod r#while;
-pub mod r#break;
 
 impl Bind<&pernixc_syntax::expression::Expression>
     for crate::binder::Binder<'_>
@@ -198,9 +199,9 @@ impl Bind<&pernixc_syntax::expression::terminator::Terminator>
             pernixc_syntax::expression::terminator::Terminator::Return(ret) => {
                 self.bind(ret, guidance, handler).await
             }
-            pernixc_syntax::expression::terminator::Terminator::Continue(_) => {
-                todo!()
-            }
+            pernixc_syntax::expression::terminator::Terminator::Continue(
+                con,
+            ) => self.bind(con, guidance, handler).await,
             pernixc_syntax::expression::terminator::Terminator::Express(
                 express,
             ) => self.bind(express, guidance, handler).await,
