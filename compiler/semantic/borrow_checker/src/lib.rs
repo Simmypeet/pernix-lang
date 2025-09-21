@@ -238,6 +238,7 @@
 
 use enum_as_inner::EnumAsInner;
 use pernixc_arena::ID;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{
     generic_parameters::LifetimeParameterID,
@@ -263,7 +264,18 @@ pub struct LocalRegionID(ID<LocalRegion>);
 
 /// An enumeration of either a named or elided lifetime parameter id.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    StableHash,
+    Serialize,
+    Deserialize,
 )]
 #[allow(missing_docs)]
 pub enum NonStaticUniversalRegion {
@@ -277,7 +289,18 @@ pub enum NonStaticUniversalRegion {
 /// bar: &'static bool)`, the `'a`, `'b`, and `'static` are the universal
 /// regions.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, EnumAsInner,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    EnumAsInner,
+    StableHash,
+    Serialize,
+    Deserialize,
 )]
 #[allow(missing_docs)]
 pub enum UniversalRegion {
