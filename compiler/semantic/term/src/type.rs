@@ -1038,8 +1038,10 @@ impl crate::display::Display for Type {
     ) -> std::fmt::Result {
         match self {
             Self::Inference(inference) => {
-                let Some(rendering) =
-                    formatter.type_inference_map.and_then(|x| x.get(inference))
+                let Some(rendering) = formatter
+                    .configuration()
+                    .type_inferences()
+                    .and_then(|x| x.get(inference))
                 else {
                     return write!(formatter, "_");
                 };
@@ -1086,7 +1088,10 @@ impl crate::display::Display for Type {
             Self::Reference(reference) => {
                 write!(formatter, "&")?;
 
-                if reference.lifetime.will_be_displayed() {
+                if formatter
+                    .configuration()
+                    .lifetime_will_be_displayed(&reference.lifetime)
+                {
                     reference.lifetime.fmt(engine, formatter).await?;
                     write!(formatter, " ")?;
                 }

@@ -486,7 +486,8 @@ impl crate::display::Display for Constant {
 
             Self::Inference(inference) => {
                 let Some(rendering) = formatter
-                    .constant_inference_map
+                    .configuration()
+                    .constant_inferences()
                     .and_then(|x| x.get(inference))
                 else {
                     return write!(formatter, "_");

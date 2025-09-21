@@ -204,18 +204,16 @@ impl Match for Lifetime {
     }
 }
 
-impl Lifetime {
-    /// Determines whether the lifetime will be displayed using
-    /// [`crate::display::Display`].
-    #[must_use]
-    pub const fn will_be_displayed(&self) -> bool {
-        !matches!(
-            self,
-            Self::Elided(_)
-                | Self::Inference(_)
-                | Self::Erased
-                | Self::Error(_)
-        )
+impl crate::display::Display for LifetimeParameterID {
+    async fn fmt(
+        &self,
+        engine: &TrackedEngine,
+        formatter: &mut crate::display::Formatter<'_, '_>,
+    ) -> std::fmt::Result {
+        let generic_parameters =
+            engine.get_generic_parameters(self.parent_id).await.unwrap();
+
+        write!(formatter, "'{}", generic_parameters.lifetimes()[self.id].name)
     }
 }
 
@@ -227,16 +225,7 @@ impl crate::display::Display for Lifetime {
     ) -> std::fmt::Result {
         match self {
             Self::Parameter(member_id) => {
-                let generic_parameters = engine
-                    .get_generic_parameters(member_id.parent_id)
-                    .await
-                    .unwrap();
-
-                write!(
-                    formatter,
-                    "'{}",
-                    generic_parameters.lifetimes()[member_id.id].name
-                )
+                member_id.fmt(engine, formatter).await
             }
 
             Self::Forall(forall) => {
@@ -248,7 +237,8 @@ impl crate::display::Display for Lifetime {
 
             Self::Inference(inference) => {
                 let Some(rendering) = formatter
-                    .lifetime_inference_map
+                    .configuration()
+                    .lifetime_inferences()
                     .and_then(|x| x.get(inference))
                 else {
                     return Ok(());

@@ -1,7 +1,9 @@
 //! Contains the definition of [`Display`], a custom alternative of the
 //! [`std::fmt::Display`].
 
+use bon::Builder;
 use flexstr::SharedStr;
+use getset::{CopyGetters, Getters};
 use pernixc_hash::HashMap;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -9,8 +11,9 @@ use pernixc_stable_hash::StableHash;
 
 use crate::{
     constant::Constant,
+    generic_arguments::GenericArguments,
     inference,
-    lifetime::{Forall, Lifetime},
+    lifetime::{ElidedLifetimeID, Forall, Lifetime},
     r#type::Type,
 };
 
@@ -40,16 +43,70 @@ pub enum InferenceRendering<T> {
 pub type InferenceRenderingMap<T> =
     HashMap<inference::Variable<T>, InferenceRendering<T>>;
 
+/// Configuration object for formatting terms.
+#[derive(Debug, Builder, CopyGetters)]
+pub struct Configuration<'y> {
+    /// Mapping for lifetime inference variables.
+    #[get_copy = "pub"]
+    lifetime_inferences: Option<&'y InferenceRenderingMap<Lifetime>>,
+    /// Mapping for type inference variables.
+    #[get_copy = "pub"]
+    type_inferences: Option<&'y InferenceRenderingMap<Type>>,
+    /// Mapping for constant inference variables.
+    #[get_copy = "pub"]
+    constant_inferences: Option<&'y InferenceRenderingMap<Constant>>,
+    /// Mapping for elided lifetime IDs to their names.
+    #[get_copy = "pub"]
+    edlided_lifetimes: Option<&'y HashMap<ElidedLifetimeID, SharedStr>>,
+}
+
+impl Configuration<'_> {
+    /// Checks whether the given lifetime will be displayed when formatting.
+    #[must_use]
+    pub fn lifetime_will_be_displayed(&self, lifetime: &Lifetime) -> bool {
+        match lifetime {
+            Lifetime::Inference(variable) => self
+                .lifetime_inferences
+                .is_some_and(|x| x.contains_key(variable)),
+
+            Lifetime::Elided(member_id) => self
+                .edlided_lifetimes
+                .is_some_and(|x| x.contains_key(member_id)),
+
+            Lifetime::Parameter(_) | Lifetime::Forall(_) | Lifetime::Static => {
+                true
+            }
+
+            Lifetime::Erased | Lifetime::Error(_) => false,
+        }
+    }
+
+    /// Determines whether the generic arguments will be displayed using
+    /// [`crate::display::Display`].
+    #[must_use]
+    pub fn generic_arguments_will_be_displayed(
+        &self,
+        generic_arguments: &GenericArguments,
+    ) -> bool {
+        generic_arguments
+            .lifetimes
+            .iter()
+            .any(|x| self.lifetime_will_be_displayed(x))
+            || !generic_arguments.types.is_empty()
+            || !generic_arguments.constants.is_empty()
+    }
+}
+
 /// Stores the internal buffer for formatting.
+#[derive(Builder, Getters)]
 pub struct Formatter<'x, 'y> {
     buffer: &'x mut (dyn std::fmt::Write + Send),
+
     forall_lifetime_names: HashMap<Forall, usize>,
 
-    pub(crate) lifetime_inference_map:
-        Option<&'y InferenceRenderingMap<Lifetime>>,
-    pub(crate) type_inference_map: Option<&'y InferenceRenderingMap<Type>>,
-    pub(crate) constant_inference_map:
-        Option<&'y InferenceRenderingMap<Constant>>,
+    /// Configuration for formatting.
+    #[get = "pub"]
+    configuration: &'y Configuration<'y>,
 }
 
 impl Formatter<'_, '_> {
@@ -96,9 +153,7 @@ pub trait Display: Send + Sync {
             let mut formatter = Formatter {
                 buffer,
                 forall_lifetime_names: HashMap::default(),
-                lifetime_inference_map: None,
-                type_inference_map: None,
-                constant_inference_map: None,
+                configuration: &Configuration::builder().build(),
             };
 
             self.fmt(engine, &mut formatter).await
@@ -116,12 +171,16 @@ pub trait Display: Send + Sync {
         constant_inference_map: Option<&InferenceRenderingMap<Constant>>,
     ) -> impl std::future::Future<Output = std::fmt::Result> {
         async move {
+            let configuration = Configuration::builder()
+                .maybe_lifetime_inferences(lifetime_inference_map)
+                .maybe_type_inferences(type_inference_map)
+                .maybe_constant_inferences(constant_inference_map)
+                .build();
+
             let mut formatter = Formatter {
                 buffer,
                 forall_lifetime_names: HashMap::default(),
-                lifetime_inference_map,
-                type_inference_map,
-                constant_inference_map,
+                configuration: &configuration,
             };
 
             self.fmt(engine, &mut formatter).await

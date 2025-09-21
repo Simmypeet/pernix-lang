@@ -55,15 +55,6 @@ impl GenericArguments {
             && self.types.is_empty()
             && self.constants.is_empty()
     }
-
-    /// Determines whether the generic arguments will be displayed using
-    /// [`crate::display::Display`].
-    #[must_use]
-    pub fn will_be_displayed(&self) -> bool {
-        self.lifetimes.iter().any(Lifetime::will_be_displayed)
-            || !self.types.is_empty()
-            || !self.constants.is_empty()
-    }
 }
 
 impl crate::display::Display for GenericArguments {
@@ -72,26 +63,31 @@ impl crate::display::Display for GenericArguments {
         engine: &pernixc_query::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
-        if !self.will_be_displayed() {
+        if formatter.configuration().generic_arguments_will_be_displayed(self) {
             return Ok(());
         }
 
-        let last_is = if self.constants.is_empty().not() {
-            GenericKind::Constant
-        } else if self.types.is_empty().not() {
-            GenericKind::Type
-        } else if self.lifetimes.iter().any(Lifetime::will_be_displayed) {
-            GenericKind::Lifetime
-        } else {
-            unreachable!()
-        };
+        let last_is =
+            if self.constants.is_empty().not() {
+                GenericKind::Constant
+            } else if self.types.is_empty().not() {
+                GenericKind::Type
+            } else if self.lifetimes.iter().any(|x| {
+                formatter.configuration().lifetime_will_be_displayed(x)
+            }) {
+                GenericKind::Lifetime
+            } else {
+                unreachable!()
+            };
 
         write!(formatter, "[")?;
 
         let lts = self
             .lifetimes
             .iter()
-            .filter(|lt| lt.will_be_displayed())
+            .filter(|lt| {
+                formatter.configuration().lifetime_will_be_displayed(lt)
+            })
             .collect::<Vec<_>>();
         let lts_len = lts.len();
 
