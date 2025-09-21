@@ -32,6 +32,7 @@ use crate::UniversalRegion;
 )]
 #[allow(missing_docs)]
 pub enum Diagnostic {
+    TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
     MovedOutWhileBorrowed(MovedOutWhileBorrowed),
     VariableDoesNotLiveLongEnough(VariableDoesNotLiveLongEnough),
     MutablyAccessWhileImmutablyBorrowed(MutablyAccessWhileImmutablyBorrowed),
@@ -44,6 +45,7 @@ impl Report for Diagnostic {
         engine: &TrackedEngine,
     ) -> Result<Rendered<ByteIndex>, CyclicError> {
         match self {
+            Self::TypeSystem(x) => x.report(engine).await,
             Self::MovedOutWhileBorrowed(x) => x.report(engine).await,
             Self::VariableDoesNotLiveLongEnough(x) => x.report(engine).await,
             Self::MutablyAccessWhileImmutablyBorrowed(x) => {

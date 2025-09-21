@@ -242,6 +242,7 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::{
     generic_parameters::LifetimeParameterID,
+    inference,
     lifetime::{ElidedLifetimeID, Lifetime},
 };
 
@@ -260,7 +261,7 @@ pub mod diagnostic;
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
 )]
-pub struct LocalRegionID(ID<LocalRegion>);
+pub struct LocalRegionID(inference::Variable<Lifetime>);
 
 /// An enumeration of either a named or elided lifetime parameter id.
 #[derive(
@@ -324,6 +325,24 @@ impl From<UniversalRegion> for Lifetime {
     }
 }
 
+impl TryFrom<Lifetime> for UniversalRegion {
+    type Error = Lifetime;
+
+    fn try_from(value: Lifetime) -> Result<Self, Self::Error> {
+        match value {
+            Lifetime::Static => Ok(Self::Static),
+            Lifetime::Parameter(member_id) => {
+                Ok(Self::NonStatic(NonStaticUniversalRegion::Named(member_id)))
+            }
+            Lifetime::Elided(member_id) => {
+                Ok(Self::NonStatic(NonStaticUniversalRegion::Elided(member_id)))
+            }
+
+            lifetime => Err(lifetime),
+        }
+    }
+}
+
 /// Represents a region inference that was created in the IR. (declared within
 /// the function body, automatically created by the compiler).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -348,11 +367,10 @@ pub enum Region {
     Local(LocalRegionID),
 }
 
-/*
-impl TryFrom<Lifetime<Model>> for Region {
-    type Error = Lifetime<Model>;
+impl TryFrom<Lifetime> for Region {
+    type Error = Lifetime;
 
-    fn try_from(value: Lifetime<Model>) -> Result<Self, Self::Error> {
+    fn try_from(value: Lifetime) -> Result<Self, Self::Error> {
         match value {
             Lifetime::Static => Ok(Self::Universal(UniversalRegion::Static)),
             Lifetime::Parameter(member_id) => {
@@ -365,12 +383,16 @@ impl TryFrom<Lifetime<Model>> for Region {
                     NonStaticUniversalRegion::Elided(member_id),
                 )))
             }
-            Lifetime::Inference(inference) => Ok(Self::Local(inference)),
+            Lifetime::Inference(inference) => {
+                Ok(Self::Local(LocalRegionID(inference)))
+            }
 
             lifetime => Err(lifetime),
         }
     }
 }
+
+/*
 
 /// The model used in borrow checking phase.
 #[derive(
