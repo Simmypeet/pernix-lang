@@ -2,6 +2,7 @@
 //! transforming the inference variables in the IR to concrete types after
 //! type inference has been completed.
 
+use pernixc_arena::ID;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_term::{
@@ -12,6 +13,8 @@ use pernixc_term::{
     lifetime::Lifetime,
     r#type::Type,
 };
+
+use crate::alloca::Alloca;
 
 /// A trait implemented by terms that can be transformed by a [`Transformer`]
 /// (lifetimes, types, and constants).
@@ -64,6 +67,9 @@ pub enum TypeTermSource {
 
     /// From the type in a cast expression like `expr as T`.
     Cast,
+
+    /// The type comes from an alloca instruction.
+    Alloca(ID<Alloca>),
 }
 
 impl Transformable for Type {

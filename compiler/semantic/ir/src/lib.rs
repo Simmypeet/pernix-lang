@@ -7,11 +7,16 @@ use alloca::Alloca;
 use control_flow_graph::ControlFlowGraph;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
+use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
-use crate::value::register::Register;
+use crate::{
+    transform::{Transformer, TypeTermSource},
+    value::register::Register,
+};
 
 pub mod address;
 pub mod alloca;
@@ -74,4 +79,36 @@ pub struct IR {
 
     /// The tree of scopes in the program.
     pub scope_tree: scope::Tree,
+}
+
+impl IR {
+    /// Applies the given transformer to all types, lifetimes, and constants in
+    /// the IR.
+    pub async fn transform<
+        T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
+    >(
+        &mut self,
+        tracked_engine: &TrackedEngine,
+        transformer: &mut T,
+    ) -> Result<(), CyclicError> {
+        self.control_flow_graph.transform(transformer).await?;
+
+        for (_, register) in &mut self.values.registers {
+            register.transform(transformer, tracked_engine).await?;
+        }
+
+        self.control_flow_graph.transform(transformer).await?;
+
+        for (&alloca_id, alloca) in &mut self.values.allocas {
+            transformer
+                .transform(
+                    &mut alloca.r#type,
+                    TypeTermSource::Alloca(alloca_id),
+                    alloca.span,
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
 }
