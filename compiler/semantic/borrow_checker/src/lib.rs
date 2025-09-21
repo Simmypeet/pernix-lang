@@ -207,65 +207,59 @@
 //! Now it's more clear that `?x` is a set of `{%r1, %r2}`, which is the
 //! possible `Borrow` expressions that it might come from.
 
-use std::collections::HashSet;
+// use std::collections::HashSet;
 
-use cache::{RegionVariances, RegisterInfos};
+// use cache::{RegionVariances, RegisterInfos};
+// use enum_as_inner::EnumAsInner;
+// use pernixc_abort::Abort;
+// use pernixc_arena::{Key, ID};
+// use pernixc_handler::Handler;
+// use pernixc_semantic::{
+//     component::derived::{
+//         elided_lifetimes::ElidedLifetimeID,
+//         generic_parameters::{GenericParameters, LifetimeParameterID},
+//         ir::{address::Address, Representation, Values},
+//     },
+//     diagnostic::Diagnostic,
+//     table::{self, GlobalID, Table},
+//     term::{
+//         self,
+//         constant::Constant,
+//         lifetime::Lifetime,
+//         r#type::{Qualifier, Type},
+//         visitor::RecursiveIterator,
+//         ModelOf, Never,
+//     },
+// };
+// use pernixc_source_file::Span;
+// use pernixc_type_of::TypeOf;
+// use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+// use serde::{Deserialize, Serialize};
+
 use enum_as_inner::EnumAsInner;
-use pernixc_abort::Abort;
-use pernixc_arena::{Key, ID};
-use pernixc_handler::Handler;
-use pernixc_semantic::{
-    component::derived::{
-        elided_lifetimes::ElidedLifetimeID,
-        generic_parameters::{GenericParameters, LifetimeParameterID},
-        ir::{address::Address, Representation, Values},
-    },
-    diagnostic::Diagnostic,
-    table::{self, GlobalID, Table},
-    term::{
-        self,
-        constant::Constant,
-        lifetime::Lifetime,
-        r#type::{Qualifier, Type},
-        visitor::RecursiveIterator,
-        ModelOf, Never,
-    },
+use pernixc_arena::ID;
+use pernixc_stable_hash::StableHash;
+use pernixc_term::{
+    generic_parameters::LifetimeParameterID,
+    lifetime::{ElidedLifetimeID, Lifetime},
 };
-use pernixc_source_file::Span;
-use pernixc_type_of::TypeOf;
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
-use serde::{Deserialize, Serialize};
 
 pub(crate) mod cache;
-pub(crate) mod check;
-pub(crate) mod invalidate;
-pub(crate) mod liveness;
-pub(crate) mod local_region_generator;
-pub(crate) mod subset;
-pub(crate) mod transform;
+// pub(crate) mod check;
+// pub(crate) mod invalidate;
+// pub(crate) mod liveness;
+// pub(crate) mod local_region_generator;
+// pub(crate) mod subset;
+// pub(crate) mod transform;
 
 pub mod diagnostic;
 
 /// A new type wrapper over a [`ID<LocalRegion>`] to overcome the constraint
 /// over orphan-rule
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    derive_more::From,
-    Serialize,
-    Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
 )]
 pub struct LocalRegionID(ID<LocalRegion>);
-
-impl From<Never> for LocalRegionID {
-    fn from(value: Never) -> Self { match value {} }
-}
 
 /// An enumeration of either a named or elided lifetime parameter id.
 #[derive(
@@ -291,24 +285,7 @@ pub enum UniversalRegion {
     NonStatic(NonStaticUniversalRegion),
 }
 
-impl<M: term::Model> TryFrom<Lifetime<M>> for UniversalRegion {
-    type Error = Lifetime<M>;
-
-    fn try_from(value: Lifetime<M>) -> Result<Self, Self::Error> {
-        match value {
-            Lifetime::Static => Ok(Self::Static),
-            Lifetime::Parameter(member_id) => {
-                Ok(Self::NonStatic(NonStaticUniversalRegion::Named(member_id)))
-            }
-            Lifetime::Elided(member_id) => {
-                Ok(Self::NonStatic(NonStaticUniversalRegion::Elided(member_id)))
-            }
-            lifetime => Err(lifetime),
-        }
-    }
-}
-
-impl<M: term::Model> From<UniversalRegion> for Lifetime<M> {
+impl From<UniversalRegion> for Lifetime {
     fn from(value: UniversalRegion) -> Self {
         match value {
             UniversalRegion::Static => Self::Static,
@@ -320,38 +297,6 @@ impl<M: term::Model> From<UniversalRegion> for Lifetime<M> {
                     Self::Elided(member_id)
                 }
             },
-        }
-    }
-}
-
-impl table::Display for UniversalRegion {
-    fn fmt(
-        &self,
-        table: &Table,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
-        match self {
-            Self::Static => write!(f, "'static"),
-            Self::NonStatic(id) => {
-                match id {
-                    NonStaticUniversalRegion::Named(member_id) => {
-                        let generic_parameters = table
-                            .query::<GenericParameters>(member_id.parent)
-                            .unwrap();
-
-                        write!(
-                            f,
-                            "'{}",
-                            generic_parameters.lifetimes()[member_id.id].name
-                        )?;
-                    }
-                    NonStaticUniversalRegion::Elided(member_id) => {
-                        write!(f, "'{}", member_id.id.into_index())?;
-                    }
-                };
-
-                Ok(())
-            }
         }
     }
 }
@@ -380,6 +325,7 @@ pub enum Region {
     Local(LocalRegionID),
 }
 
+/*
 impl TryFrom<Lifetime<Model>> for Region {
     type Error = Lifetime<Model>;
 
@@ -617,3 +563,5 @@ pub fn borrow_check(
 
     Ok(())
 }
+
+*/

@@ -1,0 +1,32 @@
+[package]
+name = "pernixc_borrow_checker"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pernixc_arena = { path = "../../base/arena" }
+pernixc_source_file = { path = "../../base/source_file" }
+pernixc_handler = { path = "../../base/handler" }
+pernixc_diagnostic = { path = "../../base/diagnostic" }
+pernixc_stable_hash = { path = "../../base/stable_hash" }
+pernixc_hash = { path = "../../base/hash" }
+pernixc_serialize = { path = "../../base/serialize" }
+pernixc_query = { path = "../../base/query" }
+pernixc_target = { path = "../../base/target" }
+pernixc_corelib = { path = "../corelib" }
+pernixc_lexical = { path = "../../syntax/lexical" }
+pernixc_semantic_element = { path = "../semantic_element" }
+pernixc_ir = { path = "../ir" }
+pernixc_term = { path = "../term" }
+pernixc_symbol = { path = "../symbol" }
+pernixc_type_system = { path = "../type_system" }
+derive_more = { workspace = true }
+enum-as-inner = { workspace = true }
+serde = { workspace = true }
+getset = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,10 +1,11 @@
 //! Contains the dianostic types related to the borrow check analysis.
 
 use enum_as_inner::EnumAsInner;
-use pernixc_diagnostic::{Diagnostic, Related, Report};
-use pernixc_log::Severity;
-use pernixc_semantic::table::{DisplayObject, Table};
+use pernixc_diagnostic::{ByteIndex, Highlight, Rendered, Report, Severity};
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_source_file::Span;
+use pernixc_symbol::source_map::to_absolute_span;
 
 use crate::UniversalRegion;
 
@@ -14,9 +15,9 @@ use crate::UniversalRegion;
 pub enum Usage {
     /// The invalidated borrows are later used within the body of local
     /// function/scope.
-    Local(Span),
+    Local(RelativeSpan),
 
-    /// The invalidated borrows might be later used by the univseral regions
+    /// The invalidated borrows might be later used by the universal regions
     /// (the caller of the function).
     ByUniversalRegions(Vec<UniversalRegion>),
 
@@ -28,22 +29,22 @@ pub enum Usage {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MovedOutWhileBorrowed {
     /// The span of the borrow.
-    pub borrow_span: Span,
+    pub borrow_span: RelativeSpan,
 
     /// The span of the borrow usage.
     pub usage: Usage,
 
     /// The span where the value is moved out
-    pub moved_out_span: Span,
+    pub moved_out_span: RelativeSpan,
 }
 
-impl Report<&Table> for MovedOutWhileBorrowed {
-    fn report(&self, table: &Table) -> Diagnostic {
+impl Report for MovedOutWhileBorrowed {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<Rendered<ByteIndex>, CyclicError> {
         Diagnostic {
             span: self.moved_out_span.clone(),
-            message: "the value is moved out from the variable while it is \
-                      borrowed"
-                .to_string(),
             severity: Severity::Error,
             help_message: match &self.usage {
                 Usage::Local { .. } => None,
@@ -77,7 +78,42 @@ impl Report<&Table> for MovedOutWhileBorrowed {
                 }
             }))
             .collect(),
-        }
+        };
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(
+                "the value is moved out from the variable while it is borrowed",
+            )
+            .severity(Severity::Error)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.moved_out_span).await)
+                    .maybe_message(match self.usage {
+                        Usage::Local(span) => todo!(),
+
+                        Usage::ByUniversalRegions(universal_regions) => {
+                            Some(format!(
+                                "lifetime(s) {} can access the borrow later",
+                                universal_regions
+                                    .iter()
+                                    .map(|x| DisplayObject {
+                                        display: x,
+                                        table
+                                    }
+                                    .to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ))
+                        }
+
+                        Usage::Drop => Some(
+                            "the borrow is used in the drop implementation"
+                                .to_string(),
+                        ),
+                    })
+                    .build(),
+            )
+            .build())
     }
 }
 
@@ -94,8 +130,11 @@ pub struct VariableDoesNotLiveLongEnough {
     pub usage: Usage,
 }
 
-impl Report<&Table> for VariableDoesNotLiveLongEnough {
-    fn report(&self, table: &Table) -> Diagnostic {
+impl Report for VariableDoesNotLiveLongEnough {
+    fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<Rendered<ByteIndex>, CyclicError> {
         Diagnostic {
             span: self.variable_span.clone(),
             message: "the variable doesn't live long enough".to_string(),
@@ -104,6 +143,7 @@ impl Report<&Table> for VariableDoesNotLiveLongEnough {
                 Usage::Local { .. } => None,
                 Usage::ByUniversalRegions(vec) => Some(format!(
                         "lifetime(s) {} can access the borrow later",
+
                         vec.iter()
                             .map(|x| DisplayObject { display: x, table }
                                 .to_string())
@@ -131,17 +171,20 @@ impl Report<&Table> for VariableDoesNotLiveLongEnough {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MutablyAccessWhileImmutablyBorrowed {
     /// The span of the mutable access.
-    pub mutable_access_span: Span,
+    pub mutable_access_span: RelativeSpan,
 
     /// The span of the prior borrow.
-    pub immutable_borrow_span: Option<Span>,
+    pub immutable_borrow_span: Option<RelativeSpan>,
 
     /// The usage span of the prior borrow.
     pub usage: Usage,
 }
 
-impl Report<&Table> for MutablyAccessWhileImmutablyBorrowed {
-    fn report(&self, table: &Table) -> Diagnostic {
+impl Report for MutablyAccessWhileImmutablyBorrowed {
+    fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<Rendered<ByteIndex>, CyclicError> {
         Diagnostic {
             span: self.mutable_access_span.clone(),
             message: format!(
@@ -194,17 +237,20 @@ impl Report<&Table> for MutablyAccessWhileImmutablyBorrowed {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AccessWhileMutablyBorrowed {
     /// The span of the access.
-    pub access_span: Span,
+    pub access_span: RelativeSpan,
 
     /// The span of the prior borrow.
-    pub mutable_borrow_span: Option<Span>,
+    pub mutable_borrow_span: Option<RelativeSpan>,
 
     /// The usage span of the prior borrow.
     pub borrow_usage: Usage,
 }
 
-impl Report<&Table> for AccessWhileMutablyBorrowed {
-    fn report(&self, table: &Table) -> Diagnostic {
+impl Report for AccessWhileMutablyBorrowed {
+    fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<Rendered<ByteIndex>, CyclicError> {
         Diagnostic {
             span: self.access_span.clone(),
             message: format!(
