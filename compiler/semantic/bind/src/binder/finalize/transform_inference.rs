@@ -175,32 +175,7 @@ impl Binder<'_> {
             handler,
         };
 
-        for (_, register) in &mut self.ir.values.registers {
-            register.transform(&mut transformer, self.engine).await?;
-        }
-
-        self.ir.control_flow_graph.transform(&mut transformer).await?;
-
-        for (_, alloca) in &mut self.ir.values.allocas {
-            match transformer
-                .environment
-                .simplify(std::mem::take(&mut alloca.r#type))
-                .await
-            {
-                Ok(simplified) => {
-                    alloca.r#type = simplified.result.clone();
-                }
-                Err(pernixc_type_system::Error::Overflow(overflow)) => {
-                    overflow.report_as_type_calculating_overflow(
-                        alloca.span.unwrap(),
-                        &handler,
-                    );
-                }
-                Err(pernixc_type_system::Error::CyclicDependency(err)) => {
-                    return Err(err)
-                }
-            }
-        }
+        self.ir.transform(self.engine, &mut transformer).await?;
 
         Ok(())
     }
