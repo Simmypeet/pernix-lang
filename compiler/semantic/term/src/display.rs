@@ -200,4 +200,26 @@ pub trait Display: Send + Sync {
             Result::<_, std::fmt::Error>::Ok(string)
         }
     }
+
+    /// Writes the value into a string, using the given formatting
+    /// configuration.c
+    fn write_to_string_with_configuration(
+        &self,
+        engine: &TrackedEngine,
+        configuration: &Configuration,
+    ) -> impl std::future::Future<Output = Result<String, std::fmt::Error>>
+    {
+        async move {
+            let mut string = String::new();
+            let mut formatter = Formatter {
+                buffer: &mut string,
+                forall_lifetime_names: HashMap::default(),
+                configuration,
+            };
+
+            self.fmt(engine, &mut formatter).await?;
+
+            Result::<_, std::fmt::Error>::Ok(string)
+        }
+    }
 }
