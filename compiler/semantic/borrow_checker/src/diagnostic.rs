@@ -30,7 +30,7 @@ use crate::UniversalRegion;
     Deserialize,
     derive_more::From,
 )]
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::large_enum_variant)]
 pub enum Diagnostic {
     TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
     MovedOutWhileBorrowed(MovedOutWhileBorrowed),

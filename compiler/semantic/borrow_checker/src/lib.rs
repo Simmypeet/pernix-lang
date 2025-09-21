@@ -237,31 +237,36 @@
 // use serde::{Deserialize, Serialize};
 
 use enum_as_inner::EnumAsInner;
-use pernixc_arena::ID;
+use pernixc_handler::Handler;
+use pernixc_ir::IR;
+use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_target::Global;
 use pernixc_term::{
     generic_parameters::LifetimeParameterID,
     inference,
     lifetime::{ElidedLifetimeID, Lifetime},
+};
+use pernixc_type_system::{
+    environment::Environment, normalizer::Normalizer, UnrecoverableError,
+};
+
+use crate::{
+    cache::{RegionVariances, RegisterInfos},
+    diagnostic::Diagnostic,
 };
 
 pub(crate) mod cache;
 // pub(crate) mod check;
 // pub(crate) mod invalidate;
 // pub(crate) mod liveness;
-// pub(crate) mod local_region_generator;
+pub(crate) mod local_region_generator;
 // pub(crate) mod subset;
-// pub(crate) mod transform;
+pub(crate) mod context;
+pub(crate) mod transform;
 
 pub mod diagnostic;
-
-/// A new type wrapper over a [`ID<LocalRegion>`] to overcome the constraint
-/// over orphan-rule
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, derive_more::From,
-)]
-pub struct LocalRegionID(inference::Variable<Lifetime>);
 
 /// An enumeration of either a named or elided lifetime parameter id.
 #[derive(
@@ -364,7 +369,7 @@ pub struct LocalRegion;
 #[allow(missing_docs)]
 pub enum Region {
     Universal(UniversalRegion),
-    Local(LocalRegionID),
+    Local(inference::Variable<Lifetime>),
 }
 
 impl TryFrom<Lifetime> for Region {
@@ -383,230 +388,47 @@ impl TryFrom<Lifetime> for Region {
                     NonStaticUniversalRegion::Elided(member_id),
                 )))
             }
-            Lifetime::Inference(inference) => {
-                Ok(Self::Local(LocalRegionID(inference)))
-            }
+            Lifetime::Inference(inference) => Ok(Self::Local(inference)),
 
             lifetime => Err(lifetime),
         }
     }
 }
 
-/*
-
-/// The model used in borrow checking phase.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-    Serialize,
-    Deserialize,
-)]
-pub struct Model;
-
-impl term::Model for Model {
-    type LifetimeInference = LocalRegionID;
-    type TypeInference = Never;
-    type ConstantInference = Never;
-
-    fn from_default_type(ty: Type<term::Default>) -> Type<Self> {
-        Type::from_other_model(ty)
-    }
-
-    fn from_default_lifetime(
-        lifetime: Lifetime<term::Default>,
-    ) -> Lifetime<Self> {
-        Lifetime::from_other_model(lifetime)
-    }
-
-    fn from_default_constant(
-        constant: Constant<term::Default>,
-    ) -> Constant<Self> {
-        Constant::from_other_model(constant)
-    }
-}
-
-/// Gets the regions that got dereferenced when using the given address
-fn get_dereferenced_regions_in_address(
-    values: &Values<Model>,
-    mut address: &Address<Model>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<Model, impl Normalizer<Model>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<HashSet<Region>, Abort> {
-    let mut regions = HashSet::new();
-
-    loop {
-        match address {
-            Address::Memory(_) => break Ok(regions),
-
-            Address::Field(field) => {
-                address = &field.struct_address;
-            }
-            Address::Tuple(tuple) => {
-                address = &tuple.tuple_address;
-            }
-            Address::Index(index) => {
-                address = &index.array_address;
-            }
-            Address::Variant(variant) => {
-                address = &variant.enum_address;
-            }
-
-            Address::Reference(reference) => {
-                let pointee_ty = values
-                    .type_of(
-                        &*reference.reference_address,
-                        current_site,
-                        environment,
-                    )
-                    .map_err(|x| {
-                        x.report_overflow(|x| {
-                            x.report_as_type_calculating_overflow(
-                                span.clone(),
-                                handler,
-                            )
-                        })
-                    })?
-                    .result;
-
-                let pointee_reference_ty = pointee_ty.into_reference().unwrap();
-
-                regions.extend(
-                    Region::try_from(pointee_reference_ty.lifetime).ok(),
-                );
-
-                address = &reference.reference_address;
-            }
-        }
-    }
-}
-
-/// Gets the regions that appears when using the given address
-fn get_regions_in_address(
-    values: &Values<Model>,
-    mut address: &Address<Model>,
-    span: &Span,
-    include_deref: bool,
-    current_site: GlobalID,
-    environment: &Environment<Model, impl Normalizer<Model>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<HashSet<Region>, Abort> {
-    let address_ty = values
-        .type_of(address, current_site, environment)
-        .map_err(|x| {
-            x.report_overflow(|x| {
-                x.report_as_type_calculating_overflow(span.clone(), handler)
-            })
-        })?
-        .result;
-
-    let mut regions = RecursiveIterator::new(&address_ty)
-        .filter_map(|x| x.0.into_lifetime().ok())
-        .filter_map(|x| Region::try_from(*x).ok())
-        .collect::<HashSet<_>>();
-
-    if include_deref {
-        loop {
-            match address {
-                Address::Memory(_) => break,
-
-                Address::Field(field) => {
-                    address = &field.struct_address;
-                }
-                Address::Tuple(tuple) => {
-                    address = &tuple.tuple_address;
-                }
-                Address::Index(index) => {
-                    address = &index.array_address;
-                }
-                Address::Variant(variant) => {
-                    address = &variant.enum_address;
-                }
-
-                Address::Reference(reference) => {
-                    let pointee_ty = values
-                        .type_of(
-                            &*reference.reference_address,
-                            current_site,
-                            environment,
-                        )
-                        .map_err(|x| {
-                            x.report_overflow(|x| {
-                                x.report_as_type_calculating_overflow(
-                                    span.clone(),
-                                    handler,
-                                )
-                            })
-                        })?
-                        .result;
-
-                    let pointee_reference_ty =
-                        pointee_ty.into_reference().unwrap();
-
-                    regions.extend(
-                        Region::try_from(pointee_reference_ty.lifetime).ok(),
-                    );
-
-                    if pointee_reference_ty.qualifier == Qualifier::Immutable {
-                        break;
-                    }
-
-                    address = &reference.reference_address;
-                }
-            }
-        }
-    }
-
-    Ok(regions)
-}
-
-/// Performs the borrow check analysis.
 #[allow(clippy::missing_errors_doc)]
-pub fn borrow_check(
-    ir: &Representation<pernixc_semantic::component::derived::ir::model::Model>,
-    current_site: GlobalID,
-    environment: &Environment<Model, impl Normalizer<Model>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<(), Abort> {
+pub async fn borrow_check<N: Normalizer>(
+    ir: &IR,
+    current_site: Global<pernixc_symbol::ID>,
+    environment: &Environment<'_, N>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
     // NOTE: we clone the whole ir here, is there a better way to do this?
-    let (ir, _) =
-        transform::transform_to_borrow_model(ir.clone(), environment.table());
+    let mut ir = ir.clone();
 
-    let register_infos =
-        RegisterInfos::new(&ir, current_site, environment, handler)?;
-    let region_variances =
-        RegionVariances::new(&ir, current_site, environment)?;
-    let reachability = ir.control_flow_graph.reachability();
+    transform::transform_to_inference(&mut ir, environment.tracked_engine());
 
-    let subset = subset::analyze(
-        &ir,
-        &register_infos,
-        &region_variances,
-        current_site,
-        environment,
-        handler,
-    )?;
+    let context =
+        context::Context::new(&ir, environment, current_site, handler).await?;
 
-    check::borrow_check_internal(
-        &ir,
-        &subset,
-        &register_infos,
-        &region_variances,
-        &reachability,
-        current_site,
-        environment,
-        handler,
-    )?;
+    // let subset = subset::analyze(
+    //     &ir,
+    //     &register_infos,
+    //     &region_variances,
+    //     current_site,
+    //     environment,
+    //     handler,
+    // )?;
+
+    // check::borrow_check_internal(
+    //     &ir,
+    //     &subset,
+    //     &register_infos,
+    //     &region_variances,
+    //     &reachability,
+    //     current_site,
+    //     environment,
+    //     handler,
+    // )?;
 
     Ok(())
 }
-
-*/
