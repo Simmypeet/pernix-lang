@@ -63,7 +63,8 @@ impl crate::display::Display for GenericArguments {
         engine: &pernixc_query::TrackedEngine,
         formatter: &mut crate::display::Formatter<'_, '_>,
     ) -> std::fmt::Result {
-        if formatter.configuration().generic_arguments_will_be_displayed(self) {
+        if !formatter.configuration().generic_arguments_will_be_displayed(self)
+        {
             return Ok(());
         }
 
