@@ -1,7 +1,5 @@
 //! Contains the definition of [`TransitiveClosure`]
 
-use std::cell::Cell;
-
 use getset::{CopyGetters, Getters};
 
 /// Used for efficiently representing an array of true/false values.
@@ -10,7 +8,7 @@ use getset::{CopyGetters, Getters};
 /// boolean values as a single 64-bit integer.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BitSet {
-    bits: Vec<Cell<u64>>,
+    bits: Vec<u64>,
     size: usize,
 }
 
@@ -18,7 +16,7 @@ impl BitSet {
     /// Creates a new dynamic bitset with the given size.
     #[must_use]
     pub fn new(size: usize) -> Self {
-        let bits = vec![Cell::new(0); size.div_ceil(64)];
+        let bits = vec![0; size.div_ceil(64)];
         Self { bits, size }
     }
 
@@ -29,7 +27,7 @@ impl BitSet {
     /// Returns `None` if the index is out of bounds, otherwise returns `Some`
     /// with `true` if there was a change in the bitset.
     #[must_use]
-    pub fn set(&self, index: usize) -> Option<bool> {
+    pub fn set(&mut self, index: usize) -> Option<bool> {
         if index >= self.size {
             return None;
         }
@@ -37,16 +35,16 @@ impl BitSet {
         let word = index / 64;
         let bit = index % 64;
 
-        let old = self.bits[word].get();
-        self.bits[word].set(old | (1 << bit));
+        let old = self.bits[word];
+        self.bits[word] = old | (1 << bit);
 
-        Some(old != self.bits[word].get())
+        Some(old != self.bits[word])
     }
 
     /// Set all bits to 0
-    pub fn clear(&self) {
-        for word in &self.bits {
-            word.set(0);
+    pub fn clear(&mut self) {
+        for word in &mut self.bits {
+            *word = 0;
         }
     }
 
@@ -57,7 +55,7 @@ impl BitSet {
     /// Returns `None` if the index is out of bounds, otherwise returns `Some`
     /// with `true` if there was a change in the bitset.
     #[must_use]
-    pub fn unset(&self, index: usize) -> Option<bool> {
+    pub fn unset(&mut self, index: usize) -> Option<bool> {
         if index >= self.size {
             return None;
         }
@@ -65,10 +63,10 @@ impl BitSet {
         let word = index / 64;
         let bit = index % 64;
 
-        let old = self.bits[word].get();
-        self.bits[word].set(old & !(1 << bit));
+        let old = self.bits[word];
+        self.bits[word] = old & !(1 << bit);
 
-        Some(old != self.bits[word].get())
+        Some(old != self.bits[word])
     }
 
     /// Get the value of the bit at the given index
@@ -85,7 +83,7 @@ impl BitSet {
 
         let word = index / 64;
         let bit = index % 64;
-        Some((self.bits[word].get() & (1 << bit)) != 0)
+        Some((self.bits[word] & (1 << bit)) != 0)
     }
 
     /// Perform a bitwise OR operation with another bitset
@@ -95,16 +93,17 @@ impl BitSet {
     /// Returns `None` if the bitsets have different sizes, otherwise returns
     /// `Some` with `true` if there was a change in the bitset.
     #[must_use]
-    pub fn or(&self, other: &Self) -> Option<bool> {
+    pub fn or(&mut self, other: &Self) -> Option<bool> {
         if self.size != other.size {
             return None;
         }
 
         let mut changed = false;
         for (i, word) in other.bits.iter().enumerate() {
-            let old = self.bits[i].get();
-            self.bits[i].set(old | word.get());
-            changed |= old != self.bits[i].get();
+            let old = self.bits[i];
+            self.bits[i] = old | word;
+
+            changed |= old != self.bits[i];
         }
 
         Some(changed)
@@ -117,16 +116,16 @@ impl BitSet {
     /// Returns `None` if the bitsets have different sizes, otherwise returns
     /// `Some` with `true` if there was a change in the bitset.
     #[must_use]
-    pub fn and(&self, other: &Self) -> Option<bool> {
+    pub fn and(&mut self, other: &Self) -> Option<bool> {
         if self.size != other.size {
             return None;
         }
 
         let mut changed = false;
         for (i, word) in other.bits.iter().enumerate() {
-            let old = self.bits[i].get();
-            self.bits[i].set(old & word.get());
-            changed |= old != self.bits[i].get();
+            let old = self.bits[i];
+            self.bits[i] = old & word;
+            changed |= old != self.bits[i];
         }
 
         Some(changed)
@@ -135,8 +134,8 @@ impl BitSet {
     /// Checks if any bit is set to 1
     #[allow(unused)]
     #[must_use]
-    pub fn is_not_zero(&self) -> bool {
-        self.bits.iter().any(|word| word.get() != 0)
+    pub fn is_not_zero(&mut self) -> bool {
+        self.bits.iter().any(|word| *word != 0)
     }
 }
 
@@ -167,7 +166,7 @@ impl TransitiveClosure {
         size: usize,
         include_self_loops: bool,
     ) -> Option<Self> {
-        let transitive_closure = vec![BitSet::new(size); size];
+        let mut transitive_closure = vec![BitSet::new(size); size];
 
         if include_self_loops {
             for i in 0..size {
@@ -175,7 +174,7 @@ impl TransitiveClosure {
             }
         }
 
-        let result = Self { size, closure: transitive_closure };
+        let mut result = Self { size, closure: transitive_closure };
 
         let mut changed = true;
         while changed {
@@ -183,7 +182,16 @@ impl TransitiveClosure {
 
             for (from, to) in edges.clone() {
                 changed |= result.closure[from].set(to)?;
-                changed |= result.closure[from].or(&result.closure[to])?;
+
+                // skip redundant `or`ing
+
+                let Ok([left, right]) =
+                    result.closure.get_disjoint_mut([from, to])
+                else {
+                    continue;
+                };
+
+                changed |= left.or(right)?;
             }
         }
 
