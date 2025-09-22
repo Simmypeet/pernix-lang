@@ -562,7 +562,6 @@ impl InferenceContext {
                 continue;
             };
 
-            dbg!(inference, inferring);
             if inference == inferring {
                 return Err(T::from_cyclic_inference_error(
                     CyclicInferenceError(*inference_variable),
