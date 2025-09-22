@@ -166,21 +166,20 @@ impl Report for MovedOutWhileBorrowed {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.moved_out_span).await)
-                    .maybe_message(match &self.usage {
-                        Usage::Local(_) => None,
-
-                        Usage::ByUniversalRegions(universal_regions) => Some(
-                            format_universal_regions(engine, universal_regions)
-                                .await,
-                        ),
-
-                        Usage::Drop => Some(
-                            "the borrow is used in the drop implementation"
-                                .to_string(),
-                        ),
-                    })
+                    .message("the value is moved out here while it is borrowed")
                     .build(),
             )
+            .maybe_help_message(match &self.usage {
+                Usage::Local(_) => None,
+
+                Usage::ByUniversalRegions(universal_regions) => Some(
+                    format_universal_regions(engine, universal_regions).await,
+                ),
+
+                Usage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            })
             .related(related)
             .build())
     }
@@ -235,21 +234,22 @@ impl Report for VariableDoesNotLiveLongEnough {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.variable_span).await)
-                    .maybe_message(match &self.usage {
-                        Usage::Local(_) => None,
-
-                        Usage::ByUniversalRegions(universal_regions) => Some(
-                            format_universal_regions(engine, universal_regions)
-                                .await,
-                        ),
-
-                        Usage::Drop => Some(
-                            "the borrow is used in the drop implementation"
-                                .to_string(),
-                        ),
-                    })
+                    .message(
+                        "the variable declared here doesn't live long enough",
+                    )
                     .build(),
             )
+            .maybe_help_message(match &self.usage {
+                Usage::Local(_) => None,
+
+                Usage::ByUniversalRegions(universal_regions) => Some(
+                    format_universal_regions(engine, universal_regions).await,
+                ),
+
+                Usage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            })
             .related(related)
             .build())
     }
@@ -326,21 +326,20 @@ impl Report for MutablyAccessWhileImmutablyBorrowed {
                             .to_absolute_span(&self.mutable_access_span)
                             .await,
                     )
-                    .maybe_message(match &self.usage {
-                        Usage::Local(_) => None,
-
-                        Usage::ByUniversalRegions(universal_regions) => Some(
-                            format_universal_regions(engine, universal_regions)
-                                .await,
-                        ),
-
-                        Usage::Drop => Some(
-                            "the borrow is used in the drop implementation"
-                                .to_string(),
-                        ),
-                    })
+                    .message("mutable access occurs here")
                     .build(),
             )
+            .maybe_help_message(match &self.usage {
+                Usage::Local(_) => None,
+
+                Usage::ByUniversalRegions(universal_regions) => Some(
+                    format_universal_regions(engine, universal_regions).await,
+                ),
+
+                Usage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            })
             .related(related)
             .build())
     }
@@ -413,22 +412,21 @@ impl Report for AccessWhileMutablyBorrowed {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.access_span).await)
-                    .maybe_message(match &self.borrow_usage {
-                        Usage::Local(_) => None,
-
-                        Usage::ByUniversalRegions(universal_regions) => Some(
-                            format_universal_regions(engine, universal_regions)
-                                .await,
-                        ),
-
-                        Usage::Drop => Some(
-                            "the borrow is used in the drop implementation"
-                                .to_string(),
-                        ),
-                    })
+                    .message("access occurs here while it is mutably borrowed")
                     .build(),
             )
             .related(related)
+            .maybe_help_message(match &self.borrow_usage {
+                Usage::Local(_) => None,
+
+                Usage::ByUniversalRegions(universal_regions) => Some(
+                    format_universal_regions(engine, universal_regions).await,
+                ),
+
+                Usage::Drop => Some(
+                    "the borrow is used in the drop implementation".to_string(),
+                ),
+            })
             .build())
     }
 }
