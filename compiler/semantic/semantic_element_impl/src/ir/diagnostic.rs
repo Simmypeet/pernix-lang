@@ -15,6 +15,7 @@ use pernixc_stable_hash::StableHash;
 pub enum Diagnostic {
     Bind(pernixc_bind::diagnostic::Diagnostic),
     MemoryChecker(pernixc_memory_checker::diagnostic::Diagnostic),
+    BorrowChecker(pernixc_borrow_checker::diagnostic::Diagnostic),
 }
 
 impl Report for Diagnostic {
@@ -28,6 +29,7 @@ impl Report for Diagnostic {
         match self {
             Self::Bind(d) => d.report(engine).await,
             Self::MemoryChecker(d) => d.report(engine).await,
+            Self::BorrowChecker(d) => d.report(engine).await,
         }
     }
 }

@@ -4,6 +4,10 @@ use pernixc_bind::binder::{Binder, UnrecoverableError};
 use pernixc_handler::Storage;
 use pernixc_query::runtime::executor;
 use pernixc_symbol::{kind::get_kind, syntax::get_function_body_syntax};
+use pernixc_type_system::{
+    environment::{get_active_premise, Environment},
+    normalizer,
+};
 
 use crate::build::{self, Build, Output};
 
@@ -44,6 +48,31 @@ async fn build_ir_for_function(
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
+        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+    }
+
+    // if there's an error, should not proceed to borrow checking
+    if !storage.as_vec().is_empty() {
+        return Ok(Arc::new(ir));
+    }
+
+    let active_premse = engine.get_active_premise(key.0).await?;
+
+    let env = Environment::new(
+        std::borrow::Cow::Borrowed(&active_premse),
+        std::borrow::Cow::Borrowed(engine),
+        normalizer::NO_OP,
+    );
+
+    // do borrow checking analysis
+    match pernixc_borrow_checker::borrow_check(&ir, key.0, &env, storage).await
+    {
+        Ok(()) => {}
+
+        Err(UnrecoverableError::CyclicDependency(error)) => {
+            return Err(error);
+        }
+
         Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
     }
 

@@ -279,7 +279,7 @@ impl ControlFlowGraph {
         let mut block_ids_to_index = HashMap::default();
         let mut index_to_block_ids = Vec::new();
 
-        for (index, id) in self.blocks().ids().enumerate() {
+        for (index, id) in self.blocks.ids().enumerate() {
             block_ids_to_index.insert(id, index);
             index_to_block_ids.push(id);
         }

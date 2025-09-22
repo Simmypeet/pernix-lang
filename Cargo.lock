@@ -1562,6 +1562,7 @@ dependencies = [
  "flexstr",
  "pernixc_arena",
  "pernixc_bind",
+ "pernixc_borrow_checker",
  "pernixc_diagnostic",
  "pernixc_extend",
  "pernixc_handler",

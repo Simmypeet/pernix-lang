@@ -129,10 +129,12 @@ impl<'a, N: Normalizer> Context<'a, N> {
             })?
             .result;
 
-        let mut regions = RecursiveIterator::new(&address_ty)
-            .filter_map(|x| x.0.into_lifetime().ok())
-            .filter_map(|x| Region::try_from(*x).ok())
-            .collect::<HashSet<_>>();
+        let mut regions = HashSet::default();
+
+        // let mut regions = RecursiveIterator::new(&address_ty)
+        //     .filter_map(|x| x.0.into_lifetime().ok())
+        //     .filter_map(|x| Region::try_from(*x).ok())
+        //     .collect::<HashSet<_>>();
 
         if include_deref {
             loop {

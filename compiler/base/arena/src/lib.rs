@@ -3,8 +3,9 @@
 //! more type safety when working with various containers of different types.
 
 use std::{
-    collections::hash_map::Entry,
+    collections::hash_map::{Entry, Keys},
     fmt::Debug,
+    iter::Copied,
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
@@ -288,8 +289,7 @@ impl<T, G: State<T>> Arena<T, G> {
     }
 
     /// Returns an iterator over the IDs of the items in the [`Arena`].
-    #[must_use]
-    pub fn ids(&self) -> impl ExactSizeIterator<Item = G::ID> + '_ {
+    pub fn ids(&self) -> Copied<Keys<'_, G::ID, T>> {
         self.items.keys().copied()
     }
 

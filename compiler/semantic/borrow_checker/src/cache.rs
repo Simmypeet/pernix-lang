@@ -45,40 +45,39 @@ impl RegisterInfos {
     ) -> Result<Self, UnrecoverableError> {
         let mut cache = HashMap::default();
 
-        for (point, inst) in ir.control_flow_graph.blocks().iter().flat_map(
-            |(block_id, block)| {
-                block
-                    .instructions()
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(idx, inst)| {
-                        inst.as_register_assignment().map(|x| (idx, x))
-                    })
-                    .map(move |(idx, inst)| {
-                        (Point { instruction_index: idx, block_id }, inst)
-                    })
-            },
-        ) {
-            let register = ir.values.registers.get(inst.id).unwrap();
-            let ty = ir
-                .values
-                .type_of(inst.id, current_site, environment)
-                .await
-                .map_err(|x| {
-                    x.report_as_type_calculating_overflow(
-                        register.span.unwrap(),
-                        &handler,
-                    )
-                })?;
+        for (block_id, block) in ir.control_flow_graph.blocks().iter() {
+            for (point, inst) in block
+                .instructions()
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, inst)| {
+                    inst.as_register_assignment().map(|x| (idx, x))
+                })
+                .map(move |(idx, inst)| {
+                    (Point { instruction_index: idx, block_id }, inst)
+                })
+            {
+                let register = ir.values.registers.get(inst.id).unwrap();
+                let ty = ir
+                    .values
+                    .type_of(inst.id, current_site, environment)
+                    .await
+                    .map_err(|x| {
+                        x.report_as_type_calculating_overflow(
+                            register.span.unwrap(),
+                            &handler,
+                        )
+                    })?;
 
-            cache.insert(inst.id, RegisterInfo {
-                regions: RecursiveIterator::new(&ty.result)
-                    .filter_map(|x| x.0.into_lifetime().ok())
-                    .filter_map(|x| (*x).try_into().ok())
-                    .collect(),
-                r#type: ty.result,
-                assigned_at: point,
-            });
+                cache.insert(inst.id, RegisterInfo {
+                    regions: RecursiveIterator::new(&ty.result)
+                        .filter_map(|x| x.0.into_lifetime().ok())
+                        .filter_map(|x| (*x).try_into().ok())
+                        .collect(),
+                    r#type: ty.result,
+                    assigned_at: point,
+                });
+            }
         }
 
         // make sure every registers are included in the cache
