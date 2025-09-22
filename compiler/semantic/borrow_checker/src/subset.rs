@@ -27,6 +27,7 @@ mod phi;
 mod r#struct;
 mod subtype;
 mod variant;
+mod tuple;
 
 /// Represents a point in the control flow graph where the borrow checker
 /// is considering the subset relation between regions.
@@ -252,47 +253,6 @@ pub struct Changes {
 }
 
 impl<N: Normalizer> Context<'_, N> {
-    #[allow(clippy::too_many_lines)]
-    pub(super) fn get_changes_of_tuple(
-        &self,
-        tuple: &Tuple,
-        span: &RelativeSpan,
-    ) -> Result<Changes, UnrecoverableError> {
-        let mut lifetime_constraints = BTreeSet::new();
-        for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
-            let ty = values
-                .type_of(&element.value, current_site, environment)
-                .unwrap()
-                .result;
-
-            let predicate = Predicate::TupleType(predicate::Tuple(ty));
-            lifetime_constraints.extend(
-                well_formedness::predicate_satisfied(
-                    predicate,
-                    None,
-                    false,
-                    environment,
-                )?
-                .0,
-            );
-        }
-
-        Ok(Changes {
-            subset_relations: lifetime_constraints
-                .into_iter()
-                .filter_map(|x| {
-                    let x = x.into_lifetime_outlives().ok()?;
-
-                    let from = Region::try_from(x.operand).ok()?;
-                    let to = Region::try_from(x.bound).ok()?;
-
-                    Some((from, to, span.clone()))
-                })
-                .collect(),
-            borrow_created: None,
-            overwritten_regions: HashSet::new(),
-        })
-    }
 
     #[allow(clippy::too_many_lines)]
     pub(super) fn get_changes_of_function_call(
