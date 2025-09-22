@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: access is done while it is mutably borrowed
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/invalidated_universal_regions/main.pnx:31:13
+   │
+30 │     numbers.push(number)
+   │                  ------ the mutable borrow starts here
+31 │     let b = *number
+   │             ^^^^^^^ access occurs here while it is mutably borrowed
+   │
+   = lifetime(s) 'b, 'a can access the borrow later
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
