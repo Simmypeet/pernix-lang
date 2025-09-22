@@ -45,11 +45,11 @@ impl build::Build for pernixc_semantic_element::fields::Key {
 
         let Some(syntax_tree) = syntax.and_then(|x| x.members()) else {
             return Ok(Output {
-                item: Fields {
+                item: Arc::new(Fields {
                     fields: Arena::default(),
                     field_ids_by_name: HashMap::default(),
                     field_declaration_order: Vec::default(),
-                },
+                }),
                 diagnostics: Arc::default(),
                 occurrences: Arc::default(),
             });
@@ -79,7 +79,7 @@ impl build::Build for pernixc_semantic_element::fields::Key {
         }
 
         Ok(Output {
-            item: fields,
+            item: Arc::new(fields),
             diagnostics: storage.into_vec().into(),
             occurrences: Arc::new(occurrences),
         })
