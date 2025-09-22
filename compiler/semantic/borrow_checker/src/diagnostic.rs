@@ -286,34 +286,29 @@ impl Report for MutablyAccessWhileImmutablyBorrowed {
     ) -> Result<Rendered<ByteIndex>, CyclicError> {
         let mut related = Vec::new();
 
-        if let Some(span) = &self.immutable_borrow_span {
-            related.push(
-                Highlight::builder()
-                    .span(engine.to_absolute_span(span).await)
-                    .message("the borrow starts here".to_string())
-                    .build(),
-            );
-        }
+        let in_loop = self
+            .immutable_borrow_span
+            .as_ref()
+            .is_some_and(|x| x == &self.mutable_access_span);
 
-        if let Some(span) = self.usage.as_local() {
-            if self.immutable_borrow_span.as_ref() == Some(span) {
+        if let Some(span) = &self.immutable_borrow_span {
+            if !in_loop {
                 related.push(
                     Highlight::builder()
                         .span(engine.to_absolute_span(span).await)
-                        .message(
-                            "the borrow is used later in the next iteration"
-                                .to_string(),
-                        )
-                        .build(),
-                );
-            } else {
-                related.push(
-                    Highlight::builder()
-                        .span(engine.to_absolute_span(span).await)
-                        .message("the borrow is used here".to_string())
+                        .message("the borrow starts here".to_string())
                         .build(),
                 );
             }
+        }
+
+        if let Some(span) = self.usage.as_local() {
+            related.push(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(span).await)
+                    .message("the borrow is used here".to_string())
+                    .build(),
+            );
         }
 
         Ok(pernixc_diagnostic::Rendered::builder()
@@ -326,7 +321,12 @@ impl Report for MutablyAccessWhileImmutablyBorrowed {
                             .to_absolute_span(&self.mutable_access_span)
                             .await,
                     )
-                    .message("mutable access occurs here")
+                    .message(if in_loop {
+                        "the mutable access occurs here in the next iteration \
+                         while it is immutably borrowed"
+                    } else {
+                        "mutable access occurs here"
+                    })
                     .build(),
             )
             .maybe_help_message(match &self.usage {
@@ -376,34 +376,29 @@ impl Report for AccessWhileMutablyBorrowed {
     ) -> Result<Rendered<ByteIndex>, CyclicError> {
         let mut related = Vec::new();
 
-        if let Some(span) = &self.mutable_borrow_span {
-            related.push(
-                Highlight::builder()
-                    .span(engine.to_absolute_span(span).await)
-                    .message("the mutable borrow starts here".to_string())
-                    .build(),
-            );
-        }
+        let in_loop = self
+            .mutable_borrow_span
+            .as_ref()
+            .is_some_and(|x| x == &self.access_span);
 
-        if let Some(span) = self.borrow_usage.as_local() {
-            if self.mutable_borrow_span.as_ref() == Some(span) {
+        if let Some(span) = &self.mutable_borrow_span {
+            if !in_loop {
                 related.push(
                     Highlight::builder()
                         .span(engine.to_absolute_span(span).await)
-                        .message(
-                            "the borrow is used later in the next iteration"
-                                .to_string(),
-                        )
-                        .build(),
-                );
-            } else {
-                related.push(
-                    Highlight::builder()
-                        .span(engine.to_absolute_span(span).await)
-                        .message("the borrow is used here".to_string())
+                        .message("the mutable borrow starts here".to_string())
                         .build(),
                 );
             }
+        }
+
+        if let Some(span) = self.borrow_usage.as_local() {
+            related.push(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(span).await)
+                    .message("the borrow is used here".to_string())
+                    .build(),
+            );
         }
 
         Ok(pernixc_diagnostic::Rendered::builder()
@@ -412,7 +407,12 @@ impl Report for AccessWhileMutablyBorrowed {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.access_span).await)
-                    .message("access occurs here while it is mutably borrowed")
+                    .message(if in_loop {
+                        "the access occurs here in the next iteration while it \
+                         is mutably borrowed"
+                    } else {
+                        "access occurs here while it is mutably borrowed"
+                    })
                     .build(),
             )
             .related(related)
