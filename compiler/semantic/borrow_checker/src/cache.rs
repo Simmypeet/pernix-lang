@@ -51,16 +51,16 @@ impl RegisterInfos {
                 .iter()
                 .enumerate()
                 .filter_map(|(idx, inst)| {
-                    inst.as_register_assignment().map(|x| (idx, x))
+                    inst.as_register_assignment().map(|x| (idx, x.id))
                 })
                 .map(move |(idx, inst)| {
                     (Point { instruction_index: idx, block_id }, inst)
                 })
             {
-                let register = ir.values.registers.get(inst.id).unwrap();
+                let register = ir.values.registers.get(inst).unwrap();
                 let ty = ir
                     .values
-                    .type_of(inst.id, current_site, environment)
+                    .type_of(inst, current_site, environment)
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
@@ -69,7 +69,7 @@ impl RegisterInfos {
                         )
                     })?;
 
-                cache.insert(inst.id, RegisterInfo {
+                cache.insert(inst, RegisterInfo {
                     regions: RecursiveIterator::new(&ty.result)
                         .filter_map(|x| x.0.into_lifetime().ok())
                         .filter_map(|x| (*x).try_into().ok())
@@ -81,7 +81,7 @@ impl RegisterInfos {
         }
 
         // make sure every registers are included in the cache
-        assert_eq!(cache.len(), ir.values.registers.len());
+        assert_eq!(cache.len(), ir.values.registers.len(),);
 
         Ok(Self(cache))
     }

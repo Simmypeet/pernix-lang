@@ -32,10 +32,7 @@ impl<N: Normalizer> Context<'_, N> {
 
         let instantiation = self
             .tracked_engine()
-            .get_instantiation(
-                variant.variant_id,
-                variant.generic_arguments.clone(),
-            )
+            .get_instantiation(enum_id, variant.generic_arguments.clone())
             .await?
             .unwrap();
 
