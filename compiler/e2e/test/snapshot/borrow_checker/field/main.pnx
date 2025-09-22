@@ -1,0 +1,7 @@
+public function main():
+    let mut outer = 32
+    let pair = (&outer,)
+    
+    outer = 32
+
+    let x = *pair.0

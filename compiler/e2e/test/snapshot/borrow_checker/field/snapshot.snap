@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mutable access is done while it is borrowed
+  ╭─ compiler/e2e/test/snapshot/borrow_checker/field/main.pnx:5:5
+  │
+3 │     let pair = (&outer,)
+  │                 ------ the borrow starts here
+4 │     
+5 │     outer = 32
+  │     ^^^^^^^^^^ mutable access occurs here
+6 │ 
+7 │     let x = *pair.0
+  │             ------- the borrow is used here
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
