@@ -1,0 +1,23 @@
+public struct MyPair[T, U]:
+    public first: T
+    public second: U
+
+
+public function print[T](value: T):
+    pass
+
+
+public function main():
+    let mut outer = 32
+    
+    scope:
+        let mut inner = 64
+
+        let pair = MyPair {
+            first: &outer,
+            second: &inner,
+        }
+
+        outer = 32
+
+        print(*pair.first)
