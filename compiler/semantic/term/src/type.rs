@@ -290,6 +290,16 @@ impl Type {
         }
         self
     }
+
+    /// Creates an immutable reference type to `self` with the given lifetime.
+    #[must_use]
+    pub fn to_immutable_reference(self, lifetime: Lifetime) -> Self {
+        Self::Reference(Reference {
+            qualifier: Qualifier::Immutable,
+            lifetime,
+            pointee: Box::new(self),
+        })
+    }
 }
 
 impl TryFrom<Type> for Tuple {

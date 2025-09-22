@@ -229,13 +229,13 @@ impl Impl for Lifetime {
         let constraints: BTreeSet<_> = match subtype.variance {
             Variance::Covariant => {
                 std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: subtype.source, bound: subtype.target },
+                    Outlives { operand: subtype.target, bound: subtype.source },
                 ))
                 .collect()
             }
             Variance::Contravariant => {
                 std::iter::once(LifetimeConstraint::LifetimeOutlives(
-                    Outlives { operand: subtype.target, bound: subtype.source },
+                    Outlives { operand: subtype.source, bound: subtype.target },
                 ))
                 .collect()
             }
@@ -394,7 +394,7 @@ async fn subtypable_with_unification(
     current_variance: Variance,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Option<Succeeded<Subtypable>>, crate::Error> {
-    let Some(matching) = source.substructural_match(target) else {
+    let Some(matching) = target.substructural_match(source) else {
         return Ok(None);
     };
 
@@ -404,8 +404,8 @@ async fn subtypable_with_unification(
     // matching the tuple packing range
 
     for Matching {
-        lhs: source_lt,
-        rhs: target_lt,
+        lhs: target_lt,
+        rhs: source_lt,
         lhs_location: source_location,
         ..
     } in matching.lifetimes
@@ -422,7 +422,7 @@ async fn subtypable_with_unification(
             .await?;
 
         let Some(new_result) = environment
-            .query(&Subtype::new(source_lt, target_lt, inner_variance))
+            .query(&Subtype::new(target_lt, source_lt, inner_variance))
             .await?
         else {
             return Ok(None);
@@ -432,8 +432,8 @@ async fn subtypable_with_unification(
     }
 
     for Matching {
-        lhs: source_ty,
-        rhs: target_ty,
+        lhs: target_ty,
+        rhs: source_ty,
         lhs_location: source_location,
         ..
     } in matching.types
@@ -450,7 +450,7 @@ async fn subtypable_with_unification(
             .await?;
 
         let Some(new_result) = environment
-            .query(&Subtype::new(source_ty, target_ty, inner_variance))
+            .query(&Subtype::new(target_ty, source_ty, inner_variance))
             .await?
         else {
             return Ok(None);
@@ -459,13 +459,13 @@ async fn subtypable_with_unification(
         merge_result(&mut result, &new_result);
     }
 
-    for Matching { lhs: source_const, rhs: target_const, .. } in
+    for Matching { lhs: target_const, rhs: source_const, .. } in
         matching.constants
     {
         // constant should have variance influenced, as of now, we'll simply
         // propagate the current variance down
         let Some(new_result) = environment
-            .query(&Subtype::new(source_const, target_const, current_variance))
+            .query(&Subtype::new(target_const, source_const, current_variance))
             .await?
         else {
             return Ok(None);

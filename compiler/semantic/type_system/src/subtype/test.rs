@@ -12,6 +12,7 @@ use pernixc_term::{
     lifetime::Lifetime,
     predicate::Outlives,
     r#type::{Primitive, Qualifier, Reference, Type},
+    tuple::{Element, Tuple},
 };
 
 use crate::{
@@ -231,6 +232,56 @@ fn subtyping_with_adt(#[case] variance: Variance) {
         .build()
         .unwrap()
         .block_on(test);
+}
+
+#[tokio::test]
+async fn subtyping_with_inner_tuple() {
+    // &'a mutable &'b bool == &'c mutable &'d bool
+
+    let global_id = Global::new(TargetID::TEST, pernixc_symbol::ID(1));
+    let a_lt = Lifetime::Parameter(LifetimeParameterID {
+        parent_id: global_id,
+        id: pernixc_arena::ID::new(0),
+    });
+    let b_lt = Lifetime::Parameter(LifetimeParameterID {
+        parent_id: global_id,
+        id: pernixc_arena::ID::new(1),
+    });
+
+    let lhs = Type::Tuple(Tuple {
+        elements: vec![Element::new_regular(
+            Type::bool().to_immutable_reference(a_lt),
+        )],
+    });
+    let rhs = Type::Tuple(Tuple {
+        elements: vec![Element::new_regular(
+            Type::bool().to_immutable_reference(b_lt),
+        )],
+    });
+
+    let engine = Arc::new(Engine::default());
+    let premise = Premise::default();
+
+    let environment = Environment::new(
+        Cow::Borrowed(&premise),
+        Cow::Owned(engine.tracked()),
+        normalizer::NO_OP,
+    );
+
+    let result = environment
+        .query(&Subtype::new(lhs, rhs, Variance::Covariant))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(result.constraints.len(), 1);
+
+    let a_and_b = LifetimeConstraint::LifetimeOutlives(Outlives {
+        operand: a_lt,
+        bound: b_lt,
+    });
+
+    assert!(result.constraints.contains(&a_and_b));
 }
 
 #[tokio::test]

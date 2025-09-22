@@ -36,6 +36,14 @@ pub struct Element<Term> {
     pub is_unpacked: bool,
 }
 
+impl<Term> Element<Term> {
+    /// Creates a new regular (not unpacked) element.
+    #[must_use]
+    pub const fn new_regular(term: Term) -> Self {
+        Self { term, is_unpacked: false }
+    }
+}
+
 /// Represents a tuple of terms.
 #[derive(
     Debug,
