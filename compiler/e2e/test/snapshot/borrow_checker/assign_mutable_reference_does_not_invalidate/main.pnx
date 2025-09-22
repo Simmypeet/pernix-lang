@@ -1,0 +1,9 @@
+public function main():
+    let mut first = 32
+    let mut second = 64
+
+    let mut ref = &mut first
+	let anoher = &mut *ref
+
+    ref = &mut second
+	let x = *anoher

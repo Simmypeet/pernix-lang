@@ -1,0 +1,9 @@
+public function main():
+    let outer = 32
+    let mut test = &outer
+
+    while true:
+        let inner = 32
+        test = &inner
+
+        let copy = *test

@@ -1,0 +1,10 @@
+public function test(cond: bool):
+    let outer = 1
+    let mut ref = &outer
+
+    while (true):
+        let inner = 2
+        if true:
+            ref = &inner
+        
+        let copy = *ref
