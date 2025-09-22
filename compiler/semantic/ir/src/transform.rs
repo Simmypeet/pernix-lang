@@ -10,7 +10,7 @@ use pernixc_term::{
     generic_parameters::{
         ConstantParameterID, LifetimeParameterID, TypeParameterID,
     },
-    lifetime::Lifetime,
+    lifetime::{ElidedLifetimeID, Lifetime},
     r#type::Type,
 };
 
@@ -32,6 +32,9 @@ pub enum LifetimeTermSource {
 
     /// As a generic argument supplied to a generic symbol.
     GenericParameter(LifetimeParameterID),
+
+    /// From an elided lifetime argument to the function call.
+    ElidedLifetimeParameter(ElidedLifetimeID),
 }
 
 impl Transformable for Lifetime {

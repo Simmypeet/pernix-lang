@@ -548,17 +548,17 @@ impl FunctionCall {
         }
 
         for (lt_id, lt) in &mut self.instantiation.lifetimes {
-            transformer
-                .transform(
-                    lt,
-                    LifetimeTermSource::GenericParameter(
-                        lt_id
-                            .into_parameter()
-                            .expect("should've been a lifetime ID"),
-                    ),
-                    call_span,
-                )
-                .await?;
+            let source = match lt_id {
+                Lifetime::Parameter(member_id) => {
+                    LifetimeTermSource::GenericParameter(*member_id)
+                }
+                Lifetime::Elided(member_id) => {
+                    LifetimeTermSource::ElidedLifetimeParameter(*member_id)
+                }
+                _ => unreachable!("should've either be parameter or elided"),
+            };
+
+            transformer.transform(lt, source, call_span).await?;
         }
 
         for (ty_id, ty) in &mut self.instantiation.types {

@@ -6,6 +6,7 @@ use pernixc_ir::value::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
+    elided_lifetime::get_elided_lifetimes,
     implements_arguments::get_implements_argument, parameter::get_parameters,
     variant::get_variant_associated_type,
 };
@@ -22,6 +23,7 @@ use pernixc_term::{
         get_instantiation, get_instantiation_for_associated_symbol,
         Instantiation,
     },
+    lifetime::{ElidedLifetimeID, Lifetime},
     r#type::Qualifier,
 };
 use pernixc_type_system::deduction;
@@ -45,6 +47,26 @@ use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{Binder, BindingError, Error},
 };
+
+// has to map the elided lifetimes to some erased lifetime
+// everytime, since the all the generic parameters (including
+// the elided lifetimes) must be specified
+async fn map_elided_lifetimes_to_erased(
+    binder: &mut Binder<'_>,
+    id: Global<pernixc_symbol::ID>,
+    inst: &mut Instantiation,
+) -> Result<(), Error> {
+    let elided_lts = binder.engine().get_elided_lifetimes(id).await?;
+
+    inst.lifetimes.extend(elided_lts.ids().map(|x| {
+        (
+            Lifetime::Elided(ElidedLifetimeID { parent_id: id, id: x }),
+            Lifetime::Erased,
+        )
+    }));
+
+    Ok(())
+}
 
 #[allow(clippy::too_many_lines)]
 async fn get_function_instantiation(
@@ -79,7 +101,8 @@ async fn get_function_instantiation(
                     ),
                     variant.generic_arguments,
                 )
-                .await?,
+                .await?
+                .unwrap(),
         ),
         Resolution::Generic(generic)
             if {
@@ -92,7 +115,8 @@ async fn get_function_instantiation(
                 binder
                     .engine()
                     .get_instantiation(generic.id, generic.generic_arguments)
-                    .await?,
+                    .await?
+                    .unwrap(),
             )
         }
 
@@ -115,7 +139,8 @@ async fn get_function_instantiation(
                             member_generic.parent_generic_arguments,
                             member_generic.member_generic_arguments,
                         )
-                        .await?,
+                        .await?
+                        .unwrap(),
                 );
             }
 
@@ -195,7 +220,7 @@ async fn get_function_instantiation(
                 )
                 .expect("should have correct generic arguments count");
 
-            (member_generic.id, Ok(instantiation))
+            (member_generic.id, instantiation)
         }
 
         resolution => {
@@ -212,7 +237,7 @@ async fn get_function_instantiation(
         }
     };
 
-    Ok((id, instantation.expect("should have correct generic arguments count")))
+    Ok((id, instantation))
 }
 
 async fn get_callable_expected_types(
@@ -435,10 +460,19 @@ impl Binder<'_> {
         call_span: RelativeSpan,
         whole_span: RelativeSpan,
         callable_id: pernixc_target::Global<pernixc_symbol::ID>,
-        instantiation: Instantiation,
+        mut instantiation: Instantiation,
         method_receiver: Option<MethodReceiver>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<pernixc_arena::ID<Register>, Error> {
+        // map the elided lifetimes to erased lifetime
+
+        // it's important that all the generic parameters (including the
+        // elided lifetimes) is mapped, since the function call
+        // might be monomorphized and the elided lifetimes are
+        // replaced with concrete lifetimes
+        map_elided_lifetimes_to_erased(self, callable_id, &mut instantiation)
+            .await?;
+
         // deduct the by one if it's method, receiver is not counted as an
         // argument
         let expected =
