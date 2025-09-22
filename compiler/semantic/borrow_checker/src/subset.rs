@@ -22,6 +22,7 @@ use pernixc_type_system::{
 
 use crate::{context, diagnostic::Diagnostic, Region, UniversalRegion};
 
+mod array;
 mod phi;
 mod r#struct;
 
@@ -249,79 +250,6 @@ pub struct Changes {
 }
 
 impl<N: Normalizer> Context<'_, N> {
-    pub(super) async fn get_changes_of_array(
-        &self,
-        array: &Array,
-        span: &RelativeSpan,
-    ) -> Result<Changes, UnrecoverableError> {
-        let array_ty = array.element_type.clone();
-        let mut lifetime_constraints = BTreeSet::new();
-
-        for value in &array.elements {
-            let value_span = match value {
-                Value::Register(id) => {
-                    values.registers.get(*id).unwrap().span.clone().unwrap()
-                }
-                Value::Literal(literal) => literal.span().cloned().unwrap(),
-            };
-
-            let Succeeded { result: value_ty, constraints } = values
-                .type_of(value, current_site, environment)
-                .map_err(|x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_calculating_overflow(
-                            value_span.clone(),
-                            handler,
-                        )
-                    })
-                })?;
-
-            lifetime_constraints.extend(constraints);
-
-            let compatibility = environment
-                .compatible(&value_ty, &array_ty, Variance::Covariant)
-                .map_err(|x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_check_overflow(
-                            value_span.clone(),
-                            handler,
-                        )
-                    })
-                })?;
-
-            // append the lifetime constraints
-            if let Some(Succeeded {
-                result,
-                constraints: compatibility_constraints,
-            }) = compatibility
-            {
-                assert!(result.forall_lifetime_errors.is_empty());
-                assert!(result
-                    .forall_lifetime_instantiations
-                    .lifetimes_by_forall
-                    .is_empty());
-
-                lifetime_constraints.extend(compatibility_constraints);
-            }
-        }
-
-        Ok(Changes {
-            subset_relations: lifetime_constraints
-                .into_iter()
-                .filter_map(|x| {
-                    let x = x.into_lifetime_outlives().ok()?;
-
-                    let from = Region::try_from(x.operand).ok()?;
-                    let to = Region::try_from(x.bound).ok()?;
-
-                    Some((from, to, span.clone()))
-                })
-                .collect(),
-            borrow_created: None,
-            overwritten_regions: HashSet::new(),
-        })
-    }
-
     #[allow(clippy::too_many_lines)]
     pub(super) fn get_changes_of_variant(
         &self,
