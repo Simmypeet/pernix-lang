@@ -225,9 +225,9 @@ use pernixc_type_system::{
 use crate::diagnostic::Diagnostic;
 
 pub(crate) mod cache;
-// pub(crate) mod check;
-// pub(crate) mod invalidate;
+pub(crate) mod check;
 pub(crate) mod context;
+pub(crate) mod invalidate;
 pub(crate) mod liveness;
 pub(crate) mod local_region_generator;
 pub(crate) mod subset;
@@ -379,18 +379,9 @@ pub async fn borrow_check<N: Normalizer>(
     let context =
         context::Context::new(&ir, environment, current_site, handler).await?;
 
-    let _subset = subset::analyze(&context).await?;
+    let subset = subset::analyze(&context).await?;
 
-    // check::borrow_check_internal(
-    //     &ir,
-    //     &subset,
-    //     &register_infos,
-    //     &region_variances,
-    //     &reachability,
-    //     current_site,
-    //     environment,
-    //     handler,
-    // )?;
+    check::borrow_check(&context, &subset).await?;
 
     Ok(())
 }

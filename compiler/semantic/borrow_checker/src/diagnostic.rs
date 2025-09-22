@@ -12,6 +12,9 @@ use pernixc_term::{
     display::{Configuration, Display},
     lifetime::Lifetime,
 };
+use pernixc_type_system::diagnostic::{
+    PredicateSatisfiabilityOverflow, UnsatisfiedPredicate,
+};
 
 use crate::UniversalRegion;
 
@@ -415,5 +418,17 @@ impl Report for AccessWhileMutablyBorrowed {
             )
             .related(related)
             .build())
+    }
+}
+
+impl From<UnsatisfiedPredicate> for Diagnostic {
+    fn from(value: UnsatisfiedPredicate) -> Self {
+        Self::TypeSystem(value.into())
+    }
+}
+
+impl From<PredicateSatisfiabilityOverflow> for Diagnostic {
+    fn from(value: PredicateSatisfiabilityOverflow) -> Self {
+        Self::TypeSystem(value.into())
     }
 }
