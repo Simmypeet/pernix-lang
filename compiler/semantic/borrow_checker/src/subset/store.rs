@@ -28,30 +28,14 @@ impl<N: Normalizer> Context<'_, N> {
                 })?;
 
         // get the compatibility constraints between the value and the address
-        let compatibility = self
-            .environment()
-            .subtypes(
-                value_type.result,
-                address_ty.clone(),
-                Variance::Covariant,
-            )
-            .await
-            .map_err(|x| {
-                x.report_as_type_check_overflow(*span, &self.handler())
-            })?;
-
-        if let Some(compat) = compatibility {
-            assert!(compat
-                .result
-                .forall_lifetime_instantiations
-                .lifetimes_by_forall
-                .is_empty());
-            assert!(compat.result.forall_lifetime_errors.is_empty());
-
-            value_type.constraints.extend(compat.constraints.iter().cloned());
-        } else {
-            panic!("in borrow checking, all subtyping should be valid");
-        }
+        self.subtypes(
+            value_type.result,
+            address_ty.clone(),
+            Variance::Covariant,
+            *span,
+            &mut value_type.constraints,
+        )
+        .await?;
 
         Ok(Changes {
             subset_relations: value_type
