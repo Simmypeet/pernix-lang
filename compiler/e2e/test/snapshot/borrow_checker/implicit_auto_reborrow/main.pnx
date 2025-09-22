@@ -1,0 +1,10 @@
+public function addOne(x: &mut uint32):
+    *x = *x + 1
+
+
+public function test():
+    let mut num = 64
+    let r = &mut num
+
+    addOne(r)
+    addOne(r)
