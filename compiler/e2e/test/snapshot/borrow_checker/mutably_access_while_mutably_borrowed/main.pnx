@@ -1,0 +1,7 @@
+public function testa():
+	let mut test = 32
+	let refm = &mut test
+
+	test = 64
+
+	*refm = 64

@@ -1,0 +1,11 @@
+public function print[T](value: T):
+    pass
+    
+
+public function main():
+    let mut x = 22
+    let y = 44
+    let mut p = &x
+    p = &y
+    x += 1
+    print(*p)

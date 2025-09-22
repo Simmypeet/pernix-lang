@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: access is done while it is mutably borrowed
+  ╭─ compiler/e2e/test/snapshot/borrow_checker/mutably_access_while_mutably_borrowed/main.pnx:5:2
+  │
+3 │     let refm = &mut test
+  │                --------- the mutable borrow starts here
+4 │ 
+5 │     test = 64
+  │     ^^^^^^^^^ access occurs here while it is mutably borrowed
+6 │ 
+7 │     *refm = 64
+  │     ---------- the borrow is used here
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

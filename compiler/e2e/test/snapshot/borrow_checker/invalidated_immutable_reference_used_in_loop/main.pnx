@@ -1,0 +1,19 @@
+public function consume[T](x: T):
+    pass
+
+
+public function cond() -> bool:
+    panic
+
+
+public function main():
+    let mut test = 32
+    let r = &test
+
+    while cond():
+        # in first iteration, r is fine, no error
+        # in second iteration, r is invalidated error should be raised
+        consume(*r)
+
+        # r is invalidated here
+        test = 64
