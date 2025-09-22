@@ -8,10 +8,7 @@ use pernixc_type_system::{
     normalizer::Normalizer, Succeeded, UnrecoverableError,
 };
 
-use crate::{
-    subset::{Changes, Context},
-    Region,
-};
+use crate::{context::Context, subset::Changes, Region};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]

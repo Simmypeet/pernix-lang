@@ -9,7 +9,7 @@ use pernixc_type_system::{
     UnrecoverableError,
 };
 
-use crate::subset::Context;
+use crate::context::Context;
 
 impl<N: Normalizer> Context<'_, N> {
     pub async fn subtypes(

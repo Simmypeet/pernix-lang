@@ -6,10 +6,7 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
 use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
-use crate::{
-    subset::{Changes, Context},
-    Region,
-};
+use crate::{context::Context, subset::Changes, Region};
 
 impl<N: Normalizer> Context<'_, N> {
     pub(super) async fn get_changes_of_phi(

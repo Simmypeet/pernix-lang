@@ -11,10 +11,7 @@ use pernixc_target::Global;
 use pernixc_term::instantiation::get_instantiation;
 use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
-use crate::{
-    subset::{Changes, Context},
-    Region,
-};
+use crate::{context::Context, subset::Changes, Region};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]

@@ -4,10 +4,7 @@ use pernixc_ir::value::register::{Borrow, Register};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
-use crate::{
-    subset::{Changes, Context},
-    Region,
-};
+use crate::{context::Context, subset::Changes, Region};
 
 impl<N: Normalizer> Context<'_, N> {
     pub(super) async fn get_changes_of_borrow(
@@ -16,10 +13,8 @@ impl<N: Normalizer> Context<'_, N> {
         span: &RelativeSpan,
         register_id: ID<Register>,
     ) -> Result<Changes, UnrecoverableError> {
-        let region_in_addresss = self
-            .borrowing_context
-            .get_regions_in_address(&borrow.address, *span, true)
-            .await?;
+        let region_in_addresss =
+            self.get_regions_in_address(&borrow.address, *span, true).await?;
 
         let borrow_local_region = borrow.lifetime.into_inference().unwrap();
 

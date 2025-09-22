@@ -7,10 +7,7 @@ use pernixc_type_system::{
     normalizer::Normalizer, Succeeded, UnrecoverableError,
 };
 
-use crate::{
-    subset::{Changes, Context},
-    Region,
-};
+use crate::{context::Context, subset::Changes, Region};
 
 impl<N: Normalizer> Context<'_, N> {
     pub(super) async fn get_changes_of_store(
