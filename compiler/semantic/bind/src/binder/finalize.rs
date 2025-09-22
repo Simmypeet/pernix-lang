@@ -1,4 +1,5 @@
 use pernixc_handler::Handler;
+#[allow(unused_imports)]
 use pernixc_hash::HashSet;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
