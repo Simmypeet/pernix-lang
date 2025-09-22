@@ -1,0 +1,9 @@
+public function test(cond: bool):
+    let outer = 1
+    let mut numberRef = &outer
+
+    while cond:
+        let inner = 0
+        numberRef = &inner
+    
+    let a = *numberRef
