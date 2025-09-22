@@ -1,0 +1,10 @@
+public function print[T](value: T):
+    pass
+
+
+public function main():
+    let mut x = 1
+    let ref = &mut x
+
+    *ref = 1
+    *ref = 2
