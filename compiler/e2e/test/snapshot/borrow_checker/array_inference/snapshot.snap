@@ -1,0 +1,20 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: access is done while it is mutably borrowed
+  ╭─ compiler/e2e/test/snapshot/borrow_checker/array_inference/main.pnx:7:26
+  │
+7 │     let array = [&mut x, &mut x]
+  │                ----------^^^^^^-
+  │                │ │       │
+  │                │ │       access occurs here while it is mutably borrowed
+  │                │ the mutable borrow starts here
+  │                the borrow is used here
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

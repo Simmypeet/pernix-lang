@@ -1,0 +1,13 @@
+public function test(cond: bool):
+    let outer = 1
+
+    let ref = scope 'result:
+        let inner = 2
+
+        if true:
+            express 'result &inner
+        else if true:
+            let anotherInner = 3
+            express 'result &anotherInner
+         
+        express &outer

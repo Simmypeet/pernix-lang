@@ -1,0 +1,7 @@
+public function consume[T](..: T):
+    pass
+
+
+public function test():
+    let mut x = 0
+    let array = [&mut x, &mut x]

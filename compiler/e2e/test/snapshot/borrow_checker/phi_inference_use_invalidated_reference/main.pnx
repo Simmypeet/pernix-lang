@@ -1,0 +1,12 @@
+public function test(cond: bool):
+    let mut first = 1
+    let mut second = 1
+
+    let ref = scope 'result:
+        if cond:
+            express 'result &first
+        else: 
+            express 'result &second
+
+    first = 2        # <- Error: first is borrowed by ref
+    let copy = *ref  # <- Error: ref is invalidated
