@@ -207,39 +207,9 @@
 //! Now it's more clear that `?x` is a set of `{%r1, %r2}`, which is the
 //! possible `Borrow` expressions that it might come from.
 
-// use std::collections::HashSet;
-
-// use cache::{RegionVariances, RegisterInfos};
-// use enum_as_inner::EnumAsInner;
-// use pernixc_abort::Abort;
-// use pernixc_arena::{Key, ID};
-// use pernixc_handler::Handler;
-// use pernixc_semantic::{
-//     component::derived::{
-//         elided_lifetimes::ElidedLifetimeID,
-//         generic_parameters::{GenericParameters, LifetimeParameterID},
-//         ir::{address::Address, Representation, Values},
-//     },
-//     diagnostic::Diagnostic,
-//     table::{self, GlobalID, Table},
-//     term::{
-//         self,
-//         constant::Constant,
-//         lifetime::Lifetime,
-//         r#type::{Qualifier, Type},
-//         visitor::RecursiveIterator,
-//         ModelOf, Never,
-//     },
-// };
-// use pernixc_source_file::Span;
-// use pernixc_type_of::TypeOf;
-// use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
-// use serde::{Deserialize, Serialize};
-
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
 use pernixc_ir::IR;
-use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
@@ -252,18 +222,15 @@ use pernixc_type_system::{
     environment::Environment, normalizer::Normalizer, UnrecoverableError,
 };
 
-use crate::{
-    cache::{RegionVariances, RegisterInfos},
-    diagnostic::Diagnostic,
-};
+use crate::diagnostic::Diagnostic;
 
 pub(crate) mod cache;
 // pub(crate) mod check;
 // pub(crate) mod invalidate;
 // pub(crate) mod liveness;
-pub(crate) mod local_region_generator;
-// pub(crate) mod subset;
 pub(crate) mod context;
+pub(crate) mod local_region_generator;
+pub(crate) mod subset;
 pub(crate) mod transform;
 
 pub mod diagnostic;
@@ -395,6 +362,7 @@ impl TryFrom<Lifetime> for Region {
     }
 }
 
+/// Perform borrow checking on the given IR at the given current site.
 #[allow(clippy::missing_errors_doc)]
 pub async fn borrow_check<N: Normalizer>(
     ir: &IR,
@@ -405,7 +373,8 @@ pub async fn borrow_check<N: Normalizer>(
     // NOTE: we clone the whole ir here, is there a better way to do this?
     let mut ir = ir.clone();
 
-    transform::transform_to_inference(&mut ir, environment.tracked_engine());
+    transform::transform_to_inference(&mut ir, environment.tracked_engine())
+        .await?;
 
     let context =
         context::Context::new(&ir, environment, current_site, handler).await?;

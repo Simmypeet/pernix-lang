@@ -1,60 +1,30 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
-
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
-use pernixc_abort::Abort;
 use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            elided_lifetimes::{ElidedLifetimeID, ElidedLifetimes},
-            fields::Fields,
-            function_signature::FunctionSignature,
-            generic_parameters::{GenericParameters, LifetimeParameterID},
-            ir::{
-                address::Address,
-                control_flow_graph::{Block, Point},
-                instruction::{Instruction, Store},
-                value::{
-                    register::{
-                        Array, Assignment, Borrow, FunctionCall, Phi, Register,
-                        Struct, Tuple, Variant,
-                    },
-                    Value,
-                },
-                Representation, Values,
-            },
-            variances::Variance,
-            variant,
-        },
-        input::{Parent, SymbolKind},
+use pernixc_hash::{HashMap, HashSet};
+use pernixc_ir::{
+    address::Address,
+    control_flow_graph::{Block, Point},
+    instruction::{Instruction, Store},
+    value::register::{
+        Array, Borrow, FunctionCall, Phi, Register, Struct, Tuple, Variant,
     },
-    diagnostic::Diagnostic,
-    table::GlobalID,
-    term::{
-        instantiation::{self, Instantiation},
-        predicate::{self, PositiveTrait, Predicate},
-        r#type::Type,
-        visitor::RecursiveIterator,
-        Model, ModelOf,
-    },
+    Values, IR,
 };
-use pernixc_source_file::Span;
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::TrackedEngine;
+use pernixc_target::Global;
+use pernixc_term::{inference, lifetime::Lifetime, r#type::Type};
 use pernixc_transitive_closure::TransitiveClosure;
-use pernixc_type_of::TypeOf;
 use pernixc_type_system::{
-    compatible::Compatibility,
-    environment::{Environment, GetActivePremiseExt},
-    normalizer::Normalizer,
-    well_formedness, Succeeded,
+    environment::Environment, normalizer::Normalizer, Succeeded,
+    UnrecoverableError,
 };
 
-use super::cache::{RegionVariances, RegisterInfos};
-use crate::{
-    get_regions_in_address, LocalRegionID, Model as BorrowModel,
-    NonStaticUniversalRegion, Region, UniversalRegion,
-};
+use crate::{context, diagnostic::Diagnostic, Region, UniversalRegion};
+
+mod r#struct;
 
 /// Represents a point in the control flow graph where the borrow checker
 /// is considering the subset relation between regions.
@@ -63,15 +33,15 @@ use crate::{
 )]
 pub enum RegionPoint {
     /// Involving a particular point in the control flow graph.
-    InBlock(Point<BorrowModel>),
+    InBlock(Point),
 
     /// The moment before executing the first instruction in the block.
-    EnteringBlock(ID<Block<BorrowModel>>),
+    EnteringBlock(ID<Block>),
 }
 
 impl RegionPoint {
     /// Gets the block id where the region is considered.
-    pub const fn block_id(&self) -> ID<Block<BorrowModel>> {
+    pub const fn block_id(&self) -> ID<Block> {
         match self {
             Self::InBlock(point) => point.block_id,
             Self::EnteringBlock(block_id) => *block_id,
@@ -106,7 +76,7 @@ pub enum RegionAt {
 /// flow
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LocalRegionAt {
-    pub local_region: LocalRegionID,
+    pub local_region: inference::Variable<Lifetime>,
 
     /// Specifies the point in the control flow graph where the region is
     /// considered.
@@ -135,7 +105,9 @@ impl RegionAt {
         }
     }
 
-    pub const fn new_location_insensitive(local_region: LocalRegionID) -> Self {
+    pub const fn new_location_insensitive(
+        local_region: inference::Variable<Lifetime>,
+    ) -> Self {
         Self::Local(LocalRegionAt { local_region, point: None })
     }
 
@@ -158,16 +130,12 @@ impl RegionAt {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RegionChangeLog {
-    pub updated_at_instruction_indices:
-        HashMap<ID<Block<BorrowModel>>, Vec<usize>>,
+    pub updated_at_instruction_indices: HashMap<ID<Block>, Vec<usize>>,
 }
 
 impl RegionChangeLog {
     /// Gets the [`RegionPoint`] where the region is most updated.
-    pub fn get_most_updated_point(
-        &self,
-        point: Point<BorrowModel>,
-    ) -> RegionPoint {
+    pub fn get_most_updated_point(&self, point: Point) -> RegionPoint {
         let updated_points = self
             .updated_at_instruction_indices
             .get(&point.block_id)
@@ -208,7 +176,7 @@ impl RegionChangeLog {
 pub struct Intermediate {
     /// The accumulated subset relations between regions since the beginning
     /// of the control flow graph.
-    subset_relations: HashSet<(RegionAt, RegionAt, Option<Span>)>,
+    subset_relations: HashSet<(RegionAt, RegionAt, Option<RelativeSpan>)>,
 
     /// Represents the [`Borrow`] register assignment created so far.
     ///
@@ -216,12 +184,11 @@ pub struct Intermediate {
     /// the region where the borrow is created.
     #[get = "pub"]
     created_borrows:
-        HashMap<ID<Register<BorrowModel>>, (LocalRegionID, Point<BorrowModel>)>,
+        HashMap<ID<Register>, (inference::Variable<Lifetime>, Point)>,
 
     /// Maps the region to the block ids that the region first appears. (mostly
     /// is the entry block)
-    entry_block_ids_by_universal_regions:
-        HashMap<UniversalRegion, ID<Block<BorrowModel>>>,
+    entry_block_ids_by_universal_regions: HashMap<UniversalRegion, ID<Block>>,
 }
 
 /// A struct used for building a subset relations between regions in the borrow
@@ -233,12 +200,8 @@ pub struct Intermediate {
 /// all points in the control flow graph. Instead, we'll keep the state of the
 /// region at the points where the region is changed (e.g., created, borrowed,
 /// added to subset relation).
-pub struct Builder<'a, N: Normalizer<BorrowModel>> {
-    representation: &'a Representation<BorrowModel>,
-    register_infos: &'a RegisterInfos,
-    current_site: GlobalID,
-    environment: &'a Environment<'a, BorrowModel, N>,
-    region_variances: &'a RegionVariances,
+pub struct Builder<'a, N: Normalizer> {
+    context: &'a context::Context<'a, N>,
 
     /// A map between the region and the instruction index where the region
     /// was last changed.
@@ -247,23 +210,15 @@ pub struct Builder<'a, N: Normalizer<BorrowModel>> {
     /// present in this map. The value is the point in the control flow
     /// graph where the region is most updated.
     latest_change_points_by_region: HashMap<Region, Option<usize>>,
-
-    handler: &'a dyn Handler<Box<dyn Diagnostic>>,
 }
 
-impl<N: Normalizer<BorrowModel>> Clone for Builder<'_, N> {
+impl<N: Normalizer> Clone for Builder<'_, N> {
     fn clone(&self) -> Self {
         Self {
-            environment: self.environment,
-            representation: self.representation,
-            register_infos: self.register_infos,
-            region_variances: self.region_variances,
-
-            current_site: self.current_site,
+            context: self.context,
             latest_change_points_by_region: self
                 .latest_change_points_by_region
                 .clone(),
-            handler: self.handler,
         }
     }
 }
@@ -273,10 +228,10 @@ impl<N: Normalizer<BorrowModel>> Clone for Builder<'_, N> {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Changes {
     /// Creates a new subset relation between two regions.
-    subset_relations: HashSet<(Region, Region, Span)>,
+    subset_relations: HashSet<(Region, Region, RelativeSpan)>,
 
     /// The borrow is created at the given region.
-    borrow_created: Option<(ID<Register<BorrowModel>>, LocalRegionID)>,
+    borrow_created: Option<(ID<Register>, inference::Variable<Lifetime>)>,
 
     /// The region is abourt to be rewritten.
     ///
@@ -294,54 +249,102 @@ pub struct Changes {
     overwritten_regions: HashSet<Region>,
 }
 
-#[allow(clippy::too_many_lines)]
-pub(super) fn get_changes_of_struct(
-    values: &Values<BorrowModel>,
-    struct_lit: &Struct<BorrowModel>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let struct_generic_params =
-        environment.table().query::<GenericParameters>(struct_lit.struct_id)?;
+impl<N: Normalizer> Context<'_, N> {
+    pub(super) async fn get_changes_of_phi(
+        &self,
+        phi: &Phi,
+        span: &RelativeSpan,
+    ) -> Result<Changes, UnrecoverableError> {
+        let mut constraints = BTreeSet::new();
+        for value in phi.incoming_values.values() {
+            let Succeeded {
+                result: value_ty,
+                constraints: value_ty_constraints,
+            } = values.type_of(value, current_site, environment).map_err(
+                |x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_check_overflow(
+                            match value {
+                                Value::Register(id) => values
+                                    .registers
+                                    .get(*id)
+                                    .unwrap()
+                                    .span
+                                    .clone()
+                                    .unwrap(),
+                                Value::Literal(literal) => {
+                                    literal.span().cloned().unwrap()
+                                }
+                            },
+                            handler,
+                        )
+                    })
+                },
+            )?;
 
-    let instantiation = Instantiation::from_generic_arguments(
-        struct_lit.generic_arguments.clone(),
-        struct_lit.struct_id,
-        &struct_generic_params,
-    )
-    .unwrap();
+            constraints.extend(value_ty_constraints);
 
-    let mut lifetime_constraints = BTreeSet::new();
+            let compatibility = environment
+                .compatible(&value_ty, &phi.r#type, Variance::Covariant)
+                .map_err(|x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_check_overflow(span.clone(), handler)
+                    })
+                })?;
 
-    let fields = environment.table().query::<Fields>(struct_lit.struct_id)?;
+            if let Some(Succeeded {
+                result:
+                    Compatibility {
+                        forall_lifetime_instantiations,
+                        forall_lifetime_errors,
+                    },
+                constraints: compatibility_constraints,
+            }) = compatibility
+            {
+                assert!(forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+                assert!(forall_lifetime_errors.is_empty());
 
-    // compare each values in the field to the struct's field type
-    for field_id in fields.field_declaration_order.iter().copied() {
-        let mut field_ty = Type::from_other_model(
-            fields.fields.get(field_id).unwrap().r#type.clone(),
-        );
-        instantiation::instantiate(&mut field_ty, &instantiation);
-
-        let value_span = match &struct_lit
-            .initializers_by_field_id
-            .get(&field_id)
-        {
-            Some(Value::Register(id)) => {
-                values.registers.get(*id).unwrap().span.clone().unwrap()
+                constraints.extend(compatibility_constraints);
             }
-            Some(Value::Literal(literal)) => literal.span().cloned().unwrap(),
-            None => unreachable!(),
-        };
+        }
 
-        let Succeeded { result: value_ty, constraints: value_constraints } =
-            values
-                .type_of(
-                    struct_lit.initializers_by_field_id.get(&field_id).unwrap(),
-                    current_site,
-                    environment,
-                )
+        Ok(Changes {
+            subset_relations: constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
+    pub(super) async fn get_changes_of_array(
+        &self,
+        array: &Array,
+        span: &RelativeSpan,
+    ) -> Result<Changes, UnrecoverableError> {
+        let array_ty = array.element_type.clone();
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for value in &array.elements {
+            let value_span = match value {
+                Value::Register(id) => {
+                    values.registers.get(*id).unwrap().span.clone().unwrap()
+                }
+                Value::Literal(literal) => literal.span().cloned().unwrap(),
+            };
+
+            let Succeeded { result: value_ty, constraints } = values
+                .type_of(value, current_site, environment)
                 .map_err(|x| {
                     x.report_overflow(|x| {
                         x.report_as_type_calculating_overflow(
@@ -351,100 +354,465 @@ pub(super) fn get_changes_of_struct(
                     })
                 })?;
 
-        lifetime_constraints.extend(value_constraints);
+            lifetime_constraints.extend(constraints);
 
-        let compatibility = environment
-            .compatible(&value_ty, &field_ty, Variance::Covariant)
-            .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_check_overflow(value_span.clone(), handler)
-                })
-            })?;
+            let compatibility = environment
+                .compatible(&value_ty, &array_ty, Variance::Covariant)
+                .map_err(|x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_check_overflow(
+                            value_span.clone(),
+                            handler,
+                        )
+                    })
+                })?;
 
-        // append the lifetime constraints
-        if let Some(Succeeded {
-            result,
-            constraints: compatibility_constraints,
-        }) = compatibility
-        {
-            assert!(result.forall_lifetime_errors.is_empty());
-            assert!(result
-                .forall_lifetime_instantiations
-                .lifetimes_by_forall
-                .is_empty());
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = compatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
 
-            lifetime_constraints.extend(compatibility_constraints);
+                lifetime_constraints.extend(compatibility_constraints);
+            }
         }
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
     }
 
-    let well_fromed_lifetime_constraints = well_formedness::check(
-        struct_lit.struct_id,
-        &instantiation,
-        false,
-        environment,
-    )?
-    .0;
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn get_changes_of_variant(
+        &self,
+        variant: &Variant,
+        span: &RelativeSpan,
+    ) -> Result<Changes, UnrecoverableError> {
+        let enum_id = GlobalID::new(
+            variant.variant_id.target_id,
+            environment
+                .tracked_engine()
+                .get::<Parent>(variant.variant_id)
+                .unwrap(),
+        );
 
-    Ok(Changes {
-        subset_relations: lifetime_constraints
-            .into_iter()
-            .chain(well_fromed_lifetime_constraints)
-            .filter_map(|x| {
-                let x = x.into_lifetime_outlives().ok()?;
+        let enum_generic_parameters =
+            environment.tracked_engine().query::<GenericParameters>(enum_id)?;
 
-                let from = Region::try_from(x.operand).ok()?;
-                let to = Region::try_from(x.bound).ok()?;
+        let variant_sym = environment
+            .tracked_engine()
+            .query::<variant::Variant>(variant.variant_id)?;
 
-                Some((from, to, span.clone()))
-            })
-            .collect(),
-        borrow_created: None,
-        overwritten_regions: HashSet::new(),
-    })
-}
+        let instantiation = Instantiation::from_generic_arguments(
+            variant.generic_arguments.clone(),
+            enum_id,
+            &enum_generic_parameters,
+        )
+        .unwrap();
 
-pub(super) fn get_changes_of_phi(
-    values: &Values<BorrowModel>,
-    phi: &Phi<BorrowModel>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let mut constraints = BTreeSet::new();
-    for value in phi.incoming_values.values() {
-        let Succeeded { result: value_ty, constraints: value_ty_constraints } =
-            values.type_of(value, current_site, environment).map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_check_overflow(
-                        match value {
-                            Value::Register(id) => values
-                                .registers
-                                .get(*id)
-                                .unwrap()
-                                .span
-                                .clone()
-                                .unwrap(),
-                            Value::Literal(literal) => {
-                                literal.span().cloned().unwrap()
-                            }
-                        },
-                        handler,
-                    )
+        let mut lifetime_constraints = BTreeSet::new();
+
+        // compare each values in the field to the struct's field type
+        if let Some(mut associated_type) = variant_sym
+            .associated_type
+            .as_ref()
+            .map(|x| BorrowModel::from_default_type(x.clone()))
+        {
+            instantiation::instantiate(&mut associated_type, &instantiation);
+            let associated_value = variant.associated_value.as_ref().unwrap();
+            let value_span = match associated_value {
+                Value::Register(id) => {
+                    values.registers.get(*id).unwrap().span.clone().unwrap()
+                }
+                Value::Literal(literal) => literal.span().cloned().unwrap(),
+            };
+
+            let Succeeded { result: value_ty, constraints: value_constraints } =
+                values
+                    .type_of(associated_value, current_site, environment)
+                    .map_err(|x| {
+                        x.report_overflow(|x| {
+                            x.report_as_type_calculating_overflow(
+                                value_span.clone(),
+                                handler,
+                            )
+                        })
+                    })?;
+
+            lifetime_constraints.extend(value_constraints);
+
+            let compatibility = environment
+                .compatible(&value_ty, &associated_type, Variance::Covariant)
+                .map_err(|x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_check_overflow(
+                            value_span.clone(),
+                            handler,
+                        )
+                    })
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = compatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            }
+        }
+
+        // handle the constraints introduced by the outlive predicates of the
+        // struct
+        let well_fromed_lifetime_constraints = well_formedness::check(
+            enum_id,
+            &instantiation,
+            false,
+            environment,
+        )?
+        .0;
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .chain(well_fromed_lifetime_constraints)
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
+
+                    Some((from, to, span.clone()))
                 })
-            })?;
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
 
-        constraints.extend(value_ty_constraints);
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn get_changes_of_tuple(
+        &self,
+        tuple: &Tuple,
+        span: &RelativeSpan,
+    ) -> Result<Changes, UnrecoverableError> {
+        let mut lifetime_constraints = BTreeSet::new();
+        for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
+            let ty = values
+                .type_of(&element.value, current_site, environment)
+                .unwrap()
+                .result;
 
+            let predicate = Predicate::TupleType(predicate::Tuple(ty));
+            lifetime_constraints.extend(
+                well_formedness::predicate_satisfied(
+                    predicate,
+                    None,
+                    false,
+                    environment,
+                )?
+                .0,
+            );
+        }
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(super) fn get_changes_of_function_call(
+        &self,
+        function_call: &FunctionCall,
+        span: &RelativeSpan,
+    ) -> Result<Changes, UnrecoverableError> {
+        let function_signature =
+            environment
+                .tracked_engine()
+                .query::<FunctionSignature>(function_call.callable_id)?;
+
+        let mut lifetime_constraints = BTreeSet::new();
+
+        for (parameter, argument) in function_signature
+            .parameter_order
+            .iter()
+            .copied()
+            .map(|x| function_signature.parameters.get(x).unwrap())
+            .zip(&function_call.arguments)
+        {
+            /*
+            The c-varargs will break this assertion
+            assert_eq!(
+                function_signature.parameter_order.len(),
+                function_call.arguments.len()
+            );
+            */
+
+            let mut parameter_ty =
+                Type::from_other_model(parameter.r#type.clone());
+            instantiation::instantiate(
+                &mut parameter_ty,
+                &function_call.instantiation,
+            );
+
+            // obtains the type of argument ty
+            let argument_span = match argument {
+                Value::Register(id) => {
+                    values.registers.get(*id).unwrap().span.clone().unwrap()
+                }
+                Value::Literal(literal) => literal.span().cloned().unwrap(),
+            };
+
+            let Succeeded {
+                result: argument_ty,
+                constraints: argument_ty_constraints,
+            } = values.type_of(argument, current_site, environment).map_err(
+                |x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_calculating_overflow(
+                            argument_span.clone(),
+                            handler,
+                        )
+                    })
+                },
+            )?;
+
+            lifetime_constraints.extend(argument_ty_constraints);
+
+            let compatibility = environment
+                .compatible(&argument_ty, &parameter_ty, Variance::Covariant)
+                .map_err(|x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_check_overflow(argument_span, handler)
+                    })
+                })?;
+
+            // append the lifetime constraints
+            if let Some(Succeeded {
+                result,
+                constraints: compatibility_constraints,
+            }) = compatibility
+            {
+                assert!(result.forall_lifetime_errors.is_empty());
+                assert!(result
+                    .forall_lifetime_instantiations
+                    .lifetimes_by_forall
+                    .is_empty());
+
+                lifetime_constraints.extend(compatibility_constraints);
+            }
+        }
+
+        let mut well_formedness_constraints = well_formedness::check(
+            function_call.callable_id,
+            &function_call.instantiation,
+            false,
+            environment,
+        )?
+        .0;
+
+        let symbol_kind = *environment
+            .tracked_engine()
+            .get::<SymbolKind>(function_call.callable_id);
+
+        match symbol_kind {
+            SymbolKind::Function | SymbolKind::ExternFunction => {}
+
+            SymbolKind::TraitFunction => {
+                // parent trait requirement
+                let parent_trait_id = GlobalID::new(
+                    function_call.callable_id.target_id,
+                    environment
+                        .tracked_engine()
+                        .get::<Parent>(function_call.callable_id)
+                        .unwrap(),
+                );
+
+                let trait_generic_params =
+                    environment
+                        .tracked_engine()
+                        .query::<GenericParameters>(parent_trait_id)?;
+
+                let trait_arguments = function_call
+                    .instantiation
+                    .create_generic_arguments(
+                        parent_trait_id,
+                        &trait_generic_params,
+                    )
+                    .unwrap();
+
+                // check extra trait satisfiability
+                well_formedness_constraints.extend(
+                    well_formedness::predicate_satisfied(
+                        predicate::Predicate::PositiveTrait(PositiveTrait {
+                            trait_id: parent_trait_id,
+                            is_const: false, /* TODO: reflect the
+                                              * actual value */
+                            generic_arguments: trait_arguments,
+                        }),
+                        None,
+                        false,
+                        environment,
+                    )?
+                    .0,
+                );
+            }
+
+            SymbolKind::TraitImplementationFunction
+            | SymbolKind::AdtImplementationFunction => {
+                let parent_implementation_id = GlobalID::new(
+                    function_call.callable_id.target_id,
+                    environment
+                        .tracked_engine()
+                        .get::<Parent>(function_call.callable_id)
+                        .unwrap(),
+                );
+
+                well_formedness_constraints.extend(
+                    well_formedness::check(
+                        parent_implementation_id,
+                        &function_call.instantiation,
+                        false,
+                        environment,
+                    )?
+                    .0,
+                );
+            }
+
+            SymbolKind::Module
+            | SymbolKind::Struct
+            | SymbolKind::Trait
+            | SymbolKind::Enum
+            | SymbolKind::Type
+            | SymbolKind::Constant
+            | SymbolKind::Variant
+            | SymbolKind::TraitType
+            | SymbolKind::TraitConstant
+            | SymbolKind::PositiveTraitImplementation
+            | SymbolKind::NegativeTraitImplementation
+            | SymbolKind::TraitImplementationType
+            | SymbolKind::TraitImplementationConstant
+            | SymbolKind::AdtImplementation
+            | SymbolKind::Marker
+            | SymbolKind::PositiveMarkerImplementation
+            | SymbolKind::NegativeMarkerImplementation => {
+                panic!("Unexpected symbol kind encountered")
+            }
+        }
+
+        Ok(Changes {
+            subset_relations: lifetime_constraints
+                .into_iter()
+                .chain(well_formedness_constraints)
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
+
+                    let from = Region::try_from(x.operand).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
+
+                    Some((from, to, span.clone()))
+                })
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
+    pub(super) fn get_changes_of_borrow(
+        &self,
+        borrow: &Borrow,
+        span: &RelativeSpan,
+    ) -> Result<Changes, UnrecoverableError> {
+        let regions_in_address = get_regions_in_address(
+            values,
+            &borrow.address,
+            span,
+            true,
+            current_site,
+            environment,
+            handler,
+        )?;
+
+        let borrow_local_region = borrow.lifetime.into_inference().unwrap();
+
+        Ok(Changes {
+            subset_relations: {
+                regions_in_address
+                    .into_iter()
+                    .map(|x| {
+                        (x, Region::Local(borrow_local_region), span.clone())
+                    })
+                    .collect()
+            },
+            borrow_created: Some((register_id, borrow_local_region)),
+            overwritten_regions: HashSet::new(),
+        })
+    }
+
+    pub(super) fn get_changes_of_store_internal(
+        &self,
+        store_address: &Address,
+        value_type: Succeeded<Type>,
+        span: &RelativeSpan,
+    ) -> Result<Changes, UnrecoverableError> {
+        let Succeeded { result: address_ty, constraints: address_constraints } =
+            values.type_of(store_address, current_site, environment).map_err(
+                |x| {
+                    x.report_overflow(|x| {
+                        x.report_as_type_calculating_overflow(
+                            span.clone(),
+                            handler,
+                        )
+                    })
+                },
+            )?;
+
+        // get the compatibility constraints between the value and the address
         let compatibility = environment
-            .compatible(&value_ty, &phi.r#type, Variance::Covariant)
+            .compatible(&value_type.result, &address_ty, Variance::Covariant)
             .map_err(|x| {
                 x.report_overflow(|x| {
                     x.report_as_type_check_overflow(span.clone(), handler)
                 })
             })?;
 
-        if let Some(Succeeded {
+        let compatibility_constraints = if let Some(Succeeded {
             result:
                 Compatibility {
                     forall_lifetime_instantiations,
@@ -458,580 +826,70 @@ pub(super) fn get_changes_of_phi(
                 .is_empty());
             assert!(forall_lifetime_errors.is_empty());
 
-            constraints.extend(compatibility_constraints);
-        }
-    }
-
-    Ok(Changes {
-        subset_relations: constraints
-            .into_iter()
-            .filter_map(|x| {
-                let x = x.into_lifetime_outlives().ok()?;
-
-                let from = Region::try_from(x.operand).ok()?;
-                let to = Region::try_from(x.bound).ok()?;
-
-                Some((from, to, span.clone()))
-            })
-            .collect(),
-        borrow_created: None,
-        overwritten_regions: HashSet::new(),
-    })
-}
-
-pub(super) fn get_changes_of_array(
-    values: &Values<BorrowModel>,
-    array: &Array<BorrowModel>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let array_ty = array.element_type.clone();
-    let mut lifetime_constraints = BTreeSet::new();
-
-    for value in &array.elements {
-        let value_span = match value {
-            Value::Register(id) => {
-                values.registers.get(*id).unwrap().span.clone().unwrap()
-            }
-            Value::Literal(literal) => literal.span().cloned().unwrap(),
+            compatibility_constraints
+        } else {
+            BTreeSet::new()
         };
 
-        let Succeeded { result: value_ty, constraints } =
-            values.type_of(value, current_site, environment).map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_calculating_overflow(
-                        value_span.clone(),
-                        handler,
-                    )
-                })
-            })?;
-
-        lifetime_constraints.extend(constraints);
-
-        let compatibility = environment
-            .compatible(&value_ty, &array_ty, Variance::Covariant)
-            .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_check_overflow(value_span.clone(), handler)
-                })
-            })?;
-
-        // append the lifetime constraints
-        if let Some(Succeeded {
-            result,
-            constraints: compatibility_constraints,
-        }) = compatibility
-        {
-            assert!(result.forall_lifetime_errors.is_empty());
-            assert!(result
-                .forall_lifetime_instantiations
-                .lifetimes_by_forall
-                .is_empty());
-
-            lifetime_constraints.extend(compatibility_constraints);
-        }
-    }
-
-    Ok(Changes {
-        subset_relations: lifetime_constraints
-            .into_iter()
-            .filter_map(|x| {
-                let x = x.into_lifetime_outlives().ok()?;
-
-                let from = Region::try_from(x.operand).ok()?;
-                let to = Region::try_from(x.bound).ok()?;
-
-                Some((from, to, span.clone()))
-            })
-            .collect(),
-        borrow_created: None,
-        overwritten_regions: HashSet::new(),
-    })
-}
-
-#[allow(clippy::too_many_lines)]
-pub(super) fn get_changes_of_variant(
-    values: &Values<BorrowModel>,
-    variant: &Variant<BorrowModel>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let enum_id = GlobalID::new(
-        variant.variant_id.target_id,
-        environment.table().get::<Parent>(variant.variant_id).unwrap(),
-    );
-
-    let enum_generic_parameters =
-        environment.table().query::<GenericParameters>(enum_id)?;
-
-    let variant_sym =
-        environment.table().query::<variant::Variant>(variant.variant_id)?;
-
-    let instantiation = Instantiation::from_generic_arguments(
-        variant.generic_arguments.clone(),
-        enum_id,
-        &enum_generic_parameters,
-    )
-    .unwrap();
-
-    let mut lifetime_constraints = BTreeSet::new();
-
-    // compare each values in the field to the struct's field type
-    if let Some(mut associated_type) = variant_sym
-        .associated_type
-        .as_ref()
-        .map(|x| BorrowModel::from_default_type(x.clone()))
-    {
-        instantiation::instantiate(&mut associated_type, &instantiation);
-        let associated_value = variant.associated_value.as_ref().unwrap();
-        let value_span = match associated_value {
-            Value::Register(id) => {
-                values.registers.get(*id).unwrap().span.clone().unwrap()
-            }
-            Value::Literal(literal) => literal.span().cloned().unwrap(),
-        };
-
-        let Succeeded { result: value_ty, constraints: value_constraints } =
-            values
-                .type_of(associated_value, current_site, environment)
-                .map_err(|x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_calculating_overflow(
-                            value_span.clone(),
-                            handler,
-                        )
-                    })
-                })?;
-
-        lifetime_constraints.extend(value_constraints);
-
-        let compatibility = environment
-            .compatible(&value_ty, &associated_type, Variance::Covariant)
-            .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_check_overflow(value_span.clone(), handler)
-                })
-            })?;
-
-        // append the lifetime constraints
-        if let Some(Succeeded {
-            result,
-            constraints: compatibility_constraints,
-        }) = compatibility
-        {
-            assert!(result.forall_lifetime_errors.is_empty());
-            assert!(result
-                .forall_lifetime_instantiations
-                .lifetimes_by_forall
-                .is_empty());
-
-            lifetime_constraints.extend(compatibility_constraints);
-        }
-    }
-
-    // handle the constraints introduced by the outlive predicates of the
-    // struct
-    let well_fromed_lifetime_constraints =
-        well_formedness::check(enum_id, &instantiation, false, environment)?.0;
-
-    Ok(Changes {
-        subset_relations: lifetime_constraints
-            .into_iter()
-            .chain(well_fromed_lifetime_constraints)
-            .filter_map(|x| {
-                let x = x.into_lifetime_outlives().ok()?;
-
-                let from = Region::try_from(x.operand).ok()?;
-                let to = Region::try_from(x.bound).ok()?;
-
-                Some((from, to, span.clone()))
-            })
-            .collect(),
-        borrow_created: None,
-        overwritten_regions: HashSet::new(),
-    })
-}
-
-#[allow(clippy::too_many_lines)]
-pub(super) fn get_changes_of_tuple(
-    values: &Values<BorrowModel>,
-    tuple: &Tuple<BorrowModel>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-) -> Result<Changes, Abort> {
-    let mut lifetime_constraints = BTreeSet::new();
-    for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
-        let ty = values
-            .type_of(&element.value, current_site, environment)
-            .unwrap()
-            .result;
-
-        let predicate = Predicate::TupleType(predicate::Tuple(ty));
-        lifetime_constraints.extend(
-            well_formedness::predicate_satisfied(
-                predicate,
-                None,
-                false,
-                environment,
-            )?
-            .0,
-        );
-    }
-
-    Ok(Changes {
-        subset_relations: lifetime_constraints
-            .into_iter()
-            .filter_map(|x| {
-                let x = x.into_lifetime_outlives().ok()?;
-
-                let from = Region::try_from(x.operand).ok()?;
-                let to = Region::try_from(x.bound).ok()?;
-
-                Some((from, to, span.clone()))
-            })
-            .collect(),
-        borrow_created: None,
-        overwritten_regions: HashSet::new(),
-    })
-}
-
-#[allow(clippy::too_many_lines)]
-pub(super) fn get_changes_of_function_call(
-    values: &Values<BorrowModel>,
-    function_call: &FunctionCall<BorrowModel>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let function_signature = environment
-        .table()
-        .query::<FunctionSignature>(function_call.callable_id)?;
-
-    let mut lifetime_constraints = BTreeSet::new();
-
-    for (parameter, argument) in function_signature
-        .parameter_order
-        .iter()
-        .copied()
-        .map(|x| function_signature.parameters.get(x).unwrap())
-        .zip(&function_call.arguments)
-    {
-        /*
-        The c-varargs will break this assertion
-        assert_eq!(
-            function_signature.parameter_order.len(),
-            function_call.arguments.len()
-        );
-        */
-
-        let mut parameter_ty = Type::from_other_model(parameter.r#type.clone());
-        instantiation::instantiate(
-            &mut parameter_ty,
-            &function_call.instantiation,
-        );
-
-        // obtains the type of argument ty
-        let argument_span = match argument {
-            Value::Register(id) => {
-                values.registers.get(*id).unwrap().span.clone().unwrap()
-            }
-            Value::Literal(literal) => literal.span().cloned().unwrap(),
-        };
-
-        let Succeeded {
-            result: argument_ty,
-            constraints: argument_ty_constraints,
-        } = values.type_of(argument, current_site, environment).map_err(
-            |x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_calculating_overflow(
-                        argument_span.clone(),
-                        handler,
-                    )
-                })
-            },
-        )?;
-
-        lifetime_constraints.extend(argument_ty_constraints);
-
-        let compatibility = environment
-            .compatible(&argument_ty, &parameter_ty, Variance::Covariant)
-            .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_check_overflow(argument_span, handler)
-                })
-            })?;
-
-        // append the lifetime constraints
-        if let Some(Succeeded {
-            result,
-            constraints: compatibility_constraints,
-        }) = compatibility
-        {
-            assert!(result.forall_lifetime_errors.is_empty());
-            assert!(result
-                .forall_lifetime_instantiations
-                .lifetimes_by_forall
-                .is_empty());
-
-            lifetime_constraints.extend(compatibility_constraints);
-        }
-    }
-
-    let mut well_formedness_constraints = well_formedness::check(
-        function_call.callable_id,
-        &function_call.instantiation,
-        false,
-        environment,
-    )?
-    .0;
-
-    let symbol_kind =
-        *environment.table().get::<SymbolKind>(function_call.callable_id);
-
-    match symbol_kind {
-        SymbolKind::Function | SymbolKind::ExternFunction => {}
-
-        SymbolKind::TraitFunction => {
-            // parent trait requirement
-            let parent_trait_id = GlobalID::new(
-                function_call.callable_id.target_id,
-                environment
-                    .table()
-                    .get::<Parent>(function_call.callable_id)
-                    .unwrap(),
-            );
-
-            let trait_generic_params = environment
-                .table()
-                .query::<GenericParameters>(parent_trait_id)?;
-
-            let trait_arguments = function_call
-                .instantiation
-                .create_generic_arguments(
-                    parent_trait_id,
-                    &trait_generic_params,
-                )
-                .unwrap();
-
-            // check extra trait satisfiability
-            well_formedness_constraints.extend(
-                well_formedness::predicate_satisfied(
-                    predicate::Predicate::PositiveTrait(PositiveTrait {
-                        trait_id: parent_trait_id,
-                        is_const: false, /* TODO: reflect the
-                                          * actual value */
-                        generic_arguments: trait_arguments,
-                    }),
-                    None,
-                    false,
-                    environment,
-                )?
-                .0,
-            );
-        }
-
-        SymbolKind::TraitImplementationFunction
-        | SymbolKind::AdtImplementationFunction => {
-            let parent_implementation_id = GlobalID::new(
-                function_call.callable_id.target_id,
-                environment
-                    .table()
-                    .get::<Parent>(function_call.callable_id)
-                    .unwrap(),
-            );
-
-            well_formedness_constraints.extend(
-                well_formedness::check(
-                    parent_implementation_id,
-                    &function_call.instantiation,
-                    false,
-                    environment,
-                )?
-                .0,
-            );
-        }
-
-        SymbolKind::Module
-        | SymbolKind::Struct
-        | SymbolKind::Trait
-        | SymbolKind::Enum
-        | SymbolKind::Type
-        | SymbolKind::Constant
-        | SymbolKind::Variant
-        | SymbolKind::TraitType
-        | SymbolKind::TraitConstant
-        | SymbolKind::PositiveTraitImplementation
-        | SymbolKind::NegativeTraitImplementation
-        | SymbolKind::TraitImplementationType
-        | SymbolKind::TraitImplementationConstant
-        | SymbolKind::AdtImplementation
-        | SymbolKind::Marker
-        | SymbolKind::PositiveMarkerImplementation
-        | SymbolKind::NegativeMarkerImplementation => {
-            panic!("Unexpected symbol kind encountered")
-        }
-    }
-
-    Ok(Changes {
-        subset_relations: lifetime_constraints
-            .into_iter()
-            .chain(well_formedness_constraints)
-            .filter_map(|x| {
-                let x = x.into_lifetime_outlives().ok()?;
-
-                let from = Region::try_from(x.operand).ok()?;
-                let to = Region::try_from(x.bound).ok()?;
-
-                Some((from, to, span.clone()))
-            })
-            .collect(),
-        borrow_created: None,
-        overwritten_regions: HashSet::new(),
-    })
-}
-
-pub(super) fn get_changes_of_borrow(
-    values: &Values<BorrowModel>,
-    borrow: &Borrow<BorrowModel>,
-    span: &Span,
-    register_id: ID<Register<BorrowModel>>,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let regions_in_address = get_regions_in_address(
-        values,
-        &borrow.address,
-        span,
-        true,
-        current_site,
-        environment,
-        handler,
-    )?;
-
-    let borrow_local_region = borrow.lifetime.into_inference().unwrap();
-
-    Ok(Changes {
-        subset_relations: {
-            regions_in_address
+        Ok(Changes {
+            subset_relations: value_type
+                .constraints
                 .into_iter()
-                .map(|x| (x, Region::Local(borrow_local_region), span.clone()))
-                .collect()
-        },
-        borrow_created: Some((register_id, borrow_local_region)),
-        overwritten_regions: HashSet::new(),
-    })
-}
+                .chain(address_constraints)
+                .chain(compatibility_constraints)
+                .filter_map(|x| {
+                    let x = x.into_lifetime_outlives().ok()?;
 
-pub(super) fn get_changes_of_store_internal(
-    values: &Values<BorrowModel>,
-    store_address: &Address<BorrowModel>,
-    value_type: Succeeded<Type<BorrowModel>, BorrowModel>,
-    span: &Span,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let Succeeded { result: address_ty, constraints: address_constraints } =
-        values.type_of(store_address, current_site, environment).map_err(
-            |x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_calculating_overflow(span.clone(), handler)
+                    let from = Region::try_from(x.operand).ok()?;
+                    let to = Region::try_from(x.bound).ok()?;
+
+                    Some((from, to, span.clone()))
                 })
-            },
-        )?;
+                .collect(),
+            borrow_created: None,
+            overwritten_regions: RecursiveIterator::new(&address_ty)
+                .filter_map(|x| x.0.into_lifetime().ok())
+                .filter_map(|x| Region::try_from(*x).ok())
+                .collect::<HashSet<_>>(),
+        })
+    }
 
-    // get the compatibility constraints between the value and the address
-    let compatibility = environment
-        .compatible(&value_type.result, &address_ty, Variance::Covariant)
-        .map_err(|x| {
-            x.report_overflow(|x| {
-                x.report_as_type_check_overflow(span.clone(), handler)
-            })
-        })?;
+    pub(super) fn get_changes_of_store(
+        &self,
+        store_inst: &Store,
+    ) -> Result<Changes, UnrecoverableError> {
+        let value_ty = values
+            .type_of(&store_inst.value, current_site, environment)
+            .map_err(|x| {
+                x.report_overflow(|x| {
+                    x.report_as_type_calculating_overflow(
+                        store_inst.span.clone().unwrap(),
+                        handler,
+                    )
+                })
+            })?;
 
-    let compatibility_constraints = if let Some(Succeeded {
-        result:
-            Compatibility { forall_lifetime_instantiations, forall_lifetime_errors },
-        constraints: compatibility_constraints,
-    }) = compatibility
-    {
-        assert!(forall_lifetime_instantiations.lifetimes_by_forall.is_empty());
-        assert!(forall_lifetime_errors.is_empty());
-
-        compatibility_constraints
-    } else {
-        BTreeSet::new()
-    };
-
-    Ok(Changes {
-        subset_relations: value_type
-            .constraints
-            .into_iter()
-            .chain(address_constraints)
-            .chain(compatibility_constraints)
-            .filter_map(|x| {
-                let x = x.into_lifetime_outlives().ok()?;
-
-                let from = Region::try_from(x.operand).ok()?;
-                let to = Region::try_from(x.bound).ok()?;
-
-                Some((from, to, span.clone()))
-            })
-            .collect(),
-        borrow_created: None,
-        overwritten_regions: RecursiveIterator::new(&address_ty)
-            .filter_map(|x| x.0.into_lifetime().ok())
-            .filter_map(|x| Region::try_from(*x).ok())
-            .collect::<HashSet<_>>(),
-    })
+        get_changes_of_store_internal(
+            values,
+            &store_inst.address,
+            value_ty,
+            &store_inst.span.clone().unwrap(),
+            current_site,
+            environment,
+            handler,
+        )
+    }
 }
 
-pub(super) fn get_changes_of_store(
-    values: &Values<BorrowModel>,
-    store_inst: &Store<BorrowModel>,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Changes, Abort> {
-    let value_ty = values
-        .type_of(&store_inst.value, current_site, environment)
-        .map_err(|x| {
-            x.report_overflow(|x| {
-                x.report_as_type_calculating_overflow(
-                    store_inst.span.clone().unwrap(),
-                    handler,
-                )
-            })
-        })?;
-
-    get_changes_of_store_internal(
-        values,
-        &store_inst.address,
-        value_ty,
-        &store_inst.span.clone().unwrap(),
-        current_site,
-        environment,
-        handler,
-    )
-}
-
-impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
+impl<N: Normalizer> Builder<'_, N> {
     /// Returns a list of new region introduced by the scope push instruction.
     ///
     /// This function returns all the regions that are created by the variables
     /// declared in the scope push instruction.
     pub fn get_new_regions(
         &self,
-        instruction: &Instruction<BorrowModel>,
-    ) -> Result<HashSet<Region>, Abort> {
+        instruction: &Instruction,
+    ) -> Result<HashSet<Region>, UnrecoverableError> {
         match instruction {
             Instruction::ScopePush(scope_push) => {
                 let mut regions = HashSet::new();
@@ -1062,19 +920,19 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
 
                     for global_id in self
                         .environment
-                        .table()
+                        .tracked_engine()
                         .scope_walker(self.current_site)
                         .map(|x| GlobalID::new(self.current_site.target_id, x))
                     {
                         let symbol_kind = self
                             .environment
-                            .table()
+                            .tracked_engine()
                             .get::<SymbolKind>(global_id);
 
                         if symbol_kind.has_generic_parameters() {
                             regions.extend(
                                 self.environment
-                                    .table()
+                                    .tracked_engine()
                                     .query::<GenericParameters>(global_id)?
                                     .lifetime_order()
                                     .iter()
@@ -1097,7 +955,7 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
                         if symbol_kind.has_elided_lifetimes() {
                             regions.extend(
                                 self.environment
-                                    .table()
+                                    .tracked_engine()
                                     .query::<ElidedLifetimes>(global_id)?
                                     .elided_lifetimes
                                     .ids()
@@ -1134,8 +992,8 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
     /// Returns a list of regions that are removed by the scope pop instruction.
     pub fn get_removing_regions(
         &self,
-        instruction: &Instruction<BorrowModel>,
-    ) -> Result<HashSet<Region>, Abort> {
+        instruction: &Instruction,
+    ) -> Result<HashSet<Region>, UnrecoverableError> {
         match instruction {
             Instruction::ScopePop(scope_pop) => {
                 let mut regions = HashSet::new();
@@ -1164,19 +1022,19 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
 
                     for global_id in self
                         .environment
-                        .table()
+                        .tracked_engine()
                         .scope_walker(self.current_site)
                         .map(|x| GlobalID::new(self.current_site.target_id, x))
                     {
                         let symbol_kind = self
                             .environment
-                            .table()
+                            .tracked_engine()
                             .get::<SymbolKind>(global_id);
 
                         if symbol_kind.has_generic_parameters() {
                             regions.extend(
                                 self.environment
-                                    .table()
+                                    .tracked_engine()
                                     .query::<GenericParameters>(global_id)?
                                     .lifetime_order()
                                     .iter()
@@ -1199,7 +1057,7 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
                         if symbol_kind.has_elided_lifetimes() {
                             regions.extend(
                                 self.environment
-                                    .table()
+                                    .tracked_engine()
                                     .query::<ElidedLifetimes>(global_id)?
                                     .elided_lifetimes
                                     .ids()
@@ -1237,8 +1095,8 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
     #[allow(clippy::too_many_lines)]
     pub fn get_changes(
         &self,
-        instruction: &Instruction<BorrowModel>,
-    ) -> Result<Changes, Abort> {
+        instruction: &Instruction,
+    ) -> Result<Changes, UnrecoverableError> {
         match instruction {
             Instruction::Store(store) => get_changes_of_store(
                 &self.representation.values,
@@ -1265,10 +1123,8 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
                     .map(|return_inst| {
                         let function_signature = self
                             .environment
-                            .table()
-                            .query::<FunctionSignature>(
-                            self.current_site,
-                        )?;
+                            .tracked_engine()
+                            .query::<FunctionSignature>(self.current_site)?;
 
                         let return_ty = BorrowModel::from_default_type(
                             function_signature.return_type.clone(),
@@ -1485,13 +1341,13 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
     }
 }
 
-impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
+impl<N: Normalizer> Builder<'_, N> {
     pub fn walk_instruction(
         &mut self,
-        instruction: &Instruction<BorrowModel>,
-        instruction_point: Point<BorrowModel>,
+        instruction: &Instruction,
+        instruction_point: Point,
         subset_result: &mut Intermediate,
-    ) -> Result<(), Abort> {
+    ) -> Result<(), UnrecoverableError> {
         for region in self.get_new_regions(instruction)? {
             assert!(self
                 .latest_change_points_by_region
@@ -1525,7 +1381,7 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
         &mut self,
         changes: Changes,
         subset_result: &mut Intermediate,
-        instruction_point: Point<BorrowModel>,
+        instruction_point: Point,
     ) {
         if let Some((borrow_register_id, local_region)) = changes.borrow_created
         {
@@ -1662,9 +1518,9 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
 
     pub fn walk_block(
         &mut self,
-        block_id: ID<Block<BorrowModel>>,
+        block_id: ID<Block>,
         subset_result: &mut Intermediate,
-    ) -> Result<(), Abort> {
+    ) -> Result<(), UnrecoverableError> {
         let block = self
             .representation
             .control_flow_graph
@@ -1686,37 +1542,50 @@ impl<N: Normalizer<BorrowModel>> Builder<'_, N> {
 
 #[derive(Clone)]
 #[allow(clippy::type_complexity)]
-struct Context<'a, N: Normalizer<BorrowModel>> {
-    representation: &'a Representation<BorrowModel>,
-    current_site: GlobalID,
-    environment: &'a Environment<'a, BorrowModel, N>,
-    register_infos: &'a RegisterInfos,
-    region_variances: &'a RegionVariances,
+struct Context<'a, N: Normalizer> {
+    borrowing_context: &'a context::Context<'a, N>,
 
     /// The key represents the block ID that needs to be checked/explored.
     ///
     /// - `None` value means the block is being processed.
     /// - `Some` value means the block has been processed
     /// - No value means the block has not been explored
-    walk_results_by_block_id:
-        HashMap<ID<Block<BorrowModel>>, Option<Builder<'a, N>>>,
+    walk_results_by_block_id: HashMap<ID<Block>, Option<Builder<'a, N>>>,
 
     /// If the block id appears in this map, it means the block is a looped
     /// block and the value is the starting environment of the looped block.
-    target_regions_by_block_id: HashMap<
-        ID<Block<BorrowModel>>,
-        (ID<Block<BorrowModel>>, HashSet<Region>),
-    >,
+    target_regions_by_block_id:
+        HashMap<ID<Block>, (ID<Block>, HashSet<Region>)>,
 }
 
-impl<'a, N: Normalizer<BorrowModel>> Context<'a, N> {
+impl<'a, N: Normalizer> Context<'a, N> {
+    pub fn tracked_engine(&self) -> &'a TrackedEngine {
+        self.borrowing_context.environment().tracked_engine()
+    }
+
+    pub fn values(&self) -> &'a Values { &self.representation.values }
+
+    pub fn current_site(&self) -> Global<pernixc_symbol::ID> {
+        self.borrowing_context.current_site()
+    }
+
+    pub fn environment(&self) -> &'a Environment<'a, N> {
+        self.borrowing_context.environment()
+    }
+
+    pub fn handler(&self) -> &'a dyn Handler<Diagnostic> {
+        self.borrowing_context.handler()
+    }
+}
+
+impl<'a, N: Normalizer> Context<'a, N> {
     #[allow(clippy::too_many_lines)]
     pub fn walk_block(
         &mut self,
-        block_id: ID<Block<BorrowModel>>,
+        block_id: ID<Block>,
         subset_result: &mut Intermediate,
-        handler: &'a dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<Option<Builder<'a, N>>, Abort> {
+        handler: &'a dyn Handler<Diagnostic>,
+    ) -> Result<Option<Builder<'a, N>>, UnrecoverableError> {
         // skip if already processed
         if let Some(walk_result) = self.walk_results_by_block_id.get(&block_id)
         {
@@ -1744,8 +1613,8 @@ impl<'a, N: Normalizer<BorrowModel>> Context<'a, N> {
 
             let predicates = self
                 .environment
-                .table()
-                .get_active_premise::<BorrowModel>(self.current_site)
+                .tracked_engine()
+                .get_active_premise(self.current_site)
                 .predicates;
 
             let mut adding_edges = HashSet::new();
@@ -2027,21 +1896,20 @@ pub struct Subset {
     transitive_closure: TransitiveClosure,
 
     #[get = "pub"]
-    direct_subset_relations: HashSet<(RegionAt, RegionAt, Option<Span>)>,
+    direct_subset_relations:
+        HashSet<(RegionAt, RegionAt, Option<RelativeSpan>)>,
 
     #[get = "pub"]
     created_borrows:
-        HashMap<ID<Register<BorrowModel>>, (LocalRegionID, Point<BorrowModel>)>,
+        HashMap<ID<Register>, (inference::Variable<Lifetime>, Point)>,
 
     /// Maps the region to the block ids that the region first appears. (mostly
     /// is the entry block)
-    entry_block_ids_by_universal_regions:
-        HashMap<UniversalRegion, ID<Block<BorrowModel>>>,
+    entry_block_ids_by_universal_regions: HashMap<UniversalRegion, ID<Block>>,
 
     change_logs_by_region: HashMap<Region, RegionChangeLog>,
-    active_region_sets_by_block_id:
-        HashMap<ID<Block<BorrowModel>>, HashSet<Region>>,
-    location_insensitive_regions: HashSet<LocalRegionID>,
+    active_region_sets_by_block_id: HashMap<ID<Block>, HashSet<Region>>,
+    location_insensitive_regions: HashSet<inference::Variable<Lifetime>>,
 }
 
 impl Subset {
@@ -2087,8 +1955,8 @@ impl Subset {
     /// Gets a list of region that contains the given borrow at the given point.
     pub fn get_regions_containing_borrow(
         &self,
-        borrow_register_id: ID<Register<BorrowModel>>,
-        point: Point<BorrowModel>,
+        borrow_register_id: ID<Register>,
+        point: Point,
     ) -> HashSet<Region> {
         let block_id = point.block_id;
         let borrow_region = RegionAt::new_location_insensitive(
@@ -2136,14 +2004,9 @@ impl Subset {
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn analyze<N: Normalizer<BorrowModel>>(
-    ir: &Representation<BorrowModel>,
-    register_infos: &RegisterInfos,
-    region_variances: &RegionVariances,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, N>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<Subset, Abort> {
+pub fn analyze<N: Normalizer>(
+    context: &context::Context<'_, N>,
+) -> Result<Subset, UnrecoverableError> {
     let mut context = Context {
         representation: ir,
         current_site,
@@ -2231,7 +2094,7 @@ pub fn analyze<N: Normalizer<BorrowModel>>(
         .values_mut()
         .flat_map(|x| x.updated_at_instruction_indices.values_mut())
     {
-        indices.sort_unstable();
+        indices.sort_unstracked_engine();
         indices.dedup();
     }
 

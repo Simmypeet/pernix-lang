@@ -1,18 +1,12 @@
 use getset::{CopyGetters, Getters};
 use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
-use pernixc_ir::{
-    address::Address,
-    value::{literal::Unreachable, TypeOf},
-    IR,
-};
+use pernixc_ir::{address::Address, value::TypeOf, IR};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_target::Global;
 use pernixc_term::{r#type::Qualifier, visitor::RecursiveIterator};
 use pernixc_type_system::{
-    environment::Environment,
-    normalizer::{self, Normalizer},
-    UnrecoverableError,
+    environment::Environment, normalizer::Normalizer, UnrecoverableError,
 };
 
 use crate::{
