@@ -26,6 +26,7 @@ mod array;
 mod borrow;
 mod function_call;
 mod phi;
+mod store;
 mod r#struct;
 mod subtype;
 mod tuple;
@@ -252,103 +253,6 @@ pub struct Changes {
     /// The `a = b` will produce an `OverwrittenRegion` change, and the region
     /// that appears here is `'0`.
     overwritten_regions: HashSet<Region>,
-}
-
-impl<N: Normalizer> Context<'_, N> {
-    pub(super) fn get_changes_of_store_internal(
-        &self,
-        store_address: &Address,
-        value_type: Succeeded<Type>,
-        span: &RelativeSpan,
-    ) -> Result<Changes, UnrecoverableError> {
-        let Succeeded { result: address_ty, constraints: address_constraints } =
-            values.type_of(store_address, current_site, environment).map_err(
-                |x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_calculating_overflow(
-                            span.clone(),
-                            handler,
-                        )
-                    })
-                },
-            )?;
-
-        // get the compatibility constraints between the value and the address
-        let compatibility = environment
-            .compatible(&value_type.result, &address_ty, Variance::Covariant)
-            .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_check_overflow(span.clone(), handler)
-                })
-            })?;
-
-        let compatibility_constraints = if let Some(Succeeded {
-            result:
-                Compatibility {
-                    forall_lifetime_instantiations,
-                    forall_lifetime_errors,
-                },
-            constraints: compatibility_constraints,
-        }) = compatibility
-        {
-            assert!(forall_lifetime_instantiations
-                .lifetimes_by_forall
-                .is_empty());
-            assert!(forall_lifetime_errors.is_empty());
-
-            compatibility_constraints
-        } else {
-            BTreeSet::new()
-        };
-
-        Ok(Changes {
-            subset_relations: value_type
-                .constraints
-                .into_iter()
-                .chain(address_constraints)
-                .chain(compatibility_constraints)
-                .filter_map(|x| {
-                    let x = x.into_lifetime_outlives().ok()?;
-
-                    let from = Region::try_from(x.operand).ok()?;
-                    let to = Region::try_from(x.bound).ok()?;
-
-                    Some((from, to, span.clone()))
-                })
-                .collect(),
-            borrow_created: None,
-            overwritten_regions: RecursiveIterator::new(&address_ty)
-                .filter_map(|x| x.0.into_lifetime().ok())
-                .filter_map(|x| Region::try_from(*x).ok())
-                .collect::<HashSet<_>>(),
-        })
-    }
-
-    pub(super) fn get_changes_of_store(
-        &self,
-        store_inst: &Store,
-    ) -> Result<Changes, UnrecoverableError> {
-        let value_ty = values
-            .type_of(&store_inst.value, current_site, environment)
-            .map_err(|x| {
-                x.report_overflow(|x| {
-                    x.report_as_type_calculating_overflow(
-                        store_inst.span.clone().unwrap(),
-                        handler,
-                    )
-                })
-            })?;
-
-        get_changes_of_store_internal(
-            values,
-            &store_inst.address,
-            value_ty,
-            &store_inst.span.clone().unwrap(),
-            current_site,
-            environment,
-            handler,
-        )
-    }
 }
 
 impl<N: Normalizer> Builder<'_, N> {
