@@ -62,6 +62,6 @@ impl<N: Normalizer> Context<'_, N> {
 
         set.extend(constraints);
 
-        self.subtypes(target, source, variance, span, set).await
+        self.subtypes(source, target, variance, span, set).await
     }
 }
