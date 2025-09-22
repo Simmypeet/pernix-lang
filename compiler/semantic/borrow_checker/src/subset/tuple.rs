@@ -59,7 +59,7 @@ impl<N: Normalizer> Context<'_, N> {
                     let from = Region::try_from(x.operand).ok()?;
                     let to = Region::try_from(x.bound).ok()?;
 
-                    Some((from, to, span.clone()))
+                    Some((from, to, *span))
                 })
                 .collect(),
             borrow_created: None,

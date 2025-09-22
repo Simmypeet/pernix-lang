@@ -51,13 +51,13 @@ impl<N: Normalizer> Context<'_, N> {
         variance: Variance,
         set: &mut BTreeSet<LifetimeConstraint>,
     ) -> Result<(), UnrecoverableError> {
-        let span = self.values().span_of_value(source_value).unwrap().clone();
+        let span = *self.values().span_of_value(source_value).unwrap();
         let Succeeded { result: source, constraints } = self
             .values()
             .type_of(source_value, self.current_site(), self.environment())
             .await
             .map_err(|x| {
-                x.report_as_type_check_overflow(span.clone(), &self.handler())
+                x.report_as_type_check_overflow(span, &self.handler())
             })?;
 
         set.extend(constraints);

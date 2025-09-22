@@ -54,14 +54,15 @@ impl<N: Normalizer> Context<'_, N> {
                 argument,
                 Variance::Covariant,
                 &mut lifetime_constraints,
-            );
+            )
+            .await?;
         }
 
         lifetime_constraints.extend(
             self.environment()
                 .wf_check(
                     function_call.callable_id,
-                    span.clone(),
+                    *span,
                     &function_call.instantiation,
                     false,
                     &self.handler(),
@@ -105,7 +106,7 @@ impl<N: Normalizer> Context<'_, N> {
                                 is_const: false,
                                 generic_arguments: trait_arguments,
                             }),
-                            span.clone(),
+                            *span,
                             None,
                             false,
                             &self.handler(),
@@ -127,7 +128,7 @@ impl<N: Normalizer> Context<'_, N> {
                     self.environment()
                         .wf_check(
                             parent_implementation_id,
-                            span.clone(),
+                            *span,
                             &function_call.instantiation,
                             false,
                             &self.handler(),
@@ -150,7 +151,7 @@ impl<N: Normalizer> Context<'_, N> {
                     let from = Region::try_from(x.operand).ok()?;
                     let to = Region::try_from(x.bound).ok()?;
 
-                    Some((from, to, span.clone()))
+                    Some((from, to, *span))
                 })
                 .collect(),
             borrow_created: None,

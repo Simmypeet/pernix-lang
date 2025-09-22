@@ -379,14 +379,7 @@ pub async fn borrow_check<N: Normalizer>(
     let context =
         context::Context::new(&ir, environment, current_site, handler).await?;
 
-    // let subset = subset::analyze(
-    //     &ir,
-    //     &register_infos,
-    //     &region_variances,
-    //     current_site,
-    //     environment,
-    //     handler,
-    // )?;
+    let _subset = subset::analyze(&context).await?;
 
     // check::borrow_check_internal(
     //     &ir,

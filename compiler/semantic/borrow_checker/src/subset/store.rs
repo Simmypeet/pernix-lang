@@ -22,7 +22,7 @@ impl<N: Normalizer> Context<'_, N> {
                 .await
                 .map_err(|x| {
                     x.report_as_type_calculating_overflow(
-                        span.clone(),
+                        *span,
                         &self.handler(),
                     )
                 })?;
@@ -37,7 +37,7 @@ impl<N: Normalizer> Context<'_, N> {
             )
             .await
             .map_err(|x| {
-                x.report_as_type_check_overflow(span.clone(), &self.handler())
+                x.report_as_type_check_overflow(*span, &self.handler())
             })?;
 
         if let Some(compat) = compatibility {
@@ -51,7 +51,7 @@ impl<N: Normalizer> Context<'_, N> {
             value_type.constraints.extend(compat.constraints.iter().cloned());
         } else {
             panic!("in borrow checking, all subtyping should be valid");
-        };
+        }
 
         Ok(Changes {
             subset_relations: value_type
@@ -64,7 +64,7 @@ impl<N: Normalizer> Context<'_, N> {
                     let from = Region::try_from(x.operand).ok()?;
                     let to = Region::try_from(x.bound).ok()?;
 
-                    Some((from, to, span.clone()))
+                    Some((from, to, *span))
                 })
                 .collect(),
             borrow_created: None,
@@ -85,7 +85,7 @@ impl<N: Normalizer> Context<'_, N> {
             .await
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
-                    store_inst.span.clone().unwrap(),
+                    store_inst.span.unwrap(),
                     &self.handler(),
                 )
             })?;
@@ -93,7 +93,7 @@ impl<N: Normalizer> Context<'_, N> {
         self.get_changes_of_store(
             &store_inst.address,
             value_ty,
-            &store_inst.span.clone().unwrap(),
+            &store_inst.span.unwrap(),
         )
         .await
     }

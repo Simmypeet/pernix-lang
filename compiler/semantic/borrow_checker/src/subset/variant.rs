@@ -52,7 +52,8 @@ impl<N: Normalizer> Context<'_, N> {
                 associated_value,
                 Variance::Covariant,
                 &mut lifetime_constraints,
-            );
+            )
+            .await?;
         }
 
         // handle the constraints introduced by the outlive predicates of the
@@ -72,7 +73,7 @@ impl<N: Normalizer> Context<'_, N> {
                     let from = Region::try_from(x.operand).ok()?;
                     let to = Region::try_from(x.bound).ok()?;
 
-                    Some((from, to, span.clone()))
+                    Some((from, to, *span))
                 })
                 .collect(),
             borrow_created: None,

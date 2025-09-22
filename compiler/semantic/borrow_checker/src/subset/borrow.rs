@@ -22,9 +22,7 @@ impl<N: Normalizer> Context<'_, N> {
             subset_relations: {
                 region_in_addresss
                     .into_iter()
-                    .map(|x| {
-                        (x, Region::Local(borrow_local_region), span.clone())
-                    })
+                    .map(|x| (x, Region::Local(borrow_local_region), *span))
                     .collect()
             },
             borrow_created: Some((register_id, borrow_local_region)),

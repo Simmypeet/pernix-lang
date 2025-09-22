@@ -97,10 +97,12 @@ impl<'a, N: Normalizer> Context<'a, N> {
     }
 
     /// Gets the values from the IR
-    pub fn values(&self) -> &'a pernixc_ir::Values { &self.ir.values }
+    #[must_use]
+    pub const fn values(&self) -> &'a pernixc_ir::Values { &self.ir.values }
 
     /// Gets the control flow graph from the IR
-    pub fn control_flow_graph(
+    #[must_use]
+    pub const fn control_flow_graph(
         &self,
     ) -> &'a pernixc_ir::control_flow_graph::ControlFlowGraph {
         &self.ir.control_flow_graph

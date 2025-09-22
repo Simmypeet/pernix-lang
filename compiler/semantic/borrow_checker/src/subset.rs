@@ -3,25 +3,20 @@ use std::{collections::BTreeSet, ops::Deref};
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_arena::ID;
-use pernixc_handler::Handler;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_ir::{
-    address::Address,
     control_flow_graph::{Block, Point},
-    instruction::{Instruction, RegisterAssignment, Store},
+    instruction::{Instruction, RegisterAssignment},
     value::{
-        register::{
-            Assignment, Borrow, FunctionCall, Register, Tuple, Variant,
-        },
+        register::{Assignment, Register},
         TypeOf, Value,
     },
-    Values,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_semantic_element::{
-    elided_lifetime::get_elided_lifetimes, parameter::get_parameters,
-    return_type::get_return_type, variance::Variance,
+    elided_lifetime::get_elided_lifetimes, return_type::get_return_type,
+    variance::Variance,
 };
 use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
@@ -29,19 +24,15 @@ use pernixc_term::{
     generic_parameters::{get_generic_parameters, LifetimeParameterID},
     inference,
     lifetime::{ElidedLifetimeID, Lifetime},
-    r#type::Type,
+    predicate::Predicate,
     visitor::RecursiveIterator,
 };
 use pernixc_transitive_closure::TransitiveClosure;
 use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, Succeeded,
-    UnrecoverableError,
+    environment::get_active_premise, normalizer::Normalizer, UnrecoverableError,
 };
 
-use crate::{
-    context, diagnostic::Diagnostic, NonStaticUniversalRegion, Region,
-    UniversalRegion,
-};
+use crate::{context, NonStaticUniversalRegion, Region, UniversalRegion};
 
 mod array;
 mod borrow;
@@ -461,12 +452,14 @@ impl<N: Normalizer> Builder<'_, N> {
                 .await?;
 
             let mut constraints = BTreeSet::new();
-            self.context.subtypes_value(
-                return_ty.deref().clone(),
-                &Value::Register(register_id),
-                Variance::Covariant,
-                &mut constraints,
-            );
+            self.context
+                .subtypes_value(
+                    return_ty.deref().clone(),
+                    &Value::Register(register_id),
+                    Variance::Covariant,
+                    &mut constraints,
+                )
+                .await?;
 
             return Ok(Some(
                 constraints
@@ -477,7 +470,7 @@ impl<N: Normalizer> Builder<'_, N> {
                         let from = Region::try_from(x.operand).ok()?;
                         let to = Region::try_from(x.bound).ok()?;
 
-                        Some((from, to, return_inst.span.clone().unwrap()))
+                        Some((from, to, return_inst.span.unwrap()))
                     })
                     .collect::<HashSet<_>>(),
             ));
@@ -603,7 +596,7 @@ impl<N: Normalizer> Builder<'_, N> {
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
-                            tuple_pack.packed_tuple_span.clone().unwrap(),
+                            tuple_pack.packed_tuple_span.unwrap(),
                             &self.context.handler(),
                         )
                     })?;
@@ -633,13 +626,13 @@ impl<N: Normalizer> Builder<'_, N> {
 }
 
 impl<N: Normalizer> Builder<'_, N> {
-    pub fn walk_instruction(
+    pub async fn walk_instruction(
         &mut self,
         instruction: &Instruction,
         instruction_point: Point,
         subset_result: &mut Intermediate,
     ) -> Result<(), UnrecoverableError> {
-        for region in self.get_new_regions(instruction)? {
+        for region in self.get_new_regions(instruction).await? {
             assert!(self
                 .latest_change_points_by_region
                 .insert(region, None)
@@ -654,10 +647,10 @@ impl<N: Normalizer> Builder<'_, N> {
         }
 
         // gets the changes made by the instruction
-        let changes = self.get_changes(instruction)?;
+        let changes = self.get_changes(instruction).await?;
         self.handle_chages(changes, subset_result, instruction_point);
 
-        for region in self.get_removing_regions(instruction)? {
+        for region in self.get_removing_regions(instruction).await? {
             assert!(self
                 .latest_change_points_by_region
                 .remove(&region)
@@ -760,7 +753,8 @@ impl<N: Normalizer> Builder<'_, N> {
 
                         // flows state to current
                         match self
-                            .region_variances
+                            .context
+                            .region_variances()
                             .get(&region_at.to_region())
                             .copied()
                             .unwrap_or(Variance::Covariant)
@@ -807,24 +801,21 @@ impl<N: Normalizer> Builder<'_, N> {
         }
     }
 
-    pub fn walk_block(
+    pub async fn walk_block(
         &mut self,
         block_id: ID<Block>,
         subset_result: &mut Intermediate,
     ) -> Result<(), UnrecoverableError> {
-        let block = self
-            .representation
-            .control_flow_graph
-            .blocks()
-            .get(block_id)
-            .unwrap();
+        let block =
+            self.context.control_flow_graph().blocks().get(block_id).unwrap();
 
         for (index, instruction) in block.instructions().iter().enumerate() {
             self.walk_instruction(
                 instruction,
                 Point { block_id, instruction_index: index },
                 subset_result,
-            )?;
+            )
+            .await?;
         }
 
         Ok(())
@@ -832,9 +823,9 @@ impl<N: Normalizer> Builder<'_, N> {
 }
 
 #[derive(Clone)]
-#[allow(clippy::type_complexity)]
-struct Context<'a, N: Normalizer> {
-    borrowing_context: &'a context::Context<'a, N>,
+#[allow(clippy::type_complexity, clippy::struct_field_names)]
+struct Walker<'a, N: Normalizer> {
+    context: &'a context::Context<'a, N>,
 
     /// The key represents the block ID that needs to be checked/explored.
     ///
@@ -849,33 +840,22 @@ struct Context<'a, N: Normalizer> {
         HashMap<ID<Block>, (ID<Block>, HashSet<Region>)>,
 }
 
-impl<'a, N: Normalizer> Context<'a, N> {
+impl<'a, N: Normalizer> Walker<'a, N> {
     pub fn tracked_engine(&self) -> &'a TrackedEngine {
-        self.borrowing_context.environment().tracked_engine()
+        self.context.environment().tracked_engine()
     }
-
-    pub fn values(&self) -> &'a Values { &self.representation.values }
 
     pub fn current_site(&self) -> Global<pernixc_symbol::ID> {
-        self.borrowing_context.current_site()
-    }
-
-    pub fn environment(&self) -> &'a Environment<'a, N> {
-        self.borrowing_context.environment()
-    }
-
-    pub fn handler(&self) -> &'a dyn Handler<Diagnostic> {
-        self.borrowing_context.handler()
+        self.context.current_site()
     }
 }
 
-impl<'a, N: Normalizer> Context<'a, N> {
+impl<'a, N: Normalizer> Walker<'a, N> {
     #[allow(clippy::too_many_lines)]
-    pub fn walk_block(
+    pub async fn walk_block(
         &mut self,
         block_id: ID<Block>,
         subset_result: &mut Intermediate,
-        handler: &'a dyn Handler<Diagnostic>,
     ) -> Result<Option<Builder<'a, N>>, UnrecoverableError> {
         // skip if already processed
         if let Some(walk_result) = self.walk_results_by_block_id.get(&block_id)
@@ -887,30 +867,24 @@ impl<'a, N: Normalizer> Context<'a, N> {
         self.walk_results_by_block_id.insert(block_id, None);
 
         let block =
-            self.representation.control_flow_graph.get_block(block_id).unwrap();
+            self.context.control_flow_graph().get_block(block_id).unwrap();
 
         let mut builder = if block.is_entry() {
             assert!(block.predecessors().is_empty());
 
             let builder = Builder {
-                representation: self.representation,
-                register_infos: self.register_infos,
-                current_site: self.current_site,
-                environment: self.environment,
-                region_variances: self.region_variances,
-                latest_change_points_by_region: HashMap::new(),
-                handler,
+                context: self.context,
+                latest_change_points_by_region: HashMap::default(),
             };
 
             let predicates = self
-                .environment
                 .tracked_engine()
-                .get_active_premise(self.current_site)
-                .predicates;
+                .get_active_premise(self.current_site())
+                .await?;
 
-            let mut adding_edges = HashSet::new();
+            let mut adding_edges = HashSet::default();
 
-            for predicate in predicates {
+            for predicate in &predicates.predicates {
                 match predicate {
                     Predicate::LifetimeOutlives(outlives) => {
                         let (Some(operand), Some(bound)) = (
@@ -975,7 +949,8 @@ impl<'a, N: Normalizer> Context<'a, N> {
             // block.
             for predecessor_id in predecessors.iter().copied() {
                 if let Some(builder) =
-                    self.walk_block(predecessor_id, subset_result, handler)?
+                    Box::pin(self.walk_block(predecessor_id, subset_result))
+                        .await?
                 {
                     flowing_subset_builders.push((predecessor_id, builder));
                 } else {
@@ -991,20 +966,13 @@ impl<'a, N: Normalizer> Context<'a, N> {
             }
 
             let builder = Builder {
-                representation: self.representation,
-                register_infos: self.register_infos,
-                current_site: self.current_site,
-                environment: self.environment,
-                region_variances: self.region_variances,
-
+                context: self.context,
                 latest_change_points_by_region: flowing_subset_builders[0]
                     .1
                     .latest_change_points_by_region
                     .keys()
                     .map(|x| (*x, None))
                     .collect(),
-
-                handler,
             };
 
             // flow the state of the regions from the predecessors to the
@@ -1041,7 +1009,8 @@ impl<'a, N: Normalizer> Context<'a, N> {
 
                     // taken account the variance
                     match self
-                        .region_variances
+                        .context
+                        .region_variances()
                         .get(&region)
                         .copied()
                         .unwrap_or(Variance::Covariant)
@@ -1095,7 +1064,7 @@ impl<'a, N: Normalizer> Context<'a, N> {
             builder
         };
 
-        builder.walk_block(block_id, subset_result)?;
+        builder.walk_block(block_id, subset_result).await?;
 
         // flows the state of the regions back to the predecessors
         if let Some((to_block_id, regions)) =
@@ -1130,7 +1099,8 @@ impl<'a, N: Normalizer> Context<'a, N> {
 
                 // taken account the variance
                 match self
-                    .region_variances
+                    .context
+                    .region_variances()
                     .get(region)
                     .copied()
                     .unwrap_or(Variance::Covariant)
@@ -1295,29 +1265,26 @@ impl Subset {
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn analyze<N: Normalizer>(
+pub async fn analyze<N: Normalizer>(
     context: &context::Context<'_, N>,
 ) -> Result<Subset, UnrecoverableError> {
-    let mut context = Context {
-        representation: ir,
-        current_site,
-        environment,
-        register_infos,
-        region_variances,
-        walk_results_by_block_id: HashMap::new(),
-        target_regions_by_block_id: HashMap::new(),
+    let mut context = Walker {
+        context,
+        walk_results_by_block_id: HashMap::default(),
+        target_regions_by_block_id: HashMap::default(),
     };
 
     let all_block_ids =
-        ir.control_flow_graph.blocks().ids().collect::<Vec<_>>();
+        context.context.control_flow_graph().blocks().ids().collect::<Vec<_>>();
+
     let mut subset_result = Intermediate {
-        subset_relations: HashSet::new(),
-        created_borrows: HashMap::new(),
-        entry_block_ids_by_universal_regions: HashMap::new(),
+        subset_relations: HashSet::default(),
+        created_borrows: HashMap::default(),
+        entry_block_ids_by_universal_regions: HashMap::default(),
     };
 
     for block_id in all_block_ids.iter().copied() {
-        context.walk_block(block_id, &mut subset_result, handler)?;
+        context.walk_block(block_id, &mut subset_result).await?;
     }
 
     // make sure all blocks are processed
@@ -1325,12 +1292,13 @@ pub fn analyze<N: Normalizer>(
 
     // populate the region and assign the index
     let mut region_ats_by_index = Vec::new();
-    let mut indices_by_region_at = HashMap::new();
+    let mut indices_by_region_at = HashMap::default();
 
-    let mut all_regions = HashSet::new();
-    let mut location_insensitive_regions = HashSet::new();
-    let mut active_region_sets_by_block_id = HashMap::<_, HashSet<_>>::new();
-    let mut change_logs_by_region = HashMap::<_, RegionChangeLog>::new();
+    let mut all_regions = HashSet::default();
+    let mut location_insensitive_regions = HashSet::default();
+    let mut active_region_sets_by_block_id =
+        HashMap::<_, HashSet<_>>::default();
+    let mut change_logs_by_region = HashMap::<_, RegionChangeLog>::default();
 
     for region_at in subset_result
         .subset_relations
@@ -1385,7 +1353,7 @@ pub fn analyze<N: Normalizer>(
         .values_mut()
         .flat_map(|x| x.updated_at_instruction_indices.values_mut())
     {
-        indices.sort_unstracked_engine();
+        indices.sort_unstable();
         indices.dedup();
     }
 
