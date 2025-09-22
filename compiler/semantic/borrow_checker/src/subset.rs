@@ -7,10 +7,8 @@ use pernixc_ir::{
     address::Address,
     control_flow_graph::{Block, Point},
     instruction::{Instruction, Store},
-    value::register::{
-        Array, Borrow, FunctionCall, Phi, Register, Struct, Tuple, Variant,
-    },
-    Values, IR,
+    value::register::{Array, Borrow, FunctionCall, Register, Tuple, Variant},
+    Values,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
@@ -24,6 +22,7 @@ use pernixc_type_system::{
 
 use crate::{context, diagnostic::Diagnostic, Region, UniversalRegion};
 
+mod phi;
 mod r#struct;
 
 /// Represents a point in the control flow graph where the borrow checker
@@ -250,83 +249,6 @@ pub struct Changes {
 }
 
 impl<N: Normalizer> Context<'_, N> {
-    pub(super) async fn get_changes_of_phi(
-        &self,
-        phi: &Phi,
-        span: &RelativeSpan,
-    ) -> Result<Changes, UnrecoverableError> {
-        let mut constraints = BTreeSet::new();
-        for value in phi.incoming_values.values() {
-            let Succeeded {
-                result: value_ty,
-                constraints: value_ty_constraints,
-            } = values.type_of(value, current_site, environment).map_err(
-                |x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_check_overflow(
-                            match value {
-                                Value::Register(id) => values
-                                    .registers
-                                    .get(*id)
-                                    .unwrap()
-                                    .span
-                                    .clone()
-                                    .unwrap(),
-                                Value::Literal(literal) => {
-                                    literal.span().cloned().unwrap()
-                                }
-                            },
-                            handler,
-                        )
-                    })
-                },
-            )?;
-
-            constraints.extend(value_ty_constraints);
-
-            let compatibility = environment
-                .compatible(&value_ty, &phi.r#type, Variance::Covariant)
-                .map_err(|x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_check_overflow(span.clone(), handler)
-                    })
-                })?;
-
-            if let Some(Succeeded {
-                result:
-                    Compatibility {
-                        forall_lifetime_instantiations,
-                        forall_lifetime_errors,
-                    },
-                constraints: compatibility_constraints,
-            }) = compatibility
-            {
-                assert!(forall_lifetime_instantiations
-                    .lifetimes_by_forall
-                    .is_empty());
-                assert!(forall_lifetime_errors.is_empty());
-
-                constraints.extend(compatibility_constraints);
-            }
-        }
-
-        Ok(Changes {
-            subset_relations: constraints
-                .into_iter()
-                .filter_map(|x| {
-                    let x = x.into_lifetime_outlives().ok()?;
-
-                    let from = Region::try_from(x.operand).ok()?;
-                    let to = Region::try_from(x.bound).ok()?;
-
-                    Some((from, to, span.clone()))
-                })
-                .collect(),
-            borrow_created: None,
-            overwritten_regions: HashSet::new(),
-        })
-    }
-
     pub(super) async fn get_changes_of_array(
         &self,
         array: &Array,
