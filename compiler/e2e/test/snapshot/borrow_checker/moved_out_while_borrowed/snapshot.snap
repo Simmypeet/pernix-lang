@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the value is moved out from the variable while it is borrowed
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/moved_out_while_borrowed/main.pnx:8:13
+   │
+ 8 │     consume(x.0)
+   │             ^^^ the value is moved out here while it is borrowed
+ 9 │ 
+10 │     consume(y)
+   │             - the borrow is used here
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

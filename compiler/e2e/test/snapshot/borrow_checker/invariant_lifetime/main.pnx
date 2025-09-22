@@ -1,0 +1,23 @@
+public function consume[T](x: T):
+    pass
+
+
+public function assign['a, T] (
+    reference: &'a mut T,
+    value: T
+):
+    where:
+        T: 'a
+
+    *reference = value
+
+
+public function test():
+    let outer =  32
+    let mut ref = &outer
+
+    scope:
+        let inner = 0
+        assign(&mut ref, &inner)
+
+    consume(*ref)

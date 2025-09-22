@@ -1,0 +1,11 @@
+public function consume[T](x: T):
+    pass
+
+
+public function test():
+    let mut number = 1
+    let numberRef = &number
+
+    number = 2
+
+    consume(*numberRef)

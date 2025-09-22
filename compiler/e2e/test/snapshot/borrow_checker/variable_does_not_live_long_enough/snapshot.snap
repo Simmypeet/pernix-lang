@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the variable doesn't live long enough
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/variable_does_not_live_long_enough/main.pnx:10:13
+   │
+10 │         let inner = 0
+   │             ^^^^^ the variable declared here doesn't live long enough
+11 │         ref = &inner
+   │               ------ the borrow starts here
+12 │ 
+13 │     consume(*ref)
+   │             ---- the borrow is used here
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
