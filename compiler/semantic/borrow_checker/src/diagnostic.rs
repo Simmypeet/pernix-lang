@@ -147,6 +147,17 @@ impl Report for MovedOutWhileBorrowed {
         &self,
         engine: &TrackedEngine,
     ) -> Result<Rendered<ByteIndex>, CyclicError> {
+        let mut related = Vec::new();
+
+        if let Usage::Local(span) = &self.usage {
+            related.push(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(span).await)
+                    .message("the borrow is used here".to_string())
+                    .build(),
+            );
+        }
+
         Ok(pernixc_diagnostic::Rendered::builder()
             .message(
                 "the value is moved out from the variable while it is borrowed",
@@ -170,6 +181,7 @@ impl Report for MovedOutWhileBorrowed {
                     })
                     .build(),
             )
+            .related(related)
             .build())
     }
 }
