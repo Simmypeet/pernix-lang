@@ -1,0 +1,28 @@
+from core import Drop, Copy
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
+
+
+public struct LoudDrop:
+    private value: int32
+
+
+final implements Drop[LoudDrop]:
+    function drop(self: &mut LoudDrop):
+        unsafe scope:
+            printf(&"Dropping %d\n\0".[0], self.value)
+    
+
+final implements Copy[LoudDrop] delete
+
+
+public function createLoudDrop(value: int32) -> LoudDrop:
+    return LoudDrop { value: value }
+
+
+public function main():
+    createLoudDrop(1)
+    
+    printf(&"End of main\n\0".[0])

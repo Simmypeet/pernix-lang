@@ -1,0 +1,11 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = ""
+stdout = """
+Dropping 1
+End of main"""
+stderr = ""
