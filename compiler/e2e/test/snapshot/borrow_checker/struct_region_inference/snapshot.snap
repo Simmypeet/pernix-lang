@@ -1,0 +1,16 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/struct_region_inference/main.pnx:14:5
+   │
+14 │     return RefWrapper { ref: ref }
+   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the predicate `'a: 'b` is not satisfied
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

@@ -1,0 +1,14 @@
+public struct RefWrapper['a, T]:
+    where:
+        T: 'a
+
+    public ref: &'a T
+
+
+public function test['a, 'b](
+    ref: &'a int32
+) -> RefWrapper['b, int32]:
+    let test = 32
+    let another = &test
+
+    return RefWrapper { ref: ref }
