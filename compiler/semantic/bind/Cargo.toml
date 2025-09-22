@@ -36,6 +36,7 @@ flexstr = { workspace = true }
 bon = { workspace = true }
 bit-vec = { workspace = true }
 drain_filter_polyfill = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

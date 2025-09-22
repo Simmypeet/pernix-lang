@@ -98,6 +98,8 @@ pub struct Binder<'t> {
     type_inference_counter: u64,
     const_inference_counter: u64,
 
+    unreachable_register_ids: Vec<ID<Register>>,
+
     block_context: block::Context,
     loop_context: r#loop::Context,
 }
@@ -131,6 +133,8 @@ impl<'t> Binder<'t> {
 
             type_inference_counter: 0,
             const_inference_counter: 0,
+
+            unreachable_register_ids: Vec::new(),
 
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
@@ -473,6 +477,12 @@ impl Binder<'_> {
 
     /// Adds a new instruction to the current block.
     pub fn push_instruction(&mut self, instruction: Instruction) {
+        assert!(
+            !instruction.is_register_assignment(),
+            "Use `create_register_assignment` to create register assignment \
+             instructions"
+        );
+
         let _ = self.current_block_mut().add_instruction(instruction);
     }
 
@@ -570,11 +580,15 @@ impl Binder<'_> {
             .registers
             .insert(Register { assignment, span: Some(span) });
 
-        let _ = self.current_block_mut().add_instruction(
+        let reachable = self.current_block_mut().add_instruction(
             instruction::Instruction::RegisterAssignment(
                 instruction::RegisterAssignment { id: register_id },
             ),
         );
+
+        if !reachable {
+            self.unreachable_register_ids.push(register_id);
+        }
 
         register_id
     }

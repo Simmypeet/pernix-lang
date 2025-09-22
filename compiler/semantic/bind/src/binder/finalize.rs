@@ -1,4 +1,5 @@
 use pernixc_handler::Handler;
+use pernixc_hash::HashSet;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
     IR,
@@ -14,6 +15,41 @@ use crate::{
 
 mod check;
 mod transform_inference;
+
+#[cfg(debug_assertions)]
+fn check_all_register_assigned(ir: &IR) {
+    let mut assigned = HashSet::default();
+    for (_, block) in ir.control_flow_graph.blocks().iter() {
+        for inst in block.instructions() {
+            if let Some(reg) = inst.as_register_assignment() {
+                assert!(
+                    assigned.insert(reg.id),
+                    "register assigned more than once"
+                );
+            }
+        }
+    }
+
+    let unassigned_registers = ir
+        .values
+        .registers
+        .ids()
+        .filter(|id| !assigned.contains(id))
+        .collect::<HashSet<_>>();
+
+    if !unassigned_registers.is_empty() {
+        for reg in unassigned_registers {
+            let assignment = ir.values.registers.get(reg).unwrap();
+
+            tracing::error!(
+                "register `ID({reg:?}) = {assignment:?}` is never assigned in \
+                 cfg"
+            );
+        }
+
+        panic!("some registers are never assigned in cfg");
+    }
+}
 
 impl Binder<'_> {
     /// Finalizes the binding process, performing necessary checks and
@@ -36,6 +72,14 @@ impl Binder<'_> {
 
         // remove all unreachable blocks
         self.ir.control_flow_graph.remove_unreachable_blocks();
+
+        // remove all unreachable registers
+        for reg_id in self.unreachable_register_ids.iter().copied() {
+            assert!(self.ir.values.registers.remove(reg_id).is_some());
+        }
+
+        #[cfg(debug_assertions)]
+        check_all_register_assigned(&self.ir);
 
         // we're in the function, check if all paths return the value
         'out: {
