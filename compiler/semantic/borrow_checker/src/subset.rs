@@ -1,3 +1,5 @@
+use std::{collections::BTreeSet, ops::Deref};
+
 use enum_as_inner::EnumAsInner;
 use getset::Getters;
 use pernixc_arena::ID;
@@ -6,21 +8,40 @@ use pernixc_hash::{HashMap, HashSet};
 use pernixc_ir::{
     address::Address,
     control_flow_graph::{Block, Point},
-    instruction::{Instruction, Store},
-    value::register::{Borrow, FunctionCall, Register, Tuple, Variant},
+    instruction::{Instruction, RegisterAssignment, Store},
+    value::{
+        register::{
+            Assignment, Borrow, FunctionCall, Register, Tuple, Variant,
+        },
+        TypeOf, Value,
+    },
     Values,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
+use pernixc_semantic_element::{
+    elided_lifetime::get_elided_lifetimes, parameter::get_parameters,
+    return_type::get_return_type, variance::Variance,
+};
+use pernixc_symbol::{kind::get_kind, parent::scope_walker};
 use pernixc_target::Global;
-use pernixc_term::{inference, lifetime::Lifetime, r#type::Type};
+use pernixc_term::{
+    generic_parameters::{get_generic_parameters, LifetimeParameterID},
+    inference,
+    lifetime::{ElidedLifetimeID, Lifetime},
+    r#type::Type,
+    visitor::RecursiveIterator,
+};
 use pernixc_transitive_closure::TransitiveClosure;
 use pernixc_type_system::{
     environment::Environment, normalizer::Normalizer, Succeeded,
     UnrecoverableError,
 };
 
-use crate::{context, diagnostic::Diagnostic, Region, UniversalRegion};
+use crate::{
+    context, diagnostic::Diagnostic, NonStaticUniversalRegion, Region,
+    UniversalRegion,
+};
 
 mod array;
 mod borrow;
@@ -256,20 +277,84 @@ pub struct Changes {
 }
 
 impl<N: Normalizer> Builder<'_, N> {
+    pub async fn get_regions_in_generic_parameters(
+        &self,
+        regions: &mut HashSet<Region>,
+    ) -> Result<(), UnrecoverableError> {
+        regions.insert(Region::Universal(UniversalRegion::Static));
+
+        let mut scope_walker = self
+            .context
+            .environment()
+            .tracked_engine()
+            .scope_walker(self.context.current_site());
+
+        while let Some(x) = scope_walker.next().await {
+            let global_id =
+                Global::new(self.context.current_site().target_id, x);
+
+            let symbol_kind =
+                self.context.tracked_engine().get_kind(global_id).await;
+
+            if symbol_kind.has_generic_parameters() {
+                regions.extend(
+                    self.context
+                        .tracked_engine()
+                        .get_generic_parameters(global_id)
+                        .await?
+                        .lifetime_order()
+                        .iter()
+                        .copied()
+                        .map(|x| {
+                            Region::Universal(UniversalRegion::NonStatic(
+                                NonStaticUniversalRegion::Named(
+                                    LifetimeParameterID {
+                                        parent_id: global_id,
+                                        id: x,
+                                    },
+                                ),
+                            ))
+                        }),
+                );
+            }
+
+            if symbol_kind.has_elided_lifetimes() {
+                regions.extend(
+                    self.context
+                        .tracked_engine()
+                        .get_elided_lifetimes(global_id)
+                        .await?
+                        .ids()
+                        .map(|x| {
+                            Region::Universal(UniversalRegion::NonStatic(
+                                NonStaticUniversalRegion::Elided(
+                                    ElidedLifetimeID {
+                                        parent_id: global_id,
+                                        id: x,
+                                    },
+                                ),
+                            ))
+                        }),
+                );
+            }
+        }
+
+        Ok(())
+    }
     /// Returns a list of new region introduced by the scope push instruction.
     ///
     /// This function returns all the regions that are created by the variables
     /// declared in the scope push instruction.
-    pub fn get_new_regions(
+    pub async fn get_new_regions(
         &self,
         instruction: &Instruction,
     ) -> Result<HashSet<Region>, UnrecoverableError> {
         match instruction {
             Instruction::ScopePush(scope_push) => {
-                let mut regions = HashSet::new();
+                let mut regions = HashSet::default();
 
                 for alloca in
-                    self.representation.values.allocas.iter().filter_map(|x| {
+                    self.context.ir().values.allocas.iter().filter_map(|x| {
                         (x.1.declared_in_scope_id == scope_push.0)
                             .then_some(x.1)
                     })
@@ -287,67 +372,10 @@ impl<N: Normalizer> Builder<'_, N> {
                 }
 
                 // we'll insert a universal region for the root scope
-                if scope_push.0
-                    == self.representation.scope_tree.root_scope_id()
+                if scope_push.0 == self.context.ir().scope_tree.root_scope_id()
                 {
-                    regions.insert(Region::Universal(UniversalRegion::Static));
-
-                    for global_id in self
-                        .environment
-                        .tracked_engine()
-                        .scope_walker(self.current_site)
-                        .map(|x| GlobalID::new(self.current_site.target_id, x))
-                    {
-                        let symbol_kind = self
-                            .environment
-                            .tracked_engine()
-                            .get::<SymbolKind>(global_id);
-
-                        if symbol_kind.has_generic_parameters() {
-                            regions.extend(
-                                self.environment
-                                    .tracked_engine()
-                                    .query::<GenericParameters>(global_id)?
-                                    .lifetime_order()
-                                    .iter()
-                                    .copied()
-                                    .map(|x| {
-                                        Region::Universal(
-                                            UniversalRegion::NonStatic(
-                                                NonStaticUniversalRegion::Named(
-                                                    LifetimeParameterID {
-                                                        parent: global_id,
-                                                        id: x,
-                                                    },
-                                                ),
-                                            ),
-                                        )
-                                    }),
-                            );
-                        }
-
-                        if symbol_kind.has_elided_lifetimes() {
-                            regions.extend(
-                                self.environment
-                                    .tracked_engine()
-                                    .query::<ElidedLifetimes>(global_id)?
-                                    .elided_lifetimes
-                                    .ids()
-                                    .map(|x| {
-                                        Region::Universal(
-                                            UniversalRegion::NonStatic(
-                                                NonStaticUniversalRegion::Elided(
-                                                    ElidedLifetimeID {
-                                                        parent: global_id,
-                                                        id: x,
-                                                    },
-                                                ),
-                                            ),
-                                        )
-                                    }),
-                            );
-                        }
-                    }
+                    self.get_regions_in_generic_parameters(&mut regions)
+                        .await?;
                 }
 
                 Ok(regions)
@@ -359,21 +387,21 @@ impl<N: Normalizer> Builder<'_, N> {
             | Instruction::Store(_)
             | Instruction::RegisterDiscard(_)
             | Instruction::TuplePack(_)
-            | Instruction::Drop(_) => Ok(HashSet::new()),
+            | Instruction::Drop(_) => Ok(HashSet::default()),
         }
     }
 
     /// Returns a list of regions that are removed by the scope pop instruction.
-    pub fn get_removing_regions(
+    pub async fn get_removing_regions(
         &self,
         instruction: &Instruction,
     ) -> Result<HashSet<Region>, UnrecoverableError> {
         match instruction {
             Instruction::ScopePop(scope_pop) => {
-                let mut regions = HashSet::new();
+                let mut regions = HashSet::default();
 
                 for alloca in
-                    self.representation.values.allocas.iter().filter_map(|x| {
+                    self.context.ir().values.allocas.iter().filter_map(|x| {
                         (x.1.declared_in_scope_id == scope_pop.0).then_some(x.1)
                     })
                 {
@@ -390,66 +418,12 @@ impl<N: Normalizer> Builder<'_, N> {
                 }
 
                 // we'll insert a universal region for the root scope
-                if scope_pop.0 == self.representation.scope_tree.root_scope_id()
-                {
+                if scope_pop.0 == self.context.ir().scope_tree.root_scope_id() {
                     regions.insert(Region::Universal(UniversalRegion::Static));
 
-                    for global_id in self
-                        .environment
-                        .tracked_engine()
-                        .scope_walker(self.current_site)
-                        .map(|x| GlobalID::new(self.current_site.target_id, x))
-                    {
-                        let symbol_kind = self
-                            .environment
-                            .tracked_engine()
-                            .get::<SymbolKind>(global_id);
-
-                        if symbol_kind.has_generic_parameters() {
-                            regions.extend(
-                                self.environment
-                                    .tracked_engine()
-                                    .query::<GenericParameters>(global_id)?
-                                    .lifetime_order()
-                                    .iter()
-                                    .copied()
-                                    .map(|x| {
-                                        Region::Universal(
-                                            UniversalRegion::NonStatic(
-                                                NonStaticUniversalRegion::Named(
-                                                    LifetimeParameterID {
-                                                        parent: global_id,
-                                                        id: x,
-                                                    },
-                                                ),
-                                            ),
-                                        )
-                                    }),
-                            );
-                        }
-
-                        if symbol_kind.has_elided_lifetimes() {
-                            regions.extend(
-                                self.environment
-                                    .tracked_engine()
-                                    .query::<ElidedLifetimes>(global_id)?
-                                    .elided_lifetimes
-                                    .ids()
-                                    .map(|x| {
-                                        Region::Universal(
-                                            UniversalRegion::NonStatic(
-                                                NonStaticUniversalRegion::Elided(
-                                                    ElidedLifetimeID {
-                                                        parent: global_id,
-                                                        id: x,
-                                                    },
-                                                ),
-                                            ),
-                                        )
-                                    }),
-                            );
-                        }
-                    }
+                    self.get_regions_in_generic_parameters(&mut regions)
+                        .await
+                        .unwrap();
                 }
 
                 Ok(regions)
@@ -461,250 +435,193 @@ impl<N: Normalizer> Builder<'_, N> {
             | Instruction::DropUnpackTuple(_)
             | Instruction::Store(_)
             | Instruction::TuplePack(_)
-            | Instruction::Drop(_) => Ok(HashSet::new()),
+            | Instruction::Drop(_) => Ok(HashSet::default()),
         }
+    }
+
+    pub async fn get_changes_of_return_type(
+        &self,
+        register_id: ID<Register>,
+    ) -> Result<
+        Option<HashSet<(Region, Region, RelativeSpan)>>,
+        UnrecoverableError,
+    > {
+        if let Some(return_inst) = self
+            .context
+            .control_flow_graph()
+            .blocks()
+            .items()
+            .filter_map(|x| x.terminator().as_ref().and_then(|x| x.as_return()))
+            .find(|x| x.value == Value::Register(register_id))
+        {
+            let return_ty = self
+                .context
+                .tracked_engine()
+                .get_return_type(self.context.current_site())
+                .await?;
+
+            let mut constraints = BTreeSet::new();
+            self.context.subtypes_value(
+                return_ty.deref().clone(),
+                &Value::Register(register_id),
+                Variance::Covariant,
+                &mut constraints,
+            );
+
+            return Ok(Some(
+                constraints
+                    .into_iter()
+                    .filter_map(|x| {
+                        let x = x.into_lifetime_outlives().ok()?;
+
+                        let from = Region::try_from(x.operand).ok()?;
+                        let to = Region::try_from(x.bound).ok()?;
+
+                        Some((from, to, return_inst.span.clone().unwrap()))
+                    })
+                    .collect::<HashSet<_>>(),
+            ));
+        }
+
+        Ok(None)
+    }
+
+    pub async fn get_changes_of_register_assignment(
+        &self,
+        register_assignment: &RegisterAssignment,
+    ) -> Result<Changes, UnrecoverableError> {
+        let register = self
+            .context
+            .values()
+            .registers
+            .get(register_assignment.id)
+            .unwrap();
+
+        // if the register assignment will be used as a return value,
+        // then, compute the subset relation against the type of the
+        // return type.
+        let extra_relations =
+            self.get_changes_of_return_type(register_assignment.id).await?;
+
+        let changes = match &register.assignment {
+            Assignment::VariantNumber(_)
+            | Assignment::Cast(_)
+            | Assignment::Binary(_)
+            | Assignment::Prefix(_)
+            | Assignment::Load(_) => Ok(Changes::default()),
+
+            Assignment::Tuple(tuple) => {
+                self.context
+                    .get_changes_of_tuple(
+                        tuple,
+                        register.span.as_ref().unwrap(),
+                    )
+                    .await
+            }
+            Assignment::Borrow(borrow) => {
+                self.context
+                    .get_changes_of_borrow(
+                        borrow,
+                        register.span.as_ref().unwrap(),
+                        register_assignment.id,
+                    )
+                    .await
+            }
+            Assignment::FunctionCall(function_call) => {
+                self.context
+                    .get_changes_of_function_call(
+                        function_call,
+                        register.span.as_ref().unwrap(),
+                    )
+                    .await
+            }
+            Assignment::Struct(struct_lit) => {
+                self.context
+                    .get_changes_of_struct(
+                        struct_lit,
+                        register.span.as_ref().unwrap(),
+                    )
+                    .await
+            }
+            Assignment::Variant(variant) => {
+                self.context
+                    .get_changes_of_variant(
+                        variant,
+                        register.span.as_ref().unwrap(),
+                    )
+                    .await
+            }
+            Assignment::Array(array) => {
+                self.context
+                    .get_changes_of_array(
+                        array,
+                        register.span.as_ref().unwrap(),
+                    )
+                    .await
+            }
+            Assignment::Phi(phi) => {
+                self.context
+                    .get_changes_of_phi(phi, register.span.as_ref().unwrap())
+                    .await
+            }
+        }?;
+
+        Ok(Changes {
+            subset_relations: changes
+                .subset_relations
+                .into_iter()
+                .chain(extra_relations.into_iter().flatten())
+                .collect(),
+            borrow_created: changes.borrow_created,
+            overwritten_regions: changes.overwritten_regions,
+        })
     }
 
     /// Returns a list of regions that are removed by the scope pop instruction.
     #[allow(clippy::too_many_lines)]
-    pub fn get_changes(
+    pub async fn get_changes(
         &self,
         instruction: &Instruction,
     ) -> Result<Changes, UnrecoverableError> {
         match instruction {
-            Instruction::Store(store) => get_changes_of_store(
-                &self.representation.values,
-                store,
-                self.current_site,
-                self.environment,
-                self.handler,
-            ),
+            Instruction::Store(store) => {
+                self.context.get_changes_of_store_inst(store).await
+            }
             Instruction::RegisterAssignment(register_assignment) => {
-                // if the register assignment will be used as a return value,
-                // then, compute the subset relation against the type of the
-                // return type.
-                let extra_relations = self
-                    .representation
-                    .control_flow_graph
-                    .blocks()
-                    .items()
-                    .filter_map(|x| {
-                        x.terminator().as_ref().and_then(|x| x.as_return())
-                    })
-                    .find(|x| {
-                        x.value == Value::Register(register_assignment.id)
-                    })
-                    .map(|return_inst| {
-                        let function_signature = self
-                            .environment
-                            .tracked_engine()
-                            .query::<FunctionSignature>(self.current_site)?;
-
-                        let return_ty = BorrowModel::from_default_type(
-                            function_signature.return_type.clone(),
-                        );
-
-                        let register_span = self
-                            .representation
-                            .values
-                            .registers
-                            .get(register_assignment.id)
-                            .unwrap()
-                            .span
-                            .clone()
-                            .unwrap();
-                        let Succeeded {
-                            result: register_ty,
-                            constraints: register_constraints,
-                        } = self
-                            .representation
-                            .values
-                            .type_of(
-                                register_assignment.id,
-                                self.current_site,
-                                self.environment,
-                            )
-                            .map_err(|x| {
-                                x.report_overflow(|x| {
-                                    x.report_as_type_calculating_overflow(
-                                        register_span.clone(),
-                                        self.handler,
-                                    )
-                                })
-                            })?;
-
-                        let compatibility = self
-                            .environment
-                            .compatible(
-                                &register_ty,
-                                &return_ty,
-                                Variance::Covariant,
-                            )
-                            .map_err(|x| {
-                                x.report_overflow(|x| {
-                                    x.report_as_type_check_overflow(
-                                        register_span,
-                                        self.handler,
-                                    )
-                                })
-                            })?;
-
-                        let constraitns = if let Some(Succeeded {
-                            result:
-                                Compatibility {
-                                    forall_lifetime_instantiations,
-                                    forall_lifetime_errors,
-                                },
-                            constraints: compatibility_constraints,
-                        }) = compatibility
-                        {
-                            assert!(forall_lifetime_instantiations
-                                .lifetimes_by_forall
-                                .is_empty());
-                            assert!(forall_lifetime_errors.is_empty());
-
-                            compatibility_constraints
-                        } else {
-                            BTreeSet::new()
-                        };
-
-                        Ok(register_constraints
-                            .into_iter()
-                            .chain(constraitns.into_iter())
-                            .filter_map(|x| {
-                                let x = x.into_lifetime_outlives().ok()?;
-
-                                let from = Region::try_from(x.operand).ok()?;
-                                let to = Region::try_from(x.bound).ok()?;
-
-                                Some((
-                                    from,
-                                    to,
-                                    return_inst.span.clone().unwrap(),
-                                ))
-                            })
-                            .collect::<HashSet<_>>())
-                    })
-                    .transpose()?;
-
-                let register = self
-                    .representation
-                    .values
-                    .registers
-                    .get(register_assignment.id)
-                    .unwrap();
-
-                let changes = match &register.assignment {
-                    Assignment::VariantNumber(_)
-                    | Assignment::Cast(_)
-                    | Assignment::Binary(_)
-                    | Assignment::Prefix(_)
-                    | Assignment::Load(_) => Ok(Changes::default()),
-
-                    Assignment::Tuple(tuple) => get_changes_of_tuple(
-                        &self.representation.values,
-                        tuple,
-                        register.span.as_ref().unwrap(),
-                        self.current_site,
-                        self.environment,
-                    ),
-                    Assignment::Borrow(borrow) => get_changes_of_borrow(
-                        &self.representation.values,
-                        borrow,
-                        register.span.as_ref().unwrap(),
-                        register_assignment.id,
-                        self.current_site,
-                        self.environment,
-                        self.handler,
-                    ),
-                    Assignment::FunctionCall(function_call) => {
-                        get_changes_of_function_call(
-                            &self.representation.values,
-                            function_call,
-                            register.span.as_ref().unwrap(),
-                            self.current_site,
-                            self.environment,
-                            self.handler,
-                        )
-                    }
-                    Assignment::Struct(struct_lit) => get_changes_of_struct(
-                        &self.representation.values,
-                        struct_lit,
-                        register.span.as_ref().unwrap(),
-                        self.current_site,
-                        self.environment,
-                        self.handler,
-                    ),
-                    Assignment::Variant(variant) => get_changes_of_variant(
-                        &self.representation.values,
-                        variant,
-                        register.span.as_ref().unwrap(),
-                        self.current_site,
-                        self.environment,
-                        self.handler,
-                    ),
-                    Assignment::Array(array) => get_changes_of_array(
-                        &self.representation.values,
-                        array,
-                        register.span.as_ref().unwrap(),
-                        self.current_site,
-                        self.environment,
-                        self.handler,
-                    ),
-                    Assignment::Phi(phi) => get_changes_of_phi(
-                        &self.representation.values,
-                        phi,
-                        register.span.as_ref().unwrap(),
-                        self.current_site,
-                        self.environment,
-                        self.handler,
-                    ),
-                }?;
-
-                Ok(Changes {
-                    subset_relations: changes
-                        .subset_relations
-                        .into_iter()
-                        .chain(extra_relations.into_iter().flatten())
-                        .collect(),
-                    borrow_created: changes.borrow_created,
-                    overwritten_regions: changes.overwritten_regions,
-                })
+                self.get_changes_of_register_assignment(register_assignment)
+                    .await
             }
             Instruction::TuplePack(tuple_pack) => {
                 let tuple_ty = self
-                    .representation
-                    .values
+                    .context
+                    .values()
                     .type_of(
                         &tuple_pack.tuple_address,
-                        self.current_site,
-                        self.environment,
+                        self.context.current_site(),
+                        self.context.environment(),
                     )
+                    .await
                     .map_err(|x| {
-                        x.report_overflow(|x| {
-                            x.report_as_type_calculating_overflow(
-                                tuple_pack.packed_tuple_span.clone().unwrap(),
-                                self.handler,
-                            )
-                        })
+                        x.report_as_type_calculating_overflow(
+                            tuple_pack.packed_tuple_span.clone().unwrap(),
+                            &self.context.handler(),
+                        )
                     })?;
 
-                get_changes_of_store_internal(
-                    &self.representation.values,
-                    &tuple_pack.store_address,
-                    tuple_ty.map(|x| {
-                        x.into_tuple()
-                            .unwrap()
-                            .elements
-                            .into_iter()
-                            .find_map(|x| x.is_unpacked.then_some(x.term))
-                            .unwrap()
-                    }),
-                    tuple_pack.packed_tuple_span.as_ref().unwrap(),
-                    self.current_site,
-                    self.environment,
-                    self.handler,
-                )
+                self.context
+                    .get_changes_of_store(
+                        &tuple_pack.store_address,
+                        tuple_ty.map(|x| {
+                            x.into_tuple()
+                                .unwrap()
+                                .elements
+                                .into_iter()
+                                .find_map(|x| x.is_unpacked.then_some(x.term))
+                                .unwrap()
+                        }),
+                        tuple_pack.packed_tuple_span.as_ref().unwrap(),
+                    )
+                    .await
             }
             Instruction::RegisterDiscard(_)
             | Instruction::ScopePush(_)

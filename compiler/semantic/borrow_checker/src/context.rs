@@ -99,6 +99,13 @@ impl<'a, N: Normalizer> Context<'a, N> {
     /// Gets the values from the IR
     pub fn values(&self) -> &'a pernixc_ir::Values { &self.ir.values }
 
+    /// Gets the control flow graph from the IR
+    pub fn control_flow_graph(
+        &self,
+    ) -> &'a pernixc_ir::control_flow_graph::ControlFlowGraph {
+        &self.ir.control_flow_graph
+    }
+
     /// Gets all the regions that appear in the given address type (including
     /// in dereferenced references if `include_deref` is true).
     pub async fn get_regions_in_address(
