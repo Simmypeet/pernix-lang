@@ -386,13 +386,14 @@ impl<N: Normalizer> Environment<'_, N> {
                     instantiation_span,
                     predicate_declaration_span,
                     do_outlives_check,
+                    diagnostics,
                     handler,
                 )
                 .await
             }
 
             Ok(None) => {
-                handler.receive(Diagnostic::UnsatisfiedPredicate(
+                diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                     UnsatisfiedPredicate {
                         predicate,
                         instantiation_span,
@@ -428,6 +429,7 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation_span: RelativeSpan,
         predicate_declaration_span: Option<RelativeSpan>,
         do_outlives_check: bool,
+        diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         // if do_outlives_check is false, then we don't need to check
@@ -440,7 +442,7 @@ impl<N: Normalizer> Environment<'_, N> {
                 LifetimeConstraint::LifetimeOutlives(pred) => {
                     match self.query(&pred).await {
                         Ok(None) => {
-                            handler.receive(Diagnostic::UnsatisfiedPredicate(
+                            diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                                 UnsatisfiedPredicate {
                                     predicate: Predicate::LifetimeOutlives(
                                         pred,
