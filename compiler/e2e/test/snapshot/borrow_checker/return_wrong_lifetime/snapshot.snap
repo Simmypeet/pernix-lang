@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: unsatisfied predicate
+  ╭─ compiler/e2e/test/snapshot/borrow_checker/return_wrong_lifetime/main.pnx:5:5
+  │
+5 │     return &*second
+  │     ^^^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+
+error: unsatisfied predicate
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/return_wrong_lifetime/main.pnx:12:5
+   │
+12 │     return second
+   │     ^^^^^^^^^^^^^ the predicate `'b: 'a` is not satisfied
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:

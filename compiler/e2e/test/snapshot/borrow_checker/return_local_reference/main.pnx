@@ -1,0 +1,3 @@
+public function test['a](param: &'a int32) -> &'a int32:
+    let local = 0
+    return &local

@@ -1,0 +1,10 @@
+public function test['a, 'b](
+    test: &'a (int32, int32, int32),
+) -> &'b int32:
+    where:
+        'a: 'b
+
+    match (true, true):
+        (true, false):  return &test.0
+        (false, false): return &test.1
+        (.., true):     return &test.2
