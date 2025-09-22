@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: access is done while it is mutably borrowed
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/mutably_access_more_than_once_in_function_with_variable/main.pnx:21:13
+   │
+17 │     let n = &mut number
+   │             ----------- the mutable borrow starts here
+   ·
+21 │     let n = &mut number
+   │             ^^^^^^^^^^^ access occurs here while it is mutably borrowed
+22 │     v.push(n)
+   │     - the borrow is used here
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
