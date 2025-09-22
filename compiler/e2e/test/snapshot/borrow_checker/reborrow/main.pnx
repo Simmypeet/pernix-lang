@@ -1,0 +1,10 @@
+
+public function test['a, 'b, T](
+    mut x: &'a T,
+    y: &'b (T, T)
+):
+    where:
+        'b: 'a
+        T: 'a + 'b
+
+    x = &y.0
