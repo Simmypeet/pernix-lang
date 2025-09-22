@@ -7,7 +7,7 @@ use pernixc_ir::{
     address::Address,
     control_flow_graph::{Block, Point},
     instruction::{Instruction, Store},
-    value::register::{Array, Borrow, FunctionCall, Register, Tuple, Variant},
+    value::register::{Borrow, FunctionCall, Register, Tuple, Variant},
     Values,
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -25,6 +25,8 @@ use crate::{context, diagnostic::Diagnostic, Region, UniversalRegion};
 mod array;
 mod phi;
 mod r#struct;
+mod subtype;
+mod variant;
 
 /// Represents a point in the control flow graph where the borrow checker
 /// is considering the subset relation between regions.
@@ -250,120 +252,6 @@ pub struct Changes {
 }
 
 impl<N: Normalizer> Context<'_, N> {
-    #[allow(clippy::too_many_lines)]
-    pub(super) fn get_changes_of_variant(
-        &self,
-        variant: &Variant,
-        span: &RelativeSpan,
-    ) -> Result<Changes, UnrecoverableError> {
-        let enum_id = GlobalID::new(
-            variant.variant_id.target_id,
-            environment
-                .tracked_engine()
-                .get::<Parent>(variant.variant_id)
-                .unwrap(),
-        );
-
-        let enum_generic_parameters =
-            environment.tracked_engine().query::<GenericParameters>(enum_id)?;
-
-        let variant_sym = environment
-            .tracked_engine()
-            .query::<variant::Variant>(variant.variant_id)?;
-
-        let instantiation = Instantiation::from_generic_arguments(
-            variant.generic_arguments.clone(),
-            enum_id,
-            &enum_generic_parameters,
-        )
-        .unwrap();
-
-        let mut lifetime_constraints = BTreeSet::new();
-
-        // compare each values in the field to the struct's field type
-        if let Some(mut associated_type) = variant_sym
-            .associated_type
-            .as_ref()
-            .map(|x| BorrowModel::from_default_type(x.clone()))
-        {
-            instantiation::instantiate(&mut associated_type, &instantiation);
-            let associated_value = variant.associated_value.as_ref().unwrap();
-            let value_span = match associated_value {
-                Value::Register(id) => {
-                    values.registers.get(*id).unwrap().span.clone().unwrap()
-                }
-                Value::Literal(literal) => literal.span().cloned().unwrap(),
-            };
-
-            let Succeeded { result: value_ty, constraints: value_constraints } =
-                values
-                    .type_of(associated_value, current_site, environment)
-                    .map_err(|x| {
-                        x.report_overflow(|x| {
-                            x.report_as_type_calculating_overflow(
-                                value_span.clone(),
-                                handler,
-                            )
-                        })
-                    })?;
-
-            lifetime_constraints.extend(value_constraints);
-
-            let compatibility = environment
-                .compatible(&value_ty, &associated_type, Variance::Covariant)
-                .map_err(|x| {
-                    x.report_overflow(|x| {
-                        x.report_as_type_check_overflow(
-                            value_span.clone(),
-                            handler,
-                        )
-                    })
-                })?;
-
-            // append the lifetime constraints
-            if let Some(Succeeded {
-                result,
-                constraints: compatibility_constraints,
-            }) = compatibility
-            {
-                assert!(result.forall_lifetime_errors.is_empty());
-                assert!(result
-                    .forall_lifetime_instantiations
-                    .lifetimes_by_forall
-                    .is_empty());
-
-                lifetime_constraints.extend(compatibility_constraints);
-            }
-        }
-
-        // handle the constraints introduced by the outlive predicates of the
-        // struct
-        let well_fromed_lifetime_constraints = well_formedness::check(
-            enum_id,
-            &instantiation,
-            false,
-            environment,
-        )?
-        .0;
-
-        Ok(Changes {
-            subset_relations: lifetime_constraints
-                .into_iter()
-                .chain(well_fromed_lifetime_constraints)
-                .filter_map(|x| {
-                    let x = x.into_lifetime_outlives().ok()?;
-
-                    let from = Region::try_from(x.operand).ok()?;
-                    let to = Region::try_from(x.bound).ok()?;
-
-                    Some((from, to, span.clone()))
-                })
-                .collect(),
-            borrow_created: None,
-            overwritten_regions: HashSet::new(),
-        })
-    }
-
     #[allow(clippy::too_many_lines)]
     pub(super) fn get_changes_of_tuple(
         &self,

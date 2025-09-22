@@ -1,12 +1,10 @@
 use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
-use pernixc_ir::value::{register::Array, TypeOf};
+use pernixc_ir::value::register::Array;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
-use pernixc_type_system::{
-    normalizer::Normalizer, Succeeded, UnrecoverableError,
-};
+use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
 use crate::{
     subset::{Changes, Context},
@@ -23,43 +21,13 @@ impl<N: Normalizer> Context<'_, N> {
         let mut lifetime_constraints = BTreeSet::new();
 
         for value in &array.elements {
-            let value_span = *self.values().span_of_value(value).unwrap();
-
-            let Succeeded { result: value_ty, constraints } = self
-                .values()
-                .type_of(value, self.current_site(), self.environment())
-                .await
-                .map_err(|x| {
-                    x.report_as_type_calculating_overflow(
-                        value_span.clone(),
-                        &self.handler(),
-                    )
-                })?;
-
-            lifetime_constraints.extend(constraints);
-
-            let compatibility = self
-                .environment()
-                .subtypes(value_ty, array_ty.clone(), Variance::Covariant)
-                .await
-                .map_err(|x| {
-                    x.report_as_type_check_overflow(
-                        value_span.clone(),
-                        &self.handler(),
-                    )
-                })?;
-
-            // append the lifetime constraints
-            if let Some(compat) = compatibility {
-                assert!(compat.result.forall_lifetime_errors.is_empty());
-                assert!(compat
-                    .result
-                    .forall_lifetime_instantiations
-                    .lifetimes_by_forall
-                    .is_empty());
-
-                lifetime_constraints.extend(compat.constraints.iter().cloned());
-            }
+            self.subtypes_value(
+                array_ty.clone(),
+                value,
+                Variance::Covariant,
+                &mut lifetime_constraints,
+            )
+            .await?;
         }
 
         Ok(Changes {

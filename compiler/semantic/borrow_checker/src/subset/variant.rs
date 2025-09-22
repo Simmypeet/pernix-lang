@@ -1,9 +1,13 @@
 use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
-use pernixc_ir::value::register::Struct;
+use pernixc_ir::value::register::Variant;
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_semantic_element::{fields::get_fields, variance::Variance};
+use pernixc_semantic_element::{
+    variance::Variance, variant::get_variant_associated_type,
+};
+use pernixc_symbol::parent::get_parent;
+use pernixc_target::Global;
 use pernixc_term::instantiation::get_instantiation;
 use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
@@ -14,56 +18,57 @@ use crate::{
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
-    pub(super) async fn get_changes_of_struct(
+    pub(super) async fn get_changes_of_variant(
         &self,
-        struct_lit: &Struct,
+        variant: &Variant,
         span: &RelativeSpan,
     ) -> Result<Changes, UnrecoverableError> {
+        let enum_id = Global::new(
+            variant.variant_id.target_id,
+            self.tracked_engine().get_parent(variant.variant_id).await.unwrap(),
+        );
+
+        let variant_sym = self
+            .tracked_engine()
+            .get_variant_associated_type(variant.variant_id)
+            .await?;
+
         let instantiation = self
             .tracked_engine()
             .get_instantiation(
-                struct_lit.struct_id,
-                struct_lit.generic_arguments.clone(),
+                variant.variant_id,
+                variant.generic_arguments.clone(),
             )
             .await?
             .unwrap();
 
-        let fields =
-            self.tracked_engine().get_fields(struct_lit.struct_id).await?;
-
         let mut lifetime_constraints = BTreeSet::new();
 
         // compare each values in the field to the struct's field type
-        for field_id in fields.field_declaration_order.iter().copied() {
-            let mut field_ty =
-                fields.fields.get(field_id).unwrap().r#type.clone();
+        if let Some(mut associated_type) = variant_sym.as_deref().cloned() {
+            instantiation.instantiate(&mut associated_type);
 
-            instantiation.instantiate(&mut field_ty);
+            let associated_value = variant.associated_value.as_ref().unwrap();
 
             self.subtypes_value(
-                field_ty,
-                struct_lit.initializers_by_field_id.get(&field_id).unwrap(),
+                associated_type,
+                associated_value,
                 Variance::Covariant,
                 &mut lifetime_constraints,
-            )
-            .await?;
+            );
         }
 
-        let well_formed_lifetime_constraints = self
+        // handle the constraints introduced by the outlive predicates of the
+        // struct
+        let well_fromed_lifetime_constraints = self
             .environment()
-            .wf_check(
-                struct_lit.struct_id,
-                *span,
-                &instantiation,
-                false,
-                &self.handler(),
-            )
+            .wf_check(enum_id, *span, &instantiation, false, &self.handler())
             .await?;
 
         Ok(Changes {
             subset_relations: lifetime_constraints
                 .into_iter()
-                .chain(well_formed_lifetime_constraints)
+                .chain(well_fromed_lifetime_constraints)
                 .filter_map(|x| {
                     let x = x.into_lifetime_outlives().ok()?;
 

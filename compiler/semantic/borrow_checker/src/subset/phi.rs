@@ -1,12 +1,10 @@
 use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
-use pernixc_ir::value::{register::Phi, TypeOf};
+use pernixc_ir::value::register::Phi;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_semantic_element::variance::Variance;
-use pernixc_type_system::{
-    normalizer::Normalizer, Succeeded, UnrecoverableError,
-};
+use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
 use crate::{
     subset::{Changes, Context},
@@ -21,43 +19,13 @@ impl<N: Normalizer> Context<'_, N> {
     ) -> Result<Changes, UnrecoverableError> {
         let mut constraints = BTreeSet::new();
         for value in phi.incoming_values.values() {
-            let Succeeded {
-                result: value_ty,
-                constraints: value_ty_constraints,
-            } = self
-                .values()
-                .type_of(value, self.current_site(), self.environment())
-                .await
-                .map_err(|x| {
-                    x.report_as_type_check_overflow(
-                        *self.values().span_of_value(value).unwrap(),
-                        &self.handler(),
-                    )
-                })?;
-
-            constraints.extend(value_ty_constraints);
-
-            let compatibility = self
-                .environment()
-                .subtypes(value_ty, phi.r#type.clone(), Variance::Covariant)
-                .await
-                .map_err(|x| {
-                    x.report_as_type_check_overflow(
-                        span.clone(),
-                        &self.handler(),
-                    )
-                })?;
-
-            if let Some(compatibility) = compatibility {
-                assert!(compatibility
-                    .result
-                    .forall_lifetime_instantiations
-                    .lifetimes_by_forall
-                    .is_empty());
-                assert!(compatibility.result.forall_lifetime_errors.is_empty());
-
-                constraints.extend(compatibility.constraints.iter().cloned());
-            }
+            self.subtypes_value(
+                phi.r#type.clone(),
+                value,
+                Variance::Covariant,
+                &mut constraints,
+            )
+            .await?;
         }
 
         Ok(Changes {

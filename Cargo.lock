@@ -1195,6 +1195,7 @@ dependencies = [
  "pernixc_arena",
  "pernixc_corelib",
  "pernixc_diagnostic",
+ "pernixc_extend",
  "pernixc_handler",
  "pernixc_hash",
  "pernixc_ir",
