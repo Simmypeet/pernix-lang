@@ -29,7 +29,7 @@ use crate::{
     lifetime_constraint::LifetimeConstraint,
     normalizer::Normalizer,
     predicate::{marker, r#trait},
-    Succeeded,
+    Succeeded, UnrecoverableError,
 };
 
 impl<N: Normalizer> Environment<'_, N> {
@@ -47,7 +47,68 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate_declaration_span: Option<RelativeSpan>,
         do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, CyclicError> {
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
+        let mut diagnostics = Vec::new();
+
+        let result = self
+            .predicate_satisfied_internal(
+                predicate,
+                instantiation_span,
+                predicate_declaration_span,
+                do_outlives_check,
+                &mut diagnostics,
+                handler,
+            )
+            .await?;
+
+        handler.receieve_many(diagnostics);
+
+        Ok(result)
+    }
+
+    /// Checks if the given `predicate` is satisfied in the given `environment`.
+    ///
+    /// If `do_outlives_check` is true, then the outlives constraints/predicates
+    /// will be checked using symbolic evaluation. Otherwise, the outlives
+    /// constraints/predicates will be assumed to be satisfied and returned as
+    /// lifetime constraints in the Ok result.
+    pub async fn predicate_satisfied_as_diagnostics(
+        &self,
+        predicate: Predicate,
+        instantiation_span: RelativeSpan,
+        predicate_declaration_span: Option<RelativeSpan>,
+        do_outlives_check: bool,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<
+        (Vec<Diagnostic>, BTreeSet<LifetimeConstraint>),
+        UnrecoverableError,
+    > {
+        let mut diagnostics = Vec::new();
+
+        let constraints = self
+            .predicate_satisfied_internal(
+                predicate,
+                instantiation_span,
+                predicate_declaration_span,
+                do_outlives_check,
+                &mut diagnostics,
+                handler,
+            )
+            .await?;
+
+        Ok((diagnostics, constraints))
+    }
+
+    #[allow(clippy::too_many_lines)]
+    async fn predicate_satisfied_internal(
+        &self,
+        predicate: Predicate,
+        instantiation_span: RelativeSpan,
+        predicate_declaration_span: Option<RelativeSpan>,
+        do_outlives_check: bool,
+        diagnostics: &mut Vec<Diagnostic>,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let result = match &predicate {
             Predicate::TraitTypeCompatible(equality) => {
                 let result = self
@@ -83,7 +144,7 @@ impl<N: Normalizer> Environment<'_, N> {
                         Ok(Some(_)) => return Ok(BTreeSet::new()),
 
                         Ok(None) => {
-                            handler.receive(Diagnostic::UnsatisfiedPredicate(
+                            diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                                 UnsatisfiedPredicate {
                                     predicate,
                                     instantiation_span,
@@ -105,11 +166,11 @@ impl<N: Normalizer> Environment<'_, N> {
                                 ),
                             );
 
-                            return Ok(BTreeSet::new());
+                            return Err(UnrecoverableError::Reported);
                         }
 
                         Err(crate::Error::CyclicDependency(error)) => {
-                            return Err(error)
+                            return Err(error.into())
                         }
                     }
                 }
@@ -127,7 +188,7 @@ impl<N: Normalizer> Environment<'_, N> {
                         Ok(Some(_)) => return Ok(BTreeSet::new()),
 
                         Ok(None) => {
-                            handler.receive(Diagnostic::UnsatisfiedPredicate(
+                            diagnostics.push(Diagnostic::UnsatisfiedPredicate(
                                 UnsatisfiedPredicate {
                                     predicate,
                                     instantiation_span,
@@ -149,11 +210,13 @@ impl<N: Normalizer> Environment<'_, N> {
                                 ),
                             );
 
-                            return Ok(BTreeSet::new());
+                            return Err(UnrecoverableError::Reported);
                         }
 
                         Err(crate::Error::CyclicDependency(error)) => {
-                            return Err(error)
+                            return Err(UnrecoverableError::CyclicDependency(
+                                error,
+                            ))
                         }
                     }
                 }
@@ -199,6 +262,7 @@ impl<N: Normalizer> Environment<'_, N> {
                                     predicate_declaration_span,
                                     do_outlives_check,
                                     implementation.is_not_general_enough,
+                                    diagnostics,
                                     handler,
                                 ))
                                 .await?;
@@ -236,6 +300,7 @@ impl<N: Normalizer> Environment<'_, N> {
                                 predicate_declaration_span,
                                 do_outlives_check,
                                 implementation.is_not_general_enough,
+                                diagnostics,
                                 handler,
                             ))
                             .await?;
@@ -261,6 +326,7 @@ impl<N: Normalizer> Environment<'_, N> {
                                 instantiation_span,
                                 predicate_declaration_span,
                                 do_outlives_check,
+                                diagnostics,
                                 handler,
                             ))
                             .await?;
@@ -297,6 +363,7 @@ impl<N: Normalizer> Environment<'_, N> {
                                 predicate_declaration_span,
                                 do_outlives_check,
                                 implementation.is_not_general_enough,
+                                diagnostics,
                                 handler,
                             ))
                             .await?;
@@ -349,7 +416,9 @@ impl<N: Normalizer> Environment<'_, N> {
                 Ok(BTreeSet::new())
             }
 
-            Err(crate::Error::CyclicDependency(error)) => Err(error),
+            Err(crate::Error::CyclicDependency(error)) => {
+                Err(UnrecoverableError::CyclicDependency(error))
+            }
         }
     }
 
@@ -360,7 +429,7 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate_declaration_span: Option<RelativeSpan>,
         do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, CyclicError> {
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         // if do_outlives_check is false, then we don't need to check
         if !do_outlives_check {
             return Ok(constraints);
@@ -383,7 +452,9 @@ impl<N: Normalizer> Environment<'_, N> {
                         }
 
                         Err(crate::Error::CyclicDependency(error)) => {
-                            return Err(error);
+                            return Err(UnrecoverableError::CyclicDependency(
+                                error,
+                            ));
                         }
 
                         Err(crate::Error::Overflow(overflow_error)) => {
@@ -399,6 +470,8 @@ impl<N: Normalizer> Environment<'_, N> {
                                     },
                                 ),
                             );
+
+                            return Err(UnrecoverableError::Reported);
                         }
 
                         Ok(Some(_)) => {}
@@ -410,7 +483,7 @@ impl<N: Normalizer> Environment<'_, N> {
         Ok(BTreeSet::new())
     }
 
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity, clippy::too_many_arguments)]
     async fn handle_positive_marker_satisfied(
         &self,
         result: &marker::PositiveSatisfied,
@@ -418,8 +491,9 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation_span: RelativeSpan,
         predicate_declaration_span: Option<RelativeSpan>,
         do_outlives_check: bool,
+        diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, CyclicError> {
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         match result {
             marker::PositiveSatisfied::Premise
             | marker::PositiveSatisfied::Environment
@@ -434,6 +508,7 @@ impl<N: Normalizer> Environment<'_, N> {
                     predicate_declaration_span,
                     do_outlives_check,
                     implementation.is_not_general_enough,
+                    diagnostics,
                     handler,
                 )
                 .await
@@ -452,6 +527,7 @@ impl<N: Normalizer> Environment<'_, N> {
                             instantiation_span,
                             predicate_declaration_span,
                             do_outlives_check,
+                            diagnostics,
                             handler,
                         ))
                         .await?;
@@ -517,7 +593,7 @@ impl<N: Normalizer> Environment<'_, N> {
         instantiation: &instantiation::Instantiation,
         do_outlives_check: bool,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, CyclicError> {
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let predicates = Self::get_all_predicates(
             self.tracked_engine(),
             generic_id,
@@ -526,20 +602,24 @@ impl<N: Normalizer> Environment<'_, N> {
         .await?;
 
         let mut lifetime_constraints = BTreeSet::new();
+        let mut diagnostics = Vec::new();
 
         for (predicate, span) in predicates {
             let new_lifetime_constraints = self
-                .predicate_satisfied(
+                .predicate_satisfied_internal(
                     predicate,
                     instantiation_span,
                     span,
                     do_outlives_check,
+                    &mut diagnostics,
                     handler,
                 )
                 .await?;
 
             lifetime_constraints.extend(new_lifetime_constraints);
         }
+
+        handler.receieve_many(diagnostics);
 
         Ok(lifetime_constraints)
     }
@@ -554,8 +634,9 @@ impl<N: Normalizer> Environment<'_, N> {
         predicate_declaration_span: Option<RelativeSpan>,
         do_outlives_check: bool,
         mut is_not_general_enough: bool,
+        diagnostics: &mut Vec<Diagnostic>,
         handler: &dyn Handler<Diagnostic>,
-    ) -> Result<BTreeSet<LifetimeConstraint>, CyclicError> {
+    ) -> Result<BTreeSet<LifetimeConstraint>, UnrecoverableError> {
         let mut lifetime_constraints = BTreeSet::new();
 
         // check for each predicate in the implementation
@@ -601,11 +682,12 @@ impl<N: Normalizer> Environment<'_, N> {
             }
 
             let new_lifetime_constraints = self
-                .predicate_satisfied(
+                .predicate_satisfied_internal(
                     predicate,
                     instantiation_span,
                     span,
                     do_outlives_check,
+                    diagnostics,
                     handler,
                 )
                 .await?;

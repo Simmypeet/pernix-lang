@@ -17,6 +17,15 @@ pub trait Handler<T>: Send + Sync {
     fn receive(&self, error: T);
 }
 
+impl<T> dyn Handler<T> + '_ {
+    /// Receives multiple errors and handles them.
+    pub fn receieve_many<I: IntoIterator<Item = T>>(&self, errors: I) {
+        for error in errors {
+            self.receive(error);
+        }
+    }
+}
+
 impl<T, U: From<T>> Handler<T> for &dyn Handler<U> {
     fn receive(&self, error: T) { (*self).receive(error.into()) }
 }
