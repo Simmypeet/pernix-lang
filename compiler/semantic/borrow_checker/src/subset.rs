@@ -255,37 +255,6 @@ pub struct Changes {
 }
 
 impl<N: Normalizer> Context<'_, N> {
-    pub(super) fn get_changes_of_borrow(
-        &self,
-        borrow: &Borrow,
-        span: &RelativeSpan,
-    ) -> Result<Changes, UnrecoverableError> {
-        let regions_in_address = get_regions_in_address(
-            values,
-            &borrow.address,
-            span,
-            true,
-            current_site,
-            environment,
-            handler,
-        )?;
-
-        let borrow_local_region = borrow.lifetime.into_inference().unwrap();
-
-        Ok(Changes {
-            subset_relations: {
-                regions_in_address
-                    .into_iter()
-                    .map(|x| {
-                        (x, Region::Local(borrow_local_region), span.clone())
-                    })
-                    .collect()
-            },
-            borrow_created: Some((register_id, borrow_local_region)),
-            overwritten_regions: HashSet::new(),
-        })
-    }
-
     pub(super) fn get_changes_of_store_internal(
         &self,
         store_address: &Address,
