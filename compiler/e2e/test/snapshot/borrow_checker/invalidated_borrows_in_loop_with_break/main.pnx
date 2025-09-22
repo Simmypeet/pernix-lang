@@ -1,0 +1,29 @@
+# fake vector
+public struct Vector[T]:
+    private _marker: phantom T
+
+
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
+
+    public function clear['a](self: &'a mut this):
+        where:
+            T: 'a
+
+        panic
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+        panic
+
+
+public function main(cond: bool):
+    let mut vector = Vector::new()
+    let mut number = 0
+
+    while cond:
+        vector.push(&mut number)
+        break
