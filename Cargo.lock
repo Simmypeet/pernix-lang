@@ -1183,6 +1183,7 @@ dependencies = [
  "pernixc_type_system",
  "thiserror 2.0.15",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1286,6 +1287,7 @@ dependencies = [
  "test-generator",
  "tokio",
  "toml",
+ "tracing-subscriber",
 ]
 
 [[package]]

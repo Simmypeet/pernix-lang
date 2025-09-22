@@ -9,9 +9,27 @@ use clap::Parser;
 use insta::assert_snapshot;
 use pernixc_target::{Arguments, Check, Command, Input};
 use pretty_assertions::assert_str_eq;
+use tracing_subscriber::{
+    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+};
 
 #[test_generator::test_resources("compiler/e2e/test/snapshot/**/main.pnx")]
 fn main(resource: &str) {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_thread_ids(true)
+                .with_thread_names(true)
+                .with_span_events(
+                    tracing_subscriber::fmt::format::FmtSpan::CLOSE,
+                )
+                .with_filter(
+                    EnvFilter::try_from_env("PERNIXC_LOG")
+                        .unwrap_or_else(|_| "ERROR".into()),
+                ),
+        )
+        .init();
+
     let file_path = PathBuf::from(resource);
     std::env::set_current_dir(env!("PERNIXC_CARGO_WORKSPACE_DIR")).unwrap();
 
