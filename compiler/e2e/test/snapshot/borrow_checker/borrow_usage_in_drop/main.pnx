@@ -1,0 +1,23 @@
+from core import Drop
+
+
+public struct DropWrapper[T]:
+    private value: T
+
+
+implements[T] DropWrapper[T]:
+    public function new(value: T) -> this:
+        return this { value: value }
+
+
+implements[T] Drop[DropWrapper[T]]:
+    function drop['b](self: &'b mut DropWrapper[T]):
+        where:
+            DropWrapper[T]: 'b 
+
+
+public function main():
+    let mut number = 32
+    let wrapper = DropWrapper::new(&number)
+
+    number += 23

@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: implementation is not general enough
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/implementation_is_not_general_enough/main.pnx:60:2
+   │
+29 │ implements['a, 'c] DoSomething['a, Vector[&'c mut int32]]:
+   │                    -------------------------------------- this implementation was used but its lifetimes are not general enough
+   ·
+47 │         trait for['x] DoSomething['x, T]
+   │               -------------------------- the predicate is declared here
+   ·
+60 │     use(&mut vector)
+   │     ^^^^^^^^^^^^^^^^ the implementation is not general enought to satisfy the required forall lifetimes in the generic arguments: ['∀0, main::Vector[&mut int32]]
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

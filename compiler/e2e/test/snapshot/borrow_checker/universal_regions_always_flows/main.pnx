@@ -1,0 +1,13 @@
+public struct Test['a]:
+	public first: &'a int32
+
+
+public function test['a, 'b](test: &'b mut Test['a], cond: bool):
+    where:
+        'a: 'b
+
+	let inner = 32
+	let copy = test.first
+
+	test.first = &inner
+	test.first = copy
