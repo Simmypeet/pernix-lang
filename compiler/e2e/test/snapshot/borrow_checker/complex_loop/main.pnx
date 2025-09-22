@@ -1,0 +1,34 @@
+public function consume[T](..: T):
+    panic
+
+
+public function create['a]() -> &'a mut int32:
+    panic
+
+
+public function test(cond: bool):
+	let mut a = 32
+	let mut x = &mut a
+	let mut q = create()    # create() No.1
+
+	loop:
+		# first iteration -> p refers to the `a` variable
+		# second iteration -> p refers to the `create() No.2` function
+		let p = &mut *x
+
+		if cond:
+            break
+	
+		# before loop -> q refers to the `create() No.1` function
+		# first iteration -> q refers to the `a` variable
+		# second iteration -> q refers to the `create() No.2` function
+		q = p
+
+		x = create() # create() No.2
+
+
+	consume(&mut a)
+
+	# q might refer to the `a` variable if the loop is executed twice 
+	# (full first iteration, and second iteration hits the break)
+	consume(q)

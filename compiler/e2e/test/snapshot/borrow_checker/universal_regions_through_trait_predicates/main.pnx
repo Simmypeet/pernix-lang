@@ -1,0 +1,15 @@
+public trait Fizz['a, T, U]:
+    public function doSomething['b](self: &'b T, t: &'a mut U):
+        where:
+            T: 'b
+            U: 'a
+
+
+public function test['a, 'b, T, U](t: &'b T, u: &'a mut U):
+    where:
+        trait Fizz['a, T, U]
+        T: 'b
+        U: 'a
+
+    Fizz::doSomething(t, u)
+    Fizz::doSomething(t, u)
