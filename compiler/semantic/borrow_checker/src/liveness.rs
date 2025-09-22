@@ -1,43 +1,32 @@
-use std::collections::{HashMap, HashSet};
-
 use enum_as_inner::EnumAsInner;
-use pernixc_abort::Abort;
-use pernixc_arena::{Key, ID};
+use pernixc_arena::ID;
 use pernixc_handler::Handler;
-use pernixc_semantic::{
-    component::{
-        derived::{
-            fields::{Field, Fields},
-            function_signature::FunctionSignature,
-            generic_parameters::GenericParameters,
-            ir::{
-                address::{self, Address, Memory},
-                control_flow_graph::{Block, ControlFlowGraph, Point},
-                instruction::{
-                    AccessKind, AccessMode, Instruction, Jump, Terminator,
-                },
-                value::register::Register,
-                Representation,
-            },
-            variant,
-        },
-        input::SymbolKind,
-    },
-    diagnostic::Diagnostic,
-    table::GlobalID,
-    term::{
-        self,
-        instantiation::{self, Instantiation},
-        r#type::Type,
-        Model as _, Symbol,
-    },
+use pernixc_hash::{HashMap, HashSet};
+use pernixc_ir::{
+    address::{self, Address, Memory},
+    control_flow_graph::{Block, ControlFlowGraph, Point},
+    instruction::{AccessKind, AccessMode, Instruction, Jump, Terminator},
+    value::register::Register,
 };
-use pernixc_source_file::Span;
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_semantic_element::{
+    fields::{get_fields, Field},
+    parameter::get_parameters,
+    variant::get_variant_associated_type,
+};
+use pernixc_symbol::kind::{get_kind, Kind};
+use pernixc_target::Global;
+use pernixc_term::{
+    generic_arguments::Symbol, instantiation::get_instantiation, r#type::Type,
+};
+use pernixc_type_system::{
+    environment::Environment, normalizer::Normalizer, UnrecoverableError,
+};
 
 use crate::{
-    diagnostic::Usage, get_dereferenced_regions_in_address,
-    get_regions_in_address, Model as BorrowModel, Region,
+    context::Context,
+    diagnostic::{Diagnostic, Usage},
+    Region,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,7 +48,7 @@ pub struct Struct {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     variant_projection: Box<Assigned>,
-    variant_id: GlobalID,
+    variant_id: Global<pernixc_symbol::ID>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,7 +94,7 @@ impl Assigned {
     }
 
     /// Returns assignment state for the given address.
-    pub fn at_address(&self, address: &Address<impl term::Model>) -> &Self {
+    pub fn at_address(&self, address: &Address) -> &Self {
         match address {
             Address::Memory(_) => self,
 
@@ -193,22 +182,22 @@ impl Assigned {
 }
 
 #[derive(Debug, EnumAsInner)]
-enum SetAssignedResultInternal<'a, M: term::Model> {
+enum SetAssignedResultInternal<'a> {
     Done(bool),
-    Continue { projection: &'a mut Assigned, ty: Type<M> },
+    Continue { projection: &'a mut Assigned, ty: Type },
 }
 
 impl Assigned {
     /// Remembers that the given `address` has been accessed. Returns `true`
     /// if the address is accessed for the first time.
-    pub fn set_assigned<M: term::Model>(
+    pub async fn set_assigned<N: Normalizer>(
         &mut self,
-        address: &Address<M>,
-        root_ty: Type<M>,
-        environment: &Environment<M, impl Normalizer<M>>,
-        access_span: Span,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<bool, Abort> {
+        address: &Address,
+        root_ty: Type,
+        environment: &Environment<'_, N>,
+        access_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<bool, UnrecoverableError> {
         Ok(self
             .set_accessed_internal(
                 address,
@@ -217,21 +206,22 @@ impl Assigned {
                 environment,
                 access_span,
                 handler,
-            )?
+            )
+            .await?
             .into_done()
             .unwrap())
     }
 
-    #[allow(clippy::too_many_lines)]
-    fn set_accessed_internal<M: term::Model>(
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
+    async fn set_accessed_internal<N: Normalizer>(
         &mut self,
-        address: &Address<M>,
-        root_ty: Type<M>,
+        address: &Address,
+        root_ty: Type,
         root: bool,
-        environment: &Environment<M, impl Normalizer<M>>,
-        access_span: Span,
-        handler: &dyn Handler<Box<dyn Diagnostic>>,
-    ) -> Result<SetAssignedResultInternal<M>, Abort> {
+        environment: &Environment<'_, N>,
+        access_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<SetAssignedResultInternal<'_>, UnrecoverableError> {
         // no more work to do
         if self.is_assigned() {
             return Ok(SetAssignedResultInternal::Done(false));
@@ -241,14 +231,16 @@ impl Assigned {
             Address::Memory(_) => (self, root_ty),
 
             Address::Field(field) => {
-                let (proj, ty) = match self.set_accessed_internal(
+                let (proj, ty) = match Box::pin(self.set_accessed_internal(
                     &field.struct_address,
                     root_ty,
                     false,
                     environment,
-                    access_span.clone(),
+                    access_span,
                     handler,
-                )? {
+                ))
+                .await?
+                {
                     done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
@@ -270,23 +262,18 @@ impl Assigned {
                 };
 
                 assert_eq!(
-                    *environment.table().get::<SymbolKind>(struct_id),
-                    SymbolKind::Struct
+                    environment.tracked_engine().get_kind(struct_id).await,
+                    Kind::Struct
                 );
 
-                let struct_generic_params =
-                    environment
-                        .table()
-                        .query::<GenericParameters>(struct_id)?;
+                let inst = environment
+                    .tracked_engine()
+                    .get_instantiation(struct_id, generic_arguments)
+                    .await?
+                    .unwrap();
 
-                let inst = Instantiation::from_generic_arguments(
-                    generic_arguments,
-                    struct_id,
-                    &struct_generic_params,
-                )
-                .unwrap();
-
-                let fields = environment.table().query::<Fields>(struct_id)?;
+                let fields =
+                    environment.tracked_engine().get_fields(struct_id).await?;
 
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
@@ -309,21 +296,19 @@ impl Assigned {
                         .get_mut(&field.id)
                         .unwrap(),
                     {
-                        let mut field_ty = M::from_default_type(
-                            fields.fields.get(field.id).unwrap().r#type.clone(),
-                        );
+                        let mut field_ty =
+                            fields.fields.get(field.id).unwrap().r#type.clone();
 
-                        instantiation::instantiate(&mut field_ty, &inst);
+                        inst.instantiate(&mut field_ty);
 
                         environment
                             .simplify(field_ty)
+                            .await
                             .map_err(|x| {
-                                x.report_overflow(|x| {
-                                    x.report_as_type_calculating_overflow(
-                                        access_span,
-                                        handler,
-                                    )
-                                })
+                                x.report_as_type_calculating_overflow(
+                                    access_span,
+                                    &handler,
+                                )
                             })?
                             .result
                             .clone()
@@ -331,14 +316,16 @@ impl Assigned {
                 )
             }
             Address::Tuple(tuple) => {
-                let (proj, ty) = match self.set_accessed_internal(
+                let (proj, ty) = match Box::pin(self.set_accessed_internal(
                     &tuple.tuple_address,
                     root_ty,
                     false,
                     environment,
                     access_span,
                     handler,
-                )? {
+                ))
+                .await?
+                {
                     done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
@@ -419,14 +406,16 @@ impl Assigned {
             }
 
             Address::Variant(variant) => {
-                let (proj, ty) = match self.set_accessed_internal(
+                let (proj, ty) = match Box::pin(self.set_accessed_internal(
                     &variant.enum_address,
                     root_ty,
                     false,
                     environment,
-                    access_span.clone(),
+                    access_span,
                     handler,
-                )? {
+                ))
+                .await?
+                {
                     done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
@@ -446,15 +435,11 @@ impl Assigned {
                     }
                 };
 
-                let enum_generic_params =
-                    environment.table().query::<GenericParameters>(enum_id)?;
-
-                let instantiation = Instantiation::from_generic_arguments(
-                    generic_arguments,
-                    enum_id,
-                    &enum_generic_params,
-                )
-                .unwrap();
+                let inst = environment
+                    .tracked_engine()
+                    .get_instantiation(enum_id, generic_arguments)
+                    .await?
+                    .unwrap();
 
                 if let Self::Whole(whole_proj) = proj {
                     // if have concluded, we should've returned earlier
@@ -467,25 +452,24 @@ impl Assigned {
                 }
 
                 let variant_comp = environment
-                    .table()
-                    .query::<variant::Variant>(variant.id)?;
+                    .tracked_engine()
+                    .get_variant_associated_type(variant.id)
+                    .await?;
 
                 (proj.as_variant_mut().unwrap().variant_projection.as_mut(), {
-                    let mut variant_ty = M::from_default_type(
-                        variant_comp.associated_type.clone().unwrap(),
-                    );
+                    let mut variant_ty =
+                        variant_comp.map(|x| (*x).clone()).unwrap();
 
-                    instantiation::instantiate(&mut variant_ty, &instantiation);
+                    inst.instantiate(&mut variant_ty);
 
                     environment
                         .simplify(variant_ty)
+                        .await
                         .map_err(|x| {
-                            x.report_overflow(|x| {
-                                x.report_as_type_calculating_overflow(
-                                    access_span,
-                                    handler,
-                                )
-                            })
+                            x.report_as_type_calculating_overflow(
+                                access_span,
+                                &handler,
+                            )
                         })?
                         .result
                         .clone()
@@ -493,14 +477,16 @@ impl Assigned {
             }
 
             Address::Reference(reference) => {
-                let (proj, ty) = match self.set_accessed_internal(
+                let (proj, ty) = match Box::pin(self.set_accessed_internal(
                     &reference.reference_address,
                     root_ty,
                     false,
                     environment,
                     access_span,
                     handler,
-                )? {
+                ))
+                .await?
+                {
                     done @ SetAssignedResultInternal::Done(_) => {
                         return Ok(done);
                     }
@@ -552,33 +538,33 @@ pub enum ControlFlow<T> {
 /// # Note
 ///
 /// Cloning is used when encountering a branch in the control flow graph.
-trait Traverser<M: term::Model>: Clone {
+trait Traverser: Clone {
     type Error;
     type Result: Default;
 
-    fn on_instruction(
+    async fn on_instruction(
         &mut self,
-        point: Point<M>,
-        instruction: &Instruction<M>,
+        point: Point,
+        instruction: &Instruction,
     ) -> Result<ControlFlow<Self::Result>, Self::Error>;
 
-    fn on_terminator(
+    async fn on_terminator(
         &mut self,
-        block_id: ID<Block<M>>,
-        terminator: Option<&Terminator<M>>,
+        block_id: ID<Block>,
+        terminator: Option<&Terminator>,
     ) -> Result<ControlFlow<Self::Result>, Self::Error>;
 
-    fn fold_result(
+    async fn fold_result(
         previous: Self::Result,
         next: Self::Result,
     ) -> (Self::Result, bool);
 }
 
-fn traverse_block<M: term::Model, T: Traverser<M>>(
+async fn traverse_block<T: Traverser>(
     traverser_state: &mut T,
-    control_flow_graph: &ControlFlowGraph<M>,
-    point: Point<M>,
-    exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
+    control_flow_graph: &ControlFlowGraph,
+    point: Point,
+    exit: &mut impl FnMut(&Instruction, Point) -> bool,
 ) -> Result<T::Result, T::Error> {
     traverse_block_internal(
         traverser_state,
@@ -586,21 +572,22 @@ fn traverse_block<M: term::Model, T: Traverser<M>>(
         point.block_id,
         Some(point.instruction_index),
         exit,
-        &mut HashSet::new(),
+        &mut HashSet::default(),
     )
+    .await
 }
 
 #[allow(clippy::too_many_lines)]
-fn traverse_block_internal<M: term::Model, T: Traverser<M>>(
+async fn traverse_block_internal<T: Traverser>(
     traverser_state: &mut T,
-    control_flow_graph: &ControlFlowGraph<M>,
-    block_id: ID<Block<M>>,
+    control_flow_graph: &ControlFlowGraph,
+    block_id: ID<Block>,
     starting_instruction_index: Option<usize>,
-    exit: &mut impl FnMut(&Instruction<M>, Point<M>) -> bool,
-    visited: &mut HashSet<(usize, Option<usize>)>,
+    exit: &mut impl FnMut(&Instruction, Point) -> bool,
+    visited: &mut HashSet<(u64, Option<usize>)>,
 ) -> Result<T::Result, T::Error> {
     if starting_instruction_index.is_none()
-        && !visited.insert((block_id.into_index(), None))
+        && !visited.insert((block_id.index(), None))
     {
         return Ok(T::Result::default());
     }
@@ -614,14 +601,14 @@ fn traverse_block_internal<M: term::Model, T: Traverser<M>>(
         .skip(starting_instruction_index.map_or(0, |x| x + 1))
     {
         // skip to the starting instruction index
-        if visited.contains(&(block_id.into_index(), Some(index))) {
+        if visited.contains(&(block_id.index(), Some(index))) {
             return Ok(T::Result::default());
         }
 
         // if the next instruction is the starting instruction index, we
         // should mark the current instruction as visited
         if starting_instruction_index.is_some_and(|x| x + 1 == index) {
-            assert!(visited.insert((block_id.into_index(), Some(index))));
+            assert!(visited.insert((block_id.index(), Some(index))));
         }
 
         // explicitly exit the traversal
@@ -629,50 +616,59 @@ fn traverse_block_internal<M: term::Model, T: Traverser<M>>(
             return Ok(T::Result::default());
         }
 
-        match traverser_state.on_instruction(
-            Point { block_id, instruction_index: index },
-            instruction,
-        )? {
+        match traverser_state
+            .on_instruction(
+                Point { block_id, instruction_index: index },
+                instruction,
+            )
+            .await?
+        {
             ControlFlow::Continue => {}
             ControlFlow::Break(result) => return Ok(result),
         }
     }
 
-    if let ControlFlow::Break(result) =
-        traverser_state.on_terminator(block_id, block.terminator().as_ref())?
+    if let ControlFlow::Break(result) = traverser_state
+        .on_terminator(block_id, block.terminator().as_ref())
+        .await?
     {
         return Ok(result);
     }
 
     match block.terminator() {
         Some(Terminator::Jump(jump)) => match jump {
-            Jump::Unconditional(unconditional_jump) => traverse_block_internal(
-                traverser_state,
-                control_flow_graph,
-                unconditional_jump.target,
-                None,
-                exit,
-                visited,
-            ),
+            Jump::Unconditional(unconditional_jump) => {
+                Box::pin(traverse_block_internal(
+                    traverser_state,
+                    control_flow_graph,
+                    unconditional_jump.target,
+                    None,
+                    exit,
+                    visited,
+                ))
+                .await
+            }
             Jump::Conditional(conditional_jump) => {
-                let true_usages = traverse_block_internal(
+                let true_usages = Box::pin(traverse_block_internal(
                     &mut traverser_state.clone(),
                     control_flow_graph,
                     conditional_jump.true_target,
                     None,
                     exit,
                     &mut visited.clone(),
-                )?;
-                let false_usages = traverse_block_internal(
+                ))
+                .await?;
+                let false_usages = Box::pin(traverse_block_internal(
                     traverser_state,
                     control_flow_graph,
                     conditional_jump.false_target,
                     None,
                     exit,
                     &mut visited.clone(),
-                )?;
+                ))
+                .await?;
 
-                Ok(T::fold_result(true_usages, false_usages).0)
+                Ok(T::fold_result(true_usages, false_usages).await.0)
             }
             Jump::Switch(select_jump) => {
                 let mut blocks = select_jump
@@ -684,27 +680,29 @@ fn traverse_block_internal<M: term::Model, T: Traverser<M>>(
                 let Some(first_block) = blocks.next() else {
                     return Ok(T::Result::default());
                 };
-                let mut first_result = traverse_block_internal(
+                let mut first_result = Box::pin(traverse_block_internal(
                     &mut traverser_state.clone(),
                     control_flow_graph,
                     first_block,
                     None,
                     exit,
                     &mut visited.clone(),
-                )?;
+                ))
+                .await?;
 
                 for block in select_jump.branches.values().copied() {
-                    let new_result = traverse_block_internal(
+                    let new_result = Box::pin(traverse_block_internal(
                         &mut traverser_state.clone(),
                         control_flow_graph,
                         block,
                         None,
                         exit,
                         &mut visited.clone(),
-                    )?;
+                    ))
+                    .await?;
 
                     let (folded, return_now) =
-                        T::fold_result(first_result, new_result);
+                        T::fold_result(first_result, new_result).await;
 
                     if return_now {
                         return Ok(folded);
@@ -737,55 +735,48 @@ fn traverse_block_internal<M: term::Model, T: Traverser<M>>(
 /// ```
 ///
 /// the live addresses is only `a.1`.
-#[allow(clippy::too_many_arguments)]
-pub fn get_live_usages(
-    memories: impl IntoIterator<Item = Memory<BorrowModel>>,
-    checking_registers: HashSet<ID<Register<BorrowModel>>>,
-    invalidated_regions: &HashSet<Region>,
-    invalidated_borrow_register_id: ID<Register<BorrowModel>>,
-    point: Point<BorrowModel>,
-    mut exit: &mut impl FnMut(&Instruction<BorrowModel>, Point<BorrowModel>) -> bool,
-    representation: &Representation<BorrowModel>,
-    current_site: GlobalID,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<HashSet<Usage>, Abort> {
-    let mut state = LiveBorrowTraverser {
-        assigned_states_by_memory: memories
-            .into_iter()
-            .map(|memory| (memory, Assigned::Whole(false)))
-            .collect(),
-        invalidated_borrow_register_id,
-        checking_registers,
-        invalidated_regions,
-        representation,
-        environment,
-        current_site,
-        handler,
-    };
+impl<N: Normalizer> Context<'_, N> {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn get_live_usages<
+        M: IntoIterator<Item = Memory>,
+        E: FnMut(&Instruction, Point) -> bool,
+    >(
+        &self,
+        memories: M,
+        checking_registers: HashSet<ID<Register>>,
+        invalidated_regions: &HashSet<Region>,
+        invalidated_borrow_register_id: ID<Register>,
+        point: Point,
+        mut exit: &mut E,
+    ) -> Result<HashSet<Usage>, UnrecoverableError> {
+        let mut state = LiveBorrowTraverser {
+            assigned_states_by_memory: memories
+                .into_iter()
+                .map(|memory| (memory, Assigned::Whole(false)))
+                .collect(),
+            invalidated_borrow_register_id,
+            checking_registers,
+            invalidated_regions,
 
-    traverse_block(
-        &mut state,
-        &representation.control_flow_graph,
-        point,
-        &mut exit,
-    )
+            context: self,
+        };
+
+        traverse_block(&mut state, self.control_flow_graph(), point, &mut exit)
+            .await
+    }
 }
 
 /// The state struct used for keep tracking the liveness of the addresses.
-struct LiveBorrowTraverser<'a, N: Normalizer<BorrowModel>> {
-    assigned_states_by_memory: HashMap<Memory<BorrowModel>, Assigned>,
-    checking_registers: HashSet<ID<Register<BorrowModel>>>,
+struct LiveBorrowTraverser<'a, N: Normalizer> {
+    assigned_states_by_memory: HashMap<Memory, Assigned>,
+    checking_registers: HashSet<ID<Register>>,
     invalidated_regions: &'a HashSet<Region>,
-    invalidated_borrow_register_id: ID<Register<BorrowModel>>,
+    invalidated_borrow_register_id: ID<Register>,
 
-    representation: &'a Representation<BorrowModel>,
-    environment: &'a Environment<'a, BorrowModel, N>,
-    handler: &'a dyn Handler<Box<dyn Diagnostic>>,
-    current_site: GlobalID,
+    context: &'a Context<'a, N>,
 }
 
-impl<N: Normalizer<BorrowModel>> Clone for LiveBorrowTraverser<'_, N> {
+impl<N: Normalizer> Clone for LiveBorrowTraverser<'_, N> {
     fn clone(&self) -> Self {
         Self {
             assigned_states_by_memory: self.assigned_states_by_memory.clone(),
@@ -793,46 +784,41 @@ impl<N: Normalizer<BorrowModel>> Clone for LiveBorrowTraverser<'_, N> {
             invalidated_borrow_register_id: self.invalidated_borrow_register_id,
 
             invalidated_regions: self.invalidated_regions,
-            representation: self.representation,
-            environment: self.environment,
-            current_site: self.current_site,
-            handler: self.handler,
+            context: self.context,
         }
     }
 }
 
-impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
-    for LiveBorrowTraverser<'_, N>
-{
-    type Error = Abort;
+impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
+    type Error = UnrecoverableError;
 
     type Result = HashSet<Usage>;
 
     #[allow(clippy::too_many_lines)]
-    fn on_instruction(
+    async fn on_instruction(
         &mut self,
-        _: Point<BorrowModel>,
-        instruction: &Instruction<BorrowModel>,
+        _: Point,
+        instruction: &Instruction,
     ) -> Result<ControlFlow<Self::Result>, Self::Error> {
-        let accesses =
-            instruction.get_access_address(&self.representation.values);
+        let accesses = instruction.get_access_address(self.context.values());
+
         // check each access
         for (address, kind) in accesses {
             let memory_root = address.get_root_memory();
             let memory_root_ty = match *memory_root {
-                Memory::Parameter(id) => BorrowModel::from_default_type(
-                    self.environment
-                        .table()
-                        .query::<FunctionSignature>(self.current_site)?
-                        .parameters
-                        .get(id)
-                        .unwrap()
-                        .r#type
-                        .clone(),
-                ),
+                Memory::Parameter(id) => self
+                    .context
+                    .tracked_engine()
+                    .get_parameters(self.context.current_site())
+                    .await?
+                    .parameters
+                    .get(id)
+                    .unwrap()
+                    .r#type
+                    .clone(),
                 Memory::Alloca(id) => self
-                    .representation
-                    .values
+                    .context
+                    .values()
                     .allocas
                     .get(id)
                     .unwrap()
@@ -857,15 +843,13 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
                 AccessKind::Normal(AccessMode::Write(write_span)) => {
                     // check if the write dereference the regions that are
                     // invalidated
-                    let dereferenced_regions =
-                        get_dereferenced_regions_in_address(
-                            &self.representation.values,
+                    let dereferenced_regions = self
+                        .context
+                        .get_dereferenced_regions_in_address(
                             &address,
                             write_span.as_ref().unwrap(),
-                            self.current_site,
-                            self.environment,
-                            self.handler,
-                        )?;
+                        )
+                        .await?;
 
                     if dereferenced_regions
                         .iter()
@@ -877,55 +861,52 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
                         ));
                     }
 
-                    assigned_state.set_assigned(
-                        &address,
-                        memory_root_ty,
-                        self.environment,
-                        write_span.clone().unwrap(),
-                        self.handler,
-                    )?;
+                    assigned_state
+                        .set_assigned(
+                            &address,
+                            memory_root_ty,
+                            self.context.environment(),
+                            write_span.unwrap(),
+                            self.context.handler(),
+                        )
+                        .await?;
 
                     continue;
                 }
 
                 AccessKind::Normal(AccessMode::Read(read)) => {
-                    (read.span.clone().unwrap(), false)
+                    (read.span.unwrap(), false)
                 }
+
                 AccessKind::Drop => (
                     match *memory_root {
                         Memory::Parameter(id) => self
-                            .environment
-                            .table()
-                            .query::<FunctionSignature>(self.current_site)?
+                            .context
+                            .tracked_engine()
+                            .get_parameters(self.context.current_site())
+                            .await?
                             .parameters
                             .get(id)
                             .unwrap()
                             .span
-                            .clone()
                             .unwrap(),
                         Memory::Alloca(id) => self
-                            .representation
-                            .values
+                            .context
+                            .values()
                             .allocas
                             .get(id)
                             .unwrap()
                             .span
-                            .clone()
                             .unwrap(),
                     },
                     true,
                 ),
             };
 
-            let read_lifetimes = get_regions_in_address(
-                &self.representation.values,
-                &address,
-                &read_span,
-                true,
-                self.current_site,
-                self.environment,
-                self.handler,
-            )?;
+            let read_lifetimes = self
+                .context
+                .get_regions_in_address(&address, read_span, true)
+                .await?;
 
             // check if the lifetime appears in the invalidated regions
             let has_invalidated_region = read_lifetimes
@@ -956,8 +937,8 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
                 self.checking_registers.remove(&register_assignment.id);
 
                 let register = self
-                    .representation
-                    .values
+                    .context
+                    .values()
                     .registers
                     .get(register_assignment.id)
                     .unwrap();
@@ -986,13 +967,12 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
         if let Some(register_id) = invalidated_use_register {
             return Ok(ControlFlow::Break(
                 std::iter::once(Usage::Local(
-                    self.representation
-                        .values
+                    self.context
+                        .values()
                         .registers
                         .get(register_id)
                         .unwrap()
                         .span
-                        .clone()
                         .unwrap(),
                 ))
                 .collect(),
@@ -1002,15 +982,15 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
         Ok(ControlFlow::Continue)
     }
 
-    fn on_terminator(
+    async fn on_terminator(
         &mut self,
-        _: ID<Block<BorrowModel>>,
-        _: Option<&Terminator<BorrowModel>>,
+        _: ID<Block>,
+        _: Option<&Terminator>,
     ) -> Result<ControlFlow<Self::Result>, Self::Error> {
         Ok(ControlFlow::Continue)
     }
 
-    fn fold_result(
+    async fn fold_result(
         mut previous: Self::Result,
         next: Self::Result,
     ) -> (Self::Result, bool) {
@@ -1024,75 +1004,69 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
     }
 }
 
-pub fn is_live(
-    checking_address: &Address<BorrowModel>,
-    root_address_type: &Type<BorrowModel>,
-    from: Point<BorrowModel>,
-    to: Point<BorrowModel>,
-    representation: &Representation<BorrowModel>,
-    environment: &Environment<BorrowModel, impl Normalizer<BorrowModel>>,
-    handler: &dyn Handler<Box<dyn Diagnostic>>,
-) -> Result<bool, Abort> {
-    let mut traverser = LiveLenderTraverser {
-        root_memory: *checking_address.get_root_memory(),
-        assigned_states: Assigned::Whole(false),
-        checking_address,
-        representation,
-        to_point: to,
-        root_type: root_address_type,
-        environment,
-        handler,
-    };
+impl<N: Normalizer> Context<'_, N> {
+    pub async fn is_live(
+        &self,
+        checking_address: &Address,
+        root_address_type: &Type,
+        from: Point,
+        to: Point,
+    ) -> Result<bool, UnrecoverableError> {
+        let mut traverser = LiveLenderTraverser {
+            root_memory: *checking_address.get_root_memory(),
+            assigned_states: Assigned::Whole(false),
+            checking_address,
+            to_point: to,
+            root_type: root_address_type,
 
-    traverse_block(
-        &mut traverser,
-        &representation.control_flow_graph,
-        from,
-        &mut |_, _| false,
-    )
+            context: self,
+        };
+
+        traverse_block(
+            &mut traverser,
+            self.control_flow_graph(),
+            from,
+            &mut |_, _| false,
+        )
+        .await
+    }
 }
 
-struct LiveLenderTraverser<'a, N: Normalizer<BorrowModel>> {
-    root_memory: Memory<BorrowModel>,
+struct LiveLenderTraverser<'a, N: Normalizer> {
+    root_memory: Memory,
     assigned_states: Assigned,
-    checking_address: &'a Address<BorrowModel>,
-    root_type: &'a Type<BorrowModel>,
-    to_point: Point<BorrowModel>,
+    checking_address: &'a Address,
+    root_type: &'a Type,
+    to_point: Point,
 
-    environment: &'a Environment<'a, BorrowModel, N>,
-    representation: &'a Representation<BorrowModel>,
-    handler: &'a dyn Handler<Box<dyn Diagnostic>>,
+    context: &'a Context<'a, N>,
 }
 
-impl<N: Normalizer<BorrowModel>> Clone for LiveLenderTraverser<'_, N> {
+impl<N: Normalizer> Clone for LiveLenderTraverser<'_, N> {
     fn clone(&self) -> Self {
         Self {
             root_memory: self.root_memory,
             assigned_states: self.assigned_states.clone(),
             checking_address: self.checking_address,
             root_type: self.root_type,
-            representation: self.representation,
             to_point: self.to_point,
 
-            environment: self.environment,
-            handler: self.handler,
+            context: self.context,
         }
     }
 }
 
-impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
-    for LiveLenderTraverser<'_, N>
-{
-    type Error = Abort;
+impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
+    type Error = UnrecoverableError;
 
     /// True if the address is reachable to the `to_point` without the address
     /// be reassigned or go you of scope.
     type Result = bool;
 
-    fn on_instruction(
+    async fn on_instruction(
         &mut self,
-        point: Point<BorrowModel>,
-        instruction: &Instruction<BorrowModel>,
+        point: Point,
+        instruction: &Instruction,
     ) -> Result<ControlFlow<Self::Result>, Self::Error> {
         if point == self.to_point {
             return Ok(ControlFlow::Break(true));
@@ -1109,13 +1083,15 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
                     return Ok(ControlFlow::Continue);
                 }
 
-                self.assigned_states.set_assigned(
-                    &store.address,
-                    self.root_type.clone(),
-                    self.environment,
-                    store.span.clone().unwrap(),
-                    self.handler,
-                )?;
+                self.assigned_states
+                    .set_assigned(
+                        &store.address,
+                        self.root_type.clone(),
+                        self.context.environment(),
+                        store.span.unwrap(),
+                        self.context.handler(),
+                    )
+                    .await?;
 
                 if self
                     .assigned_states
@@ -1131,11 +1107,11 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
             Instruction::ScopePop(scope_pop) => {
                 let scope_of_memory = match self.root_memory {
                     Memory::Parameter(_) => {
-                        self.representation.scope_tree.root_scope_id()
+                        self.context.ir().scope_tree.root_scope_id()
                     }
                     Memory::Alloca(id) => {
-                        self.representation
-                            .values
+                        self.context
+                            .values()
                             .allocas
                             .get(id)
                             .unwrap()
@@ -1154,15 +1130,15 @@ impl<N: Normalizer<BorrowModel>> Traverser<BorrowModel>
         }
     }
 
-    fn on_terminator(
+    async fn on_terminator(
         &mut self,
-        _: ID<Block<BorrowModel>>,
-        _: Option<&Terminator<BorrowModel>>,
+        _: ID<Block>,
+        _: Option<&Terminator>,
     ) -> Result<ControlFlow<Self::Result>, Self::Error> {
         Ok(ControlFlow::Continue)
     }
 
-    fn fold_result(
+    async fn fold_result(
         previous: Self::Result,
         next: Self::Result,
     ) -> (Self::Result, bool) {

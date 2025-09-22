@@ -1,5 +1,7 @@
 //! Contains the definition of [`Field`] and [`Fields`].
 
+use std::sync::Arc;
+
 use flexstr::SharedStr;
 use pernixc_arena::Arena;
 use pernixc_hash::HashMap;
@@ -53,6 +55,7 @@ pub struct Field {
 )]
 #[id(Global<pernixc_symbol::ID>)]
 #[extend(method(get_fields))]
+#[value(Arc<Fields>)]
 pub struct Fields {
     /// The arena storing all the fields in the struct.
     pub fields: Arena<Field>,

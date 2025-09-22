@@ -129,12 +129,10 @@ impl<'a, N: Normalizer> Context<'a, N> {
             })?
             .result;
 
-        let mut regions = HashSet::default();
-
-        // let mut regions = RecursiveIterator::new(&address_ty)
-        //     .filter_map(|x| x.0.into_lifetime().ok())
-        //     .filter_map(|x| Region::try_from(*x).ok())
-        //     .collect::<HashSet<_>>();
+        let mut regions = RecursiveIterator::new(&address_ty)
+            .filter_map(|x| x.0.into_lifetime().ok())
+            .filter_map(|x| Region::try_from(*x).ok())
+            .collect::<HashSet<_>>();
 
         if include_deref {
             loop {
@@ -193,5 +191,60 @@ impl<'a, N: Normalizer> Context<'a, N> {
         }
 
         Ok(regions)
+    }
+
+    /// Gets the regions that got dereferenced when using the given address
+    pub async fn get_dereferenced_regions_in_address(
+        &self,
+        mut address: &Address,
+        span: &RelativeSpan,
+    ) -> Result<HashSet<Region>, UnrecoverableError> {
+        let mut regions = HashSet::default();
+
+        loop {
+            match address {
+                Address::Memory(_) => break Ok(regions),
+
+                Address::Field(field) => {
+                    address = &field.struct_address;
+                }
+                Address::Tuple(tuple) => {
+                    address = &tuple.tuple_address;
+                }
+                Address::Index(index) => {
+                    address = &index.array_address;
+                }
+                Address::Variant(variant) => {
+                    address = &variant.enum_address;
+                }
+
+                Address::Reference(reference) => {
+                    let pointee_ty = self
+                        .values()
+                        .type_of(
+                            &*reference.reference_address,
+                            self.current_site,
+                            self.environment,
+                        )
+                        .await
+                        .map_err(|x| {
+                            x.report_as_type_calculating_overflow(
+                                *span,
+                                &self.handler,
+                            )
+                        })?
+                        .result;
+
+                    let pointee_reference_ty =
+                        pointee_ty.into_reference().unwrap();
+
+                    regions.extend(
+                        Region::try_from(pointee_reference_ty.lifetime).ok(),
+                    );
+
+                    address = &reference.reference_address;
+                }
+            }
+        }
     }
 }
