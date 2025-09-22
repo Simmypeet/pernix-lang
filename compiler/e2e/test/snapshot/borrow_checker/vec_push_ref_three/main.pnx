@@ -1,0 +1,30 @@
+# fake vector
+public struct Vector[T]:
+    private _marker: phantom T
+
+
+implements[T] Vector[T]:
+    public function new() -> this:
+        panic
+
+
+    public function push['a](self: &'a mut this, value: T):
+        where:
+            T: 'a
+
+
+public function consume[T](x: T):
+    pass
+
+
+public function main(cond: bool):
+    let mut x = 1
+    let mut v = Vector::new()
+    let p = &x
+
+    if cond:
+        v.push(p)
+    else:
+        x = 1
+
+    consume(v)

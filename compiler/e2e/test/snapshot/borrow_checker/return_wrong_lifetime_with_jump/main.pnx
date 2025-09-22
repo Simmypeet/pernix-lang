@@ -1,0 +1,7 @@
+public function test['a, 'b](in: &'a int32) -> &'b int32:
+	let result = in
+
+    scope: # <- this creates jump in cfg
+        pass
+
+	return result

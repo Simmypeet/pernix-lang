@@ -1,0 +1,22 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: mutable access is done while it is borrowed
+   ╭─ compiler/e2e/test/snapshot/borrow_checker/vec_push_ref_two/main.pnx:30:5
+   │
+23 │     let p = &x
+   │             -- the borrow starts here
+   ·
+30 │     x = 3
+   │     ^^^^^ mutable access occurs here
+31 │ 
+32 │     consume(v)
+   │             - the borrow is used here
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
