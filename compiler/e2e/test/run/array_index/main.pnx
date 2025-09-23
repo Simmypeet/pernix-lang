@@ -1,0 +1,36 @@
+## Case
+## 2 4 6 8 10
+## 5
+## 0 4 1 3 2
+
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
+
+
+public function main():
+    let mut arr = [0i32, 0, 0, 0, 0]
+
+    scanf(
+        &"%d %d %d %d %d\0".[0],
+        &mut arr.[0],
+        &mut arr.[1],
+        &mut arr.[2],
+        &mut arr.[3],
+        &mut arr.[4],
+    )
+
+
+    let mut askCount = 0
+    scanf(&"%d\0".[0], &mut askCount)
+
+    while askCount > 0:
+        askCount -= 1
+
+        let mut x = 0
+        scanf(&"%d\0".[0], &mut x)
+
+        let number = arr.[x]
+
+        printf(&"%d\n\0".[0], number)
