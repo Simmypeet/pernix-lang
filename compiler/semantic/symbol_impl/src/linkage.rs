@@ -1,12 +1,11 @@
-#[pernixc_query::query(
-    key(Key),
-    id(Global<ID>),
-    value(Linkage),
-    executor(Executor),
-    extend(method(get_linkage), no_cyclic)
-)]
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_symbol::linkage::{Key, Linkage};
+
+use crate::table::get_table_of_symbol;
+
+#[pernixc_query::executor(key(Key), name(Executor))]
 pub async fn executor(
-    id: Global<ID>,
+    &Key(id): &Key,
     engine: &TrackedEngine,
 ) -> Result<Linkage, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;

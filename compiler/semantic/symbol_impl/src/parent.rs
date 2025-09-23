@@ -1,3 +1,12 @@
+use std::sync::Arc;
+
+use pernixc_hash::HashMap;
+use pernixc_query::TrackedEngine;
+use pernixc_symbol::{get_target_root_module_id, parent::Key, ID};
+use pernixc_target::TargetID;
+
+use crate::table::{get_table_of_symbol, MapKey, Table};
+
 /// The executor for the [`Parent`] component.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -35,7 +44,7 @@ pub async fn intermediate_executor(
     engine: &TrackedEngine,
 ) -> Result<Arc<HashMap<ID, ID>>, pernixc_query::runtime::executor::CyclicError>
 {
-    let map = engine.query(&crate::MapKey(target_id)).await?;
+    let map = engine.query(&MapKey(target_id)).await?;
 
     let mut key_and_member_tasks = Vec::new();
 
@@ -44,7 +53,7 @@ pub async fn intermediate_executor(
         let symbol = *symbol;
 
         key_and_member_tasks.push(tokio::spawn(async move {
-            let table: Arc<crate::Table> =
+            let table: Arc<Table> =
                 engine.get_table_of_symbol(target_id.make_global(symbol)).await;
 
             table.members.get(&symbol).map(|members| {

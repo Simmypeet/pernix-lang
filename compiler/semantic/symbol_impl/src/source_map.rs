@@ -4,12 +4,11 @@
 use std::{collections::HashMap, fmt::Display, path::Path, sync::Arc};
 
 use pernixc_extend::extend;
-use pernixc_lexical::tree::RelativeLocation;
 use pernixc_query::TrackedEngine;
-use pernixc_source_file::{
-    get_source_file_path, ByteIndex, FilePathKey, SourceFile, Span,
-};
+use pernixc_source_file::{FilePathKey, SourceFile};
 use pernixc_target::{Global, TargetID};
+
+use crate::table::MapKey;
 
 pernixc_register::register!(FilePathKey, FilePathExecutor);
 
@@ -18,7 +17,7 @@ pub async fn file_path_executor(
     FilePathKey(source_file_id): &FilePathKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<Path>, pernixc_query::runtime::executor::CyclicError> {
-    let table = engine.query(&crate::MapKey(source_file_id.target_id)).await?;
+    let table = engine.query(&MapKey(source_file_id.target_id)).await?;
 
     Ok(table.paths_by_source_id.get(&source_file_id.id).map_or_else(
         || panic!("Source file path not found for ID: {:?}", source_file_id.id),
@@ -40,7 +39,7 @@ pub async fn create_source_map(
     self: &TrackedEngine,
     target_id: TargetID,
 ) -> SourceMap {
-    let map: crate::Map = self.query(&crate::MapKey(target_id)).await.unwrap();
+    let map = self.query(&MapKey(target_id)).await.unwrap();
     let mut source_files = HashMap::default();
 
     for (id, source_file) in map.paths_by_source_id.iter() {

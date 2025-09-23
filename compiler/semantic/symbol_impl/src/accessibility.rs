@@ -1,3 +1,25 @@
+use std::sync::Arc;
+
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_symbol::{
+    accessibility::{
+        accessibility_hierarchy_relationship, get_accessibility, Accessibility,
+        Key,
+    },
+    get_target_root_module_id,
+    kind::{get_kind, Kind},
+    member::get_members,
+    parent::{get_closest_module_id, get_parent, HierarchyRelationship},
+    syntax::get_implements_member_access_modifier,
+    ID,
+};
+use pernixc_target::Global;
+
+use crate::{
+    accessibility::diagnostic::SymbolIsMoreAccessibleThanParent,
+    table::get_table_of_symbol,
+};
+
 pub mod diagnostic;
 
 #[pernixc_query::executor(key(Key), name(Executor))]
@@ -79,7 +101,7 @@ pub async fn member_is_more_accessible_executor(
     let trait_accessibility: Accessibility<ID> =
         tracked_engine.get_accessibility(trait_id).await;
 
-    let members: Arc<crate::member::Member> =
+    let members: Arc<pernixc_symbol::member::Member> =
         tracked_engine.get_members(trait_id).await;
 
     let mut diagnostic = Vec::new();

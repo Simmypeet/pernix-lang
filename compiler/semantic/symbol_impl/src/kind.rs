@@ -1,3 +1,22 @@
+use std::{fmt::Debug, hash::Hash, sync::Arc};
+
+use pernixc_extend::extend;
+use pernixc_query::{
+    runtime::executor::{self, CyclicError},
+    TrackedEngine,
+};
+use pernixc_serialize::{Deserialize, Serialize};
+use pernixc_stable_hash::StableHash;
+use pernixc_stable_type_id::Identifiable;
+use pernixc_symbol::{
+    kind::{Key, Kind},
+    ID,
+};
+use pernixc_target::TargetID;
+use pernixc_tokio::scoped;
+
+use crate::table::{self, get_table_of_symbol, MapKey};
+
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn executor(
@@ -89,7 +108,7 @@ impl<
         engine: &TrackedEngine,
         key: &FilterKey<T>,
     ) -> Result<<FilterKey<T> as pernixc_query::Key>::Value, CyclicError> {
-        let map = engine.query(&crate::MapKey(key.target_id)).await?;
+        let map = engine.query(&MapKey(key.target_id)).await?;
 
         scoped!(|handles| async move {
             for x in map.keys_by_symbol_id.keys() {
@@ -106,14 +125,14 @@ impl<
                         .unwrap_or_else(|| panic!("invalid symbol ID: {id:?}"))
                         .as_ref()
                         .map_or_else(
-                            || crate::Key::Root(target_id),
-                            |x| crate::Key::Submodule {
+                            || table::Key::Root(target_id),
+                            |x| table::Key::Submodule {
                                 external_submodule: x.clone(),
                                 target_id,
                             },
                         );
 
-                    let node = engine.query(&crate::TableKey(node_key)).await?;
+                    let node = engine.query(&table::TableKey(node_key)).await?;
 
                     if filter.filter(*node.kinds.get(&id).unwrap()).await {
                         Ok(Some(id))

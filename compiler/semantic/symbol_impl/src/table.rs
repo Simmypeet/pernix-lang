@@ -12,7 +12,7 @@ use pernixc_query::{
     TrackedEngine,
 };
 use pernixc_serialize::{Deserialize, Serialize};
-use pernixc_source_file::{SourceElement, SourceFile};
+use pernixc_source_file::{calculate_path_id, SourceElement, SourceFile};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
     accessibility::Accessibility,

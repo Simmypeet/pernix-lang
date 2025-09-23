@@ -16,15 +16,19 @@ use pernixc_query::{
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
-use pernixc_target::{Global, TargetID};
-use pernixc_tokio::{join_list::JoinList, scoped};
-
-use crate::{
-    kind::{get_all_symbols_of_kind, Kind},
+use pernixc_symbol::{
+    kind::Kind,
     name::{get_name, get_qualified_name},
     source_map::to_absolute_span,
     span::get_span,
     ID,
+};
+use pernixc_target::{Global, TargetID};
+use pernixc_tokio::{join_list::JoinList, scoped};
+
+use crate::{
+    kind::get_all_symbols_of_kind,
+    table::{DiagnosticKey, Key, Map, MapKey},
 };
 
 /// Enumeration of all diagnostics that can be reported while building table
@@ -271,7 +275,7 @@ fn populate_file_errors(
     engine: &TrackedEngine,
     target_id: TargetID,
     file_errors_list: &mut JoinList<Result<FileError, CyclicError>>,
-    map: &crate::Map,
+    map: &Map,
 ) {
     for path in map.paths_by_source_id.values() {
         let external_submodule_opt = path.1.clone();
@@ -357,7 +361,7 @@ pub async fn rendered_executor(
              member_is_moere_accessible_diagnostics,
              diagnostic_handles| async move {
         // Get the map for this target to discover all table keys
-        let map = engine.query(&crate::MapKey(target_id)).await?;
+        let map = engine.query(&MapKey(target_id)).await?;
 
         populate_file_errors(engine, target_id, file_diagnostics, &map);
 

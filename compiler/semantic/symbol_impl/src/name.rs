@@ -1,13 +1,13 @@
-#[pernixc_query::query(
-    key(Key),
-    id(Global<ID>),
-    value(SharedStr),
-    executor(Executor),
-    extend(method(get_name), no_cyclic)
-)]
+use flexstr::SharedStr;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_symbol::name::Key;
+
+use crate::table::get_table_of_symbol;
+
+#[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn executor(
-    id: Global<ID>,
+    &Key(id): &Key,
     engine: &TrackedEngine,
 ) -> Result<SharedStr, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;

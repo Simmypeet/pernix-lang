@@ -2468,6 +2468,7 @@ name = "symbol_impl"
 version = "0.1.0-beta.2"
 dependencies = [
  "bon",
+ "codespan-reporting",
  "enum-as-inner",
  "flexstr",
  "pernixc_arena",

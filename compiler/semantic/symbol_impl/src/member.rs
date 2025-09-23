@@ -1,13 +1,14 @@
-#[pernixc_query::query(
-    key(Key),
-    id(Global<ID>),
-    value(Arc<Member>),
-    executor(Executor),
-    extend(method(get_members), no_cyclic)
-)]
+use std::sync::Arc;
+
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_symbol::member::{Key, Member};
+
+use crate::table::get_table_of_symbol;
+
+#[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn executor(
-    id: Global<ID>,
+    &Key(id): &Key,
     engine: &TrackedEngine,
 ) -> Result<Arc<Member>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;

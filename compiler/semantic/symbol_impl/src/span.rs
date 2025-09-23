@@ -1,4 +1,8 @@
-pernixc_register::register!(Key, Executor);
+use pernixc_lexical::tree::RelativeSpan;
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_symbol::span::Key;
+
+use crate::table::get_table_of_symbol;
 
 #[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
@@ -14,3 +18,5 @@ pub async fn executor(
         .copied()
         .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", key.0.id)))
 }
+
+pernixc_register::register!(Key, Executor);
