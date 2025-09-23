@@ -19,7 +19,8 @@ final implements Copy[LoudDrop] delete
 
 
 public function createLoudDrop(value: int32) -> LoudDrop:
-    return LoudDrop { value: value }
+    let loudDrop = LoudDrop { value: value }
+    return loudDrop
 
 
 public function main():
