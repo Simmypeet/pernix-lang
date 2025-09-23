@@ -10,7 +10,7 @@ use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
     kind::{Key, Kind},
-    ID,
+    AllAdtIDKey, AllImplementsIDKey, ID,
 };
 use pernixc_target::TargetID;
 use pernixc_tokio::scoped;
@@ -189,3 +189,74 @@ pub async fn get_all_symbols_of_kind(
         .await
         .unwrap()
 }
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct AdtFilter;
+
+pernixc_register::register!(FilterKey<AdtFilter>, FilterExecutor);
+
+impl Filter for AdtFilter {
+    async fn filter(&self, kind: Kind) -> bool { kind.is_adt() }
+}
+
+#[pernixc_query::executor(key(AllAdtIDKey), name(AllAdtIDExecutor))]
+pub async fn all_adt_ids_executor(
+    &AllAdtIDKey(id): &AllAdtIDKey,
+    engine: &TrackedEngine,
+) -> Result<Arc<[ID]>, executor::CyclicError> {
+    engine.query(&FilterKey { target_id: id, filter: AdtFilter }).await
+}
+
+pernixc_register::register!(AllAdtIDKey, AllAdtIDExecutor);
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    StableHash,
+    Serialize,
+    Deserialize,
+    Identifiable,
+)]
+pub struct ImplementationFilter;
+
+impl Filter for ImplementationFilter {
+    async fn filter(&self, kind: pernixc_symbol::kind::Kind) -> bool {
+        kind.is_implementation()
+    }
+}
+
+pernixc_register::register!(FilterKey<ImplementationFilter>, FilterExecutor);
+
+#[pernixc_query::executor(
+    key(AllImplementsIDKey),
+    name(AllImplementsIDExecutor)
+)]
+pub async fn all_implements_ids_executor(
+    &AllImplementsIDKey(id): &AllImplementsIDKey,
+    engine: &TrackedEngine,
+) -> Result<Arc<[ID]>, executor::CyclicError> {
+    engine
+        .query(&FilterKey { target_id: id, filter: ImplementationFilter })
+        .await
+}
+
+pernixc_register::register!(AllImplementsIDKey, AllImplementsIDExecutor);

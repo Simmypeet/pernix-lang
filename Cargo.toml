@@ -28,6 +28,7 @@ members = [
     "compiler/syntax/syntax",
 
     "compiler/semantic/symbol",
+    "compiler/semantic/symbol_impl",
     "compiler/semantic/term",
     "compiler/semantic/type_system",
     "compiler/semantic/resolution",
@@ -43,7 +44,7 @@ members = [
 
     "compiler/driver",
     "compiler/main",
-    "compiler/e2e", "compiler/semantic/symbol_impl",
+    "compiler/e2e",
 
     # tidy-alphabetical-end
 ]

@@ -1,6 +1,9 @@
 //! Contains the logic for building the symbol table from the syntax tree.
 
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use pernixc_extend::extend;
 use pernixc_lexical::tree::RelativeSpan;
@@ -183,3 +186,61 @@ pub async fn get_target_root_module_id(
         .await
     }
 }
+
+/// Retrieves all symbol IDs in the given target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[ID]>)]
+#[extend(method(get_all_symbol_ids), no_cyclic)]
+pub struct AllSymbolIDKey(pub TargetID);
+
+/// Retrieves all ADT symbol IDs in the given target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[ID]>)]
+#[extend(method(get_all_adt_ids), no_cyclic)]
+pub struct AllAdtIDKey(pub TargetID);
+
+/// Retrieves all implements symbol IDs in the given target (including positive
+/// and negative)
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<[ID]>)]
+#[extend(method(get_all_implements_ids), no_cyclic)]
+pub struct AllImplementsIDKey(pub TargetID);

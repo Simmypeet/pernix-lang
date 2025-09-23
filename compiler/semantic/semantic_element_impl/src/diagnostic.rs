@@ -13,7 +13,7 @@ use pernixc_semantic_element::{
 };
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
-    all_symbol_ids,
+    get_all_symbol_ids,
     kind::{get_kind, Kind},
 };
 use pernixc_target::{Global, TargetID};
@@ -154,7 +154,7 @@ pub async fn all_rendered_executor(
 > {
     scoped!(|handles| async move {
         let mut diagnostics = Vec::new();
-        let all_ids = engine.all_symbol_ids(id).await;
+        let all_ids = engine.get_all_symbol_ids(id).await;
 
         // SAFETY: the spawned tasks are independent and do not access shared
         // state therefore they can be safely parallelly re-verified.

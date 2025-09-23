@@ -10,9 +10,9 @@ use pernixc_semantic_element::{
 };
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::{
-    kind::{get_kind, Filter, FilterExecutor, FilterKey, Kind},
+    get_all_adt_ids,
+    kind::{get_kind, Kind},
     member::get_members,
 };
 use pernixc_target::{Global, TargetID};
@@ -469,28 +469,6 @@ impl Constraints {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-    Identifiable,
-)]
-pub struct AdtFilter;
-
-pernixc_register::register!(FilterKey<AdtFilter>, FilterExecutor);
-
-impl Filter for AdtFilter {
-    async fn filter(&self, kind: Kind) -> bool { kind.is_adt() }
-}
-
 async fn collect_constraints(
     target_id: TargetID,
     engine: &TrackedEngine,
@@ -505,11 +483,8 @@ async fn collect_constraints(
     let constraints_list = scoped!(|scoped| async move {
         let mut constraints_list = Vec::new();
         for constraint_id in engine
-            .query(&pernixc_symbol::kind::FilterKey {
-                target_id,
-                filter: AdtFilter,
-            })
-            .await?
+            .get_all_adt_ids(target_id)
+            .await
             .iter()
             .map(|x| target_id.make_global(*x))
         {
@@ -622,11 +597,8 @@ pub async fn get_variance_maps(
     // due to their type/lifetime parameters are declared but not used, add to
     // to the map with default bivariant
     for adt_id in engine
-        .query(&pernixc_symbol::kind::FilterKey {
-            target_id,
-            filter: AdtFilter,
-        })
-        .await?
+        .get_all_adt_ids(target_id)
+        .await
         .iter()
         .map(|x| target_id.make_global(*x))
     {

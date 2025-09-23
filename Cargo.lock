@@ -1264,6 +1264,7 @@ dependencies = [
  "pernixc_source_file",
  "pernixc_stable_type_id",
  "pernixc_symbol",
+ "pernixc_symbol_impl",
  "pernixc_syntax",
  "pernixc_target",
  "pernixc_type_system",
@@ -1693,6 +1694,34 @@ dependencies = [
  "rayon",
  "siphasher",
  "strsim 0.10.0",
+ "tokio",
+]
+
+[[package]]
+name = "pernixc_symbol_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "bon",
+ "codespan-reporting",
+ "enum-as-inner",
+ "flexstr",
+ "pernixc_arena",
+ "pernixc_diagnostic",
+ "pernixc_extend",
+ "pernixc_handler",
+ "pernixc_hash",
+ "pernixc_lexical",
+ "pernixc_parser",
+ "pernixc_query",
+ "pernixc_register",
+ "pernixc_serialize",
+ "pernixc_source_file",
+ "pernixc_stable_hash",
+ "pernixc_stable_type_id",
+ "pernixc_symbol",
+ "pernixc_syntax",
+ "pernixc_target",
+ "pernixc_tokio",
  "tokio",
 ]
 
@@ -2461,34 +2490,6 @@ dependencies = [
  "proc-macro2 1.0.101",
  "quote 1.0.40",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "symbol_impl"
-version = "0.1.0-beta.2"
-dependencies = [
- "bon",
- "codespan-reporting",
- "enum-as-inner",
- "flexstr",
- "pernixc_arena",
- "pernixc_diagnostic",
- "pernixc_extend",
- "pernixc_handler",
- "pernixc_hash",
- "pernixc_lexical",
- "pernixc_parser",
- "pernixc_query",
- "pernixc_register",
- "pernixc_serialize",
- "pernixc_source_file",
- "pernixc_stable_hash",
- "pernixc_stable_type_id",
- "pernixc_symbol",
- "pernixc_syntax",
- "pernixc_target",
- "pernixc_tokio",
- "tokio",
 ]
 
 [[package]]

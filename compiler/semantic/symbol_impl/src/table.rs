@@ -21,7 +21,7 @@ use pernixc_symbol::{
     kind::{self, Kind},
     linkage::{self, C},
     member::{self, Member},
-    ID,
+    AllSymbolIDKey, ID,
 };
 use pernixc_syntax::{
     item::{
@@ -2248,15 +2248,9 @@ pub async fn map_executor(
 }
 
 /// Retrieves all symbol IDs for the given target ID.
-#[pernixc_query::query(
-    key(AllSymbolIDKey),
-    executor(AllSymbolIDExecutor),
-    value(Arc<[ID]>),
-    id(TargetID),
-    extend(method(all_symbol_ids), no_cyclic)
-)]
+#[pernixc_query::executor(key(AllSymbolIDKey), name(AllSymbolIDExecutor))]
 pub async fn all_symbol_ids_executor(
-    id: TargetID,
+    &AllSymbolIDKey(id): &AllSymbolIDKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<[ID]>, executor::CyclicError> {
     let map = engine.query(&MapKey(id)).await?;

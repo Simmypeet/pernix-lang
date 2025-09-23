@@ -8,7 +8,7 @@ use codespan_reporting::{
 };
 use pernixc_query::{runtime::persistence::Persistence, Engine, TrackedEngine};
 use pernixc_source_file::GlobalSourceID;
-use pernixc_symbol::source_map::{create_source_map, SourceMap};
+use pernixc_symbol_impl::source_map::{create_source_map, SourceMap};
 use pernixc_target::{Arguments, Build, Command, Run, TargetID, TargetKind};
 use tracing::instrument;
 
@@ -295,7 +295,9 @@ pub async fn run(
         let mut diagnostics = Vec::new();
 
         let symbol_errors = tracked_engine
-            .query(&pernixc_symbol::diagnostic::RenderedKey(local_target_id))
+            .query(&pernixc_symbol_impl::diagnostic::RenderedKey(
+                local_target_id,
+            ))
             .await
             .unwrap();
 
