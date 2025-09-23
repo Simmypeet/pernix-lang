@@ -2464,6 +2464,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "symbol_impl"
+version = "0.1.0-beta.2"
+dependencies = [
+ "pernixc_arena",
+ "pernixc_diagnostic",
+ "pernixc_extend",
+ "pernixc_handler",
+ "pernixc_hash",
+ "pernixc_lexical",
+ "pernixc_parser",
+ "pernixc_query",
+ "pernixc_register",
+ "pernixc_serialize",
+ "pernixc_source_file",
+ "pernixc_stable_hash",
+ "pernixc_stable_type_id",
+ "pernixc_symbol",
+ "pernixc_syntax",
+ "pernixc_target",
+ "pernixc_tokio",
+]
+
+[[package]]
 name = "syn"
 version = "0.15.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"

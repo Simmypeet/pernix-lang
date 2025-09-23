@@ -43,7 +43,7 @@ members = [
 
     "compiler/driver",
     "compiler/main",
-    "compiler/e2e",
+    "compiler/e2e", "compiler/semantic/symbol_impl",
 
     # tidy-alphabetical-end
 ]

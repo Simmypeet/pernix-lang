@@ -5,12 +5,12 @@ use std::sync::Arc;
 use flexstr::SharedStr;
 use pernixc_extend::extend;
 use pernixc_hash::{HashMap, HashSet};
-use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 
-use crate::{get_table_of_symbol, kind::get_kind, ID};
+use crate::{kind::get_kind, ID};
 
 /// Stores the members of a symbol in a form of `::Member`
 #[derive(
@@ -29,28 +29,24 @@ pub struct Member {
     pub unnameds: HashSet<ID>,
 }
 
-#[pernixc_query::query(
-    key(Key),
-    id(Global<ID>),
-    value(Arc<Member>),
-    executor(Executor),
-    extend(method(get_members), no_cyclic)
+/// The key type used with [`TrackedEngine`] to access the members of a symbol.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
 )]
-#[allow(clippy::unnecessary_wraps)]
-pub async fn executor(
-    id: Global<ID>,
-    engine: &TrackedEngine,
-) -> Result<Arc<Member>, CyclicError> {
-    let table = engine.get_table_of_symbol(id).await;
-
-    Ok(table
-        .members
-        .get(&id.id)
-        .cloned()
-        .unwrap_or_else(|| panic!("invalid symbol ID: {:?}", id.id)))
-}
-
-pernixc_register::register!(Key, Executor);
+#[value(Arc<Member>)]
+#[extend(method(get_members), no_cyclic)]
+pub struct Key(pub Global<ID>);
 
 /// Optionally returns `None` if the given symbol is of a kind that does not
 /// have members.
