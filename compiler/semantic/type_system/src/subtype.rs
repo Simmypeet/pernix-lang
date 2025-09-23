@@ -413,7 +413,7 @@ async fn subtypable_with_unification(
         let inner_variance = environment
             .tracked_engine()
             .get_variance_of(
-                source,
+                target,
                 current_variance,
                 std::iter::once(TermLocation::Lifetime(
                     SubLifetimeLocation::FromType(source_location),
@@ -441,7 +441,7 @@ async fn subtypable_with_unification(
         let inner_variance = environment
             .tracked_engine()
             .get_variance_of(
-                source,
+                target,
                 current_variance,
                 std::iter::once(TermLocation::Type(SubTypeLocation::FromType(
                     source_location,
