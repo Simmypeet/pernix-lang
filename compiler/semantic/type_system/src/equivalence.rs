@@ -48,39 +48,41 @@ impl Impl for Type {
     ) -> Result<Vec<Succeeded<Self>>, Error> {
         let mut equivalences = Vec::new();
 
-        if !self.is_trait_member() {
-            return Ok(equivalences);
-        }
-
-        for equivalence in environment
-            .premise()
-            .predicates
-            .iter()
-            .filter_map(Predicate::as_trait_type_compatible)
-        {
-            let lhs = Self::TraitMember(equivalence.lhs.clone());
-            let rhs = &equivalence.rhs;
-
-            if let Some(result) = environment
-                .query(&Subtype::new(self.clone(), lhs, Variance::Invariant))
-                .await?
+        if self.is_trait_member() {
+            for equivalence in environment
+                .premise()
+                .predicates
+                .iter()
+                .filter_map(Predicate::as_trait_type_compatible)
             {
-                if !result.result.forall_lifetime_errors.is_empty() {
-                    continue; // sadly
+                let lhs = Self::TraitMember(equivalence.lhs.clone());
+                let rhs = &equivalence.rhs;
+
+                if let Some(result) = environment
+                    .query(&Subtype::new(
+                        self.clone(),
+                        lhs,
+                        Variance::Invariant,
+                    ))
+                    .await?
+                {
+                    if !result.result.forall_lifetime_errors.is_empty() {
+                        continue; // sadly
+                    }
+
+                    let mut final_result = rhs.clone();
+
+                    // instantiate the forall lifetime
+                    result
+                        .result
+                        .forall_lifetime_instantiations
+                        .instantiate(&mut final_result);
+
+                    equivalences.push(Succeeded {
+                        result: final_result,
+                        constraints: result.constraints.clone(),
+                    });
                 }
-
-                let mut final_result = rhs.clone();
-
-                // instantiate the forall lifetime
-                result
-                    .result
-                    .forall_lifetime_instantiations
-                    .instantiate(&mut final_result);
-
-                equivalences.push(Succeeded {
-                    result: final_result,
-                    constraints: result.constraints.clone(),
-                });
             }
         }
 
