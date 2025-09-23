@@ -1,4 +1,4 @@
-from core import Drop
+from core import Drop, Copy
 
 
 public struct DropWrapper[T]:
@@ -14,6 +14,9 @@ implements[T] Drop[DropWrapper[T]]:
     function drop['b](self: &'b mut DropWrapper[T]):
         where:
             DropWrapper[T]: 'b 
+
+
+final implements[T] Copy[DropWrapper[T]] delete
 
 
 public function main():

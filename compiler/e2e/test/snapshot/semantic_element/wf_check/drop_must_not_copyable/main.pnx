@@ -1,0 +1,10 @@
+from core import Drop
+
+
+public struct TotallyCopyable:
+    pass
+
+
+final implements Drop[TotallyCopyable]:
+    function drop(self: &mut TotallyCopyable):
+        pass
