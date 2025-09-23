@@ -19,43 +19,45 @@ use tracing_subscriber::{
 
 #[test_resources("compiler/e2e/test/run/**/main.pnx")]
 fn main(resource: &str) {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_thread_ids(true)
-                .with_thread_names(true)
-                .with_span_events(
-                    tracing_subscriber::fmt::format::FmtSpan::CLOSE,
-                )
-                .with_filter(
-                    EnvFilter::try_from_env("PERNIXC_LOG")
-                        .unwrap_or_else(|_| "ERROR".into()),
-                ),
-        )
-        .init();
+    stacker::maybe_grow(3 * 1024 * 1024, 8 * 1024 * 1024, || {
+        let _ = tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_thread_ids(true)
+                    .with_thread_names(true)
+                    .with_span_events(
+                        tracing_subscriber::fmt::format::FmtSpan::CLOSE,
+                    )
+                    .with_filter(
+                        EnvFilter::try_from_env("PERNIXC_LOG")
+                            .unwrap_or_else(|_| "ERROR".into()),
+                    ),
+            )
+            .try_init();
 
-    let file_path = PathBuf::from(resource);
-    std::env::set_current_dir(env!("PERNIXC_CARGO_WORKSPACE_DIR")).unwrap();
+        let file_path = PathBuf::from(resource);
+        std::env::set_current_dir(env!("PERNIXC_CARGO_WORKSPACE_DIR")).unwrap();
 
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_stack_size(
-            // in the debug build, the stack size of the future is not
-            // optimized well, so we need a larger stack size
-            {
-                #[cfg(debug_assertions)]
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_stack_size(
+                // in the debug build, the stack size of the future is not
+                // optimized well, so we need a larger stack size
                 {
-                    8 * 1024 * 1024 // 8MB stack for debug build
-                }
-                #[cfg(not(debug_assertions))]
-                {
-                    2 * 1024 * 1024 // 2MB stack default
-                }
-            },
-        )
-        .build()
-        .expect("Failed to create Tokio runtime")
-        .block_on(test(&file_path));
+                    #[cfg(debug_assertions)]
+                    {
+                        8 * 1024 * 1024 // 8MB stack for debug build
+                    }
+                    #[cfg(not(debug_assertions))]
+                    {
+                        2 * 1024 * 1024 // 2MB stack default
+                    }
+                },
+            )
+            .build()
+            .expect("Failed to create Tokio runtime")
+            .block_on(test(&file_path));
+    });
 }
 
 #[derive(Debug)]
