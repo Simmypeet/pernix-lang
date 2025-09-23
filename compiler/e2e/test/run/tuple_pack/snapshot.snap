@@ -1,0 +1,9 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "1 2 3 4 5 6"
+stdout = "21"
+stderr = ""

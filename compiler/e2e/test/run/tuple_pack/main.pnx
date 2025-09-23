@@ -1,0 +1,66 @@
+## Case
+## 1 2 3 4 5 6
+
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
+
+
+public trait Add[T]:
+    public function add(a: T, b: T) -> T
+
+
+implements Add[int32]:
+    function add(a: int32, b: int32) -> int32:
+        return a + b
+
+
+public trait SumTuple[T: tuple]:
+    public type Output
+
+    public function sum(elements: T) -> this::Output
+
+
+implements[T] SumTuple[(T,)]:
+    where:
+        trait Add[T]
+
+    type Output = T
+
+    function sum(elements: (T,)) -> this::Output:
+        return elements.0
+
+
+implements[T, Rest] SumTuple[(T, ...Rest)]:
+    where:
+        trait Add[T] + SumTuple[Rest]
+        Rest: tuple
+        SumTuple[Rest]::Output = T
+
+    type Output = T
+
+    function sum((first, ...rest): (T, ...Rest)) -> this::Output:
+        return Add::add(first, SumTuple::sum(rest))
+
+
+public function main():
+    let mut nums = (
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+    )
+
+    scanf(&"%d %d %d %d %d %d\0".[0], 
+        &mut nums.0,
+        &mut nums.1,
+        &mut nums.2,
+        &mut nums.3,
+        &mut nums.4,
+        &mut nums.5,
+    )
+
+    printf(&"%d\0".[0], SumTuple::sum(nums))
