@@ -2467,6 +2467,9 @@ dependencies = [
 name = "symbol_impl"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
+ "enum-as-inner",
+ "flexstr",
  "pernixc_arena",
  "pernixc_diagnostic",
  "pernixc_extend",
@@ -2484,6 +2487,7 @@ dependencies = [
  "pernixc_syntax",
  "pernixc_target",
  "pernixc_tokio",
+ "tokio",
 ]
 
 [[package]]

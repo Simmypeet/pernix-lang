@@ -62,4 +62,5 @@ pub struct C {
     pernixc_query::Key,
 )]
 #[value(Linkage)]
+#[extend(method(get_linkage), no_cyclic)]
 pub struct Key(pub Global<ID>);

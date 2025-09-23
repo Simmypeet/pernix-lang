@@ -18,6 +18,7 @@ pub mod linkage;
 pub mod member;
 pub mod name;
 pub mod parent;
+pub mod source_map;
 pub mod span;
 pub mod syntax;
 pub mod variant_declaration_order;

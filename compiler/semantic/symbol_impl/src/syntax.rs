@@ -1,14 +1,24 @@
+use std::sync::Arc;
+
+use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
+use pernixc_symbol::{
+    name::get_qualified_name,
+    syntax::{
+        FieldsKey, FunctionBodyKey, FunctionSignatureKey, GenericParametersKey,
+        ImplementsFinalKeywordKey, ImplementsMemberAccessModifierKey,
+        ImplementsQualifiedIdentifierKey, ImportKey, TypeAliasKey,
+        VariantAssociatedTypeKey, WhereClauseKey,
+    },
+};
+use pernixc_syntax::QualifiedIdentifier;
+
+use crate::table::get_table_of_symbol;
+
 /// Implementation of the `get_module_imports_syntax` method
-#[pernixc_query::query(
-    key(ImportKey),
-    id(Global<ID>),
-    value(Arc<[pernixc_syntax::item::module::Import]>),
-    executor(ImportExecutor),
-    extend(method(get_module_imports_syntax), no_cyclic),
-)]
+#[pernixc_query::executor(key(ImportKey), name(ImportExecutor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn import_syntax_executor(
-    id: Global<ID>,
+    &ImportKey(id): &ImportKey,
     engine: &TrackedEngine,
 ) -> Result<Arc<[pernixc_syntax::item::module::Import]>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
@@ -23,16 +33,13 @@ pub async fn import_syntax_executor(
 
 pernixc_register::register!(ImportKey, ImportExecutor);
 
-#[pernixc_query::query(
+#[pernixc_query::executor(
     key(ImplementsQualifiedIdentifierKey),
-    id(Global<ID>),
-    value(QualifiedIdentifier),
-    executor(ImplementsQualifiedIdentifierExecutor),
-    extend(method(get_implements_qualified_identifier), no_cyclic)
+    name(ImplementsQualifiedIdentifierExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn implements_qualified_identifier_executor(
-    id: Global<ID>,
+    &ImplementsQualifiedIdentifierKey(id): &ImplementsQualifiedIdentifierKey,
     engine: &TrackedEngine,
 ) -> Result<QualifiedIdentifier, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
@@ -55,16 +62,13 @@ pernixc_register::register!(
 );
 
 /// Implementation of the `get_generic_parameters_syntax` method
-#[pernixc_query::query(
+#[pernixc_query::executor(
     key(GenericParametersKey),
-    id(Global<ID>),
-    value(Option<pernixc_syntax::item::generic_parameters::GenericParameters>),
-    executor(GenericParametersExecutor),
-    extend(method(get_generic_parameters_syntax), no_cyclic),
+    name(GenericParametersExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn generic_parameters_syntax(
-    id: Global<ID>,
+    &GenericParametersKey(id): &GenericParametersKey,
     engine: &TrackedEngine,
 ) -> Result<
     Option<pernixc_syntax::item::generic_parameters::GenericParameters>,
@@ -87,16 +91,10 @@ pub async fn generic_parameters_syntax(
 pernixc_register::register!(GenericParametersKey, GenericParametersExecutor);
 
 /// Implementation of the `get_where_clause_syntax` method
-#[pernixc_query::query(
-    key(WhereClauseKey),
-    id(Global<ID>),
-    value(Option<pernixc_syntax::item::where_clause::Predicates>),
-    executor(WhereClauseExecutor),
-    extend(method(get_where_clause_syntax), no_cyclic),
-)]
+#[pernixc_query::executor(key(WhereClauseKey), name(WhereClauseExecutor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn where_clause_syntax(
-    id: Global<ID>,
+    &WhereClauseKey(id): &WhereClauseKey,
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::item::where_clause::Predicates>, CyclicError>
 {
@@ -113,16 +111,10 @@ pub async fn where_clause_syntax(
 pernixc_register::register!(WhereClauseKey, WhereClauseExecutor);
 
 /// Implementation of the `get_type_alias_syntax` method
-#[pernixc_query::query(
-    key(TypeAliasKey),
-    id(Global<ID>),
-    value(Option<pernixc_syntax::r#type::Type>),
-    executor(TypeAliasExecutor),
-    extend(method(get_type_alias_syntax), no_cyclic),
-)]
+#[pernixc_query::executor(key(TypeAliasKey), name(TypeAliasExecutor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_type_alias_syntax(
-    id: Global<ID>,
+    &TypeAliasKey(id): &TypeAliasKey,
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::r#type::Type>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
@@ -138,16 +130,13 @@ pub async fn get_type_alias_syntax(
 pernixc_register::register!(TypeAliasKey, TypeAliasExecutor);
 
 /// Implementation of the `get_implements_final_keyword` method
-#[pernixc_query::query(
+#[pernixc_query::executor(
     key(ImplementsFinalKeywordKey),
-    id(Global<ID>),
-    value(Option<pernixc_syntax::Keyword>),
-    executor(ImplementsFinalKeywordExecutor),
-    extend(method(get_implements_final_keyword), no_cyclic),
+    name(ImplementsFinalKeywordExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_implements_final_keyword(
-    id: Global<ID>,
+    &ImplementsFinalKeywordKey(id): &ImplementsFinalKeywordKey,
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::Keyword>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
@@ -162,16 +151,13 @@ pernixc_register::register!(
 );
 
 /// Implementation of the `get_implements_member_access_modifier` method
-#[pernixc_query::query(
+#[pernixc_query::executor(
     key(ImplementsMemberAccessModifierKey),
-    id(Global<ID>),
-    value(Option<pernixc_syntax::AccessModifier>),
-    executor(ImplementsMemberAccessModifierExecutor),
-    extend(method(get_implements_member_access_modifier), no_cyclic),
+    name(ImplementsMemberAccessModifierExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_implements_member_access_modifier(
-    id: Global<ID>,
+    &ImplementsMemberAccessModifierKey(id): &ImplementsMemberAccessModifierKey,
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::AccessModifier>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
@@ -194,16 +180,13 @@ pernixc_register::register!(
 );
 
 /// Implementation of the `get_variant_associated_type_syntax` method
-#[pernixc_query::query(
+#[pernixc_query::executor(
     key(VariantAssociatedTypeKey),
-    id(Global<ID>),
-    value(Option<pernixc_syntax::r#type::Type>),
-    executor(VariantAssociatedTypeExecutor),
-    extend(method(get_variant_associated_type_syntax), no_cyclic),
+    name(VariantAssociatedTypeExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_variant_associated_type_syntax(
-    id: Global<ID>,
+    &VariantAssociatedTypeKey(id): &VariantAssociatedTypeKey,
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::r#type::Type>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
@@ -225,16 +208,10 @@ pernixc_register::register!(
 );
 
 /// Implementation of the `get_fields_syntax` method
-#[pernixc_query::query(
-    key(FieldsKey),
-    id(Global<ID>),
-    value(Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>),
-    executor(FieldsExecutor),
-    extend(method(get_fields_syntax), no_cyclic),
-)]
+#[pernixc_query::executor(key(FieldsKey), name(FieldsExecutor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_fields_syntax(
-    id: Global<ID>,
+    &FieldsKey(id): &FieldsKey,
     engine: &TrackedEngine,
 ) -> Result<
     Option<pernixc_syntax::item::Body<pernixc_syntax::item::r#struct::Field>>,
@@ -253,19 +230,13 @@ pub async fn get_fields_syntax(
 pernixc_register::register!(FieldsKey, FieldsExecutor);
 
 /// Implementation of the `get_function_signature` method
-#[pernixc_query::query(
+#[pernixc_query::executor(
     key(FunctionSignatureKey),
-    id(Global<ID>),
-    value((
-        Option<pernixc_syntax::item::function::Parameters>,
-        Option<pernixc_syntax::item::function::ReturnType>,
-    )),
-    executor(FunctionSignatureExecutor),
-    extend(method(get_function_signature_syntax), no_cyclic),
+    name(FunctionSignatureExecutor)
 )]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_function_signature_syntax(
-    id: Global<ID>,
+    &FunctionSignatureKey(id): &FunctionSignatureKey,
     engine: &TrackedEngine,
 ) -> Result<
     (
@@ -290,16 +261,10 @@ pub async fn get_function_signature_syntax(
 pernixc_register::register!(FunctionSignatureKey, FunctionSignatureExecutor);
 
 /// Implementation of the `get_fields_syntax` method
-#[pernixc_query::query(
-    key(FunctionBodyKey),
-    id(Global<ID>),
-    value(),
-    executor(FunctionBodyExecutor),
-    extend(method(get_function_body_syntax), no_cyclic),
-)]
+#[pernixc_query::executor(key(FunctionBodyKey), name(FunctionBodyExecutor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn get_function_body_syntax(
-    id: Global<ID>,
+    &FunctionBodyKey(id): &FunctionBodyKey,
     engine: &TrackedEngine,
 ) -> Result<
     Option<pernixc_syntax::item::Members<pernixc_syntax::statement::Statement>>,

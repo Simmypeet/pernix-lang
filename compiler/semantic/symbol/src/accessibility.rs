@@ -174,3 +174,36 @@ pub async fn is_accessible_from(
         }
     }
 }
+
+/// Similar to [`is_accessible_from`] but with the global ID
+/// and global accessibility.
+#[extend]
+pub async fn is_accessible_from_globally(
+    self: &TrackedEngine,
+    referring_site: Global<crate::ID>,
+    referred_accessibility: Accessibility<Global<crate::ID>>,
+) -> bool {
+    match referred_accessibility {
+        Accessibility::Public => true,
+
+        Accessibility::Scoped(module_id) => {
+            if module_id.target_id != referring_site.target_id {
+                return false;
+            }
+
+            let referring_site_module_id =
+                self.get_closest_module_id(referring_site).await;
+
+            matches!(
+                self.symbol_hierarchy_relationship(
+                    referring_site.target_id,
+                    module_id.id,
+                    referring_site_module_id,
+                )
+                .await,
+                HierarchyRelationship::Parent
+                    | HierarchyRelationship::Equivalent
+            )
+        }
+    }
+}

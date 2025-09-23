@@ -24,6 +24,10 @@ pernixc_tokio = { path = "../../base/tokio" }
 pernixc_parser = { path = "../../syntax/parser" }
 pernixc_stable_type_id = { path = "../../base/stable_type_id" }
 pernixc_register = { path = "../../base/register" }
+flexstr = { workspace = true }
+enum-as-inner = { workspace = true }
+bon = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

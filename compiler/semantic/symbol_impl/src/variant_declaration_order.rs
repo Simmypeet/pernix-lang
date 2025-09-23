@@ -1,20 +1,14 @@
 //! Defines the query to get the declaration order of a variant in an enum.
 
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
-use pernixc_target::Global;
+use pernixc_symbol::variant_declaration_order::Key;
 
-use crate::{get_table_of_symbol, ID};
+use crate::table::get_table_of_symbol;
 
-#[pernixc_query::query(
-    key(Key),
-    id(Global<ID>),
-    value(usize),
-    executor(Executor),
-    extend(method(get_variant_declaration_order), no_cyclic)
-)]
+#[pernixc_query::executor(key(Key), name(Executor))]
 #[allow(clippy::unnecessary_wraps)]
 pub async fn executor(
-    id: Global<ID>,
+    &Key(id): &Key,
     engine: &TrackedEngine,
 ) -> Result<usize, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
