@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = """
+1 2
+3
+-4
+0"""
+stdout = """
+Dropping Zero
+Dropping LtZero
+Dropping -4
+Dropping GtZero
+Dropping 3
+Dropping Pair
+Dropping 1
+Dropping 2"""
+stderr = ""

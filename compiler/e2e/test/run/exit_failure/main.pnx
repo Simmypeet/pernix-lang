@@ -1,0 +1,6 @@
+extern "C":
+    public function exit(code: int32)
+
+
+public function main():
+    exit(1)

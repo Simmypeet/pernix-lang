@@ -1,0 +1,25 @@
+## Case
+## 5 
+## Case
+## 10
+
+extern "C":
+    public function printf(format: &uint8, ...) -> int32
+    public function scanf(format: &uint8, ...) -> int32
+
+
+public function fibonacci(n: int32) -> int32:
+    if n <= 1:
+        return 1
+    
+    return fibonacci(n - 1) + fibonacci(n - 2)
+    
+
+public function main():
+    printf(&"Enter the number: \0".[0])
+
+    let mut number = 0
+    scanf(&"%d\0".[0], &mut number)
+
+    let result = fibonacci(number)
+    printf(&"fibonacci(%d) = %d\n\0".[0], number, result)

@@ -1,0 +1,15 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "20 30"
+stdout = "the max is 30"
+stderr = ""
+
+## Case 1
+exit_code = 0
+stdin = "2 5"
+stdout = "the max is 5"
+stderr = ""

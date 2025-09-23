@@ -1,0 +1,15 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "5"
+stdout = "Enter the number: fibonacci(5) = 8"
+stderr = ""
+
+## Case 1
+exit_code = 0
+stdin = "10"
+stdout = "Enter the number: fibonacci(10) = 89"
+stderr = ""

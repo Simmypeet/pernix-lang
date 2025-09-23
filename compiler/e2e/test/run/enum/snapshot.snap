@@ -1,0 +1,33 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "1 1"
+stdout = "1"
+stderr = ""
+
+## Case 1
+exit_code = 0
+stdin = "2 1 2"
+stdout = "3"
+stderr = ""
+
+## Case 2
+exit_code = 0
+stdin = "3 1 2 3"
+stdout = "6"
+stderr = ""
+
+## Case 3
+exit_code = 0
+stdin = "4 1 2 3 4"
+stdout = "10"
+stderr = ""
+
+## Case 4
+exit_code = 0
+stdin = "Random"
+stdout = "Invalid mode"
+stderr = ""
