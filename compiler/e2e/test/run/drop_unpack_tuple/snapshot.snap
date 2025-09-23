@@ -1,0 +1,14 @@
+---
+source: compiler/e2e/test/run/mod.rs
+expression: final_string
+---
+## Case 0
+exit_code = 0
+stdin = "1 2 3 4 5"
+stdout = """
+Dropping 1
+Dropping 2
+Dropping 3
+Dropping 4
+Dropping 5"""
+stderr = ""
