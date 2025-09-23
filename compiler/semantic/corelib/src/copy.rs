@@ -275,7 +275,10 @@ pub async fn initialize_copy_marker(
         .unwrap()
         .input_session(async move |x| {
             x.set_input(
-                implemented::Key(copy_marker_id),
+                implemented::InTargetKey {
+                    implementable_id: copy_marker_id,
+                    target_id: TargetID::CORE,
+                },
                 Arc::new(implemented),
             )
             .await;

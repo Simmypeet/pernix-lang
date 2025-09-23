@@ -26,3 +26,28 @@ use pernixc_target::Global;
 #[value(Arc<HashSet<Global<pernixc_symbol::ID>>>)]
 #[extend(method(get_implemented))]
 pub struct Key(pub Global<pernixc_symbol::ID>);
+
+/// A query for retrieving all the `implements` IDs that implements this symbol
+/// in a specific target.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Arc<HashSet<Global<pernixc_symbol::ID>>>)]
+pub struct InTargetKey {
+    /// The ID of the implementable (trait or marker).
+    pub implementable_id: Global<pernixc_symbol::ID>,
+
+    /// The target ID to search for implementations in.
+    pub target_id: pernixc_target::TargetID,
+}

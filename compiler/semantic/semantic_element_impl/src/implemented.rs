@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use pernixc_hash::HashSet;
 use pernixc_query::{runtime::executor, TrackedEngine};
-use pernixc_semantic_element::implements::get_implements;
+use pernixc_semantic_element::{
+    implemented::InTargetKey, implements::get_implements,
+};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
 use pernixc_symbol::kind::FilterKey;
-use pernixc_target::{get_all_target_ids, Global, TargetID};
+use pernixc_target::{get_all_target_ids, Global};
 use pernixc_tokio::scoped;
 
 #[derive(
@@ -36,26 +38,6 @@ pernixc_register::register!(
     FilterKey<ImplementationFilter>,
     pernixc_symbol::kind::FilterExecutor
 );
-
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    Deserialize,
-    StableHash,
-    pernixc_query::Key,
-)]
-#[value(Arc<HashSet<Global<pernixc_symbol::ID>>>)]
-pub struct InTargetKey {
-    pub implementable_id: Global<pernixc_symbol::ID>,
-    pub target_id: TargetID,
-}
 
 pernixc_register::register!(InTargetKey, InTargetExecutor);
 
@@ -144,8 +126,7 @@ pub async fn implemented_executor(
         scoped!(|scoped| async move {
             let mut results = HashSet::default();
 
-            for target_id in target_ids.iter().filter(|x| **x != TargetID::CORE)
-            {
+            for target_id in target_ids.iter() {
                 let engine = engine.clone();
                 let key = InTargetKey {
                     implementable_id: key.0,

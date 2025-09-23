@@ -206,5 +206,15 @@ pub async fn initialize_drop_trait(
             .await;
     }
 
+    input_lock
+        .set_input(
+            implemented::InTargetKey {
+                implementable_id: drop_trait_id,
+                target_id: TargetID::CORE,
+            },
+            Arc::new(HashSet::default()),
+        )
+        .await;
+
     drop_trait_id.id
 }
