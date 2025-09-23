@@ -13,7 +13,10 @@ use super::{
     marker::Marker, r#enum::Enum, r#extern::Extern, r#struct::Struct,
     r#trait::Trait, r#type::Type,
 };
-use crate::{AccessModifier, Identifier, Keyword, Passable, SimplePath};
+use crate::{
+    item::effect::Effect, AccessModifier, Identifier, Keyword, Passable,
+    SimplePath,
+};
 
 #[cfg(any(test, feature = "arbitrary"))]
 pub mod arbitrary;
@@ -186,6 +189,7 @@ abstract_tree::abstract_tree! {
         Constant(Constant = ast::<Constant>()),
         Extern(Extern = ast::<Extern>()),
         Marker(Marker = ast::<Marker>()),
+        Effect(Effect = ast::<Effect>()),
     }
 }
 

@@ -11,11 +11,11 @@ use crate::{
         Passable, SimplePath,
     },
     item::{
-        constant::arbitrary::Constant, function::arbitrary::Function,
-        implements::arbitrary::Implements, marker::arbitrary::Marker,
-        r#enum::arbitrary::Enum, r#extern::arbitrary::Extern,
-        r#struct::arbitrary::Struct, r#trait::arbitrary::Trait,
-        r#type::arbitrary::Type,
+        constant::arbitrary::Constant, effect::arbitrary::Effect,
+        function::arbitrary::Function, implements::arbitrary::Implements,
+        marker::arbitrary::Marker, r#enum::arbitrary::Enum,
+        r#extern::arbitrary::Extern, r#struct::arbitrary::Struct,
+        r#trait::arbitrary::Trait, r#type::arbitrary::Type,
     },
     reference,
 };
@@ -332,6 +332,7 @@ reference! {
         Constant(Constant),
         Marker(Marker),
         Extern(Extern),
+        Effect(Effect),
     }
 }
 
@@ -352,6 +353,7 @@ impl Arbitrary for Member {
             Constant::arbitrary().prop_map(Member::Constant),
             Marker::arbitrary().prop_map(Member::Marker),
             Extern::arbitrary().prop_map(Member::Extern),
+            Effect::arbitrary().prop_map(Member::Effect),
         ]
         .boxed()
     }
@@ -375,6 +377,7 @@ impl IndentDisplay for Member {
             Self::Constant(constant) => constant.indent_fmt(f, indent),
             Self::Marker(marker) => marker.indent_fmt(f, indent),
             Self::Extern(extern_) => extern_.indent_fmt(f, indent),
+            Self::Effect(effect) => effect.indent_fmt(f, indent),
         }
     }
 }
