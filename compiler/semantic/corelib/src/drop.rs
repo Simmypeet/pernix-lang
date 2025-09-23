@@ -104,7 +104,22 @@ pub async fn initialize_drop_trait(
         )
         .await;
     input_lock
-        .set_input(where_clause::Key(drop_trait_id), Arc::default())
+        .set_input(
+            where_clause::Key(drop_trait_id),
+            Arc::from([where_clause::Predicate {
+                predicate: predicate::Predicate::NegativeMarker(
+                    NegativeMarker {
+                        marker_id: TargetID::CORE.make_global(copy_marker_id),
+                        generic_arguments: GenericArguments {
+                            lifetimes: Vec::new(),
+                            types: vec![t_ty.clone()],
+                            constants: Vec::new(),
+                        },
+                    },
+                ),
+                span: None,
+            }]),
+        )
         .await;
     input_lock
         .set_input(
@@ -164,29 +179,13 @@ pub async fn initialize_drop_trait(
         input_lock
             .set_input(
                 where_clause::Key(drop_function_id),
-                Arc::from([
-                    where_clause::Predicate {
-                        predicate: predicate::Predicate::type_outlives(
-                            t_ty.clone(),
-                            a_lt,
-                        ),
-                        span: None,
-                    },
-                    where_clause::Predicate {
-                        predicate: predicate::Predicate::NegativeMarker(
-                            NegativeMarker {
-                                marker_id: TargetID::CORE
-                                    .make_global(copy_marker_id),
-                                generic_arguments: GenericArguments {
-                                    lifetimes: Vec::new(),
-                                    types: vec![t_ty.clone()],
-                                    constants: Vec::new(),
-                                },
-                            },
-                        ),
-                        span: None,
-                    },
-                ]),
+                Arc::from([where_clause::Predicate {
+                    predicate: predicate::Predicate::type_outlives(
+                        t_ty.clone(),
+                        a_lt,
+                    ),
+                    span: None,
+                }]),
             )
             .await;
 
