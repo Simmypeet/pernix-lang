@@ -243,7 +243,9 @@ impl Checker<'_> {
         resolution_span: &RelativeSpan,
     ) -> Result<(), executor::CyclicError> {
         match resolution {
-            Resolution::Module(_) | Resolution::Variant(_) => Ok(()),
+            Resolution::EffectOperation(_)
+            | Resolution::Module(_)
+            | Resolution::Variant(_) => Ok(()),
 
             Resolution::Generic(generic) => {
                 self.check_instantiation_predicates_by_generic_arguments(

@@ -143,7 +143,8 @@ impl Bind<&pernixc_syntax::QualifiedIdentifier> for Binder<'_> {
                 member_generic.id
             }
 
-            resolution @ Resolution::Module(_) => resolution.global_id(),
+            resolution @ (Resolution::Module(_)
+            | Resolution::EffectOperation(_)) => resolution.global_id(),
         };
 
         handler.receive(

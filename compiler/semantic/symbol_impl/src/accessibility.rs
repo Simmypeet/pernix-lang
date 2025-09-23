@@ -39,12 +39,13 @@ pub async fn executor(
         | Kind::TraitConstant
         | Kind::Marker
         | Kind::ExternFunction
+        | Kind::Effect
         | Kind::Function => {
             let table = engine.get_table_of_symbol(id).await;
             Ok(table.accessibilities.get(&id.id).copied().unwrap())
         }
 
-        Kind::Variant => Ok(engine
+        Kind::EffectOperation | Kind::Variant => Ok(engine
             .get_accessibility(Global::new(
                 id.target_id,
                 engine.get_parent(id).await.unwrap(),

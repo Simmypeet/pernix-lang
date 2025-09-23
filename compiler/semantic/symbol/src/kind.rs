@@ -45,6 +45,8 @@ pub enum Kind {
     TraitType,
     TraitFunction,
     TraitConstant,
+    Effect,
+    EffectOperation,
     Marker,
     PositiveImplementation,
     NegativeImplementation,
@@ -63,6 +65,7 @@ impl Kind {
                 | Self::Enum
                 | Self::Trait
                 | Self::PositiveImplementation
+                | Self::Effect
         )
     }
 
@@ -100,6 +103,8 @@ impl Kind {
             Self::ImplementationType => "implementation type",
             Self::ImplementationConstant => "implementation constant",
             Self::Marker => "marker",
+            Self::Effect => "effect",
+            Self::EffectOperation => "effect operation",
         }
     }
 
@@ -124,6 +129,7 @@ impl Kind {
                 | Self::ImplementationType
                 | Self::ImplementationFunction
                 | Self::ImplementationConstant
+                | Self::Effect
         )
     }
 
@@ -148,6 +154,7 @@ impl Kind {
                 | Self::ImplementationType
                 | Self::ImplementationFunction
                 | Self::ImplementationConstant
+                | Self::Effect
         )
     }
 
@@ -179,6 +186,7 @@ impl Kind {
                 | Self::TraitFunction
                 | Self::ImplementationFunction
                 | Self::ExternFunction
+                | Self::EffectOperation
         )
     }
 

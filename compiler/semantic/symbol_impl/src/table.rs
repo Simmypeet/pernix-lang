@@ -1990,6 +1990,11 @@ impl TableContext {
 
                         continue;
                     }
+
+                    ModuleMemberSyn::Effect(_) => {
+                        // effects are not yet supported
+                        continue;
+                    }
                 };
 
                 let member_id = module_member_builder

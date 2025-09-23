@@ -7,7 +7,10 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::{self, CyclicError};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{resolve_qualified_identifier, Resolution},
+    qualified_identifier::{
+        resolve_qualified_identifier, EffectOperation, MemberGeneric,
+        Resolution,
+    },
     term::{resolution_to_type, ResolutionToTypeError},
     Config,
 };
@@ -235,12 +238,16 @@ async fn check_valid_resolution(
             Ok(())
         }
 
-        Resolution::MemberGeneric(member_generic) => {
+        Resolution::EffectOperation(EffectOperation {
+            operation_id: global_id,
+            ..
+        })
+        | Resolution::MemberGeneric(MemberGeneric { id: global_id, .. }) => {
             storage.receive(
                 diagnostic::Diagnostic::InvalidSymbolForImplements(
                     InvalidSymbolForImplements {
                         qualified_identifier_span: qualified_identifier,
-                        symbol_id: member_generic.id,
+                        symbol_id: global_id,
                     },
                 ),
             );
