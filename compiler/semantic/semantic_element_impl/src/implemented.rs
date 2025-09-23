@@ -8,7 +8,7 @@ use pernixc_semantic_element::{
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
-use pernixc_symbol::{kind::FilterKey, name::get_qualified_name};
+use pernixc_symbol::kind::FilterKey;
 use pernixc_target::{get_all_target_ids, Global, TargetID};
 use pernixc_tokio::scoped;
 
@@ -134,7 +134,6 @@ pub async fn implemented_executor(
     unsafe {
         engine.start_parallel();
     }
-
 
     let result: Result<_, executor::CyclicError> =
         scoped!(|scoped| async move {
