@@ -550,9 +550,11 @@ impl<'ctx> Context<'_, 'ctx> {
             .await,
         );
 
-        self.function_map_mut()
+        assert!(self
+            .function_map_mut()
             .llvm_functions_by_key
-            .insert(key.clone(), llvm_function_signatue.clone());
+            .insert(key.clone(), llvm_function_signatue.clone())
+            .is_none());
 
         // build intrinsic function
         if key.callable_id.target_id == TargetID::CORE {
