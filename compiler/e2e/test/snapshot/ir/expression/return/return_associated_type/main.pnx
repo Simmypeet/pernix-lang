@@ -1,0 +1,11 @@
+public trait Fizz[T]:
+    public type Output
+
+    public function fizz(x: T) -> this::Output
+
+
+final implements[T] Fizz[T]:
+    type Output = T
+
+    function fizz(x: T) -> this::Output:
+        return x
