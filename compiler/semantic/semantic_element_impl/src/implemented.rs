@@ -8,8 +8,8 @@ use pernixc_semantic_element::{
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_stable_type_id::Identifiable;
-use pernixc_symbol::kind::FilterKey;
-use pernixc_target::{get_all_target_ids, Global};
+use pernixc_symbol::{kind::FilterKey, name::get_qualified_name};
+use pernixc_target::{get_all_target_ids, Global, TargetID};
 use pernixc_tokio::scoped;
 
 #[derive(
@@ -49,6 +49,19 @@ pub async fn implemented_in_target_executor(
     Arc<HashSet<Global<pernixc_symbol::ID>>>,
     pernixc_query::runtime::executor::CyclicError,
 > {
+    if key.target_id == TargetID::CORE {
+        assert_ne!(
+            key.implementable_id.target_id,
+            TargetID::CORE,
+            "core library should've explicitly specified implementations for \
+             its own traits and markers "
+        );
+
+        // core library will never implement traits or markers from other
+        // targets
+        return Ok(Arc::new(HashSet::default()));
+    }
+
     let implementations = engine
         .query(&pernixc_symbol::kind::FilterKey {
             target_id: key.target_id,
@@ -121,6 +134,7 @@ pub async fn implemented_executor(
     unsafe {
         engine.start_parallel();
     }
+
 
     let result: Result<_, executor::CyclicError> =
         scoped!(|scoped| async move {

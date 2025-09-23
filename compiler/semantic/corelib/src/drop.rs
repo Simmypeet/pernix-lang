@@ -18,12 +18,13 @@ use pernixc_symbol::{
 };
 use pernixc_target::TargetID;
 use pernixc_term::{
+    generic_arguments::GenericArguments,
     generic_parameters::{
         self, GenericParameters, LifetimeParameter, LifetimeParameterID,
         TypeParameter, TypeParameterID,
     },
     lifetime::Lifetime,
-    predicate,
+    predicate::{self, NegativeMarker},
     r#type::{Qualifier, Reference, Type},
 };
 
@@ -42,11 +43,13 @@ pub const DROP_FUNCTION_SEQUENCE: [&str; 3] = ["core", "Drop", "drop"];
 /// public trait Drop[T]:
 ///     public function drop['a](self: &'a mut T):
 ///         where:
+///             marker not Copy[T]
 ///             T: 'a
 /// ```
 #[allow(clippy::too_many_lines)]
 pub async fn initialize_drop_trait(
     engine: &mut Arc<Engine>,
+    copy_marker_id: pernixc_symbol::ID,
 ) -> pernixc_symbol::ID {
     let (root_target_module_id, drop_trait_id, drop_function_id) = {
         let tracked_engine = engine.tracked();
@@ -161,13 +164,29 @@ pub async fn initialize_drop_trait(
         input_lock
             .set_input(
                 where_clause::Key(drop_function_id),
-                Arc::from([where_clause::Predicate {
-                    predicate: predicate::Predicate::type_outlives(
-                        t_ty.clone(),
-                        a_lt,
-                    ),
-                    span: None,
-                }]),
+                Arc::from([
+                    where_clause::Predicate {
+                        predicate: predicate::Predicate::type_outlives(
+                            t_ty.clone(),
+                            a_lt,
+                        ),
+                        span: None,
+                    },
+                    where_clause::Predicate {
+                        predicate: predicate::Predicate::NegativeMarker(
+                            NegativeMarker {
+                                marker_id: TargetID::CORE
+                                    .make_global(copy_marker_id),
+                                generic_arguments: GenericArguments {
+                                    lifetimes: Vec::new(),
+                                    types: vec![t_ty.clone()],
+                                    constants: Vec::new(),
+                                },
+                            },
+                        ),
+                        span: None,
+                    },
+                ]),
             )
             .await;
 

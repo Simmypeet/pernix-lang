@@ -25,8 +25,9 @@ pub async fn initialize_corelib(engine: &mut Arc<Engine>) {
         )
     };
 
-    let drop_trait_id = drop::initialize_drop_trait(engine).await;
     let copy_marker_id = copy::initialize_copy_marker(engine).await;
+    let drop_trait_id =
+        drop::initialize_drop_trait(engine, copy_marker_id).await;
 
     let input_lock = Arc::get_mut(engine).unwrap().input_lock();
 
