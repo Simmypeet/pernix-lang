@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use pernixc_serialize::Serialize;
+use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::ID;
 use pernixc_target::Global;
@@ -20,6 +20,7 @@ use pernixc_term::effect::Effect;
     Hash,
     StableHash,
     Serialize,
+    Deserialize,
     pernixc_query::Key,
 )]
 #[value(Arc<Effect>)]
