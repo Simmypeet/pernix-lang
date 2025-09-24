@@ -6,6 +6,7 @@ use pernixc_stable_hash::StableHash;
 
 pub mod constant;
 pub mod display;
+pub mod effect;
 pub mod error;
 pub mod generic_arguments;
 pub mod generic_parameters;
