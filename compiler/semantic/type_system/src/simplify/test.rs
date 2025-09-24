@@ -164,7 +164,7 @@ async fn with_lifetime_matching() {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
-            lifetimes: vec![first_lifetime],
+            lifetimes: vec![first_lifetime.clone()],
             types: Vec::new(),
             constants: Vec::new(),
         },
@@ -174,7 +174,7 @@ async fn with_lifetime_matching() {
         id: Global::new(TargetID::TEST, pernixc_symbol::ID(2)),
         member_generic_arguments: GenericArguments::default(),
         parent_generic_arguments: GenericArguments {
-            lifetimes: vec![second_lifetime],
+            lifetimes: vec![second_lifetime.clone()],
             types: Vec::new(),
             constants: Vec::new(),
         },
@@ -236,8 +236,8 @@ async fn with_lifetime_matching() {
 
     assert!(result.constraints.contains(
         &LifetimeConstraint::LifetimeOutlives(Outlives::new(
-            second_lifetime,
-            first_lifetime
+            second_lifetime.clone(),
+            first_lifetime.clone()
         ))
     ));
     assert!(result.constraints.contains(
@@ -344,6 +344,7 @@ async fn multiple_equivalences() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)]
 async fn transitive() {
     // TraitA['a] = TraitB['b]
     // TraitB['c] = bool
@@ -374,9 +375,9 @@ async fn transitive() {
     let b_lt = lt(1);
     let c_lt = lt(2);
 
-    let trait_a = trait_member(2, a_lt);
-    let trait_b_b = trait_member(3, b_lt);
-    let trait_b_c = trait_member(3, c_lt);
+    let trait_a = trait_member(2, a_lt.clone());
+    let trait_b_b = trait_member(3, b_lt.clone());
+    let trait_b_c = trait_member(3, c_lt.clone());
     let equivalent = Type::Primitive(Primitive::Bool);
 
     let mut engine = Arc::new(Engine::default());
@@ -455,7 +456,10 @@ async fn transitive() {
     assert_eq!(result.constraints.len(), 2);
 
     assert!(result.constraints.contains(
-        &LifetimeConstraint::LifetimeOutlives(Outlives::new(b_lt, c_lt))
+        &LifetimeConstraint::LifetimeOutlives(Outlives::new(
+            b_lt.clone(),
+            c_lt.clone()
+        ))
     ));
     assert!(result.constraints.contains(
         &LifetimeConstraint::LifetimeOutlives(Outlives::new(c_lt, b_lt))

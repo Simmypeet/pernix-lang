@@ -117,7 +117,7 @@ impl Property<Type> for ByEquality {
 
             let outlives = Outlives::new(
                 Type::TraitMember(self.equality.clone()),
-                inner_bound,
+                inner_bound.clone(),
             );
 
             let environment = Environment::new(
@@ -306,7 +306,7 @@ impl Property<Type> for LifetimeMatching {
             );
 
             if environment
-                .query(&Outlives::new(ty_operand.clone(), self.bound))
+                .query(&Outlives::new(ty_operand.clone(), self.bound.clone()))
                 .await?
                 .is_none()
             {
@@ -319,11 +319,11 @@ impl Property<Type> for LifetimeMatching {
                             constants: Vec::new(),
                         },
                     }),
-                    bound: self.bound,
+                    bound: self.bound.clone(),
                 }));
             }
 
-            Ok((ty_operand, self.bound))
+            Ok((ty_operand, self.bound.clone()))
         })
     }
 
@@ -439,17 +439,20 @@ where
             );
 
             if environment
-                .query(&Outlives::new(self.term.clone(), self.bound))
+                .query(&Outlives::new(self.term.clone(), self.bound.clone()))
                 .await?
                 .is_none()
             {
                 premise.predicates.insert(
-                    Outlives { operand: self.term.clone(), bound: self.bound }
-                        .into(),
+                    Outlives {
+                        operand: self.term.clone(),
+                        bound: self.bound.clone(),
+                    }
+                    .into(),
                 );
             }
 
-            Ok((self.term.clone(), self.bound))
+            Ok((self.term.clone(), self.bound.clone()))
         })
     }
 
@@ -479,16 +482,22 @@ impl<T: Term> Property<T> for Transitive<T> {
             );
 
             if environment
-                .query(&Outlives::new(inner_operand.clone(), self.final_bound))
+                .query(&Outlives::new(
+                    inner_operand.clone(),
+                    self.final_bound.clone(),
+                ))
                 .await?
                 .is_none()
             {
                 premise.predicates.insert(Predicate::LifetimeOutlives(
-                    Outlives { operand: inner_bound, bound: self.final_bound },
+                    Outlives {
+                        operand: inner_bound,
+                        bound: self.final_bound.clone(),
+                    },
                 ));
             }
 
-            Ok((inner_operand, self.final_bound))
+            Ok((inner_operand, self.final_bound.clone()))
         })
     }
 
