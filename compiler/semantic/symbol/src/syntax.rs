@@ -224,3 +224,22 @@ pub struct FunctionSignatureKey(pub Global<ID>);
 >)]
 #[extend(method(get_function_body_syntax), no_cyclic)]
 pub struct FunctionBodyKey(pub Global<ID>);
+
+/// Retrieves the function body syntax defined to a function.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    StableHash,
+    pernixc_query::Key,
+)]
+#[value(Option<pernixc_syntax::item::function::DoEffect>)]
+#[extend(method(get_function_do_syntax), no_cyclic)]
+pub struct FunctionDoEffectSyntax(pub Global<ID>);
