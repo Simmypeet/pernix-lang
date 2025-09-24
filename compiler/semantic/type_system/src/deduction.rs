@@ -298,10 +298,12 @@ impl CompatiblePredicate<Lifetime> for UniToSubs<'_> {
             Ok(Some(Succeeded::satisfied_with(
                 [
                     LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                        *lhs, *rhs,
+                        lhs.clone(),
+                        rhs.clone(),
                     )),
                     LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                        *rhs, *lhs,
+                        rhs.clone(),
+                        lhs.clone(),
                     )),
                 ]
                 .into_iter()
@@ -347,10 +349,10 @@ impl CompatiblePredicate<Type> for UniToSubs<'_> {
                     *self.0 = true;
                 } else {
                     constraints.insert(LifetimeConstraint::LifetimeOutlives(
-                        Outlives::new(lhs, rhs),
+                        Outlives::new(lhs.clone(), rhs.clone()),
                     ));
                     constraints.insert(LifetimeConstraint::LifetimeOutlives(
-                        Outlives::new(rhs, lhs),
+                        Outlives::new(rhs.clone(), lhs.clone()),
                     ));
                 }
             }
@@ -484,12 +486,12 @@ impl<N: Normalizer> Environment<'_, N> {
                     } else {
                         constraints.insert(
                             LifetimeConstraint::LifetimeOutlives(
-                                Outlives::new(key, value),
+                                Outlives::new(key.clone(), value.clone()),
                             ),
                         );
                         constraints.insert(
                             LifetimeConstraint::LifetimeOutlives(
-                                Outlives::new(value, key),
+                                Outlives::new(value.clone(), key.clone()),
                             ),
                         );
                     }

@@ -226,8 +226,8 @@ impl<N: Normalizer> Environment<'_, N> {
                         .filter_map(|x| x.0.into_lifetime().ok())
                         .map(|x| {
                             LifetimeConstraint::LifetimeOutlives(Outlives::new(
-                                *x,
-                                outlives.bound,
+                                x.clone(),
+                                outlives.bound.clone(),
                             ))
                         })
                         .collect(),
