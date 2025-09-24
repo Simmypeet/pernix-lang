@@ -116,7 +116,7 @@ impl Formatter<'_, '_> {
 
         *self
             .forall_lifetime_names
-            .entry(*forall_lifetime)
+            .entry(forall_lifetime.clone())
             .or_insert_with(|| len)
     }
 }

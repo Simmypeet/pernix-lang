@@ -295,7 +295,7 @@ impl Instantiation {
                     let inst = self
                         .lifetimes
                         .get(&lifetime_parameter)
-                        .copied()
+                        .cloned()
                         .unwrap();
 
                     inst

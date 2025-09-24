@@ -380,20 +380,20 @@ impl Location<Type, Lifetime> for SubLifetimeLocation {
     fn get_sub_term(self, term: &Type) -> Option<Lifetime> {
         match (term, self) {
             (Type::Reference(reference), Self::Reference) => {
-                Some(reference.lifetime)
+                Some(reference.lifetime.clone())
             }
 
             (Type::Symbol(symbol), Self::Symbol(location)) => {
-                symbol.get_term(location).copied()
+                symbol.get_term(location).cloned()
             }
 
             (
                 Type::MemberSymbol(member_symbol),
                 Self::MemberSymbol(location),
-            ) => member_symbol.get_term(location).copied(),
+            ) => member_symbol.get_term(location).cloned(),
 
             (Type::TraitMember(trait_member), Self::TraitMember(location)) => {
-                trait_member.0.get_term(location.0).copied()
+                trait_member.0.get_term(location.0).cloned()
             }
 
             _ => None,
@@ -879,8 +879,8 @@ impl Match for Type {
             {
                 Some(Substructural {
                     lifetimes: vec![Matching {
-                        lhs: lhs.lifetime,
-                        rhs: rhs.lifetime,
+                        lhs: lhs.lifetime.clone(),
+                        rhs: rhs.lifetime.clone(),
                         lhs_location: SubLifetimeLocation::Reference,
                         rhs_location: SubLifetimeLocation::Reference,
                     }],

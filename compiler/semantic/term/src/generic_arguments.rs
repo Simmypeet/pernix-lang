@@ -327,8 +327,8 @@ impl GenericArguments {
         for (idx, (lhs, rhs)) in self
             .lifetimes
             .iter()
-            .copied()
-            .zip(other.lifetimes.iter().copied())
+            .cloned()
+            .zip(other.lifetimes.iter().cloned())
             .enumerate()
         {
             let location = to_location(idx);

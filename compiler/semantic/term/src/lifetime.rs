@@ -46,7 +46,7 @@ pub struct NamedForall {
     /// lifetime.
     pub span: RelativeSpan,
 
-    //// The name of the named for all lifetime.
+    /// The name of the named for all lifetime.
     pub shared_str: SharedStr,
 }
 
