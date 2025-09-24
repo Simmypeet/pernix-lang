@@ -6,6 +6,7 @@
 //! This crate also doesn't contain the IR of the function, it's defined in
 //! `pernixc_ir` crate.
 
+pub mod do_effect;
 pub mod elided_lifetime;
 pub mod fields;
 pub mod implemented;
