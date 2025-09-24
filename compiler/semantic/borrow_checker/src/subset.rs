@@ -888,8 +888,8 @@ impl<'a, N: Normalizer> Walker<'a, N> {
                 match predicate {
                     Predicate::LifetimeOutlives(outlives) => {
                         let (Some(operand), Some(bound)) = (
-                            outlives.operand.try_into().ok(),
-                            outlives.bound.try_into().ok(),
+                            outlives.operand.clone().try_into().ok(),
+                            outlives.bound.clone().try_into().ok(),
                         ) else {
                             continue;
                         };
@@ -907,13 +907,15 @@ impl<'a, N: Normalizer> Walker<'a, N> {
                     }
 
                     Predicate::TypeOutlives(outlives) => {
-                        let Some(bound) = outlives.bound.try_into().ok() else {
+                        let Some(bound) =
+                            outlives.bound.clone().try_into().ok()
+                        else {
                             continue;
                         };
 
                         for operand in RecursiveIterator::new(&outlives.operand)
                             .filter_map(|x| x.0.into_lifetime().ok())
-                            .filter_map(|x| (*x).try_into().ok())
+                            .filter_map(|x| x.clone().try_into().ok())
                         {
                             adding_edges.insert((
                                 RegionAt::Universal(UniversalRegionAt {

@@ -224,7 +224,7 @@ async fn type_of_reference_of_assignment(
             x.map(|x| {
                 Type::Reference(pernixc_term::r#type::Reference {
                     qualifier: reference_of.qualifier,
-                    lifetime: reference_of.lifetime,
+                    lifetime: reference_of.lifetime.clone(),
                     pointee: Box::new(x),
                 })
             })

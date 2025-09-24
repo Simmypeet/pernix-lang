@@ -54,7 +54,7 @@ impl<N: Normalizer> Context<'_, N> {
             borrow_created: None,
             overwritten_regions: RecursiveIterator::new(&address_ty)
                 .filter_map(|x| x.0.into_lifetime().ok())
-                .filter_map(|x| Region::try_from(*x).ok())
+                .filter_map(|x| Region::try_from(x.clone()).ok())
                 .collect::<HashSet<_>>(),
         })
     }

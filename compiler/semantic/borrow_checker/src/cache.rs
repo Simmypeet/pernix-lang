@@ -72,7 +72,7 @@ impl RegisterInfos {
                 cache.insert(inst, RegisterInfo {
                     regions: RecursiveIterator::new(&ty.result)
                         .filter_map(|x| x.0.into_lifetime().ok())
-                        .filter_map(|x| (*x).try_into().ok())
+                        .filter_map(|x| x.clone().try_into().ok())
                         .collect(),
                     r#type: ty.result,
                     assigned_at: point,
@@ -109,7 +109,7 @@ impl RegionVariances {
                 RecursiveIterator::new(&alloca.r#type).filter_map(|x| {
                     x.0.into_lifetime()
                         .ok()
-                        .and_then(|x| Region::try_from(*x).ok())
+                        .and_then(|x| Region::try_from(x.clone()).ok())
                         .map(|y| (y, x.1))
                 })
             {
@@ -152,7 +152,7 @@ impl RegionVariances {
                         .ok()
                         .and_then(|x| {
                             // convert the lifetime to a region
-                            UniversalRegion::try_from(*x)
+                            UniversalRegion::try_from(x.clone())
                                 .ok()
                                 .map(Region::Universal)
                         })

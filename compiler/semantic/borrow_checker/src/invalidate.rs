@@ -46,7 +46,7 @@ impl Recursive<'_, Lifetime> for Contains<'_> {
         term: &'_ Lifetime,
         _: impl Iterator<Item = TermLocation>,
     ) -> bool {
-        let Some(Region::Local(region)) = (*term).try_into().ok() else {
+        let Some(Region::Local(region)) = term.clone().try_into().ok() else {
             return true;
         };
 

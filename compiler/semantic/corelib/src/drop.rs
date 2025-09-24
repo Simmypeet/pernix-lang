@@ -182,7 +182,7 @@ pub async fn initialize_drop_trait(
                 Arc::from([where_clause::Predicate {
                     predicate: predicate::Predicate::type_outlives(
                         t_ty.clone(),
-                        a_lt,
+                        a_lt.clone(),
                     ),
                     span: None,
                 }]),
