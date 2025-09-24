@@ -5,6 +5,7 @@ use crate::build::Build;
 pub mod diagnostic;
 
 mod build;
+mod do_effect;
 mod fields;
 mod function_signature;
 mod generic_parameters;
