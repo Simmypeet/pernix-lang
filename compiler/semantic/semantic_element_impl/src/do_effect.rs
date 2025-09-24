@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pernixc_handler::Storage;
+use pernixc_handler::{Handler, Storage};
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_resolution::{
     forall_lifetimes::create_forall_lifetimes,
@@ -9,6 +9,7 @@ use pernixc_resolution::{
     Config, ExtraNamespace,
 };
 use pernixc_semantic_element::do_effect;
+use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     syntax::get_function_do_effect_syntax,
@@ -26,6 +27,22 @@ use crate::{
 };
 
 pub mod diagnostic;
+
+async fn to_effect(
+    engine: &TrackedEngine,
+    resolution: Resolution,
+) -> Option<effect::Unit> {
+    let Resolution::Generic(symbol) = resolution else {
+        return None;
+    };
+
+    let kind = engine.get_kind(symbol.id).await;
+
+    (kind == Kind::Effect).then_some(effect::Unit(Symbol {
+        id: symbol.id,
+        generic_arguments: symbol.generic_arguments,
+    }))
+}
 
 async fn build_do_effect(
     engine: &TrackedEngine,
@@ -73,17 +90,21 @@ async fn build_do_effect(
             }
         },
     };
+    let id = resolution.global_id();
 
-    let Resolution::Generic(symbol) = resolution else {
-        return Ok(None);
-    };
+    to_effect(engine, resolution).await.map_or_else(
+        || {
+            handler.receive(diagnostic::Diagnostic::EffectExpected(
+                diagnostic::EffectExpected {
+                    found: id,
+                    found_span: q_ident.span(),
+                },
+            ));
 
-    let kind = engine.get_kind(symbol.id).await;
-
-    Ok((kind == Kind::Effect).then_some(effect::Unit(Symbol {
-        id: symbol.id,
-        generic_arguments: symbol.generic_arguments,
-    })))
+            Ok(None)
+        },
+        |effect| Ok(Some(effect)),
+    )
 }
 
 impl Build for do_effect::Key {

@@ -1,0 +1,6 @@
+public struct TotallyNotAnEffect:
+    pass
+
+
+public function test() do TotallyNotAnEffect:
+    pass
