@@ -84,7 +84,7 @@ impl IndentDisplay for Operation {
         formatter: &mut std::fmt::Formatter<'_>,
         indent: usize,
     ) -> std::fmt::Result {
-        write!(formatter, "do {}", self.identifier)?;
+        write!(formatter, "{}", self.identifier.0)?;
 
         self.parameters.indent_fmt(formatter, indent)?;
 

@@ -24,7 +24,6 @@ abstract_tree::abstract_tree! {
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Operation {
-        pub do_keyword: Keyword = expect::Keyword::Do,
         pub identifier: Identifier = expect::Identifier,
         pub parameters: function::Parameters = ast::<function::Parameters>(),
         pub return_type: function::ReturnType
