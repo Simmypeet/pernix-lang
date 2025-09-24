@@ -15,6 +15,7 @@ use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 use crate::{diagnostic::Diagnostic, qualified_identifier::Resolution};
 
 pub mod diagnostic;
+pub mod forall_lifetimes;
 pub mod generic_parameter_namespace;
 pub mod qualified_identifier;
 pub mod term;

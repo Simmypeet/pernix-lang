@@ -1,13 +1,12 @@
 //! Contains the builder for the where clause.
 
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::sync::Arc;
 
-use flexstr::SharedStr;
 use pernixc_handler::{Handler, Storage};
-use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
+    forall_lifetimes::create_forall_lifetimes,
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{resolve_qualified_identifier, Generic, Resolution},
     term::{resolve_lifetime, resolve_type},
@@ -23,7 +22,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     generic_arguments::{MemberSymbol, TraitMember},
     generic_parameters::{get_generic_parameters, TypeParameterID},
-    lifetime::{self, Forall, Lifetime},
+    lifetime::Lifetime,
     predicate::{self, Compatible, NegativeMarker, PositiveMarker},
     r#type::Type,
     visitor::RecursiveIterator,
@@ -34,43 +33,12 @@ use crate::{
     occurrences::Occurrences,
     where_clause::diagnostic::{
         Diagnostic, ForallLifetimeIsNotAllowedInOutlivesPredicate,
-        HigherRankedLifetimeRedefinition, PredicateKind,
-        UnexpectedSymbolInPredicate, UnexpectedTypeEqualityPredicate,
+        PredicateKind, UnexpectedSymbolInPredicate,
+        UnexpectedTypeEqualityPredicate,
     },
 };
 
 pub mod diagnostic;
-
-fn create_forall_lifetimes(
-    namespace: &mut HashMap<SharedStr, Lifetime>,
-    syntax_tree: &pernixc_syntax::predicate::HigherRankedLifetimes,
-    handler: &dyn Handler<Diagnostic>,
-) {
-    for syn in syntax_tree
-        .lifetimes()
-        .into_iter()
-        .flat_map(|x| x.lifetimes().collect::<Vec<_>>())
-    {
-        let Some(identifier) = syn.identifier() else {
-            continue;
-        };
-
-        match namespace.entry(identifier.kind.0) {
-            Entry::Vacant(entry) => {
-                entry.insert(Lifetime::Forall(Forall::Named(
-                    lifetime::NamedForall::new(identifier.span),
-                )));
-            }
-            Entry::Occupied(_) => {
-                handler.receive(Diagnostic::HigherRankedLifetimeRedefinition(
-                    HigherRankedLifetimeRedefinition {
-                        redefinition_span: syn.span(),
-                    },
-                ));
-            }
-        }
-    }
-}
 
 async fn create_trait_member_predicates(
     engine: &TrackedEngine,

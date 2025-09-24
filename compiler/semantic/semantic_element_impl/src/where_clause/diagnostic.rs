@@ -3,7 +3,9 @@
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor, TrackedEngine};
-use pernixc_resolution::diagnostic as resolution_diagnostic;
+use pernixc_resolution::diagnostic::{
+    self as resolution_diagnostic, ForallLifetimeRedefinition,
+};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::{get_source_file_path, ByteIndex};
 use pernixc_stable_hash::StableHash;
@@ -32,7 +34,7 @@ use pernixc_term::{lifetime, r#type::Type};
 )]
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
-    HigherRankedLifetimeRedefinition(HigherRankedLifetimeRedefinition),
+    ForallLifetimeRedefinition(ForallLifetimeRedefinition),
     UnexpectedSymbolInPredicate(UnexpectedSymbolInPredicate),
     UnexpectedTypeEqualityPredicate(UnexpectedTypeEqualityPredicate),
     ForallLifetimeIsNotAllowedInOutlivesPredicate(
@@ -48,55 +50,13 @@ impl Report for Diagnostic {
     {
         match self {
             Self::Resolution(d) => d.report(engine).await,
-            Self::HigherRankedLifetimeRedefinition(d) => d.report(engine).await,
+            Self::ForallLifetimeRedefinition(d) => d.report(engine).await,
             Self::UnexpectedSymbolInPredicate(d) => d.report(engine).await,
             Self::UnexpectedTypeEqualityPredicate(d) => d.report(engine).await,
             Self::ForallLifetimeIsNotAllowedInOutlivesPredicate(d) => {
                 d.report(engine).await
             }
         }
-    }
-}
-
-/// The higher-ranked lifetime with the same name already exists in the given
-/// scope.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-)]
-pub struct HigherRankedLifetimeRedefinition {
-    /// The span of the redefinition.
-    pub redefinition_span: RelativeSpan,
-}
-
-impl Report for HigherRankedLifetimeRedefinition {
-    async fn report(
-        &self,
-        engine: &TrackedEngine,
-    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
-    {
-        Ok(pernixc_diagnostic::Rendered {
-            primary_highlight: Some(Highlight::new(
-                engine.to_absolute_span(&self.redefinition_span).await,
-                Some(
-                    "higher-ranked lifetime with the same name already exists \
-                     in this scope"
-                        .to_string(),
-                ),
-            )),
-            message: "high-ranked lifetime redefinition".to_string(),
-            severity: Severity::Error,
-            help_message: None,
-            related: Vec::new(),
-        })
     }
 }
 
