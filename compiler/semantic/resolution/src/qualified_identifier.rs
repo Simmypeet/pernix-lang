@@ -212,7 +212,13 @@ fn to_resolution(
                 generic_arguments: generic_arguments.unwrap(),
             })
         }
-        Kind::EffectOperation => todo!(),
+        Kind::EffectOperation => Resolution::EffectOperation(EffectOperation {
+            operation_id: resolved_id,
+            generic_arguments: latest_resolution
+                .into_generic()
+                .unwrap()
+                .generic_arguments,
+        }),
         Kind::Variant => Resolution::Variant(Variant {
             variant_id: resolved_id,
             generic_arguments: latest_resolution
