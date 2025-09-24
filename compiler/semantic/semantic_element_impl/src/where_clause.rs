@@ -237,7 +237,7 @@ async fn create_outlives_predicates(
     }
 
     let Some(operand) =
-        extra_namespace.lifetimes.get(operand.kind.0.as_str()).copied()
+        extra_namespace.lifetimes.get(operand.kind.0.as_str()).cloned()
     else {
         handler.receive(
             pernixc_resolution::diagnostic::LifetimeParameterNotFound {
@@ -253,7 +253,7 @@ async fn create_outlives_predicates(
     for bound in bounds {
         where_clause.push(where_clause::Predicate {
             predicate: predicate::Predicate::LifetimeOutlives(
-                predicate::Outlives { operand, bound },
+                predicate::Outlives { operand: operand.clone(), bound },
             ),
             span: Some(syntax_tree.span()),
         });
@@ -430,7 +430,7 @@ async fn create_type_bound_predicates_internal(
 
                 let forall_lts_in_ty = RecursiveIterator::new(ty)
                     .filter_map(|x| {
-                        x.0.as_lifetime().and_then(|x| x.as_forall().copied())
+                        x.0.as_lifetime().and_then(|x| x.as_forall().cloned())
                     })
                     .collect::<Vec<_>>();
 

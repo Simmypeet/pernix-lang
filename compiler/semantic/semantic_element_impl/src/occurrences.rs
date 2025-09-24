@@ -68,7 +68,7 @@ impl pernixc_resolution::Observer for Occurrences {
         syntax_tree: &pernixc_syntax::Lifetime,
         _: &dyn Handler<pernixc_resolution::diagnostic::Diagnostic>,
     ) {
-        self.lifetimes.push((*lifetime, syntax_tree.clone()));
+        self.lifetimes.push((lifetime.clone(), syntax_tree.clone()));
     }
 
     fn on_constant_arguments_resolved(

@@ -235,7 +235,7 @@ impl Build for Key {
                         implied_predicate_candidates.push((
                             ImpliedPredicate::TypeOutlives(Outlives::new(
                                 (*reference.pointee).clone(),
-                                reference.lifetime,
+                                reference.lifetime.clone(),
                             )),
                             None,
                             *span,
@@ -385,7 +385,7 @@ struct ReturnElidedLifetimeProvider {
 }
 
 impl ElidedTermProvider<Lifetime> for ReturnElidedLifetimeProvider {
-    fn create(&mut self) -> Lifetime { self.lifetime }
+    fn create(&mut self) -> Lifetime { self.lifetime.clone() }
 }
 
 struct AllLifetimeParameters {
