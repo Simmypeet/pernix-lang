@@ -387,7 +387,7 @@ pub fn resolve_lifetime_parameter(
     // reach to the extra namespace first
     if let Some(extra_lifeime) = config
         .extra_namespace
-        .and_then(|x| x.lifetimes.get(identifier.kind.0.as_str()).copied())
+        .and_then(|x| x.lifetimes.get(identifier.kind.0.as_str()).cloned())
     {
         return extra_lifeime;
     }

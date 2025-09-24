@@ -29,10 +29,13 @@ pub fn create_forall_lifetimes(
             continue;
         };
 
-        match namespace.entry(identifier.kind.0) {
+        match namespace.entry(identifier.kind.0.clone()) {
             Entry::Vacant(entry) => {
                 entry.insert(Lifetime::Forall(Forall::Named(
-                    lifetime::NamedForall::new(identifier.span),
+                    lifetime::NamedForall::new(
+                        identifier.span,
+                        identifier.kind.0,
+                    ),
                 )));
             }
             Entry::Occupied(_) => {
