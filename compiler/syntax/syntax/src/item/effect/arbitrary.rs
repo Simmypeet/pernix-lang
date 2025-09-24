@@ -54,7 +54,6 @@ reference! {
     pub struct Operation for super::Operation {
         #{map_input_assert(identifier, &identifier.kind)}
         pub identifier (Identifier),
-        pub generic_parameters (Option<GenericParameters>),
         pub parameters (function::arbitrary::Parameters),
         pub return_type (Option<function::arbitrary::ReturnType>),
     }
@@ -67,20 +66,14 @@ impl Arbitrary for Operation {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
-            proptest::option::of(GenericParameters::arbitrary()),
             function::arbitrary::Parameters::arbitrary(),
             proptest::option::of(function::arbitrary::ReturnType::arbitrary()),
         )
-            .prop_map(
-                |(identifier, generic_parameters, parameters, return_type)| {
-                    Self {
-                        identifier,
-                        generic_parameters,
-                        parameters,
-                        return_type,
-                    }
-                },
-            )
+            .prop_map(|(identifier, parameters, return_type)| Self {
+                identifier,
+                parameters,
+                return_type,
+            })
             .boxed()
     }
 }
@@ -92,10 +85,6 @@ impl IndentDisplay for Operation {
         indent: usize,
     ) -> std::fmt::Result {
         write!(formatter, "do {}", self.identifier)?;
-
-        if let Some(generic_parameters) = &self.generic_parameters {
-            generic_parameters.indent_fmt(formatter, indent)?;
-        }
 
         self.parameters.indent_fmt(formatter, indent)?;
 

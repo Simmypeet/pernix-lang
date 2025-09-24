@@ -26,8 +26,6 @@ abstract_tree::abstract_tree! {
     pub struct Operation {
         pub do_keyword: Keyword = expect::Keyword::Do,
         pub identifier: Identifier = expect::Identifier,
-        pub generic_parameters: GenericParameters
-            = ast::<GenericParameters>().optional(),
         pub parameters: function::Parameters = ast::<function::Parameters>(),
         pub return_type: function::ReturnType
             = ast::<function::ReturnType>().optional(),
