@@ -3,6 +3,7 @@
 use std::fmt::Write;
 
 use enum_as_inner::EnumAsInner;
+use flexstr::SharedStr;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
 use pernixc_serialize::{Deserialize, Serialize};
@@ -28,7 +29,6 @@ pub mod arbitrary;
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -45,6 +45,9 @@ pub struct NamedForall {
     /// The relative span can be uniquely identified the named for-all
     /// lifetime.
     pub span: RelativeSpan,
+
+    //// The name of the named for all lifetime.
+    pub shared_str: SharedStr,
 }
 
 /// From which semantic element the forall lifetime was generated.
@@ -99,7 +102,6 @@ pub struct GeneratedForall {
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -144,7 +146,6 @@ pub type ElidedLifetimeID = MemberID<pernixc_arena::ID<ElidedLifetime>>;
 #[derive(
     Debug,
     Clone,
-    Copy,
     PartialEq,
     Eq,
     PartialOrd,

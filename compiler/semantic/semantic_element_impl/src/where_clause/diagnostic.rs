@@ -232,6 +232,13 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
                     forall_lifetimes
                         .push(source.content()[abs_span.range()].to_string());
                 }
+
+                lifetime::Forall::Generated(generated_forall) => {
+                    forall_lifetimes.push(format!(
+                        "'{}",
+                        generated_forall.unique_counter
+                    ));
+                }
             }
         }
         let forall_lifetimes = forall_lifetimes.join(", ");
