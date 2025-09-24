@@ -7,9 +7,9 @@ use pernixc_diagnostic::Report;
 use pernixc_ir::Key as IRKey;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
-    fields::Key as FieldsKey, import::Key as ImportKey,
-    type_alias::Key as TypeAliasKey, variant::Key as VariantKey,
-    where_clause::Key as WhereClauseKey,
+    do_effect::Key as DoEffectKey, fields::Key as FieldsKey,
+    import::Key as ImportKey, type_alias::Key as TypeAliasKey,
+    variant::Key as VariantKey, where_clause::Key as WhereClauseKey,
 };
 use pernixc_source_file::ByteIndex;
 use pernixc_symbol::{
@@ -113,6 +113,13 @@ pub async fn single_rendered_executor(
         let diags = engine
             .query(&BuildDiagnosticKey::new(FunctionSignatureKey(id)))
             .await?;
+
+        for diag in diags.iter() {
+            final_diagnostics.push(diag.report(engine).await?);
+        }
+
+        let diags =
+            engine.query(&BuildDiagnosticKey::new(DoEffectKey(id))).await?;
 
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await?);
