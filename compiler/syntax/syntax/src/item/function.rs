@@ -10,8 +10,8 @@ use pernixc_stable_hash::StableHash;
 
 use crate::{
     item::generic_parameters::GenericParameters, pattern::Irrefutable,
-    r#type::Type, statement::Statement, AccessModifier, Identifier, Keyword,
-    Punctuation,
+    predicate::HigherRankedLifetimes, r#type::Type, statement::Statement,
+    AccessModifier, Identifier, Keyword, Punctuation, QualifiedIdentifier,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -103,6 +103,106 @@ abstract_tree::abstract_tree! {
             = ast::<GenericParameters>().optional(),
         pub parameters: Parameters = ast::<Parameters>(),
         pub return_type: ReturnType = ast::<ReturnType>().optional(),
+        pub do_effect: DoEffect = ast::<DoEffect>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        StableHash
+    )]
+    pub struct DoEffect {
+        pub do_keyword: Keyword = expect::Keyword::Do,
+        pub effect_unit_list: EffectUnitListKind = ast::<EffectUnitListKind>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        StableHash
+    )]
+    pub struct EffectUnit {
+        pub higher_ranked_lifetimes: HigherRankedLifetimes =
+            ast::<HigherRankedLifetimes>().optional(),
+        pub qualified_identifier: QualifiedIdentifier =
+            ast::<QualifiedIdentifier>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        StableHash
+    )]
+    pub struct EffectUnitList {
+        pub effect_units: #[multi] EffectUnit
+            = ast::<EffectUnit>().repeat_all_with_separator('+'),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        Serialize,
+        Deserialize,
+        StableHash
+    )]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct ParenthesizedEffectUnitList {
+        pub effect_units: #[multi] EffectUnit
+            = ast::<EffectUnit>().repeat_all_with_separator('+'),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(
+        Debug,
+        Clone,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        StableHash,
+        Serialize,
+        Deserialize
+    )]
+    pub enum EffectUnitListKind {
+        EffectUnitList(EffectUnitList = ast::<EffectUnitList>()),
+        ParenthesizedEffectUnitList(ParenthesizedEffectUnitList
+            = ast::<ParenthesizedEffectUnitList>()),
     }
 }
 

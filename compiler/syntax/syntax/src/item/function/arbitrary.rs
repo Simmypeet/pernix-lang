@@ -7,9 +7,12 @@ use proptest::{
 };
 
 use crate::{
-    arbitrary::{AccessModifier, IndentDisplay, IntoSeparated},
+    arbitrary::{
+        AccessModifier, IndentDisplay, IntoSeparated, QualifiedIdentifier,
+    },
     item::{arbitrary::Body, generic_parameters::arbitrary::GenericParameters},
     pattern::arbitrary::Irrefutable,
+    predicate::arbitrary::HigherRankedLifetimes,
     r#type::arbitrary::Type,
     reference,
     statement::arbitrary::Statement,
@@ -23,6 +26,7 @@ reference! {
         pub generic_parameters (Option<GenericParameters>),
         pub parameters (Parameters),
         pub return_type (Option<ReturnType>),
+        pub do_effect (Option<DoEffect>),
     }
 }
 
@@ -36,14 +40,22 @@ impl Arbitrary for Signature {
             proptest::option::of(GenericParameters::arbitrary()),
             Parameters::arbitrary(),
             proptest::option::of(ReturnType::arbitrary()),
+            proptest::option::of(DoEffect::arbitrary()),
         )
             .prop_map(
-                |(identifier, generic_parameters, parameters, return_type)| {
+                |(
+                    identifier,
+                    generic_parameters,
+                    parameters,
+                    return_type,
+                    do_effect,
+                )| {
                     Self {
                         identifier,
                         generic_parameters,
                         parameters,
                         return_type,
+                        do_effect,
                     }
                 },
             )
@@ -263,5 +275,172 @@ impl IndentDisplay for ReturnType {
     ) -> std::fmt::Result {
         f.write_str(" -> ")?;
         self.r#type.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct EffectUnit for super::EffectUnit {
+        pub higher_ranked_lifetimes (Option<HigherRankedLifetimes>),
+        pub qualified_identifier (QualifiedIdentifier)
+    }
+}
+
+impl Arbitrary for EffectUnit {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        (
+            proptest::option::of(HigherRankedLifetimes::arbitrary()),
+            QualifiedIdentifier::arbitrary(),
+        )
+            .prop_map(|(higher_ranked_lifetimes, qualified_identifier)| Self {
+                higher_ranked_lifetimes,
+                qualified_identifier,
+            })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for EffectUnit {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        if let Some(higher_ranked_lifetimes) = &self.higher_ranked_lifetimes {
+            write!(f, "{higher_ranked_lifetimes} ")?;
+        }
+
+        self.qualified_identifier.indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct EffectUnitList for super::EffectUnitList {
+        pub effect_units (Vec<EffectUnit>)
+    }
+}
+
+impl Arbitrary for EffectUnitList {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(EffectUnit::arbitrary(), 1..6)
+            .prop_map(|effect_units| Self { effect_units })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for EffectUnitList {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        self.effect_units.into_separated(" + ").indent_fmt(f, indent)
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct ParenthesizedEffectUnitList
+        for super::ParenthesizedEffectUnitList {
+        pub effect_units (Vec<EffectUnit>)
+    }
+}
+
+impl Arbitrary for ParenthesizedEffectUnitList {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        proptest::collection::vec(EffectUnit::arbitrary(), 1..6)
+            .prop_map(|effect_units| Self { effect_units })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for ParenthesizedEffectUnitList {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        f.write_char('(')?;
+        self.effect_units.into_separated(" + ").indent_fmt(f, indent)?;
+        f.write_char(')')
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub enum EffectUnitListKind for super::EffectUnitListKind {
+        EffectUnitList(EffectUnitList),
+        ParenthesizedEffectUnitList(ParenthesizedEffectUnitList)
+    }
+}
+
+impl Arbitrary for EffectUnitListKind {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        prop_oneof![
+            3 => EffectUnitList::arbitrary()
+                .prop_map(Self::EffectUnitList),
+            1 => ParenthesizedEffectUnitList::arbitrary()
+                .prop_map(Self::ParenthesizedEffectUnitList),
+        ]
+        .boxed()
+    }
+}
+
+impl IndentDisplay for EffectUnitListKind {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        match self {
+            Self::EffectUnitList(effect_unit_list) => {
+                effect_unit_list.indent_fmt(f, indent)
+            }
+            Self::ParenthesizedEffectUnitList(
+                parenthesized_effect_unit_list,
+            ) => parenthesized_effect_unit_list.indent_fmt(f, indent),
+        }
+    }
+}
+
+reference! {
+    #[derive(Debug, Clone)]
+    pub struct DoEffect for super::DoEffect {
+        pub effect_unit_list (EffectUnitListKind)
+    }
+}
+
+impl Arbitrary for DoEffect {
+    type Parameters = ();
+    type Strategy = BoxedStrategy<Self>;
+
+    fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
+        EffectUnitListKind::arbitrary()
+            .prop_map(|effect_unit_list| Self { effect_unit_list })
+            .boxed()
+    }
+}
+
+impl IndentDisplay for DoEffect {
+    fn indent_fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        indent: usize,
+    ) -> std::fmt::Result {
+        write!(f, " do ")?;
+        self.effect_unit_list.indent_fmt(f, indent)
     }
 }
