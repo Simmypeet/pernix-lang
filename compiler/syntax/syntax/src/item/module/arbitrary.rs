@@ -8,7 +8,7 @@ use proptest::{
 use crate::{
     arbitrary::{
         write_indent_line_for_indent_display, AccessModifier, IndentDisplay,
-        Passable, SimplePath,
+        IntoSeparated, Passable, SimplePath,
     },
     item::{
         constant::arbitrary::Constant, effect::arbitrary::Effect,
@@ -90,9 +90,9 @@ impl Arbitrary for ImportItems {
 
 reference! {
     #[derive(Debug, Clone, derive_more::Display)]
-    #[display("({import_items})")]
+    #[display("({})", self.items.into_separated(", "))]
     pub struct ParenthesizedImportItems for super::ParenthesizedImportItems {
-        pub import_items (ImportItems),
+        pub items (Vec<ImportItem>),
     }
 }
 
@@ -101,8 +101,8 @@ impl Arbitrary for ParenthesizedImportItems {
     type Strategy = BoxedStrategy<Self>;
 
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
-        ImportItems::arbitrary()
-            .prop_map(|import_items| Self { import_items })
+        proptest::collection::vec(ImportItem::arbitrary(), 0..=3)
+            .prop_map(|items| Self { items })
             .boxed()
     }
 }

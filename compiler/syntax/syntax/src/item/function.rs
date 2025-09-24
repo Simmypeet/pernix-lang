@@ -162,7 +162,7 @@ abstract_tree::abstract_tree! {
     )]
     pub struct EffectUnitList {
         pub effect_units: #[multi] EffectUnit
-            = ast::<EffectUnit>().repeat_all_with_separator('+'),
+            = ast::<EffectUnit>().repeat_with_separator_at_least_once('+'),
     }
 }
 

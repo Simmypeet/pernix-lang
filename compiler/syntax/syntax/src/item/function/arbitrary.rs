@@ -81,6 +81,10 @@ impl IndentDisplay for Signature {
             return_type.indent_fmt(formatter, indent)?;
         }
 
+        if let Some(do_effect) = &self.do_effect {
+            do_effect.indent_fmt(formatter, indent)?;
+        }
+
         Ok(())
     }
 }
