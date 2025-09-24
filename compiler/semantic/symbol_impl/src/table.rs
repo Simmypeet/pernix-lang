@@ -31,6 +31,7 @@ use tokio::task::JoinHandle;
 
 use crate::diagnostic::{Diagnostic, ItemRedefinition, SourceFileLoadFail};
 
+mod effect;
 mod module;
 
 /// The key to query each table node.

@@ -389,8 +389,14 @@ impl TableContext {
                         continue;
                     }
 
-                    ModuleMemberSyn::Effect(_) => {
-                        // effects are not yet supported
+                    ModuleMemberSyn::Effect(eff) => {
+                        if let Some(handle) = self
+                            .handle_effect_member(&eff, module_member_builder)
+                            .await
+                        {
+                            tasks.push(handle);
+                        }
+
                         continue;
                     }
                 };
