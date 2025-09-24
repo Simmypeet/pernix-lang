@@ -242,4 +242,4 @@ pub struct FunctionBodyKey(pub Global<ID>);
 )]
 #[value(Option<pernixc_syntax::item::function::DoEffect>)]
 #[extend(method(get_function_do_syntax), no_cyclic)]
-pub struct FunctionDoEffectSyntax(pub Global<ID>);
+pub struct FunctionDoEffectKey(pub Global<ID>);
