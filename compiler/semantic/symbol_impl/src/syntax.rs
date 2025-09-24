@@ -296,16 +296,18 @@ pub async fn get_function_do_effect_syntax(
     engine: &TrackedEngine,
 ) -> Result<Option<pernixc_syntax::item::function::DoEffect>, CyclicError> {
     let table = engine.get_table_of_symbol(id).await;
-    Ok(table
-        .function_do_effect_syntaxes
-        .get(&id.id)
-        .unwrap_or_else(|| {
-            panic!(
-                "No function do effect syntax found for symbol ID: {:?}",
-                id.id
-            )
-        })
-        .clone())
+
+    if let Some(value) = table.function_do_effect_syntaxes.get(&id.id) {
+        return Ok(value.clone());
+    }
+
+    let qualified_identifier = engine.get_qualified_name(id).await;
+
+    panic!(
+        "No function do effect syntax found for symbol ID: {:?}, qualified \
+         identifier: {:?}",
+        id.id, qualified_identifier
+    );
 }
 
 pernixc_register::register!(FunctionDoEffectKey, FunctionDoEffectExecutor);

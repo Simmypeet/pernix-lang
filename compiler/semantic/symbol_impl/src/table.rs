@@ -1633,6 +1633,9 @@ impl TableContext {
                     function_syntax.signature().and_then(|x| x.parameters()),
                     function_syntax.signature().and_then(|x| x.return_type()),
                 ))
+                .function_do_effect_syntax(
+                    function_syntax.signature().and_then(|x| x.do_effect()),
+                )
                 .function_linkage(linkage)
                 .build();
 
