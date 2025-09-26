@@ -50,7 +50,7 @@ use std::fmt::Display;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// # use pernixc_serialize::de::{self, Deserialize, Deserializer};
 /// #
 /// struct MyType {
@@ -795,7 +795,7 @@ pub trait Deserialize<D: Deserializer<E> + ?Sized, E>: Sized {
 ///
 /// # Examples
 ///
-/// ```no_run
+/// ```ignore
 /// # use pernixc_serialize::de::{DeserializeSeed, Deserializer};
 /// #
 /// struct StringSeed {

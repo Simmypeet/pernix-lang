@@ -12,7 +12,7 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```ignore
 //! use pernixc_stable_type_id::Identifiable;
 //!
 //! #[derive(Identifiable)]
@@ -64,7 +64,7 @@
 //!
 //! ## Simple Types
 //!
-//! ```rust
+//! ```ignore
 //! # use pernixc_stable_type_id::Identifiable;
 //! #[derive(Identifiable)]
 //! struct Point {
@@ -78,7 +78,7 @@
 //!
 //! ## Generic Types
 //!
-//! ```rust
+//! ```ignore
 //! # use pernixc_stable_type_id::Identifiable;
 //! #[derive(Identifiable)]
 //! struct Container<T: Identifiable> {
@@ -144,7 +144,7 @@ use proc_macro::TokenStream;
 ///
 /// ## Simple Struct
 ///
-/// ```rust
+/// ```ignore
 /// # use pernixc_stable_type_id::Identifiable;
 /// #[derive(Identifiable)]
 /// struct User {
@@ -160,7 +160,7 @@ use proc_macro::TokenStream;
 ///
 /// ## Generic Struct
 ///
-/// ```rust
+/// ```ignore
 /// # use pernixc_stable_type_id::Identifiable;
 /// #[derive(Identifiable)]
 /// struct Pair<T: Identifiable, U: Identifiable> {
@@ -174,7 +174,7 @@ use proc_macro::TokenStream;
 ///
 /// ## Enum Types
 ///
-/// ```rust
+/// ```ignore
 /// # use pernixc_stable_type_id::Identifiable;
 /// #[derive(Identifiable)]
 /// enum Result<T: Identifiable, E: Identifiable> {

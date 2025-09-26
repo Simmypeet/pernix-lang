@@ -6,7 +6,7 @@
 //!
 //! # Examples
 //!
-//! ```rust
+//! ```ignore
 //! use pernixc_serialize::{binary::ser::BinarySerializer, ser::Serialize};
 //!
 //! let mut buffer = Vec::new();

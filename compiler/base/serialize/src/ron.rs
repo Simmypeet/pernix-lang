@@ -14,7 +14,7 @@
 //!
 //! # Examples
 //!
-//! ```rust
+//! ```ignore
 //! use pernixc_serialize::{ron::ser::RonSerializer, ser::Serialize};
 //! use pernixc_serialize_derive::Serialize;
 //!

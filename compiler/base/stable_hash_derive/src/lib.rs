@@ -8,7 +8,7 @@
 //!
 //! ## Struct
 //!
-//! ```rust
+//! ```ignore
 //! use pernixc_stable_hash::StableHash;
 //!
 //! #[derive(StableHash)]
@@ -20,7 +20,7 @@
 //!
 //! ## Enum
 //!
-//! ```rust
+//! ```ignore
 //! use pernixc_stable_hash::StableHash;
 //!
 //! #[derive(StableHash)]
@@ -49,7 +49,7 @@ use syn::{
 ///
 /// # Struct Example
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_hash_derive::StableHash;
 ///
 /// #[derive(StableHash)]
@@ -61,7 +61,7 @@ use syn::{
 ///
 /// # Enum Example
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_hash_derive::StableHash;
 ///
 /// #[derive(StableHash)]

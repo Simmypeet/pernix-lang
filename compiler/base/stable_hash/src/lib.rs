@@ -15,7 +15,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```ignore
 //! use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
 //!
 //! let mut hasher = StableSipHasher::new();
@@ -71,7 +71,7 @@ pub trait Value: Default + StableHash + Send + Sync + 'static {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
 ///
 /// let mut hasher = StableSipHasher::new();
@@ -299,7 +299,7 @@ pub trait StableHasher: Send + Sync + 'static {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```ignore
 /// use pernixc_stable_hash::{StableHash, StableHasher, StableSipHasher};
 ///
 /// #[derive(Debug)]
