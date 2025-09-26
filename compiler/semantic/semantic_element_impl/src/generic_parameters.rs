@@ -206,6 +206,9 @@ impl build::Build for pernixc_term::generic_parameters::Key {
                     },
                 ),
             );
+
+            type_parameter_syns.clear();
+            constant_parameter_syns.clear();
         }
 
         for type_parameter_syn in type_parameter_syns {
