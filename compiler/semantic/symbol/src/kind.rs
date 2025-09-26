@@ -130,6 +130,7 @@ impl Kind {
                 | Self::ImplementationFunction
                 | Self::ImplementationConstant
                 | Self::Effect
+                | Self::EffectOperation
         )
     }
 
@@ -155,6 +156,7 @@ impl Kind {
                 | Self::ImplementationFunction
                 | Self::ImplementationConstant
                 | Self::Effect
+                | Self::EffectOperation
         )
     }
 
@@ -186,6 +188,19 @@ impl Kind {
                 | Self::TraitFunction
                 | Self::ImplementationFunction
                 | Self::ExternFunction
+                | Self::EffectOperation
+        )
+    }
+
+    /// Checks if the symbol has a `do Effects` clause.
+    #[must_use]
+    pub const fn has_do_effects(&self) -> bool {
+        matches!(
+            self,
+            Self::Function
+                | Self::TraitFunction
+                | Self::ImplementationFunction
+                | Self::ExternFunction
         )
     }
 
@@ -198,6 +213,7 @@ impl Kind {
                 | Self::TraitFunction
                 | Self::ImplementationFunction
                 | Self::ExternFunction
+                | Self::EffectOperation
         )
     }
 
@@ -210,6 +226,7 @@ impl Kind {
                 | Self::TraitFunction
                 | Self::ImplementationFunction
                 | Self::ExternFunction
+                | Self::EffectOperation
         )
     }
 

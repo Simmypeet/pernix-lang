@@ -64,10 +64,17 @@ impl TableContext {
                 let entry = Entry::builder()
                     .kind(Kind::EffectOperation)
                     .naming(Naming::Identifier(identifier))
+                    .generic_parameters_syntax(member.generic_parameters())
                     .function_signature_syntax((
                         member.parameters(),
                         member.return_type(),
                     ))
+                    .where_clause_syntax(
+                        member
+                            .trailing_where_clause()
+                            .and_then(|x| x.where_clause())
+                            .and_then(|x| x.predicates()),
+                    )
                     .build();
 
                 let member_id = effect_member_builder
