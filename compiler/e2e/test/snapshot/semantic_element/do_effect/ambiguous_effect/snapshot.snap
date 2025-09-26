@@ -1,0 +1,35 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the effect `main::B[&'a int32]` is defined multiple times with different lifetimes
+   ╭─ compiler/e2e/test/snapshot/semantic_element/do_effect/ambiguous_effect/main.pnx:17:41
+   │
+17 │ public function error['a]() -> int32 do B[&'a int32] + B[&'static int32]:
+   │                                         ^^^^^^^^^^^^   -----------------
+   │                                         │               
+   │                                         `main::B[&'a int32]` was first defined here
+
+error: the effect `main::B[&'a int32]` is defined multiple times with different lifetimes
+   ╭─ compiler/e2e/test/snapshot/semantic_element/do_effect/ambiguous_effect/main.pnx:21:45
+   │  
+21 │   public function errorMay['a]() -> int32 do (
+   │ ╭────────────────────────────────────────────^
+22 │ │     B[&'a int32] + B[&'static int32]
+   │ │                    -----------------
+   │ ╰────────────────^ `main::B[&'a int32]` was first defined here
+
+error: the effect `main::A[&'a int32]` is defined multiple times with different lifetimes
+   ╭─ compiler/e2e/test/snapshot/semantic_element/do_effect/ambiguous_effect/main.pnx:23:7
+   │
+23 │     + A[&'a int32] + A[&'static int32]
+   │       ^^^^^^^^^^^^   -----------------
+   │       │               
+   │       `main::A[&'a int32]` was first defined here
+
+error: Compilation aborted due to 3 error(s)
+
+
+
+stdout:

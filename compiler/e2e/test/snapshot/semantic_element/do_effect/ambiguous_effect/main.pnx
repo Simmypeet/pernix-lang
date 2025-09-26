@@ -1,0 +1,25 @@
+public effect A[T]:
+    a()
+
+
+public effect B[T]:
+    b()
+
+
+public function notError['a]() -> int32 do A[&'static int32] + B[&'a int32]:
+    return 0
+
+
+public function notErrorSame['a,]() -> int32 do B[&'a int32] + B[&'a int32]:
+    return 0
+
+
+public function error['a]() -> int32 do B[&'a int32] + B[&'static int32]:
+    return 0
+
+
+public function errorMay['a]() -> int32 do (
+    B[&'a int32] + B[&'static int32]
+    + A[&'a int32] + A[&'static int32]
+):
+    return 0

@@ -220,7 +220,7 @@ async fn effect_equivalent(
 
 async fn detect_duplicating_group<
     'a,
-    I: Iterator<Item = (&'a effect::Unit, &'a RelativeSpan)>,
+    I: Iterator<Item = (&'a effect::Unit, &'a (RelativeSpan, usize))>,
 >(
     engine: &TrackedEngine,
     symbol_id: Global<pernixc_symbol::ID>,
@@ -234,7 +234,8 @@ async fn detect_duplicating_group<
         normalizer::NO_OP,
     );
 
-    let mut groups: Vec<Vec<(&effect::Unit, &RelativeSpan)>> = Vec::new();
+    let mut groups: Vec<Vec<(&effect::Unit, &(RelativeSpan, usize))>> =
+        Vec::new();
 
     for effect in effects {
         let mut unique = true;
@@ -242,7 +243,7 @@ async fn detect_duplicating_group<
         for group in &mut groups {
             let first = &group.first().unwrap().0;
 
-            if effect_equivalent(&env, first, effect.0, *effect.1, handler)
+            if effect_equivalent(&env, first, effect.0, effect.1 .0, handler)
                 .await?
             {
                 group.push(effect);
@@ -257,15 +258,16 @@ async fn detect_duplicating_group<
     }
 
     let mut result = BTreeSet::new();
-    for group in groups {
+    for mut group in groups {
         if group.len() > 1 {
+            group.sort_by_key(|(_, (_, index))| *index);
+
             handler.receive(diagnostic::Diagnostic::AmbiguousEffectDefinition(
                 diagnostic::AmbiguousEffectDefinition {
                     first_effect: (*group.first().unwrap().0).clone(),
                     ambiguos_spans: group
                         .iter()
-                        .map(|(_, span)| *span)
-                        .copied()
+                        .map(|(_, span)| span.0)
                         .collect(),
                 },
             ));
@@ -311,9 +313,10 @@ impl Build for do_effect::Key {
                         )
                         .await?
                         {
+                            let len = do_effects.len();
                             do_effects
                                 .entry(effect_unit.0)
-                                .or_insert(effect_unit.1);
+                                .or_insert((effect_unit.1, len));
                         }
                     }
                 }
@@ -333,9 +336,10 @@ impl Build for do_effect::Key {
                         )
                         .await?
                         {
+                            let len = do_effects.len();
                             do_effects
                                 .entry(effect_unit.0)
-                                .or_insert(effect_unit.1);
+                                .or_insert((effect_unit.1, len));
                         }
                     }
                 }
