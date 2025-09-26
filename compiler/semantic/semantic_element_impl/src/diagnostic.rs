@@ -117,7 +117,9 @@ pub async fn single_rendered_executor(
         for diag in diags.iter() {
             final_diagnostics.push(diag.report(engine).await?);
         }
+    }
 
+    if kind.has_do_effects() {
         let diags =
             engine.query(&BuildDiagnosticKey::new(DoEffectKey(id))).await?;
 
