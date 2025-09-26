@@ -24,6 +24,7 @@ use pernixc_target::Global;
 )]
 pub enum Diagnostic {
     Resolution(pernixc_resolution::diagnostic::Diagnostic),
+    TypeSystem(pernixc_type_system::diagnostic::Diagnostic),
     ForallLifetimeRedefinition(ForallLifetimeRedefinition),
     EffectExpected(EffectExpected),
 }
@@ -36,6 +37,7 @@ impl Report for Diagnostic {
     {
         match self {
             Self::Resolution(d) => d.report(engine).await,
+            Self::TypeSystem(d) => d.report(engine).await,
             Self::ForallLifetimeRedefinition(d) => d.report(engine).await,
             Self::EffectExpected(d) => d.report(engine).await,
         }

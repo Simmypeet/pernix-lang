@@ -36,6 +36,7 @@ pub struct Unit(pub Symbol);
     PartialOrd,
     Ord,
     Hash,
+    Default,
     StableHash,
     Serialize,
     Deserialize,

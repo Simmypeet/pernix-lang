@@ -55,6 +55,14 @@ impl GenericArguments {
             && self.types.is_empty()
             && self.constants.is_empty()
     }
+
+    /// Checks if `self` and `other` have the same number of generic arguments.
+    #[must_use]
+    pub const fn has_same_arguments_count(&self, other: &Self) -> bool {
+        self.lifetimes.len() == other.lifetimes.len()
+            && self.types.len() == other.types.len()
+            && self.constants.len() == other.constants.len()
+    }
 }
 
 impl crate::display::Display for GenericArguments {
