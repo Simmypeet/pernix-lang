@@ -256,7 +256,26 @@ async fn detect_duplicating_group<
         }
     }
 
-    todo!()
+    let mut result = BTreeSet::new();
+    for group in groups {
+        if group.len() > 1 {
+            handler.receive(diagnostic::Diagnostic::AmbiguousEffectDefinition(
+                diagnostic::AmbiguousEffectDefinition {
+                    first_effect: (*group.first().unwrap().0).clone(),
+                    ambiguos_spans: group
+                        .iter()
+                        .map(|(_, span)| *span)
+                        .copied()
+                        .collect(),
+                },
+            ));
+        } else {
+            let (effect, _) = group.first().unwrap();
+            result.insert((*effect).clone());
+        }
+    }
+
+    Ok(result)
 }
 
 impl Build for do_effect::Key {
@@ -292,7 +311,9 @@ impl Build for do_effect::Key {
                         )
                         .await?
                         {
-                            do_effects.insert(effect_unit.0, effect_unit.1);
+                            do_effects
+                                .entry(effect_unit.0)
+                                .or_insert(effect_unit.1);
                         }
                     }
                 }
@@ -312,7 +333,9 @@ impl Build for do_effect::Key {
                         )
                         .await?
                         {
-                            do_effects.insert(effect_unit.0, effect_unit.1);
+                            do_effects
+                                .entry(effect_unit.0)
+                                .or_insert(effect_unit.1);
                         }
                     }
                 }
