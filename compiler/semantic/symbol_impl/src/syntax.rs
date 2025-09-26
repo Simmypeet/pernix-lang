@@ -99,13 +99,16 @@ pub async fn where_clause_syntax(
 ) -> Result<Option<pernixc_syntax::item::where_clause::Predicates>, CyclicError>
 {
     let table = engine.get_table_of_symbol(id).await;
-    Ok(table
-        .where_clause_syntaxes
-        .get(&id.id)
-        .unwrap_or_else(|| {
-            panic!("No where clause syntax found for symbol ID: {:?}", id.id)
-        })
-        .clone())
+
+    if let Some(value) = table.where_clause_syntaxes.get(&id.id) {
+        return Ok(value.clone());
+    }
+
+    let qualified_name = engine.get_qualified_name(id).await;
+    panic!(
+        "No where clause syntax found for symbol ID: {:?} ({qualified_name})",
+        id.id
+    );
 }
 
 pernixc_register::register!(WhereClauseKey, WhereClauseExecutor);

@@ -186,7 +186,6 @@ impl Kind {
                 | Self::TraitFunction
                 | Self::ImplementationFunction
                 | Self::ExternFunction
-                | Self::EffectOperation
         )
     }
 
