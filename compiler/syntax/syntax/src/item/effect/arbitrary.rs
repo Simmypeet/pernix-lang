@@ -3,7 +3,10 @@ use proptest::prelude::{Arbitrary, BoxedStrategy, Strategy as _};
 
 use crate::{
     arbitrary::IndentDisplay,
-    item::{function, generic_parameters::arbitrary::GenericParameters},
+    item::{
+        arbitrary::TrailingWhereClause, function,
+        generic_parameters::arbitrary::GenericParameters,
+    },
     reference,
 };
 
@@ -54,8 +57,10 @@ reference! {
     pub struct Operation for super::Operation {
         #{map_input_assert(identifier, &identifier.kind)}
         pub identifier (Identifier),
+        pub generic_parameters (Option<GenericParameters>),
         pub parameters (function::arbitrary::Parameters),
         pub return_type (Option<function::arbitrary::ReturnType>),
+        pub trailing_where_clause (Option<TrailingWhereClause>),
     }
 }
 
@@ -66,14 +71,26 @@ impl Arbitrary for Operation {
     fn arbitrary_with((): Self::Parameters) -> Self::Strategy {
         (
             Identifier::arbitrary(),
+            proptest::option::of(GenericParameters::arbitrary()),
             function::arbitrary::Parameters::arbitrary(),
             proptest::option::of(function::arbitrary::ReturnType::arbitrary()),
+            proptest::option::of(TrailingWhereClause::arbitrary()),
         )
-            .prop_map(|(identifier, parameters, return_type)| Self {
-                identifier,
-                parameters,
-                return_type,
-            })
+            .prop_map(
+                |(
+                    identifier,
+                    generic_parameters,
+                    parameters,
+                    return_type,
+                    trailing_where_clause,
+                )| Self {
+                    identifier,
+                    generic_parameters,
+                    parameters,
+                    return_type,
+                    trailing_where_clause,
+                },
+            )
             .boxed()
     }
 }
@@ -86,11 +103,19 @@ impl IndentDisplay for Operation {
     ) -> std::fmt::Result {
         write!(formatter, "{}", self.identifier.0)?;
 
+        if let Some(generic_parameters) = &self.generic_parameters {
+            generic_parameters.indent_fmt(formatter, indent)?;
+        }
+
         self.parameters.indent_fmt(formatter, indent)?;
 
         if let Some(return_type) = &self.return_type {
             write!(formatter, " ")?;
             return_type.indent_fmt(formatter, indent)?;
+        }
+
+        if let Some(trailing_where_clause) = &self.trailing_where_clause {
+            trailing_where_clause.indent_fmt(formatter, indent)?;
         }
 
         Ok(())

@@ -4,7 +4,10 @@ use pernixc_parser::{
 };
 
 use crate::{
-    item::{function, generic_parameters::GenericParameters, Body},
+    item::{
+        function, generic_parameters::GenericParameters, Body,
+        TrailingWhereClause,
+    },
     AccessModifier, Identifier, Keyword,
 };
 
@@ -25,9 +28,13 @@ abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Operation {
         pub identifier: Identifier = expect::Identifier,
+        pub generic_parameters: GenericParameters
+            = ast::<GenericParameters>().optional(),
         pub parameters: function::Parameters = ast::<function::Parameters>(),
         pub return_type: function::ReturnType
             = ast::<function::ReturnType>().optional(),
+        pub trailing_where_clause: TrailingWhereClause
+            = ast::<TrailingWhereClause>().optional(),
     }
 }
 
