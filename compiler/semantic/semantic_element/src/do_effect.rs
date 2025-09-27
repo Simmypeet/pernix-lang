@@ -24,4 +24,5 @@ use pernixc_term::effect::Effect;
     pernixc_query::Key,
 )]
 #[value(Arc<Effect>)]
+#[extend(method(get_do_effects))]
 pub struct Key(pub Global<ID>);

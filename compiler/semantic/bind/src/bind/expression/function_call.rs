@@ -6,7 +6,7 @@ use pernixc_ir::value::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
-    elided_lifetime::get_elided_lifetimes,
+    do_effect::get_do_effects, elided_lifetime::get_elided_lifetimes,
     implements_arguments::get_implements_argument, parameter::get_parameters,
     variant::get_variant_associated_type,
 };
@@ -18,6 +18,7 @@ use pernixc_symbol::{
 };
 use pernixc_target::Global;
 use pernixc_term::{
+    effect,
     generic_parameters::get_generic_parameters,
     instantiation::{
         get_instantiation, get_instantiation_for_associated_symbol,
@@ -26,7 +27,7 @@ use pernixc_term::{
     lifetime::{ElidedLifetimeID, Lifetime},
     r#type::Qualifier,
 };
-use pernixc_type_system::deduction;
+use pernixc_type_system::{deduction, environment::Environment};
 
 use crate::{
     bind::{
@@ -39,6 +40,8 @@ use crate::{
         LValue,
     },
     binder::UnrecoverableError,
+    diagnostic::UnhandledEffects,
+    inference_context,
 };
 
 pub mod diagnostic;
@@ -452,6 +455,7 @@ impl Binder<'_> {
         )
         .await
     }
+
     #[allow(clippy::too_many_arguments)]
     async fn bind_function_call_internal(
         &mut self,
@@ -562,13 +566,108 @@ impl Binder<'_> {
             std::cmp::Ordering::Equal => {}
         }
 
+        let capabilities = if self
+            .engine()
+            .get_kind(self.current_site())
+            .await
+            .has_do_effects()
+        {
+            Some(self.engine().get_do_effects(self.current_site()).await?)
+        } else {
+            None
+        };
+
+        let assignment = FunctionCall {
+            callable_id,
+            arguments: argument_values,
+            instantiation,
+        };
+
+        self.effect_check(
+            &assignment,
+            whole_span,
+            capabilities.as_deref().unwrap_or(&effect::Effect::default()),
+            handler,
+        )
+        .await?;
+
         Ok(self.create_register_assignment(
-            Assignment::FunctionCall(FunctionCall {
-                callable_id,
-                arguments: argument_values,
-                instantiation,
-            }),
+            Assignment::FunctionCall(assignment),
             whole_span,
         ))
+    }
+
+    async fn effect_compatible(
+        env: &Environment<'_, inference_context::InferenceContext>,
+        capability: &effect::Unit,
+        effect: &effect::Unit,
+        span: RelativeSpan,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<bool, UnrecoverableError> {
+        if capability.id != effect.id {
+            return Ok(false);
+        }
+
+        let result = env
+            .subtypes_generic_arguments(
+                &capability.generic_arguments,
+                &effect.generic_arguments,
+            )
+            .await
+            .map_err(|x| {
+                x.report_as_type_calculating_overflow(span, &handler)
+            })?;
+
+        Ok(result.is_some())
+    }
+
+    async fn effect_check(
+        &mut self,
+        function_call: &FunctionCall,
+        span: RelativeSpan,
+        capabilities: &effect::Effect,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        let mut unhandled_effects = Vec::new();
+
+        let effects =
+            self.engine().get_do_effects(function_call.callable_id).await?;
+
+        let environment = self.create_environment();
+
+        'next: for effect_unit in &effects.effects {
+            for capability in &capabilities.effects {
+                if Self::effect_compatible(
+                    &environment,
+                    capability,
+                    effect_unit,
+                    span,
+                    handler,
+                )
+                .await?
+                {
+                    continue 'next;
+                }
+            }
+
+            // cannot find a compatible capability
+            unhandled_effects.push(effect_unit.clone());
+        }
+
+        if !unhandled_effects.is_empty() {
+            handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
+                UnhandledEffects {
+                    effects: unhandled_effects,
+                    span,
+                    type_inference_map: self.type_inference_rendering_map(),
+                    constant_inference_map: self
+                        .constant_inference_rendering_map(),
+                },
+            ));
+
+            return Ok(());
+        }
+
+        Ok(())
     }
 }

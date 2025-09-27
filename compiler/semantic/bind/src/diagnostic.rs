@@ -13,6 +13,7 @@ use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
     display::{Display, InferenceRenderingMap},
+    effect,
     generic_parameters::{
         get_generic_parameters, ConstantParameterID, TypeParameterID,
     },
@@ -73,6 +74,7 @@ diagnostic_enum! {
         FoundPackTuplePatternInMatchArmPattern(
             FoundPackTuplePatternInMatchArmPattern
         ),
+        UnhandledEffects(UnhandledEffects),
     }
 }
 
@@ -878,6 +880,66 @@ impl Report for FoundPackTuplePatternInMatchArmPattern {
             .message(
                 "pack tuple patterns (e.g. `(A, ...B, C)`) are not allowed in \
                  match arm patterns",
+            )
+            .build())
+    }
+}
+
+/// Some effects that a function may perform are not handled by the caller.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct UnhandledEffects {
+    /// The effects that are not handled by the caller.
+    pub effects: Vec<effect::Unit>,
+
+    /// The span of the function call expression.
+    pub span: RelativeSpan,
+
+    /// Mapping for rendering type inferences
+    pub type_inference_map: InferenceRenderingMap<Type>,
+
+    /// Mapping for rendering constant inferences
+    pub constant_inference_map: InferenceRenderingMap<Constant>,
+}
+
+impl Report for UnhandledEffects {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let mut message =
+            "the following effects are not handled by the caller: ".to_string();
+
+        for (i, effect_unit) in self.effects.iter().enumerate() {
+            if i > 0 {
+                message.push_str(", ");
+            }
+
+            effect_unit
+                .0
+                .write_async_with_mapping(
+                    engine,
+                    &mut message,
+                    None,
+                    Some(&self.type_inference_map),
+                    Some(&self.constant_inference_map),
+                )
+                .await
+                .unwrap();
+        }
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message("function call here")
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message(
+                "consider adding a `do` effect annotation to the current \
+                 function to handle these effects",
             )
             .build())
     }

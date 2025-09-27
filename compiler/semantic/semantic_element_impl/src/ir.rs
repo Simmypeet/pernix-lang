@@ -28,7 +28,13 @@ async fn build_ir_for_function(
     for statement in
         function_body_syntax.members().filter_map(|x| x.into_line().ok())
     {
-        binder.bind_statement(&statement, storage).await.unwrap();
+        match binder.bind_statement(&statement, storage).await {
+            Ok(()) => {}
+            Err(UnrecoverableError::CyclicDependency(error)) => {
+                return Err(error);
+            }
+            Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+        };
     }
 
     // finalize the binder to an ir
