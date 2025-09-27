@@ -1,0 +1,20 @@
+public effect Effect[T]:
+    effectOp(t: T) -> T
+
+
+public function useEffectInt32() do Effect[int32]:
+    pass
+
+
+public function useEffectFloat32() do Effect[float32]:
+    pass
+
+
+public function useMultipleEffects() do Effect[int8] + Effect[int16]:    
+    pass
+
+
+public function useUnhandledEffect() do Effect[float32]: 
+    useEffectInt32()      # This should produce an unhandled effects error
+    useEffectFloat32()  
+    useMultipleEffects()  # This should produce an unhandled effects error
