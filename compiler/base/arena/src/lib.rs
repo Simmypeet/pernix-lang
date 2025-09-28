@@ -330,3 +330,89 @@ impl<'a, T, G: State<T>> IntoIterator for &'a mut Arena<T, G> {
 
     fn into_iter(self) -> Self::IntoIter { self.items.iter_mut() }
 }
+
+/// A wrapper around an [`Arena`] that also keeps track of the order in which
+/// items were inserted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(ser_bound(G: Serialize<__S, __E>, G::ID: Serialize<__S, __E>, T: Serialize<__S, __E>))]
+#[serde(de_bound(G: Deserialize<__D, __E>, G::ID: Deserialize<__D, __E>, T: Deserialize<__D, __E>))]
+pub struct OrderedArena<T, G: State<T> = state::Serial> {
+    arena: Arena<T, G>,
+    order: Vec<G::ID>,
+}
+
+impl<T, G: State<T> + Default> Default for OrderedArena<T, G> {
+    fn default() -> Self { Self { arena: Arena::default(), order: Vec::new() } }
+}
+
+impl<T, G: State<T> + StableHash> StableHash for OrderedArena<T, G>
+where
+    G::ID: StableHash,
+    T: StableHash,
+{
+    fn stable_hash<H: pernixc_stable_hash::StableHasher + ?Sized>(
+        &self,
+        state: &mut H,
+    ) {
+        self.arena.stable_hash(state);
+        self.order.stable_hash(state);
+    }
+}
+
+impl<T, G: State<T>> OrderedArena<T, G> {
+    /// Creates a new empty [`OrderedArena`].
+    #[must_use]
+    pub fn new() -> Self
+    where
+        G: Default,
+    {
+        Self { arena: Arena::default(), order: Vec::new() }
+    }
+
+    /// Creates a new empty [`OrderedArena`] with the given ID generator.
+    #[must_use]
+    pub fn new_with(generator: G) -> Self {
+        Self { arena: Arena::new_with(generator), order: Vec::new() }
+    }
+
+    /// Returns the number of items in the [`OrderedArena`].
+    #[must_use]
+    pub fn len(&self) -> usize { self.arena.len() }
+
+    /// Returns `true` if the [`OrderedArena`] contains no items.
+    #[must_use]
+    pub fn is_empty(&self) -> bool { self.arena.is_empty() }
+
+    /// Inserts a new item into the [`OrderedArena`] and returns its ID.
+    pub fn insert(&mut self, item: T) -> G::ID
+    where
+        G: Generator<T>,
+    {
+        let id = self.arena.insert(item);
+        self.order.push(id);
+
+        id
+    }
+
+    /// Obtains an iterator over the items in the order they were inserted.
+    #[must_use]
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (G::ID, &T)> {
+        self.order.iter().map(move |id| (*id, &self.arena[*id]))
+    }
+
+    /// Gets a reference to the item with the given ID.
+    #[must_use]
+    pub fn get(&self, id: G::ID) -> Option<&T> { self.arena.get(id) }
+}
+
+impl<T, G: State<T>> Index<G::ID> for OrderedArena<T, G> {
+    type Output = T;
+
+    fn index(&self, id: G::ID) -> &Self::Output { &self.arena[id] }
+}
+
+impl<T, G: State<T>> IndexMut<G::ID> for OrderedArena<T, G> {
+    fn index_mut(&mut self, id: G::ID) -> &mut Self::Output {
+        self.arena.get_mut(id).unwrap()
+    }
+}

@@ -11,7 +11,7 @@ error: the following effects are not handled by the caller: main::Effect[int32]
    │
    = consider adding a `do` effect annotation to the current function to handle these effects
 
-error: the following effects are not handled by the caller: main::Effect[int8], main::Effect[int16]
+error: the following effects are not handled by the caller: main::Effect[int16], main::Effect[int8]
    ╭─ compiler/e2e/test/snapshot/ir/expression/function_call/unhandled_effects/main.pnx:20:5
    │
 20 │     useMultipleEffects()  # This should produce an unhandled effects error

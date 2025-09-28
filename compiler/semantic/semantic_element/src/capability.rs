@@ -2,11 +2,12 @@
 
 use std::sync::Arc;
 
+use pernixc_arena::OrderedArena;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::ID;
 use pernixc_target::Global;
-use pernixc_term::effect::Effect;
+use pernixc_term::effect;
 
 /// A query for retrieving a set of effects that the function may perform.
 #[derive(
@@ -23,6 +24,6 @@ use pernixc_term::effect::Effect;
     Deserialize,
     pernixc_query::Key,
 )]
-#[value(Arc<Effect>)]
-#[extend(method(get_do_effects))]
+#[value(Arc<OrderedArena<effect::Unit>>)]
+#[extend(method(get_capabilities))]
 pub struct Key(pub Global<ID>);

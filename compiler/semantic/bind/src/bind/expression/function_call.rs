@@ -1,4 +1,6 @@
+use pernixc_arena::{OrderedArena, ID};
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_ir::value::{
     register::{
         Assignment, CapabilityArgument, FunctionCall, Load, Register, Variant,
@@ -8,7 +10,7 @@ use pernixc_ir::value::{
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::qualified_identifier::Resolution;
 use pernixc_semantic_element::{
-    do_effect::get_do_effects, elided_lifetime::get_elided_lifetimes,
+    capability::get_capabilities, elided_lifetime::get_elided_lifetimes,
     implements_arguments::get_implements_argument, parameter::get_parameters,
     variant::get_variant_associated_type,
 };
@@ -16,12 +18,11 @@ use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     linkage::{get_linkage, Linkage, C},
-    parent::{get_parent, get_parent_global},
+    parent::get_parent,
 };
 use pernixc_target::Global;
 use pernixc_term::{
     effect,
-    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
     instantiation::{
         get_instantiation, get_instantiation_for_associated_symbol,
@@ -569,23 +570,15 @@ impl Binder<'_> {
             std::cmp::Ordering::Equal => {}
         }
 
-        let capabilities = if self
-            .engine()
-            .get_kind(self.current_site())
-            .await
-            .has_do_effects()
-        {
-            Some(self.engine().get_do_effects(self.current_site()).await?)
-        } else {
-            None
-        };
+        let capabilities =
+            self.engine().get_capabilities(self.current_site()).await?;
 
         let capability_arguments = self
             .effect_check(
                 callable_id,
                 &instantiation,
                 whole_span,
-                capabilities.as_deref().unwrap_or(&effect::Effect::default()),
+                &capabilities,
                 handler,
             )
             .await?;
@@ -636,98 +629,82 @@ impl Binder<'_> {
         callable_id: Global<pernixc_symbol::ID>,
         instantiation: &Instantiation,
         span: RelativeSpan,
-        capabilities: &effect::Effect,
+        available_capabilities: &OrderedArena<effect::Unit>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<Vec<(effect::Unit, CapabilityArgument)>, UnrecoverableError>
+    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
     {
-        if self.engine().get_kind(callable_id).await.has_do_effects() {
-            let effects = self.engine().get_do_effects(callable_id).await?;
+        let required_capabilities =
+            self.engine().get_capabilities(callable_id).await?;
 
-            self.check_effect_units(
-                capabilities,
-                effects.effects.iter(),
-                span,
-                callable_id,
-                handler,
-            )
-            .await
-        } else {
-            let parent_effect =
-                self.engine().get_parent_global(callable_id).await.unwrap();
-
-            let parent_generic_parameters =
-                self.engine().get_generic_parameters(parent_effect).await?;
-
-            let effect_unit = effect::Unit(Symbol {
-                id: parent_effect,
-                generic_arguments: instantiation.create_generic_arguments(
-                    parent_effect,
-                    &parent_generic_parameters,
-                ),
-            });
-
-            self.check_effect_units(
-                capabilities,
-                std::iter::once(&effect_unit),
-                span,
-                callable_id,
-                handler,
-            )
-            .await
-        }
+        self.check_effect_units(
+            available_capabilities,
+            &required_capabilities,
+            instantiation,
+            span,
+            callable_id,
+            handler,
+        )
+        .await
     }
 
-    async fn check_effect_units<
-        'a,
-        I: IntoIterator<Item = &'a effect::Unit>,
-    >(
+    async fn check_effect_units(
         &self,
-        capabilities: &effect::Effect,
-        effects: I,
+        available_capabilities: &OrderedArena<effect::Unit>,
+        required_capabilities: &OrderedArena<effect::Unit>,
+        instantiation: &Instantiation,
         span: RelativeSpan,
         callable_id: Global<pernixc_symbol::ID>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<Vec<(effect::Unit, CapabilityArgument)>, UnrecoverableError>
+    ) -> Result<HashMap<ID<effect::Unit>, CapabilityArgument>, UnrecoverableError>
     {
-        let mut effect_arguments = Vec::new();
+        let mut effect_arguments = HashMap::default();
 
         let environment = self.create_environment();
 
-        'next: for effect_unit in effects {
-            for capability in &capabilities.effects {
+        'next: for (required_id, required) in required_capabilities.iter() {
+            let mut required = required.clone();
+            required.generic_arguments.instantiate(instantiation);
+
+            for (available_id, available) in available_capabilities.iter() {
                 if Self::effect_compatible(
                     &environment,
-                    capability,
-                    effect_unit,
+                    available,
+                    &required,
                     span,
                     handler,
                 )
                 .await?
                 {
-                    effect_arguments.push((
-                        effect_unit.clone(),
-                        CapabilityArgument::FromPassedCapability(
-                            capability.clone(),
-                        ),
-                    ));
+                    effect_arguments.insert(
+                        required_id,
+                        CapabilityArgument::FromPassedCapability(available_id),
+                    );
                     continue 'next;
                 }
             }
 
             // cannot find a compatible capability
-            effect_arguments
-                .push((effect_unit.clone(), CapabilityArgument::Unhandled));
+            effect_arguments.insert(required_id, CapabilityArgument::Unhandled);
         }
 
-        if effect_arguments.iter().any(|x| x.1 == CapabilityArgument::Unhandled)
+        if effect_arguments
+            .iter()
+            .any(|x| x.1 == &CapabilityArgument::Unhandled)
         {
             handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
                 UnhandledEffects {
                     effects: effect_arguments
                         .iter()
                         .filter_map(|x| {
-                            if x.1 == CapabilityArgument::Unhandled {
-                                Some(x.0.clone())
+                            if x.1 == &CapabilityArgument::Unhandled {
+                                let mut required =
+                                    required_capabilities[*x.0].clone();
+
+                                required
+                                    .generic_arguments
+                                    .instantiate(instantiation);
+
+                                Some(required)
                             } else {
                                 None
                             }

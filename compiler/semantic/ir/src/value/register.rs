@@ -19,10 +19,7 @@ use pernixc_term::{
     constant::Constant,
     effect,
     generic_arguments::{GenericArguments, Symbol},
-    generic_parameters::{
-        get_generic_parameters, ConstantParameterID, LifetimeParameterID,
-        TypeParameterID,
-    },
+    generic_parameters::get_generic_parameters,
     instantiation::Instantiation,
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Type},
@@ -517,6 +514,7 @@ async fn type_of_variant_assignment(
 #[derive(
     Debug,
     Clone,
+    Copy,
     PartialEq,
     Eq,
     PartialOrd,
@@ -528,7 +526,7 @@ async fn type_of_variant_assignment(
 )]
 pub enum CapabilityArgument {
     /// Uses the capability passed to the function as an argument.
-    FromPassedCapability(effect::Unit),
+    FromPassedCapability(ID<effect::Unit>),
 
     /// The capability is unhandled, error should've been reported.
     Unhandled,
@@ -547,7 +545,7 @@ pub struct FunctionCall {
     pub instantiation: Instantiation,
 
     /// The capability arguments supplied to the function.
-    pub capability_arguments: Vec<(effect::Unit, CapabilityArgument)>,
+    pub capability_arguments: HashMap<ID<effect::Unit>, CapabilityArgument>,
 }
 
 impl FunctionCall {
@@ -557,7 +555,6 @@ impl FunctionCall {
     >(
         &mut self,
         transformer: &mut T,
-        engine: &TrackedEngine,
         call_span: Option<RelativeSpan>,
     ) -> Result<(), CyclicError> {
         for argument in &mut self.arguments {
@@ -608,63 +605,6 @@ impl FunctionCall {
                     call_span,
                 )
                 .await?;
-        }
-
-        for (cap_param, _) in &mut self.capability_arguments {
-            let cap_generic_parameters =
-                engine.get_generic_parameters(cap_param.id).await?;
-            let cap_param_id = cap_param.id;
-
-            for (lt_id, lt) in cap_generic_parameters
-                .lifetime_order()
-                .iter()
-                .copied()
-                .zip(cap_param.generic_arguments.lifetimes.iter_mut())
-            {
-                transformer
-                    .transform(
-                        lt,
-                        LifetimeTermSource::EffectOperationGenericParameter(
-                            LifetimeParameterID::new(cap_param_id, lt_id),
-                        ),
-                        call_span,
-                    )
-                    .await?;
-            }
-
-            for (ty_id, ty) in cap_generic_parameters
-                .type_order()
-                .iter()
-                .copied()
-                .zip(cap_param.generic_arguments.types.iter_mut())
-            {
-                transformer
-                    .transform(
-                        ty,
-                        TypeTermSource::EffectOperationGenericParameter(
-                            TypeParameterID::new(cap_param_id, ty_id),
-                        ),
-                        call_span,
-                    )
-                    .await?;
-            }
-
-            for (ct_id, ct) in cap_generic_parameters
-                .constant_order()
-                .iter()
-                .copied()
-                .zip(cap_param.generic_arguments.constants.iter_mut())
-            {
-                transformer
-                    .transform(
-                        ct,
-                        ConstantTermSource::EffectOperationGenericParameter(
-                            ConstantParameterID::new(cap_param_id, ct_id),
-                        ),
-                        call_span,
-                    )
-                    .await?;
-            }
         }
 
         Ok(())
@@ -1261,7 +1201,7 @@ impl Register {
                 variant.transform(transformer, self.span, engine).await
             }
             Assignment::FunctionCall(function_call) => {
-                function_call.transform(transformer, engine, self.span).await
+                function_call.transform(transformer, self.span).await
             }
             Assignment::Binary(binary) => binary.transform(transformer).await,
             Assignment::Array(array) => {

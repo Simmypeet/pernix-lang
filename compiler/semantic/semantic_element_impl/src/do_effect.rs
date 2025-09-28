@@ -1,5 +1,6 @@
-use std::{borrow::Cow, collections::BTreeSet, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
+use pernixc_arena::OrderedArena;
 use pernixc_handler::{Handler, Storage};
 use pernixc_hash::HashMap;
 use pernixc_lexical::tree::RelativeSpan;
@@ -10,19 +11,18 @@ use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config, ExtraNamespace,
 };
-use pernixc_semantic_element::do_effect;
+use pernixc_semantic_element::capability;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
+    parent::get_parent_global,
     syntax::get_function_do_effect_syntax,
 };
 use pernixc_syntax::item::function::{EffectUnit, EffectUnitListKind};
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant,
-    effect::{self, Effect},
-    generic_arguments::Symbol,
-    lifetime::Lifetime,
+    constant::Constant, effect, generic_arguments::Symbol,
+    generic_parameters::get_generic_parameters, lifetime::Lifetime,
     r#type::Type,
 };
 use pernixc_type_system::{
@@ -226,7 +226,7 @@ async fn detect_duplicating_group<
     symbol_id: Global<pernixc_symbol::ID>,
     effects: I,
     handler: &Storage<diagnostic::Diagnostic>,
-) -> Result<BTreeSet<effect::Unit>, UnrecoverableError> {
+) -> Result<OrderedArena<effect::Unit>, UnrecoverableError> {
     let active_premise = engine.get_active_premise(symbol_id).await?;
     let env = Environment::new(
         Cow::Borrowed(&active_premise),
@@ -257,7 +257,7 @@ async fn detect_duplicating_group<
         }
     }
 
-    let mut result = BTreeSet::new();
+    let mut result = OrderedArena::new();
     for mut group in groups {
         if group.len() > 1 {
             group.sort_by_key(|(_, (_, index))| *index);
@@ -280,13 +280,38 @@ async fn detect_duplicating_group<
     Ok(result)
 }
 
-impl Build for do_effect::Key {
+impl Build for capability::Key {
     type Diagnostic = diagnostic::Diagnostic;
 
     async fn execute(
         engine: &TrackedEngine,
         key: &Self,
     ) -> Result<Output<Self>, CyclicError> {
+        let kind = engine.get_kind(key.0).await;
+
+        if kind == Kind::EffectOperation {
+            // simply return the parent effect's do effect
+            let parent_effect_id =
+                engine.get_parent_global(key.0).await.unwrap();
+            let parent_generic_parameters =
+                engine.get_generic_parameters(parent_effect_id).await?;
+
+            let arguments = parent_generic_parameters
+                .create_identity_generic_arguments(parent_effect_id);
+
+            let mut arena = OrderedArena::new();
+            arena.insert(effect::Unit(Symbol {
+                id: parent_effect_id,
+                generic_arguments: arguments,
+            }));
+
+            return Ok(Output {
+                item: Arc::new(arena),
+                diagnostics: Arc::default(),
+                occurrences: Arc::new(Occurrences::default()),
+            });
+        }
+
         let do_effect_syntax =
             engine.get_function_do_effect_syntax(key.0).await;
 
@@ -356,16 +381,16 @@ impl Build for do_effect::Key {
         {
             Ok(effect) => effect,
 
-            Err(UnrecoverableError::Reported) => BTreeSet::default(),
+            Err(UnrecoverableError::Reported) => OrderedArena::default(),
             Err(UnrecoverableError::CyclicDependency(e)) => return Err(e),
         };
 
         Ok(Output {
-            item: Arc::new(Effect { effects }),
+            item: Arc::new(effects),
             diagnostics: storage.into_vec().into(),
             occurrences: Arc::new(observer),
         })
     }
 }
 
-crate::build::register_build!(do_effect::Key);
+crate::build::register_build!(capability::Key);

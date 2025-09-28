@@ -1,9 +1,0 @@
----
-source: compiler/e2e/test/snapshot/mod.rs
-assertion_line: 156
-expression: clean_run
----
-stderr:
-
-
-stdout:

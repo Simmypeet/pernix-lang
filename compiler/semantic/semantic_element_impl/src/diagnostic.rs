@@ -7,7 +7,7 @@ use pernixc_diagnostic::Report;
 use pernixc_ir::Key as IRKey;
 use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_semantic_element::{
-    do_effect::Key as DoEffectKey, fields::Key as FieldsKey,
+    capability::Key as DoEffectKey, fields::Key as FieldsKey,
     import::Key as ImportKey, type_alias::Key as TypeAliasKey,
     variant::Key as VariantKey, where_clause::Key as WhereClauseKey,
 };
@@ -119,7 +119,7 @@ pub async fn single_rendered_executor(
         }
     }
 
-    if kind.has_do_effects() {
+    if kind.has_capabilities() {
         let diags =
             engine.query(&BuildDiagnosticKey::new(DoEffectKey(id))).await?;
 
