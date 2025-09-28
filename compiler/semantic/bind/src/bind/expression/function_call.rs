@@ -14,11 +14,12 @@ use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     linkage::{get_linkage, Linkage, C},
-    parent::get_parent,
+    parent::{get_parent, get_parent_global},
 };
 use pernixc_target::Global;
 use pernixc_term::{
     effect,
+    generic_arguments::Symbol,
     generic_parameters::get_generic_parameters,
     instantiation::{
         get_instantiation, get_instantiation_for_associated_symbol,
@@ -572,27 +573,23 @@ impl Binder<'_> {
             instantiation,
         };
 
-        let kind = self.engine().get_kind(callable_id).await;
-
-        if kind.has_do_effects() {
-            let capabilities = if self
-                .engine()
-                .get_kind(self.current_site())
-                .await
-                .has_do_effects()
-            {
-                Some(self.engine().get_do_effects(self.current_site()).await?)
-            } else {
-                None
-            };
-            self.effect_check(
-                &assignment,
-                whole_span,
-                capabilities.as_deref().unwrap_or(&effect::Effect::default()),
-                handler,
-            )
-            .await?;
-        }
+        let capabilities = if self
+            .engine()
+            .get_kind(self.current_site())
+            .await
+            .has_do_effects()
+        {
+            Some(self.engine().get_do_effects(self.current_site()).await?)
+        } else {
+            None
+        };
+        self.effect_check(
+            &assignment,
+            whole_span,
+            capabilities.as_deref().unwrap_or(&effect::Effect::default()),
+            handler,
+        )
+        .await?;
 
         Ok(self.create_register_assignment(
             Assignment::FunctionCall(assignment),
@@ -631,14 +628,70 @@ impl Binder<'_> {
         capabilities: &effect::Effect,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
-        let mut unhandled_effects = Vec::new();
+        if self
+            .engine()
+            .get_kind(function_call.callable_id)
+            .await
+            .has_do_effects()
+        {
+            let effects =
+                self.engine().get_do_effects(function_call.callable_id).await?;
 
-        let effects =
-            self.engine().get_do_effects(function_call.callable_id).await?;
+            self.check_effect_units(
+                capabilities,
+                effects.effects.iter(),
+                span,
+                function_call,
+                handler,
+            )
+            .await
+        } else {
+            let parent_effect = self
+                .engine()
+                .get_parent_global(function_call.callable_id)
+                .await
+                .unwrap();
+
+            let parent_generic_parameters =
+                self.engine().get_generic_parameters(parent_effect).await?;
+
+            let effect_unit = effect::Unit(Symbol {
+                id: parent_effect,
+                generic_arguments: function_call
+                    .instantiation
+                    .create_generic_arguments(
+                        parent_effect,
+                        &parent_generic_parameters,
+                    ),
+            });
+
+            self.check_effect_units(
+                capabilities,
+                std::iter::once(&effect_unit),
+                span,
+                function_call,
+                handler,
+            )
+            .await
+        }
+    }
+
+    async fn check_effect_units<
+        'a,
+        I: IntoIterator<Item = &'a effect::Unit>,
+    >(
+        &self,
+        capabilities: &effect::Effect,
+        effects: I,
+        span: RelativeSpan,
+        function_assignment: &FunctionCall,
+        handler: &dyn Handler<crate::diagnostic::Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        let mut unhandled_effects = Vec::new();
 
         let environment = self.create_environment();
 
-        'next: for effect_unit in &effects.effects {
+        'next: for effect_unit in effects {
             for capability in &capabilities.effects {
                 if Self::effect_compatible(
                     &environment,
@@ -661,6 +714,7 @@ impl Binder<'_> {
             handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
                 UnhandledEffects {
                     effects: unhandled_effects,
+                    callable_id: function_assignment.callable_id,
                     span,
                     type_inference_map: self.type_inference_rendering_map(),
                     constant_inference_map: self

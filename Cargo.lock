@@ -1228,6 +1228,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pernixc_cps"
+version = "0.1.0-beta.2"
+
+[[package]]
 name = "pernixc_diagnostic"
 version = "0.1.0-beta.2"
 dependencies = [

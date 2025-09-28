@@ -10,7 +10,7 @@ use pernixc_ir::{
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     name::get_by_qualified_name,
-    parent::{get_parent, get_parent_global},
+    parent::get_parent,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -24,7 +24,7 @@ use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
 
 use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
 async fn check_register_assignment<N: Normalizer>(
     ir: &IR,
     register_id: ID<Register>,
@@ -90,20 +90,6 @@ async fn check_register_assignment<N: Normalizer>(
                 .await;
 
             match symbol_kind {
-                Kind::Function | Kind::ExternFunction => {
-                    environment
-                        .wf_check(
-                            function_call.callable_id,
-                            register.span.unwrap(),
-                            &function_call.instantiation,
-                            false,
-                            &handler,
-                        )
-                        .await?;
-
-                    Ok(())
-                }
-
                 Kind::TraitFunction => {
                     // parent trait requirement
                     let parent_trait_id = Global::new(
@@ -187,26 +173,12 @@ async fn check_register_assignment<N: Normalizer>(
                     Ok(())
                 }
 
-                Kind::EffectOperation => {
+                Kind::Function
+                | Kind::ExternFunction
+                | Kind::EffectOperation => {
                     environment
                         .wf_check(
                             function_call.callable_id,
-                            register.span.unwrap(),
-                            &function_call.instantiation,
-                            false,
-                            &handler,
-                        )
-                        .await?;
-
-                    let parent_effect_id = environment
-                        .tracked_engine()
-                        .get_parent_global(function_call.callable_id)
-                        .await
-                        .unwrap();
-
-                    environment
-                        .wf_check(
-                            parent_effect_id,
                             register.span.unwrap(),
                             &function_call.instantiation,
                             false,

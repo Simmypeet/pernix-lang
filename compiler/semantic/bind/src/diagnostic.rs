@@ -7,7 +7,8 @@ use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_source_file::ByteIndex;
 use pernixc_stable_hash::StableHash;
 use pernixc_symbol::{
-    name::get_qualified_name, source_map::to_absolute_span, span::get_span,
+    kind::get_kind, name::get_qualified_name, source_map::to_absolute_span,
+    span::get_span,
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -891,6 +892,9 @@ pub struct UnhandledEffects {
     /// The effects that are not handled by the caller.
     pub effects: Vec<effect::Unit>,
 
+    /// The ID of the callable where the unhandled effects occur.
+    pub callable_id: Global<pernixc_symbol::ID>,
+
     /// The span of the function call expression.
     pub span: RelativeSpan,
 
@@ -928,12 +932,20 @@ impl Report for UnhandledEffects {
                 .unwrap();
         }
 
+        let called_qualified_name =
+            engine.get_qualified_name(self.callable_id).await;
+        let kind = engine.get_kind(self.callable_id).await;
+
         Ok(pernixc_diagnostic::Rendered::builder()
             .message(message)
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.span).await)
-                    .message("function call here")
+                    .message(format!(
+                        "call to the `{} {}`",
+                        kind.kind_str(),
+                        called_qualified_name
+                    ))
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
