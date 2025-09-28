@@ -126,7 +126,7 @@ async fn get_function_instantiation(
         Resolution::MemberGeneric(member_generic)
             if {
                 let kind = binder.engine().get_kind(member_generic.id).await;
-                kind.has_function_signature()
+                kind.has_function_signature() || kind == Kind::EffectOperation
             } =>
         'result: {
             let kind = binder.engine().get_kind(member_generic.id).await;
@@ -456,7 +456,7 @@ impl Binder<'_> {
         .await
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     async fn bind_function_call_internal(
         &mut self,
         expected_types: &[pernixc_term::r#type::Type],
@@ -566,30 +566,33 @@ impl Binder<'_> {
             std::cmp::Ordering::Equal => {}
         }
 
-        let capabilities = if self
-            .engine()
-            .get_kind(self.current_site())
-            .await
-            .has_do_effects()
-        {
-            Some(self.engine().get_do_effects(self.current_site()).await?)
-        } else {
-            None
-        };
-
         let assignment = FunctionCall {
             callable_id,
             arguments: argument_values,
             instantiation,
         };
 
-        self.effect_check(
-            &assignment,
-            whole_span,
-            capabilities.as_deref().unwrap_or(&effect::Effect::default()),
-            handler,
-        )
-        .await?;
+        let kind = self.engine().get_kind(callable_id).await;
+
+        if kind.has_do_effects() {
+            let capabilities = if self
+                .engine()
+                .get_kind(self.current_site())
+                .await
+                .has_do_effects()
+            {
+                Some(self.engine().get_do_effects(self.current_site()).await?)
+            } else {
+                None
+            };
+            self.effect_check(
+                &assignment,
+                whole_span,
+                capabilities.as_deref().unwrap_or(&effect::Effect::default()),
+                handler,
+            )
+            .await?;
+        }
 
         Ok(self.create_register_assignment(
             Assignment::FunctionCall(assignment),

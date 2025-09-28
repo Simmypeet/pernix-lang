@@ -137,9 +137,47 @@ impl<N: Normalizer> Context<'_, N> {
                 );
             }
 
-            _ => {
-                panic!("Unexpected symbol kind encountered")
+            Kind::EffectOperation => {
+                let parent_effect_id = Global::new(
+                    function_call.callable_id.target_id,
+                    self.tracked_engine()
+                        .get_parent(function_call.callable_id)
+                        .await
+                        .unwrap(),
+                );
+
+                lifetime_constraints.extend(
+                    self.environment()
+                        .wf_check(
+                            parent_effect_id,
+                            *span,
+                            &function_call.instantiation,
+                            false,
+                            &self.handler(),
+                        )
+                        .await?,
+                );
+
+                lifetime_constraints.extend(
+                    self.environment()
+                        .wf_check(
+                            function_call.callable_id,
+                            *span,
+                            &function_call.instantiation,
+                            false,
+                            &self.handler(),
+                        )
+                        .await?,
+                );
             }
+
+            _ => unreachable!(
+                "function call to non-function kind: {}",
+                self.tracked_engine()
+                    .get_kind(function_call.callable_id)
+                    .await
+                    .kind_str()
+            ),
         }
 
         Ok(Changes {

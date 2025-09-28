@@ -10,7 +10,7 @@ use pernixc_ir::{
 use pernixc_symbol::{
     kind::{get_kind, Kind},
     name::get_by_qualified_name,
-    parent::get_parent,
+    parent::{get_parent, get_parent_global},
 };
 use pernixc_target::Global;
 use pernixc_term::{
@@ -177,6 +177,36 @@ async fn check_register_assignment<N: Normalizer>(
                     environment
                         .wf_check(
                             function_call.callable_id,
+                            register.span.unwrap(),
+                            &function_call.instantiation,
+                            false,
+                            &handler,
+                        )
+                        .await?;
+
+                    Ok(())
+                }
+
+                Kind::EffectOperation => {
+                    environment
+                        .wf_check(
+                            function_call.callable_id,
+                            register.span.unwrap(),
+                            &function_call.instantiation,
+                            false,
+                            &handler,
+                        )
+                        .await?;
+
+                    let parent_effect_id = environment
+                        .tracked_engine()
+                        .get_parent_global(function_call.callable_id)
+                        .await
+                        .unwrap();
+
+                    environment
+                        .wf_check(
+                            parent_effect_id,
                             register.span.unwrap(),
                             &function_call.instantiation,
                             false,

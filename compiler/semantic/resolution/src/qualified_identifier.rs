@@ -90,28 +90,6 @@ pub struct Variant {
     pub generic_arguments: GenericArguments,
 }
 
-/// Represents a resolution to an effect operation symbol such as
-/// `do IO::readLine(...)`.
-#[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-)]
-pub struct EffectOperation {
-    /// The resolved effect operation symbol.
-    pub operation_id: Global<pernixc_symbol::ID>,
-
-    /// The generic arguments that are supplied to the parent effect.
-    pub generic_arguments: GenericArguments,
-}
-
 /// Represents a resolution to a symbol that is a member of an another symbol
 /// such as `Clone[T]::clone['a]`
 #[derive(
@@ -163,9 +141,6 @@ pub enum Resolution {
     /// Resolved to an enum-variant symbol.
     Variant(Variant),
 
-    /// Resolved to an effect operation symbol.
-    EffectOperation(EffectOperation),
-
     /// Resolved to a symbol with generic arguments such as `Symbol['a, T, U]`.
     Generic(Generic),
 
@@ -181,7 +156,6 @@ impl Resolution {
         match self {
             Self::Module(id) => *id,
             Self::Variant(variant) => variant.variant_id,
-            Self::EffectOperation(effect_op) => effect_op.operation_id,
             Self::Generic(generic) => generic.id,
             Self::MemberGeneric(member) => member.id,
         }
@@ -212,13 +186,6 @@ fn to_resolution(
                 generic_arguments: generic_arguments.unwrap(),
             })
         }
-        Kind::EffectOperation => Resolution::EffectOperation(EffectOperation {
-            operation_id: resolved_id,
-            generic_arguments: latest_resolution
-                .into_generic()
-                .unwrap()
-                .generic_arguments,
-        }),
         Kind::Variant => Resolution::Variant(Variant {
             variant_id: resolved_id,
             generic_arguments: latest_resolution
@@ -231,6 +198,7 @@ fn to_resolution(
         | Kind::TraitConstant
         | Kind::ImplementationConstant
         | Kind::ImplementationFunction
+        | Kind::EffectOperation
         | Kind::ImplementationType => {
             Resolution::MemberGeneric(MemberGeneric {
                 id: resolved_id,

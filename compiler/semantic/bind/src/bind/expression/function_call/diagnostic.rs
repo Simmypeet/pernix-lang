@@ -85,7 +85,8 @@ impl Report for SymbolIsNotCallable {
             )
             .severity(Severity::Error)
             .help_message(
-                "only functions or enum with associated value can be called",
+                "only functions, effect operation or enum with associated \
+                 value can be called",
             )
             .build())
     }
