@@ -1,6 +1,7 @@
 public effect Test['a]:
     takeMut(x: &'a mut int32)
 
+
 public function useIndirectly['a](x: &'a mut int32) do Test['a]:
     Test::takeMut(x)
 
