@@ -17,8 +17,12 @@ use pernixc_symbol::{member::get_members, parent::get_parent, MemberID};
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
+    effect,
     generic_arguments::{GenericArguments, Symbol},
-    generic_parameters::get_generic_parameters,
+    generic_parameters::{
+        get_generic_parameters, ConstantParameterID, LifetimeParameterID,
+        TypeParameterID,
+    },
     instantiation::Instantiation,
     lifetime::Lifetime,
     r#type::{Primitive, Qualifier, Type},
@@ -509,7 +513,7 @@ async fn type_of_variant_assignment(
     })
 }
 
-/// Represents a function call.
+/// Specifies how an effectful operation's capability arguments are supplied.
 #[derive(
     Debug,
     Clone,
@@ -522,6 +526,16 @@ async fn type_of_variant_assignment(
     Deserialize,
     StableHash,
 )]
+pub enum CapabilityArgument {
+    /// Uses the capability passed to the function as an argument.
+    FromPassedCapability(effect::Unit),
+
+    /// The capability is unhandled, error should've been reported.
+    Unhandled,
+}
+
+/// Represents a function call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
 pub struct FunctionCall {
     /// The ID of the function that is called.
     pub callable_id: Global<pernixc_symbol::ID>,
@@ -531,14 +545,19 @@ pub struct FunctionCall {
 
     /// The generic instantiations of the function.
     pub instantiation: Instantiation,
+
+    /// The capability arguments supplied to the function.
+    pub capability_arguments: Vec<(effect::Unit, CapabilityArgument)>,
 }
 
 impl FunctionCall {
+    #[allow(clippy::too_many_lines)]
     async fn transform<
         T: Transformer<Lifetime> + Transformer<Type> + Transformer<Constant>,
     >(
         &mut self,
         transformer: &mut T,
+        engine: &TrackedEngine,
         call_span: Option<RelativeSpan>,
     ) -> Result<(), CyclicError> {
         for argument in &mut self.arguments {
@@ -589,6 +608,63 @@ impl FunctionCall {
                     call_span,
                 )
                 .await?;
+        }
+
+        for (cap_param, _) in &mut self.capability_arguments {
+            let cap_generic_parameters =
+                engine.get_generic_parameters(cap_param.id).await?;
+            let cap_param_id = cap_param.id;
+
+            for (lt_id, lt) in cap_generic_parameters
+                .lifetime_order()
+                .iter()
+                .copied()
+                .zip(cap_param.generic_arguments.lifetimes.iter_mut())
+            {
+                transformer
+                    .transform(
+                        lt,
+                        LifetimeTermSource::EffectOperationGenericParameter(
+                            LifetimeParameterID::new(cap_param_id, lt_id),
+                        ),
+                        call_span,
+                    )
+                    .await?;
+            }
+
+            for (ty_id, ty) in cap_generic_parameters
+                .type_order()
+                .iter()
+                .copied()
+                .zip(cap_param.generic_arguments.types.iter_mut())
+            {
+                transformer
+                    .transform(
+                        ty,
+                        TypeTermSource::EffectOperationGenericParameter(
+                            TypeParameterID::new(cap_param_id, ty_id),
+                        ),
+                        call_span,
+                    )
+                    .await?;
+            }
+
+            for (ct_id, ct) in cap_generic_parameters
+                .constant_order()
+                .iter()
+                .copied()
+                .zip(cap_param.generic_arguments.constants.iter_mut())
+            {
+                transformer
+                    .transform(
+                        ct,
+                        ConstantTermSource::EffectOperationGenericParameter(
+                            ConstantParameterID::new(cap_param_id, ct_id),
+                        ),
+                        call_span,
+                    )
+                    .await?;
+            }
         }
 
         Ok(())
@@ -1185,7 +1261,7 @@ impl Register {
                 variant.transform(transformer, self.span, engine).await
             }
             Assignment::FunctionCall(function_call) => {
-                function_call.transform(transformer, self.span).await
+                function_call.transform(transformer, engine, self.span).await
             }
             Assignment::Binary(binary) => binary.transform(transformer).await,
             Assignment::Array(array) => {

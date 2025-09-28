@@ -1,6 +1,8 @@
 use pernixc_handler::Handler;
 use pernixc_ir::value::{
-    register::{Assignment, FunctionCall, Load, Register, Variant},
+    register::{
+        Assignment, CapabilityArgument, FunctionCall, Load, Register, Variant,
+    },
     Value,
 };
 use pernixc_lexical::tree::RelativeSpan;
@@ -567,12 +569,6 @@ impl Binder<'_> {
             std::cmp::Ordering::Equal => {}
         }
 
-        let assignment = FunctionCall {
-            callable_id,
-            arguments: argument_values,
-            instantiation,
-        };
-
         let capabilities = if self
             .engine()
             .get_kind(self.current_site())
@@ -583,13 +579,23 @@ impl Binder<'_> {
         } else {
             None
         };
-        self.effect_check(
-            &assignment,
-            whole_span,
-            capabilities.as_deref().unwrap_or(&effect::Effect::default()),
-            handler,
-        )
-        .await?;
+
+        let capability_arguments = self
+            .effect_check(
+                callable_id,
+                &instantiation,
+                whole_span,
+                capabilities.as_deref().unwrap_or(&effect::Effect::default()),
+                handler,
+            )
+            .await?;
+
+        let assignment = FunctionCall {
+            callable_id,
+            instantiation,
+            arguments: argument_values,
+            capability_arguments,
+        };
 
         Ok(self.create_register_assignment(
             Assignment::FunctionCall(assignment),
@@ -610,66 +616,61 @@ impl Binder<'_> {
 
         let result = env
             .subtypes_generic_arguments(
-                &capability.generic_arguments,
                 &effect.generic_arguments,
+                &capability.generic_arguments,
             )
             .await
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(span, &handler)
             })?;
 
-        Ok(result.is_some())
+        let Some(result) = result else {
+            return Ok(false);
+        };
+
+        Ok(result.result.forall_lifetime_errors.is_empty())
     }
 
     async fn effect_check(
         &mut self,
-        function_call: &FunctionCall,
+        callable_id: Global<pernixc_symbol::ID>,
+        instantiation: &Instantiation,
         span: RelativeSpan,
         capabilities: &effect::Effect,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<(), UnrecoverableError> {
-        if self
-            .engine()
-            .get_kind(function_call.callable_id)
-            .await
-            .has_do_effects()
-        {
-            let effects =
-                self.engine().get_do_effects(function_call.callable_id).await?;
+    ) -> Result<Vec<(effect::Unit, CapabilityArgument)>, UnrecoverableError>
+    {
+        if self.engine().get_kind(callable_id).await.has_do_effects() {
+            let effects = self.engine().get_do_effects(callable_id).await?;
 
             self.check_effect_units(
                 capabilities,
                 effects.effects.iter(),
                 span,
-                function_call,
+                callable_id,
                 handler,
             )
             .await
         } else {
-            let parent_effect = self
-                .engine()
-                .get_parent_global(function_call.callable_id)
-                .await
-                .unwrap();
+            let parent_effect =
+                self.engine().get_parent_global(callable_id).await.unwrap();
 
             let parent_generic_parameters =
                 self.engine().get_generic_parameters(parent_effect).await?;
 
             let effect_unit = effect::Unit(Symbol {
                 id: parent_effect,
-                generic_arguments: function_call
-                    .instantiation
-                    .create_generic_arguments(
-                        parent_effect,
-                        &parent_generic_parameters,
-                    ),
+                generic_arguments: instantiation.create_generic_arguments(
+                    parent_effect,
+                    &parent_generic_parameters,
+                ),
             });
 
             self.check_effect_units(
                 capabilities,
                 std::iter::once(&effect_unit),
                 span,
-                function_call,
+                callable_id,
                 handler,
             )
             .await
@@ -684,10 +685,11 @@ impl Binder<'_> {
         capabilities: &effect::Effect,
         effects: I,
         span: RelativeSpan,
-        function_assignment: &FunctionCall,
+        callable_id: Global<pernixc_symbol::ID>,
         handler: &dyn Handler<crate::diagnostic::Diagnostic>,
-    ) -> Result<(), UnrecoverableError> {
-        let mut unhandled_effects = Vec::new();
+    ) -> Result<Vec<(effect::Unit, CapabilityArgument)>, UnrecoverableError>
+    {
+        let mut effect_arguments = Vec::new();
 
         let environment = self.create_environment();
 
@@ -702,29 +704,44 @@ impl Binder<'_> {
                 )
                 .await?
                 {
+                    effect_arguments.push((
+                        effect_unit.clone(),
+                        CapabilityArgument::FromPassedCapability(
+                            capability.clone(),
+                        ),
+                    ));
                     continue 'next;
                 }
             }
 
             // cannot find a compatible capability
-            unhandled_effects.push(effect_unit.clone());
+            effect_arguments
+                .push((effect_unit.clone(), CapabilityArgument::Unhandled));
         }
 
-        if !unhandled_effects.is_empty() {
+        if effect_arguments.iter().any(|x| x.1 == CapabilityArgument::Unhandled)
+        {
             handler.receive(crate::diagnostic::Diagnostic::UnhandledEffects(
                 UnhandledEffects {
-                    effects: unhandled_effects,
-                    callable_id: function_assignment.callable_id,
+                    effects: effect_arguments
+                        .iter()
+                        .filter_map(|x| {
+                            if x.1 == CapabilityArgument::Unhandled {
+                                Some(x.0.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
+                    callable_id,
                     span,
                     type_inference_map: self.type_inference_rendering_map(),
                     constant_inference_map: self
                         .constant_inference_rendering_map(),
                 },
             ));
-
-            return Ok(());
         }
 
-        Ok(())
+        Ok(effect_arguments)
     }
 }

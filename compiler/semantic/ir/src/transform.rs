@@ -33,6 +33,9 @@ pub enum LifetimeTermSource {
     /// As a generic argument supplied to a generic symbol.
     GenericParameter(LifetimeParameterID),
 
+    /// As lifetime parameter for a capability generic parameter.
+    EffectOperationGenericParameter(LifetimeParameterID),
+
     /// From an elided lifetime argument to the function call.
     ElidedLifetimeParameter(ElidedLifetimeID),
 }
@@ -68,6 +71,9 @@ pub enum TypeTermSource {
     /// As a generic argument supplied to a generic symbol.
     GenericParameter(TypeParameterID),
 
+    /// As type parameter for a capability generic parameter.
+    EffectOperationGenericParameter(TypeParameterID),
+
     /// From the type in a cast expression like `expr as T`.
     Cast,
 
@@ -84,6 +90,9 @@ impl Transformable for Type {
 pub enum ConstantTermSource {
     /// As a generic argument supplied to a generic symbol.
     GenericParameter(ConstantParameterID),
+
+    /// As constant parameter for a capability generic parameter.
+    EffectOperationGenericParameter(ConstantParameterID),
 }
 
 impl Transformable for Constant {

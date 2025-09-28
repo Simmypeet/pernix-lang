@@ -1,18 +1,16 @@
 use std::collections::BTreeSet;
 
 use pernixc_hash::HashSet;
-use pernixc_ir::value::register::FunctionCall;
+use pernixc_ir::value::register::{CapabilityArgument, FunctionCall};
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_semantic_element::{
-    do_effect::get_do_effects, parameter::get_parameters, variance::Variance,
-};
+use pernixc_semantic_element::{parameter::get_parameters, variance::Variance};
 use pernixc_symbol::{
     kind::{get_kind, Kind},
-    parent::{get_parent, get_parent_global},
+    parent::get_parent,
 };
 use pernixc_target::Global;
 use pernixc_term::{
-    generic_arguments::Symbol,
+    effect,
     generic_parameters::get_generic_parameters,
     predicate::{PositiveTrait, Predicate},
 };
@@ -25,72 +23,46 @@ use crate::{context::Context, subset::Changes, Region};
 
 impl<N: Normalizer> Context<'_, N> {
     #[allow(clippy::too_many_lines)]
-    pub(super) async fn get_changes_of_effect_operation(
+    pub(super) async fn get_subset_of_effect_operations(
         &self,
-        function_call: &FunctionCall,
+        capability_arguments: &[(effect::Unit, CapabilityArgument)],
         span: &RelativeSpan,
         lifetime_constraints: &mut BTreeSet<LifetimeConstraint>,
     ) -> Result<(), UnrecoverableError> {
-        let parent_effect_id = self
-            .tracked_engine()
-            .get_parent_global(function_call.callable_id)
-            .await
-            .unwrap();
+        for (capability, argument) in dbg!(capability_arguments) {
+            match argument {
+                CapabilityArgument::FromPassedCapability(capability_unit) => {
+                    let subtypable = self
+                        .environment()
+                        .subtypes_generic_arguments(
+                            &capability.generic_arguments,
+                            &capability_unit.generic_arguments,
+                        )
+                        .await
+                        .map_err(|x| {
+                            x.report_as_type_check_overflow(
+                                *span,
+                                &self.handler(),
+                            )
+                        })?;
 
-        let parent_generic_parameters = self
-            .tracked_engine()
-            .get_generic_parameters(parent_effect_id)
-            .await?;
+                    let subtypable =
+                        subtypable.expect("should've been checked");
 
-        let effect_operation = Symbol {
-            id: parent_effect_id,
-            generic_arguments: function_call
-                .instantiation
-                .create_generic_arguments(
-                    parent_effect_id,
-                    &parent_generic_parameters,
-                ),
-        };
+                    assert!(subtypable
+                        .result
+                        .forall_lifetime_errors
+                        .is_empty());
 
-        let do_effects =
-            self.tracked_engine().get_do_effects(self.current_site()).await?;
+                    lifetime_constraints
+                        .extend(subtypable.constraints.iter().cloned());
+                }
 
-        let mut found = false;
-        for available_cap in &do_effects.effects {
-            // must be the same effect
-            if available_cap.id != effect_operation.id {
-                continue;
+                CapabilityArgument::Unhandled => {
+                    // error should've been reported
+                }
             }
-
-            let Some(subtypable) = self
-                .environment()
-                .subtypes_generic_arguments(
-                    &effect_operation.generic_arguments,
-                    &available_cap.generic_arguments,
-                )
-                .await
-                .map_err(|e| {
-                    e.report_as_type_calculating_overflow(
-                        *span,
-                        &self.handler(),
-                    )
-                })?
-            else {
-                continue;
-            };
-
-            assert!(subtypable.result.forall_lifetime_errors.is_empty());
-
-            lifetime_constraints.extend(subtypable.constraints.iter().cloned());
-
-            found = true;
-            break;
         }
-
-        assert!(
-            found,
-            "in borrow checking, all effect operations should be valid"
-        );
 
         Ok(())
     }
@@ -226,13 +198,6 @@ impl<N: Normalizer> Context<'_, N> {
                         )
                         .await?,
                 );
-
-                self.get_changes_of_effect_operation(
-                    function_call,
-                    span,
-                    &mut lifetime_constraints,
-                )
-                .await?;
             }
 
             _ => unreachable!(
@@ -243,6 +208,15 @@ impl<N: Normalizer> Context<'_, N> {
                     .kind_str()
             ),
         }
+
+        self.get_subset_of_effect_operations(
+            &function_call.capability_arguments,
+            span,
+            &mut lifetime_constraints,
+        )
+        .await?;
+
+        dbg!(&lifetime_constraints);
 
         Ok(Changes {
             subset_relations: lifetime_constraints
