@@ -33,14 +33,15 @@ abstract_tree::abstract_tree! {
         pub do_keyword: Keyword = expect::Keyword::Do,
         pub label: Label = ast::<Label>().optional(),
         pub statements: Statements = ast::<Statements>(),
-        pub with: With = ast::<With>().optional(),
+        pub with: With = ast::<With>(),
     }
 }
 
 abstract_tree::abstract_tree! {
     #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct With {
-        pub with_keyword: Keyword = expect::Keyword::With,
+        pub with_keyword: Keyword = expect::Keyword::With
+            .new_line_significant(false),
         pub effect: QualifiedIdentifier =
             ast::<QualifiedIdentifier>(),
         pub body: WithBody = ast::<WithBody>(),
@@ -57,6 +58,7 @@ abstract_tree::abstract_tree! {
 }
 
 abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct Handler {
         pub identifier: Identifier = expect::Identifier,
         pub arguments: HandlerArguments = ast::<HandlerArguments>(),
