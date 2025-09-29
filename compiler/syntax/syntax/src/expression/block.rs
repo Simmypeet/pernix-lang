@@ -1,4 +1,5 @@
 use enum_as_inner::EnumAsInner;
+use pernixc_lexical::tree::DelimiterKind;
 use pernixc_parser::{
     abstract_tree, expect,
     parser::{ast, Parser as _},
@@ -6,9 +7,9 @@ use pernixc_parser::{
 
 use crate::{
     expression::{binary::Binary, Expression},
-    pattern::Refutable,
+    pattern::{Irrefutable, Refutable},
     statement::Statements,
-    Keyword, Label, Passable, Punctuation,
+    Identifier, Keyword, Label, Passable, Punctuation, QualifiedIdentifier,
 };
 
 #[cfg(any(test, feature = "arbitrary"))]
@@ -22,6 +23,53 @@ abstract_tree::abstract_tree! {
         Loop(Loop = ast::<Loop>()),
         Match(Match = ast::<Match>()),
         While(While = ast::<While>()),
+        Do(Do = ast::<Do>()),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Do {
+        pub do_keyword: Keyword = expect::Keyword::Do,
+        pub label: Label = ast::<Label>().optional(),
+        pub statements: Statements = ast::<Statements>(),
+        pub with: With = ast::<With>().optional(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct With {
+        pub with_keyword: Keyword = expect::Keyword::With,
+        pub effect: QualifiedIdentifier =
+            ast::<QualifiedIdentifier>(),
+        pub body: WithBody = ast::<WithBody>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #{fragment = expect::Fragment::Delimited(DelimiterKind::Parenthesis)}
+    pub struct HandlerArguments {
+        pub irrefutable_patterns: #[multi] Irrefutable =
+            ast::<Irrefutable>().repeat_all_with_separator(','),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    pub struct Handler {
+        pub identifier: Identifier = expect::Identifier,
+        pub arguments: HandlerArguments = ast::<HandlerArguments>(),
+        pub statements: Statements = ast::<Statements>(),
+    }
+}
+
+abstract_tree::abstract_tree! {
+    #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #{fragment = expect::Fragment::Indentation}
+    pub struct WithBody {
+        pub handlers: #[multi] Passable<Handler> =
+            ast::<Passable<Handler>>().line().repeat_all(),
     }
 }
 
