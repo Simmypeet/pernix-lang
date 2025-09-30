@@ -21,8 +21,11 @@ use pernixc_symbol::{
 use pernixc_syntax::item::function::{EffectUnit, EffectUnitListKind};
 use pernixc_target::Global;
 use pernixc_term::{
-    constant::Constant, effect, generic_arguments::Symbol,
-    generic_parameters::get_generic_parameters, lifetime::Lifetime,
+    constant::Constant,
+    effect,
+    generic_arguments::Symbol,
+    generic_parameters::get_generic_parameters,
+    lifetime::{Forall, FromSemanticElement, GeneratedForall, Lifetime},
     r#type::Type,
 };
 use pernixc_type_system::{
@@ -55,6 +58,26 @@ async fn to_effect(
     }))
 }
 
+struct ElidedForallLifetimeProvider {
+    count: usize,
+    current_site: Global<pernixc_symbol::ID>,
+}
+
+impl pernixc_resolution::ElidedTermProvider<Lifetime>
+    for ElidedForallLifetimeProvider
+{
+    fn create(&mut self) -> Lifetime {
+        let counter = self.count;
+        self.count += 1;
+
+        Lifetime::Forall(Forall::Generated(GeneratedForall {
+            from_id: self.current_site,
+            from_semantic_element: FromSemanticElement::DoEffect,
+            unique_counter: counter,
+        }))
+    }
+}
+
 async fn build_do_effect(
     engine: &TrackedEngine,
     effect_unit_syntax: EffectUnit,
@@ -83,10 +106,14 @@ async fn build_do_effect(
     let extra_namespace =
         with_forall_lifetime.as_ref().unwrap_or(extra_namespace);
 
+    let mut elided_lifetime_provider =
+        ElidedForallLifetimeProvider { count: 0, current_site };
+
     let config = Config::builder()
         .observer(observer)
         .referring_site(current_site)
         .extra_namespace(extra_namespace)
+        .elided_lifetime_provider(&mut elided_lifetime_provider)
         .build();
 
     let resolution = match engine
