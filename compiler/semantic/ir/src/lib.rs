@@ -14,6 +14,7 @@ use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
+    closure::Closure,
     transform::{Transformer, TypeTermSource},
     value::register::Register,
 };
@@ -38,6 +39,9 @@ pub struct Values {
 
     /// Contains all the allocas used in the program.
     pub allocas: Arena<Alloca>,
+
+    /// Contains all the closures defined in the program.
+    pub closures: Arena<Closure>,
 }
 
 impl Values {
