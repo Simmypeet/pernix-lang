@@ -3,7 +3,7 @@
 use pernixc_arena::ID;
 use pernixc_term::inference;
 
-use crate::inference_context::table::{Constraint, Table};
+use crate::infer::table::{Constraint, Table};
 
 #[derive(Debug)]
 enum Log<C: Constraint> {

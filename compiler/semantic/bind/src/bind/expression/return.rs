@@ -15,7 +15,7 @@ use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{stack::Scope, Binder, BindingError, Error},
     diagnostic::{Diagnostic, ReturnIsNotAllowed},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::terminator::Return> for Binder<'_> {

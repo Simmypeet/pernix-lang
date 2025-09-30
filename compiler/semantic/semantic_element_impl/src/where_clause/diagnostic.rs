@@ -234,10 +234,8 @@ impl Report for ForallLifetimeIsNotAllowedInOutlivesPredicate {
                 }
 
                 lifetime::Forall::Generated(generated_forall) => {
-                    forall_lifetimes.push(format!(
-                        "'{}",
-                        generated_forall.unique_counter
-                    ));
+                    forall_lifetimes
+                        .push(format!("'{}", generated_forall.unique_counter));
                 }
             }
         }

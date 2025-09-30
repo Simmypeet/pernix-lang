@@ -9,7 +9,7 @@ use pernixc_term::r#type::{self, Type};
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::Error,
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::unit::Phantom>

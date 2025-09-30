@@ -13,7 +13,7 @@ use crate::{
         Binder, UnrecoverableError,
     },
     diagnostic::Diagnostic,
-    inference_context::constraint::{self, Constraint},
+    infer::constraint::{self, Constraint},
 };
 
 pub mod diagnostic;

@@ -12,9 +12,7 @@ use getset::Getters;
 use pernixc_arena::{Arena, ID};
 use pernixc_term::inference;
 
-use crate::inference_context::{
-    constraint::Constraint, table::history::History,
-};
+use crate::infer::{constraint::Constraint, table::history::History};
 
 pub mod history;
 

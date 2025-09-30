@@ -51,7 +51,7 @@ use crate::{
     bind::LValue,
     binder::{inference_context::InferenceContext, stack::Stack},
     diagnostic::Diagnostic,
-    inference_context::constraint,
+    infer::constraint,
     pattern::insert_name_binding,
 };
 

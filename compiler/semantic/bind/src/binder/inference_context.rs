@@ -41,7 +41,7 @@ use crate::{
         self, inference_context::sealed::Sealed, Binder, BindingError, Error,
     },
     diagnostic::Diagnostic,
-    inference_context::{
+    infer::{
         constraint,
         table::{
             self, AssignConstraintError, CombineConstraintError, Inference,
@@ -213,7 +213,7 @@ mod sealed {
         binder::inference_context::{
             CyclicInferenceError, InferenceContext, UnifyError,
         },
-        inference_context::{
+        infer::{
             constraint::Constraint,
             table::{self, CombineConstraintError, UnsatisfiedConstraintError},
         },

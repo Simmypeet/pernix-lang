@@ -6,7 +6,7 @@ use pernixc_term::{
 };
 
 use super::super::{Inference, Table, View};
-use crate::inference_context::constraint;
+use crate::infer::constraint;
 
 type TypeTable = Table<constraint::Type>;
 

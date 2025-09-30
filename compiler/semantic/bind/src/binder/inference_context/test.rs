@@ -9,7 +9,7 @@ use pernixc_term::{
 use pernixc_type_system::environment::Premise;
 
 use super::{InferenceContext, UnifyError};
-use crate::inference_context::{constraint, table::Inference};
+use crate::infer::{constraint, table::Inference};
 
 /// Helper function to create unique inference variables
 fn create_type_inference() -> inference::Variable<Type> {

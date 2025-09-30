@@ -5,7 +5,7 @@ use pernixc_term::r#type::Type;
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{Binder, Error},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::unit::Array> for Binder<'_> {
