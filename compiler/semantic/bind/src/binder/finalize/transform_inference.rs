@@ -168,7 +168,7 @@ impl Binder<'_> {
 
         let mut transformer = ReplaceInference {
             environment: &Environment::new(
-                Cow::Borrowed(&self.premise),
+                Cow::Borrowed(self.premise()),
                 Cow::Borrowed(self.engine),
                 &self.inference_context,
             ),

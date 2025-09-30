@@ -75,7 +75,7 @@ impl Binder<'_> {
                     .unify(
                         &simplified_ty.result,
                         &simplified_expected.result,
-                        &self.premise,
+                        self.premise(),
                         self.engine,
                     )
                     .await

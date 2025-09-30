@@ -21,7 +21,10 @@ use pernixc_ir::{
     IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
-use pernixc_query::{runtime::executor, TrackedEngine};
+use pernixc_query::{
+    runtime::executor::{self, CyclicError},
+    TrackedEngine,
+};
 use pernixc_resolution::{
     generic_parameter_namespace::get_generic_parameter_namespace,
     qualified_identifier::{resolve_qualified_identifier, Resolution},
@@ -31,7 +34,9 @@ use pernixc_resolution::{
     Config, ElidedTermProvider, ExtraNamespace,
 };
 use pernixc_semantic_element::parameter::get_parameters;
+use pernixc_serialize::Serialize;
 use pernixc_source_file::SourceElement;
+use pernixc_stable_hash::StableHash;
 use pernixc_symbol::syntax::get_function_signature_syntax;
 use pernixc_target::Global;
 use pernixc_term::{
@@ -44,7 +49,7 @@ use pernixc_term::{
 };
 pub use pernixc_type_system::UnrecoverableError;
 use pernixc_type_system::{
-    environment::{get_active_premise, Environment, Premise},
+    environment::{get_active_premise, Environment as TyEnvironment, Premise},
     Succeeded,
 };
 
@@ -63,6 +68,36 @@ pub mod r#loop;
 pub mod stack;
 pub mod type_check;
 
+/// The environment where the binder is operating on.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize)]
+pub struct Environment {
+    /// The current site where the binder is operating on.
+    current_site: Global<pernixc_symbol::ID>,
+
+    /// Gets the active premise at the `current_site`.
+    premise: Arc<Premise>,
+
+    extra_namespace: Arc<ExtraNamespace>,
+}
+
+impl Environment {
+    /// Creates an environment object for the given `current_site`.
+    pub async fn new(
+        engine: &TrackedEngine,
+        current_site: Global<pernixc_symbol::ID>,
+    ) -> Result<Self, CyclicError> {
+        let premise = engine.get_active_premise(current_site).await?;
+        let generic_parameter_namespace =
+            engine.get_generic_parameter_namespace(current_site).await?;
+
+        Ok(Self {
+            current_site,
+            premise,
+            extra_namespace: generic_parameter_namespace,
+        })
+    }
+}
+
 /// The binder used for building the IR.
 #[derive(Debug, Getters, CopyGetters)]
 pub struct Binder<'t> {
@@ -70,15 +105,8 @@ pub struct Binder<'t> {
     #[get = "pub"]
     engine: &'t TrackedEngine,
 
-    /// The current site where the binder is operating on.
-    #[get_copy = "pub"]
-    current_site: Global<pernixc_symbol::ID>,
-
-    /// Gets the active premise at the `current_site`.
-    #[get = "pub"]
-    premise: Arc<Premise>,
-
-    extra_namespace: Arc<ExtraNamespace>,
+    /// The current environment information where the binder is operating on.
+    environment: &'t Environment,
 
     /// The intermediate representation that is being built.
     #[get = "pub"]
@@ -105,16 +133,30 @@ pub struct Binder<'t> {
 }
 
 impl<'t> Binder<'t> {
+    /// Returns the current site where the binder is operating on.
+    #[must_use]
+    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
+        self.environment.current_site
+    }
+
+    /// Returns the extra namespace used for resolving identifiers.
+    #[must_use]
+    pub fn extra_namespace(&self) -> &'t ExtraNamespace {
+        &self.environment.extra_namespace
+    }
+
+    /// Returns the active premise where the binder is operating on.
+    #[must_use]
+    pub fn premise(&self) -> &'t Premise { &self.environment.premise }
+}
+
+impl<'t> Binder<'t> {
     /// Creates the binder for building the IR.
     pub async fn new_function(
         engine: &'t TrackedEngine,
-        function_id: Global<pernixc_symbol::ID>,
+        environment: &'t Environment,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
-        let premise = engine.get_active_premise(function_id).await?;
-        let generic_parameter_namespace =
-            engine.get_generic_parameter_namespace(function_id).await?;
-
         let ir = IR::default();
         let current_block_id = ir.control_flow_graph.entry_block_id();
 
@@ -122,12 +164,10 @@ impl<'t> Binder<'t> {
 
         let mut binder = Self {
             engine,
-            current_site: function_id,
-            premise,
             ir,
             stack,
-            extra_namespace: generic_parameter_namespace,
             current_block_id,
+            environment,
 
             inference_context: InferenceContext::default(),
 
@@ -146,10 +186,14 @@ impl<'t> Binder<'t> {
             ScopePush(root_scope_id),
         ));
 
-        let (parameters_syn, _) =
-            binder.engine.get_function_signature_syntax(function_id).await;
+        let (parameters_syn, _) = binder
+            .engine
+            .get_function_signature_syntax(environment.current_site)
+            .await;
 
-        let parameters = binder.engine.get_parameters(function_id).await?;
+        let parameters =
+            binder.engine.get_parameters(environment.current_site).await?;
+
         let mut name_binding_point = NameBindingPoint::default();
 
         // bind the parameter patterns
@@ -544,9 +588,9 @@ impl Binder<'_> {
     ///
     /// `table`, and `inference_context` normalizer.
     #[must_use]
-    pub fn create_environment(&self) -> Environment<'_, InferenceContext> {
-        let environment = Environment::new(
-            Cow::Borrowed(&self.premise),
+    pub fn create_environment(&self) -> TyEnvironment<'_, InferenceContext> {
+        let environment = TyEnvironment::new(
+            Cow::Borrowed(&self.environment.premise),
             Cow::Borrowed(self.engine),
             &self.inference_context,
         );
@@ -610,7 +654,11 @@ impl Binder<'_> {
     ) -> Result<Type, UnrecoverableError> {
         self.ir
             .values
-            .type_of(register_id, self.current_site, &self.create_environment())
+            .type_of(
+                register_id,
+                self.current_site(),
+                &self.create_environment(),
+            )
             .await
             .map(|x| x.result)
             .map_err(|x| {
@@ -721,11 +769,11 @@ impl Binder<'_> {
         let mut lifetime_inference_providers = LifetimeInferenceProvider;
 
         let config = Config::builder()
-            .extra_namespace(&self.extra_namespace)
+            .extra_namespace(self.extra_namespace())
             .elided_lifetime_provider(&mut lifetime_inference_providers)
             .elided_type_provider(&mut type_inferences)
             .elided_constant_provider(&mut constant_inferences)
-            .referring_site(self.current_site)
+            .referring_site(self.current_site())
             .build();
 
         let resolution = self
@@ -840,7 +888,7 @@ impl Binder<'_> {
         match self
             .ir
             .values
-            .type_of(address, self.current_site, &self.create_environment())
+            .type_of(address, self.current_site(), &self.create_environment())
             .await
         {
             Ok(x) => Ok(x.result),
@@ -849,7 +897,7 @@ impl Binder<'_> {
                     Memory::Parameter(id) => {
                         let parameters = self
                             .engine
-                            .get_parameters(self.current_site)
+                            .get_parameters(self.current_site())
                             .await?;
 
                         parameters.parameters[*id].span.unwrap()
@@ -927,11 +975,11 @@ impl Binder<'_> {
             .resolve_type(
                 syntax_tree,
                 pernixc_resolution::Config::builder()
-                    .extra_namespace(&self.extra_namespace)
+                    .extra_namespace(self.extra_namespace())
                     .elided_lifetime_provider(&mut lifetime_inference_providers)
                     .elided_type_provider(&mut type_inferences)
                     .elided_constant_provider(&mut constant_inferences)
-                    .referring_site(self.current_site)
+                    .referring_site(self.current_site())
                     .build(),
                 &handler,
             )
@@ -985,11 +1033,11 @@ impl Binder<'_> {
             .resolve_generic_arguments(
                 generic_arguments,
                 pernixc_resolution::Config::builder()
-                    .extra_namespace(&self.extra_namespace)
+                    .extra_namespace(self.extra_namespace())
                     .elided_lifetime_provider(&mut lifetime_inference_providers)
                     .elided_type_provider(&mut type_inferences)
                     .elided_constant_provider(&mut constant_inferences)
-                    .referring_site(self.current_site)
+                    .referring_site(self.current_site())
                     .build(),
                 &handler,
             )
@@ -1047,11 +1095,11 @@ impl Binder<'_> {
                 resolved_id,
                 generic_identifier_span,
                 pernixc_resolution::Config::builder()
-                    .extra_namespace(&self.extra_namespace)
+                    .extra_namespace(self.extra_namespace())
                     .elided_lifetime_provider(&mut lifetime_inference_providers)
                     .elided_type_provider(&mut type_inferences)
                     .elided_constant_provider(&mut constant_inferences)
-                    .referring_site(self.current_site)
+                    .referring_site(self.current_site())
                     .build(),
             )
             .await?;
