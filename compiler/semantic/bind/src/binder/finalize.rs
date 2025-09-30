@@ -66,7 +66,7 @@ impl Binder<'_> {
         // to ensure the IR is valid. For example, all scope push should have
         // corresponding scope pop.
 
-        let root_scope_id = self.ir.scope_tree.root_scope_id();
+        let root_scope_id = self.ir.control_flow_graph.root_scope_id();
         let _ = self
             .current_block_mut()
             .add_instruction(Instruction::ScopePop(ScopePop(root_scope_id)));

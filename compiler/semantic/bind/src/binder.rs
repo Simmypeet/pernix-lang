@@ -118,7 +118,7 @@ impl<'t> Binder<'t> {
         let ir = IR::default();
         let current_block_id = ir.control_flow_graph.entry_block_id();
 
-        let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
+        let stack = Stack::new(ir.control_flow_graph.root_scope_id(), false);
 
         let mut binder = Self {
             engine,
@@ -140,7 +140,7 @@ impl<'t> Binder<'t> {
             loop_context: r#loop::Context::default(),
         };
 
-        let root_scope_id = binder.ir.scope_tree.root_scope_id();
+        let root_scope_id = binder.ir.control_flow_graph.root_scope_id();
 
         binder.push_instruction(instruction::Instruction::ScopePush(
             ScopePush(root_scope_id),
@@ -524,7 +524,10 @@ impl Binder<'_> {
         parent_scope_id: ID<scope::Scope>,
         count: NonZeroUsize,
     ) -> Vec<ID<scope::Scope>> {
-        self.ir.scope_tree.new_child_branch(parent_scope_id, count).unwrap()
+        self.ir
+            .control_flow_graph
+            .new_child_branch(parent_scope_id, count)
+            .unwrap()
     }
 
     /// Creates a new child branch of scopes at the current scope.
@@ -651,7 +654,7 @@ impl Binder<'_> {
     pub fn push_scope(&mut self, is_unsafe: bool) -> ID<scope::Scope> {
         let scope_id = self
             .ir
-            .scope_tree
+            .control_flow_graph
             .new_child_branch(
                 self.stack.current_scope().scope_id(),
                 NonZeroUsize::new(1).unwrap(),

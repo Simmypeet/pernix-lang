@@ -1,6 +1,9 @@
 //! Contains the definition of [`Block`] and [`ControlFlowGraph`].
 
-use std::ops::{Not, RangeBounds};
+use std::{
+    num::NonZeroUsize,
+    ops::{Not, RangeBounds},
+};
 
 use getset::{CopyGetters, Getters};
 use pernixc_arena::{Arena, ID};
@@ -12,7 +15,7 @@ use pernixc_term::r#type::Type;
 use pernixc_transitive_closure::TransitiveClosure;
 
 use super::instruction::{Instruction, Jump, Terminator};
-use crate::transform::Transformer;
+use crate::{scope, transform::Transformer};
 
 /// A data structure used for computing whether a particular block in the
 /// control flow graph is reachable to another.
@@ -178,6 +181,9 @@ pub struct ControlFlowGraph {
     /// The id of the entry block.
     #[get_copy = "pub"]
     entry_block_id: ID<Block>,
+
+    /// The tree of scopes in the program.
+    scope_tree: scope::Tree,
 }
 
 /// An iterator for traversing through the control flow graph.
@@ -650,6 +656,28 @@ impl ControlFlowGraph {
 
         Ok(())
     }
+
+    /// Creates a new child scope under the given parent scope.
+    ///
+    /// Returns `None` if the parent scope does not exist.
+    #[must_use]
+    pub fn new_child_branch(
+        &mut self,
+        parent_scope_id: ID<scope::Scope>,
+        branch_count: NonZeroUsize,
+    ) -> Option<Vec<ID<scope::Scope>>> {
+        self.scope_tree.new_child_branch(parent_scope_id, branch_count)
+    }
+
+    /// Returns an arena containing all the scopes in the program.
+    #[must_use]
+    pub fn scopes(&self) -> &Arena<scope::Scope> { self.scope_tree.scopes() }
+
+    /// Returns the ID of the root scope.
+    #[must_use]
+    pub fn root_scope_id(&self) -> ID<scope::Scope> {
+        self.scope_tree.root_scope_id()
+    }
 }
 
 impl Default for ControlFlowGraph {
@@ -664,7 +692,7 @@ impl Default for ControlFlowGraph {
             is_entry: true,
         });
 
-        Self { blocks, entry_block_id }
+        Self { blocks, entry_block_id, scope_tree: scope::Tree::default() }
     }
 }
 
