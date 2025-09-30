@@ -20,7 +20,7 @@ use crate::{
 
 pub mod address;
 pub mod alloca;
-pub mod capture;
+pub mod closure;
 pub mod control_flow_graph;
 pub mod instruction;
 pub mod pattern;

@@ -1,4 +1,4 @@
-//! Defines the [`Capture`], representing captured IR for closures, effect
+//! Defines the [`Closure`], representing captured IR for closures, effect
 //! handlers, do blocks, etc.
 
 use pernixc_serialize::{Deserialize, Serialize};
@@ -6,7 +6,7 @@ use pernixc_stable_hash::StableHash;
 
 use crate::IR;
 
-/// Specifies what [`Capture`] is being used for.
+/// Specifies what [`Closure`] is being used for.
 #[derive(
     Debug,
     Clone,
@@ -28,9 +28,10 @@ pub enum Kind {
     EffectHandler,
 }
 
-/// Represents a captured IR for closures, effect handlers, do blocks, etc.
+/// Represents a captured IR for closures; can be used for annonymous
+/// functions, effect handlers, do blocks, etc.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-pub struct Capture {
+pub struct Closure {
     /// The IR of the inner procedure.
     pub ir: IR,
 
