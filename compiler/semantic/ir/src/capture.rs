@@ -6,25 +6,6 @@ use pernixc_stable_hash::StableHash;
 
 use crate::IR;
 
-/// Determines where the [`Capture`] is located in the IR tree.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    StableHash,
-    Serialize,
-    Deserialize,
-)]
-pub enum Parent {
-    /// The [`Capture`] is defined at a top-level IR.
-    Root,
-}
-
 /// Specifies what [`Capture`] is being used for.
 #[derive(
     Debug,
@@ -52,9 +33,6 @@ pub enum Kind {
 pub struct Capture {
     /// The IR of the inner procedure.
     pub ir: IR,
-
-    /// The parent of the captured IR.
-    pub parent_ir: Parent,
 
     /// The kind of capture.
     pub kind: Kind,

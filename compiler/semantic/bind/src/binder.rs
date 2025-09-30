@@ -152,7 +152,6 @@ impl<'t> Binder<'t> {
     ) -> Result<Self, UnrecoverableError> {
         let ir = IR::default();
         let current_block_id = ir.control_flow_graph.entry_block_id();
-
         let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
 
         let mut binder = Self {
@@ -171,7 +170,6 @@ impl<'t> Binder<'t> {
         };
 
         let root_scope_id = binder.ir.scope_tree.root_scope_id();
-
         binder.push_instruction(instruction::Instruction::ScopePush(
             ScopePush(root_scope_id),
         ));
@@ -231,6 +229,43 @@ impl<'t> Binder<'t> {
             .add_named_binding_point(name_binding_point);
 
         Ok(binder)
+    }
+
+    /// Creates a nested binder that can be used to produce a nested IR.
+    pub async fn nested_binder<T>(
+        &mut self,
+        f: impl AsyncFnOnce(&mut Self) -> Result<(), UnrecoverableError>,
+    ) -> Result<IR, UnrecoverableError> {
+        // temporary move out the inference context for the inner binder
+        let inference_context = std::mem::take(&mut self.inference_context);
+
+        let ir = IR::default();
+        let current_block_id = ir.control_flow_graph.entry_block_id();
+        let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
+
+        let mut binder = Self {
+            engine: self.engine,
+            environment: self.environment,
+            ir,
+            current_block_id,
+            stack,
+            inference_context,
+            unreachable_register_ids: Vec::new(),
+            block_context: block::Context::default(),
+            loop_context: r#loop::Context::default(),
+        };
+
+        let root_scope_id = binder.ir.scope_tree.root_scope_id();
+        binder.push_instruction(instruction::Instruction::ScopePush(
+            ScopePush(root_scope_id),
+        ));
+
+        let result = f(&mut binder).await;
+
+        // restore back the inference context
+        self.inference_context = binder.inference_context;
+
+        result.map(|()| binder.ir)
     }
 }
 
