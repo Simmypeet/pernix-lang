@@ -84,10 +84,10 @@ impl Binder<'_> {
 
         // we're in the function, check if all paths return the value
         'out: {
-            let symbol_kind = self.engine.get_kind(self.current_site).await;
+            let symbol_kind = self.engine.get_kind(self.current_site()).await;
             if symbol_kind.has_function_body() {
                 let return_ty =
-                    self.engine.get_return_type(self.current_site).await?;
+                    self.engine.get_return_type(self.current_site()).await?;
 
                 // no checking need
                 if *return_ty
@@ -107,7 +107,7 @@ impl Binder<'_> {
                 {
                     handler.receive(
                         NotAllFlowPathsReturnAValue {
-                            callable_id: self.current_site,
+                            callable_id: self.current_site(),
                         }
                         .into(),
                     );
@@ -119,7 +119,7 @@ impl Binder<'_> {
         self.transform_inference(handler).await?;
         let env = self.create_environment();
 
-        check::check(&self.ir, self.current_site, &env, handler).await?;
+        check::check(&self.ir, self.current_site(), &env, handler).await?;
 
         Ok(self.ir)
     }

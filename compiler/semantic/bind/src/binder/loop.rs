@@ -28,7 +28,7 @@ use crate::{
         Diagnostic, LoopControlFlow, LoopControlFlowOutsideLoop,
         LoopWithGivenLabelNameNotFound,
     },
-    inference_context::constraint,
+    infer::constraint,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, EnumAsInner)]

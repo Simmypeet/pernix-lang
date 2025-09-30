@@ -26,7 +26,7 @@ use crate::{
         AssignToNonMutable, BinaryOperatorKind, Diagnostic,
         InvalidTypeInBinaryOperator,
     },
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::binary::Binary> for Binder<'_> {

@@ -1,0 +1,15 @@
+54ee4daa HEAD@{13}: checkout: moving from dev to 54ee4daa3b066ac7effcab3072cb1e4ba67916a9
+1589407e HEAD@{14}: commit (amend): use subtypes
+5d251652 HEAD@{15}: commit: use subtypeas
+6803ed8b HEAD@{16}: commit: add field projection borrow ck test
+d02dcac0 HEAD@{17}: commit (amend): fix subtyping bug
+45ef8dec HEAD@{18}: commit: fix subtyping bug
+54ee4daa HEAD@{19}: commit: add more test
+29edb550 HEAD@{20}: commit: add more borrow checker test
+091328df HEAD@{21}: commit: update test
+178e1766 HEAD@{22}: commit: improve borrow checker diagnostic message
+155338b4 HEAD@{23}: commit: fix incorrect subtyping target
+5923251a HEAD@{24}: commit: add reborrow test
+e6f1067f HEAD@{25}: commit: remove dbg!
+514a649c HEAD@{26}: commit: add borrow checker test
+e3f4805a HEAD@{27}: commit: update diagnostic report improvement

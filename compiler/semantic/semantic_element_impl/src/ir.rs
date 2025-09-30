@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pernixc_bind::binder::{Binder, UnrecoverableError};
+use pernixc_bind::binder::{self, Binder, UnrecoverableError};
 use pernixc_handler::Storage;
 use pernixc_query::runtime::executor;
 use pernixc_symbol::{kind::get_kind, syntax::get_function_body_syntax};
@@ -95,11 +95,15 @@ impl Build for pernixc_ir::Key {
         let kind = engine.get_kind(key.0).await;
         let storage = Storage::<Self::Diagnostic>::default();
 
+        let environment = binder::Environment::new(engine, key.0).await?;
+
         let binder = match kind {
             pernixc_symbol::kind::Kind::Function
             | pernixc_symbol::kind::Kind::ImplementationFunction => {
                 pernixc_bind::binder::Binder::new_function(
-                    engine, key.0, &storage,
+                    engine,
+                    &environment,
+                    &storage,
                 )
                 .await
             }

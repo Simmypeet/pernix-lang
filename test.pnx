@@ -1,0 +1,16 @@
+from core import Drop, Copy
+
+
+public struct LoudDrop:
+    pass
+
+
+final implements Copy[LoudDrop] delete
+
+
+public type NonCopyable[T] = T:
+    where:
+        marker not Copy[T]
+
+
+public type Instantiate = NonCopyable[LoudDrop]

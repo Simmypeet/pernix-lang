@@ -13,7 +13,7 @@ use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{type_check::Expected, Binder, Error},
     diagnostic::{Diagnostic, LoopControlFlow},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 impl Bind<&pernixc_syntax::expression::terminator::Break> for Binder<'_> {

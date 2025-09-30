@@ -3,5 +3,5 @@
 pub mod bind;
 pub mod binder;
 pub mod diagnostic;
-pub mod inference_context;
+pub mod infer;
 pub mod pattern;

@@ -23,7 +23,7 @@ use crate::{
         type_check::Expected, Binder, BindingError, Error, UnrecoverableError,
     },
     diagnostic::{Diagnostic, ExpectedLValue},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 pub mod array;

@@ -43,9 +43,8 @@ use crate::{
         },
         LValue,
     },
-    binder::UnrecoverableError,
+    binder::{inference_context, UnrecoverableError},
     diagnostic::UnhandledEffects,
-    inference_context,
 };
 
 pub mod diagnostic;

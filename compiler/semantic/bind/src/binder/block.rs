@@ -28,7 +28,7 @@ use crate::{
     bind::{Bind, Expression},
     binder::{Binder, Error, UnrecoverableError},
     diagnostic::{Diagnostic, NotAllFlowPathsExpressValue},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 #[derive(Debug, Default)]

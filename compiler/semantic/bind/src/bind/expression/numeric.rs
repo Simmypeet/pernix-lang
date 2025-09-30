@@ -15,7 +15,7 @@ use crate::{
         Bind, Expression, Guidance,
     },
     binder::{Binder, BindingError, Error},
-    inference_context::constraint,
+    infer::constraint,
 };
 
 pub mod diagnostic;
