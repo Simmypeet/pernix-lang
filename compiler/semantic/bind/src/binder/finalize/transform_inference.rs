@@ -13,11 +13,10 @@ use pernixc_term::{
 use pernixc_type_system::environment::Environment;
 
 use crate::{
-    binder::Binder,
+    binder::{inference_context::InferenceContext, Binder},
     diagnostic::{
         ConstantAnnotationRequired, Diagnostic, TypeAnnotationRequired,
     },
-    inference_context::InferenceContext,
 };
 
 struct EraseInference;

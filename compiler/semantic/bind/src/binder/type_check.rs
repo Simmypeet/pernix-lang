@@ -8,14 +8,12 @@ use pernixc_term::r#type::Type;
 
 use crate::{
     binder::{
+        inference_context::UnifyError,
         type_check::diagnostic::{CyclicInference, MismatchedType},
         Binder, UnrecoverableError,
     },
     diagnostic::Diagnostic,
-    inference_context::{
-        constraint::{self, Constraint},
-        UnifyError,
-    },
+    inference_context::constraint::{self, Constraint},
 };
 
 pub mod diagnostic;
