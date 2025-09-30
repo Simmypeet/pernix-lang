@@ -4,6 +4,7 @@
 use pernixc_arena::Arena;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
+use pernixc_term::r#type::Type;
 
 use crate::{address::Address, IR};
 
@@ -81,6 +82,9 @@ pub enum CaptureMode {
 pub struct Capture {
     /// The captured memory address from the parent IR.
     pub parent_memory: Address,
+
+    /// The type of the captured memory address.
+    pub address_type: Type,
 
     /// Determines how the memory is captured into the closure object.
     pub capture_mode: CaptureMode,
