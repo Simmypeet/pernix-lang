@@ -233,8 +233,12 @@ async fn sort_drop_addresses(
             x.cmp(&y).reverse()
         }
 
+        (Memory::Capture(_), Memory::Capture(_)) => todo!(),
+
         (Memory::Parameter(_), Memory::Alloca(_)) => Ordering::Greater,
         (Memory::Alloca(_), Memory::Parameter(_)) => Ordering::Less,
+
+        _ => todo!(),
     });
 
     Ok(())

@@ -1,7 +1,7 @@
 //! Defines the [`Closure`], representing captured IR for closures, effect
 //! handlers, do blocks, etc.
 
-use pernixc_arena::Arena;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
@@ -39,9 +39,6 @@ pub struct Closure {
 
     /// The kind of capture.
     pub kind: Kind,
-
-    /// The list of all captured memories (variables) from the parent IR.
-    pub captures: Arena<Capture>,
 }
 
 /// Specifies how a memory is captured from the parent IR.
@@ -88,4 +85,7 @@ pub struct Capture {
 
     /// Determines how the memory is captured into the closure object.
     pub capture_mode: CaptureMode,
+
+    /// The span of the captured memory address.
+    pub span: Option<RelativeSpan>,
 }

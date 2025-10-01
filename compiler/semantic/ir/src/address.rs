@@ -26,6 +26,7 @@ use pernixc_type_system::{
 
 use crate::{
     alloca::Alloca,
+    closure::Capture,
     transform::Transformer,
     value::{TypeOf, Value},
     Values,
@@ -227,6 +228,7 @@ pub struct Reference {
 pub enum Memory {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca>),
+    Capture(ID<Capture>),
 }
 
 /// Represents an address to a particular location in memory.
@@ -400,6 +402,16 @@ impl TypeOf<&Address> for Values {
                     function_signature.parameters[*parameter].r#type.clone();
 
                 Ok(environment.simplify(ty).await?.deref().clone())
+            }
+
+            Address::Memory(Memory::Capture(parameter)) => {
+                let capture = &self.captures[*parameter];
+
+                Ok(environment
+                    .simplify(capture.address_type.clone())
+                    .await?
+                    .deref()
+                    .clone())
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {

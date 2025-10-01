@@ -816,6 +816,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     .unwrap()
                     .r#type
                     .clone(),
+
                 Memory::Alloca(id) => self
                     .context
                     .values()
@@ -824,6 +825,8 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     .unwrap()
                     .r#type
                     .clone(),
+
+                _ => todo!(),
             };
 
             let Some(assigned_state) =

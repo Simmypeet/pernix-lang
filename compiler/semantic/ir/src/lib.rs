@@ -14,7 +14,7 @@ use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
-    closure::Closure,
+    closure::{Capture, Closure},
     transform::{Transformer, TypeTermSource},
     value::register::Register,
 };
@@ -42,6 +42,10 @@ pub struct Values {
 
     /// Contains all the closures defined in the program.
     pub closures: Arena<Closure>,
+
+    /// The list of all captured memories (variables) from the parent IR if
+    /// the current IR is a closure.
+    pub captures: Arena<Capture>,
 }
 
 impl Values {
