@@ -826,7 +826,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                     .r#type
                     .clone(),
 
-                _ => todo!(),
+                Memory::Capture(_) => todo!(),
             };
 
             let Some(assigned_state) =
@@ -897,6 +897,14 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                             .context
                             .values()
                             .allocas
+                            .get(id)
+                            .unwrap()
+                            .span
+                            .unwrap(),
+                        Memory::Capture(id) => self
+                            .context
+                            .values()
+                            .captures
                             .get(id)
                             .unwrap()
                             .span
@@ -1120,6 +1128,7 @@ impl<N: Normalizer> Traverser for LiveLenderTraverser<'_, N> {
                             .unwrap()
                             .declared_in_scope_id
                     }
+                    Memory::Capture(_) => todo!(),
                 };
 
                 if scope_of_memory == scope_pop.0 {

@@ -3,9 +3,7 @@
 
 use flexstr::SharedStr;
 use pernixc_arena::Arena;
-use pernixc_hash::HashMap;
 use pernixc_ir::{
-    address::Memory,
     closure::Capture,
     instruction::{self, ScopePush},
     pattern::{NameBinding, NameBindingPoint},
@@ -57,10 +55,8 @@ impl Captures {
         // check if this memory address dominates any existing captures, if
         // so, we re-adjust the existing captures to use this memory address
 
-        let mut dominated = Vec::new();
-
         for (existing_name, existing_binding) in
-            self.name_binding_point.named_patterns_by_name.iter()
+            &self.name_binding_point.named_patterns_by_name
         {
             let existing_binding_root =
                 existing_binding.load_address.get_root_memory();
