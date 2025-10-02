@@ -279,9 +279,6 @@ impl<N: Normalizer> Checker<'_, '_, N> {
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<(), UnrecoverableError> {
         let mut current_index = 0;
-        let root_scope_id =
-            self.representation.control_flow_graph.root_scope_id();
-
         let block = self
             .representation
             .control_flow_graph
@@ -455,7 +452,9 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     'out: {
                         // if we're in the function and at the root scope,
                         // we need to initialize the parameters
-                        if scope_push.0 == root_scope_id {
+                        if scope_push.0
+                            == self.representation.scope_tree.root_scope_id()
+                        {
                             if !self
                                 .ty_environment
                                 .tracked_engine()

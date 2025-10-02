@@ -269,11 +269,7 @@ impl<N: Normalizer> Checker<'_, N> {
 
                 if symbol_kind.has_function_signature()
                     && scope_pop.0
-                        == self
-                            .context()
-                            .ir()
-                            .control_flow_graph
-                            .root_scope_id()
+                        == self.context().ir().scope_tree.root_scope_id()
                 {
                     let callable = self
                         .tracked_engine()

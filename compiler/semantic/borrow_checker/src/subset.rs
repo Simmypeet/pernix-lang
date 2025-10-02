@@ -363,8 +363,7 @@ impl<N: Normalizer> Builder<'_, N> {
                 }
 
                 // we'll insert a universal region for the root scope
-                if scope_push.0
-                    == self.context.ir().control_flow_graph.root_scope_id()
+                if scope_push.0 == self.context.ir().scope_tree.root_scope_id()
                 {
                     self.get_regions_in_generic_parameters(&mut regions)
                         .await?;
@@ -410,9 +409,7 @@ impl<N: Normalizer> Builder<'_, N> {
                 }
 
                 // we'll insert a universal region for the root scope
-                if scope_pop.0
-                    == self.context.ir().control_flow_graph.root_scope_id()
-                {
+                if scope_pop.0 == self.context.ir().scope_tree.root_scope_id() {
                     regions.insert(Region::Universal(UniversalRegion::Static));
 
                     self.get_regions_in_generic_parameters(&mut regions)

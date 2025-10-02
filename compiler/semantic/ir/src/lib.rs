@@ -164,6 +164,9 @@ pub struct IR {
 
     /// The control flow graph of the program.
     pub control_flow_graph: ControlFlowGraph,
+
+    /// The tree of scopes in the program.
+    pub scope_tree: scope::Tree,
 }
 
 impl IR {

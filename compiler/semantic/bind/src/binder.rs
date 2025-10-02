@@ -509,10 +509,7 @@ impl Binder<'_> {
         parent_scope_id: ID<scope::Scope>,
         count: NonZeroUsize,
     ) -> Vec<ID<scope::Scope>> {
-        self.ir
-            .control_flow_graph
-            .new_child_branch(parent_scope_id, count)
-            .unwrap()
+        self.ir.scope_tree.new_child_branch(parent_scope_id, count).unwrap()
     }
 
     /// Creates a new child branch of scopes at the current scope.
@@ -643,7 +640,7 @@ impl Binder<'_> {
     pub fn push_scope(&mut self, is_unsafe: bool) -> ID<scope::Scope> {
         let scope_id = self
             .ir
-            .control_flow_graph
+            .scope_tree
             .new_child_branch(
                 self.stack.current_scope().scope_id(),
                 NonZeroUsize::new(1).unwrap(),

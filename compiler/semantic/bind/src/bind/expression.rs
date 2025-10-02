@@ -53,7 +53,6 @@ pub mod scope;
 pub mod string;
 pub mod r#struct;
 pub mod r#while;
-pub mod r#do;
 
 impl Bind<&pernixc_syntax::expression::Expression>
     for crate::binder::Binder<'_>
