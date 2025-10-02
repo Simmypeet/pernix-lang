@@ -998,7 +998,10 @@ impl Report for EffectExpected {
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
-            .help_message("only effects can be used in a `do` expression")
+            .help_message(
+                "only effects can be used in a `with` clause in a `do` \
+                 expression",
+            )
             .build())
     }
 }

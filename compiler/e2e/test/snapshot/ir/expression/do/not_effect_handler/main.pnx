@@ -1,0 +1,25 @@
+public struct MyStruct:
+    pass
+
+
+public enum MyEnum:
+    pass
+
+
+public effect MyEffect:
+    myEffectOp()
+
+
+public function main():
+    do:
+        pass
+
+    with MyStruct: # totally not an effect handler
+        pass
+    
+    with MyEnum: # totally not an effect handler
+        pass
+    
+    with MyEffect: # this is an effect handler
+        myEffectOp():
+            pass

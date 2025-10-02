@@ -1,0 +1,26 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: expected `struct main::MyStruct` to be an effect
+   ╭─ compiler/e2e/test/snapshot/ir/expression/do/not_effect_handler/main.pnx:17:10
+   │
+17 │     with MyStruct: # totally not an effect handler
+   │          ^^^^^^^^ `struct main::MyStruct` is not an effect
+   │
+   = only effects can be used in a `with` clause in a `do` expression
+
+error: expected `enum main::MyEnum` to be an effect
+   ╭─ compiler/e2e/test/snapshot/ir/expression/do/not_effect_handler/main.pnx:20:10
+   │
+20 │     with MyEnum: # totally not an effect handler
+   │          ^^^^^^ `enum main::MyEnum` is not an effect
+   │
+   = only effects can be used in a `with` clause in a `do` expression
+
+error: Compilation aborted due to 2 error(s)
+
+
+
+stdout:
