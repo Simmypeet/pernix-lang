@@ -36,6 +36,7 @@ pub struct Parameter {
     Clone,
     PartialEq,
     Eq,
+    Default,
     StableHash,
     Serialize,
     Deserialize,

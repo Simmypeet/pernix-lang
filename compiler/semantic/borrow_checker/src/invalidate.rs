@@ -155,9 +155,12 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                 .unwrap()
                 .r#type
                 .clone(),
+
             Memory::Alloca(id) => {
                 self.context.values().allocas.get(id).unwrap().r#type.clone()
             }
+
+            Memory::Capture(_) | Memory::ClosureParameter(_) => todo!(),
         };
 
         if !self
@@ -350,9 +353,12 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                     .unwrap()
                     .span
                     .unwrap(),
+
                 Memory::Alloca(id) => {
                     self.context.values().allocas.get(id).unwrap().span.unwrap()
                 }
+
+                Memory::Capture(_) | Memory::ClosureParameter(_) => todo!(),
             };
 
             self.invalidate_borrow(

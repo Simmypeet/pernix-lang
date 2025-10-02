@@ -26,6 +26,7 @@ use pernixc_type_system::{
 
 use crate::{
     alloca::Alloca,
+    closure::Capture,
     transform::Transformer,
     value::{TypeOf, Value},
     Values,
@@ -227,6 +228,16 @@ pub struct Reference {
 pub enum Memory {
     Parameter(ID<Parameter>),
     Alloca(ID<Alloca>),
+
+    /// A captured variable from the parent closure/function.
+    ///
+    /// This variant only appears in the [`IRKind::Closure`] IR.
+    Capture(ID<Capture>),
+
+    /// A parameter of a closure.
+    ///
+    /// This variant only appears in the [`IRKind::Closure`] IR.
+    ClosureParameter(ID<Parameter>),
 }
 
 /// Represents an address to a particular location in memory.
@@ -379,6 +390,37 @@ impl Address {
             }
         }
     }
+
+    /// Replaces the sub-address of `self` that matches `cond` with `new`.
+    ///
+    /// Suppose `self` is `a.b.c.d`, `cond` is `a.b.c`, and `new` is `x.y`, then
+    /// after calling this function, `self` will be `x.y.d`.
+    ///
+    /// Suppose `self` is `a.b.c.d`, `cond` is `b.c`, and `new` is `x.y`,
+    /// then after calling this function, `self` will remain `a.b.c.d` since
+    /// `cond` has to match from the root of `self`.
+    ///
+    /// Returns `true` if a replacement was made, `false` otherwise.
+    pub fn replace_with(mut self: &mut Self, cond: &Self, new: Self) -> bool {
+        loop {
+            if self == cond {
+                *self = new;
+                return true;
+            }
+
+            match self {
+                Self::Memory(_) => return false,
+
+                Self::Field(field) => self = field.struct_address.as_mut(),
+                Self::Tuple(tuple) => self = tuple.tuple_address.as_mut(),
+                Self::Index(index) => self = index.array_address.as_mut(),
+                Self::Variant(variant) => self = variant.enum_address.as_mut(),
+                Self::Reference(reference) => {
+                    self = reference.reference_address.as_mut();
+                }
+            }
+        }
+    }
 }
 
 impl TypeOf<&Address> for Values {
@@ -400,6 +442,27 @@ impl TypeOf<&Address> for Values {
                     function_signature.parameters[*parameter].r#type.clone();
 
                 Ok(environment.simplify(ty).await?.deref().clone())
+            }
+
+            Address::Memory(Memory::Capture(parameter)) => {
+                let capture = &self.closure_values().captures[*parameter];
+
+                Ok(environment
+                    .simplify(capture.address_type.clone())
+                    .await?
+                    .deref()
+                    .clone())
+            }
+
+            Address::Memory(Memory::ClosureParameter(parameter)) => {
+                let parameter =
+                    &self.closure_values().parameters.parameters[*parameter];
+
+                Ok(environment
+                    .simplify(parameter.r#type.clone())
+                    .await?
+                    .deref()
+                    .clone())
             }
 
             Address::Memory(Memory::Alloca(parameter)) => {

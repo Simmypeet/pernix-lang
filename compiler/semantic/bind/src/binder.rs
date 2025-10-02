@@ -58,6 +58,7 @@ use crate::{
 mod finalize;
 
 pub mod block;
+pub mod closure;
 pub mod inference_context;
 pub mod r#loop;
 pub mod stack;
@@ -150,10 +151,9 @@ impl<'t> Binder<'t> {
         environment: &'t Environment,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
-        let ir = IR::default();
+        let ir = IR::default_function();
         let current_block_id = ir.control_flow_graph.entry_block_id();
-
-        let stack = Stack::new(ir.control_flow_graph.root_scope_id(), false);
+        let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
 
         let mut binder = Self {
             engine,
@@ -170,8 +170,7 @@ impl<'t> Binder<'t> {
             loop_context: r#loop::Context::default(),
         };
 
-        let root_scope_id = binder.ir.control_flow_graph.root_scope_id();
-
+        let root_scope_id = binder.ir.scope_tree.root_scope_id();
         binder.push_instruction(instruction::Instruction::ScopePush(
             ScopePush(root_scope_id),
         ));
@@ -713,9 +712,12 @@ impl Binder<'_> {
     ) -> Result<Option<Qualifier>, UnrecoverableError> {
         loop {
             match address {
-                Address::Memory(Memory::Alloca(_) | Memory::Parameter(_)) => {
-                    return Ok(None)
-                }
+                Address::Memory(
+                    Memory::Alloca(_)
+                    | Memory::Parameter(_)
+                    | Memory::Capture(_)
+                    | Memory::ClosureParameter(_),
+                ) => return Ok(None),
 
                 Address::Field(ad) => {
                     address = &ad.struct_address;
@@ -786,6 +788,14 @@ impl Binder<'_> {
                     }
                     Memory::Alloca(id) => {
                         self.ir.values.allocas[*id].span.unwrap()
+                    }
+                    Memory::Capture(id) => {
+                        self.ir.values.captures()[*id].span.unwrap()
+                    }
+                    Memory::ClosureParameter(id) => {
+                        self.ir.values.closure_parameters().parameters[*id]
+                            .span
+                            .unwrap()
                     }
                 },
                 &handler,

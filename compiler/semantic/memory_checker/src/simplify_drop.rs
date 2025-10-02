@@ -95,6 +95,12 @@ pub(super) async fn simplify_drop<N: Normalizer>(
         }
 
         Memory::Alloca(id) => values.allocas[*id].span.unwrap(),
+
+        Memory::Capture(id) => values.captures()[*id].span.unwrap(),
+
+        Memory::ClosureParameter(id) => {
+            values.closure_parameters().parameters[*id].span.unwrap()
+        }
     };
 
     let ty = values

@@ -22,7 +22,7 @@ async fn build_ir_for_function(
     let function_body_syntax = engine.get_function_body_syntax(key.0).await;
 
     let Some(function_body_syntax) = function_body_syntax else {
-        return Ok(Arc::new(pernixc_ir::IR::default()));
+        return Ok(Arc::new(pernixc_ir::IR::default_function()));
     };
 
     for statement in
@@ -33,7 +33,9 @@ async fn build_ir_for_function(
             Err(UnrecoverableError::CyclicDependency(error)) => {
                 return Err(error);
             }
-            Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+            Err(UnrecoverableError::Reported) => {
+                return Ok(Arc::new(pernixc_ir::IR::default_function()))
+            }
         };
     }
 
@@ -43,7 +45,9 @@ async fn build_ir_for_function(
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
-        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+        Err(UnrecoverableError::Reported) => {
+            return Ok(Arc::new(pernixc_ir::IR::default_function()))
+        }
     };
 
     // do memory checking analysis
@@ -54,7 +58,9 @@ async fn build_ir_for_function(
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
-        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+        Err(UnrecoverableError::Reported) => {
+            return Ok(Arc::new(pernixc_ir::IR::default_function()))
+        }
     }
 
     // if there's an error, should not proceed to borrow checking
@@ -79,7 +85,9 @@ async fn build_ir_for_function(
             return Err(error);
         }
 
-        Err(UnrecoverableError::Reported) => return Ok(Arc::default()),
+        Err(UnrecoverableError::Reported) => {
+            return Ok(Arc::new(pernixc_ir::IR::default_function()))
+        }
     }
 
     Ok(Arc::new(ir))
@@ -118,7 +126,7 @@ impl Build for pernixc_ir::Key {
             }
             Err(UnrecoverableError::Reported) => {
                 return Ok(Output {
-                    item: Arc::default(),
+                    item: Arc::new(pernixc_ir::IR::default_function()),
                     diagnostics: storage.into_vec().into(),
                     occurrences: Arc::default(),
                 });
