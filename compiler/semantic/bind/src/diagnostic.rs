@@ -13,8 +13,9 @@ use pernixc_symbol::{
 use pernixc_target::Global;
 use pernixc_term::{
     constant::Constant,
-    display::{Display, InferenceRenderingMap},
+    display::{Configuration, Display, InferenceRenderingMap},
     effect,
+    generic_arguments::GenericArguments,
     generic_parameters::{
         get_generic_parameters, ConstantParameterID, TypeParameterID,
     },
@@ -76,6 +77,8 @@ diagnostic_enum! {
             FoundPackTuplePatternInMatchArmPattern
         ),
         UnhandledEffects(UnhandledEffects),
+        EffectExpected(EffectExpected),
+        DuplicatedEffectHandler(DuplicatedEffectHandler),
     }
 }
 
@@ -953,6 +956,121 @@ impl Report for UnhandledEffects {
                 "consider adding a `do` effect annotation to the current \
                  function to handle these effects",
             )
+            .build())
+    }
+}
+
+/// A resolved qualified identifier was expected to be an effect, but was not.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
+pub struct EffectExpected {
+    /// The span of the qualified identifier.
+    pub span: RelativeSpan,
+
+    /// The global ID of the resolved qualified identifier.
+    pub global_id: Global<pernixc_symbol::ID>,
+}
+
+impl Report for EffectExpected {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let qualified_name = engine.get_qualified_name(self.global_id).await;
+        let kind = engine.get_kind(self.global_id).await;
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(format!(
+                "expected `{} {}` to be an effect",
+                kind.kind_str(),
+                qualified_name
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(format!(
+                        "`{} {}` is not an effect",
+                        kind.kind_str(),
+                        qualified_name
+                    ))
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message("only effects can be used in a `do` expression")
+            .build())
+    }
+}
+
+/// The same effect is handled more than once in a `do` expression.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct DuplicatedEffectHandler {
+    /// The ID of the duplicated effect.
+    pub effect_id: Global<pernixc_symbol::ID>,
+
+    /// The generic arguments used in the first handler.
+    pub generic_arguments: GenericArguments,
+
+    /// Mapping for rendering type inferences
+    pub type_inference_map: InferenceRenderingMap<Type>,
+
+    /// Mapping for rendering constant inferences
+    pub constant_inference_map: InferenceRenderingMap<Constant>,
+
+    /// The span of the first handler.
+    pub first_span: RelativeSpan,
+
+    /// The span of the second handler.
+    pub second_span: RelativeSpan,
+}
+
+impl Report for DuplicatedEffectHandler {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let qualified_name = engine.get_qualified_name(self.effect_id).await;
+        let generic_arguments = self
+            .generic_arguments
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder()
+                    .type_inferences(&self.type_inference_map)
+                    .constant_inferences(&self.constant_inference_map)
+                    .build(),
+            )
+            .await
+            .unwrap();
+
+        let kind = engine.get_kind(self.effect_id).await;
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(format!(
+                "the effect `{}{}` is handled more than once",
+                kind.kind_str(),
+                qualified_name
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.second_span).await)
+                    .message(format!("the duplicated handler is defined here"))
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .related(vec![Highlight::builder()
+                .span(engine.to_absolute_span(&self.first_span).await)
+                .message(format!(
+                    "the first handler for `{}{}` is defined here",
+                    qualified_name, generic_arguments
+                ))
+                .build()])
+            .help_message(format!(
+                "the effect `{}{}` is already handled by the first handler; \
+                 consider removing the second handler",
+                qualified_name, generic_arguments
+            ))
             .build())
     }
 }
