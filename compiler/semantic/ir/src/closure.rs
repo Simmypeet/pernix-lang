@@ -78,7 +78,7 @@ pub enum CaptureMode {
 )]
 pub struct Capture {
     /// The captured memory address from the parent IR.
-    pub parent_memory: Address,
+    pub parent_captured_address: Address,
 
     /// The type of the captured memory address.
     pub address_type: Type,

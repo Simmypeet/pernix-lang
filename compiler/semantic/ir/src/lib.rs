@@ -90,6 +90,15 @@ impl Values {
             IRKind::Function => panic!("not a closure"),
         }
     }
+
+    /// If the IR is a closure, returns the closure parameters.
+    #[must_use]
+    pub fn closure_parameters(&self) -> &Parameters {
+        match &self.kind {
+            IRKind::Closure(values) => &values.parameters,
+            IRKind::Function => panic!("not a closure"),
+        }
+    }
 }
 
 /// Contains all the values related to a closure.
