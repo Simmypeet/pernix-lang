@@ -21,7 +21,7 @@ struct Captures {
 
 impl Captures {
     pub fn new(parent_stack: &Stack) -> Self {
-        let mut captures = Captures::default();
+        let mut captures = Self::default();
 
         for scope in parent_stack.scopes().iter().rev() {
             for named_binding in scope
@@ -73,7 +73,7 @@ impl Binder<'_> {
         // temporary move out the inference context for the inner binder
         let inference_context = std::mem::take(&mut self.inference_context);
 
-        let ir = IR::default();
+        let ir = IR::default_closure();
         let current_block_id = ir.control_flow_graph.entry_block_id();
         let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
 

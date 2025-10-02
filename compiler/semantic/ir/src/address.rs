@@ -405,7 +405,7 @@ impl TypeOf<&Address> for Values {
             }
 
             Address::Memory(Memory::Capture(parameter)) => {
-                let capture = &self.captures[*parameter];
+                let capture = &self.closure_values().captures[*parameter];
 
                 Ok(environment
                     .simplify(capture.address_type.clone())

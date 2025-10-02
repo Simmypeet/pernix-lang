@@ -904,7 +904,7 @@ impl<N: Normalizer> Traverser for LiveBorrowTraverser<'_, N> {
                         Memory::Capture(id) => self
                             .context
                             .values()
-                            .captures
+                            .captures()
                             .get(id)
                             .unwrap()
                             .span

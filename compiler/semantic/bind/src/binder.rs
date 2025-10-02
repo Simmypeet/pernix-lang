@@ -18,7 +18,7 @@ use pernixc_ir::{
         register::{Assignment, Load, Register},
         TypeOf, Value,
     },
-    IR,
+    Values, IR,
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{
@@ -151,7 +151,15 @@ impl<'t> Binder<'t> {
         environment: &'t Environment,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
-        let ir = IR::default();
+        let mut ir = IR {
+            values: Values {
+                registers: todo!(),
+                allocas: todo!(),
+                kind: todo!(),
+            },
+            control_flow_graph: todo!(),
+            scope_tree: todo!(),
+        };
         let current_block_id = ir.control_flow_graph.entry_block_id();
         let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
 
@@ -786,7 +794,7 @@ impl Binder<'_> {
                         self.ir.values.allocas[*id].span.unwrap()
                     }
                     Memory::Capture(id) => {
-                        self.ir.values.captures[*id].span.unwrap()
+                        self.ir.values.captures()[*id].span.unwrap()
                     }
                 },
                 &handler,
