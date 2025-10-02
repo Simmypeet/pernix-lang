@@ -33,7 +33,7 @@ abstract_tree::abstract_tree! {
         pub do_keyword: Keyword = expect::Keyword::Do,
         pub label: Label = ast::<Label>().optional(),
         pub statements: Statements = ast::<Statements>(),
-        pub with: With = ast::<With>(),
+        pub with: #[multi] With = ast::<With>().repeat(),
     }
 }
 
