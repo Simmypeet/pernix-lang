@@ -1055,21 +1055,23 @@ impl Report for DuplicatedEffectHandler {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.second_span).await)
-                    .message(format!("the duplicated handler is defined here"))
+                    .message(
+                        "the duplicated handler is defined here".to_string(),
+                    )
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
             .related(vec![Highlight::builder()
                 .span(engine.to_absolute_span(&self.first_span).await)
                 .message(format!(
-                    "the first handler for `{}{}` is defined here",
-                    qualified_name, generic_arguments
+                    "the first handler for \
+                     `{qualified_name}{generic_arguments}` is defined here"
                 ))
                 .build()])
             .help_message(format!(
-                "the effect `{}{}` is already handled by the first handler; \
-                 consider removing the second handler",
-                qualified_name, generic_arguments
+                "the effect `{qualified_name}{generic_arguments}` is already \
+                 handled by the first handler; consider removing the second \
+                 handler"
             ))
             .build())
     }

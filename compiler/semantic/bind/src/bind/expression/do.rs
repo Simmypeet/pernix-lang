@@ -41,7 +41,7 @@ struct WithHandler {
     generic_arguments: GenericArguments,
 }
 
-pub async fn extract_effect_handlers(
+async fn extract_effect_handlers(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::block::Do,
     handler: &dyn Handler<Diagnostic>,
