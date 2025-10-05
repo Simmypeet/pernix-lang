@@ -1,0 +1,41 @@
+public effect UseLifetime['x]:
+    useLifetime()
+
+
+public effect UseTypeParameter[T]:
+    useTypeParameter()
+
+
+public function main['x, 'y]():
+    do:
+        pass
+
+    with UseLifetime['x]:
+        useLifetime():
+            pass
+    
+    with UseLifetime['y]: # different lifetime, but still the same effect
+        useLifetime():
+            pass
+
+    with UseLifetime: # still the same effect, but without a lifetime parameter
+        useLifetime():
+            pass
+    
+    with UseTypeParameter[int32]:
+        useTypeParameter():
+            pass
+    
+    with UseTypeParameter[float32]:
+        useTypeParameter():
+            pass
+    
+    with UseTypeParameter[int32]: # duplicated type parameter
+        useTypeParameter():
+            pass
+    
+    with UseTypeParameter: # error, no type inference here!
+        useTypeParameter():
+            pass
+
+    

@@ -873,7 +873,7 @@ reference! {
     pub struct Do for super::Do {
         pub label (Option<Label>),
         pub statements (Statements),
-        pub with (With),
+        pub with (Vec<With>),
     }
 }
 
@@ -890,7 +890,7 @@ impl Arbitrary for Do {
         (
             proptest::option::of(Label::arbitrary()),
             Statements::arbitrary_with(args.clone()),
-            With::arbitrary_with(args),
+            proptest::collection::vec(With::arbitrary_with(args), 0..3),
         )
             .prop_map(|(label, statements, with)| Self {
                 label,
@@ -915,6 +915,10 @@ impl IndentDisplay for Do {
 
         self.statements.indent_fmt(f, indent)?;
 
-        write_indent_line_for_indent_display(f, &self.with, indent)
+        for with in &self.with {
+            write_indent_line_for_indent_display(f, with, indent)?;
+        }
+
+        Ok(())
     }
 }

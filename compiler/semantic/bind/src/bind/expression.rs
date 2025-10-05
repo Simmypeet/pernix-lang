@@ -35,6 +35,7 @@ pub mod character;
 pub mod r#continue;
 pub mod dereference;
 pub mod diagnostic;
+pub mod r#do;
 pub mod express;
 pub mod function_call;
 pub mod group;
@@ -186,8 +187,8 @@ impl Bind<&pernixc_syntax::expression::block::Block>
             pernixc_syntax::expression::block::Block::While(wh) => {
                 Box::pin(self.bind(wh, guidance, handler)).await
             }
-            pernixc_syntax::expression::block::Block::Do(_do) => {
-                todo!()
+            pernixc_syntax::expression::block::Block::Do(d) => {
+                Box::pin(self.bind(d, guidance, handler)).await
             }
         }
     }

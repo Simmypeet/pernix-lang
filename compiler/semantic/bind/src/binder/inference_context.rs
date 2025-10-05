@@ -702,10 +702,11 @@ impl<T: From<inference::Variable<T>> + Send> ElidedTermProvider<T>
     }
 }
 
+/// A provider that creates a [`Lifetime::Erased`] for every elided lifetime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-struct LifetimeInferenceProvider;
+pub struct ErasedLifetimeProvider;
 
-impl ElidedTermProvider<Lifetime> for LifetimeInferenceProvider {
+impl ElidedTermProvider<Lifetime> for ErasedLifetimeProvider {
     fn create(&mut self) -> Lifetime { Lifetime::Erased }
 }
 
@@ -720,7 +721,7 @@ impl Binder<'_> {
         let extra_namespace = &self.environment.extra_namespace;
         let current_site = self.current_site();
 
-        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+        let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
         let mut type_inferences = InferenceProvider {
             created_inferences: Vec::new(),
@@ -803,7 +804,7 @@ impl Binder<'_> {
                 .constant_inference_counter,
         };
 
-        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+        let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
         let ty = self
             .engine
@@ -870,7 +871,7 @@ impl Binder<'_> {
                 .constant_inference_counter,
         };
 
-        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+        let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
         let ty = self
             .engine
@@ -939,7 +940,7 @@ impl Binder<'_> {
                 .constant_inference_counter,
         };
 
-        let mut lifetime_inference_providers = LifetimeInferenceProvider;
+        let mut lifetime_inference_providers = ErasedLifetimeProvider;
 
         let (arg, diags) = self
             .engine
