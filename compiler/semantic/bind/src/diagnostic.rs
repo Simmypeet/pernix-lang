@@ -1224,14 +1224,13 @@ impl Report for UnhandledEffectOperations {
             .primary_highlight(
                 Highlight::builder()
                     .span(engine.to_absolute_span(&self.with_span).await)
-                    .message(format!("`with {}` clause", qualified_name))
+                    .message(format!("`with {qualified_name}` clause"))
                     .build(),
             )
             .severity(pernixc_diagnostic::Severity::Error)
             .help_message(format!(
                 "consider adding handlers for all the effect operations of \
-                 `{}`",
-                qualified_name
+                 `{qualified_name}`"
             ))
             .build())
     }
