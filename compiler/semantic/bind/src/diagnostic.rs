@@ -1,5 +1,7 @@
 //! Diagnostics emitted during the binding phase of the compiler.
 
+use std::fmt::Write;
+
 use flexstr::SharedStr;
 use pernixc_diagnostic::{Highlight, Report, Severity};
 use pernixc_lexical::tree::RelativeSpan;
@@ -1214,7 +1216,7 @@ impl Report for UnhandledEffectOperations {
             }
 
             let operation_name = engine.get_name(*operation_id).await;
-            message.push_str(&operation_name);
+            write!(message, "`{operation_name}`").unwrap();
         }
 
         let qualified_name = engine.get_qualified_name(self.effect_id).await;
