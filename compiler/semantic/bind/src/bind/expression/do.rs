@@ -1,11 +1,16 @@
 use pernixc_handler::Handler;
+use pernixc_hash::HashMap;
 use pernixc_ir::value::Value;
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config,
 };
 use pernixc_source_file::SourceElement;
-use pernixc_symbol::kind::{get_kind, Kind};
+use pernixc_symbol::{
+    kind::{get_kind, Kind},
+    member::get_members,
+};
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
 use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
@@ -13,7 +18,10 @@ use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{inference_context::ErasedLifetimeProvider, Binder, Error},
-    diagnostic::{Diagnostic, DuplicatedEffectHandler, EffectExpected},
+    diagnostic::{
+        Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
+        EffectExpected, UnhandledEffectOperations, UnknownEffectOperation,
+    },
     infer::constraint,
 };
 
@@ -35,18 +43,100 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
     }
 }
 
-struct WithHandler {
+struct WithBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
+    #[allow(dead_code)]
+    handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
 }
 
+struct HandlerBlock {
+    identifier: pernixc_syntax::Identifier,
+    #[allow(dead_code)]
+    handler: pernixc_syntax::expression::block::Handler,
+}
+
+async fn extract_effect_operations<
+    I: IntoIterator<Item = pernixc_syntax::expression::block::Handler>,
+>(
+    binder: &mut Binder<'_>,
+    effect_handlers: I,
+    effect_id: Global<pernixc_symbol::ID>,
+    with_span: RelativeSpan,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<HashMap<pernixc_symbol::ID, HandlerBlock>, Error> {
+    let effect_operations = binder.engine().get_members(effect_id).await;
+    let mut handlers = HashMap::<pernixc_symbol::ID, HandlerBlock>::default();
+
+    for handler_syntax in effect_handlers {
+        let Some(identifier) = handler_syntax.identifier() else {
+            continue;
+        };
+
+        // obtains the effect operation id
+        let Some(effect_operation_id) = effect_operations
+            .member_ids_by_name
+            .get(identifier.kind.0.as_str())
+        else {
+            handler.receive(Diagnostic::UnknownEffectOperation(
+                UnknownEffectOperation {
+                    effect_id,
+                    operation_name: identifier.kind.0.clone(),
+                    operation_span: identifier.span(),
+                },
+            ));
+            continue;
+        };
+
+        // checks if the effect operation has already been handled
+        if let Some(previous_handler) = handlers.get(effect_operation_id) {
+            handler.receive(Diagnostic::DuplicatedEffectOperationHandler(
+                DuplicatedEffectOperationHandler {
+                    effect_id,
+                    operation_name: identifier.kind.0.clone(),
+                    first_span: previous_handler.identifier.span(),
+                    second_span: identifier.span(),
+                },
+            ));
+            continue;
+        }
+
+        handlers.insert(*effect_operation_id, HandlerBlock {
+            identifier: identifier.clone(),
+            handler: handler_syntax,
+        });
+    }
+
+    let unhandleds = effect_operations
+        .member_ids_by_name
+        .values()
+        .copied()
+        .map(|x| effect_id.target_id.make_global(x))
+        .filter(|id| !handlers.contains_key(&id.id))
+        .collect::<Vec<_>>();
+
+    // Report unhandled effect operations
+    if !unhandleds.is_empty() {
+        handler.receive(Diagnostic::UnhandledEffectOperations(
+            UnhandledEffectOperations {
+                unhandled_effect_operations: unhandleds,
+                effect_id,
+                with_span,
+            },
+        ));
+    }
+
+    Ok(handlers)
+}
+
+#[allow(clippy::too_many_lines)]
 async fn extract_effect_handlers(
     binder: &mut Binder<'_>,
     syntax_tree: &pernixc_syntax::expression::block::Do,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<Vec<WithHandler>, Error> {
-    let mut with_handlers = Vec::<WithHandler>::new();
+) -> Result<Vec<WithBlock>, Error> {
+    let mut with_handlers = Vec::<WithBlock>::new();
 
     for with in syntax_tree.with() {
         let Some(qualified_identifier) = with.effect() else {
@@ -137,10 +227,33 @@ async fn extract_effect_handlers(
             }
         }
 
-        with_handlers.push(WithHandler {
+        let with_span = with.span().join(&qualified_identifier.span());
+
+        let handlers = if let Some(x) = with.body() {
+            extract_effect_operations(
+                binder,
+                x.handlers().filter_map(|x| x.into_line().ok()),
+                effect.id,
+                with_span,
+                handler,
+            )
+            .await?
+        } else {
+            extract_effect_operations(
+                binder,
+                std::iter::empty(),
+                effect.id,
+                with_span,
+                handler,
+            )
+            .await?
+        };
+
+        with_handlers.push(WithBlock {
             qualified_identifier: qualified_identifier.clone(),
             effect_id: effect.id,
             generic_arguments: effect.generic_arguments,
+            handlers,
         });
     }
 
