@@ -175,7 +175,7 @@ impl Captures {
 
 impl Binder<'_> {
     /// Creates a nested binder that can be used to produce a nested IR.
-    pub async fn new_closure_binder<T>(
+    pub async fn new_closure_binder(
         &mut self,
         f: impl AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
         handler: &dyn Handler<Diagnostic>,
