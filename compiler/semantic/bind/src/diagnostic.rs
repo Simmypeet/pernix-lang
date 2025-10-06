@@ -87,6 +87,9 @@ diagnostic_enum! {
         UnknownEffectOperation(UnknownEffectOperation),
         DuplicatedEffectOperationHandler(DuplicatedEffectOperationHandler),
         UnhandledEffectOperations(UnhandledEffectOperations),
+        MismatchedArgumentCountInEffectOperationHandler(
+            MismatchedArgumentCountInEffectOperationHandler
+        )
     }
 }
 
@@ -1233,6 +1236,58 @@ impl Report for UnhandledEffectOperations {
             .help_message(format!(
                 "consider adding handlers for all the effect operations of \
                  `{qualified_name}`"
+            ))
+            .build())
+    }
+}
+
+/// The number of arguments in an effect operation handler does not match the
+/// number of parameters declared by the effect operation.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct MismatchedArgumentCountInEffectOperationHandler {
+    /// The number of parameters declared by the effect operation.
+    pub expected: usize,
+
+    /// The number of arguments in the handler.
+    pub found: usize,
+
+    /// The ID of the effect being handled.
+    pub operation_id: Global<pernixc_symbol::ID>,
+
+    /// The span of the operation name in the handler.
+    pub span: RelativeSpan,
+}
+
+impl Report for MismatchedArgumentCountInEffectOperationHandler {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let operation_name = engine.get_name(self.operation_id).await;
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(format!(
+                "the effect operation `{operation_name}` expects {} argument \
+                 {}, but the handler has {} argument{}",
+                self.expected,
+                if self.expected == 1 { "" } else { "s" },
+                self.found,
+                if self.found == 1 { "" } else { "s" },
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.span).await)
+                    .message(format!(
+                        "handler for operation `{operation_name}` of effect"
+                    ))
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message(format!(
+                "consider changing the number of arguments in the handler to \
+                 be {}",
+                self.expected
             ))
             .build())
     }

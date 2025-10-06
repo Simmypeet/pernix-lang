@@ -6,6 +6,7 @@ use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
     Config,
 };
+use pernixc_semantic_element::parameter::get_parameters;
 use pernixc_source_file::SourceElement;
 use pernixc_symbol::{
     kind::{get_kind, Kind},
@@ -20,7 +21,8 @@ use crate::{
     binder::{inference_context::ErasedLifetimeProvider, Binder, Error},
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
-        EffectExpected, UnhandledEffectOperations, UnknownEffectOperation,
+        EffectExpected, MismatchedArgumentCountInEffectOperationHandler,
+        UnhandledEffectOperations, UnknownEffectOperation,
     },
     infer::constraint,
 };
@@ -32,7 +34,8 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         _: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
-        let _ = extract_effect_handlers(self, syntax_tree, handler).await?;
+        let with_blocks =
+            extract_effect_handlers(self, syntax_tree, handler).await?;
 
         Ok(Expression::RValue(Value::error(
             Type::Inference(
@@ -53,8 +56,23 @@ struct WithBlock {
 
 struct HandlerBlock {
     identifier: pernixc_syntax::Identifier,
+    parameters: Vec<pernixc_syntax::pattern::Irrefutable>,
     #[allow(dead_code)]
     handler: pernixc_syntax::expression::block::Handler,
+}
+
+async fn build_with_blocks(
+    binder: &mut Binder<'_>,
+    with_blocks: Vec<WithBlock>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Expression, Error> {
+    for with_block in with_blocks {
+        for effect_hander in with_block.handlers {
+            binder.new_closure_binder(async move |x| Ok(()), handler);
+        }
+    }
+
+    todo!()
 }
 
 async fn extract_effect_operations<
@@ -102,7 +120,33 @@ async fn extract_effect_operations<
             continue;
         }
 
+        let mut parameters = Vec::new();
+        if let Some(arguments) = handler_syntax.arguments() {
+            parameters.extend(arguments.irrefutable_patterns());
+        }
+
+        let global_effect_operation_id =
+            effect_id.target_id.make_global(*effect_operation_id);
+
+        // checks the number of parameters
+        let operation_parameters =
+            binder.engine().get_parameters(global_effect_operation_id).await?;
+
+        if operation_parameters.parameters.len() != parameters.len() {
+            handler.receive(
+                Diagnostic::MismatchedArgumentCountInEffectOperationHandler(
+                    MismatchedArgumentCountInEffectOperationHandler {
+                        expected: operation_parameters.parameters.len(),
+                        found: parameters.len(),
+                        operation_id: global_effect_operation_id,
+                        span: identifier.span(),
+                    },
+                ),
+            );
+        }
+
         handlers.insert(*effect_operation_id, HandlerBlock {
+            parameters,
             identifier: identifier.clone(),
             handler: handler_syntax,
         });
