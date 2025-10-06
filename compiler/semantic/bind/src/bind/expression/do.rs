@@ -34,7 +34,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         _: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
-        let with_blocks =
+        let _with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
 
         Ok(Expression::RValue(Value::error(
@@ -56,19 +56,21 @@ struct WithBlock {
 
 struct HandlerBlock {
     identifier: pernixc_syntax::Identifier,
+    #[allow(dead_code)]
     parameters: Vec<pernixc_syntax::pattern::Irrefutable>,
     #[allow(dead_code)]
     handler: pernixc_syntax::expression::block::Handler,
 }
 
+#[allow(dead_code)]
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Expression, Error> {
     for with_block in with_blocks {
-        for effect_hander in with_block.handlers {
-            binder.new_closure_binder(async move |x| Ok(()), handler);
+        for _effect_hander in with_block.handlers {
+            binder.new_closure_binder(async move |_x| Ok(()), handler).await?;
         }
     }
 

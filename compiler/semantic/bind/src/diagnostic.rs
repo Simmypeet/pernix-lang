@@ -1243,7 +1243,9 @@ impl Report for UnhandledEffectOperations {
 
 /// The number of arguments in an effect operation handler does not match the
 /// number of parameters declared by the effect operation.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, StableHash, Serialize, Deserialize,
+)]
 pub struct MismatchedArgumentCountInEffectOperationHandler {
     /// The number of parameters declared by the effect operation.
     pub expected: usize,
