@@ -634,14 +634,13 @@ impl<N: Normalizer> Checker<'_, '_, N> {
             if merging_contexts.len() > 1 {
                 for i in merging_contexts.iter().map(|x| x.0) {
                     assert_eq!(
-                        *self
-                            .representation
+                        self.representation
                             .control_flow_graph
                             .blocks()
                             .get(i)
                             .unwrap()
                             .terminator(),
-                        Some(Terminator::Jump(Jump::Unconditional(
+                        Some(&Terminator::Jump(Jump::Unconditional(
                             UnconditionalJump { target: block_id }
                         ))),
                         "merging block `{i:#?}` should directly jump to the \

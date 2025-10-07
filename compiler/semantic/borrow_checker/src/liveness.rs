@@ -628,9 +628,8 @@ async fn traverse_block_internal<T: Traverser>(
         }
     }
 
-    if let ControlFlow::Break(result) = traverser_state
-        .on_terminator(block_id, block.terminator().as_ref())
-        .await?
+    if let ControlFlow::Break(result) =
+        traverser_state.on_terminator(block_id, block.terminator()).await?
     {
         return Ok(result);
     }

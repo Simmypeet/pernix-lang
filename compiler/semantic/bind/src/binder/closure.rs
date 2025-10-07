@@ -11,12 +11,13 @@ use pernixc_ir::{
     pattern::{NameBinding, NameBindingPoint},
     IR,
 };
+use pernixc_lexical::tree::RelativeSpan;
 use pernixc_term::r#type::Type;
 use pernixc_type_system::UnrecoverableError;
 
 use crate::{
-    binder::{block, r#loop, stack::Stack, Binder},
-    diagnostic::Diagnostic,
+    binder::{block, r#loop, stack::Stack, type_check::Expected, Binder},
+    diagnostic::{Diagnostic, MismatchedClosureReturnType},
 };
 
 #[derive(Default)]
@@ -180,6 +181,7 @@ impl Binder<'_> {
         &mut self,
         f: impl AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
         expected_type: Type,
+        closure_span: RelativeSpan,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
@@ -203,7 +205,7 @@ impl Binder<'_> {
             stack,
             inference_context,
             unreachable_register_ids: Vec::new(),
-            expected_closure_return_type: Some(expected_type),
+            expected_closure_return_type: Some(expected_type.clone()),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
         };
@@ -215,9 +217,57 @@ impl Binder<'_> {
 
         let result = f(&mut binder).await;
 
+        binder
+            .check_closure_return_type(expected_type, closure_span, handler)
+            .await?;
+
         // restore back the inference context
         self.inference_context = binder.inference_context;
 
         result.map(|()| binder.ir)
+    }
+
+    async fn check_closure_return_type(
+        &mut self,
+        expected_type: Type,
+        closure_span: RelativeSpan,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<(), UnrecoverableError> {
+        // check if there's any return instructions in the closure
+
+        let has_return = self.ir.control_flow_graph.traverse().any(|x| {
+            x.1.terminator()
+                .is_some_and(pernixc_ir::instruction::Terminator::is_return)
+        });
+
+        // no return, means the closure returns unit
+        if !has_return {
+            let unit = Type::unit();
+
+            if self
+                .type_check_as_diagnostic(
+                    &unit,
+                    Expected::Known(expected_type.clone()),
+                    closure_span,
+                    handler,
+                )
+                .await?
+                .is_some()
+            {
+                handler.receive(Diagnostic::MismatchedClosureReturnType(
+                    MismatchedClosureReturnType {
+                        expected: expected_type,
+                        found: unit,
+                        has_no_return: !has_return,
+                        closure_span,
+                        type_inference_map: self.type_inference_rendering_map(),
+                        constant_inference_map: self
+                            .constant_inference_rendering_map(),
+                    },
+                ));
+            }
+        }
+
+        Ok(())
     }
 }

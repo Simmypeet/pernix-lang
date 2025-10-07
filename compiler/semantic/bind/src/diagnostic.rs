@@ -89,7 +89,8 @@ diagnostic_enum! {
         UnhandledEffectOperations(UnhandledEffectOperations),
         MismatchedArgumentCountInEffectOperationHandler(
             MismatchedArgumentCountInEffectOperationHandler
-        )
+        ),
+        MismatchedClosureReturnType(MismatchedClosureReturnType)
     }
 }
 
@@ -1291,6 +1292,88 @@ impl Report for MismatchedArgumentCountInEffectOperationHandler {
                  be {}",
                 self.expected
             ))
+            .build())
+    }
+}
+
+/// The return type of a closure does not match the expected return type.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct MismatchedClosureReturnType {
+    /// The expected return type of the closure.
+    pub expected: Type,
+
+    /// The found return type of the closure.
+    pub found: Type,
+
+    /// `true` if the closure has no return expression (meaning it returns
+    /// unit).
+    pub has_no_return: bool,
+
+    /// The span of the closure expression
+    pub closure_span: RelativeSpan,
+
+    /// The inference mapping for rendering types
+    pub type_inference_map: InferenceRenderingMap<Type>,
+
+    /// The inference mapping for rendering constants
+    pub constant_inference_map: InferenceRenderingMap<Constant>,
+}
+
+impl Report for MismatchedClosureReturnType {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let expected = self
+            .expected
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder()
+                    .type_inferences(&self.type_inference_map)
+                    .constant_inferences(&self.constant_inference_map)
+                    .build(),
+            )
+            .await
+            .unwrap();
+
+        let found = self
+            .found
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder()
+                    .type_inferences(&self.type_inference_map)
+                    .constant_inferences(&self.constant_inference_map)
+                    .build(),
+            )
+            .await
+            .unwrap();
+
+        let message = if self.has_no_return {
+            format!(
+                "the closure is expected to return a value of type \
+                 `{expected}`, but has no return expression (returns unit \
+                 `()`)"
+            )
+        } else {
+            format!(
+                "the closure is expected to return a value of type \
+                 `{expected}`, but returns a value of type `{found}`",
+            )
+        };
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(message)
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.closure_span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message(
+                "consider changing the closure body to return the expected \
+                 type",
+            )
             .build())
     }
 }

@@ -27,7 +27,9 @@ use pernixc_type_system::UnrecoverableError;
 
 use crate::{
     bind::{Bind, Expression, Guidance},
-    binder::{inference_context::ErasedLifetimeProvider, Binder, Error},
+    binder::{
+        inference_context::ErasedLifetimeProvider, Binder, BindingError, Error,
+    },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
         EffectExpected, MismatchedArgumentCountInEffectOperationHandler,
@@ -44,10 +46,12 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         _: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
+        let Some(do_statements) = syntax_tree.statements() else {
+            return Err(Error::Binding(BindingError(syntax_tree.span())));
+        };
+
         let with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
-
-        let do_statements = syntax_tree.statements();
 
         let expected_return_type = Type::Inference(
             self.create_type_inference(constraint::Type::All(true)),
@@ -55,10 +59,11 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
 
         let _do_closure = Box::pin(self.new_closure_binder(
             async |x| {
-                build_do_block(x, do_statements.as_ref(), handler).await?;
+                build_do_block(x, &do_statements, handler).await?;
                 Ok(())
             },
             expected_return_type.clone(),
+            do_statements.span(),
             handler,
         ))
         .await?;
@@ -79,15 +84,13 @@ struct WithBlock {
     qualified_identifier: QualifiedIdentifier,
     effect_id: Global<pernixc_symbol::ID>,
     generic_arguments: GenericArguments,
-    #[allow(dead_code)]
     handlers: HashMap<pernixc_symbol::ID, HandlerBlock>,
 }
 
 struct HandlerBlock {
     identifier: pernixc_syntax::Identifier,
-    #[allow(dead_code)]
+    statements: pernixc_syntax::statement::Statements,
     parameters: Vec<pernixc_syntax::pattern::Irrefutable>,
-    #[allow(dead_code)]
     handler: pernixc_syntax::expression::block::Handler,
 }
 
@@ -108,6 +111,8 @@ async fn build_with_blocks(
             .expect("instantiation must be available");
 
         for (effect_operation_id, handler_block) in with_block.handlers {
+            let statements_span = handler_block.statements.span();
+
             binder
                 .new_closure_binder(
                     async |x| {
@@ -126,6 +131,7 @@ async fn build_with_blocks(
                         Ok(())
                     },
                     expected_type.clone(),
+                    statements_span,
                     handler,
                 )
                 .await?;
@@ -137,15 +143,12 @@ async fn build_with_blocks(
 
 async fn build_do_block(
     binder: &mut Binder<'_>,
-    statements: Option<&pernixc_syntax::statement::Statements>,
+    statements: &pernixc_syntax::statement::Statements,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    if let Some(statements) = statements {
-        for statement in
-            statements.statements().filter_map(|x| x.into_line().ok())
-        {
-            binder.bind_statement(&statement, handler).await?;
-        }
+    for statement in statements.statements().filter_map(|x| x.into_line().ok())
+    {
+        binder.bind_statement(&statement, handler).await?;
     }
 
     Ok(())
@@ -236,7 +239,9 @@ async fn extract_effect_operations<
     let mut handlers = HashMap::<pernixc_symbol::ID, HandlerBlock>::default();
 
     for handler_syntax in effect_handlers {
-        let Some(identifier) = handler_syntax.identifier() else {
+        let (Some(identifier), Some(statements)) =
+            (handler_syntax.identifier(), handler_syntax.statements())
+        else {
             continue;
         };
 
@@ -295,6 +300,7 @@ async fn extract_effect_operations<
 
         handlers.insert(*effect_operation_id, HandlerBlock {
             parameters,
+            statements,
             identifier: identifier.clone(),
             handler: handler_syntax,
         });
