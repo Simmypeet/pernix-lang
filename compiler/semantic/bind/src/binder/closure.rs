@@ -286,7 +286,7 @@ impl Binder<'_> {
                     handler,
                 )
                 .await?
-                .is_some();
+                .is_none();
 
             self.restore_inference_context_checkpoint(checkpoint);
 
