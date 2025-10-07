@@ -1,0 +1,21 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: not all flow paths in this closure return a value of type `bool`
+   ╭─ compiler/e2e/test/snapshot/ir/expression/do/not_all_flow_path_in_closure_return_a_value/main.pnx:26:13
+   │  
+26 │           op():
+   │ ╭─────────────^
+27 │ │             if cond:
+28 │ │                 return false
+   │ ╰────────────────────────────^
+   │  
+   = consider adding a return expression to all control flow paths
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:

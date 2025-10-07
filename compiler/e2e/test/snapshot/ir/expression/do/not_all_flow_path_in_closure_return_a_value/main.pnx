@@ -1,0 +1,30 @@
+public effect Test:
+    op()
+
+
+# no error here
+public function main():
+    let cond = true
+
+    do:
+        if cond:
+            return ()
+    
+    with Test:
+        op():
+            pass
+
+
+# error here, not all flow paths return a value
+public function main2():
+    let cond = true
+
+    do:
+        return true
+    
+    with Test:
+        op():
+            if cond:
+                return false
+            
+            # missing else branch, not all flow paths return a value
