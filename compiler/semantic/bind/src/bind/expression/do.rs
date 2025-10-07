@@ -1,6 +1,10 @@
 use pernixc_handler::Handler;
 use pernixc_hash::HashMap;
-use pernixc_ir::value::Value;
+use pernixc_ir::{
+    address::{Address, Memory},
+    pattern::{Irrefutable, NameBindingPoint, Wildcard},
+    value::Value,
+};
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_resolution::{
     qualified_identifier::{resolve_qualified_identifier, Resolution},
@@ -14,7 +18,12 @@ use pernixc_symbol::{
 };
 use pernixc_syntax::QualifiedIdentifier;
 use pernixc_target::Global;
-use pernixc_term::{generic_arguments::GenericArguments, r#type::Type};
+use pernixc_term::{
+    generic_arguments::GenericArguments,
+    instantiation::{get_instantiation, Instantiation},
+    r#type::{Qualifier, Type},
+};
+use pernixc_type_system::UnrecoverableError;
 
 use crate::{
     bind::{Bind, Expression, Guidance},
@@ -25,6 +34,7 @@ use crate::{
         UnhandledEffectOperations, UnknownEffectOperation,
     },
     infer::constraint,
+    pattern::insert_name_binding,
 };
 
 impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
@@ -34,8 +44,10 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         _: &Guidance<'_>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Expression, Error> {
-        let _with_blocks =
+        let with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
+
+        let _value = build_with_blocks(self, with_blocks, handler).await?;
 
         Ok(Expression::RValue(Value::error(
             Type::Inference(
@@ -62,19 +74,108 @@ struct HandlerBlock {
     handler: pernixc_syntax::expression::block::Handler,
 }
 
-#[allow(dead_code)]
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Expression, Error> {
     for with_block in with_blocks {
-        for _effect_hander in with_block.handlers {
-            binder.new_closure_binder(async move |_x| Ok(()), handler).await?;
+        let instantiation = binder
+            .engine()
+            .get_instantiation(
+                with_block.effect_id,
+                with_block.generic_arguments,
+            )
+            .await?
+            .expect("instantiation must be available");
+
+        for (effect_operation_id, handler_block) in with_block.handlers {
+            binder
+                .new_closure_binder(
+                    async |x| {
+                        build_handler_block(
+                            x,
+                            handler_block,
+                            with_block
+                                .effect_id
+                                .target_id
+                                .make_global(effect_operation_id),
+                            &instantiation,
+                            handler,
+                        )
+                        .await?;
+
+                        Ok(())
+                    },
+                    handler,
+                )
+                .await?;
         }
     }
 
     todo!()
+}
+
+async fn build_handler_block(
+    binder: &mut Binder<'_>,
+    handler_block: HandlerBlock,
+    effect_operation_id: Global<pernixc_symbol::ID>,
+    effect_inst: &Instantiation,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
+    let mut name_binding_point = NameBindingPoint::default();
+
+    let effect_operation_parameters =
+        binder.engine().get_parameters(effect_operation_id).await?;
+
+    for (parameter_id, parameter_syn) in effect_operation_parameters
+        .parameter_order
+        .iter()
+        .copied()
+        .zip(&handler_block.parameters)
+    {
+        let mut parameter_ty =
+            effect_operation_parameters.parameters[parameter_id].r#type.clone();
+
+        effect_inst.instantiate(&mut parameter_ty);
+
+        let simplified_type = binder
+            .create_environment()
+            .simplify(parameter_ty)
+            .await
+            .map_err(|x| {
+                x.report_as_type_check_overflow(parameter_syn.span(), &handler)
+            })?;
+
+        let parameter_ty = &simplified_type.result;
+
+        let pattern = binder
+            .bind_pattern(parameter_syn, parameter_ty, handler)
+            .await?
+            .unwrap_or_else(|| {
+                Irrefutable::Wildcard(Wildcard { span: parameter_syn.span() })
+            });
+
+        binder
+            .insert_name_binding_point(
+                &mut name_binding_point,
+                &pattern,
+                parameter_ty,
+                Address::Memory(Memory::Parameter(parameter_id)),
+                Qualifier::Mutable,
+                &insert_name_binding::Config {
+                    must_copy: false,
+                    scope_id: binder.stack().current_scope().scope_id(),
+                    address_span: Some(parameter_syn.span()),
+                },
+                handler,
+            )
+            .await?;
+    }
+
+    binder.add_named_binding_point(name_binding_point);
+
+    Ok(())
 }
 
 async fn extract_effect_operations<
