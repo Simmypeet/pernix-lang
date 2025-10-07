@@ -44,7 +44,7 @@ pub enum Value {
 /// Representing an environment that the [`Values`] is in. This is primarily
 /// used for type checking and retrieving the type of a [`Value`].
 #[derive(Debug, Clone, Copy, Builder)]
-pub struct Environment<'e, N: Normalizer> {
+pub struct Environment<'e, N> {
     /// The environment for type system operations.
     pub type_environment: &'e TyEnvironment<'e, N>,
 

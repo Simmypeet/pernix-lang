@@ -5,7 +5,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::{HashMap, HashSet};
 use pernixc_ir::{
     control_flow_graph::Point,
-    value::{register::Register, TypeOf},
+    value::{register::Register, Environment, TypeOf},
     IR,
 };
 use pernixc_query::TrackedEngine;
@@ -14,8 +14,7 @@ use pernixc_symbol::kind::get_kind;
 use pernixc_target::Global;
 use pernixc_term::{r#type::Type, visitor::RecursiveIterator};
 use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer,
-    variance::get_variance_of, UnrecoverableError,
+    normalizer::Normalizer, variance::get_variance_of, UnrecoverableError,
 };
 
 use crate::{diagnostic::Diagnostic, Region, UniversalRegion};
@@ -39,7 +38,6 @@ impl RegisterInfos {
     /// IR.
     pub async fn new<N: Normalizer>(
         ir: &IR,
-        current_site: Global<pernixc_symbol::ID>,
         environment: &Environment<'_, N>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
@@ -58,16 +56,14 @@ impl RegisterInfos {
                 })
             {
                 let register = ir.values.registers.get(inst).unwrap();
-                let ty = ir
-                    .values
-                    .type_of(inst, current_site, environment)
-                    .await
-                    .map_err(|x| {
+                let ty = ir.values.type_of(inst, environment).await.map_err(
+                    |x| {
                         x.report_as_type_calculating_overflow(
                             register.span.unwrap(),
                             &handler,
                         )
-                    })?;
+                    },
+                )?;
 
                 cache.insert(inst, RegisterInfo {
                     regions: RecursiveIterator::new(&ty.result)

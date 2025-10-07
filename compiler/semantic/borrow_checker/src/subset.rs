@@ -590,7 +590,6 @@ impl<N: Normalizer> Builder<'_, N> {
                     .values()
                     .type_of(
                         &tuple_pack.tuple_address,
-                        self.context.current_site(),
                         self.context.environment(),
                     )
                     .await
@@ -845,7 +844,7 @@ impl<'a, N: Normalizer> Walker<'a, N> {
         self.context.environment().tracked_engine()
     }
 
-    pub fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
         self.context.current_site()
     }
 }

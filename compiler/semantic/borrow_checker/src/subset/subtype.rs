@@ -21,7 +21,7 @@ impl<N: Normalizer> Context<'_, N> {
         set: &mut BTreeSet<LifetimeConstraint>,
     ) -> Result<(), UnrecoverableError> {
         let result = self
-            .environment()
+            .type_environment()
             .subtypes(target, source, variance)
             .await
             .map_err(|x| {
@@ -54,7 +54,7 @@ impl<N: Normalizer> Context<'_, N> {
         let span = *self.values().span_of_value(source_value).unwrap();
         let Succeeded { result: source, constraints } = self
             .values()
-            .type_of(source_value, self.current_site(), self.environment())
+            .type_of(source_value, self.environment())
             .await
             .map_err(|x| {
                 x.report_as_type_check_overflow(span, &self.handler())

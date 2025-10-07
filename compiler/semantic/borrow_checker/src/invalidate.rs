@@ -6,7 +6,7 @@ use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::{ControlFlowGraph, Point},
     instruction::{AccessMode, Instruction},
-    value::register::Register,
+    value::{register::Register, Environment},
 };
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::TrackedEngine;
@@ -19,9 +19,7 @@ use pernixc_term::{
     sub_term::TermLocation,
     visitor::{self, Recursive},
 };
-use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, UnrecoverableError,
-};
+use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
 use crate::{
     context::Context,
@@ -108,7 +106,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
         self.context.values()
     }
 
-    pub fn current_site(&self) -> Global<pernixc_symbol::ID> {
+    pub const fn current_site(&self) -> Global<pernixc_symbol::ID> {
         self.context.current_site()
     }
 
@@ -118,6 +116,12 @@ impl<'a, N: Normalizer> Checker<'a, N> {
 
     pub fn environment(&self) -> &'a Environment<'a, N> {
         self.context.environment()
+    }
+
+    pub fn type_environment(
+        &self,
+    ) -> &'a pernixc_type_system::environment::Environment<'a, N> {
+        self.context.environment().type_environment
     }
 
     pub fn handler(&self) -> &'a dyn Handler<Diagnostic> {
@@ -160,7 +164,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                 self.context.values().allocas.get(id).unwrap().r#type.clone()
             }
 
-            Memory::Capture(_) | Memory::ClosureParameter(_) => todo!(),
+            Memory::Capture(_) => todo!(),
         };
 
         if !self
@@ -358,7 +362,7 @@ impl<'a, N: Normalizer> Checker<'a, N> {
                     self.context.values().allocas.get(id).unwrap().span.unwrap()
                 }
 
-                Memory::Capture(_) | Memory::ClosureParameter(_) => todo!(),
+                Memory::Capture(_) => todo!(),
             };
 
             self.invalidate_borrow(

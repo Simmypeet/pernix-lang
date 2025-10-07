@@ -56,7 +56,7 @@ impl<N: Normalizer> Context<'_, N> {
                         &current_capabilities[*capability_unit];
 
                     let subtypable = self
-                        .environment()
+                        .type_environment()
                         .subtypes_generic_arguments(
                             &required_capability.generic_arguments,
                             &available_capability.generic_arguments,
@@ -131,7 +131,7 @@ impl<N: Normalizer> Context<'_, N> {
         }
 
         lifetime_constraints.extend(
-            self.environment()
+            self.type_environment()
                 .wf_check(
                     function_call.callable_id,
                     *span,
@@ -171,7 +171,7 @@ impl<N: Normalizer> Context<'_, N> {
 
                 // check extra trait satisfiability
                 lifetime_constraints.extend(
-                    self.environment()
+                    self.type_environment()
                         .predicate_satisfied(
                             Predicate::PositiveTrait(PositiveTrait {
                                 trait_id: parent_trait_id,
@@ -197,7 +197,7 @@ impl<N: Normalizer> Context<'_, N> {
                 );
 
                 lifetime_constraints.extend(
-                    self.environment()
+                    self.type_environment()
                         .wf_check(
                             parent_implementation_id,
                             *span,
@@ -211,7 +211,7 @@ impl<N: Normalizer> Context<'_, N> {
 
             Kind::EffectOperation => {
                 lifetime_constraints.extend(
-                    self.environment()
+                    self.type_environment()
                         .wf_check(
                             function_call.callable_id,
                             *span,

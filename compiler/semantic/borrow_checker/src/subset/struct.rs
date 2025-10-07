@@ -47,7 +47,7 @@ impl<N: Normalizer> Context<'_, N> {
         }
 
         let well_formed_lifetime_constraints = self
-            .environment()
+            .type_environment()
             .wf_check(
                 struct_lit.struct_id,
                 *span,

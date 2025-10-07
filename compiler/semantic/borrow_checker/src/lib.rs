@@ -209,18 +209,15 @@
 
 use enum_as_inner::EnumAsInner;
 use pernixc_handler::Handler;
-use pernixc_ir::IR;
+use pernixc_ir::{value::Environment, IR};
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
 use pernixc_term::{
     generic_parameters::LifetimeParameterID,
     inference,
     lifetime::{ElidedLifetimeID, Lifetime},
 };
-use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, UnrecoverableError,
-};
+use pernixc_type_system::{normalizer::Normalizer, UnrecoverableError};
 
 use crate::diagnostic::Diagnostic;
 
@@ -366,18 +363,20 @@ impl TryFrom<Lifetime> for Region {
 #[allow(clippy::missing_errors_doc)]
 pub async fn borrow_check<N: Normalizer>(
     ir: &IR,
-    current_site: Global<pernixc_symbol::ID>,
-    environment: &Environment<'_, N>,
+    value_environment: &Environment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     // NOTE: we clone the whole ir here, is there a better way to do this?
     let mut ir = ir.clone();
 
-    transform::transform_to_inference(&mut ir, environment.tracked_engine())
-        .await?;
+    transform::transform_to_inference(
+        &mut ir,
+        value_environment.tracked_engine(),
+    )
+    .await?;
 
     let context =
-        context::Context::new(&ir, environment, current_site, handler).await?;
+        context::Context::new(&ir, value_environment, handler).await?;
 
     let subset = subset::analyze(&context).await?;
 

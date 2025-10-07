@@ -37,7 +37,7 @@ impl<N: Normalizer> Checker<'_, N> {
     ) -> Result<(), UnrecoverableError> {
         let ty = self
             .values()
-            .type_of(&load.address, self.current_site(), self.environment())
+            .type_of(&load.address, self.environment())
             .await
             .map_err(|x| {
                 x.report_as_type_calculating_overflow(
@@ -74,7 +74,7 @@ impl<N: Normalizer> Checker<'_, N> {
 
                 if self
                     .context()
-                    .environment()
+                    .type_environment()
                     .predicate_satisfied_as_diagnostics(
                         Predicate::PositiveMarker(PositiveMarker::new(
                             copy_marker,
@@ -129,7 +129,7 @@ impl<N: Normalizer> Checker<'_, N> {
                     to_universal.region.into(),
                 );
 
-                match self.environment().query(&outlives).await {
+                match self.type_environment().query(&outlives).await {
                     Ok(Some(_)) => {}
                     Ok(None) => {
                         self.handler().receive(
