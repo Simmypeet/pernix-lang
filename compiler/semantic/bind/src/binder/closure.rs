@@ -177,7 +177,7 @@ impl Binder<'_> {
     /// Creates a nested binder that can be used to produce a nested IR.
     pub async fn new_closure_binder<T>(
         &mut self,
-        f: impl AsyncFnOnce(&mut Self) -> Result<(), UnrecoverableError>,
+        f: impl AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder

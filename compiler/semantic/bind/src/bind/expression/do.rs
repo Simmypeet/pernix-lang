@@ -78,7 +78,7 @@ async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     handler: &dyn Handler<Diagnostic>,
-) -> Result<Expression, Error> {
+) -> Result<(), Error> {
     for with_block in with_blocks {
         let instantiation = binder
             .engine()
@@ -113,7 +113,7 @@ async fn build_with_blocks(
         }
     }
 
-    todo!()
+    Ok(())
 }
 
 async fn build_handler_block(
