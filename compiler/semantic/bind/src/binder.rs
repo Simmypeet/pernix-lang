@@ -122,6 +122,10 @@ pub struct Binder<'t> {
 
     unreachable_register_ids: Vec<ID<Register>>,
 
+    /// Is `Some` if the binder is currently building a closure, and this
+    /// determines the expected return type of the closure.
+    expected_closure_return_type: Option<Type>,
+
     block_context: block::Context,
     loop_context: r#loop::Context,
 }
@@ -165,6 +169,8 @@ impl<'t> Binder<'t> {
             inference_context: InferenceContext::default(),
 
             unreachable_register_ids: Vec::new(),
+
+            expected_closure_return_type: None,
 
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),

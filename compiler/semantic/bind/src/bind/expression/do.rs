@@ -47,7 +47,24 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
 
-        build_with_blocks(self, with_blocks, handler).await?;
+        let do_statements = syntax_tree.statements();
+
+        let expected_return_type = Type::Inference(
+            self.create_type_inference(constraint::Type::All(true)),
+        );
+
+        let _do_closure = Box::pin(self.new_closure_binder(
+            async |x| {
+                build_do_block(x, do_statements.as_ref(), handler).await?;
+                Ok(())
+            },
+            expected_return_type.clone(),
+            handler,
+        ))
+        .await?;
+
+        build_with_blocks(self, with_blocks, &expected_return_type, handler)
+            .await?;
 
         Ok(Expression::RValue(Value::error(
             Type::Inference(
@@ -77,6 +94,7 @@ struct HandlerBlock {
 async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
+    expected_type: &Type,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), Error> {
     for with_block in with_blocks {
@@ -107,9 +125,26 @@ async fn build_with_blocks(
 
                         Ok(())
                     },
+                    expected_type.clone(),
                     handler,
                 )
                 .await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn build_do_block(
+    binder: &mut Binder<'_>,
+    statements: Option<&pernixc_syntax::statement::Statements>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<(), UnrecoverableError> {
+    if let Some(statements) = statements {
+        for statement in
+            statements.statements().filter_map(|x| x.into_line().ok())
+        {
+            binder.bind_statement(&statement, handler).await?;
         }
     }
 

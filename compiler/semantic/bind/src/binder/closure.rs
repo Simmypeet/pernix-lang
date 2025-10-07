@@ -11,6 +11,7 @@ use pernixc_ir::{
     pattern::{NameBinding, NameBindingPoint},
     IR,
 };
+use pernixc_term::r#type::Type;
 use pernixc_type_system::UnrecoverableError;
 
 use crate::{
@@ -178,6 +179,7 @@ impl Binder<'_> {
     pub async fn new_closure_binder(
         &mut self,
         f: impl AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
+        expected_type: Type,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
@@ -201,6 +203,7 @@ impl Binder<'_> {
             stack,
             inference_context,
             unreachable_register_ids: Vec::new(),
+            expected_closure_return_type: Some(expected_type),
             block_context: block::Context::default(),
             loop_context: r#loop::Context::default(),
         };
