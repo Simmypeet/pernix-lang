@@ -11,11 +11,12 @@ use pernixc_handler::{Handler, Storage};
 use pernixc_ir::{
     address::{self, Address, Memory},
     alloca::Alloca,
+    capture::Captures,
     control_flow_graph::Block,
     instruction::{Instruction, Jump, Terminator, UnconditionalJump},
     value::{
         register::{Assignment, Borrow, Load},
-        TypeOf,
+        Environment as ValueEnvironment, TypeOf,
     },
     Values, IR,
 };
@@ -108,14 +109,11 @@ async fn handle_load<N: Normalizer>(
     load: &Load,
     register_span: RelativeSpan,
     stack: &mut Stack,
-    current_site: Global<pernixc_symbol::ID>,
-    ty_environment: &TyEnvironment<'_, N>,
+    val_environment: &ValueEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
-    let ty = values
-        .type_of(&load.address, current_site, ty_environment)
-        .await
-        .map_err(|x| {
+    let ty =
+        values.type_of(&load.address, val_environment).await.map_err(|x| {
             x.report_as_type_calculating_overflow(register_span, &handler)
         })?;
 
@@ -129,7 +127,7 @@ async fn handle_load<N: Normalizer>(
                 .expect("should found")
                 .get_state_summary()
         } else {
-            let copy_marker = ty_environment
+            let copy_marker = val_environment
                 .tracked_engine()
                 .get_by_qualified_name(pernixc_corelib::copy::MARKER_SEQUENCE)
                 .await
@@ -138,7 +136,9 @@ async fn handle_load<N: Normalizer>(
             // no need to move
             let storage =
                 Storage::<pernixc_type_system::diagnostic::Diagnostic>::new();
-            ty_environment
+
+            val_environment
+                .type_environment
                 .predicate_satisfied(
                     Predicate::PositiveMarker(PositiveMarker::new(
                         copy_marker,
@@ -166,7 +166,7 @@ async fn handle_load<N: Normalizer>(
                 .set_uninitialized(
                     &load.address,
                     register_span,
-                    ty_environment,
+                    val_environment.type_environment,
                     handler,
                 )
                 .await?;
@@ -267,7 +267,7 @@ struct Checker<'r, 'a, N: Normalizer> {
     target_stakcs_by_block_id: HashMap<ID<Block>, Stack>,
 
     current_site: Global<pernixc_symbol::ID>,
-    ty_environment: &'a TyEnvironment<'a, N>,
+    value_environment: ValueEnvironment<'a, N>,
 }
 
 impl<N: Normalizer> Checker<'_, '_, N> {
@@ -292,7 +292,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         &store.address,
                         store.span.unwrap(),
                         stack,
-                        self.ty_environment,
+                        self.value_environment.type_environment,
                         handler,
                     )
                     .await?;
@@ -300,8 +300,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
                         &self.representation.values,
-                        self.current_site,
-                        self.ty_environment,
+                        &self.value_environment,
                         handler,
                     )
                     .await?;
@@ -327,8 +326,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                                 load,
                                 register.span.unwrap(),
                                 stack,
-                                self.current_site,
-                                self.ty_environment,
+                                &self.value_environment,
                                 handler,
                             )
                             .await?;
@@ -370,7 +368,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                                 offset: address::Offset::Unpacked,
                             }),
                             tuple_pack.packed_tuple_span.unwrap(),
-                            self.ty_environment,
+                            self.value_environment.type_environment,
                             handler,
                         )
                         .await?;
@@ -421,7 +419,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         &tuple_pack.store_address,
                         tuple_pack.packed_tuple_span.unwrap(),
                         stack,
-                        self.ty_environment,
+                        self.value_environment.type_environment,
                         handler,
                     )
                     .await?;
@@ -429,8 +427,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     let instructions = simplify_drop::simplify_drops(
                         instructions,
                         &self.representation.values,
-                        self.current_site,
-                        self.ty_environment,
+                        &self.value_environment,
                         handler,
                     )
                     .await?;
@@ -456,7 +453,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                             == self.representation.scope_tree.root_scope_id()
                         {
                             if !self
-                                .ty_environment
+                                .value_environment
                                 .tracked_engine()
                                 .get_kind(self.current_site)
                                 .await
@@ -466,7 +463,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                             }
 
                             let function_signature = self
-                                .ty_environment
+                                .value_environment
                                 .tracked_engine()
                                 .get_parameters(self.current_site)
                                 .await?;
@@ -529,7 +526,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         &mut memories,
                         &self.representation.values.allocas,
                         self.current_site,
-                        self.ty_environment.tracked_engine(),
+                        self.value_environment.tracked_engine(),
                     )
                     .await?;
 
@@ -556,7 +553,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                             state
                                 .get_drop_instructions(
                                     &Address::Memory(memory),
-                                    self.ty_environment.tracked_engine(),
+                                    self.value_environment.tracked_engine(),
                                 )
                                 .await?,
                         );
@@ -565,8 +562,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     let drop_instructions = simplify_drop::simplify_drops(
                         drop_instructions,
                         &self.representation.values,
-                        self.current_site,
-                        self.ty_environment,
+                        &self.value_environment,
                         handler,
                     )
                     .await?;
@@ -699,7 +695,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         &mut memories,
                         &self.representation.values.allocas,
                         self.current_site,
-                        self.ty_environment.tracked_engine(),
+                        self.value_environment.tracked_engine(),
                     )
                     .await?;
 
@@ -716,7 +712,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                                 .get_alternate_drop_instructions(
                                     alternate_state,
                                     &Address::Memory(memory_to_drop),
-                                    self.ty_environment.tracked_engine(),
+                                    self.value_environment.tracked_engine(),
                                 )
                                 .await
                                 .unwrap(),
@@ -735,8 +731,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     simplify_drop::simplify_drops(
                         drop_instructions,
                         &self.representation.values,
-                        self.current_site,
-                        self.ty_environment,
+                        &self.value_environment,
                         handler,
                     )
                     .await?,
@@ -769,7 +764,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                     &mut memories,
                     &self.representation.values.allocas,
                     self.current_site,
-                    self.ty_environment.tracked_engine(),
+                    self.value_environment.tracked_engine(),
                 )
                 .await?;
 
@@ -786,7 +781,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         .get_alternate_drop_instructions(
                             this_state,
                             &Address::Memory(memory),
-                            self.ty_environment.tracked_engine(),
+                            self.value_environment.tracked_engine(),
                         )
                         .await
                         .unwrap();
@@ -801,8 +796,7 @@ impl<N: Normalizer> Checker<'_, '_, N> {
                         simplify_drop::simplify_drops(
                             drop_instructions,
                             &self.representation.values,
-                            self.current_site,
-                            self.ty_environment,
+                            &self.value_environment,
                             handler,
                         )
                         .await?,
@@ -844,6 +838,7 @@ pub async fn memory_check(
     engine: &TrackedEngine,
     representation: &mut IR,
     current_site: Global<pernixc_symbol::ID>,
+    captures: Option<&Captures>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     let premise = engine.get_active_premise(current_site).await?;
@@ -862,7 +857,11 @@ pub async fn memory_check(
         walk_results_by_block_id: HashMap::new(),
         target_stakcs_by_block_id: HashMap::new(),
         current_site,
-        ty_environment: &ty_environment,
+        value_environment: ValueEnvironment::builder()
+            .type_environment(&ty_environment)
+            .current_site(current_site)
+            .maybe_captures(captures)
+            .build(),
     };
 
     for block_id in all_block_ids {
