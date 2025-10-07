@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use pernixc_bind::binder::{self, Binder, UnrecoverableError};
 use pernixc_handler::Storage;
+use pernixc_ir::value::Environment as ValueEnvironment;
 use pernixc_query::runtime::executor;
 use pernixc_symbol::{kind::get_kind, syntax::get_function_body_syntax};
 use pernixc_type_system::{
@@ -22,7 +23,7 @@ async fn build_ir_for_function(
     let function_body_syntax = engine.get_function_body_syntax(key.0).await;
 
     let Some(function_body_syntax) = function_body_syntax else {
-        return Ok(Arc::new(pernixc_ir::IR::default_function()));
+        return Ok(Arc::new(pernixc_ir::IR::default()));
     };
 
     for statement in
@@ -34,7 +35,7 @@ async fn build_ir_for_function(
                 return Err(error);
             }
             Err(UnrecoverableError::Reported) => {
-                return Ok(Arc::new(pernixc_ir::IR::default_function()))
+                return Ok(Arc::new(pernixc_ir::IR::default()))
             }
         };
     }
@@ -46,20 +47,22 @@ async fn build_ir_for_function(
             return Err(error);
         }
         Err(UnrecoverableError::Reported) => {
-            return Ok(Arc::new(pernixc_ir::IR::default_function()))
+            return Ok(Arc::new(pernixc_ir::IR::default()))
         }
     };
 
     // do memory checking analysis
-    match pernixc_memory_checker::memory_check(engine, &mut ir, key.0, storage)
-        .await
+    match pernixc_memory_checker::memory_check(
+        engine, &mut ir, key.0, None, storage,
+    )
+    .await
     {
         Ok(()) => {}
         Err(UnrecoverableError::CyclicDependency(error)) => {
             return Err(error);
         }
         Err(UnrecoverableError::Reported) => {
-            return Ok(Arc::new(pernixc_ir::IR::default_function()))
+            return Ok(Arc::new(pernixc_ir::IR::default()))
         }
     }
 
@@ -77,7 +80,15 @@ async fn build_ir_for_function(
     );
 
     // do borrow checking analysis
-    match pernixc_borrow_checker::borrow_check(&ir, key.0, &env, storage).await
+    match pernixc_borrow_checker::borrow_check(
+        &ir,
+        &ValueEnvironment::builder()
+            .current_site(key.0)
+            .type_environment(&env)
+            .build(),
+        storage,
+    )
+    .await
     {
         Ok(()) => {}
 
@@ -86,7 +97,7 @@ async fn build_ir_for_function(
         }
 
         Err(UnrecoverableError::Reported) => {
-            return Ok(Arc::new(pernixc_ir::IR::default_function()))
+            return Ok(Arc::new(pernixc_ir::IR::default()))
         }
     }
 
@@ -126,7 +137,7 @@ impl Build for pernixc_ir::Key {
             }
             Err(UnrecoverableError::Reported) => {
                 return Ok(Output {
-                    item: Arc::new(pernixc_ir::IR::default_function()),
+                    item: Arc::new(pernixc_ir::IR::default()),
                     diagnostics: storage.into_vec().into(),
                     occurrences: Arc::default(),
                 });
