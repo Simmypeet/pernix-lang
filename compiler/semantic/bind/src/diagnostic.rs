@@ -90,7 +90,10 @@ diagnostic_enum! {
         MismatchedArgumentCountInEffectOperationHandler(
             MismatchedArgumentCountInEffectOperationHandler
         ),
-        MismatchedClosureReturnType(MismatchedClosureReturnType)
+        MismatchedClosureReturnType(MismatchedClosureReturnType),
+        NotAllFlowPathsReturnAValueInClosure(
+            NotAllFlowPathsReturnAValueInClosure
+        ),
     }
 }
 
@@ -1373,6 +1376,58 @@ impl Report for MismatchedClosureReturnType {
             .help_message(
                 "consider changing the closure body to return the expected \
                  type",
+            )
+            .build())
+    }
+}
+
+/// Not all flow paths in a closure return a value.
+#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
+pub struct NotAllFlowPathsReturnAValueInClosure {
+    /// The span of the closure expression
+    pub closure_span: RelativeSpan,
+
+    /// The expected return type of the closure.
+    pub return_type: Type,
+
+    /// The inference mapping for rendering types
+    pub type_inference_map: InferenceRenderingMap<Type>,
+
+    /// The inference mapping for rendering constants
+    pub constant_inference_map: InferenceRenderingMap<Constant>,
+}
+
+impl Report for NotAllFlowPathsReturnAValueInClosure {
+    async fn report(
+        &self,
+        engine: &TrackedEngine,
+    ) -> Result<pernixc_diagnostic::Rendered<ByteIndex>, executor::CyclicError>
+    {
+        let return_type = self
+            .return_type
+            .write_to_string_with_configuration(
+                engine,
+                &Configuration::builder()
+                    .type_inferences(&self.type_inference_map)
+                    .constant_inferences(&self.constant_inference_map)
+                    .build(),
+            )
+            .await
+            .unwrap();
+
+        Ok(pernixc_diagnostic::Rendered::builder()
+            .message(format!(
+                "not all flow paths in this closure return a value of type \
+                 `{return_type}`",
+            ))
+            .primary_highlight(
+                Highlight::builder()
+                    .span(engine.to_absolute_span(&self.closure_span).await)
+                    .build(),
+            )
+            .severity(pernixc_diagnostic::Severity::Error)
+            .help_message(
+                "consider adding a return expression to all control flow paths",
             )
             .build())
     }

@@ -17,7 +17,10 @@ use pernixc_type_system::UnrecoverableError;
 
 use crate::{
     binder::{block, r#loop, stack::Stack, type_check::Expected, Binder},
-    diagnostic::{Diagnostic, MismatchedClosureReturnType},
+    diagnostic::{
+        Diagnostic, MismatchedClosureReturnType,
+        NotAllFlowPathsReturnAValueInClosure,
+    },
 };
 
 #[derive(Default)]
@@ -265,6 +268,50 @@ impl Binder<'_> {
                             .constant_inference_rendering_map(),
                     },
                 ));
+            }
+
+            return Ok(());
+        }
+
+        let is_unit = {
+            let checkpoint = self.start_inference_context_checkpoint();
+            let is_unit = self
+                .type_check_as_diagnostic(
+                    &expected_type,
+                    Expected::Known(Type::unit()),
+                    closure_span,
+                    handler,
+                )
+                .await?
+                .is_some();
+
+            self.restore_inference_context_checkpoint(checkpoint);
+
+            is_unit
+        };
+
+        // if isn't unit, we check all return instructions
+        if !is_unit {
+            let all_has_return =
+                self.ir.control_flow_graph.traverse().all(|x| {
+                    x.1.terminator().is_some_and(
+                        pernixc_ir::instruction::Terminator::is_return,
+                    )
+                });
+
+            if !all_has_return {
+                handler.receive(
+                    Diagnostic::NotAllFlowPathsReturnAValueInClosure(
+                        NotAllFlowPathsReturnAValueInClosure {
+                            closure_span,
+                            return_type: expected_type,
+                            type_inference_map: self
+                                .type_inference_rendering_map(),
+                            constant_inference_map: self
+                                .constant_inference_rendering_map(),
+                        },
+                    ),
+                );
             }
         }
 
