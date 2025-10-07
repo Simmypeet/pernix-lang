@@ -146,6 +146,13 @@ impl<'t> Binder<'t> {
     /// Returns the active premise where the binder is operating on.
     #[must_use]
     pub fn premise(&self) -> &'t Premise { &self.environment.premise }
+
+    /// Returns the expected return type of the closure if the binder is
+    /// currently building a closure.
+    #[must_use]
+    pub const fn expected_closure_return_type(&self) -> Option<&Type> {
+        self.expected_closure_return_type.as_ref()
+    }
 }
 
 impl<'t> Binder<'t> {
