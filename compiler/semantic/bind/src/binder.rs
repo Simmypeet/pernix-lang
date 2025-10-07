@@ -16,7 +16,7 @@ use pernixc_ir::{
     value::{
         literal::{Literal, Unreachable},
         register::{Assignment, Load, Register},
-        TypeOf, Value,
+        Environment as ValueEnvironment, TypeOf, Value,
     },
     IR,
 };
@@ -104,6 +104,9 @@ pub struct Binder<'t> {
     /// The current environment information where the binder is operating on.
     environment: &'t Environment,
 
+    /// The optional captures that the binder may use when building closures.
+    captures: Option<&'t pernixc_ir::capture::Captures>,
+
     /// The intermediate representation that is being built.
     #[get = "pub"]
     ir: IR,
@@ -162,7 +165,7 @@ impl<'t> Binder<'t> {
         environment: &'t Environment,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<Self, UnrecoverableError> {
-        let ir = IR::default_function();
+        let ir = IR::default();
         let current_block_id = ir.control_flow_graph.entry_block_id();
         let stack = Stack::new(ir.scope_tree.root_scope_id(), false);
 
@@ -172,6 +175,7 @@ impl<'t> Binder<'t> {
             stack,
             current_block_id,
             environment,
+            captures: None,
 
             inference_context: InferenceContext::default(),
 
@@ -610,8 +614,11 @@ impl Binder<'_> {
             .values
             .type_of(
                 register_id,
-                self.current_site(),
-                &self.create_environment(),
+                &ValueEnvironment::builder()
+                    .type_environment(&self.create_environment())
+                    .maybe_captures(self.captures)
+                    .current_site(self.current_site())
+                    .build(),
             )
             .await
             .map(|x| x.result)
@@ -725,8 +732,7 @@ impl Binder<'_> {
                 Address::Memory(
                     Memory::Alloca(_)
                     | Memory::Parameter(_)
-                    | Memory::Capture(_)
-                    | Memory::ClosureParameter(_),
+                    | Memory::Capture(_),
                 ) => return Ok(None),
 
                 Address::Field(ad) => {
@@ -782,7 +788,14 @@ impl Binder<'_> {
         match self
             .ir
             .values
-            .type_of(address, self.current_site(), &self.create_environment())
+            .type_of(
+                address,
+                &ValueEnvironment::builder()
+                    .type_environment(&self.create_environment())
+                    .maybe_captures(self.captures)
+                    .current_site(self.current_site())
+                    .build(),
+            )
             .await
         {
             Ok(x) => Ok(x.result),
@@ -800,12 +813,7 @@ impl Binder<'_> {
                         self.ir.values.allocas[*id].span.unwrap()
                     }
                     Memory::Capture(id) => {
-                        self.ir.values.captures()[*id].span.unwrap()
-                    }
-                    Memory::ClosureParameter(id) => {
-                        self.ir.values.closure_parameters().parameters[*id]
-                            .span
-                            .unwrap()
+                        self.captures.unwrap().captures[*id].span.unwrap()
                     }
                 },
                 &handler,

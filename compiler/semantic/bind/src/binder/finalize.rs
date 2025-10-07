@@ -3,6 +3,7 @@ use pernixc_handler::Handler;
 use pernixc_hash::HashSet;
 use pernixc_ir::{
     instruction::{Instruction, ScopePop},
+    value::Environment as ValueEnvironment,
     IR,
 };
 use pernixc_semantic_element::return_type::get_return_type;
@@ -117,9 +118,14 @@ impl Binder<'_> {
 
         // transform inference types
         self.transform_inference(handler).await?;
-        let env = self.create_environment();
+        let ty_env = self.create_environment();
+        let value_env = ValueEnvironment::builder()
+            .type_environment(&ty_env)
+            .maybe_captures(self.captures)
+            .current_site(self.current_site())
+            .build();
 
-        check::check(&self.ir, self.current_site(), &env, handler).await?;
+        check::check(&self.ir, &value_env, handler).await?;
 
         Ok(self.ir)
     }

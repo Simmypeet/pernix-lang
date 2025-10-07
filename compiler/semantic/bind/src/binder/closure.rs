@@ -190,19 +190,22 @@ impl Binder<'_> {
         // temporary move out the inference context for the inner binder
         let inference_context = std::mem::take(&mut self.inference_context);
 
-        let ir = IR::default_closure();
+        let ir = IR::default();
         let current_block_id = ir.control_flow_graph.entry_block_id();
 
         let captures = Captures::new(&self.stack, self, handler).await?;
+        let ir_captures =
+            pernixc_ir::capture::Captures { captures: captures.captures };
 
         let mut stack = Stack::new(ir.scope_tree.root_scope_id(), false);
         stack
             .current_scope_mut()
             .add_named_binding_point(captures.name_binding_point);
 
-        let mut binder = Self {
+        let mut binder = Binder {
             engine: self.engine,
             environment: self.environment,
+            captures: Some(&ir_captures),
             ir,
             current_block_id,
             stack,

@@ -3,7 +3,7 @@ use pernixc_handler::Handler;
 use pernixc_ir::{
     value::{
         register::{self, Register},
-        TypeOf, Value,
+        Environment as ValueEnvironment, TypeOf, Value,
     },
     IR,
 };
@@ -20,7 +20,7 @@ use pernixc_term::{
     predicate::{PositiveMarker, PositiveTrait, Predicate},
     r#type::Qualifier,
 };
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+use pernixc_type_system::normalizer::Normalizer;
 
 use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 
@@ -28,8 +28,7 @@ use crate::{binder::UnrecoverableError, diagnostic::Diagnostic};
 async fn check_register_assignment<N: Normalizer>(
     ir: &IR,
     register_id: ID<Register>,
-    current_site: Global<pernixc_symbol::ID>,
-    environment: &Environment<'_, N>,
+    value_environment: &ValueEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     let register =
@@ -37,13 +36,14 @@ async fn check_register_assignment<N: Normalizer>(
 
     match &register.assignment {
         register::Assignment::Struct(st) => {
-            let instantiation = environment
+            let instantiation = value_environment
                 .tracked_engine()
                 .get_instantiation(st.struct_id, st.generic_arguments.clone())
                 .await?
                 .expect("failed to get instantiation");
 
-            environment
+            value_environment
+                .type_environment
                 .wf_check(
                     st.struct_id,
                     register.span.unwrap(),
@@ -58,20 +58,21 @@ async fn check_register_assignment<N: Normalizer>(
         register::Assignment::Variant(variant) => {
             let enum_id = Global::new(
                 variant.variant_id.target_id,
-                environment
+                value_environment
                     .tracked_engine()
                     .get_parent(variant.variant_id)
                     .await
                     .unwrap(),
             );
 
-            let instantiation = environment
+            let instantiation = value_environment
                 .tracked_engine()
                 .get_instantiation(enum_id, variant.generic_arguments.clone())
                 .await?
                 .expect("failed to get instantiation");
 
-            environment
+            value_environment
+                .type_environment
                 .wf_check(
                     enum_id,
                     register.span.unwrap(),
@@ -84,7 +85,7 @@ async fn check_register_assignment<N: Normalizer>(
             Ok(())
         }
         register::Assignment::FunctionCall(function_call) => {
-            let symbol_kind = environment
+            let symbol_kind = value_environment
                 .tracked_engine()
                 .get_kind(function_call.callable_id)
                 .await;
@@ -94,7 +95,7 @@ async fn check_register_assignment<N: Normalizer>(
                     // parent trait requirement
                     let parent_trait_id = Global::new(
                         function_call.callable_id.target_id,
-                        environment
+                        value_environment
                             .tracked_engine()
                             .get_parent(function_call.callable_id)
                             .await
@@ -104,7 +105,7 @@ async fn check_register_assignment<N: Normalizer>(
                     let trait_arguments =
                         function_call.instantiation.create_generic_arguments(
                             parent_trait_id,
-                            &environment
+                            &value_environment
                                 .tracked_engine()
                                 .get_generic_parameters(parent_trait_id)
                                 .await
@@ -112,7 +113,8 @@ async fn check_register_assignment<N: Normalizer>(
                         );
 
                     // check extra trait satisfiability
-                    environment
+                    value_environment
+                        .type_environment
                         .predicate_satisfied(
                             Predicate::PositiveTrait(PositiveTrait {
                                 trait_id: parent_trait_id,
@@ -127,7 +129,8 @@ async fn check_register_assignment<N: Normalizer>(
                         )
                         .await?;
 
-                    environment
+                    value_environment
+                        .type_environment
                         .wf_check(
                             function_call.callable_id,
                             register.span.unwrap(),
@@ -143,14 +146,15 @@ async fn check_register_assignment<N: Normalizer>(
                 Kind::ImplementationFunction => {
                     let parent_implementation_id = Global::new(
                         function_call.callable_id.target_id,
-                        environment
+                        value_environment
                             .tracked_engine()
                             .get_parent(function_call.callable_id)
                             .await
                             .unwrap(),
                     );
 
-                    environment
+                    value_environment
+                        .type_environment
                         .wf_check(
                             parent_implementation_id,
                             register.span.unwrap(),
@@ -160,7 +164,8 @@ async fn check_register_assignment<N: Normalizer>(
                         )
                         .await?;
 
-                    environment
+                    value_environment
+                        .type_environment
                         .wf_check(
                             function_call.callable_id,
                             register.span.unwrap(),
@@ -176,7 +181,8 @@ async fn check_register_assignment<N: Normalizer>(
                 Kind::Function
                 | Kind::ExternFunction
                 | Kind::EffectOperation => {
-                    environment
+                    value_environment
+                        .type_environment
                         .wf_check(
                             function_call.callable_id,
                             register.span.unwrap(),
@@ -201,7 +207,7 @@ async fn check_register_assignment<N: Normalizer>(
             {
                 let ty = ir
                     .values
-                    .type_of(&load.address, current_site, environment)
+                    .type_of(&load.address, value_environment)
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
@@ -212,7 +218,7 @@ async fn check_register_assignment<N: Normalizer>(
                         )
                     })?;
 
-                let copy_marker = environment
+                let copy_marker = value_environment
                     .tracked_engine()
                     .get_by_qualified_name(
                         pernixc_corelib::copy::MARKER_SEQUENCE,
@@ -229,7 +235,8 @@ async fn check_register_assignment<N: Normalizer>(
                     },
                 ));
 
-                environment
+                value_environment
+                    .type_environment
                     .predicate_satisfied(
                         predicate,
                         register.span.unwrap(),
@@ -248,7 +255,7 @@ async fn check_register_assignment<N: Normalizer>(
             for element in tuple.elements.iter().filter(|x| x.is_unpacked) {
                 let ty = ir
                     .values
-                    .type_of(&element.value, current_site, environment)
+                    .type_of(&element.value, value_environment)
                     .await
                     .map_err(|x| {
                         x.report_as_type_calculating_overflow(
@@ -261,7 +268,8 @@ async fn check_register_assignment<N: Normalizer>(
                     pernixc_term::predicate::Tuple(ty.result.clone()),
                 );
 
-                environment
+                value_environment
+                    .type_environment
                     .predicate_satisfied(
                         predicate,
                         *ir.values.span_of_value(&element.value).unwrap(),
@@ -287,8 +295,7 @@ async fn check_register_assignment<N: Normalizer>(
 
 pub(super) async fn check<N: Normalizer>(
     ir: &IR,
-    current_site: Global<pernixc_symbol::ID>,
-    environment: &Environment<'_, N>,
+    value_environment: &ValueEnvironment<'_, N>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
     for register_id in ir
@@ -297,14 +304,8 @@ pub(super) async fn check<N: Normalizer>(
         .flat_map(|x| x.1.instructions())
         .filter_map(|x| x.as_register_assignment().map(|x| x.id))
     {
-        check_register_assignment(
-            ir,
-            register_id,
-            current_site,
-            environment,
-            handler,
-        )
-        .await?;
+        check_register_assignment(ir, register_id, value_environment, handler)
+            .await?;
     }
 
     Ok(())
