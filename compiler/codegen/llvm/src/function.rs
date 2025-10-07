@@ -25,7 +25,9 @@ use pernixc_ir::{
     address::{Address, Memory},
     control_flow_graph::Block,
     get_ir,
-    value::{register::Register, TypeOf, Value},
+    value::{
+        register::Register, Environment as ValueEnvironment, TypeOf, Value,
+    },
     IR,
 };
 use pernixc_query::TrackedEngine;
@@ -563,12 +565,25 @@ impl<'ctx> Context<'_, 'ctx> {
             let pernix_ir =
                 self.engine().get_ir(key.callable_id).await.unwrap();
 
+            let environment = Environment::new(
+                Cow::Owned(Premise {
+                    predicates: BTreeSet::default(),
+                    query_site: Some(key.callable_id),
+                }),
+                Cow::Borrowed(self.engine()),
+                normalizer::NO_OP,
+            );
+            let value_environment = ValueEnvironment::builder()
+                .current_site(key.callable_id)
+                .type_environment(&environment)
+                .build();
+
             let mut builder = Builder::new(
                 self,
-                key.callable_id,
                 &key.instantiation,
                 &function_signature,
                 &pernix_ir,
+                value_environment,
                 llvm_function_signatue.clone(),
             )
             .await;
@@ -594,8 +609,9 @@ impl<'ctx> Context<'_, 'ctx> {
 
 struct Builder<'rctx, 'ctx, 'i, 'k> {
     context: &'rctx mut Context<'i, 'ctx>,
-    callable_id: Global<pernixc_symbol::ID>,
     instantiation: &'k Instantiation,
+
+    value_environment: ValueEnvironment<'k, normalizer::NoOp>,
 
     /// The entry block of the function.
     ///
@@ -621,10 +637,17 @@ struct Builder<'rctx, 'ctx, 'i, 'k> {
 
     address_map: HashMap<Memory, LlvmAddress<'ctx>>,
 
-    environment: Environment<'i, normalizer::NoOp>,
     built: HashSet<ID<Block>>,
 
     register_map: HashMap<ID<Register>, Option<LlvmValue<'ctx>>>,
+}
+
+impl<'k> Builder<'_, '_, '_, 'k> {
+    pub const fn type_environment(
+        &self,
+    ) -> &'k Environment<'k, normalizer::NoOp> {
+        self.value_environment.type_environment
+    }
 }
 
 /// Represents the LLVM's memory address with the underlying type.
@@ -645,7 +668,7 @@ pub enum LlvmValue<'ctx> {
 
     /// The value is an aggregate type and its content is stored in the given
     /// memory.
-    TmpAggegate(LlvmAddress<'ctx>),
+    TmpAggregate(LlvmAddress<'ctx>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -673,10 +696,10 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
     #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     async fn new(
         context: &'rctx mut Context<'i, 'ctx>,
-        callable_id: Global<pernixc_symbol::ID>,
         instantiation: &'k Instantiation,
         function_signature: &'k FunctionSignature,
         function_ir: &'k IR,
+        value_environment: ValueEnvironment<'k, normalizer::NoOp>,
         llvm_function_signature: Rc<LlvmFunctionSignature<'ctx>>,
     ) -> Self {
         let mut basic_block_map = HashMap::default();
@@ -775,12 +798,9 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
             );
         }
 
-        let engine = context.engine();
-
         Self {
             llvm_entry_block: entry_block,
             context,
-            callable_id,
             instantiation,
             function_signature,
             function_ir,
@@ -788,14 +808,7 @@ impl<'rctx, 'ctx, 'i, 'k> Builder<'rctx, 'ctx, 'i, 'k> {
             inkwell_builder: builder,
             basic_block_map,
             address_map,
-            environment: Environment::new(
-                Cow::Owned(Premise {
-                    predicates: BTreeSet::default(),
-                    query_site: Some(callable_id),
-                }),
-                Cow::Borrowed(engine),
-                normalizer::NO_OP,
-            ),
+            value_environment,
             built: HashSet::default(),
             register_map: HashMap::default(),
         }
@@ -819,7 +832,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let ty = self
             .function_ir
             .values
-            .type_of(address, self.callable_id, &self.environment)
+            .type_of(address, &self.value_environment)
             .await;
 
         self.context
@@ -834,7 +847,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let ty = self
             .function_ir
             .values
-            .type_of(address, self.callable_id, &self.environment)
+            .type_of(address, &self.value_environment)
             .await;
 
         self.context
@@ -853,7 +866,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let ty = self
             .function_ir
             .values
-            .type_of(register_id, self.callable_id, &self.environment)
+            .type_of(register_id, &self.value_environment)
             .await;
 
         self.context
@@ -872,7 +885,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let ty = self
             .function_ir
             .values
-            .type_of(register_id, self.callable_id, &self.environment)
+            .type_of(register_id, &self.value_environment)
             .await;
 
         self.context
@@ -884,7 +897,7 @@ impl<'ctx> Builder<'_, 'ctx, '_, '_> {
         let ty = self
             .function_ir
             .values
-            .type_of(value, self.callable_id, &self.environment)
+            .type_of(value, &self.value_environment)
             .await;
 
         self.context
