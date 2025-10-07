@@ -1342,6 +1342,7 @@ dependencies = [
 name = "pernixc_ir"
 version = "0.1.0-beta.2"
 dependencies = [
+ "bon",
  "derive_more",
  "enum-as-inner",
  "flexstr",

@@ -25,9 +25,7 @@ use pernixc_term::{
     r#type::{Primitive, Qualifier, Type},
     tuple,
 };
-use pernixc_type_system::{
-    environment::Environment, normalizer::Normalizer, Error, Succeeded,
-};
+use pernixc_type_system::{normalizer::Normalizer, Error, Succeeded};
 
 use super::Value;
 use crate::{
@@ -36,7 +34,7 @@ use crate::{
     transform::{
         ConstantTermSource, LifetimeTermSource, Transformer, TypeTermSource,
     },
-    value::TypeOf,
+    value::{Environment, TypeOf},
     Values,
 };
 
@@ -106,7 +104,6 @@ impl Tuple {
 async fn type_of_tuple_assignment(
     values: &Values,
     tuple: &Tuple,
-    current_site: Global<pernixc_symbol::ID>,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Succeeded<Type>, Error> {
     let mut constraints = BTreeSet::new();
@@ -114,8 +111,7 @@ async fn type_of_tuple_assignment(
 
     for element in &tuple.elements {
         let Succeeded { result: ty, constraints: new_constraint } =
-            Box::pin(values.type_of(&element.value, current_site, environment))
-                .await?;
+            Box::pin(values.type_of(&element.value, environment)).await?;
 
         constraints.extend(new_constraint);
 
@@ -166,10 +162,9 @@ impl Load {
 async fn type_of_load_assignment(
     values: &Values,
     load: &Load,
-    current_site: Global<pernixc_symbol::ID>,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Succeeded<Type>, Error> {
-    values.type_of(&load.address, current_site, environment).await
+    values.type_of(&load.address, environment).await
 }
 
 /// Obtains a reference at the given address.
@@ -217,20 +212,17 @@ impl Borrow {
 async fn type_of_reference_of_assignment(
     values: &Values,
     reference_of: &Borrow,
-    current_site: Global<pernixc_symbol::ID>,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Succeeded<Type>, Error> {
-    values.type_of(&reference_of.address, current_site, environment).await.map(
-        |x| {
-            x.map(|x| {
-                Type::Reference(pernixc_term::r#type::Reference {
-                    qualifier: reference_of.qualifier,
-                    lifetime: reference_of.lifetime.clone(),
-                    pointee: Box::new(x),
-                })
+    values.type_of(&reference_of.address, environment).await.map(|x| {
+        x.map(|x| {
+            Type::Reference(pernixc_term::r#type::Reference {
+                qualifier: reference_of.qualifier,
+                lifetime: reference_of.lifetime.clone(),
+                pointee: Box::new(x),
             })
-        },
-    )
+        })
+    })
 }
 
 /// An enumeration of the different kinds of prefix operators.
@@ -301,12 +293,10 @@ impl Prefix {
 async fn type_of_prefix_assignment(
     values: &Values,
     prefix: &Prefix,
-    current_site: Global<pernixc_symbol::ID>,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Succeeded<Type>, Error> {
     let operand_type =
-        Box::pin(values.type_of(&prefix.operand, current_site, environment))
-            .await?;
+        Box::pin(values.type_of(&prefix.operand, environment)).await?;
 
     match prefix.operator {
         PrefixOperator::Negate
@@ -817,7 +807,6 @@ impl Binary {
 async fn type_of_binary(
     values: &Values,
     binary: &Binary,
-    current_site: Global<pernixc_symbol::ID>,
     environment: &Environment<'_, impl Normalizer>,
 ) -> Result<Succeeded<Type>, Error> {
     // the return type always based on the lhs field
@@ -826,7 +815,7 @@ async fn type_of_binary(
             pernixc_term::r#type::Primitive::Bool,
         )))
     } else {
-        Box::pin(values.type_of(&binary.lhs, current_site, environment)).await
+        Box::pin(values.type_of(&binary.lhs, environment)).await
     }
 }
 
@@ -1095,47 +1084,28 @@ impl TypeOf<ID<Register>> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         id: ID<Register>,
-        current_site: Global<pernixc_symbol::ID>,
         environment: &Environment<'_, N>,
     ) -> Result<Succeeded<Type>, Error> {
         let register = &self.registers[id];
 
         let ty = match &register.assignment {
             Assignment::Tuple(tuple) => {
-                return type_of_tuple_assignment(
-                    self,
-                    tuple,
-                    current_site,
-                    environment,
-                )
-                .await
+                return type_of_tuple_assignment(self, tuple, environment).await
             }
             Assignment::Load(load) => {
-                return type_of_load_assignment(
-                    self,
-                    load,
-                    current_site,
-                    environment,
-                )
-                .await
+                return type_of_load_assignment(self, load, environment).await
             }
             Assignment::Borrow(reference_of) => {
                 return type_of_reference_of_assignment(
                     self,
                     reference_of,
-                    current_site,
                     environment,
                 )
                 .await
             }
             Assignment::Prefix(prefix) => {
-                return type_of_prefix_assignment(
-                    self,
-                    prefix,
-                    current_site,
-                    environment,
-                )
-                .await
+                return type_of_prefix_assignment(self, prefix, environment)
+                    .await
             }
             Assignment::Struct(st) => Ok(type_of_struct_assignment(st)),
             Assignment::Variant(variant) => Ok(type_of_variant_assignment(
@@ -1151,8 +1121,7 @@ impl TypeOf<ID<Register>> for Values {
                 .await
             }
             Assignment::Binary(binary) => {
-                return type_of_binary(self, binary, current_site, environment)
-                    .await;
+                return type_of_binary(self, binary, environment).await;
             }
             Assignment::Phi(phi_node) => Ok(phi_node.r#type.clone()),
             Assignment::Array(array) => {
@@ -1173,7 +1142,7 @@ impl TypeOf<ID<Register>> for Values {
             }
         }?;
 
-        Ok(environment.simplify(ty).await?.deref().clone())
+        Ok(environment.type_environment.simplify(ty).await?.deref().clone())
     }
 }
 

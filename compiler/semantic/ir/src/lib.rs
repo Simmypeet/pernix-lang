@@ -8,21 +8,19 @@ use control_flow_graph::ControlFlowGraph;
 use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
-use pernixc_semantic_element::parameter::Parameters;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_target::Global;
 use pernixc_term::{constant::Constant, lifetime::Lifetime, r#type::Type};
 
 use crate::{
-    closure::Capture,
     transform::{Transformer, TypeTermSource},
     value::register::Register,
 };
 
 pub mod address;
 pub mod alloca;
-pub mod closure;
+pub mod capture;
 pub mod control_flow_graph;
 pub mod instruction;
 pub mod pattern;
@@ -31,101 +29,15 @@ pub mod transform;
 pub mod value;
 
 /// Contains all the registers and allocas used in the program.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, StableHash)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, StableHash,
+)]
 pub struct Values {
     /// Contains all the registers used in the program.
     pub registers: Arena<Register>,
 
     /// Contains all the allocas used in the program.
     pub allocas: Arena<Alloca>,
-
-    /// The kind of IR, either a function or a closure.
-    pub kind: IRKind,
-}
-
-impl Values {
-    /// Creates a default IR values for a closure.
-    #[must_use]
-    pub fn default_closure() -> Self {
-        Self {
-            registers: Arena::default(),
-            allocas: Arena::default(),
-            kind: IRKind::Closure(ClosureValues::default()),
-        }
-    }
-
-    /// Creates a default IR values for a function.
-    #[must_use]
-    pub fn default_function() -> Self {
-        Self {
-            registers: Arena::default(),
-            allocas: Arena::default(),
-            kind: IRKind::Function,
-        }
-    }
-
-    /// If the IR is a closure, returns the closure values.
-    #[must_use]
-    pub fn closure_values(&self) -> &ClosureValues {
-        match &self.kind {
-            IRKind::Closure(values) => values,
-            IRKind::Function => panic!("not a closure"),
-        }
-    }
-
-    /// If the IR is a closure, returns the closure values.
-    #[must_use]
-    pub fn closure_values_mut(&mut self) -> &mut ClosureValues {
-        match &mut self.kind {
-            IRKind::Closure(values) => values,
-            IRKind::Function => panic!("not a closure"),
-        }
-    }
-
-    /// If the IR is a closure, returns the captures.
-    #[must_use]
-    pub fn captures(&self) -> &Arena<Capture> {
-        match &self.kind {
-            IRKind::Closure(values) => &values.captures,
-            IRKind::Function => panic!("not a closure"),
-        }
-    }
-
-    /// If the IR is a closure, returns the closure parameters.
-    #[must_use]
-    pub fn closure_parameters(&self) -> &Parameters {
-        match &self.kind {
-            IRKind::Closure(values) => &values.parameters,
-            IRKind::Function => panic!("not a closure"),
-        }
-    }
-}
-
-/// Contains all the values related to a closure.
-#[derive(
-    Debug, Clone, PartialEq, Eq, Default, StableHash, Serialize, Deserialize,
-)]
-pub struct ClosureValues {
-    /// The list of all captured memories (variables) from the parent IR if
-    /// the current IR is a closure.
-    pub captures: Arena<Capture>,
-
-    /// The parameters of the closure.
-    pub parameters: Parameters,
-
-    /// The return type of the closure.
-    pub return_type: Type,
-}
-
-/// The kind of IR, either a function or a closure.
-#[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum IRKind {
-    /// The IR was built for a function.
-    Function,
-
-    /// The IR was built for a closure.
-    Closure(ClosureValues),
 }
 
 impl Values {
@@ -150,6 +62,7 @@ impl Values {
     Clone,
     PartialEq,
     Eq,
+    Default,
     Serialize,
     Deserialize,
     StableHash,
@@ -170,26 +83,6 @@ pub struct IR {
 }
 
 impl IR {
-    /// Creates a default IR for a closure.
-    #[must_use]
-    pub fn default_closure() -> Self {
-        Self {
-            values: Values::default_closure(),
-            control_flow_graph: ControlFlowGraph::default(),
-            scope_tree: scope::Tree::default(),
-        }
-    }
-
-    /// Creates a default IR for a function.
-    #[must_use]
-    pub fn default_function() -> Self {
-        Self {
-            values: Values::default_function(),
-            control_flow_graph: ControlFlowGraph::default(),
-            scope_tree: scope::Tree::default(),
-        }
-    }
-
     /// Applies the given transformer to all types, lifetimes, and constants in
     /// the IR.
     pub async fn transform<

@@ -6,7 +6,7 @@ use pernixc_arena::Arena;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
-    closure::{Capture, CaptureMode},
+    capture::{Capture, CaptureMode},
     instruction::{self, ScopePush},
     pattern::{NameBinding, NameBindingPoint},
     IR,

@@ -1,12 +1,13 @@
 //! Defines the [`Closure`], representing captured IR for closures, effect
 //! handlers, do blocks, etc.
 
+use pernixc_arena::Arena;
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 use pernixc_term::r#type::Type;
 
-use crate::{address::Address, IR};
+use crate::address::Address;
 
 /// Specifies what [`Closure`] is being used for.
 #[derive(
@@ -30,15 +31,12 @@ pub enum Kind {
     EffectHandler,
 }
 
-/// Represents a captured IR for closures; can be used for annonymous
-/// functions, effect handlers, do blocks, etc.
+/// Represents capturing structure used for implementing closures, do blocks,
+/// and effect handlers.
 #[derive(Debug, Clone, PartialEq, Eq, StableHash, Serialize, Deserialize)]
-pub struct Closure {
-    /// The IR of the inner procedure.
-    pub ir: IR,
-
-    /// The kind of capture.
-    pub kind: Kind,
+pub struct Captures {
+    /// All the captures used in the closure.
+    pub captures: Arena<Capture>,
 }
 
 /// Specifies how a memory is captured from the parent IR.

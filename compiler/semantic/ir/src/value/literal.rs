@@ -8,17 +8,16 @@ use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::runtime::executor::CyclicError;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
-use pernixc_target::Global;
 use pernixc_term::{
     lifetime::Lifetime,
     r#type::{Array, Primitive, Qualifier, Reference, Type},
     tuple,
 };
-use pernixc_type_system::{environment::Environment, normalizer::Normalizer};
+use pernixc_type_system::normalizer::Normalizer;
 
 use crate::{
     transform::{Transformer, TypeTermSource},
-    value::TypeOf,
+    value::{Environment, TypeOf},
     Values,
 };
 
@@ -287,11 +286,14 @@ impl TypeOf<&Literal> for Values {
     async fn type_of<N: Normalizer>(
         &self,
         literal: &Literal,
-        _: Global<pernixc_symbol::ID>,
         environment: &Environment<'_, N>,
     ) -> Result<pernixc_type_system::Succeeded<Type>, pernixc_type_system::Error>
     {
-        environment.simplify(literal.r#type()).await.map(|x| x.deref().clone())
+        environment
+            .type_environment
+            .simplify(literal.r#type())
+            .await
+            .map(|x| x.deref().clone())
     }
 }
 
