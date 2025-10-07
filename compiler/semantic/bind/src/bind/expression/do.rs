@@ -47,7 +47,7 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
         let with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
 
-        let _value = build_with_blocks(self, with_blocks, handler).await?;
+        build_with_blocks(self, with_blocks, handler).await?;
 
         Ok(Expression::RValue(Value::error(
             Type::Inference(
@@ -93,7 +93,7 @@ async fn build_with_blocks(
             binder
                 .new_closure_binder(
                     async |x| {
-                        build_handler_block(
+                        Box::pin(build_handler_block(
                             x,
                             handler_block,
                             with_block
@@ -102,7 +102,7 @@ async fn build_with_blocks(
                                 .make_global(effect_operation_id),
                             &instantiation,
                             handler,
-                        )
+                        ))
                         .await?;
 
                         Ok(())
@@ -123,6 +123,7 @@ async fn build_handler_block(
     effect_inst: &Instantiation,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), UnrecoverableError> {
+    // start binding all the arguments as parameters
     let mut name_binding_point = NameBindingPoint::default();
 
     let effect_operation_parameters =
@@ -174,6 +175,15 @@ async fn build_handler_block(
     }
 
     binder.add_named_binding_point(name_binding_point);
+
+    // start binding all the statements
+    if let Some(statements) = handler_block.handler.statements() {
+        for statement in
+            statements.statements().filter_map(|x| x.into_line().ok())
+        {
+            binder.bind_statement(&statement, handler).await?;
+        }
+    }
 
     Ok(())
 }
