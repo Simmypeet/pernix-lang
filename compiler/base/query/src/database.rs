@@ -1208,7 +1208,11 @@ impl Engine {
         return_value: bool,
     ) -> Option<K::Value> {
         let recompute = {
-            if K::ALWAYS_REVERIFY
+            if self
+                .runtime
+                .executor
+                .executor_always_recompute::<K>()
+                .unwrap_or(false)
                 || re_verify.derived_metadata.version_info.fingerprint.is_none()
             {
                 // if the query is a part of SCC, always recompute

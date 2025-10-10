@@ -48,6 +48,17 @@ where
 
 /// Implements by the query executors to compute the value of the given key.
 pub trait Executor<K: Key>: Any + Send + Sync + std::fmt::Debug {
+    /// If `true`, when the query's version needs to be verified, the query
+    /// engine will always re-compute the value by invoking the executor
+    /// again.
+    ///
+    /// This can be beneficial for executors that interact with external state
+    /// such as file system or network, where the value may change outside
+    /// the control of the query system.
+    ///
+    /// Defaults to `false`.
+    const ALWAYS_RECOMPUTE: bool = false;
+
     /// Computes the result [`K::Value`] for the given [`K`] key.
     ///
     /// Got invoked when the key query is requested to the database and the
@@ -124,6 +135,12 @@ impl Registry {
             .map(|entry| entry.executor)
     }
 
+    pub(crate) fn executor_always_recompute<K: Key>(&self) -> Option<bool> {
+        self.executors_by_key_type_id
+            .get(&TypeId::of::<K>())
+            .map(|entry| entry.always_recompute)
+    }
+
     /// Retrieves the executor for the given key type [`K`]. If no executor
     /// is registered for the key type, it returns `None`.
     pub(crate) fn get_entry<K: Key>(&self) -> Option<&Entry> {
@@ -141,6 +158,7 @@ pub(crate) struct Entry {
     executor: Arc<dyn Any + Send + Sync>,
     invoke_executor: InvokeExecutorFn,
     re_verify_query: ReVerifyQueryFn,
+    always_recompute: bool,
 }
 
 impl Entry {
@@ -149,6 +167,7 @@ impl Entry {
             executor: executor as Arc<dyn Any + Send + Sync>,
             invoke_executor: invoke_executor::<E, K>,
             re_verify_query: database::re_verify_query::<K>,
+            always_recompute: E::ALWAYS_RECOMPUTE,
         }
     }
 

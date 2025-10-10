@@ -1592,7 +1592,6 @@ async fn persistence_set_same_input_no_recompute() {
     StableHash,
 )]
 #[value(i32)]
-#[always_reverify]
 pub struct ImpureKey;
 
 #[derive(Debug)]
@@ -1601,6 +1600,8 @@ pub struct ImpureExecutor {
 }
 
 impl Executor<ImpureKey> for ImpureExecutor {
+    const ALWAYS_RECOMPUTE: bool = true;
+
     async fn execute(
         &self,
         _engine: &TrackedEngine,
@@ -1788,7 +1789,6 @@ pub struct DependencyListKey;
     StableHash,
 )]
 #[value(i32)]
-#[always_reverify]
 pub struct DoubleKey(pub i32);
 
 #[derive(Debug, Default)]
@@ -1797,6 +1797,8 @@ pub struct DoubleKeyExecutor {
 }
 
 impl Executor<DoubleKey> for DoubleKeyExecutor {
+    const ALWAYS_RECOMPUTE: bool = true;
+
     async fn execute(
         &self,
         _engine: &TrackedEngine,

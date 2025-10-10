@@ -28,10 +28,6 @@ pub trait Key:
     + StableHash
     + Debug
 {
-    /// If `true`, the query will always re-verify the value everytime the
-    /// database version is incremented.
-    const ALWAYS_REVERIFY: bool = false;
-
     /// The corresponding value type for this key
     type Value: 'static + Send + Sync + Clone + Debug + StableHash;
 
