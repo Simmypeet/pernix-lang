@@ -1,6 +1,6 @@
 //! Contains the code related to handling workspace configuration.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use getset::Getters;
 use serde::Deserialize;
@@ -12,12 +12,20 @@ pub struct Workspace {
     /// The root path of the workspace.
     ///
     /// The path is always an absolute path.
-    #[get = "pub"]
     root_path: PathBuf,
 
     /// The parsed configuration of the `pernix.json` file.
-    #[get = "pub"]
     configuration: Configuration,
+}
+
+impl Workspace {
+    /// Returns the root source file that the module tree starts from.
+    #[must_use]
+    pub fn root_source_file(&self) -> &Path { &self.configuration.root_file }
+
+    /// Returns the name of the target specified in the `pernix.json` file.
+    #[must_use]
+    pub fn target_name(&self) -> &str { &self.configuration.target_name }
 }
 
 /// Represents the parsed configuration of the `pernix.json` file.
@@ -106,7 +114,7 @@ impl Workspace {
             std::fs::File::open(&pernix_configuration_path)?,
         );
 
-        let configuration_obj =
+        let mut configuration_obj =
             match Configuration::deserialize(&mut deserializer) {
                 Ok(configuration) => configuration,
                 Err(err) => {
@@ -138,8 +146,10 @@ impl Workspace {
                 }
             };
 
+        configuration_obj.root_file = canonicalized;
+
         Ok(Workspace {
-            root_path: canonicalized,
+            root_path: abs_root_pathbuf,
             configuration: configuration_obj,
         })
     }

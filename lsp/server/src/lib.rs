@@ -1,10 +1,10 @@
 //! Contains the server implementation.
 
-use std::sync::Arc;
+use std::{future::IntoFuture, sync::Arc};
 
 use log::{error, info};
 use pernixc_query::Engine;
-use pernixc_target::{Check, Input};
+use pernixc_target::{Arguments, Check, Input, TargetID};
 use tokio::sync::RwLock;
 use tower_lsp::{
     jsonrpc,
@@ -27,7 +27,7 @@ pub struct DiagnosticsWithUrl {
     pub diagnostics: Vec<tower_lsp::lsp_types::Diagnostic>,
 }
 
-pub mod extension;
+// pub mod extension;
 // pub mod semantic;
 // pub mod syntax;
 pub mod workspace;
@@ -223,19 +223,72 @@ impl Server {
         let workspace = workspace::Workspace::new(&base_uri);
 
         // successfully create a new workspace
-        match workspace {
-            Ok(workspace) => {
-                self.workspace.write().replace(workspace);
-                true
-            }
+        let workspace = match workspace {
+            Ok(workspace) => workspace,
 
             // workspace file does exist but failed to parse the json
             Err(error) => {
                 self.client.log_message(MessageType::ERROR, error).await;
 
-                false
+                return false;
             }
-        }
+        };
+
+        let target_name = workspace.target_name().to_string();
+        let local_target_id = TargetID::from_target_name(&target_name);
+
+        let command = pernixc_target::Command::Check(Check {
+            input: Input {
+                file: workspace.root_source_file().to_path_buf(),
+                target_name: Some(target_name),
+                library_paths: Vec::new(),
+                incremental_path: None,
+                chrome_tracing: false,
+                target_seed: None,
+            },
+        });
+
+        Arc::get_mut(&mut *self.engine.write().await)
+            .unwrap()
+            .input_session(async |x| {
+                x.set_input(
+                    pernixc_target::LinkKey(local_target_id),
+                    Arc::new(std::iter::once(TargetID::CORE).collect()),
+                )
+                .await;
+
+                x.set_input(
+                    pernixc_target::AllTargetIDsKey,
+                    Arc::new(
+                        vec![local_target_id, TargetID::CORE]
+                            .into_iter()
+                            .collect(),
+                    ),
+                )
+                .await;
+
+                x.set_input(
+                    pernixc_target::MapKey,
+                    Arc::new(
+                        [
+                            (command.input().target_name(), local_target_id),
+                            ("core".into(), TargetID::CORE),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                )
+                .await;
+
+                x.set_input(
+                    pernixc_target::Key(local_target_id),
+                    Arc::new(Arguments { command }),
+                )
+                .await;
+            })
+            .await;
+
+        true
     }
 
     async fn get_workspace_and_configuration_uri(&self) -> Option<(Url, Url)> {

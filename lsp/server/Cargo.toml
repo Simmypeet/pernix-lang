@@ -22,6 +22,9 @@ serde = { workspace = true }
 pernixc_source_file = { path = "../../compiler/base/source_file" }
 pernixc_diagnostic = { path = "../../compiler/base/diagnostic" }
 pernixc_lexical = { path = "../../compiler/syntax/lexical" }
+pernixc_target = { path = "../../compiler/base/target" }
+pernixc_query = { path = "../../compiler/base/query" }
+pernixc_corelib = { path = "../../compiler/semantic/corelib" }
 
 
 [lints]
