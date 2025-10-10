@@ -32,7 +32,7 @@ impl Engine {
     /// A helper method allowing setting the input queries via [`SetInputLock`]
     pub async fn input_session<'x, R>(
         &'x mut self,
-        f: impl AsyncFnOnce(&SetInputLock<'x>) -> R,
+        f: impl AsyncFnOnce(&SetInputLock) -> R,
     ) -> R {
         let input_lock = self.input_lock();
         let result = f(&input_lock).await;

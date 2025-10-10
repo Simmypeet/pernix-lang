@@ -1,6 +1,6 @@
 //! Contains the server implementation.
 
-use std::{future::IntoFuture, sync::Arc};
+use std::sync::Arc;
 
 use log::{error, info};
 use pernixc_query::Engine;
@@ -38,22 +38,15 @@ pub struct Server {
     client: Client,
 
     /// Present if the server started with a workspace.
-    engine: RwLock<Arc<Engine>>,
+    engine: RwLock<Option<Arc<Engine>>>,
     workspace: RwLock<Option<workspace::Workspace>>,
 }
 
 impl Server {
     /// Creates a new server instance.
     #[must_use]
-    pub async fn new(client: Client) -> Self {
-        let mut engine = Arc::new(Engine::default());
-        pernixc_corelib::initialize_corelib(&mut engine).await;
-
-        Self {
-            client,
-            engine: RwLock::new(engine),
-            workspace: RwLock::new(None),
-        }
+    pub fn new(client: Client) -> Self {
+        Self { client, engine: RwLock::new(None), workspace: RwLock::new(None) }
     }
 }
 
@@ -248,7 +241,10 @@ impl Server {
             },
         });
 
-        Arc::get_mut(&mut *self.engine.write().await)
+        // initialize the engine with corelib
+        let mut engine = Arc::new(Engine::default());
+
+        Arc::get_mut(&mut engine)
             .unwrap()
             .input_session(async |x| {
                 x.set_input(
@@ -287,6 +283,11 @@ impl Server {
                 .await;
             })
             .await;
+
+        pernixc_corelib::initialize_corelib(&mut engine).await;
+
+        self.engine.write().await.replace(engine);
+        self.workspace.write().await.replace(workspace);
 
         true
     }

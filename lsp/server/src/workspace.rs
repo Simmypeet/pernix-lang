@@ -139,7 +139,7 @@ impl Workspace {
                 Err(err) => {
                     return Err(
                         NewWorkspaceError::RootPathCanonicalizationFailed(
-                            configuration_obj.root_file.clone(),
+                            configuration_obj.root_file,
                             err,
                         ),
                     );
@@ -148,7 +148,7 @@ impl Workspace {
 
         configuration_obj.root_file = canonicalized;
 
-        Ok(Workspace {
+        Ok(Self {
             root_path: abs_root_pathbuf,
             configuration: configuration_obj,
         })
