@@ -366,6 +366,51 @@ pub struct String(pub SharedStr);
 )]
 pub struct Identifier(pub SharedStr);
 
+impl Identifier {
+    /// Checks if the given character can be used as the first character in an
+    /// identifier.
+    #[must_use]
+    pub fn is_first_identifier_character(c: char) -> bool {
+        c == '_'
+            || (!c.is_control()
+                && !c.is_whitespace()
+                && !c.is_ascii_punctuation()
+                && !c.is_ascii_digit())
+    }
+
+    /// Checks if the given character can be used as a non-initial character in
+    /// an identifier.
+    #[must_use]
+    pub fn is_identifier_character(c: char) -> bool {
+        c == '_'
+            || (!c.is_control()
+                && !c.is_whitespace()
+                && !c.is_ascii_punctuation())
+    }
+
+    /// Checks if the given string is a valid identifier.
+    #[must_use]
+    pub fn is_identifier_string(s: &str) -> bool {
+        let mut chars = s.chars();
+
+        if let Some(first_char) = chars.next() {
+            if !Self::is_first_identifier_character(first_char) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        for c in chars {
+            if !Self::is_identifier_character(c) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
 impl Display for Identifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
