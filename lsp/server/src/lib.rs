@@ -1,10 +1,6 @@
 //! Contains the server implementation.
 
-use std::sync::Arc;
-
 use log::{error, info};
-use pernixc_query::Engine;
-use pernixc_target::{Arguments, Check, Input, TargetID};
 use tokio::sync::RwLock;
 use tower_lsp::{
     jsonrpc,
@@ -17,6 +13,8 @@ use tower_lsp::{
     Client, LanguageServer,
 };
 
+use crate::analyzer::Analyzer;
+
 /// A diagnostic with its source file uri.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiagnosticsWithUrl {
@@ -27,9 +25,7 @@ pub struct DiagnosticsWithUrl {
     pub diagnostics: Vec<tower_lsp::lsp_types::Diagnostic>,
 }
 
-// pub mod extension;
-// pub mod semantic;
-// pub mod syntax;
+pub mod analyzer;
 pub mod workspace;
 
 /// The language server protocal implementation for Pernix.
@@ -38,15 +34,14 @@ pub struct Server {
     client: Client,
 
     /// Present if the server started with a workspace.
-    engine: RwLock<Option<Arc<Engine>>>,
-    workspace: RwLock<Option<workspace::Workspace>>,
+    analyzer: RwLock<Option<Analyzer>>,
 }
 
 impl Server {
     /// Creates a new server instance.
     #[must_use]
     pub fn new(client: Client) -> Self {
-        Self { client, engine: RwLock::new(None), workspace: RwLock::new(None) }
+        Self { client, analyzer: RwLock::new(None) }
     }
 }
 
@@ -89,7 +84,7 @@ impl LanguageServer for Server {
 
     async fn initialized(&self, _: InitializedParams) {
         // initialize the workspace if it exists
-        if let Some(workspace) = self
+        let Some(workspace) = self
             .client
             .workspace_folders()
             .await
@@ -97,32 +92,55 @@ impl LanguageServer for Server {
             .flatten()
             .flatten()
             .next()
-        {
-            match self
-                .client
-                .register_capability(vec![Registration {
-                    id: "pernixWatcher".to_string(),
-                    method: "workspace/didChangeWatchedFiles".to_string(),
-                    register_options: Some(serde_json::json!({
-                        "watchers": [
-                            {
-                                "globPattern": "**/pernix.json",
-                                "kind": 7,
-                            }
-                        ]
-                    })),
-                }])
-                .await
-            {
-                Ok(()) => {}
+        else {
+            self.client
+                .log_message(
+                    MessageType::ERROR,
+                    "no workspace folder found, the server's services will be \
+                     limited",
+                )
+                .await;
+            return;
+        };
 
-                Err(response) => {
-                    error!("failed to register watcher: {response}");
-                }
+        match self
+            .client
+            .register_capability(vec![Registration {
+                id: "pernixWatcher".to_string(),
+                method: "workspace/didChangeWatchedFiles".to_string(),
+                register_options: Some(serde_json::json!({
+                    "watchers": [
+                        {
+                            "globPattern": "**/pernix.json",
+                            "kind": 7,
+                        }
+                    ]
+                })),
+            }])
+            .await
+        {
+            Ok(()) => {}
+
+            Err(response) => {
+                error!("failed to register file watcher: {response}");
+                self.client
+                    .log_message(
+                        MessageType::ERROR,
+                        "failed to initialize the file watcher, the server \
+                         will not respond to changes in `pernix.json`",
+                    )
+                    .await;
+                return;
+            }
+        }
+
+        match analyzer::Analyzer::new(workspace.uri).await {
+            Ok(analyzer) => {
+                self.analyzer.write().await.replace(analyzer);
             }
 
-            if !self.configure_workspace(workspace.uri).await {
-                info!("failed to configure workspace");
+            Err(err) => {
+                self.client.log_message(MessageType::ERROR, err).await;
             }
         }
     }
@@ -210,88 +228,6 @@ impl LanguageServer for Server {
 }
 
 impl Server {
-    /// Reads the workspace configuration file and sets the workspace.
-    #[must_use]
-    async fn configure_workspace(&self, base_uri: Url) -> bool {
-        let workspace = workspace::Workspace::new(&base_uri);
-
-        // successfully create a new workspace
-        let workspace = match workspace {
-            Ok(workspace) => workspace,
-
-            // workspace file does exist but failed to parse the json
-            Err(error) => {
-                self.client.log_message(MessageType::ERROR, error).await;
-
-                return false;
-            }
-        };
-
-        let target_name = workspace.target_name().to_string();
-        let local_target_id = TargetID::from_target_name(&target_name);
-
-        let command = pernixc_target::Command::Check(Check {
-            input: Input {
-                file: workspace.root_source_file().to_path_buf(),
-                target_name: Some(target_name),
-                library_paths: Vec::new(),
-                incremental_path: None,
-                chrome_tracing: false,
-                target_seed: None,
-            },
-        });
-
-        // initialize the engine with corelib
-        let mut engine = Arc::new(Engine::default());
-
-        Arc::get_mut(&mut engine)
-            .unwrap()
-            .input_session(async |x| {
-                x.set_input(
-                    pernixc_target::LinkKey(local_target_id),
-                    Arc::new(std::iter::once(TargetID::CORE).collect()),
-                )
-                .await;
-
-                x.set_input(
-                    pernixc_target::AllTargetIDsKey,
-                    Arc::new(
-                        vec![local_target_id, TargetID::CORE]
-                            .into_iter()
-                            .collect(),
-                    ),
-                )
-                .await;
-
-                x.set_input(
-                    pernixc_target::MapKey,
-                    Arc::new(
-                        [
-                            (command.input().target_name(), local_target_id),
-                            ("core".into(), TargetID::CORE),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    ),
-                )
-                .await;
-
-                x.set_input(
-                    pernixc_target::Key(local_target_id),
-                    Arc::new(Arguments { command }),
-                )
-                .await;
-            })
-            .await;
-
-        pernixc_corelib::initialize_corelib(&mut engine).await;
-
-        self.engine.write().await.replace(engine);
-        self.workspace.write().await.replace(workspace);
-
-        true
-    }
-
     async fn get_workspace_and_configuration_uri(&self) -> Option<(Url, Url)> {
         if let Some(workspace) = self
             .client
