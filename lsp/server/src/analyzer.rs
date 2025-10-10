@@ -2,8 +2,11 @@
 
 use std::sync::Arc;
 
-use pernixc_query::{runtime::executor, Engine};
-use pernixc_source_file::SourceFile;
+use pernixc_diagnostic::ByteIndex;
+use pernixc_query::{runtime::executor, Engine, TrackedEngine};
+use pernixc_source_file::{
+    get_source_file_by_id, get_source_file_path, EditorLocation, SourceFile,
+};
 use pernixc_target::{Arguments, Check, Input, TargetID};
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::Url;
@@ -121,5 +124,75 @@ impl Analyzer {
             workspace,
             current_target_id: local_target_id,
         })
+    }
+
+    pub async fn check(
+        &self,
+    ) -> Result<Vec<tower_lsp::lsp_types::Diagnostic>, ()> {
+        // the engine is intentionally held here
+        let engine_lock = self.engine.read().await;
+        let engine = engine_lock.tracked();
+
+        let symbol_impl = {
+            let engine = engine.clone();
+            let current_target_id = self.current_target_id;
+
+            tokio::spawn(async move {
+                engine
+                    .query(&pernixc_symbol_impl::diagnostic::RenderedKey(
+                        current_target_id,
+                    ))
+                    .await
+            })
+        };
+        let semantic_element_impl = {
+            let engine = engine.clone();
+            let current_target_id = self.current_target_id;
+
+            tokio::spawn(async move {
+                engine
+                .query(
+                    &pernixc_semantic_element_impl::diagnostic::AllRenderedKey(
+                        current_target_id,
+                    ),
+                )
+                .await
+            })
+        };
+
+        todo!()
+    }
+}
+
+#[pernixc_extend::extend]
+#[allow(clippy::cast_possible_truncation)]
+async fn to_lsp_range(
+    self: &TrackedEngine,
+    span: &pernixc_source_file::Span<ByteIndex>,
+) -> tower_lsp::lsp_types::Range {
+    let source_file = self.get_source_file_by_id(span.source_id).await;
+    let start = source_file.get_location(span.start).unwrap_or_else(|| {
+        let line = source_file.line_coount() - 1;
+        let column = source_file.get_line(line).unwrap().len();
+
+        EditorLocation::new(line, column)
+    });
+
+    let end = source_file.get_location(span.end).unwrap_or_else(|| {
+        let line = source_file.line_coount() - 1;
+        let column = source_file.get_line(line).unwrap().len();
+
+        EditorLocation::new(line, column)
+    });
+
+    tower_lsp::lsp_types::Range {
+        start: tower_lsp::lsp_types::Position {
+            line: start.line as u32,
+            character: start.column as u32,
+        },
+        end: tower_lsp::lsp_types::Position {
+            line: end.line as u32,
+            character: end.column as u32,
+        },
     }
 }

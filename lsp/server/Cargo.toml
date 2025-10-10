@@ -25,7 +25,10 @@ pernixc_lexical = { path = "../../compiler/syntax/lexical" }
 pernixc_target = { path = "../../compiler/base/target" }
 pernixc_query = { path = "../../compiler/base/query" }
 pernixc_corelib = { path = "../../compiler/semantic/corelib" }
+pernixc_symbol_impl = { path = "../../compiler/semantic/symbol_impl" }
+pernixc_semantic_element_impl = { path = "../../compiler/semantic/semantic_element_impl" }
 pernixc_register = { path = "../../compiler/base/register" }
+pernixc_extend = { path = "../../compiler/base/extend" }
 
 
 [lints]

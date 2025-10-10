@@ -894,5 +894,16 @@ pub async fn calculate_path_id(
 // we be implemented in the downstream crates
 pub struct FilePathKey(pub Global<pernixc_arena::ID<SourceFile>>);
 
+/// Obtains the [`Arc<SourceFile>`] by its associated ID.
+#[pernixc_extend::extend]
+pub async fn get_source_file_by_id(
+    self: &TrackedEngine,
+    id: Global<pernixc_arena::ID<SourceFile>>,
+) -> Arc<SourceFile> {
+    let source_path = self.get_source_file_path(id).await;
+    let target_id = id.target_id;
+
+    self.query(&Key { path: source_path, target_id }).await.unwrap().unwrap()
+}
 #[cfg(test)]
 mod test;
