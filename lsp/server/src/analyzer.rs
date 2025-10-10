@@ -1,16 +1,15 @@
 //! Contains the analyzer implementation.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use pernixc_diagnostic::ByteIndex;
 use pernixc_query::{runtime::executor, Engine, TrackedEngine};
 use pernixc_source_file::{
-    get_source_file_by_id, get_source_file_path, EditorLocation,
-    GlobalSourceID, SourceFile,
+    get_source_file_by_id, EditorLocation, GlobalSourceID, SourceFile,
 };
-use pernixc_target::{Arguments, Check, Global, Input, TargetID};
+use pernixc_target::{Arguments, Check, Input, TargetID};
 use tokio::sync::RwLock;
-use tower_lsp::lsp_types::Url;
+use tower_lsp::lsp_types::{DidChangeTextDocumentParams, Url};
 
 use crate::workspace::{self, NewWorkspaceError, Workspace};
 
@@ -127,10 +126,81 @@ impl Analyzer {
         })
     }
 
+    /// Applies the given change to the source file in the engine.
+    /// This does not perform a check, that must be done separately.
+    pub async fn apply_change(&self, params: DidChangeTextDocumentParams) {
+        let mut engine_lock = self.engine.write().await;
+        let current_target_id = self.current_target_id;
+
+        Arc::get_mut(&mut *engine_lock)
+            .unwrap()
+            .input_session(async move |x| {
+                x.inplace_mutate(
+                    &pernixc_source_file::Key {
+                        path: params
+                            .text_document
+                            .uri
+                            .to_file_path()
+                            .unwrap()
+                            .into(),
+                        target_id: current_target_id,
+                    },
+                    |x| {
+                        let source_file = x.as_mut().unwrap();
+
+                        let changes = match params
+                            .content_changes
+                            .iter()
+                            .rposition(|x| x.range.is_none())
+                        {
+                            Some(index) => &params.content_changes[index + 1..],
+                            None => &params.content_changes,
+                        };
+
+                        for change in changes {
+                            Self::update_source_file(
+                                Arc::get_mut(source_file).unwrap(),
+                                &change.text,
+                                change.range.unwrap(),
+                            );
+                        }
+                    },
+                )
+            })
+            .await;
+    }
+
+    fn update_source_file(
+        source_file: &mut SourceFile,
+        text: &str,
+        range: tower_lsp::lsp_types::Range,
+    ) {
+        let pernix_location_start = EditorLocation::new(
+            range.start.line as usize,
+            range.start.character as usize,
+        );
+        let pernix_location_end = EditorLocation::new(
+            range.end.line as usize,
+            range.end.character as usize,
+        );
+
+        let start = source_file
+            .into_byte_index_include_ending(pernix_location_start)
+            .unwrap();
+        let end = source_file
+            .into_byte_index_include_ending(pernix_location_end)
+            .unwrap();
+
+        source_file.replace_range(start..end, text);
+    }
+
+    /// Performs a compile check and sends diagnostics to the client.
     pub async fn check(
         &self,
-    ) -> Result<Vec<tower_lsp::lsp_types::Diagnostic>, ()> {
-        // the engine is intentionally held here
+        client: &tower_lsp::Client,
+        version: Option<i32>,
+    ) {
+        // the engine lock is intentionally held here
         let engine_lock = self.engine.read().await;
         let engine = engine_lock.tracked();
 
@@ -161,7 +231,34 @@ impl Analyzer {
             })
         };
 
-        todo!()
+        let symbol_impl = symbol_impl.await.unwrap().unwrap();
+        let semantic_element_impl =
+            semantic_element_impl.await.unwrap().unwrap();
+
+        // collect diagnostics and group them by source file URL
+        let mut diagnostics = HashMap::new();
+
+        for diag in symbol_impl
+            .iter()
+            .chain(semantic_element_impl.iter().flat_map(|x| x.iter()))
+        {
+            let url = if let Some(primary) = &diag.primary_highlight {
+                engine.get_url_by_source_id(primary.span.source_id).await
+            } else {
+                Url::from_file_path(self.workspace.root_source_file()).unwrap()
+            };
+
+            diagnostics
+                .entry(url)
+                .or_insert_with(Vec::new)
+                .push(engine.to_lsp_diagnostic(diag).await);
+        }
+
+        for (url, diags) in diagnostics {
+            client
+                .publish_diagnostics(url.clone(), diags.clone(), version)
+                .await;
+        }
     }
 }
 

@@ -5,10 +5,12 @@ use tokio::sync::RwLock;
 use tower_lsp::{
     jsonrpc,
     lsp_types::{
-        DidChangeWatchedFilesParams, InitializeParams, InitializeResult,
-        InitializedParams, MessageType, OneOf, Registration,
-        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
-        Url, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
+        DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
+        DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileChangeType,
+        InitializeParams, InitializeResult, InitializedParams, MessageType,
+        OneOf, Registration, ServerCapabilities, TextDocumentSyncCapability,
+        TextDocumentSyncKind, Url, WorkspaceFoldersServerCapabilities,
+        WorkspaceServerCapabilities,
     },
     Client, LanguageServer,
 };
@@ -151,7 +153,6 @@ impl LanguageServer for Server {
     ) {
         info!("Did change watched files: {params:?}");
 
-        /*
         let Some((workspace_uri, expected_file_uri)) =
             self.get_workspace_and_configuration_uri().await
         else {
@@ -167,21 +168,21 @@ impl LanguageServer for Server {
 
             match change.typ {
                 FileChangeType::CREATED | FileChangeType::CHANGED => {
-                    // clear any prior diagnostics
-                    self.client
-                        .publish_diagnostics(
-                            expected_file_uri.clone(),
-                            vec![],
-                            None,
-                        )
-                        .await;
+                    match analyzer::Analyzer::new(workspace_uri.clone()).await {
+                        Ok(analyzer) => {
+                            self.analyzer.write().await.replace(analyzer);
+                        }
 
-                    let _ =
-                        self.configure_workspace(workspace_uri.clone()).await;
+                        Err(err) => {
+                            self.client
+                                .log_message(MessageType::ERROR, err)
+                                .await;
+                        }
+                    }
                 }
 
                 FileChangeType::DELETED => {
-                    self.workspace.write().take();
+                    self.analyzer.write().await.take();
                 }
 
                 unknown => {
@@ -189,42 +190,41 @@ impl LanguageServer for Server {
                 }
             }
         }
-        */
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> { Ok(()) }
 
-    /*
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let analyzer = self.analyzer.read().await;
+        let Some(analyzer) = analyzer.as_ref() else {
+            return;
+        };
+
         info!("Did open: {}", params.text_document.uri.path());
 
-        let uri = params.text_document.uri.clone();
-        let version = params.text_document.version;
-        let diagnostics = self.analyze_did_open(params);
-
-        self.client.publish_diagnostics(uri, diagnostics, Some(version)).await;
+        analyzer.check(&self.client, None).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
-        info!("Did change: {}", params.text_document.uri.path());
+        let analyzer = self.analyzer.read().await;
+        let Some(analyzer) = analyzer.as_ref() else {
+            return;
+        };
 
-        let uri = params.text_document.uri.clone();
-        let version = params.text_document.version;
-        let diagnostics = self.analyze_did_change(params);
-
-        self.client.publish_diagnostics(uri, diagnostics, Some(version)).await;
+        analyzer.apply_change(params).await;
+        analyzer.check(&self.client, None).await;
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        let analyzer = self.analyzer.read().await;
+        let Some(analyzer) = analyzer.as_ref() else {
+            return;
+        };
+
         info!("Did save: {}", params.text_document.uri.path());
 
-        let diagnostics = self.analyze_did_save(params);
-
-        for (uri, diagnostics) in diagnostics {
-            self.client.publish_diagnostics(uri, diagnostics, None).await;
-        }
+        analyzer.check(&self.client, None).await;
     }
-    */
 }
 
 impl Server {
@@ -247,95 +247,3 @@ impl Server {
         }
     }
 }
-
-/*
-
-impl Server {
-    fn analyze_did_open(
-        &self,
-        params: DidOpenTextDocumentParams,
-    ) -> Vec<tower_lsp::lsp_types::Diagnostic> {
-        let mut syntax = self.syntax.write();
-
-        syntax.register_source_file(
-            params.text_document.uri.clone(),
-            params.text_document.text,
-        );
-
-        syntax.analyze(&params.text_document.uri).unwrap_or_else(|| {
-            error!(
-                "failed to diagnose syntax: {}",
-                params.text_document.uri.path()
-            );
-            Vec::new()
-        })
-    }
-
-    /// Analyze the semantic when the source file is saved.
-    fn analyze_did_save(
-        &self,
-        params: DidSaveTextDocumentParams,
-    ) -> Vec<(Url, Vec<tower_lsp::lsp_types::Diagnostic>)> {
-        // let mut semantic = self.semantic.write();
-        // let workspace = self.workspace.read();
-
-        // semantic.analyze(workspace.as_ref().map_or_else(
-        //     || semantic::OperatingMode::SingleFile(params.text_document.uri),
-        //     semantic::OperatingMode::Workspace,
-        // ))
-    }
-
-    /// Analyze the changes in the source file and report syntax errors.
-    ///
-    /// TODO: In the [`semantic::Semantic::latest_semantic_errors_by_uri`]
-    /// diagnostics' location should be updated according to the
-    /// changes so that we can append those semantic diagnostics along with
-    /// the syntax diagnostics.
-    fn analyze_did_change(
-        &self,
-        mut params: DidChangeTextDocumentParams,
-    ) -> Vec<tower_lsp::lsp_types::Diagnostic> {
-        let mut syntax = self.syntax.write();
-
-        // if found a change that replaces the whole content, all the changes
-        // before it are ignored
-        let changes = match params
-            .content_changes
-            .iter()
-            .rposition(|x| x.range.is_none())
-        {
-            Some(index) => {
-                syntax.register_source_file(
-                    params.text_document.uri.clone(),
-                    std::mem::take(&mut params.content_changes[index].text),
-                );
-
-                &params.content_changes[index + 1..]
-            }
-            None => &params.content_changes,
-        };
-
-        for change in changes {
-            if let Err(err) = syntax.update_source_file(
-                &params.text_document.uri,
-                &change.text,
-                change.range.unwrap(),
-            ) {
-                error!(
-                    "failed to update source file: {}, reason: {}",
-                    params.text_document.uri.path(),
-                    err
-                );
-            }
-        }
-
-        syntax.analyze(&params.text_document.uri).unwrap_or_else(|| {
-            error!(
-                "failed to diagnose syntax: {}",
-                params.text_document.uri.path()
-            );
-            Vec::new()
-        })
-    }
-}
-*/
