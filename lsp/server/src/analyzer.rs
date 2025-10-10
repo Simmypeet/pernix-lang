@@ -5,9 +5,10 @@ use std::sync::Arc;
 use pernixc_diagnostic::ByteIndex;
 use pernixc_query::{runtime::executor, Engine, TrackedEngine};
 use pernixc_source_file::{
-    get_source_file_by_id, get_source_file_path, EditorLocation, SourceFile,
+    get_source_file_by_id, get_source_file_path, EditorLocation,
+    GlobalSourceID, SourceFile,
 };
-use pernixc_target::{Arguments, Check, Input, TargetID};
+use pernixc_target::{Arguments, Check, Global, Input, TargetID};
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::Url;
 
@@ -194,5 +195,87 @@ async fn to_lsp_range(
             line: end.line as u32,
             character: end.column as u32,
         },
+    }
+}
+
+#[pernixc_extend::extend]
+async fn get_url_by_source_id(
+    self: &TrackedEngine,
+    source_id: GlobalSourceID,
+) -> Url {
+    let source_file = self.get_source_file_by_id(source_id).await;
+
+    let absolute_path = std::fs::canonicalize(source_file.path()).unwrap();
+
+    Url::from_file_path(absolute_path).unwrap()
+}
+
+#[pernixc_extend::extend]
+async fn to_lsp_diagnostic(
+    self: &TrackedEngine,
+    diagnostic: &pernixc_diagnostic::Rendered<ByteIndex>,
+) -> tower_lsp::lsp_types::Diagnostic {
+    let primary_range =
+        if let Some(primary_highlight) = &diagnostic.primary_highlight {
+            self.to_lsp_range(&primary_highlight.span).await
+        } else {
+            tower_lsp::lsp_types::Range {
+                start: tower_lsp::lsp_types::Position { line: 0, character: 0 },
+                end: tower_lsp::lsp_types::Position { line: 0, character: 0 },
+            }
+        };
+
+    let severity = match diagnostic.severity {
+        pernixc_diagnostic::Severity::Error => {
+            tower_lsp::lsp_types::DiagnosticSeverity::ERROR
+        }
+        pernixc_diagnostic::Severity::Warning => {
+            tower_lsp::lsp_types::DiagnosticSeverity::WARNING
+        }
+        pernixc_diagnostic::Severity::Info => {
+            tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION
+        }
+    };
+
+    let related_information = {
+        let mut result = Vec::new();
+        for related in &diagnostic.related {
+            result.push(tower_lsp::lsp_types::DiagnosticRelatedInformation {
+                location: tower_lsp::lsp_types::Location {
+                    uri: self
+                        .get_url_by_source_id(related.span.source_id)
+                        .await,
+                    range: self.to_lsp_range(&related.span).await,
+                },
+                message: related.message.clone().unwrap_or_default(),
+            });
+        }
+
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
+    };
+
+    let mut message = diagnostic.message.clone();
+
+    if let Some(primary_message) =
+        diagnostic.primary_highlight.as_ref().and_then(|x| x.message.as_ref())
+    {
+        message.push('\n');
+        message.push_str(primary_message);
+    }
+
+    tower_lsp::lsp_types::Diagnostic {
+        range: primary_range,
+        severity: Some(severity),
+        code: None,
+        code_description: None,
+        source: Some("pernixc".to_string()),
+        message,
+        related_information,
+        tags: None,
+        data: None,
     }
 }
