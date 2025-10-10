@@ -1,16 +1,18 @@
 //! Contains the server implementation.
 
-use log::{debug, error, info};
-use parking_lot::RwLock;
+use std::sync::Arc;
+
+use log::{error, info};
+use pernixc_query::Engine;
+use pernixc_target::{Check, Input};
+use tokio::sync::RwLock;
 use tower_lsp::{
     jsonrpc,
     lsp_types::{
-        DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
-        DidOpenTextDocumentParams, DidSaveTextDocumentParams, FileChangeType,
-        InitializeParams, InitializeResult, InitializedParams, OneOf,
-        Registration, ServerCapabilities, TextDocumentSyncCapability,
-        TextDocumentSyncKind, Url, WorkspaceFoldersServerCapabilities,
-        WorkspaceServerCapabilities,
+        DidChangeWatchedFilesParams, InitializeParams, InitializeResult,
+        InitializedParams, MessageType, OneOf, Registration,
+        ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind,
+        Url, WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities,
     },
     Client, LanguageServer,
 };
@@ -36,14 +38,22 @@ pub struct Server {
     client: Client,
 
     /// Present if the server started with a workspace.
+    engine: RwLock<Arc<Engine>>,
     workspace: RwLock<Option<workspace::Workspace>>,
 }
 
 impl Server {
     /// Creates a new server instance.
     #[must_use]
-    pub fn new(client: Client) -> Self {
-        Self { client, workspace: RwLock::new(None) }
+    pub async fn new(client: Client) -> Self {
+        let mut engine = Arc::new(Engine::default());
+        pernixc_corelib::initialize_corelib(&mut engine).await;
+
+        Self {
+            client,
+            engine: RwLock::new(engine),
+            workspace: RwLock::new(None),
+        }
     }
 }
 
@@ -116,7 +126,7 @@ impl LanguageServer for Server {
                 Err(response) => {
                     error!("failed to register watcher: {response}");
                 }
-            };
+            }
 
             if !self.configure_workspace(workspace.uri).await {
                 info!("failed to configure workspace");
@@ -130,6 +140,7 @@ impl LanguageServer for Server {
     ) {
         info!("Did change watched files: {params:?}");
 
+        /*
         let Some((workspace_uri, expected_file_uri)) =
             self.get_workspace_and_configuration_uri().await
         else {
@@ -167,10 +178,12 @@ impl LanguageServer for Server {
                 }
             }
         }
+        */
     }
 
     async fn shutdown(&self) -> jsonrpc::Result<()> { Ok(()) }
 
+    /*
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         info!("Did open: {}", params.text_document.uri.path());
 
@@ -200,6 +213,7 @@ impl LanguageServer for Server {
             self.client.publish_diagnostics(uri, diagnostics, None).await;
         }
     }
+    */
 }
 
 impl Server {
@@ -216,43 +230,11 @@ impl Server {
             }
 
             // workspace file does exist but failed to parse the json
-            Err(error) => match error {
-                workspace::NewWorkspaceError::JsonParsing(
-                    json_file_path,
-                    errors,
-                ) => {
-                    let Ok(uri) = Url::from_file_path(&json_file_path) else {
-                        error!(
-                            "failed to convert file path to uri: {}",
-                            json_file_path.display()
-                        );
-                        return false;
-                    };
+            Err(error) => {
+                self.client.log_message(MessageType::ERROR, error).await;
 
-                    debug!(
-                        "failed to parse workspace configuration: {errors:?} \
-                         {uri:?}",
-                    );
-
-                    self.client
-                        .publish_diagnostics(
-                            uri,
-                            errors
-                                .into_iter()
-                                .filter_map(|x| x.to_diagnostic(true))
-                                .collect(),
-                            None,
-                        )
-                        .await;
-
-                    false
-                }
-
-                error => {
-                    error!("failed to create workspace: {error}");
-                    false
-                }
-            },
+                false
+            }
         }
     }
 
@@ -275,6 +257,8 @@ impl Server {
         }
     }
 }
+
+/*
 
 impl Server {
     fn analyze_did_open(
@@ -364,3 +348,4 @@ impl Server {
         })
     }
 }
+*/
