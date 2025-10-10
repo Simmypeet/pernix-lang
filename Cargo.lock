@@ -1416,6 +1416,7 @@ dependencies = [
  "pernixc_diagnostic",
  "pernixc_lexical",
  "pernixc_query",
+ "pernixc_register",
  "pernixc_source_file",
  "pernixc_target",
  "serde",

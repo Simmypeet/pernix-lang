@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use pernixc_query::Engine;
+use pernixc_query::{runtime::executor, Engine};
+use pernixc_source_file::SourceFile;
 use pernixc_target::{Arguments, Check, Input, TargetID};
 use tokio::sync::RwLock;
 use tower_lsp::lsp_types::Url;
@@ -14,6 +15,31 @@ use crate::workspace::{self, NewWorkspaceError, Workspace};
 pub struct Analyzer {
     engine: RwLock<Arc<Engine>>,
     workspace: Workspace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+struct LoadSourceFileExecutor;
+
+impl executor::Executor<pernixc_source_file::Key> for LoadSourceFileExecutor {
+    /// The original executor always recomputes the value, which is not what we
+    /// want here in the lsp server. We'll depend on the LSP server to tell us
+    /// when to recompute.
+    const ALWAYS_RECOMPUTE: bool = false;
+
+    async fn execute(
+        &self,
+        _: &pernixc_query::TrackedEngine,
+        key: &pernixc_source_file::Key,
+    ) -> Result<
+        Result<Arc<SourceFile>, pernixc_source_file::Error>,
+        executor::CyclicError,
+    > {
+        Ok(std::fs::File::open(key.path.as_ref())
+            .and_then(|file| {
+                Ok(Arc::new(SourceFile::load(file, key.path.to_path_buf())?))
+            })
+            .map_err(|x| pernixc_source_file::Error(x.to_string().into())))
+    }
 }
 
 impl Analyzer {
@@ -36,10 +62,18 @@ impl Analyzer {
         });
 
         // initialize the engine with corelib
-        let mut engine = Arc::new(Engine::default());
+        let mut engine = Engine::default();
+        pernixc_register::Registration::register_executor(
+            &mut engine.runtime.executor,
+        );
 
-        Arc::get_mut(&mut engine)
-            .unwrap()
+        assert!(engine
+            .runtime
+            .executor
+            .register(Arc::new(LoadSourceFileExecutor))
+            .is_some());
+
+        engine
             .input_session(async |x| {
                 x.set_input(
                     pernixc_target::LinkKey(local_target_id),
@@ -78,6 +112,7 @@ impl Analyzer {
             })
             .await;
 
+        let mut engine = Arc::new(engine);
         pernixc_corelib::initialize_corelib(&mut engine).await;
 
         Ok(Self { engine: RwLock::new(engine), workspace })
