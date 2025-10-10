@@ -15,6 +15,7 @@ use crate::workspace::{self, NewWorkspaceError, Workspace};
 pub struct Analyzer {
     engine: RwLock<Arc<Engine>>,
     workspace: Workspace,
+    current_target_id: TargetID,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -115,6 +116,10 @@ impl Analyzer {
         let mut engine = Arc::new(engine);
         pernixc_corelib::initialize_corelib(&mut engine).await;
 
-        Ok(Self { engine: RwLock::new(engine), workspace })
+        Ok(Self {
+            engine: RwLock::new(engine),
+            workspace,
+            current_target_id: local_target_id,
+        })
     }
 }
