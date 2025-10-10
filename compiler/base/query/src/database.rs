@@ -886,10 +886,7 @@ impl Engine {
                         std::any::type_name::<K>()
                     )
                 },
-                |x| {
-                    let value = x.value();
-                    (value.get_any_executor(), x.get_invoke_executor())
-                },
+                |x| (x.get_any_executor(), x.get_invoke_executor()),
             );
 
         (invoke)(key as &dyn Any, executor.as_ref(), tracked_engine).await

@@ -6,8 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use dashmap::mapref::one::Ref;
-use pernixc_hash::DashMap;
+use pernixc_hash::HashMap;
 use pernixc_serialize::{Deserialize, Serialize};
 use pernixc_stable_hash::StableHash;
 
@@ -109,7 +108,7 @@ type ReVerifyQueryFn = for<'a> fn(
 /// registering and retrieving executors for different query key types.
 #[derive(Debug, Default)]
 pub struct Registry {
-    executors_by_key_type_id: DashMap<TypeId, Entry>,
+    executors_by_key_type_id: HashMap<TypeId, Entry>,
 }
 
 impl Registry {
@@ -127,15 +126,12 @@ impl Registry {
 
     /// Retrieves the executor for the given key type [`K`]. If no executor
     /// is registered for the key type, it returns `None`.
-    pub(crate) fn get_entry<K: Key>(&self) -> Option<Ref<'_, TypeId, Entry>> {
+    pub(crate) fn get_entry<K: Key>(&self) -> Option<&Entry> {
         self.executors_by_key_type_id.get(&TypeId::of::<K>())
     }
 
     /// Retrieves the executor for the given key type by its [`TypeId`].
-    pub(crate) fn get_entry_with_id(
-        &self,
-        type_id: TypeId,
-    ) -> Option<Ref<'_, TypeId, Entry>> {
+    pub(crate) fn get_entry_with_id(&self, type_id: TypeId) -> Option<&Entry> {
         self.executors_by_key_type_id.get(&type_id)
     }
 }
