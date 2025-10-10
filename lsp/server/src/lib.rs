@@ -26,17 +26,14 @@ pub struct DiagnosticsWithUrl {
 }
 
 pub mod extension;
-pub mod semantic;
-pub mod syntax;
+// pub mod semantic;
+// pub mod syntax;
 pub mod workspace;
 
 /// The language server protocal implementation for Pernix.
 #[derive(Debug)]
 pub struct Server {
     client: Client,
-
-    syntax: RwLock<syntax::Syntax>,
-    semantic: RwLock<semantic::Semantic>,
 
     /// Present if the server started with a workspace.
     workspace: RwLock<Option<workspace::Workspace>>,
@@ -46,12 +43,7 @@ impl Server {
     /// Creates a new server instance.
     #[must_use]
     pub fn new(client: Client) -> Self {
-        Self {
-            client,
-            syntax: RwLock::new(syntax::Syntax::default()),
-            semantic: RwLock::new(semantic::Semantic::default()),
-            workspace: RwLock::new(None),
-        }
+        Self { client, workspace: RwLock::new(None) }
     }
 }
 
@@ -225,7 +217,7 @@ impl Server {
 
             // workspace file does exist but failed to parse the json
             Err(error) => match error {
-                workspace::NewWorkspaceError::JsonConfiguration(
+                workspace::NewWorkspaceError::JsonParsing(
                     json_file_path,
                     errors,
                 ) => {
@@ -310,13 +302,13 @@ impl Server {
         &self,
         params: DidSaveTextDocumentParams,
     ) -> Vec<(Url, Vec<tower_lsp::lsp_types::Diagnostic>)> {
-        let mut semantic = self.semantic.write();
-        let workspace = self.workspace.read();
+        // let mut semantic = self.semantic.write();
+        // let workspace = self.workspace.read();
 
-        semantic.analyze(workspace.as_ref().map_or_else(
-            || semantic::OperatingMode::SingleFile(params.text_document.uri),
-            semantic::OperatingMode::Workspace,
-        ))
+        // semantic.analyze(workspace.as_ref().map_or_else(
+        //     || semantic::OperatingMode::SingleFile(params.text_document.uri),
+        //     semantic::OperatingMode::Workspace,
+        // ))
     }
 
     /// Analyze the changes in the source file and report syntax errors.

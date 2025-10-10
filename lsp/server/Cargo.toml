@@ -17,14 +17,12 @@ getset = { workspace = true }
 derive_more = { workspace = true }
 thiserror = { workspace = true }
 by_address = { workspace = true }
+serde = { workspace = true }
 
-pernixc_source_file = { path = "../../compiler/pernixc_source_file" }
-pernixc_diagnostic = { path = "../../compiler/pernixc_diagnostic" }
-pernixc_handler = { path = "../../compiler/pernixc_handler" }
-pernixc_lexical = { path = "../../compiler/pernixc_lexical" }
-pernixc_syntax = { path = "../../compiler/pernixc_syntax" }
-pernixc_semantic = { path = "../../compiler/pernixc_semantic" }
-pernixc_builder = { path = "../../compiler/pernixc_builder" }
+pernixc_source_file = { path = "../../compiler/base/source_file" }
+pernixc_diagnostic = { path = "../../compiler/base/diagnostic" }
+pernixc_lexical = { path = "../../compiler/syntax/lexical" }
+
 
 [lints]
 workspace = true

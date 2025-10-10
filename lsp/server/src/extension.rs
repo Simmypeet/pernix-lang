@@ -1,5 +1,6 @@
 //! Contains extension traits for the [`pernixc_base::source_file::Span`] type.
 
+use pernixc_source_file::ByteIndex;
 use tower_lsp::lsp_types::{Position, Url};
 
 /// Extension trait for converting the [`pernixc_base::source_file::Span`] type
@@ -9,7 +10,7 @@ pub trait SpanExt {
     fn to_range(&self) -> tower_lsp::lsp_types::Range;
 }
 
-impl SpanExt for pernixc_source_file::Span {
+impl SpanExt for pernixc_source_file::Span<ByteIndex> {
     #[allow(clippy::cast_possible_truncation)]
     fn to_range(&self) -> tower_lsp::lsp_types::Range {
         let start = self.start_location().map_or_else(
@@ -50,49 +51,52 @@ pub trait DaignosticExt {
     fn into_diagnostic(self) -> tower_lsp::lsp_types::Diagnostic;
 }
 
-impl DaignosticExt for pernixc_diagnostic::Diagnostic {
+impl DaignosticExt for pernixc_diagnostic::Rendered<ByteIndex> {
     fn into_diagnostic(self) -> tower_lsp::lsp_types::Diagnostic {
         let related = &self.related;
+        let related_informations = {
+            let result = related
+                .iter()
+                .filter_map(|x| {
+                    let to_absolute_path = std::fs::canonicalize(
+                        self.span.source_file().full_path(),
+                    )
+                    .ok()?;
+                    let uri = Url::from_file_path(to_absolute_path).ok()?;
+
+                    Some(tower_lsp::lsp_types::DiagnosticRelatedInformation {
+                        location: tower_lsp::lsp_types::Location {
+                            uri,
+                            range: x.span.to_range(),
+                        },
+                        message: x.message.clone(),
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            if result.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
+        };
         tower_lsp::lsp_types::Diagnostic {
             range: self.span.to_range(),
             severity: Some(match self.severity {
-                pernixc_log::Severity::Error => {
+                pernixc_diagnostic::Severity::Error => {
                     tower_lsp::lsp_types::DiagnosticSeverity::ERROR
                 }
-                pernixc_log::Severity::Info => {
+                pernixc_diagnostic::Severity::Info => {
                     tower_lsp::lsp_types::DiagnosticSeverity::INFORMATION
                 }
-                pernixc_log::Severity::Warning => {
+                pernixc_diagnostic::Severity::Warning => {
                     tower_lsp::lsp_types::DiagnosticSeverity::WARNING
                 }
             }),
             code: None,
             source: None,
             message: self.message.clone(),
-            related_information: {
-                let result = related
-                    .iter()
-                    .filter_map(|x| {
-                        let to_absolute_path =
-                            std::fs::canonicalize(self.span.source_file().full_path()).ok()?;
-                        let uri = Url::from_file_path(to_absolute_path).ok()?;
-
-                        Some(tower_lsp::lsp_types::DiagnosticRelatedInformation {
-                            location: tower_lsp::lsp_types::Location {
-                                uri,
-                                range: x.span.to_range(),
-                            },
-                            message: x.message.clone(),
-                        })
-                    })
-                    .collect::<Vec<_>>();
-
-                if result.is_empty() {
-                    None
-                } else {
-                    Some(result)
-                }
-            },
+            related_information: related_informations,
             tags: None,
             code_description: None,
             data: None,
