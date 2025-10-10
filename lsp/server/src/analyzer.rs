@@ -128,46 +128,52 @@ impl Analyzer {
 
     /// Applies the given change to the source file in the engine.
     /// This does not perform a check, that must be done separately.
-    pub async fn apply_change(&self, params: DidChangeTextDocumentParams) {
+    pub async fn apply_change(&self, mut params: DidChangeTextDocumentParams) {
         let mut engine_lock = self.engine.write().await;
-        let current_target_id = self.current_target_id;
 
-        Arc::get_mut(&mut *engine_lock)
-            .unwrap()
-            .input_session(async move |x| {
-                x.inplace_mutate(
-                    &pernixc_source_file::Key {
-                        path: params
-                            .text_document
-                            .uri
-                            .to_file_path()
-                            .unwrap()
-                            .into(),
-                        target_id: current_target_id,
-                    },
-                    |x| {
-                        let source_file = x.as_mut().unwrap();
+        let input_lock = Arc::get_mut(&mut *engine_lock).unwrap().input_lock();
+        let key = pernixc_source_file::Key {
+            path: params.text_document.uri.to_file_path().unwrap().into(),
+            target_id: self.current_target_id,
+        };
 
-                        let changes = match params
-                            .content_changes
-                            .iter()
-                            .rposition(|x| x.range.is_none())
-                        {
-                            Some(index) => &params.content_changes[index + 1..],
-                            None => &params.content_changes,
-                        };
+        let changes = match params
+            .content_changes
+            .iter()
+            .rposition(|x| x.range.is_none())
+        {
+            Some(index) => {
+                let change = &mut params.content_changes[index];
 
-                        for change in changes {
-                            Self::update_source_file(
-                                Arc::get_mut(source_file).unwrap(),
-                                &change.text,
-                                change.range.unwrap(),
-                            );
-                        }
-                    },
-                )
-            })
-            .await;
+                let file_path =
+                    params.text_document.uri.to_file_path().unwrap();
+
+                input_lock
+                    .set_input(
+                        key.clone(),
+                        Ok(Arc::new(SourceFile::new(
+                            std::mem::take(&mut change.text),
+                            file_path,
+                        ))),
+                    )
+                    .await;
+
+                &params.content_changes[index + 1..]
+            }
+            None => &params.content_changes,
+        };
+
+        assert!(input_lock.inplace_mutate(&key, |source_file| {
+            let source_file = source_file.as_mut().unwrap();
+
+            for change in changes {
+                Self::update_source_file(
+                    Arc::get_mut(source_file).expect("should be unique"),
+                    &change.text,
+                    change.range.unwrap(),
+                );
+            }
+        }));
     }
 
     fn update_source_file(
@@ -186,10 +192,21 @@ impl Analyzer {
 
         let start = source_file
             .into_byte_index_include_ending(pernix_location_start)
-            .unwrap();
+            .unwrap_or_else(|| {
+                panic!(
+                    "the given range {pernix_location_start:?} is invalid to \
+                     the source file"
+                )
+            });
+
         let end = source_file
             .into_byte_index_include_ending(pernix_location_end)
-            .unwrap();
+            .unwrap_or_else(|| {
+                panic!(
+                    "the given range {pernix_location_end:?} is invalid to \
+                     the source file"
+                )
+            });
 
         source_file.replace_range(start..end, text);
     }
