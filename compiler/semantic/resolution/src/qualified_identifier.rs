@@ -34,9 +34,7 @@ use crate::{
         NoGenericArgumentsRequired, SymbolIsNotAccessible, SymbolNotFound,
         ThisNotFound,
     },
-    term::{
-        resolve_generic_arguments_for, resolve_generic_arguments_for_internal,
-    },
+    term::resolve_generic_arguments_for_internal,
     Config, Diagnostic, Error, Handler,
 };
 
@@ -243,9 +241,10 @@ pub(super) async fn search_this(
 }
 
 #[allow(clippy::too_many_lines)]
-pub(super) async fn resolve_root(
+async fn resolve_root(
     tracked_engine: &TrackedEngine,
     root: &QualifiedIdentifierRoot,
+    type_bound: Option<&Type>,
     mut config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Resolution, Error> {
@@ -346,8 +345,12 @@ pub(super) async fn resolve_root(
             let generic_arguments = if symbol_kind.has_generic_parameters() {
                 Some(
                     tracked_engine
-                        .resolve_generic_arguments_for(
+                        .resolve_generic_arguments_for_internal(
                             id,
+                            (symbol_kind == Kind::Marker
+                                || symbol_kind == Kind::Trait)
+                                .then_some(type_bound)
+                                .flatten(),
                             generic_identifier,
                             config.reborrow(),
                             handler,
@@ -494,6 +497,7 @@ async fn resolve_qualified_identifier_internal(
     let mut latest_resolution = resolve_root(
         self,
         &qualified_identifier.root().ok_or(Error::Abort)?,
+        bound_type,
         config.reborrow(),
         handler,
     )
