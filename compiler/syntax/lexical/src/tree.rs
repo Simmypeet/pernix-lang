@@ -743,11 +743,10 @@ impl Converter<'_, '_> {
         // need to assign the indentation size
         let mut new_indentation = false;
         if self.indentation_stack.last().unwrap().indentation_size.is_none() {
-            let prior_indentation = self.indentation_stack
-                [indentation_range.clone()]
-            .iter()
-            .rev()
-            .find(|x| x.indentation_size.is_some());
+            let prior_indentation = self.indentation_stack[indentation_range]
+                .iter()
+                .rev()
+                .find(|x| x.indentation_size.is_some());
 
             // must be deeper indentation
             if indentation_size == 0 {
