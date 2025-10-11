@@ -53,7 +53,7 @@ impl LanguageServer for Server {
         &self,
         _: InitializeParams,
     ) -> jsonrpc::Result<InitializeResult> {
-        info!("Server initialized");
+        info!("Pernix Language Server is initializing...");
 
         Ok(InitializeResult {
             server_info: None,
@@ -136,8 +136,16 @@ impl LanguageServer for Server {
             }
         }
 
-        match analyzer::Analyzer::new(workspace.uri).await {
+        match analyzer::Analyzer::new(workspace.uri.clone()).await {
             Ok(analyzer) => {
+                info!(
+                    "Pernix Language Server is initialized at workspace: {}",
+                    workspace.uri
+                );
+
+                // perform an initial check of the workspace
+                analyzer.check(&self.client, None).await;
+
                 self.analyzer.write().await.replace(analyzer);
             }
 
@@ -210,6 +218,8 @@ impl LanguageServer for Server {
         let Some(analyzer) = analyzer.as_ref() else {
             return;
         };
+
+        info!("Did change: {}", params.text_document.uri.path());
 
         analyzer.apply_change(params).await;
         analyzer.check(&self.client, None).await;

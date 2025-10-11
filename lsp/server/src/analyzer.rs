@@ -165,7 +165,7 @@ impl Analyzer {
             None => &params.content_changes,
         };
 
-        assert!(input_lock.inplace_mutate(&key, |source_file| {
+        input_lock.inplace_mutate(&key, |source_file| {
             let source_file = source_file.as_mut().unwrap();
 
             for change in changes {
@@ -175,7 +175,7 @@ impl Analyzer {
                     change.range.unwrap(),
                 );
             }
-        }));
+        });
     }
 
     fn update_source_file(
