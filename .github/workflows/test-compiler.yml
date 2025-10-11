@@ -77,6 +77,10 @@ jobs:
               with:
                   crate: cargo-nextest
 
+            - name: Install Rust Nightly with Fmt
+              run: |
+                  rustup toolchain install nightly --component rustfmt
+
             - name: Check Code Formatting
               run: cargo +nightly fmt --all -- --check
 
