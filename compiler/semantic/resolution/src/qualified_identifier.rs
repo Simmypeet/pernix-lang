@@ -735,26 +735,14 @@ pub async fn get_member_of(
 ) -> Option<Global<pernixc_symbol::ID>> {
     let symbol_kind = self.get_kind(id).await;
 
-    let result = if symbol_kind.has_member() {
-        self.get_members(id).await.member_ids_by_name.get(member_name).copied()
+    if symbol_kind.has_member() {
+        self.get_members(id)
+            .await
+            .member_ids_by_name
+            .get(member_name)
+            .copied()
+            .map(|x| id.target_id.make_global(x))
     } else {
         None
-    };
-
-    if let Some(test) = result {
-        return Some(Global::new(id.target_id, test));
-    }
-
-    // TODO: search the member in the adt implementations
-    let this_kind = self.get_kind(id).await;
-
-    match this_kind {
-        Kind::Module => {
-            let imports = self.get_import_map(id).await;
-
-            imports.get(member_name).map(|x| x.id)
-        }
-
-        _ => None,
     }
 }
