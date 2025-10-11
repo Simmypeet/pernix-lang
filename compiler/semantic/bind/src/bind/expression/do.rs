@@ -28,7 +28,8 @@ use pernixc_type_system::UnrecoverableError;
 use crate::{
     bind::{Bind, Expression, Guidance},
     binder::{
-        inference_context::ErasedLifetimeProvider, Binder, BindingError, Error,
+        self, inference_context::ErasedLifetimeProvider, Binder, BindingError,
+        Error,
     },
     diagnostic::{
         Diagnostic, DuplicatedEffectHandler, DuplicatedEffectOperationHandler,
@@ -50,6 +51,8 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             return Err(Error::Binding(BindingError(syntax_tree.span())));
         };
 
+        let captures = self.create_captures(handler).await?;
+
         let with_blocks =
             extract_effect_handlers(self, syntax_tree, handler).await?;
 
@@ -64,12 +67,19 @@ impl Bind<&pernixc_syntax::expression::block::Do> for Binder<'_> {
             },
             expected_return_type.clone(),
             do_statements.span(),
+            &captures,
             handler,
         ))
         .await?;
 
-        build_with_blocks(self, with_blocks, &expected_return_type, handler)
-            .await?;
+        build_with_blocks(
+            self,
+            with_blocks,
+            &expected_return_type,
+            &captures,
+            handler,
+        )
+        .await?;
 
         Ok(Expression::RValue(Value::error(
             Type::Inference(
@@ -98,6 +108,7 @@ async fn build_with_blocks(
     binder: &mut Binder<'_>,
     with_blocks: Vec<WithBlock>,
     expected_type: &Type,
+    captures: &binder::closure::Captures,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<(), Error> {
     for with_block in with_blocks {
@@ -132,6 +143,7 @@ async fn build_with_blocks(
                     },
                     expected_type.clone(),
                     statements_span,
+                    captures,
                     handler,
                 )
                 .await?;

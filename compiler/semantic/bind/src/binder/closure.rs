@@ -2,7 +2,6 @@
 //! effect handlers, do blocks, etc.
 
 use flexstr::SharedStr;
-use pernixc_arena::Arena;
 use pernixc_handler::Handler;
 use pernixc_ir::{
     address::{Address, Memory},
@@ -23,14 +22,16 @@ use crate::{
     },
 };
 
-#[derive(Default)]
-struct Captures {
-    captures: Arena<Capture>,
+/// Represents a capturing structure available at a particular point in the
+/// binding process.
+#[derive(Debug, Default)]
+pub struct Captures {
+    captures: pernixc_ir::capture::Captures,
     name_binding_point: NameBindingPoint,
 }
 
 impl Captures {
-    pub async fn new(
+    async fn new(
         parent_stack: &Stack,
         binder: &Binder<'_>,
         handler: &dyn Handler<Diagnostic>,
@@ -58,7 +59,7 @@ impl Captures {
         Ok(captures)
     }
 
-    pub async fn try_insert_named_binding(
+    async fn try_insert_named_binding(
         &mut self,
         new_name: &SharedStr,
         new_name_binding: &NameBinding,
@@ -88,8 +89,9 @@ impl Captures {
                 .copied()
                 .unwrap();
 
-            let existing_captured_address =
-                &self.captures[existing_binding_root].parent_captured_address;
+            let existing_captured_address = &self.captures.captures
+                [existing_binding_root]
+                .parent_captured_address;
 
             // if the existing captured address is a child of the new
             // captured address, we re-adjust the existing capture to use
@@ -117,7 +119,7 @@ impl Captures {
         };
 
         // insert a new capture and cooresponding name binding
-        let new_capture_id = self.captures.insert(new_capture);
+        let new_capture_id = self.captures.captures.insert(new_capture);
         self.name_binding_point.named_patterns_by_name.insert(
             new_name.clone(),
             NameBinding {
@@ -145,7 +147,7 @@ impl Captures {
                 .unwrap();
 
             let dominated_root_captured_address =
-                &self.captures[dominated_root].parent_captured_address;
+                &self.captures.captures[dominated_root].parent_captured_address;
 
             // replace the captured root with the actual original captured
             // address
@@ -171,7 +173,7 @@ impl Captures {
         for dominated_capture in removing_captures {
             // it is possible we remove the same capture multiple times if
             // multiple names capture the same memory
-            let _ = self.captures.remove(dominated_capture);
+            let _ = self.captures.captures.remove(dominated_capture);
         }
 
         Ok(())
@@ -179,12 +181,22 @@ impl Captures {
 }
 
 impl Binder<'_> {
+    /// Creates a capturing structure representing all the captures available
+    /// at the current point in the binding process.
+    pub async fn create_captures(
+        &self,
+        handler: &dyn Handler<Diagnostic>,
+    ) -> Result<Captures, UnrecoverableError> {
+        Captures::new(&self.stack, self, handler).await
+    }
+
     /// Creates a nested binder that can be used to produce a nested IR.
     pub async fn new_closure_binder(
         &mut self,
         f: impl AsyncFnOnce(&mut Binder<'_>) -> Result<(), UnrecoverableError>,
         expected_type: Type,
         closure_span: RelativeSpan,
+        captures: &Captures,
         handler: &dyn Handler<Diagnostic>,
     ) -> Result<IR, UnrecoverableError> {
         // temporary move out the inference context for the inner binder
@@ -193,19 +205,15 @@ impl Binder<'_> {
         let ir = IR::default();
         let current_block_id = ir.control_flow_graph.entry_block_id();
 
-        let captures = Captures::new(&self.stack, self, handler).await?;
-        let ir_captures =
-            pernixc_ir::capture::Captures { captures: captures.captures };
-
         let mut stack = Stack::new(ir.scope_tree.root_scope_id(), false);
         stack
             .current_scope_mut()
-            .add_named_binding_point(captures.name_binding_point);
+            .add_named_binding_point(captures.name_binding_point.clone());
 
         let mut binder = Binder {
             engine: self.engine,
             environment: self.environment,
-            captures: Some(&ir_captures),
+            captures: Some(&captures.captures),
             ir,
             current_block_id,
             stack,
