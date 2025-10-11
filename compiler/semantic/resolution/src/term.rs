@@ -44,7 +44,26 @@ pub async fn resolve_generic_arguments_for(
     mut config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<GenericArguments, executor::CyclicError> {
-    let generic_arguments = if let Some(generic_arguments) =
+    self.resolve_generic_arguments_for_internal(
+        symbol_id,
+        None,
+        generic_identifier,
+        config.reborrow(),
+        handler,
+    )
+    .await
+}
+
+#[extend]
+pub(crate) async fn resolve_generic_arguments_for_internal(
+    self: &TrackedEngine,
+    symbol_id: Global<pernixc_symbol::ID>,
+    bound_type: Option<&Type>,
+    generic_identifier: &GenericIdentifier,
+    mut config: Config<'_, '_, '_, '_, '_>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<GenericArguments, executor::CyclicError> {
+    let mut generic_arguments = if let Some(generic_arguments) =
         generic_identifier.generic_arguments()
     {
         self.resolve_generic_arguments(
@@ -56,6 +75,11 @@ pub async fn resolve_generic_arguments_for(
     } else {
         GenericArguments::default()
     };
+
+    // add the bound type as the first type argument
+    if let Some(bound_type) = bound_type {
+        generic_arguments.types.insert(0, bound_type.clone());
+    }
 
     let (generic_arguments, diagnostics) = self
         .verify_generic_arguments_for(

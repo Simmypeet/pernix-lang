@@ -26,7 +26,7 @@ use pernixc_syntax::{
 use pernixc_target::{get_linked_targets, get_target_map, Global};
 use pernixc_term::{
     generic_arguments::GenericArguments,
-    generic_parameters::get_generic_parameters,
+    generic_parameters::get_generic_parameters, r#type::Type,
 };
 
 use crate::{
@@ -34,7 +34,9 @@ use crate::{
         NoGenericArgumentsRequired, SymbolIsNotAccessible, SymbolNotFound,
         ThisNotFound,
     },
-    term::resolve_generic_arguments_for,
+    term::{
+        resolve_generic_arguments_for, resolve_generic_arguments_for_internal,
+    },
     Config, Diagnostic, Error, Handler,
 };
 
@@ -392,12 +394,99 @@ pub(super) async fn resolve_root(
     Ok(resolution)
 }
 
-/// Resolves a [`QualifiedIdentifier`] to a [`Resolution`].
+/// Resolves a [`QualifiedIdentifier`] to a [`Resolution`] where the last
+/// identifier is expected to be a `marker` or `trait`. The resolution will
+/// insert the given `type_bound` as the first generic argument to the last
+/// identifier if it is a `marker` or `trait`.
 #[allow(clippy::too_many_lines)]
 #[extend]
-pub async fn resolve_qualified_identifier(
+pub async fn resolve_type_bound(
     self: &TrackedEngine,
     qualified_identifier: &QualifiedIdentifier,
+    type_bound: &Type,
+    mut config: Config<'_, '_, '_, '_, '_>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Resolution, Error> {
+    self.resolve_qualified_identifier_internal(
+        qualified_identifier,
+        Some(type_bound),
+        config.reborrow(),
+        handler,
+    )
+    .await
+}
+
+#[extend]
+async fn resolve_step(
+    self: &TrackedEngine,
+    latest_resolution: Global<pernixc_symbol::ID>,
+    identifier: &pernixc_syntax::Identifier,
+    config: Config<'_, '_, '_, '_, '_>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Global<pernixc_symbol::ID>, Error> {
+    let resolved_id = 'resolved: {
+        if let Some(resolved_id) =
+            self.get_member_of(latest_resolution, &identifier.kind).await
+        {
+            break 'resolved Some(resolved_id);
+        }
+
+        // try to search in the implements if the latest resolution is an
+        // ADT
+
+        let kind = self.get_kind(latest_resolution).await;
+
+        if !(kind.is_adt() && config.consider_adt_implements) {
+            break 'resolved None;
+        }
+
+        let implemented = self.get_implemented(latest_resolution).await?;
+
+        for impl_id in implemented.iter().copied() {
+            let impl_members = self.get_members(impl_id).await;
+
+            if let Some(resolved_id) =
+                impl_members.member_ids_by_name.get(&identifier.kind.0)
+            {
+                break 'resolved Some(Global::new(
+                    impl_id.target_id,
+                    *resolved_id,
+                ));
+            }
+        }
+
+        None
+    };
+
+    let Some(resolved_id) = resolved_id else {
+        handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
+            searched_item_id: Some(latest_resolution),
+            resolution_span: identifier.span,
+            name: identifier.kind.0.clone(),
+        }));
+
+        return Err(Error::Abort);
+    };
+
+    // check if the symbol is accessible
+    if !self.symbol_accessible(config.referring_site, resolved_id).await {
+        handler.receive(Diagnostic::SymbolIsNotAccessible(
+            SymbolIsNotAccessible {
+                referring_site: config.referring_site,
+                referred: resolved_id,
+                referred_span: identifier.span,
+            },
+        ));
+    }
+
+    Ok(resolved_id)
+}
+
+#[extend]
+async fn resolve_qualified_identifier_internal(
+    self: &TrackedEngine,
+    qualified_identifier: &QualifiedIdentifier,
+    bound_type: Option<&Type>,
     mut config: Config<'_, '_, '_, '_, '_>,
     handler: &dyn Handler<Diagnostic>,
 ) -> Result<Resolution, Error> {
@@ -418,72 +507,24 @@ pub async fn resolve_qualified_identifier(
             continue;
         };
 
-        let resolved_id = 'resolved: {
-            if let Some(resolved_id) = self
-                .get_member_of(latest_resolution.global_id(), &identifier.kind)
-                .await
-            {
-                break 'resolved Some(resolved_id);
-            }
-
-            // try to search in the implements if the latest resolution is an
-            // ADT
-
-            let kind = self.get_kind(latest_resolution.global_id()).await;
-
-            if !(kind.is_adt() && config.consider_adt_implements) {
-                break 'resolved None;
-            }
-
-            let implemented =
-                self.get_implemented(latest_resolution.global_id()).await?;
-
-            for impl_id in implemented.iter().copied() {
-                let impl_members = self.get_members(impl_id).await;
-
-                if let Some(resolved_id) =
-                    impl_members.member_ids_by_name.get(&identifier.kind.0)
-                {
-                    break 'resolved Some(Global::new(
-                        impl_id.target_id,
-                        *resolved_id,
-                    ));
-                }
-            }
-
-            None
-        };
-
-        let Some(resolved_id) = resolved_id else {
-            handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
-                searched_item_id: Some(latest_resolution.global_id()),
-                resolution_span: identifier.span,
-                name: identifier.kind.0.clone(),
-            }));
-
-            return Err(Error::Abort);
-        };
-
-        // check if the symbol is accessible
-        if !self.symbol_accessible(config.referring_site, resolved_id).await {
-            handler.receive(Diagnostic::SymbolIsNotAccessible(
-                SymbolIsNotAccessible {
-                    referring_site: config.referring_site,
-                    referred: resolved_id,
-                    referred_span: generic_identifier
-                        .identifier()
-                        .unwrap()
-                        .span,
-                },
-            ));
-        }
+        let resolved_id = self
+            .resolve_step(
+                latest_resolution.global_id(),
+                &identifier,
+                config.reborrow(),
+                handler,
+            )
+            .await?;
 
         let symbol_kind = self.get_kind(resolved_id).await;
 
         let generic_arguments = if symbol_kind.has_generic_parameters() {
             Some(
-                self.resolve_generic_arguments_for(
+                self.resolve_generic_arguments_for_internal(
                     resolved_id,
+                    (symbol_kind == Kind::Marker || symbol_kind == Kind::Trait)
+                        .then_some(bound_type)
+                        .flatten(),
                     &generic_identifier,
                     config.reborrow(),
                     handler,
@@ -526,6 +567,24 @@ pub async fn resolve_qualified_identifier(
     }
 
     Ok(latest_resolution)
+}
+
+/// Resolves a [`QualifiedIdentifier`] to a [`Resolution`].
+#[allow(clippy::too_many_lines)]
+#[extend]
+pub async fn resolve_qualified_identifier(
+    self: &TrackedEngine,
+    qualified_identifier: &QualifiedIdentifier,
+    mut config: Config<'_, '_, '_, '_, '_>,
+    handler: &dyn Handler<Diagnostic>,
+) -> Result<Resolution, Error> {
+    self.resolve_qualified_identifier_internal(
+        qualified_identifier,
+        None,
+        config.reborrow(),
+        handler,
+    )
+    .await
 }
 
 /// Resolves a [`SimplePath`] as a [`GlobalID`].
