@@ -803,6 +803,9 @@ impl Converter<'_, '_> {
             return;
         }
 
+        // Recalculate indentation_range after potential stack modifications
+        let indentation_range = self.current_indentation_range();
+
         // check if the indentation size is valid
         let pop_count = if indentation_size == 0 {
             // pop all indentation markers
