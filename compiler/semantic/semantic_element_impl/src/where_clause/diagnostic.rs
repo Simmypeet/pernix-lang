@@ -78,6 +78,7 @@ impl Report for Diagnostic {
 pub enum PredicateKind {
     Trait,
     Marker,
+    TypeBound,
 }
 
 /// The unexpected symbol was found in the predicate.
@@ -117,6 +118,7 @@ impl Report for UnexpectedSymbolInPredicate {
         let expected = match self.predicate_kind {
             PredicateKind::Trait => "trait",
             PredicateKind::Marker => "marker",
+            PredicateKind::TypeBound => "either a trait or marker",
         };
 
         Ok(pernixc_diagnostic::Rendered {
@@ -133,6 +135,7 @@ impl Report for UnexpectedSymbolInPredicate {
                 match self.predicate_kind {
                     PredicateKind::Trait => "trait",
                     PredicateKind::Marker => "marker",
+                    PredicateKind::TypeBound => "type bound",
                 },
             ),
             severity: Severity::Error,

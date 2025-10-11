@@ -8,7 +8,9 @@ use pernixc_query::{runtime::executor, TrackedEngine};
 use pernixc_resolution::{
     forall_lifetimes::create_forall_lifetimes,
     generic_parameter_namespace::get_generic_parameter_namespace,
-    qualified_identifier::{resolve_qualified_identifier, Generic, Resolution},
+    qualified_identifier::{
+        resolve_qualified_identifier, resolve_type_bound, Generic, Resolution,
+    },
     term::{resolve_lifetime, resolve_type},
     Config, ExtraNamespace,
 };
@@ -379,7 +381,6 @@ async fn create_type_bound_predicates(
         engine,
         &ty,
         &ty_syn.span(),
-        global_id,
         syntax_tree.bounds(),
         config,
         where_clause,
@@ -393,7 +394,6 @@ async fn create_type_bound_predicates_internal(
     engine: &TrackedEngine,
     ty: &Type,
     type_span: &RelativeSpan,
-    _global_id: Global<pernixc_symbol::ID>,
     bounds: impl IntoIterator<Item = pernixc_syntax::predicate::TypeBound>,
     mut config: Config<'_, '_, '_, '_, '_>,
     where_clause: &mut Vec<where_clause::Predicate>,
@@ -402,9 +402,125 @@ async fn create_type_bound_predicates_internal(
     for bound in bounds {
         match bound {
             pernixc_syntax::predicate::TypeBound::QualifiedIdentifier(
-                _qualified_identifier_bound,
+                qualified_identifier_bound,
             ) => {
-                todo!()
+                let Some(qualified_identifier) =
+                    qualified_identifier_bound.qualified_identifier()
+                else {
+                    continue;
+                };
+
+                let original_extra_namespace = config.extra_namespace;
+
+                let optional_namespace = if let Some(forall_lifetimes) =
+                    qualified_identifier_bound.higher_ranked_lifetimes()
+                {
+                    let mut extra_namespace =
+                        config.extra_namespace.cloned().unwrap_or_default();
+
+                    create_forall_lifetimes(
+                        &mut extra_namespace.lifetimes,
+                        &forall_lifetimes,
+                        handler,
+                    );
+
+                    Some(extra_namespace)
+                } else {
+                    None
+                };
+
+                let config = Config {
+                    extra_namespace: optional_namespace
+                        .as_ref()
+                        .or(original_extra_namespace),
+                    ..config.reborrow()
+                };
+
+                let resolution = match engine
+                    .resolve_type_bound(
+                        &qualified_identifier,
+                        ty,
+                        config,
+                        handler,
+                    )
+                    .await
+                {
+                    Ok(resolution) => resolution,
+                    Err(pernixc_resolution::Error::Abort) => continue,
+                    Err(pernixc_resolution::Error::Cyclic(error)) => {
+                        return Err(error);
+                    }
+                };
+
+                let resolved_kind =
+                    engine.get_kind(resolution.global_id()).await;
+
+                let preidcate = match (
+                    resolved_kind,
+                    resolution,
+                    qualified_identifier_bound.not_keyword().is_some(),
+                ) {
+                    (
+                        Kind::Trait,
+                        Resolution::Generic(Generic { id, generic_arguments }),
+                        false,
+                    ) => predicate::Predicate::PositiveTrait(
+                        predicate::PositiveTrait {
+                            is_const: false,
+                            generic_arguments,
+                            trait_id: id,
+                        },
+                    ),
+
+                    (
+                        Kind::Trait,
+                        Resolution::Generic(Generic { id, generic_arguments }),
+                        true,
+                    ) => predicate::Predicate::NegativeTrait(
+                        predicate::NegativeTrait {
+                            generic_arguments,
+                            trait_id: id,
+                        },
+                    ),
+
+                    (
+                        Kind::Marker,
+                        Resolution::Generic(Generic { id, generic_arguments }),
+                        false,
+                    ) => predicate::Predicate::PositiveMarker(PositiveMarker {
+                        marker_id: id,
+                        generic_arguments,
+                    }),
+
+                    (
+                        Kind::Marker,
+                        Resolution::Generic(Generic { id, generic_arguments }),
+                        true,
+                    ) => predicate::Predicate::NegativeMarker(NegativeMarker {
+                        marker_id: id,
+                        generic_arguments,
+                    }),
+
+                    (_, found_resolution, _) => {
+                        handler.receive(
+                            Diagnostic::UnexpectedSymbolInPredicate(
+                                UnexpectedSymbolInPredicate {
+                                    predicate_kind: PredicateKind::TypeBound,
+                                    found_id: found_resolution.global_id(),
+                                    qualified_identifier_span:
+                                        qualified_identifier.span(),
+                                },
+                            ),
+                        );
+
+                        continue;
+                    }
+                };
+
+                where_clause.push(where_clause::Predicate {
+                    predicate: preidcate,
+                    span: Some(qualified_identifier_bound.span()),
+                });
             }
 
             pernixc_syntax::predicate::TypeBound::Const(syn) => {
@@ -593,7 +709,6 @@ impl build::Build for pernixc_semantic_element::where_clause::Key {
                         engine,
                         &Type::Parameter(TypeParameterID::new(key.0, *id)),
                         &identifier.span,
-                        key.0,
                         bounds.bounds(),
                         Config::builder()
                             .observer(&mut occurrences)
