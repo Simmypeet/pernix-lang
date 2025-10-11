@@ -410,7 +410,13 @@ where
         &mut self,
         visitor: &mut V,
     ) -> bool {
-        implements_tuple!(self, visitor, accept_single_async_mut, iter_mut, await)
+        implements_tuple!(
+            self,
+            visitor,
+            accept_single_async_mut,
+            iter_mut,
+            await
+        )
     }
 }
 
