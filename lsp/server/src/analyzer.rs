@@ -19,6 +19,7 @@ pub struct Analyzer {
     engine: RwLock<Arc<Engine>>,
     workspace: Workspace,
     current_target_id: TargetID,
+    published_diagnostics: RwLock<Vec<Url>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -123,6 +124,7 @@ impl Analyzer {
             engine: RwLock::new(engine),
             workspace,
             current_target_id: local_target_id,
+            published_diagnostics: RwLock::new(Vec::new()),
         })
     }
 
@@ -219,6 +221,9 @@ impl Analyzer {
     ) {
         // the engine lock is intentionally held here
         let engine_lock = self.engine.read().await;
+        let mut published_diagnostics =
+            self.published_diagnostics.write().await;
+
         let engine = engine_lock.tracked();
 
         let symbol_impl = {
@@ -271,10 +276,21 @@ impl Analyzer {
                 .push(engine.to_lsp_diagnostic(diag).await);
         }
 
+        // clear diagnostics for files that no longer have diagnostics
+        for url in published_diagnostics.iter() {
+            if !diagnostics.contains_key(url) {
+                client
+                    .publish_diagnostics(url.clone(), Vec::new(), version)
+                    .await;
+            }
+        }
+
+        published_diagnostics.clear();
         for (url, diags) in diagnostics {
             client
                 .publish_diagnostics(url.clone(), diags.clone(), version)
                 .await;
+            published_diagnostics.push(url);
         }
     }
 }
