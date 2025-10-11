@@ -1,0 +1,13 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the symbol was not found
+  ╭─ compiler/e2e/test/snapshot/issues/1/main.pnx:1:15
+  │
+1 │ from target::o
+  │               ^ the symbol `o` was not found in `main`
+
+
+stdout:
