@@ -661,7 +661,7 @@ fn invalid_inner_indentation() {
     let mut errs = storage.into_vec();
     assert_eq!(errs.len(), 1);
 
-    let err = errs.pop().unwrap().into_invalid_indentation().unwrap();
+    let err = errs.pop().unwrap().into_invalid_new_indentation_level().unwrap();
 
     assert_eq!(
         &source_map.get(source_id).unwrap().content()[err.span.range()],
