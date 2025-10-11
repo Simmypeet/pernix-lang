@@ -639,6 +639,36 @@ fn empty_indentation() {
     );
 }
 
+const INVALID_INNER_INDENTATION: &str = "
+a:
+    b:
+    b
+";
+
+#[test]
+fn invalid_inner_indentation() {
+    let source_map = SourceMap::default();
+    let source_id = TargetID::TEST.make_global(source_map.register(
+        TargetID::TEST,
+        SourceFile::new(INVALID_INNER_INDENTATION.to_string(), "test".into()),
+    ));
+
+    let source_content = source_map.get(source_id).unwrap();
+    let storage = Storage::<Error>::new();
+
+    let _ = Tree::from_source(source_content.content(), source_id, &storage);
+
+    let mut errs = storage.into_vec();
+    assert_eq!(errs.len(), 1);
+
+    let err = errs.pop().unwrap().into_invalid_indentation().unwrap();
+
+    assert_eq!(
+        &source_map.get(source_id).unwrap().content()[err.span.range()],
+        "b"
+    );
+}
+
 proptest! {
    #[test]
     fn tree(
