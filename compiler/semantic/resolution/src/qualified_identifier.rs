@@ -324,7 +324,7 @@ async fn resolve_root(
                 Some(id) => Some(id),
                 None => tracked_engine
                     .get_import_map(current_module_id)
-                    .await
+                    .await?
                     .get(&identifier.kind.0)
                     .copied()
                     .map(|x| x.id),
@@ -429,7 +429,7 @@ async fn resolve_step(
 ) -> Result<Global<pernixc_symbol::ID>, Error> {
     let resolved_id = 'resolved: {
         if let Some(resolved_id) =
-            self.get_member_of(latest_resolution, &identifier.kind).await
+            self.get_member_of(latest_resolution, &identifier.kind).await?
         {
             break 'resolved Some(resolved_id);
         }
@@ -599,9 +599,12 @@ pub async fn resolve_simple_path(
     referring_site: Global<pernixc_symbol::ID>,
     start_from_root: bool,
     handler: &dyn Handler<Diagnostic>,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Result<Option<Global<pernixc_symbol::ID>>, pernixc_query::runtime::executor::CyclicError> {
     // simple path should always have root tough
-    let root: Global<pernixc_symbol::ID> = match simple_path.root()? {
+    let Some(root_match) = simple_path.root() else {
+        return Ok(None);
+    };
+    let root: Global<pernixc_symbol::ID> = match root_match {
         SimplePathRoot::Target(_) => Global::new(
             referring_site.target_id,
             self.get_target_root_module_id(referring_site.target_id).await,
@@ -628,7 +631,7 @@ pub async fn resolve_simple_path(
                         },
                     ));
 
-                    return None;
+                    return Ok(None);
                 };
 
                 Global::new(
@@ -652,7 +655,7 @@ pub async fn resolve_simple_path(
                     Some(id) => Some(id),
                     None => self
                         .get_import_map(global_closest_module_id)
-                        .await
+                        .await?
                         .get(ident.kind.0.as_str())
                         .map(|x| x.id),
                 };
@@ -666,7 +669,7 @@ pub async fn resolve_simple_path(
                         },
                     ));
 
-                    return None;
+                    return Ok(None);
                 };
 
                 id
@@ -691,13 +694,13 @@ pub async fn resolve_sequence<'a>(
     referring_site: Global<pernixc_symbol::ID>,
     root: Global<pernixc_symbol::ID>,
     handler: &dyn Handler<Diagnostic>,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Result<Option<Global<pernixc_symbol::ID>>, pernixc_query::runtime::executor::CyclicError> {
     let mut lastest_resolution = root;
 
     for identifier in simple_path {
         let Some(new_id) = self
             .get_member_of(lastest_resolution, identifier.kind.0.as_str())
-            .await
+            .await?
         else {
             handler.receive(Diagnostic::SymbolNotFound(SymbolNotFound {
                 searched_item_id: Some(lastest_resolution),
@@ -705,7 +708,7 @@ pub async fn resolve_sequence<'a>(
                 name: identifier.kind.0,
             }));
 
-            return None;
+            return Ok(None);
         };
 
         // non-fatal error, no need to return early
@@ -722,7 +725,7 @@ pub async fn resolve_sequence<'a>(
         lastest_resolution = new_id;
     }
 
-    Some(lastest_resolution)
+    Ok(Some(lastest_resolution))
 }
 
 /// Searches for a member in the given symbol scope and returns its ID if it
@@ -732,7 +735,7 @@ pub async fn get_member_of(
     self: &TrackedEngine,
     id: Global<pernixc_symbol::ID>,
     member_name: &str,
-) -> Option<Global<pernixc_symbol::ID>> {
+) -> Result<Option<Global<pernixc_symbol::ID>>, pernixc_query::runtime::executor::CyclicError> {
     let symbol_kind = self.get_kind(id).await;
 
     let result = if symbol_kind.has_member() {
@@ -742,7 +745,7 @@ pub async fn get_member_of(
     };
 
     if let Some(test) = result {
-        return Some(Global::new(id.target_id, test));
+        return Ok(Some(Global::new(id.target_id, test)));
     }
 
     // TODO: search the member in the adt implementations
@@ -750,11 +753,11 @@ pub async fn get_member_of(
 
     match this_kind {
         Kind::Module => {
-            let imports = self.get_import_map(id).await;
+            let imports = self.get_import_map(id).await?;
 
-            imports.get(member_name).map(|x| x.id)
+            Ok(imports.get(member_name).map(|x| x.id))
         }
 
-        _ => None,
+        _ => Ok(None),
     }
 }

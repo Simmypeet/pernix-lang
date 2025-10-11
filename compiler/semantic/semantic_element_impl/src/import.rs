@@ -60,7 +60,7 @@ impl Build for import::Key {
                         true,
                         &storage,
                     )
-                    .await
+                    .await?
                 else {
                     continue;
                 };

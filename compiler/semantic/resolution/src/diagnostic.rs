@@ -568,7 +568,7 @@ impl Report for SymbolNotFound {
 
                 match kind {
                     Kind::Module => {
-                        let imports = engine.get_import_map(item).await;
+                        let imports = engine.get_import_map(item).await?;
 
                         suggest(
                             &self.name,

@@ -48,5 +48,6 @@ pub struct Import {
     pernixc_query::Key,
 )]
 #[value(Arc<HashMap<SharedStr, Import>>)]
-#[extend(method(get_import_map), no_cyclic)]
+#[scc_value(Arc::new(HashMap::default()))]
+#[extend(method(get_import_map))]
 pub struct Key(pub Global<pernixc_symbol::ID>);

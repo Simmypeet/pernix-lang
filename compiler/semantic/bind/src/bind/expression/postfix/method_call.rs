@@ -226,7 +226,7 @@ async fn visible_traits(
     // 1 & 2
     {
         let members = binder.engine().get_members(nearest_module_id).await;
-        let imports = binder.engine().get_import_map(nearest_module_id).await;
+        let imports = binder.engine().get_import_map(nearest_module_id).await?;
 
         for member_id in members
             .member_ids_by_name
