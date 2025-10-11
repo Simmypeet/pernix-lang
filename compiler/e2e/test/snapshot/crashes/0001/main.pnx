@@ -1,0 +1,9 @@
+from core import Drop
+
+
+public struct LoudDrop:
+    pass
+
+
+implements Drop[LoudDrop]:
+    pass

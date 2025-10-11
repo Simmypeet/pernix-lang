@@ -1,6 +1,7 @@
 use pernixc_lexical::tree::RelativeSpan;
 use pernixc_query::{runtime::executor::CyclicError, TrackedEngine};
 use pernixc_symbol::span::Key;
+use pernixc_target::TargetID;
 
 use crate::table::get_table_of_symbol;
 
@@ -10,6 +11,11 @@ pub async fn executor(
     key: &Key,
     engine: &TrackedEngine,
 ) -> Result<Option<RelativeSpan>, CyclicError> {
+    // the core symbols don't have spans
+    if key.0.target_id == TargetID::CORE {
+        return Ok(None);
+    }
+
     let table = engine.get_table_of_symbol(key.0).await;
 
     Ok(table
