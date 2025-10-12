@@ -77,6 +77,14 @@ jobs:
               with:
                   crate: cargo-nextest
 
+            - name: Install Rust Nightly with Fmt
+              run: |
+                  rustup toolchain install nightly --component rustfmt
+
+            - name: Install Rust Stable Clippy
+              run: |
+                  rustup component add clippy
+
             - name: Check Code Formatting
               run: cargo +nightly fmt --all -- --check
 
