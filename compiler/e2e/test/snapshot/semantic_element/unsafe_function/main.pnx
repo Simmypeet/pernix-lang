@@ -1,0 +1,22 @@
+// Test for unsafe function declaration and calling
+
+// Define an unsafe function
+public unsafe fn dangerous_operation() -> int32:
+    return 42
+
+// Define a safe function
+public fn safe_operation() -> int32:
+    return 10
+
+// Try to call unsafe function without unsafe scope (should error)
+public fn test_unsafe_call() -> int32:
+    return dangerous_operation()
+
+// Call unsafe function with unsafe scope (should be ok)
+public fn test_safe_unsafe_call() -> int32:
+    unsafe:
+        return dangerous_operation()
+
+// Call safe function (should always be ok)
+public fn test_safe_call() -> int32:
+    return safe_operation()

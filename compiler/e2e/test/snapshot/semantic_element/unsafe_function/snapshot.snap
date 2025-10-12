@@ -1,0 +1,19 @@
+---
+source: compiler/e2e/test/snapshot/mod.rs
+expression: clean_run
+---
+stderr:
+error: the operation of calling an `unsafe` function is unsafe and requires an unsafe scope
+   ╭─ compiler/e2e/test/snapshot/semantic_element/unsafe_function/main.pnx:13:12
+   │
+13 │     return dangerous_operation()
+   │            ^^^^^^^^^^^^^^^^^^^^^
+   │
+   = help: these operations require an extra level of caution and must be performed within an `unsafe scope`
+
+error: Compilation aborted due to 1 error(s)
+
+
+
+stdout:
+
