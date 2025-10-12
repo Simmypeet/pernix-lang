@@ -34,10 +34,10 @@ jobs:
             - name: Install Dependencies
               run: sudo apt update && sudo apt install -y libtinfo5
 
-            - name: Install LLVM and Clang 18.1.8
+            - name: Install LLVM and Clang 18.1
               uses: KyleMayes/install-llvm-action@v1
               with:
-                  version: 18.1.8
+                  version: 18.1
 
             - name: llvm-config
               run: llvm-config --version --bindir --libdir
